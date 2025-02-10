@@ -12,7 +12,10 @@
 		"dotenv": "^16.0.3",
 		"express": "^4.18.2",
 		"jsonwebtoken": "^9.0.0",
-		"mongoose": "^7.0.3"
+		"mongoose": "^7.0.3",
+		"morgan": "^1.10.0",
+		"helmet": "^7.1.0",
+		"@sendgrid/mail": "^7.7.0"
 	},
 	"devDependencies": {
 		"nodemon": "^2.0.22"
