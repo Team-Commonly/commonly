@@ -1,0 +1,20 @@
+.layout-container {
+    display: flex;
+}
+
+.dashboard-container {
+    width: 250px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background-color: #f8f9fa;
+    padding: 20px;
+    border-right: 1px solid #ccc;
+}
+
+.content-container {
+    margin-left: 270px;
+    padding: 20px;
+    width: calc(100% - 270px);
+}
