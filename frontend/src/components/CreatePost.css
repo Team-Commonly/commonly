@@ -1,37 +1,68 @@
 .create-post-container {
-    max-width: 600px;
-    margin: 0 auto;
-    padding: 20px;
-    border: 1px solid #ccc;
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background-color: #fff;
     border-radius: 8px;
-    background-color: #f9f9f9;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .create-post-form {
     display: flex;
     flex-direction: column;
+    gap: 1rem;
+}
+
+.create-post-textarea-container {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
 }
 
 .create-post-textarea {
     width: 100%;
-    height: 150px;
-    padding: 10px;
-    margin-bottom: 10px;
-    border: 1px solid #ccc;
+    min-height: 150px;
+    padding: 1rem;
+    border: 1px solid #e0e0e0;
     border-radius: 4px;
-    font-size: 16px;
+    resize: vertical;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.emoji-button {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+}
+
+.emoji-picker-container {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 1000;
+    transform: scale(0.65);
+    transform-origin: top right;
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 .create-post-button {
-    padding: 10px 20px;
+    padding: 0.75rem 1.5rem;
+    background-color: #1976d2;
+    color: white;
     border: none;
     border-radius: 4px;
-    background-color: #007bff;
-    color: white;
-    font-size: 16px;
     cursor: pointer;
+    font-size: 1rem;
+    align-self: flex-end;
 }
 
 .create-post-button:hover {
-    background-color: #0056b3;
+    background-color: #1565c0;
+}
+
+.create-post-button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
 }

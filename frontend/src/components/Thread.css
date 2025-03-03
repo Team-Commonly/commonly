@@ -1,0 +1,47 @@
+.thread-comment-form {
+    margin-top: 20px;
+    margin-bottom: 30px;
+}
+
+.emoji-picker-container {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 1000;
+    transform: scale(0.65);
+    transform-origin: top right;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.comment-input-container {
+    position: relative;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.comment-textarea {
+    flex-grow: 1;
+    min-height: 60px;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    resize: vertical;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.comment-textarea:focus {
+    outline: none;
+    border-color: #1976d2;
+    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.emoji-button {
+    padding: 8px;
+    min-width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
