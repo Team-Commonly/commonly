@@ -5,20 +5,40 @@ import { formatDistanceToNow } from 'date-fns';
 
 const UserProfile = () => {
     const [user, setUser] = useState(null);
+    const [userStats, setUserStats] = useState({ postCount: 0, commentCount: 0 });
     const [error, setError] = useState('');
 
     useEffect(() => {
-        const fetchUser = async () => {
+        const fetchUserData = async () => {
             try {
-                const res = await axios.get(`/api/auth/profile`, {
-                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                const [userRes, postsRes] = await Promise.all([
+                    axios.get('/api/auth/profile', {
+                        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                    }),
+                    axios.get('/api/posts')
+                ]);
+
+                setUser(userRes.data);
+
+                // Calculate post count and comment count
+                const userPosts = postsRes.data.filter(post => post.userId._id === userRes.data._id);
+                const userComments = postsRes.data.reduce((count, post) => {
+                    return count + (post.comments || []).filter(comment => 
+                        comment.userId && 
+                        comment.userId._id && 
+                        comment.userId._id === userRes.data._id
+                    ).length;
+                }, 0);
+
+                setUserStats({
+                    postCount: userPosts.length,
+                    commentCount: userComments
                 });
-                setUser(res.data);
             } catch (err) {
-                setError('Failed to fetch user profile. Please try again later.');
+                setError('Failed to fetch user data. Please try again later.');
             }
         };
-        fetchUser();
+        fetchUserData();
     }, []);
 
     if (error) return (
@@ -66,7 +86,7 @@ const UserProfile = () => {
                                     Posts
                                 </Typography>
                                 <Typography variant="h4">
-                                    {user.posts?.length || 0}
+                                    {userStats.postCount}
                                 </Typography>
                             </Paper>
                         </Grid>
@@ -76,7 +96,7 @@ const UserProfile = () => {
                                     Comments
                                 </Typography>
                                 <Typography variant="h4">
-                                    {user.comments?.length || 0}
+                                    {userStats.commentCount}
                                 </Typography>
                             </Paper>
                         </Grid>

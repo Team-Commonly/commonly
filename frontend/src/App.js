@@ -19,11 +19,13 @@ function App() {
           <Route path="/" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
-          <Route path="/feed" element={<Layout><PostFeed /></Layout>} />
-          <Route path="/thread/:id" element={<Layout><Thread /></Layout>} />
-          <Route path="/profile" element={<Layout><UserProfile /></Layout>} />
-          <Route path="/dashboard" element={<Layout><Dashboard /></Layout>} />
-          <Route path="/create-post" element={<Layout><CreatePost /></Layout>} />
+          <Route element={<Layout />}>
+            <Route path="/feed" element={<PostFeed />} />
+            <Route path="/thread/:id" element={<Thread />} />
+            <Route path="/profile" element={<UserProfile />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/create-post" element={<CreatePost />} />
+          </Route>
         </Routes>
       </div>
     </BrowserRouter>
