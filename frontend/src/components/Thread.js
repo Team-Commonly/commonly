@@ -1,31 +1,49 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Chip } from '@mui/material';
+import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Chip, Menu, MenuItem } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
+import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
+import FavoriteIcon from '@mui/icons-material/Favorite';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EmojiPicker from 'emoji-picker-react';
+import { getAvatarColor } from '../utils/avatarUtils';
+import { useAppContext } from '../context/AppContext';
+import { blurActiveElement } from '../utils/focusUtils';
 import './Thread.css';
 
 const Thread = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { currentUser, refreshData } = useAppContext();
     const [post, setPost] = useState(null);
     const [error, setError] = useState('');
     const [comment, setComment] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [liked, setLiked] = useState(false);
+    const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+    const [selectedItemId, setSelectedItemId] = useState(null);
+    const [itemType, setItemType] = useState(null); // 'post' or 'comment'
 
     useEffect(() => {
         const fetchPost = async () => {
             try {
                 const res = await axios.get(`/api/posts/${id}`);
                 setPost(res.data);
+                
+                // Check if current user has liked this post
+                if (currentUser && res.data.likedBy) {
+                    setLiked(res.data.likedBy.includes(currentUser._id));
+                } else {
+                    setLiked(false);
+                }
             } catch (err) {
                 setError('Failed to fetch post. Please try again later.');
             }
         };
         fetchPost();
-    }, [id]);
+    }, [id, currentUser]);
 
     const handleCommentSubmit = async (e) => {
         e.preventDefault();
@@ -42,8 +60,90 @@ const Thread = () => {
             }));
             setComment('');
             setShowEmojiPicker(false);
+            
+            // Refresh data to ensure consistency
+            refreshData();
         } catch (err) {
             setError('Failed to post comment. Please try again.');
+        }
+    };
+
+    const handleLike = async () => {
+        // Store current liked state
+        const wasLiked = liked;
+        
+        try {
+            // Update UI immediately for better user experience
+            setLiked(!wasLiked);
+            
+            // Send request to server
+            const response = await axios.post(`/api/posts/${id}/like`, {}, {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+            
+            // Update post likes count
+            setPost(prevPost => ({
+                ...prevPost,
+                likes: response.data.likes
+            }));
+            
+            // If server response doesn't match our optimistic update, correct it
+            if (response.data.liked !== !wasLiked) {
+                setLiked(response.data.liked);
+            }
+        } catch (err) {
+            console.error('Failed to like post:', err);
+            // Revert UI change if request fails
+            setLiked(wasLiked);
+        }
+    };
+
+    const handleMenuOpen = (event, itemId, type) => {
+        event.stopPropagation();
+        setMenuAnchorEl(event.currentTarget);
+        setSelectedItemId(itemId);
+        setItemType(type);
+    };
+
+    const handleMenuClose = () => {
+        setMenuAnchorEl(null);
+        setSelectedItemId(null);
+        setItemType(null);
+        blurActiveElement();
+    };
+
+    const handleDelete = async () => {
+        if (!selectedItemId) return;
+        
+        try {
+            if (itemType === 'post') {
+                await axios.delete(`/api/posts/${selectedItemId}`, {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                });
+                
+                // Navigate back to feed after deleting the post
+                navigate('/feed');
+                
+                // Refresh data to ensure consistency
+                refreshData();
+            } else if (itemType === 'comment') {
+                await axios.delete(`/api/posts/${id}/comments/${selectedItemId}`, {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                });
+                
+                // Remove the deleted comment from the state
+                setPost(prevPost => ({
+                    ...prevPost,
+                    comments: prevPost.comments.filter(comment => comment._id !== selectedItemId)
+                }));
+                
+                // Refresh data to ensure consistency
+                refreshData();
+            }
+            
+            handleMenuClose();
+        } catch (err) {
+            console.error(`Failed to delete ${itemType}:`, err);
         }
     };
 
@@ -55,19 +155,34 @@ const Thread = () => {
     if (!post) return <Typography sx={{ p: 2 }}>Loading...</Typography>;
 
     return (
-        <Box sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
+        <Box sx={{ maxWidth: 800, mx: 'auto', p: 3, mt: 8 }}>
             <Card sx={{ mb: 4 }}>
                 <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
-                            {post.userId.username.charAt(0).toUpperCase()}
-                        </Avatar>
-                        <Box>
-                            <Typography variant="h6">{post.userId.username}</Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {formatDistanceToNow(new Date(post.createdAt))} ago
-                            </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Avatar sx={{ 
+                                bgcolor: getAvatarColor(post.userId.profilePicture), 
+                                mr: 2 
+                            }}>
+                                {post.userId.username.charAt(0).toUpperCase()}
+                            </Avatar>
+                            <Box>
+                                <Typography variant="h6">{post.userId.username}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {formatDistanceToNow(new Date(post.createdAt))} ago
+                                </Typography>
+                            </Box>
                         </Box>
+                        {currentUser && (currentUser._id === post.userId._id) && (
+                            <IconButton 
+                                size="small" 
+                                onClick={(e) => handleMenuOpen(e, post._id, 'post')}
+                                aria-label="post options"
+                                id="post-options-button"
+                            >
+                                <MoreVertIcon />
+                            </IconButton>
+                        )}
                     </Box>
                     <Typography variant="body1" sx={{ mt: 2, mb: 2 }}>
                         {post.content}
@@ -86,6 +201,14 @@ const Thread = () => {
                             ))}
                         </Box>
                     )}
+                    <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
+                        <IconButton onClick={handleLike} color="primary">
+                            {liked ? <FavoriteIcon /> : <FavoriteBorderIcon />}
+                        </IconButton>
+                        <Typography variant="body2" color="text.secondary">
+                            {post.likes || 0} likes
+                        </Typography>
+                    </Box>
                 </CardContent>
             </Card>
 
@@ -132,22 +255,63 @@ const Thread = () => {
 
             {post.comments.map((comment) => (
                 <Paper key={comment._id} sx={{ p: 2, mb: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                        <Avatar sx={{ width: 32, height: 32, mr: 1, bgcolor: 'primary.main' }}>
-                            {comment.userId && comment.userId.username ? comment.userId.username.charAt(0).toUpperCase() : '?'}
-                        </Avatar>
-                        <Box>
-                            <Typography variant="subtitle2">{comment.userId && comment.userId.username ? comment.userId.username : 'Unknown User'}</Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {formatDistanceToNow(new Date(comment.createdAt))} ago
-                            </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <Avatar sx={{ 
+                                width: 32, 
+                                height: 32, 
+                                mr: 1, 
+                                bgcolor: getAvatarColor(comment.userId && comment.userId.profilePicture) 
+                            }}>
+                                {comment.userId && comment.userId.username ? comment.userId.username.charAt(0).toUpperCase() : '?'}
+                            </Avatar>
+                            <Box>
+                                <Typography variant="subtitle2">{comment.userId && comment.userId.username ? comment.userId.username : 'Unknown User'}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {formatDistanceToNow(new Date(comment.createdAt))} ago
+                                </Typography>
+                            </Box>
                         </Box>
+                        {currentUser && comment.userId && (currentUser._id === comment.userId._id) && (
+                            <IconButton 
+                                size="small" 
+                                onClick={(e) => handleMenuOpen(e, comment._id, 'comment')}
+                                aria-label="comment options"
+                                id="post-options-button"
+                            >
+                                <MoreVertIcon />
+                            </IconButton>
+                        )}
                     </Box>
                     <Typography variant="body2" sx={{ mt: 1 }}>
                         {comment.text}
                     </Typography>
                 </Paper>
             ))}
+
+            <Menu
+                anchorEl={menuAnchorEl}
+                open={Boolean(menuAnchorEl)}
+                onClose={handleMenuClose}
+                disableRestoreFocus
+                keepMounted
+                MenuListProps={{
+                    'aria-labelledby': 'post-options-button',
+                    autoFocusItem: false,
+                }}
+                slotProps={{
+                    backdrop: {
+                        onClick: handleMenuClose
+                    }
+                }}
+            >
+                <MenuItem 
+                    onClick={handleDelete}
+                    tabIndex={0}
+                >
+                    Delete
+                </MenuItem>
+            </Menu>
         </Box>
     );
 };

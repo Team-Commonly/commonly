@@ -1,13 +1,31 @@
 .layout-container {
     display: flex;
+    background-color: #ffffff;
 }
-
-/* Dashboard is now styled directly in the Dashboard component */
 
 .content-container {
     margin-left: 280px;
     padding: 20px;
     width: calc(100% - 280px);
-    background-color: #f5f7fa;
+    background-color: #ffffff;
     min-height: 100vh;
+}
+
+.search-bar {
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid #eff3f4;
+}
+
+.post-card {
+    background: #ffffff;
+    border: 1px solid #eff3f4;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+    transition: background-color 0.2s;
+}
+
+.post-card:hover {
+    background-color: #f7f9f9;
 }
