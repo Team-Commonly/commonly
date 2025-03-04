@@ -7,15 +7,17 @@ import './SearchBar.css';
 
 const SearchBar = ({ onSearchResults }) => {
     const [query, setQuery] = useState('');
-    const [tags, setTags] = useState('');
 
-    const performSearch = async (searchQuery, searchTags) => {
+    const performSearch = async (searchQuery) => {
         try {
-            const params = {};
-            if (searchQuery) params.query = searchQuery;
-            if (searchTags) params.tags = searchTags;
+            if (!searchQuery.trim()) {
+                fetchAllPosts();
+                return;
+            }
 
-            const response = await axios.get('/api/posts/search', { params });
+            const response = await axios.get('/api/posts/search', { 
+                params: { query: searchQuery }
+            });
             if (typeof onSearchResults === 'function') {
                 onSearchResults(response.data);
             } else {
@@ -23,7 +25,6 @@ const SearchBar = ({ onSearchResults }) => {
             }
         } catch (err) {
             console.error('Search failed:', err);
-            // If search fails, fetch all posts
             fetchAllPosts();
         }
     };
@@ -40,19 +41,13 @@ const SearchBar = ({ onSearchResults }) => {
         }
     };
 
-    // Fetch all posts when component mounts
     useEffect(() => {
         fetchAllPosts();
     }, []);
 
-    // Debounced search function
     const debouncedSearch = useCallback(
-        debounce((searchQuery, searchTags) => {
-            if (!searchQuery && !searchTags) {
-                fetchAllPosts();
-            } else {
-                performSearch(searchQuery, searchTags);
-            }
+        debounce((searchQuery) => {
+            performSearch(searchQuery);
         }, 500),
         []
     );
@@ -60,21 +55,7 @@ const SearchBar = ({ onSearchResults }) => {
     const handleSearch = (e) => {
         const value = e.target.value;
         setQuery(value);
-        debouncedSearch(value, tags);
-    };
-
-    const handleTagsChange = (e) => {
-        const value = e.target.value;
-        setTags(value);
-        debouncedSearch(query, value);
-    };
-
-    const handleSearchClick = () => {
-        if (!query && !tags) {
-            fetchAllPosts();
-        } else {
-            performSearch(query, tags);
-        }
+        debouncedSearch(value);
     };
 
     return (
@@ -82,22 +63,15 @@ const SearchBar = ({ onSearchResults }) => {
             <div className="search-inputs">
                 <input
                     type="text"
-                    placeholder="Search posts and comments..."
+                    placeholder="Search posts by content or #tags..."
                     value={query}
                     onChange={handleSearch}
                     className="search-input"
                 />
-                <input
-                    type="text"
-                    placeholder="Tags (comma separated)"
-                    value={tags}
-                    onChange={handleTagsChange}
-                    className="tags-input"
-                />
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={handleSearchClick}
+                    onClick={() => performSearch(query)}
                     className="search-button"
                     startIcon={<SearchIcon />}
                 >
