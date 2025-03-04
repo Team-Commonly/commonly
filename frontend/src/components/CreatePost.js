@@ -5,8 +5,10 @@ import './CreatePost.css';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import EmojiPicker from 'emoji-picker-react';
 import { IconButton, Box, Chip } from '@mui/material';
+import { useAppContext } from '../context/AppContext';
 
 const CreatePost = () => {
+    const { refreshData } = useAppContext();
     const [content, setContent] = useState('');
     const [error, setError] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -25,6 +27,10 @@ const CreatePost = () => {
             await axios.post('/api/posts', { content, tags }, {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
             });
+            
+            // Refresh data to ensure consistency
+            refreshData();
+            
             navigate('/feed');
         } catch (err) {
             setError('Failed to create post. Please try again later.');

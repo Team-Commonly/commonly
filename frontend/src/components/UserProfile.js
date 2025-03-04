@@ -1,12 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Card, CardContent, Typography, Avatar, Box, Paper, Grid, Divider } from '@mui/material';
+import { 
+    Card, 
+    CardContent, 
+    Typography, 
+    Avatar, 
+    Box, 
+    Paper, 
+    Grid, 
+    Divider, 
+    Button, 
+    Dialog, 
+    DialogTitle, 
+    DialogContent, 
+    DialogActions,
+    IconButton
+} from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
+import EditIcon from '@mui/icons-material/Edit';
+import { avatarOptions, getAvatarColor } from '../utils/avatarUtils';
+import { useAppContext } from '../context/AppContext';
+import { blurActiveElement } from '../utils/focusUtils';
 
 const UserProfile = () => {
+    const { currentUser, refreshData, refreshAvatars } = useAppContext();
     const [user, setUser] = useState(null);
     const [userStats, setUserStats] = useState({ postCount: 0, commentCount: 0 });
     const [error, setError] = useState('');
+    const [openAvatarDialog, setOpenAvatarDialog] = useState(false);
+    const [selectedAvatar, setSelectedAvatar] = useState('default');
+    const [isUpdating, setIsUpdating] = useState(false);
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -19,6 +42,7 @@ const UserProfile = () => {
                 ]);
 
                 setUser(userRes.data);
+                setSelectedAvatar(userRes.data.profilePicture || 'default');
 
                 // Calculate post count and comment count
                 const userPosts = postsRes.data.filter(post => post.userId._id === userRes.data._id);
@@ -41,6 +65,39 @@ const UserProfile = () => {
         fetchUserData();
     }, []);
 
+    const handleOpenAvatarDialog = () => {
+        setOpenAvatarDialog(true);
+    };
+
+    const handleCloseAvatarDialog = () => {
+        setOpenAvatarDialog(false);
+        blurActiveElement();
+    };
+
+    const handleAvatarSelect = (avatarId) => {
+        setSelectedAvatar(avatarId);
+    };
+
+    const handleSaveAvatar = async () => {
+        setIsUpdating(true);
+        try {
+            const response = await axios.put(
+                '/api/auth/profile',
+                { profilePicture: selectedAvatar },
+                { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+            );
+            setUser(response.data);
+            handleCloseAvatarDialog();
+            
+            // Trigger a refresh of the app context data
+            refreshData();
+        } catch (err) {
+            setError('Failed to update profile. Please try again.');
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
     if (error) return (
         <Typography color="error" sx={{ p: 2 }}>{error}</Typography>
     );
@@ -49,21 +106,36 @@ const UserProfile = () => {
     );
 
     return (
-        <Box sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
+        <Box sx={{ maxWidth: 800, mx: 'auto', p: 3, mt: 8 }}>
             <Card sx={{ mb: 4 }}>
                 <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <Avatar 
-                            sx={{ 
-                                width: 100, 
-                                height: 100, 
-                                mr: 3,
-                                bgcolor: 'primary.main',
-                                fontSize: '2.5rem'
-                            }}
-                        >
-                            {user.username.charAt(0).toUpperCase()}
-                        </Avatar>
+                        <Box sx={{ position: 'relative' }}>
+                            <Avatar 
+                                sx={{ 
+                                    width: 100, 
+                                    height: 100, 
+                                    mr: 3,
+                                    bgcolor: getAvatarColor(user.profilePicture),
+                                    fontSize: '2.5rem'
+                                }}
+                            >
+                                {user.username.charAt(0).toUpperCase()}
+                            </Avatar>
+                            <IconButton 
+                                sx={{ 
+                                    position: 'absolute', 
+                                    bottom: 0, 
+                                    right: 12,
+                                    bgcolor: 'background.paper',
+                                    '&:hover': { bgcolor: 'background.default' }
+                                }}
+                                onClick={handleOpenAvatarDialog}
+                                size="small"
+                            >
+                                <EditIcon fontSize="small" />
+                            </IconButton>
+                        </Box>
                         <Box>
                             <Typography variant="h4" gutterBottom>
                                 {user.username}
@@ -85,7 +157,7 @@ const UserProfile = () => {
                                 <Typography variant="h6" color="primary">
                                     Posts
                                 </Typography>
-                                <Typography variant="h4">
+                                <Typography variant="h4" sx={{ fontSize: '1.8rem' }}>
                                     {userStats.postCount}
                                 </Typography>
                             </Paper>
@@ -95,7 +167,7 @@ const UserProfile = () => {
                                 <Typography variant="h6" color="primary">
                                     Comments
                                 </Typography>
-                                <Typography variant="h4">
+                                <Typography variant="h4" sx={{ fontSize: '1.8rem' }}>
                                     {userStats.commentCount}
                                 </Typography>
                             </Paper>
@@ -105,7 +177,7 @@ const UserProfile = () => {
                                 <Typography variant="h6" color="primary">
                                     Joined
                                 </Typography>
-                                <Typography variant="h4">
+                                <Typography variant="h4" sx={{ fontSize: '1.5rem' }}>
                                     {new Date(user.createdAt).toLocaleDateString()}
                                 </Typography>
                             </Paper>
@@ -113,6 +185,45 @@ const UserProfile = () => {
                     </Grid>
                 </CardContent>
             </Card>
+
+            {/* Avatar Selection Dialog */}
+            <Dialog 
+                open={openAvatarDialog} 
+                onClose={handleCloseAvatarDialog}
+                disableRestoreFocus={true}
+            >
+                <DialogTitle>Choose Your Avatar Color</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', my: 2 }}>
+                        {avatarOptions.map((avatar) => (
+                            <Avatar
+                                key={avatar.id}
+                                sx={{
+                                    width: 60,
+                                    height: 60,
+                                    bgcolor: avatar.color,
+                                    fontSize: '1.5rem',
+                                    cursor: 'pointer',
+                                    border: selectedAvatar === avatar.id ? '3px solid #1976d2' : 'none',
+                                }}
+                                onClick={() => handleAvatarSelect(avatar.id)}
+                            >
+                                {user.username.charAt(0).toUpperCase()}
+                            </Avatar>
+                        ))}
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCloseAvatarDialog}>Cancel</Button>
+                    <Button 
+                        onClick={handleSaveAvatar} 
+                        variant="contained" 
+                        disabled={isUpdating}
+                    >
+                        {isUpdating ? 'Saving...' : 'Save'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

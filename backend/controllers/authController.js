@@ -91,3 +91,42 @@ exports.getProfile = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+// Get current user information
+exports.getCurrentUser = async (req, res) => {
+    try {
+        const user = await User.findById(req.userId).select('-password');
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        res.json(user);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// Update user profile
+exports.updateProfile = async (req, res) => {
+    try {
+        const { profilePicture } = req.body;
+        
+        // Find the user
+        const user = await User.findById(req.userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Update profile picture if provided
+        if (profilePicture) {
+            user.profilePicture = profilePicture;
+        }
+        
+        await user.save();
+        
+        // Return the updated user without the password
+        const updatedUser = await User.findById(req.userId).select('-password');
+        res.json(updatedUser);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};

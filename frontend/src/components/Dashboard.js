@@ -3,9 +3,11 @@ import axios from 'axios';
 import { Link, useLocation } from 'react-router-dom';
 import { List, ListItem, ListItemIcon, ListItemText, Typography, Avatar, Divider, Box } from '@mui/material';
 import { Home as HomeIcon, Person as PersonIcon, Add as AddIcon, ExitToApp as LogoutIcon } from '@mui/icons-material';
+import { getAvatarColor } from '../utils/avatarUtils';
+import { useAppContext } from '../context/AppContext';
 
 const Dashboard = () => {
-    const [user, setUser] = useState(null);
+    const { currentUser, loading } = useAppContext();
     const [error, setError] = useState('');
     const location = useLocation();
 
@@ -21,36 +23,27 @@ const Dashboard = () => {
         overflowY: 'auto'
     };
 
-    useEffect(() => {
-        const fetchUser = async () => {
-            try {
-                const res = await axios.get('/api/auth/profile', {
-                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-                });
-                setUser(res.data);
-            } catch (err) {
-                setError('Failed to fetch user profile. Please try again later.');
-            }
-        };
-        fetchUser();
-    }, []);
-
     if (error) return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
-    if (!user) return <Typography sx={{ p: 2 }}>Loading...</Typography>;
+    if (loading || !currentUser) return <Typography sx={{ p: 2 }}>Loading...</Typography>;
 
     return (
         <div style={sidebarStyles}>
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3, mt: 2, px: 2 }}>
                 <Avatar 
-                    sx={{ width: 64, height: 64, mb: 1, bgcolor: 'primary.main' }}
+                    sx={{ 
+                        width: 64, 
+                        height: 64, 
+                        mb: 1, 
+                        bgcolor: getAvatarColor(currentUser.profilePicture) 
+                    }}
                 >
-                    {user.username.charAt(0).toUpperCase()}
+                    {currentUser.username.charAt(0).toUpperCase()}
                 </Avatar>
                 <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                    {user.username}
+                    {currentUser.username}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                    {user.email}
+                    {currentUser.email}
                 </Typography>
             </Box>
             
@@ -62,12 +55,11 @@ const Dashboard = () => {
                     component={Link} 
                     to="/feed"
                     selected={location.pathname === '/feed'}
-                    sx={{ borderRadius: 1, mb: 1, '&.Mui-selected': { bgcolor: 'action.selected' } }}
                 >
                     <ListItemIcon>
-                        <HomeIcon color="primary" />
+                        <HomeIcon />
                     </ListItemIcon>
-                    <ListItemText primary="Post Feed" />
+                    <ListItemText primary="Feed" />
                 </ListItem>
                 
                 <ListItem 
@@ -75,10 +67,9 @@ const Dashboard = () => {
                     component={Link} 
                     to="/profile"
                     selected={location.pathname === '/profile'}
-                    sx={{ borderRadius: 1, mb: 1, '&.Mui-selected': { bgcolor: 'action.selected' } }}
                 >
                     <ListItemIcon>
-                        <PersonIcon color="primary" />
+                        <PersonIcon />
                     </ListItemIcon>
                     <ListItemText primary="Profile" />
                 </ListItem>
@@ -88,10 +79,9 @@ const Dashboard = () => {
                     component={Link} 
                     to="/create-post"
                     selected={location.pathname === '/create-post'}
-                    sx={{ borderRadius: 1, mb: 1, '&.Mui-selected': { bgcolor: 'action.selected' } }}
                 >
                     <ListItemIcon>
-                        <AddIcon color="primary" />
+                        <AddIcon />
                     </ListItemIcon>
                     <ListItemText primary="Create Post" />
                 </ListItem>
@@ -104,10 +94,9 @@ const Dashboard = () => {
                         localStorage.removeItem('token');
                         window.location.href = '/';
                     }}
-                    sx={{ borderRadius: 1 }}
                 >
                     <ListItemIcon>
-                        <LogoutIcon color="error" />
+                        <LogoutIcon />
                     </ListItemIcon>
                     <ListItemText primary="Logout" />
                 </ListItem>
