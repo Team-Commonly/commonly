@@ -8,7 +8,9 @@ const AppContext = createContext();
 export const AppProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [posts, setPosts] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
+    const [userLoading, setUserLoading] = useState(true);
+    const [postsLoading, setPostsLoading] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
 
     // Function to trigger a refresh of data
@@ -16,21 +18,39 @@ export const AppProvider = ({ children }) => {
         setRefreshTrigger(prev => prev + 1);
     }, []);
 
+    // Function to directly update a post in the posts array
+    const updatePost = useCallback((postId, updatedData) => {
+        setPosts(currentPosts => 
+            currentPosts.map(post => 
+                post._id === postId ? { ...post, ...updatedData } : post
+            )
+        );
+    }, []);
+
+    // Function to remove a post from the posts array
+    const removePost = useCallback((postId) => {
+        setPosts(currentPosts => currentPosts.filter(post => post._id !== postId));
+    }, []);
+
     // Fetch current user data
     useEffect(() => {
         const fetchCurrentUser = async () => {
+            setUserLoading(true);
             try {
                 const token = localStorage.getItem('token');
-                if (token) {
-                    const response = await axios.get('/api/auth/me', {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    setCurrentUser(response.data);
+                if (!token) {
+                    setUserLoading(false);
+                    return;
                 }
+                
+                const response = await axios.get('/api/auth/user', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setCurrentUser(response.data);
             } catch (error) {
                 console.error('Error fetching current user:', error);
             } finally {
-                setLoading(false);
+                setUserLoading(false);
             }
         };
 
@@ -40,6 +60,9 @@ export const AppProvider = ({ children }) => {
     // Fetch posts
     useEffect(() => {
         const fetchPosts = async () => {
+            if (!currentUser) return;
+            
+            setPostsLoading(true);
             try {
                 const response = await axios.get('/api/posts', {
                     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -47,13 +70,18 @@ export const AppProvider = ({ children }) => {
                 setPosts(response.data);
             } catch (error) {
                 console.error('Error fetching posts:', error);
+            } finally {
+                setPostsLoading(false);
             }
         };
 
-        if (currentUser) {
-            fetchPosts();
-        }
+        fetchPosts();
     }, [currentUser, refreshTrigger]);
+
+    // Combine loading states
+    useEffect(() => {
+        setLoading(userLoading || postsLoading);
+    }, [userLoading, postsLoading]);
 
     // Context value
     const contextValue = {
@@ -62,7 +90,11 @@ export const AppProvider = ({ children }) => {
         posts,
         setPosts,
         loading,
-        refreshData
+        userLoading,
+        postsLoading,
+        refreshData,
+        updatePost,
+        removePost
     };
 
     return (
