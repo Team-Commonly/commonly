@@ -79,8 +79,8 @@ exports.createPod = async (req, res) => {
             name,
             description,
             type,
-            createdBy: req.user.id,
-            members: [req.user.id]
+            createdBy: req.userId,
+            members: [req.userId]
         });
         
         const pod = await newPod.save();
@@ -106,11 +106,11 @@ exports.joinPod = async (req, res) => {
         }
         
         // Check if user is already a member
-        if (pod.members.includes(req.user.id)) {
+        if (pod.members.includes(req.userId)) {
             return res.status(400).json({ msg: 'Already a member of this pod' });
         }
         
-        pod.members.push(req.user.id);
+        pod.members.push(req.userId);
         pod.updatedAt = Date.now();
         
         await pod.save();
@@ -139,12 +139,12 @@ exports.leavePod = async (req, res) => {
         }
         
         // Check if user is a member
-        if (!pod.members.includes(req.user.id)) {
+        if (!pod.members.includes(req.userId)) {
             return res.status(400).json({ msg: 'Not a member of this pod' });
         }
         
         // Remove user from members
-        pod.members = pod.members.filter(member => member.toString() !== req.user.id);
+        pod.members = pod.members.filter(member => member.toString() !== req.userId);
         pod.updatedAt = Date.now();
         
         await pod.save();
@@ -173,7 +173,7 @@ exports.deletePod = async (req, res) => {
         }
         
         // Check if user is the creator
-        if (pod.createdBy.toString() !== req.user.id) {
+        if (pod.createdBy.toString() !== req.userId) {
             return res.status(401).json({ msg: 'Not authorized to delete this pod' });
         }
         
