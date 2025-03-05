@@ -127,7 +127,15 @@ const Pod = () => {
     // Handle joining a room
     const handleJoinRoom = async (podId) => {
         try {
-            const response = await axios.post(`/api/pods/${podId}/join`);
+            // Get token from localStorage
+            const token = localStorage.getItem('token');
+            
+            // Make the request with authorization header
+            const response = await axios.post(`/api/pods/${podId}/join`, {}, {
+                headers: {
+                    'x-auth-token': token
+                }
+            });
             
             // Update the pod in the list
             setPods(pods.map(pod => pod._id === podId ? response.data : pod));
