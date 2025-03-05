@@ -1,35 +1,84 @@
-version: '3.8'
+version: '3'
 
 services:
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
-    environment:
-      - MONGO_URI=${MONGO_URI}
-      - JWT_SECRET=${JWT_SECRET}
-      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
-      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
-      - FRONTEND_URL=${FRONTEND_URL}
-    depends_on:
-      - mongo
+  # MongoDB service
   mongo:
     image: mongo:latest
+    container_name: mongodb
     ports:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
+    networks:
+      - app-network
+
+  # PostgreSQL service
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
+      POSTGRES_DB: ${PG_DATABASE:-commonly}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  # Backend service
+  backend:
+    build:
+      context: ./backend
+    container_name: backend
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+      - postgres
+    environment:
+      - NODE_ENV=development
+      - MONGO_URI=${MONGO_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=5000
+      - PG_USER=${PG_USER}
+      - PG_PASSWORD=${PG_PASSWORD}
+      - PG_HOST=${PG_HOST}
+      - PG_PORT=${PG_PORT}
+      - PG_DATABASE=${PG_DATABASE}
+      - PG_SSL_CA_PATH=/app/ca.pem
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      - FRONTEND_URL=${FRONTEND_URL}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./ca.pem:/app/ca.pem:ro
+    networks:
+      - app-network
+
+  # Frontend service
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
   mongo-data:
+  postgres-data:

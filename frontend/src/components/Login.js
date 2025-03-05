@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { useNavigate, Link } from 'react-router-dom';
-import { Box, TextField, Button, Typography, Container, Paper } from '@mui/material';
+import { Link } from 'react-router-dom';
+import { Box, TextField, Button, Typography, Container, Paper, CircularProgress } from '@mui/material';
 
 const Login = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
-    const navigate = useNavigate();
+    const [loading, setLoading] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+        setLoading(true);
 
         try {
             const res = await axios.post(`/api/auth/login`, {
@@ -22,14 +23,19 @@ const Login = () => {
             // Check if email is verified
             if (!res.data.verified) {
                 setError('Please verify your email before logging in.');
+                setLoading(false);
                 return;
             }
 
-            // Store token and redirect to feed
+            // Store token
             localStorage.setItem('token', res.data.token);
-            navigate('/feed');
+            
+            // Use window.location.href for a complete page reload
+            // This ensures the app context is properly initialized
+            window.location.href = '/feed';
         } catch (err) {
             setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
+            setLoading(false);
         }
     };
 
@@ -49,6 +55,7 @@ const Login = () => {
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
+                            disabled={loading}
                         />
                         <TextField
                             fullWidth
@@ -58,14 +65,16 @@ const Login = () => {
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
+                            disabled={loading}
                         />
                         <Button
                             type="submit"
                             fullWidth
                             variant="contained"
                             sx={{ mt: 3, mb: 2 }}
+                            disabled={loading}
                         >
-                            Login
+                            {loading ? <CircularProgress size={24} /> : 'Login'}
                         </Button>
                         {error && (
                             <Typography 

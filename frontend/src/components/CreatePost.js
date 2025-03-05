@@ -6,6 +6,7 @@ import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import EmojiPicker from 'emoji-picker-react';
 import { IconButton, Box, Chip } from '@mui/material';
 import { useAppContext } from '../context/AppContext';
+import { refreshPage } from '../utils/refreshUtils';
 
 const CreatePost = () => {
     const { refreshData } = useAppContext();
@@ -31,7 +32,11 @@ const CreatePost = () => {
             // Refresh data to ensure consistency
             refreshData();
             
+            // Navigate to feed
             navigate('/feed');
+            
+            // Trigger a page refresh after a short delay
+            refreshPage(500);
         } catch (err) {
             setError('Failed to create post. Please try again later.');
         }

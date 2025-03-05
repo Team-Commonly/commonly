@@ -21,6 +21,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import { avatarOptions, getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
+import { refreshPage } from '../utils/refreshUtils';
 
 const UserProfile = () => {
     const { currentUser, refreshData, refreshAvatars } = useAppContext();
@@ -91,6 +92,9 @@ const UserProfile = () => {
             
             // Trigger a refresh of the app context data
             refreshData();
+            
+            // Trigger a page refresh after a short delay
+            refreshPage(500);
         } catch (err) {
             setError('Failed to update profile. Please try again.');
         } finally {

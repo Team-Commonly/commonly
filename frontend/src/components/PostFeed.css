@@ -1,0 +1,85 @@
+.post-feed-container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+/* Create Post Styles */
+.create-post-container {
+    border-radius: 16px;
+    transition: box-shadow 0.2s ease;
+}
+
+.create-post-container:focus-within {
+    box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.3);
+}
+
+.create-post-input {
+    font-size: 1.1rem !important;
+    padding: 12px 0 !important;
+}
+
+.emoji-picker-container {
+    position: absolute;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
+}
+
+/* Post Card Styles */
+.post-card {
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+}
+
+.post-card:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+.post-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
+}
+
+.post-actions {
+    display: flex;
+    gap: 24px;
+    margin-top: 8px;
+}
+
+.action-button {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #536471;
+    transition: color 0.2s ease;
+}
+
+.action-button:hover {
+    color: #1d9bf0;
+}
+
+.like-button:hover {
+    color: #f91880;
+}
+
+.like-button.active {
+    color: #f91880;
+}
+
+.hashtag {
+    color: #1d9bf0;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.hashtag:hover {
+    text-decoration: underline;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+    .post-actions {
+        gap: 16px;
+    }
+} 
