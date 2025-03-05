@@ -1,12 +1,33 @@
-import React, { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import SearchBar from './SearchBar';
-import { Box } from '@mui/material';
+import { Box, CircularProgress } from '@mui/material';
+import { useAppContext } from '../context/AppContext';
 import './Layout.css';
 
 const Layout = () => {
     const [searchResults, setSearchResults] = useState(null);
+    const { currentUser, userLoading } = useAppContext();
+    const navigate = useNavigate();
+    
+    // Check if user is authenticated
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (!token && !userLoading) {
+            // Redirect to login if no token is found
+            window.location.href = '/';
+        }
+    }, [userLoading]);
+
+    // Show loading state while checking authentication
+    if (userLoading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
 
     return (
         <div className="layout-container">

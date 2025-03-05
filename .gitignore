@@ -8,3 +8,5 @@ npm-debug.log
 
 build/
 dist/
+
+ca.pem

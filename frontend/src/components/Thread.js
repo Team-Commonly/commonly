@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Chip, Menu, MenuItem } from '@mui/material';
+import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Chip, Menu, MenuItem, CircularProgress } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
@@ -11,12 +11,14 @@ import EmojiPicker from 'emoji-picker-react';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
+import { refreshPage } from '../utils/refreshUtils';
 import './Thread.css';
+import '../components/PostFeed.css';
 
 const Thread = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { currentUser, refreshData } = useAppContext();
+    const { currentUser, refreshData, removePost } = useAppContext();
     const [post, setPost] = useState(null);
     const [error, setError] = useState('');
     const [comment, setComment] = useState('');
@@ -25,21 +27,29 @@ const Thread = () => {
     const [menuAnchorEl, setMenuAnchorEl] = useState(null);
     const [selectedItemId, setSelectedItemId] = useState(null);
     const [itemType, setItemType] = useState(null); // 'post' or 'comment'
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchPost = async () => {
+            setLoading(true);
             try {
                 const res = await axios.get(`/api/posts/${id}`);
                 setPost(res.data);
                 
                 // Check if current user has liked this post
                 if (currentUser && res.data.likedBy) {
-                    setLiked(res.data.likedBy.includes(currentUser._id));
+                    // Check if likedBy contains the current user's ID
+                    const isLiked = res.data.likedBy.some(user => 
+                        user._id === currentUser._id || user === currentUser._id
+                    );
+                    setLiked(isLiked);
                 } else {
                     setLiked(false);
                 }
             } catch (err) {
                 setError('Failed to fetch post. Please try again later.');
+            } finally {
+                setLoading(false);
             }
         };
         fetchPost();
@@ -116,34 +126,41 @@ const Thread = () => {
         if (!selectedItemId) return;
         
         try {
+            // Close the menu first
+            handleMenuClose();
+            
             if (itemType === 'post') {
+                // Use the removePost function from context
+                removePost(selectedItemId);
+                
+                // Navigate back to feed immediately
+                navigate('/feed');
+                
+                // Send the delete request to the server
                 await axios.delete(`/api/posts/${selectedItemId}`, {
                     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                 });
                 
-                // Navigate back to feed after deleting the post
-                navigate('/feed');
-                
-                // Refresh data to ensure consistency
-                refreshData();
+                // Trigger a page refresh after a short delay
+                refreshPage(500);
             } else if (itemType === 'comment') {
-                await axios.delete(`/api/posts/${id}/comments/${selectedItemId}`, {
-                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-                });
-                
-                // Remove the deleted comment from the state
+                // Remove the deleted comment from the state immediately
                 setPost(prevPost => ({
                     ...prevPost,
                     comments: prevPost.comments.filter(comment => comment._id !== selectedItemId)
                 }));
                 
-                // Refresh data to ensure consistency
-                refreshData();
+                // Send the delete request to the server
+                await axios.delete(`/api/posts/${id}/comments/${selectedItemId}`, {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                });
+                
+                // No refresh needed for comment deletion as we've already updated the state
             }
-            
-            handleMenuClose();
         } catch (err) {
             console.error(`Failed to delete ${itemType}:`, err);
+            // If there's an error, revert the UI changes by refreshing the data
+            refreshData();
         }
     };
 
@@ -152,7 +169,12 @@ const Thread = () => {
     };
 
     if (error) return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
-    if (!post) return <Typography sx={{ p: 2 }}>Loading...</Typography>;
+    if (loading) return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+            <CircularProgress />
+        </Box>
+    );
+    if (!post) return <Typography sx={{ p: 2 }}>Post not found</Typography>;
 
     return (
         <Box sx={{ maxWidth: 800, mx: 'auto', p: 3, mt: 8 }}>
@@ -184,23 +206,26 @@ const Thread = () => {
                             </IconButton>
                         )}
                     </Box>
-                    <Typography variant="body1" sx={{ mt: 2, mb: 2 }}>
-                        {post.content}
+                    <Typography variant="body1" sx={{ mt: 2, mb: 2, textAlign: 'left' }}>
+                        {post.content.split(/(#\w+)/g).map((part, index) => {
+                            if (part.startsWith('#')) {
+                                return (
+                                    <Typography
+                                        key={index}
+                                        component="span"
+                                        color="primary"
+                                        sx={{ fontWeight: 'bold' }}
+                                        onClick={() => navigate(`/feed?tags=${part.substring(1)}`)}
+                                        className="hashtag"
+                                    >
+                                        {part}
+                                    </Typography>
+                                );
+                            }
+                            return part;
+                        })}
                     </Typography>
-                    {post.tags && post.tags.length > 0 && (
-                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                            {post.tags.map((tag, index) => (
-                                <Chip
-                                    key={index}
-                                    label={tag}
-                                    size="small"
-                                    color="primary"
-                                    variant="outlined"
-                                    onClick={() => navigate(`/feed?tags=${tag}`)}
-                                />
-                            ))}
-                        </Box>
-                    )}
+                    
                     <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
                         <IconButton onClick={handleLike} color="primary">
                             {liked ? <FavoriteIcon /> : <FavoriteBorderIcon />}
@@ -283,8 +308,24 @@ const Thread = () => {
                             </IconButton>
                         )}
                     </Box>
-                    <Typography variant="body2" sx={{ mt: 1 }}>
-                        {comment.text}
+                    <Typography variant="body2" sx={{ mt: 1, textAlign: 'left' }}>
+                        {comment.text.split(/(#\w+)/g).map((part, index) => {
+                            if (part.startsWith('#')) {
+                                return (
+                                    <Typography
+                                        key={index}
+                                        component="span"
+                                        color="primary"
+                                        sx={{ fontWeight: 'bold' }}
+                                        onClick={() => navigate(`/feed?tags=${part.substring(1)}`)}
+                                        className="hashtag"
+                                    >
+                                        {part}
+                                    </Typography>
+                                );
+                            }
+                            return part;
+                        })}
                     </Typography>
                 </Paper>
             ))}

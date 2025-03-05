@@ -1,13 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import axios from 'axios';
-import { Link, useLocation } from 'react-router-dom';
-import { List, ListItem, ListItemIcon, ListItemText, Typography, Avatar, Divider, Box } from '@mui/material';
-import { Home as HomeIcon, Person as PersonIcon, Add as AddIcon, ExitToApp as LogoutIcon } from '@mui/icons-material';
+import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { List, ListItem, ListItemIcon, ListItemText, Typography, Avatar, Divider, Box, Skeleton } from '@mui/material';
+import { 
+    Home as HomeIcon, 
+    Person as PersonIcon, 
+    ExitToApp as LogoutIcon,
+    Chat as ChatIcon
+} from '@mui/icons-material';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 
 const Dashboard = () => {
-    const { currentUser, loading } = useAppContext();
+    const { currentUser, userLoading, refreshData } = useAppContext();
     const [error, setError] = useState('');
     const location = useLocation();
 
@@ -23,28 +27,50 @@ const Dashboard = () => {
         overflowY: 'auto'
     };
 
+    // Function to handle navigation with refresh
+    const handleNavigation = (path) => {
+        // Refresh data to ensure we have the latest state
+        refreshData();
+        
+        // Use window.location for a full page refresh
+        window.location.href = path;
+    };
+
     if (error) return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
-    if (loading || !currentUser) return <Typography sx={{ p: 2 }}>Loading...</Typography>;
 
     return (
         <div style={sidebarStyles}>
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3, mt: 2, px: 2 }}>
-                <Avatar 
-                    sx={{ 
-                        width: 64, 
-                        height: 64, 
-                        mb: 1, 
-                        bgcolor: getAvatarColor(currentUser.profilePicture) 
-                    }}
-                >
-                    {currentUser.username.charAt(0).toUpperCase()}
-                </Avatar>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                    {currentUser.username}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                    {currentUser.email}
-                </Typography>
+                {userLoading ? (
+                    <>
+                        <Skeleton variant="circular" width={64} height={64} sx={{ mb: 1 }} />
+                        <Skeleton variant="text" width={120} height={32} sx={{ mb: 0.5 }} />
+                        <Skeleton variant="text" width={180} height={24} />
+                    </>
+                ) : currentUser ? (
+                    <>
+                        <Avatar 
+                            sx={{ 
+                                width: 64, 
+                                height: 64, 
+                                mb: 1, 
+                                bgcolor: getAvatarColor(currentUser.profilePicture) 
+                            }}
+                        >
+                            {currentUser.username.charAt(0).toUpperCase()}
+                        </Avatar>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                            {currentUser.username}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            {currentUser.email}
+                        </Typography>
+                    </>
+                ) : (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                        <Typography>Please log in</Typography>
+                    </Box>
+                )}
             </Box>
             
             <Divider sx={{ mb: 2 }} />
@@ -52,8 +78,7 @@ const Dashboard = () => {
             <List component="nav">
                 <ListItem 
                     button 
-                    component={Link} 
-                    to="/feed"
+                    onClick={() => handleNavigation('/feed')}
                     selected={location.pathname === '/feed'}
                 >
                     <ListItemIcon>
@@ -64,8 +89,7 @@ const Dashboard = () => {
                 
                 <ListItem 
                     button 
-                    component={Link} 
-                    to="/profile"
+                    onClick={() => handleNavigation('/profile')}
                     selected={location.pathname === '/profile'}
                 >
                     <ListItemIcon>
@@ -76,14 +100,13 @@ const Dashboard = () => {
                 
                 <ListItem 
                     button 
-                    component={Link} 
-                    to="/create-post"
-                    selected={location.pathname === '/create-post'}
+                    onClick={() => handleNavigation('/pods')}
+                    selected={location.pathname.startsWith('/pods')}
                 >
                     <ListItemIcon>
-                        <AddIcon />
+                        <ChatIcon />
                     </ListItemIcon>
-                    <ListItemText primary="Create Post" />
+                    <ListItemText primary="Pods" />
                 </ListItem>
                 
                 <Divider sx={{ my: 2 }} />

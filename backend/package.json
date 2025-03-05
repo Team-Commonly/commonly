@@ -15,7 +15,9 @@
 		"mongoose": "^7.0.3",
 		"morgan": "^1.10.0",
 		"helmet": "^7.1.0",
-		"@sendgrid/mail": "^7.7.0"
+		"@sendgrid/mail": "^7.7.0",
+		"socket.io": "^4.7.2",
+		"pg": "^8.11.3"
 	},
 	"devDependencies": {
 		"nodemon": "^2.0.22"
