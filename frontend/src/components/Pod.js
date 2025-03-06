@@ -49,18 +49,47 @@ const Pod = () => {
         }
     };
     
-    // Fetch pods on component mount
+    // Set tab value based on URL parameter when component mounts
+    useEffect(() => {
+        if (podType) {
+            switch (podType) {
+                case 'chat':
+                    setTabValue(0);
+                    break;
+                case 'study':
+                    setTabValue(1);
+                    break;
+                case 'games':
+                    setTabValue(2);
+                    break;
+                default:
+                    setTabValue(0);
+            }
+        }
+    }, [podType]);
+    
+    // Fetch pods on component mount or when tab/podType changes
     useEffect(() => {
         const fetchPods = async () => {
             try {
                 setLoading(true);
-                const response = await axios.get('/api/pods', {
-                    params: { type: getPodType() }
-                });
-                setPods(response.data);
-                setError(null);
+                const currentPodType = getPodType();
+                console.log('Fetching pods for type:', currentPodType);
+                
+                const response = await axios.get(`/api/pods/${currentPodType}`);
+                
+                // Check if the response has data
+                if (response.data && Array.isArray(response.data)) {
+                    setPods(response.data);
+                    setError(null);
+                } else {
+                    console.warn('Invalid pod data format received');
+                    setPods([]);
+                    setError('Failed to load pods: Invalid data format');
+                }
             } catch (err) {
                 console.error('Error fetching pods:', err);
+                setPods([]);
                 setError('Failed to load pods. Please try again later.');
             } finally {
                 setLoading(false);
@@ -68,7 +97,7 @@ const Pod = () => {
         };
         
         fetchPods();
-    }, []);
+    }, [tabValue, podType]);
     
     // Filter pods based on search query and tab value
     const filteredPods = React.useMemo(() => {
@@ -108,7 +137,7 @@ const Pod = () => {
             });
             
             // Add the new pod to the list
-            setPods([...pods, response.data]);
+            setPods(prevPods => [...prevPods, response.data]);
             
             // Reset form and close dialog
             setOpenDialog(false);
@@ -116,24 +145,60 @@ const Pod = () => {
             setRoomDescription('');
             setError(null);
             
-            // Show success message or navigate to the new pod
-            // navigate(`/pods/${podType}/${response.data._id}`);
+            // Refresh the pod list
+            const fetchPods = async () => {
+                try {
+                    const response = await axios.get('/api/pods', {
+                        params: { type: getPodType() }
+                    });
+                    setPods(response.data);
+                } catch (err) {
+                    console.error('Error fetching pods after creation:', err);
+                }
+            };
+            
+            fetchPods();
+            
+            // Navigate to the new pod
+            navigate(`/pods/${podType}/${response.data._id}`);
         } catch (err) {
             console.error('Error creating pod:', err);
             setError('Failed to create pod. Please try again later.');
         }
     };
     
+    // Check if user is a member of a pod
+    const isMember = (pod) => {
+        if (!currentUser) return false;
+        return pod.members && pod.members.some(member => 
+            typeof member === 'object' 
+                ? member._id === currentUser._id 
+                : member === currentUser._id
+        );
+    };
+    
     // Handle joining a room
     const handleJoinRoom = async (podId) => {
         try {
-            // Get token from localStorage
+            if (!podId) {
+                console.error('Cannot join room: Invalid pod ID');
+                setError('Cannot join room: Invalid pod ID');
+                return;
+            }
+            
             const token = localStorage.getItem('token');
             
-            // Make the request with authorization header
+            // If user is already a member, navigate directly to the chat room
+            const pod = pods.find(p => p._id === podId);
+            if (pod && isMember(pod)) {
+                navigate(`/pods/${getPodType()}/${podId}`);
+                return;
+            }
+            
+            // Otherwise, join the pod first
             const response = await axios.post(`/api/pods/${podId}/join`, {}, {
                 headers: {
-                    'x-auth-token': token
+                    'Authorization': `Bearer ${token}`
                 }
             });
             
@@ -148,13 +213,11 @@ const Pod = () => {
         }
     };
     
-    // Check if user is a member of a pod
-    const isMember = (pod) => {
-        if (pgAvailable) {
-            return pod.members && pod.members.includes(currentUser._id);
-        } else {
-            return pod.members && pod.members.includes(currentUser._id);
-        }
+    // Handle tab change
+    const handleTabChange = (event, newValue) => {
+        setTabValue(newValue);
+        const podTypes = ['chat', 'study', 'games'];
+        navigate(`/pods/${podTypes[newValue]}`);
     };
     
     return (
@@ -183,6 +246,7 @@ const Pod = () => {
                             color="primary"
                             startIcon={<AddIcon />}
                             onClick={() => setOpenDialog(true)}
+                            className="create-room-button"
                         >
                             Create Room
                         </Button>
@@ -191,14 +255,15 @@ const Pod = () => {
                 
                 <Tabs
                     value={tabValue}
-                    onChange={(e, newValue) => setTabValue(newValue)}
+                    onChange={handleTabChange}
                     indicatorColor="primary"
                     textColor="primary"
                     centered
+                    className="pod-tabs"
                 >
-                    <Tab label="Chat" />
-                    <Tab label="Study" />
-                    <Tab label="Games" />
+                    <Tab label="Chat" className="pod-tab" />
+                    <Tab label="Study" className="pod-tab" />
+                    <Tab label="Games" className="pod-tab" />
                 </Tabs>
             </AppBar>
             
@@ -214,18 +279,8 @@ const Pod = () => {
                 <Grid container spacing={3} className="pod-grid">
                     {filteredPods.length === 0 ? (
                         <Grid item xs={12}>
-                            <Box className="pod-empty" sx={{ 
-                                display: 'flex', 
-                                flexDirection: 'column', 
-                                alignItems: 'center', 
-                                justifyContent: 'center',
-                                padding: 4,
-                                textAlign: 'center',
-                                backgroundColor: '#f5f5f5',
-                                borderRadius: 2,
-                                marginTop: 4
-                            }}>
-                                <PeopleIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
+                            <Box className="pod-empty">
+                                <PeopleIcon sx={{ fontSize: 60, mb: 2 }} />
                                 <Typography variant="h5" gutterBottom>
                                     No pods found in this category
                                 </Typography>
@@ -238,7 +293,6 @@ const Pod = () => {
                                     size="large"
                                     startIcon={<AddIcon />}
                                     onClick={() => setOpenDialog(true)}
-                                    sx={{ mt: 2 }}
                                 >
                                     Create New Pod
                                 </Button>
@@ -283,7 +337,7 @@ const Pod = () => {
                                             fullWidth
                                             onClick={() => handleJoinRoom(pod._id)}
                                         >
-                                            {isMember(pod) ? 'Enter Room' : 'Join Room'}
+                                            {isMember(pod) ? 'Open Chat' : 'Join Room'}
                                         </Button>
                                     </CardActions>
                                 </Card>

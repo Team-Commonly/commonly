@@ -44,7 +44,14 @@ exports.getPodsByType = async (req, res) => {
 // Get a specific pod
 exports.getPodById = async (req, res) => {
     try {
-        const pod = await Pod.findById(req.params.id)
+        const { id, type } = req.params;
+        
+        if (!id) {
+            return res.status(400).json({ msg: 'Pod ID is required' });
+        }
+        
+        // Get the pod with populated data
+        const pod = await Pod.findById(id)
             .populate('createdBy', 'username profilePicture')
             .populate('members', 'username profilePicture');
         
@@ -52,9 +59,14 @@ exports.getPodById = async (req, res) => {
             return res.status(404).json({ msg: 'Pod not found' });
         }
         
+        // If type is specified, ensure pod is of that type
+        if (type && pod.type !== type) {
+            return res.status(404).json({ msg: 'Pod not found or is not of specified type' });
+        }
+        
         res.json(pod);
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in getPodById:', err.message);
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Pod not found' });
         }
@@ -99,29 +111,42 @@ exports.createPod = async (req, res) => {
 // Join a pod
 exports.joinPod = async (req, res) => {
     try {
-        const pod = await Pod.findById(req.params.id);
+        const { id } = req.params;
         
+        if (!id) {
+            return res.status(400).json({ msg: 'Pod ID is required' });
+        }
+        
+        // Access the user ID safely
+        const userId = req.userId || req.user.id;
+        if (!userId) {
+            return res.status(401).json({ msg: 'User authentication failed' });
+        }
+        
+        // Check if pod exists
+        const pod = await Pod.findById(id);
         if (!pod) {
             return res.status(404).json({ msg: 'Pod not found' });
         }
         
         // Check if user is already a member
-        if (pod.members.includes(req.userId)) {
+        if (pod.members.includes(userId)) {
             return res.status(400).json({ msg: 'Already a member of this pod' });
         }
         
-        pod.members.push(req.userId);
+        // Add user to pod members
+        pod.members.push(userId);
         pod.updatedAt = Date.now();
-        
         await pod.save();
         
-        // Populate the user data
-        await pod.populate('createdBy', 'username profilePicture');
-        await pod.populate('members', 'username profilePicture');
+        // Return the updated pod with populated data
+        const updatedPod = await Pod.findById(id)
+            .populate('createdBy', 'username profilePicture')
+            .populate('members', 'username profilePicture');
         
-        res.json(pod);
+        res.json(updatedPod);
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in joinPod:', err.message);
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Pod not found' });
         }

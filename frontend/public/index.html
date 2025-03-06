@@ -2,7 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1da1f2" />
+    <meta name="description" content="Commonly - Connect and chat with others" />
     <title>Commonly App</title>
+    <script>
+      // Force re-render on navigation
+      window.addEventListener('popstate', function() {
+        // Force a re-render by adding and removing a class
+        document.body.classList.add('navigation-occurred');
+        setTimeout(function() {
+          document.body.classList.remove('navigation-occurred');
+        }, 0);
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

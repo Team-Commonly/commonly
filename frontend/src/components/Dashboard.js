@@ -22,9 +22,10 @@ const Dashboard = () => {
         left: 0,
         top: 0,
         backgroundColor: '#ffffff',
-        boxShadow: '2px 0 5px rgba(0,0,0,0.1)',
+        boxShadow: '3px 0 10px rgba(0,0,0,0.15)',
         padding: '20px 0',
-        overflowY: 'auto'
+        overflowY: 'auto',
+        zIndex: 1100
     };
 
     // Function to handle navigation with refresh
