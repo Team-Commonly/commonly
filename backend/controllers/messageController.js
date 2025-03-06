@@ -7,6 +7,10 @@ exports.getMessages = async (req, res) => {
         const { podId } = req.params;
         const { limit = 50, before } = req.query;
         
+        if (!podId) {
+            return res.status(400).json({ msg: 'Pod ID is required' });
+        }
+        
         // Check if pod exists
         const pod = await Pod.findById(podId);
         if (!pod) {
@@ -14,7 +18,19 @@ exports.getMessages = async (req, res) => {
         }
         
         // Check if user is a member of the pod
-        if (!pod.members.includes(req.user.id)) {
+        // Access the user ID safely
+        const userId = req.userId || req.user.id;
+        if (!userId) {
+            return res.status(401).json({ msg: 'User authentication failed' });
+        }
+        
+        // Convert user ID and pod members to strings for consistent comparison
+        const userIdStr = userId.toString();
+        const isUserMember = pod.members.some(memberId => 
+            memberId.toString() === userIdStr
+        );
+        
+        if (!isUserMember) {
             return res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
         }
         
@@ -31,7 +47,7 @@ exports.getMessages = async (req, res) => {
         
         res.json(messages.reverse()); // Reverse to get oldest first
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in getMessages:', err.message);
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Pod not found' });
         }
@@ -45,6 +61,10 @@ exports.createMessage = async (req, res) => {
         const { podId } = req.params;
         const { text, attachments } = req.body;
         
+        if (!podId) {
+            return res.status(400).json({ msg: 'Pod ID is required' });
+        }
+        
         if (!text && (!attachments || attachments.length === 0)) {
             return res.status(400).json({ msg: 'Message text or attachments are required' });
         }
@@ -55,15 +75,26 @@ exports.createMessage = async (req, res) => {
             return res.status(404).json({ msg: 'Pod not found' });
         }
         
-        // Check if user is a member of the pod
-        if (!pod.members.includes(req.user.id)) {
+        // Access the user ID safely
+        const userId = req.userId || req.user.id;
+        if (!userId) {
+            return res.status(401).json({ msg: 'User authentication failed' });
+        }
+        
+        // Convert user ID and pod members to strings for consistent comparison
+        const userIdStr = userId.toString();
+        const isUserMember = pod.members.some(memberId => 
+            memberId.toString() === userIdStr
+        );
+        
+        if (!isUserMember) {
             return res.status(401).json({ msg: 'Not authorized to post in this pod' });
         }
         
         const newMessage = new Message({
             text: text || '',
             podId,
-            userId: req.user.id,
+            userId,
             attachments: attachments || []
         });
         
@@ -78,7 +109,7 @@ exports.createMessage = async (req, res) => {
         
         res.json(message);
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in createMessage:', err.message);
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Pod not found' });
         }
@@ -95,11 +126,17 @@ exports.deleteMessage = async (req, res) => {
             return res.status(404).json({ msg: 'Message not found' });
         }
         
+        // Access the user ID safely
+        const userId = req.userId || req.user.id;
+        if (!userId) {
+            return res.status(401).json({ msg: 'User authentication failed' });
+        }
+        
         // Check if user is the creator of the message
-        if (message.userId.toString() !== req.user.id) {
+        if (message.userId.toString() !== userId.toString()) {
             // Check if user is the creator of the pod
             const pod = await Pod.findById(message.podId);
-            if (!pod || pod.createdBy.toString() !== req.user.id) {
+            if (!pod || pod.createdBy.toString() !== userId.toString()) {
                 return res.status(401).json({ msg: 'Not authorized to delete this message' });
             }
         }
@@ -108,7 +145,7 @@ exports.deleteMessage = async (req, res) => {
         
         res.json({ msg: 'Message deleted' });
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in deleteMessage:', err.message);
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Message not found' });
         }

@@ -1,31 +1,211 @@
+/* Main layout container */
 .layout-container {
     display: flex;
-    background-color: #ffffff;
-}
-
-.content-container {
-    margin-left: 280px;
-    padding: 20px;
-    width: calc(100% - 280px);
-    background-color: #ffffff;
     min-height: 100vh;
+    background-color: #f7f9f9;
+    color: #0f1419;
 }
 
-.search-bar {
-    background-color: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(12px);
+/* Main content area */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: calc(100% - 280px);
+    margin-left: 280px;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 1000;
+}
+
+/* Pod layout specific styles */
+.pod-layout {
+    background-color: #f7f9f9;
+}
+
+/* Search container */
+.search-container {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    background-color: #ffffff;
+    border-bottom: 1px solid #eff3f4;
+    padding: 0;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    -webkit-box-shadow: none !important;
+    -moz-box-shadow: none !important;
+}
+
+/* Fix for search container overlap in pod layout */
+.pod-layout .search-container {
+    position: fixed;
+    top: 0;
+    left: 280px;
+    width: calc(100% - 280px);
+    padding-left: 0;
+    box-shadow: none;
+    transition: all 0.3s ease;
+}
+
+/* Adjust content for fixed search bar */
+.pod-layout .content-container {
+    margin-top: 60px;
+}
+
+/* Content container */
+.content-container {
+    padding: 20px;
+    flex: 1;
+}
+
+/* Pod content specific styles */
+.pod-content {
+    max-width: 100%;
+    padding: 0;
+    padding-top: 20px;
+}
+
+/* Feed container */
+.feed-container {
+    padding: 0 !important;
+    max-width: 1280px !important;
+    margin-top: 20px;
+}
+
+/* Content grid for feed layout */
+.content-grid {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 24px;
+    padding: 0 16px;
+}
+
+/* Main content column */
+.content-main {
+    padding: 16px 0;
+}
+
+/* Sidebar column */
+.content-sidebar {
+    padding: 16px 0;
+    position: sticky;
+    top: 60px;
+    height: calc(100vh - 60px);
+    overflow-y: auto;
+}
+
+/* Trending section */
+.trending-section {
+    background-color: #f7f9f9;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 16px;
+    border: 1px solid #eff3f4;
+}
+
+.trending-section h3 {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    color: #0f1419;
+}
+
+/* Trending topics */
+.trending-topics {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.trending-topic {
+    padding: 8px 0;
     border-bottom: 1px solid #eff3f4;
 }
 
+.trending-topic:last-child {
+    border-bottom: none;
+}
+
+.topic-category {
+    font-size: 13px;
+    color: #536471;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.trending-topic h4 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+    color: #0f1419;
+}
+
+.topic-posts {
+    font-size: 13px;
+    color: #536471;
+}
+
+/* Post card styling */
 .post-card {
     background: #ffffff;
     border: 1px solid #eff3f4;
     border-radius: 16px;
     padding: 16px;
     margin-bottom: 12px;
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
 }
 
 .post-card:hover {
     background-color: #f7f9f9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .content-grid {
+        grid-template-columns: 1fr 300px;
+    }
+}
+
+@media (max-width: 992px) {
+    .content-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .content-sidebar {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .main-content {
+        width: 100%;
+        margin-left: 0;
+    }
+    
+    .layout-container {
+        flex-direction: column;
+    }
+    
+    .search-container {
+        padding: 0 8px;
+    }
+}
+
+/* Pod detail page specific styling */
+.pod-detail .search-container {
+    border-bottom: 1px solid #eff3f4;
+    box-shadow: none;
+}
+
+.pod-detail .pod-content {
+    max-width: 100%;
+    padding: 20px;
 }

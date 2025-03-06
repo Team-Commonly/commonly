@@ -23,7 +23,7 @@ export const SocketProvider = ({ children }) => {
                 setPgAvailable(response.data.available);
                 
                 // If PostgreSQL is available and user is logged in, sync user data
-                if (response.data.available && token && currentUser) {
+                if (response.data.available && token && currentUser && currentUser._id) {
                     try {
                         await axios.post('/api/pg/status/sync-user', {}, {
                             headers: {
@@ -33,7 +33,10 @@ export const SocketProvider = ({ children }) => {
                         console.log('User synchronized with PostgreSQL for chat functionality');
                     } catch (err) {
                         console.error('Error syncing user to PostgreSQL:', err.message);
+                        // Don't set pgAvailable to false here, as it might be a temporary error
                     }
+                } else if (response.data.available && (!currentUser || !currentUser._id)) {
+                    console.warn('User data is not fully loaded yet, skipping PostgreSQL sync');
                 }
             } catch (err) {
                 console.error('PostgreSQL not available:', err.message);
@@ -41,64 +44,90 @@ export const SocketProvider = ({ children }) => {
             }
         };
 
-        if (token) {
+        if (token && currentUser) {
             checkPgAvailability();
         }
     }, [token, currentUser]);
 
     useEffect(() => {
-        if (token && currentUser) {
+        if (token && currentUser && currentUser._id) {
             // Create socket connection with auth token
-            const newSocket = io(process.env.REACT_APP_API_URL || '', {
+            console.log('Attempting to connect to socket server...');
+            
+            // Check if we have a valid API URL
+            const apiUrl = process.env.REACT_APP_API_URL || window.location.origin;
+            console.log('Using API URL for socket connection:', apiUrl);
+            
+            const newSocket = io(apiUrl, {
                 auth: {
                     token
-                }
+                },
+                transports: ['websocket', 'polling'], // Try WebSocket first, then fall back to polling
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000
             });
 
             newSocket.on('connect', () => {
-                console.log('Socket connected');
+                console.log('Socket connected successfully');
                 setConnected(true);
             });
 
-            newSocket.on('disconnect', () => {
-                console.log('Socket disconnected');
+            newSocket.on('welcome', (data) => {
+                console.log('Received welcome message from server:', data.message);
+                // Connection is now fully established and authenticated
+            });
+
+            newSocket.on('connect_error', (error) => {
+                console.error('Socket connection error:', error.message);
+                setConnected(false);
+            });
+
+            newSocket.on('disconnect', (reason) => {
+                console.log('Socket disconnected, reason:', reason);
                 setConnected(false);
             });
 
             newSocket.on('error', (error) => {
                 console.error('Socket error:', error);
+                setConnected(false);
             });
 
             setSocket(newSocket);
 
             return () => {
+                console.log('Cleaning up socket connection');
                 newSocket.disconnect();
             };
+        } else {
+            console.warn('Not connecting socket: missing token or user data');
         }
     }, [token, currentUser]);
 
     // Join a pod room
     const joinPod = (podId) => {
-        if (socket && connected) {
+        if (socket && connected && podId) {
             socket.emit('joinPod', podId);
         }
     };
 
     // Leave a pod room
     const leavePod = (podId) => {
-        if (socket && connected) {
+        if (socket && connected && podId) {
             socket.emit('leavePod', podId);
         }
     };
 
     // Send a message to a pod
     const sendMessage = (podId, content) => {
-        if (socket && connected && currentUser) {
+        if (socket && connected && currentUser && currentUser._id && podId) {
             socket.emit('sendMessage', {
                 podId,
                 content,
                 userId: currentUser._id
             });
+        } else {
+            console.warn('Cannot send message: socket, user, or podId is missing');
         }
     };
 

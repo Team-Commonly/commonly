@@ -27,9 +27,12 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
+        origin: process.env.FRONTEND_URL || '*',
+        methods: ["GET", "POST"],
+        credentials: true,
+        allowedHeaders: ["Authorization", "Content-Type"]
+    },
+    transports: ['websocket', 'polling']
 });
 const PORT = process.env.PORT || 5000;
 
@@ -104,37 +107,63 @@ if (process.env.PG_HOST) {
 io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     if (!token) {
+        console.error('Socket auth error: Token not provided');
         return next(new Error('Authentication error: Token not provided'));
     }
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        socket.userId = decoded.user.id;
+        
+        // Handle both token formats: { id: user._id } or { user: { id: user._id } }
+        const userId = decoded.id || (decoded.user && decoded.user.id);
+        
+        if (!userId) {
+            console.error('Socket auth error: Invalid token structure');
+            return next(new Error('Authentication error: Invalid token structure'));
+        }
+        
+        socket.userId = userId;
         next();
     } catch (err) {
+        console.error('Socket auth error:', err.message);
         return next(new Error('Authentication error: Invalid token'));
     }
 });
 
 // Socket.io event handlers
 io.on('connection', (socket) => {
-  console.log('New client connected');
+  console.log(`New client connected (id: ${socket.id}, user: ${socket.userId})`);
   
   // Join a pod room
   socket.on('joinPod', (podId) => {
+    if (!podId) {
+      console.warn('Socket tried to join pod without podId');
+      return;
+    }
     socket.join(`pod_${podId}`);
-    console.log(`User joined pod room: pod_${podId}`);
+    console.log(`User ${socket.userId} joined pod room: pod_${podId}`);
   });
   
   // Leave a pod room
   socket.on('leavePod', (podId) => {
+    if (!podId) {
+      console.warn('Socket tried to leave pod without podId');
+      return;
+    }
     socket.leave(`pod_${podId}`);
-    console.log(`User left pod room: pod_${podId}`);
+    console.log(`User ${socket.userId} left pod room: pod_${podId}`);
   });
   
   // Send a message to a pod
   socket.on('sendMessage', async ({ podId, content, userId }) => {
     try {
+      // Validate required parameters
+      if (!podId || !content || !userId) {
+        console.error('Socket error: Missing required parameters for sendMessage', { podId, userId });
+        socket.emit('error', { message: 'Missing required parameters' });
+        return;
+      }
+      
       // Use PostgreSQL for chat if available
       const isPG = process.env.PG_HOST;
       
@@ -147,12 +176,14 @@ io.on('connection', (socket) => {
         // Check if pod exists and user is a member
         const pod = await PGPod.findById(podId);
         if (!pod) {
+          console.error('Socket error: Pod not found', { podId });
           socket.emit('error', { message: 'Pod not found' });
           return;
         }
         
         const isMember = await PGPod.isMember(podId, userId);
         if (!isMember) {
+          console.error('Socket error: Not authorized to post in this pod', { podId, userId });
           socket.emit('error', { message: 'Not authorized to post in this pod' });
           return;
         }
@@ -199,15 +230,18 @@ io.on('connection', (socket) => {
       io.to(`pod_${podId}`).emit('newMessage', message);
       
     } catch (err) {
-      console.error('Socket error:', err.message);
+      console.error('Socket error:', err.message, { podId, userId });
       socket.emit('error', { message: 'Server error' });
     }
   });
   
   // Disconnect event
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
+  socket.on('disconnect', (reason) => {
+    console.log(`Client disconnected (id: ${socket.id}, user: ${socket.userId}). Reason: ${reason}`);
   });
+
+  // Send a welcome message to confirm connection
+  socket.emit('welcome', { message: 'Connected to chat server successfully' });
 });
 
 // Start the server

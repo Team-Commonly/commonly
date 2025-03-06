@@ -2,66 +2,150 @@
 
 /* Global Styles */
 body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background-color: #f4f4f4;
-  }
-  
-  /* Center App Content */
-  .App {
-    text-align: center;
-    padding: 20px;
-  }
-  
-  /* Styling for Forms */
-  form {
-    background: white;
-    padding: 20px;
-    max-width: 400px;
-    margin: auto;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  }
-  
-  input {
-    width: 100%;
-    padding: 10px;
-    margin: 10px 0;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-  }
-  
-  button {
-    background-color: #007bff;
-    color: white;
-    padding: 10px 15px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 16px;
-  }
-  
-  button:hover {
-    background-color: #0056b3;
-  }
-  
-  /* Post Feed */
-  .post {
-    background: white;
-    padding: 15px;
-    margin: 15px auto;
-    max-width: 500px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-  
-  .post h3 {
-    margin: 0;
-    color: #333;
-  }
-  
-  .post p {
-    font-size: 14px;
-    color: #555;
-  }
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: #f7f9f9;
+  color: #212529;
+  line-height: 1.5;
+}
+
+/* Force re-render on navigation */
+.navigation-occurred * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Center App Content */
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Styling for Forms */
+form {
+  background: white;
+  padding: 20px;
+  max-width: 400px;
+  margin: auto;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+input {
+  width: 100%;
+  padding: 12px;
+  margin: 10px 0;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.2);
+}
+
+button {
+  background-color: #1976d2;
+  color: white;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+button:hover {
+  background-color: #1565c0;
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+/* Post Feed */
+.post {
+  background: white;
+  padding: 20px;
+  margin: 15px auto;
+  max-width: 600px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.post:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.post h3 {
+  margin: 0 0 10px 0;
+  color: #212529;
+  font-weight: 600;
+}
+
+.post p {
+  font-size: 15px;
+  color: #495057;
+  margin-bottom: 15px;
+}
+
+/* Layout container */
+.layout-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Content container */
+.content-container {
+  padding: 20px;
+  flex: 1;
+}
+
+/* Override MUI styles */
+.MuiButton-root {
+  text-transform: none !important;
+  font-weight: 600 !important;
+}
+
+.MuiPaper-root {
+  border-radius: 12px !important;
+}
+
+/* Fix for flex layout issues */
+.flex {
+  display: flex;
+}
+
+/* Fix for pod container */
+.pod-container {
+  padding-top: 0 !important;
+  background-color: #f7f9f9 !important;
+}
+
+/* Fix for chat room container */
+.chat-room-container {
+  padding-top: 0 !important;
+}
+
+/* Override for search form */
+.search-bar form {
+  background: transparent;
+  padding: 0;
+  max-width: none;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.search-container {
+  box-shadow: none;
+}
   

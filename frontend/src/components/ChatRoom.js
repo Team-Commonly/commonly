@@ -10,26 +10,25 @@ import {
     ArrowBack as ArrowBackIcon,
     EmojiEmotions as EmojiIcon,
     AttachFile as AttachFileIcon,
-    People as PeopleIcon
+    People as PeopleIcon,
+    Chat as ChatIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
-import { useAppContext } from '../context/AppContext';
-import { useSocketContext } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { getAvatarColor } from '../utils/avatarUtils';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
-import { useAuth } from '../context/AuthContext';
 import './ChatRoom.css';
 
 const ChatRoom = () => {
-    const { currentUser } = useAppContext();
-    const { socket, connected, pgAvailable, joinPod, leavePod, sendMessage } = useSocketContext();
+    const { currentUser } = useAuth();
+    const { socket, connected, pgAvailable, joinPod, leavePod, sendMessage } = useSocket();
     const { podType, roomId } = useParams();
     const navigate = useNavigate();
-    const { podId } = useParams();
-    const { pod } = useAuth();
+    const [room, setRoom] = useState(null);
     const [messages, setMessages] = useState([]);
-    const [newMessage, setNewMessage] = useState('');
+    const [message, setMessage] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -41,33 +40,57 @@ const ChatRoom = () => {
         const fetchPodAndMessages = async () => {
             setLoading(true);
             try {
-                // Fetch pod details
-                const podResponse = await axios.get(`/api/pods/${podId}`);
+                // Get the authentication token
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    setError('Authentication required. Please log in again.');
+                    setLoading(false);
+                    return;
+                }
+
+                const authHeaders = {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                };
+
+                // Fetch pod details - include podType in the URL
+                const podResponse = await axios.get(`/api/pods/${podType}/${roomId}`, authHeaders);
                 
-                setPod(podResponse.data);
+                if (!podResponse.data) {
+                    throw new Error('Pod not found');
+                }
+                
+                setRoom(podResponse.data);
                 
                 // Fetch messages
-                const messagesResponse = await axios.get(`/api/messages/${podId}`);
-                
+                const messagesResponse = await axios.get(`/api/messages/${roomId}`, authHeaders);
                 setMessages(messagesResponse.data.reverse()); // Reverse to show oldest first
                 setError(null);
             } catch (err) {
                 console.error('Error fetching pod data:', err);
-                setError('Failed to load chat room. Please try again.');
+                if (err.response && err.response.status === 401) {
+                    setError('Authentication required. Please log in again.');
+                } else {
+                    setError('Failed to load chat room. Please try again.');
+                }
             } finally {
                 setLoading(false);
             }
         };
         
-        if (podId) {
+        if (roomId && podType) {
             fetchPodAndMessages();
+        } else {
+            setError('Invalid pod ID or type');
+            setLoading(false);
         }
-    }, [podId]);
+    }, [roomId, podType]);
     
     // Join pod room when socket connects
     useEffect(() => {
-        if (connected && podId) {
-            joinPod(podId);
+        if (connected && roomId && !error) {
+            joinPod(roomId);
             
             // Listen for new messages
             socket.on('newMessage', (message) => {
@@ -76,28 +99,11 @@ const ChatRoom = () => {
             
             // Clean up
             return () => {
-                leavePod(podId);
+                leavePod(roomId);
                 socket.off('newMessage');
             };
         }
-    }, [connected, podId, socket, joinPod, leavePod]);
-    
-    // Listen for new messages
-    useEffect(() => {
-        if (socket) {
-            const handleNewMessage = (newMessage) => {
-                if (newMessage.podId === roomId) {
-                    setMessages(prevMessages => [...prevMessages, newMessage]);
-                }
-            };
-            
-            socket.on('new-message', handleNewMessage);
-            
-            return () => {
-                socket.off('new-message', handleNewMessage);
-            };
-        }
-    }, [socket, roomId]);
+    }, [connected, roomId, socket, joinPod, leavePod, error]);
     
     // Scroll to bottom when messages change
     useEffect(() => {
@@ -114,9 +120,9 @@ const ChatRoom = () => {
             text: message,
             podId: roomId,
             userId: {
-                _id: currentUser._id,
-                username: currentUser.username,
-                profilePicture: currentUser.profilePicture
+                _id: currentUser?._id,
+                username: currentUser?.username,
+                profilePicture: currentUser?.profilePicture
             },
             createdAt: new Date()
         };
@@ -126,6 +132,13 @@ const ChatRoom = () => {
         setMessage('');
         
         try {
+            // Get the authentication token
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setError('Authentication required. Please log in again.');
+                return;
+            }
+
             // Send message via socket
             sendMessage(roomId, message);
             
@@ -133,7 +146,9 @@ const ChatRoom = () => {
             await axios.post(`/api/messages/${roomId}`, {
                 text: message
             }, {
-                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                headers: { 
+                    'Authorization': `Bearer ${token}` 
+                }
             });
         } catch (err) {
             console.error('Failed to send message:', err);
@@ -149,6 +164,15 @@ const ChatRoom = () => {
     
     const handleBack = () => {
         navigate(`/pods/${podType}`);
+    };
+    
+    // Display offline notification with reconnect button
+    const handleReconnect = () => {
+        // Get the socket instance from context
+        if (socket) {
+            console.log('Attempting to reconnect...');
+            socket.connect();
+        }
     };
     
     if (loading) {
@@ -171,15 +195,15 @@ const ChatRoom = () => {
     }
     
     return (
-        <Container maxWidth="md" sx={{ py: 2, mt: 8, height: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column' }}>
-            <AppBar position="fixed" color="default" elevation={1} sx={{ top: 0, bottom: 'auto' }}>
+        <Container maxWidth="md" className="chat-room-container">
+            <AppBar position="fixed" color="default" elevation={1} className="chat-room-header">
                 <Toolbar>
                     <IconButton edge="start" color="inherit" onClick={handleBack} sx={{ mr: 2 }}>
                         <ArrowBackIcon />
                     </IconButton>
                     <Box sx={{ flexGrow: 1 }}>
                         <Typography variant="h6" component="div">
-                            {room?.name}
+                            {room?.name || 'Chat Room'}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                             {room?.members?.length || 0} members
@@ -193,35 +217,28 @@ const ChatRoom = () => {
                 </Toolbar>
             </AppBar>
             
-            <Box sx={{ display: 'flex', flex: 1, position: 'relative' }}>
+            <Box className="chat-content-container">
                 {/* Members sidebar */}
                 {showMembers && (
                     <Paper 
                         elevation={3} 
-                        sx={{ 
-                            width: 250, 
-                            p: 2, 
-                            position: 'absolute', 
-                            right: 0, 
-                            top: 0, 
-                            bottom: 0, 
-                            zIndex: 10,
-                            overflowY: 'auto',
-                            display: { xs: 'none', sm: 'block' }
-                        }}
+                        className="members-sidebar"
                     >
                         <Typography variant="h6" sx={{ mb: 2 }}>Members</Typography>
                         <List>
                             {room?.members?.map(member => (
                                 <ListItem key={member._id}>
                                     <ListItemAvatar>
-                                        <Avatar sx={{ bgcolor: getAvatarColor(member.profilePicture) }}>
-                                            {member.username.charAt(0).toUpperCase()}
+                                        <Avatar 
+                                            src={member.profilePicture}
+                                            sx={{ bgcolor: getAvatarColor(member.username || '') }}
+                                        >
+                                            {member.username?.charAt(0).toUpperCase()}
                                         </Avatar>
                                     </ListItemAvatar>
                                     <ListItemText 
                                         primary={member.username} 
-                                        secondary={member._id === room.createdBy._id ? 'Creator' : ''}
+                                        secondary={member._id === room.createdBy?._id ? 'Creator' : ''}
                                     />
                                 </ListItem>
                             ))}
@@ -232,58 +249,45 @@ const ChatRoom = () => {
                 {/* Chat messages */}
                 <Paper 
                     elevation={0} 
-                    sx={{ 
-                        flex: 1, 
-                        overflow: 'auto', 
-                        p: 2, 
-                        mb: 2,
-                        bgcolor: 'background.default'
-                    }}
+                    className="messages-container"
                 >
                     {messages.length === 0 ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                            <Typography color="text.secondary">No messages yet. Start the conversation!</Typography>
+                        <Box className="empty-chat-message">
+                            <ChatIcon sx={{ fontSize: 80 }} />
+                            <Typography variant="h5" gutterBottom>
+                                No messages yet
+                            </Typography>
+                            <Typography variant="body1" color="text.secondary">
+                                Be the first to start the conversation!
+                            </Typography>
                         </Box>
                     ) : (
                         <List>
                             {messages.map((msg) => (
                                 <ListItem 
                                     key={msg._id || msg.id}
-                                    alignItems="flex-start"
-                                    sx={{ 
-                                        mb: 1,
-                                        flexDirection: msg.userId._id === currentUser?._id ? 'row-reverse' : 'row'
-                                    }}
+                                    className={`message-item ${msg.userId._id === currentUser?._id ? 'sent' : 'received'}`}
                                 >
-                                    <ListItemAvatar>
-                                        <Avatar sx={{ bgcolor: getAvatarColor(msg.userId.profilePicture) }}>
-                                            {msg.userId.username.charAt(0).toUpperCase()}
+                                    <ListItemAvatar className="message-avatar">
+                                        <Avatar 
+                                            src={msg.userId.profilePicture}
+                                            sx={{ bgcolor: getAvatarColor(msg.userId.username || '') }}
+                                        >
+                                            {msg.userId.username?.charAt(0).toUpperCase()}
                                         </Avatar>
                                     </ListItemAvatar>
-                                    <Box 
-                                        sx={{ 
-                                            display: 'flex', 
-                                            flexDirection: 'column',
-                                            alignItems: msg.userId._id === currentUser?._id ? 'flex-end' : 'flex-start',
-                                            maxWidth: '70%'
-                                        }}
-                                    >
+                                    <Box className="message-content-wrapper">
                                         <Paper 
                                             elevation={1}
-                                            sx={{ 
-                                                p: 2, 
-                                                borderRadius: 2,
-                                                bgcolor: msg.userId._id === currentUser?._id ? 'primary.light' : 'background.paper',
-                                                color: msg.userId._id === currentUser?._id ? 'primary.contrastText' : 'text.primary'
-                                            }}
+                                            className={`message-bubble ${msg.userId._id === currentUser?._id ? 'sent' : 'received'}`}
                                         >
                                             <Typography variant="body1">{msg.text}</Typography>
                                         </Paper>
-                                        <Box sx={{ display: 'flex', mt: 0.5, gap: 1 }}>
-                                            <Typography variant="caption" color="text.secondary">
+                                        <Box className="message-meta">
+                                            <Typography variant="caption" className="message-username">
                                                 {msg.userId.username}
                                             </Typography>
-                                            <Typography variant="caption" color="text.secondary">
+                                            <Typography variant="caption" className="message-time">
                                                 {formatDistanceToNow(new Date(msg.createdAt))} ago
                                             </Typography>
                                         </Box>
@@ -299,17 +303,12 @@ const ChatRoom = () => {
             <Paper 
                 component="form" 
                 onSubmit={handleSendMessage}
-                sx={{ 
-                    p: 1, 
-                    display: 'flex', 
-                    alignItems: 'center',
-                    position: 'relative'
-                }}
+                className="message-input-container"
             >
-                <IconButton onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+                <IconButton onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="emoji-button">
                     <EmojiIcon />
                 </IconButton>
-                <IconButton>
+                <IconButton className="attach-button">
                     <AttachFileIcon />
                 </IconButton>
                 <TextField
@@ -321,46 +320,38 @@ const ChatRoom = () => {
                     InputProps={{
                         disableUnderline: true,
                     }}
-                    sx={{ mx: 1 }}
+                    className="message-input"
                 />
                 <IconButton 
                     color="primary" 
                     type="submit"
                     disabled={!message.trim() || !connected}
+                    className="send-button"
                 >
                     <SendIcon />
                 </IconButton>
                 
                 {showEmojiPicker && (
-                    <Box 
-                        sx={{ 
-                            position: 'absolute', 
-                            bottom: '100%', 
-                            right: 0,
-                            zIndex: 1000,
-                            boxShadow: 3,
-                            borderRadius: 1,
-                            mb: 1
-                        }}
-                    >
+                    <Box className="emoji-picker-container">
                         <EmojiPicker onEmojiClick={onEmojiClick} />
                     </Box>
                 )}
             </Paper>
             
             {!connected && (
-                <Paper 
-                    sx={{ 
-                        p: 1, 
-                        mt: 1, 
-                        bgcolor: 'warning.light', 
-                        color: 'warning.contrastText',
-                        textAlign: 'center'
-                    }}
-                >
+                <Paper className="offline-notification">
                     <Typography variant="body2">
                         You are currently offline. Messages will be sent when you reconnect.
                     </Typography>
+                    <Button 
+                        variant="contained" 
+                        color="primary" 
+                        size="small"
+                        onClick={handleReconnect}
+                        sx={{ mt: 1 }}
+                    >
+                        Reconnect
+                    </Button>
                 </Paper>
             )}
         </Container>
