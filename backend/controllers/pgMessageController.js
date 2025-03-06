@@ -7,14 +7,24 @@ exports.getMessages = async (req, res) => {
         const { podId } = req.params;
         const { limit = 50, before } = req.query;
         
+        if (!podId) {
+            return res.status(400).json({ msg: 'Pod ID is required' });
+        }
+        
         // Check if pod exists
         const pod = await PGPod.findById(podId);
         if (!pod) {
             return res.status(404).json({ msg: 'Pod not found' });
         }
         
+        // Access the user ID safely
+        const userId = req.userId || req.user.id;
+        if (!userId) {
+            return res.status(401).json({ msg: 'User authentication failed' });
+        }
+        
         // Check if user is a member of the pod
-        const isMember = await PGPod.isMember(podId, req.user.id);
+        const isMember = await PGPod.isMember(podId, userId);
         if (!isMember) {
             return res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
         }
@@ -23,7 +33,7 @@ exports.getMessages = async (req, res) => {
         
         res.json(messages);
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in PG getMessages:', err.message);
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Pod not found' });
         }
@@ -37,21 +47,31 @@ exports.createMessage = async (req, res) => {
         const { podId } = req.params;
         const { content } = req.body;
         
+        if (!podId) {
+            return res.status(400).json({ msg: 'Pod ID is required' });
+        }
+        
         // Check if pod exists
         const pod = await PGPod.findById(podId);
         if (!pod) {
             return res.status(404).json({ msg: 'Pod not found' });
         }
         
+        // Access the user ID safely
+        const userId = req.userId || req.user.id;
+        if (!userId) {
+            return res.status(401).json({ msg: 'User authentication failed' });
+        }
+        
         // Check if user is a member of the pod
-        const isMember = await PGPod.isMember(podId, req.user.id);
+        const isMember = await PGPod.isMember(podId, userId);
         if (!isMember) {
             return res.status(401).json({ msg: 'Not authorized to post in this pod' });
         }
         
         const newMessage = await PGMessage.create(
             podId,
-            req.user.id,
+            userId,
             content
         );
         
@@ -60,7 +80,7 @@ exports.createMessage = async (req, res) => {
         
         res.json(message);
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in PG createMessage:', err.message);
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Pod not found' });
         }
@@ -103,26 +123,39 @@ exports.updateMessage = async (req, res) => {
 // Delete a message
 exports.deleteMessage = async (req, res) => {
     try {
-        const message = await PGMessage.findById(req.params.id);
+        const { id } = req.params;
         
+        if (!id) {
+            return res.status(400).json({ msg: 'Message ID is required' });
+        }
+        
+        // Get the message
+        const message = await PGMessage.findById(id);
         if (!message) {
             return res.status(404).json({ msg: 'Message not found' });
         }
         
+        // Access the user ID safely
+        const userId = req.userId || req.user.id;
+        if (!userId) {
+            return res.status(401).json({ msg: 'User authentication failed' });
+        }
+        
         // Check if user is the creator of the message
-        if (message.user_id !== req.user.id) {
-            // Check if user is the creator of the pod
+        if (message.user_id !== userId) {
+            // Check if user is the pod creator
             const pod = await PGPod.findById(message.pod_id);
-            if (!pod || pod.created_by !== req.user.id) {
+            if (!pod || pod.created_by !== userId) {
                 return res.status(401).json({ msg: 'Not authorized to delete this message' });
             }
         }
         
-        await PGMessage.delete(req.params.id);
+        // Delete the message
+        await PGMessage.delete(id);
         
         res.json({ msg: 'Message deleted' });
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in PG deleteMessage:', err.message);
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Message not found' });
         }

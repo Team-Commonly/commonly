@@ -1,61 +1,105 @@
 .search-bar {
     display: flex;
-    gap: 1rem;
-    padding: 1rem;
-    background-color: white;
-    border-bottom: 1px solid #eff3f4;
-    position: fixed;
-    top: 0;
-    left: 280px;
-    right: 0;
-    z-index: 1000;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    width: 100%;
+    background-color: transparent;
+    padding: 0 16px;
+    box-shadow: none;
+}
+
+.search-bar form {
+    background: transparent;
+    padding: 0;
+    max-width: none;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 .search-inputs {
     display: flex;
-    gap: 1rem;
+    gap: 0.5rem;
     width: 100%;
     max-width: 800px;
-    margin: 0 auto;
+    margin: 0;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    box-shadow: none;
 }
 
-.search-input,
-.tags-input {
+.search-input {
     flex: 1;
     padding: 0.75rem 1rem;
     border: 1px solid #eff3f4;
     border-radius: 20px;
     font-size: 0.95rem;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
     background-color: #f7f9f9;
+    height: 40px;
+    width: 100%;
+    box-sizing: border-box;
+    box-shadow: none;
 }
 
-.search-input:focus,
-.tags-input:focus {
+.search-input:focus {
     outline: none;
     background-color: #ffffff;
-    border-color: #1d9bf0;
-    box-shadow: 0 0 0 1px rgba(29, 155, 240, 0.3);
+    border-color: #1da1f2;
+    box-shadow: none;
 }
 
-.search-input::placeholder,
-.tags-input::placeholder {
+.search-input::placeholder {
     color: #536471;
 }
 
 .search-button {
-    min-width: 100px;
+    min-width: 80px;
     border-radius: 20px;
+    height: 40px;
+    background-color: #1da1f2;
+    color: white;
+    text-transform: none;
+    font-weight: 600;
+    padding: 0 16px;
+    box-shadow: none;
+    transition: background-color 0.2s ease;
+    margin-left: 8px;
+    flex-shrink: 0;
+    border: none;
+}
+
+.search-button:hover {
+    background-color: #1a91da;
+}
+
+/* Top global search bar styling */
+.search-container .search-bar {
+    width: 100%;
+    box-shadow: none;
+}
+
+/* Override for pod page */
+.pod-layout .search-bar {
+    max-width: 100%;
+    box-shadow: none;
 }
 
 @media (max-width: 768px) {
     .search-inputs {
-        flex-direction: column;
+        max-width: 100%;
     }
     
-    .search-bar {
-        left: 0;
-        padding: 0.75rem;
+    .search-button {
+        min-width: 60px;
+        padding: 0 12px;
     }
+}
+
+/* Pod search specific styling */
+.pod-search {
+  max-width: 600px;
+}
+
+.pod-search .search-inputs {
+  justify-content: flex-start;
 }
