@@ -155,4 +155,72 @@ button:active {
 .message-input-container.MuiPaper-root {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
 }
+
+/* Global styles for emoji picker with collapsed dashboard */
+body.dashboard-collapsed .emoji-picker-wrapper {
+  left: calc(50% + 30px) !important;
+  margin-left: -285px !important;
+}
+
+/* Existing dashboard collapsed styles */
+body.dashboard-collapsed .main-content {
+  width: 100% !important;
+  margin-left: 60px !important;
+}
+
+body.dashboard-collapsed .chat-room-container {
+  width: calc(100% - 60px) !important;
+  margin-left: 60px !important;
+}
+
+@media (max-width: 1200px) {
+  body.dashboard-collapsed .emoji-picker-wrapper {
+    margin-left: -265px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  body.dashboard-collapsed .main-content,
+  body.dashboard-collapsed .chat-room-container {
+    width: 100% !important;
+    margin-left: 0 !important;
+    left: 50% !important;
+  }
+  
+  body.dashboard-collapsed .emoji-picker-wrapper {
+    left: 50% !important;
+    margin-left: -200px !important;
+  }
+}
+
+/* Global styles to override emoji picker scaling */
+.emoji-picker-react {
+  transform: none !important;
+  transform-origin: unset !important;
+  scale: 1 !important;
+  font-size: 16px !important;
+}
+
+.emoji-picker-react * {
+  transform: none !important;
+  transform-origin: unset !important;
+  scale: 1 !important;
+}
+
+.emoji-picker-react .emoji-group > span {
+  font-size: 24px !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+}
+
+/* Fix for mobile emoji sizing */
+@media (max-width: 768px) {
+  .emoji-picker-react .emoji-group > span {
+    font-size: 22px !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+  }
+}
   

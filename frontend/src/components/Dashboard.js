@@ -1,17 +1,24 @@
 import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { List, ListItem, ListItemIcon, ListItemText, Typography, Avatar, Divider, Box, Skeleton } from '@mui/material';
+import { 
+    List, ListItem, ListItemIcon, ListItemText, Typography, 
+    Avatar, Divider, Box, Skeleton, IconButton
+} from '@mui/material';
 import { 
     Home as HomeIcon, 
     Person as PersonIcon, 
     ExitToApp as LogoutIcon,
-    Chat as ChatIcon
+    Chat as ChatIcon,
+    ChevronLeft as ChevronLeftIcon
 } from '@mui/icons-material';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
+import { useLayout } from '../context/LayoutContext';
+import './Dashboard.css';
 
 const Dashboard = () => {
     const { currentUser, userLoading, refreshData } = useAppContext();
+    const { isDashboardCollapsed, toggleDashboard } = useLayout();
     const [error, setError] = useState('');
     const location = useLocation();
 
@@ -40,42 +47,57 @@ const Dashboard = () => {
     if (error) return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
 
     return (
-        <div style={sidebarStyles}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3, mt: 2, px: 2 }}>
-                {userLoading ? (
-                    <>
-                        <Skeleton variant="circular" width={64} height={64} sx={{ mb: 1 }} />
-                        <Skeleton variant="text" width={120} height={32} sx={{ mb: 0.5 }} />
-                        <Skeleton variant="text" width={180} height={24} />
-                    </>
-                ) : currentUser ? (
-                    <>
-                        <Avatar 
-                            sx={{ 
-                                width: 64, 
-                                height: 64, 
-                                mb: 1, 
-                                bgcolor: getAvatarColor(currentUser.profilePicture) 
-                            }}
-                        >
-                            {currentUser.username.charAt(0).toUpperCase()}
-                        </Avatar>
-                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                            {currentUser.username}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            {currentUser.email}
-                        </Typography>
-                    </>
-                ) : (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-                        <Typography>Please log in</Typography>
+        <div className={`dashboard ${isDashboardCollapsed ? 'collapsed' : ''}`}>
+            <Box className="dashboard-header">
+                {!isDashboardCollapsed && (
+                    <Box className="user-profile">
+                        {userLoading ? (
+                            <>
+                                <Skeleton variant="circular" width={64} height={64} sx={{ mb: 1 }} />
+                                <Skeleton variant="text" width={120} height={32} sx={{ mb: 0.5 }} />
+                                <Skeleton variant="text" width={180} height={24} />
+                            </>
+                        ) : currentUser ? (
+                            <>
+                                <Avatar 
+                                    sx={{ 
+                                        width: 64, 
+                                        height: 64, 
+                                        mb: 1,
+                                        bgcolor: getAvatarColor(currentUser.profilePicture), 
+                                        cursor: 'pointer'
+                                    }}
+                                    src={currentUser.profilePicture}
+                                    onClick={toggleDashboard}
+                                >
+                                    {currentUser.username.charAt(0).toUpperCase()}
+                                </Avatar>
+                                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                                    {currentUser.username}
+                                </Typography>
+                                <Typography variant="body2" color="textSecondary" sx={{ mb: 2, textAlign: 'center' }}>
+                                    {currentUser.email}
+                                </Typography>
+                            </>
+                        ) : null}
                     </Box>
                 )}
+                
+                {isDashboardCollapsed && (
+                    <IconButton 
+                        onClick={toggleDashboard} 
+                        sx={{ 
+                            my: 1,
+                            color: 'primary.main'
+                        }}
+                    >
+                        <ChevronLeftIcon />
+                    </IconButton>
+                )}
             </Box>
-            
-            <Divider sx={{ mb: 2 }} />
-            
+
+            <Divider />
+
             <List component="nav">
                 <ListItem 
                     button 

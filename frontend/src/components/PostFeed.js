@@ -14,7 +14,8 @@ import {
     MoreVert,
     EmojiEmotions as EmojiEmotionsIcon,
     Image as ImageIcon,
-    Send as SendIcon
+    Send as SendIcon,
+    Close as CloseIcon
 } from '@mui/icons-material';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
@@ -44,6 +45,9 @@ const PostFeed = () => {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [tags, setTags] = useState([]);
+    const [selectedImage, setSelectedImage] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
+    const fileInputRef = React.useRef(null);
     
     // Extract hashtags from content
     useEffect(() => {
@@ -53,22 +57,58 @@ const PostFeed = () => {
     
     const handleCreatePost = async (e) => {
         e.preventDefault();
-        if (!postContent.trim()) return;
+        if (!postContent.trim() && !selectedImage) return;
         
         setIsSubmitting(true);
         try {
-            await axios.post('/api/posts', { content: postContent, tags }, {
-                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            let postData;
+            let imageUrl = null;
+            
+            // If there's an image, upload it first
+            if (selectedImage) {
+                const imageFormData = new FormData();
+                imageFormData.append('image', selectedImage);
+                
+                // Upload the image
+                const imageResponse = await axios.post('/api/uploads', imageFormData, {
+                    headers: { 
+                        Authorization: `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+                
+                // Get the image URL from the response - this is now an API URL
+                imageUrl = imageResponse.data.url;
+            }
+            
+            // Create post with the uploaded image URL if available
+            postData = {
+                content: postContent.trim() || "Posted an image", // Default content if only image
+                tags: tags
+            };
+            
+            if (imageUrl) {
+                postData.image = imageUrl;
+            }
+            
+            // Create the post
+            await axios.post('/api/posts', postData, {
+                headers: { 
+                    Authorization: `Bearer ${localStorage.getItem('token')}`
+                }
             });
             
             // Clear the form
             setPostContent('');
             setTags([]);
+            setSelectedImage(null);
+            setImagePreview(null);
             
             // Refresh data to ensure consistency
             window.location.reload();
         } catch (err) {
             setError('Failed to create post. Please try again later.');
+            console.error('Error creating post:', err);
         } finally {
             setIsSubmitting(false);
         }
@@ -76,6 +116,26 @@ const PostFeed = () => {
     
     const onEmojiClick = (emojiData) => {
         setPostContent(prevContent => prevContent + emojiData.emoji);
+    };
+    
+    const handleImageUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setSelectedImage(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+    
+    const handleRemoveImage = () => {
+        setSelectedImage(null);
+        setImagePreview(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
     
     const handleLike = async (postId) => {
@@ -276,29 +336,53 @@ const PostFeed = () => {
                             display: 'flex', 
                             justifyContent: 'space-between', 
                             alignItems: 'center',
-                            mt: 2 
+                            mt: 2,
+                            position: 'relative'
                         }}>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Box sx={{ display: 'flex', gap: 1, position: 'relative' }}>
                                 <IconButton 
                                     color="primary" 
                                     size="small"
                                     onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                    className="emoji-button"
                                 >
                                     <EmojiEmotionsIcon fontSize="small" />
                                 </IconButton>
-                                <IconButton color="primary" size="small">
+                                <IconButton 
+                                    color="primary" 
+                                    size="small"
+                                    onClick={() => fileInputRef.current.click()}
+                                >
                                     <ImageIcon fontSize="small" />
                                 </IconButton>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleImageUpload}
+                                    ref={fileInputRef}
+                                    style={{ display: 'none' }}
+                                />
                                 {showEmojiPicker && (
-                                    <Box sx={{ 
-                                        position: 'absolute', 
-                                        zIndex: 1000,
-                                        mt: 2,
-                                        transform: 'translateY(0)'
-                                    }}
-                                    className="emoji-picker-container"
+                                    <Box 
+                                        className="emoji-picker-container"
+                                        sx={{ 
+                                            position: 'absolute', 
+                                            zIndex: 1000,
+                                            top: '100%',
+                                            left: '0',
+                                            marginTop: '5px'
+                                        }}
                                     >
-                                        <EmojiPicker onEmojiClick={onEmojiClick} />
+                                        <EmojiPicker 
+                                            onEmojiClick={onEmojiClick} 
+                                            width={320}
+                                            height={380}
+                                            emojiStyle="native"
+                                            searchDisabled={false}
+                                            skinTonesDisabled={true}
+                                            previewConfig={{ showPreview: false }}
+                                            style={{ transform: 'none', scale: 1 }}
+                                        />
                                     </Box>
                                 )}
                             </Box>
@@ -306,7 +390,7 @@ const PostFeed = () => {
                                 variant="contained" 
                                 color="primary" 
                                 size="small"
-                                disabled={!postContent.trim() || isSubmitting}
+                                disabled={(!postContent.trim() && !selectedImage) || isSubmitting}
                                 onClick={handleCreatePost}
                                 endIcon={isSubmitting ? <CircularProgress size={16} /> : <SendIcon />}
                                 sx={{ 
@@ -317,6 +401,38 @@ const PostFeed = () => {
                                 Post
                             </Button>
                         </Box>
+                        
+                        {imagePreview && (
+                            <Box sx={{ mt: 2, position: 'relative' }}>
+                                <Box
+                                    component="img"
+                                    src={imagePreview}
+                                    alt="Selected"
+                                    sx={{
+                                        width: '100%',
+                                        maxHeight: '300px',
+                                        objectFit: 'contain',
+                                        borderRadius: '8px',
+                                    }}
+                                />
+                                <IconButton
+                                    sx={{
+                                        position: 'absolute',
+                                        top: 8,
+                                        right: 8,
+                                        backgroundColor: 'rgba(0,0,0,0.5)',
+                                        color: 'white',
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(0,0,0,0.7)',
+                                        },
+                                        padding: '4px',
+                                    }}
+                                    onClick={handleRemoveImage}
+                                >
+                                    <CloseIcon fontSize="small" />
+                                </IconButton>
+                            </Box>
+                        )}
                     </Box>
                 </Box>
             </Paper>
@@ -432,6 +548,33 @@ const PostFeed = () => {
                                         return part;
                                     })}
                                 </Typography>
+                                
+                                {post.image && (
+                                    <Box 
+                                        sx={{ 
+                                            mt: 1, 
+                                            mb: 2, 
+                                            borderRadius: '8px',
+                                            overflow: 'hidden',
+                                            maxHeight: '400px',
+                                        }}
+                                        className="post-image-container"
+                                    >
+                                        <Box
+                                            component="img"
+                                            src={post.image}
+                                            alt="Post image"
+                                            sx={{
+                                                width: '100%',
+                                                maxHeight: '400px',
+                                                objectFit: 'contain',
+                                                borderRadius: '8px',
+                                                backgroundColor: '#f8f9fa'
+                                            }}
+                                            className="post-image"
+                                        />
+                                    </Box>
+                                )}
                                 
                                 <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }} className="post-actions">
                                     <Box 

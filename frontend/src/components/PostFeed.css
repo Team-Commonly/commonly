@@ -18,11 +18,101 @@
     padding: 12px 0 !important;
 }
 
+/* Improved emoji picker positioning */
+.emoji-button {
+    position: relative;
+}
+
 .emoji-picker-container {
     position: absolute;
     z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-radius: 10px;
+    background-color: #fff;
+    top: 100%;
+    left: 0;
+    margin-top: 5px;
+    transform-origin: top left;
+    transform: scale(1) !important;
+}
+
+.emoji-picker-container::before {
+    content: '';
+    position: absolute;
+    top: -10px;
+    left: 20px;
+    width: 0;
+    height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-bottom: 10px solid white;
+}
+
+.emoji-picker-container .EmojiPickerReact {
+    --epr-bg-color: #fff;
+    --epr-category-label-bg-color: #f8f9fa;
+    --epr-hover-bg-color: #f1f3f5;
+    --epr-search-input-bg-color: #f8f9fa;
+    width: 100% !important;
+    height: 100% !important;
+    transform: none !important;
+    scale: 1 !important;
+}
+
+.emoji-picker-container .epr-body {
+    transform: none !important;
+    scale: 1 !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.emoji-picker-container .epr-emoji-category-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+    gap: 8px;
+}
+
+.emoji-picker-container .epr-emoji {
+    font-size: 24px;
+    min-width: 32px;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-preview-container {
+    position: relative;
+    margin-top: 12px;
     border-radius: 8px;
+    overflow: hidden;
+    background-color: #f8f8f8;
+}
+
+.image-preview {
+    width: 100%;
+    max-height: 300px;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+.remove-image-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    border-radius: 50%;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.remove-image-button:hover {
+    background-color: rgba(0, 0, 0, 0.7);
 }
 
 /* Post Card Styles */
@@ -39,6 +129,23 @@
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.4;
+}
+
+.post-image-container {
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+    position: relative;
+}
+
+.post-image-container:hover {
+    opacity: 0.95;
+}
+
+.post-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    transition: transform 0.2s ease;
 }
 
 .post-actions {
@@ -78,8 +185,14 @@
 }
 
 /* Responsive adjustments */
-@media (max-width: 600px) {
-    .post-actions {
-        gap: 16px;
+@media (max-width: 768px) {
+    .emoji-picker-container {
+        width: 280px;
+    }
+    
+    .emoji-picker-container .epr-emoji {
+        font-size: 22px;
+        min-width: 28px;
+        min-height: 28px;
     }
 } 

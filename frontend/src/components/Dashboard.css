@@ -1,0 +1,93 @@
+/* Dashboard styles */
+.dashboard {
+  width: 280px;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  background-color: #ffffff;
+  box-shadow: 3px 0 10px rgba(0, 0, 0, 0.15);
+  padding: 0;
+  overflow-y: auto;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+}
+
+/* Collapsed dashboard */
+.dashboard.collapsed {
+  width: 60px;
+  overflow: visible;
+  z-index: 1050; /* Lower z-index when collapsed to prevent overlap */
+}
+
+/* Dashboard header */
+.dashboard-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 0;
+}
+
+/* User profile container */
+.user-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 20px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Navigation items in collapsed state */
+.dashboard.collapsed .MuiListItemText-root {
+  display: none;
+}
+
+.dashboard.collapsed .MuiListItem-root {
+  padding: 16px;
+  justify-content: center;
+}
+
+.dashboard.collapsed .MuiListItemIcon-root {
+  min-width: auto;
+  margin: 0;
+}
+
+/* Avatar styling */
+.dashboard .MuiAvatar-root {
+  transition: transform 0.2s ease;
+}
+
+.dashboard .MuiAvatar-root:hover {
+  transform: scale(1.05);
+}
+
+/* Media queries for responsive behavior */
+@media (max-width: 1200px) {
+  .dashboard {
+    width: 240px;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard {
+    width: 100%;
+    height: auto;
+    position: relative;
+    box-shadow: none;
+    border-bottom: 1px solid #eff3f4;
+  }
+  
+  .dashboard.collapsed {
+    width: 100%;
+    height: 60px;
+  }
+  
+  .dashboard.collapsed .dashboard-header {
+    flex-direction: row;
+    justify-content: flex-end;
+    padding: 10px 20px;
+  }
+} 

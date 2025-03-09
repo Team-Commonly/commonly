@@ -12,11 +12,27 @@ export const AppProvider = ({ children }) => {
     const [userLoading, setUserLoading] = useState(true);
     const [postsLoading, setPostsLoading] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const [avatarRefreshTrigger, setAvatarRefreshTrigger] = useState(0);
 
     // Function to trigger a refresh of data
     const refreshData = useCallback(() => {
         setRefreshTrigger(prev => prev + 1);
     }, []);
+    
+    // Function to specifically refresh avatar colors across all components
+    const refreshAvatars = useCallback(() => {
+        setAvatarRefreshTrigger(prev => prev + 1);
+        
+        // Also trigger a full data refresh to ensure consistency
+        refreshData();
+        
+        // Force socket reconnection by storing a flag in localStorage
+        localStorage.setItem('avatar_updated', Date.now().toString());
+        
+        // We need to force a full page reload to refresh components that don't
+        // automatically pick up context changes (like Dashboard and ChatRoom)
+        window.location.reload();
+    }, [refreshData]);
 
     // Function to directly update a post in the posts array
     const updatePost = useCallback((postId, updatedData) => {
@@ -94,7 +110,8 @@ export const AppProvider = ({ children }) => {
         postsLoading,
         refreshData,
         updatePost,
-        removePost
+        removePost,
+        refreshAvatars
     };
 
     return (
