@@ -7,6 +7,8 @@ body {
   background-color: #f7f9f9;
   color: #212529;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Force re-render on navigation */
@@ -147,5 +149,10 @@ button:active {
 
 .search-container {
   box-shadow: none;
+}
+
+/* Override for chat input form */
+.message-input-container.MuiPaper-root {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
 }
   

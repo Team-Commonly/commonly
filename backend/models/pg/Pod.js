@@ -1,15 +1,19 @@
 const { pool } = require('../../config/db-pg');
+const { ObjectId } = require('mongodb');
 
 class Pod {
   // Create a new pod
-  static async create(name, description, type, createdBy) {
+  static async create(name, description, type, createdBy, customId = null) {
+    // Generate a MongoDB-compatible ObjectId for the pod or use the provided ID
+    const podId = customId || new ObjectId().toString();
+    
     const query = `
-      INSERT INTO pods (name, description, type, created_by)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO pods (id, name, description, type, created_by)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
     
-    const result = await pool.query(query, [name, description, type, createdBy]);
+    const result = await pool.query(query, [podId, name, description, type, createdBy]);
     
     // Add creator as a member
     await this.addMember(result.rows[0].id, createdBy);
@@ -119,13 +123,21 @@ class Pod {
   
   // Check if a user is a member of a pod
   static async isMember(podId, userId) {
+    console.log('Checking membership with params:', { podId, userId, podIdType: typeof podId });
+    
     const query = `
       SELECT * FROM pod_members
       WHERE pod_id = $1 AND user_id = $2
     `;
     
-    const result = await pool.query(query, [podId, userId]);
-    return result.rows.length > 0;
+    try {
+      const result = await pool.query(query, [podId, userId]);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error('SQL Error in Pod.isMember:', error.message);
+      console.error('Query parameters:', { podId, userId });
+      throw error;
+    }
   }
 }
 

@@ -164,8 +164,12 @@ const Thread = () => {
         }
     };
 
-    const onEmojiClick = (emojiData) => {
-        setComment(prevComment => prevComment + emojiData.emoji);
+    const onEmojiClick = (emojiObj) => {
+        // Support both older and newer emoji-picker-react versions
+        const emoji = emojiObj.emoji || (emojiObj.unified && String.fromCodePoint(parseInt(emojiObj.unified, 16)));
+        if (emoji) {
+            setComment(prevComment => prevComment + emoji);
+        }
     };
 
     if (error) return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;

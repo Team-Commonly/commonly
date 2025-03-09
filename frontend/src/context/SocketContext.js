@@ -119,11 +119,12 @@ export const SocketProvider = ({ children }) => {
     };
 
     // Send a message to a pod
-    const sendMessage = (podId, content) => {
+    const sendMessage = (podId, content, messageType = 'text') => {
         if (socket && connected && currentUser && currentUser._id && podId) {
             socket.emit('sendMessage', {
                 podId,
                 content,
+                messageType,
                 userId: currentUser._id
             });
         } else {
