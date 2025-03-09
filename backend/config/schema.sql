@@ -1,6 +1,6 @@
 -- Create pods table
 CREATE TABLE IF NOT EXISTS pods (
-  id SERIAL PRIMARY KEY,
+  id VARCHAR(24) PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   description TEXT,
   type VARCHAR(50) NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS pods (
 -- Create pod_members table for many-to-many relationship
 CREATE TABLE IF NOT EXISTS pod_members (
   id SERIAL PRIMARY KEY,
-  pod_id INTEGER REFERENCES pods(id) ON DELETE CASCADE,
+  pod_id VARCHAR(24) REFERENCES pods(id) ON DELETE CASCADE,
   user_id VARCHAR(24) NOT NULL,
   joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(pod_id, user_id)
@@ -21,9 +21,10 @@ CREATE TABLE IF NOT EXISTS pod_members (
 -- Create messages table
 CREATE TABLE IF NOT EXISTS messages (
   id SERIAL PRIMARY KEY,
-  pod_id INTEGER REFERENCES pods(id) ON DELETE CASCADE,
+  pod_id VARCHAR(24) REFERENCES pods(id) ON DELETE CASCADE,
   user_id VARCHAR(24) NOT NULL,
   content TEXT NOT NULL,
+  message_type VARCHAR(20) DEFAULT 'text' NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

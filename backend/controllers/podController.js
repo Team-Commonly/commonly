@@ -101,6 +101,29 @@ exports.createPod = async (req, res) => {
         await pod.populate('createdBy', 'username profilePicture');
         await pod.populate('members', 'username profilePicture');
         
+        // Also create in PostgreSQL if available
+        try {
+            if (process.env.PG_HOST) {
+                console.log('Creating pod in PostgreSQL as well:', pod._id);
+                const PGPod = require('../models/pg/Pod');
+                
+                // Insert into PostgreSQL with the same ID
+                await PGPod.create(
+                    name,
+                    description,
+                    type,
+                    req.userId,
+                    pod._id.toString() // Pass the MongoDB ID
+                );
+                
+                console.log('Pod successfully created in PostgreSQL');
+            }
+        } catch (pgErr) {
+            console.error('Error creating pod in PostgreSQL:', pgErr.message);
+            // We don't fail the request if PostgreSQL creation fails
+            // The synchronization script can fix this later
+        }
+        
         res.json(pod);
     } catch (err) {
         console.error(err.message);

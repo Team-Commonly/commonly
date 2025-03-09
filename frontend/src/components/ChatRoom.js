@@ -19,6 +19,7 @@ import { useSocket } from '../context/SocketContext';
 import { getAvatarColor } from '../utils/avatarUtils';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import './ChatRoom.css';
 
 const ChatRoom = () => {
@@ -34,6 +35,10 @@ const ChatRoom = () => {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showMembers, setShowMembers] = useState(false);
     const messagesEndRef = useRef(null);
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [previewUrl, setPreviewUrl] = useState('');
+    const [isUploading, setIsUploading] = useState(false);
+    const fileInputRef = useRef(null);
     
     // Fetch pod details and messages
     useEffect(() => {
@@ -63,8 +68,13 @@ const ChatRoom = () => {
                 
                 setRoom(podResponse.data);
                 
-                // Fetch messages
-                const messagesResponse = await axios.get(`/api/messages/${roomId}`, authHeaders);
+                // Fetch messages - use the proper API endpoint based on PG availability
+                const messagesEndpoint = pgAvailable 
+                    ? `/api/pg/messages/${roomId}` 
+                    : `/api/messages/${roomId}`;
+                
+                console.log(`Fetching messages from: ${messagesEndpoint}, PG available: ${pgAvailable}`);
+                const messagesResponse = await axios.get(messagesEndpoint, authHeaders);
                 setMessages(messagesResponse.data.reverse()); // Reverse to show oldest first
                 setError(null);
             } catch (err) {
@@ -85,7 +95,7 @@ const ChatRoom = () => {
             setError('Invalid pod ID or type');
             setLoading(false);
         }
-    }, [roomId, podType]);
+    }, [roomId, podType, pgAvailable]);
     
     // Join pod room when socket connects
     useEffect(() => {
@@ -94,7 +104,29 @@ const ChatRoom = () => {
             
             // Listen for new messages
             socket.on('newMessage', (message) => {
-                setMessages(prevMessages => [...prevMessages, message]);
+                console.log('Received new message via socket:', message);
+                
+                // Check if this is a response to our own message (to prevent duplicates)
+                // If the server sends back our own message, replace the temporary one
+                setMessages(prevMessages => {
+                    // Try to identify if we have a temporary message waiting for this response
+                    const tempMessageIndex = prevMessages.findIndex(msg => 
+                        // Look for a message with similar content posted at a similar time
+                        msg.content === message.content && 
+                        msg.messageType === message.messageType &&
+                        !msg._id // Temporary messages don't have an _id from the server
+                    );
+                    
+                    if (tempMessageIndex >= 0) {
+                        // Replace temporary message with the server response
+                        const updatedMessages = [...prevMessages];
+                        updatedMessages[tempMessageIndex] = message;
+                        return updatedMessages;
+                    } else {
+                        // This is a new message from someone else, add it
+                        return [...prevMessages, message];
+                    }
+                });
             });
             
             // Clean up
@@ -105,61 +137,177 @@ const ChatRoom = () => {
         }
     }, [connected, roomId, socket, joinPod, leavePod, error]);
     
+    // Add debugging for messages
+    useEffect(() => {
+        if (messages.length > 0) {
+            console.log(`Messages array contains ${messages.length} messages`);
+            // Log the first and last message for debugging
+            if (messages.length > 0) {
+                console.log('First message structure:', messages[0]);
+                console.log('Last message structure:', messages[messages.length - 1]);
+            }
+        }
+    }, [messages]);
+    
     // Scroll to bottom when messages change
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
     
-    const handleSendMessage = async (e) => {
-        e.preventDefault();
-        if (!message.trim()) return;
-        
-        // Create a new message object
-        const newMessage = {
-            id: Date.now(), // temporary ID
-            text: message,
-            podId: roomId,
-            userId: {
-                _id: currentUser?._id,
-                username: currentUser?.username,
-                profilePicture: currentUser?.profilePicture
-            },
-            createdAt: new Date()
-        };
-        
-        // Add message to the UI immediately (optimistic update)
-        setMessages([...messages, newMessage]);
-        setMessage('');
-        
-        try {
-            // Get the authentication token
-            const token = localStorage.getItem('token');
-            if (!token) {
-                setError('Authentication required. Please log in again.');
+    const handleFileSelect = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            // Only allow images
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file');
                 return;
             }
-
-            // Send message via socket
-            sendMessage(roomId, message);
             
-            // Also send to API for persistence
-            await axios.post(`/api/messages/${roomId}`, {
-                text: message
-            }, {
-                headers: { 
-                    'Authorization': `Bearer ${token}` 
-                }
-            });
-        } catch (err) {
-            console.error('Failed to send message:', err);
-            setError('Failed to send message. Please try again.');
-            // Remove the message from the UI if it fails
-            setMessages(messages.filter(m => m.id !== newMessage.id));
+            setSelectedFile(file);
+            
+            // Create a preview
+            const reader = new FileReader();
+            reader.onload = () => {
+                setPreviewUrl(reader.result);
+            };
+            reader.readAsDataURL(file);
         }
     };
     
-    const onEmojiClick = (emojiData) => {
-        setMessage(prevMessage => prevMessage + emojiData.emoji);
+    const uploadFile = async () => {
+        if (!selectedFile) return null;
+        
+        const formData = new FormData();
+        formData.append('image', selectedFile);
+        
+        try {
+            setIsUploading(true);
+            const token = localStorage.getItem('token');
+            
+            const response = await axios.post('/api/uploads', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            setIsUploading(false);
+            return response.data.url; // The URL of the uploaded file
+        } catch (error) {
+            console.error('Error uploading file:', error);
+            setIsUploading(false);
+            setError('Failed to upload image');
+            return null;
+        }
+    };
+    
+    const handleSendMessage = async (e) => {
+        e.preventDefault();
+        
+        // Don't submit if nothing to send or if uploading
+        if ((!message.trim() && !selectedFile) || isUploading) return;
+        
+        try {
+            // Handle image upload first if present
+            if (selectedFile) {
+                setIsUploading(true);
+                
+                const formData = new FormData();
+                formData.append('image', selectedFile);
+                
+                // Upload the image
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    setError('Authentication required. Please log in again.');
+                    return;
+                }
+                
+                try {
+                    const response = await axios.post('/api/uploads', formData, {
+                        headers: {
+                            'Content-Type': 'multipart/form-data',
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    // Send the image message
+                    const imageUrl = response.data.url;
+                    
+                    // Create a temporary message object for optimistic UI
+                    const tempImageMessage = {
+                        id: Date.now() + 1, // unique temporary ID
+                        content: imageUrl,      // Use content consistently with the server
+                        text: imageUrl,         // For backward compatibility
+                        podId: roomId,
+                        messageType: 'image',
+                        userId: {
+                            _id: currentUser?._id,
+                            username: currentUser?.username,
+                            profilePicture: currentUser?.profilePicture
+                        },
+                        createdAt: new Date()
+                    };
+                    
+                    // Add image message to UI immediately
+                    setMessages(prev => [...prev, tempImageMessage]);
+                    
+                    // Send image message via socket
+                    sendMessage(roomId, imageUrl, 'image');
+                    
+                } catch (err) {
+                    console.error('Failed to upload image:', err);
+                    setError('Failed to upload image. Please try again.');
+                } finally {
+                    setIsUploading(false);
+                    setSelectedFile(null);
+                    setPreviewUrl('');
+                }
+            }
+            
+            // Handle text message if present
+            if (message.trim()) {
+                // Create a temporary text message for optimistic UI
+                const tempTextMessage = {
+                    id: Date.now(), // temporary ID
+                    content: message,    // Use content consistently with the server
+                    text: message,       // For backward compatibility
+                    podId: roomId,
+                    messageType: 'text',
+                    userId: {
+                        _id: currentUser?._id,
+                        username: currentUser?.username,
+                        profilePicture: currentUser?.profilePicture
+                    },
+                    createdAt: new Date()
+                };
+                
+                // Add text message to UI immediately
+                setMessages(prev => [...prev, tempTextMessage]);
+                
+                // Send text message via socket
+                sendMessage(roomId, message, 'text');
+                
+                // Clear the message input
+                setMessage('');
+            }
+            
+        } catch (err) {
+            console.error('Failed to send message:', err);
+            setError('Failed to send message. Please try again.');
+        }
+    };
+    
+    const onEmojiClick = (emojiObj) => {
+        console.log('Emoji selected:', emojiObj);
+        // Support multiple emoji picker library versions
+        const emoji = emojiObj.emoji || emojiObj.native || 
+                    (emojiObj.unified && String.fromCodePoint(parseInt(emojiObj.unified.split('-')[0], 16)));
+        
+        if (emoji) {
+            setMessage(prevMessage => prevMessage + emoji);
+            // Uncomment this to close the picker after selection
+            // setShowEmojiPicker(false);
+        }
     };
     
     const handleBack = () => {
@@ -263,37 +411,84 @@ const ChatRoom = () => {
                         </Box>
                     ) : (
                         <List>
-                            {messages.map((msg) => (
-                                <ListItem 
-                                    key={msg._id || msg.id}
-                                    className={`message-item ${msg.userId._id === currentUser?._id ? 'sent' : 'received'}`}
-                                >
-                                    <ListItemAvatar className="message-avatar">
-                                        <Avatar 
-                                            src={msg.userId.profilePicture}
-                                            sx={{ bgcolor: getAvatarColor(msg.userId.username || '') }}
-                                        >
-                                            {msg.userId.username?.charAt(0).toUpperCase()}
-                                        </Avatar>
-                                    </ListItemAvatar>
-                                    <Box className="message-content-wrapper">
-                                        <Paper 
-                                            elevation={1}
-                                            className={`message-bubble ${msg.userId._id === currentUser?._id ? 'sent' : 'received'}`}
-                                        >
-                                            <Typography variant="body1">{msg.text}</Typography>
-                                        </Paper>
-                                        <Box className="message-meta">
-                                            <Typography variant="caption" className="message-username">
-                                                {msg.userId.username}
-                                            </Typography>
-                                            <Typography variant="caption" className="message-time">
-                                                {formatDistanceToNow(new Date(msg.createdAt))} ago
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                </ListItem>
-                            ))}
+                            {messages.map((msg) => {
+                                // Check if msg or msg.userId is undefined or null
+                                if (!msg) {
+                                    console.warn('Encountered undefined message in messages array');
+                                    return null; // Skip rendering this item
+                                }
+                                
+                                // Safely handle userId which could be an object, string, or undefined
+                                const isCurrentUser = msg.userId 
+                                    ? (typeof msg.userId === 'object'
+                                        ? msg.userId?._id === currentUser?._id 
+                                        : msg.userId === currentUser?._id)
+                                    : (msg.user_id === currentUser?._id); // Fallback to check user_id field
+                                
+                                // Get username with multiple fallbacks
+                                const username = 
+                                    (msg.userId && typeof msg.userId === 'object' && msg.userId.username) ||
+                                    msg.username || 
+                                    'Unknown User';
+                                
+                                // Get profile picture with multiple fallbacks
+                                const profilePicture = 
+                                    (msg.userId && typeof msg.userId === 'object' && msg.userId.profilePicture) ||
+                                    msg.profile_picture || 
+                                    null;
+                                
+                                // Get message content with fallbacks
+                                const messageContent = msg.content || msg.text || '';
+                                
+                                // Get message type with fallback
+                                const messageType = msg.messageType || msg.message_type || 'text';
+                                
+                                // Get message timestamp with fallbacks
+                                const messageTime = msg.createdAt || msg.created_at || new Date();
+                                
+                                return (
+                                    <ListItem 
+                                        key={msg._id || msg.id || Date.now() + Math.random()}
+                                        className={`message-item ${isCurrentUser ? 'sent' : 'received'}`}
+                                    >
+                                        <ListItemAvatar className="message-avatar">
+                                            <Avatar 
+                                                src={profilePicture}
+                                                sx={{ bgcolor: getAvatarColor(username) }}
+                                            >
+                                                {username.charAt(0).toUpperCase()}
+                                            </Avatar>
+                                        </ListItemAvatar>
+                                        
+                                        <div className="message-content-wrapper">
+                                            {!isCurrentUser && <div className="message-user">{username}</div>}
+                                            
+                                            {/* Text message */}
+                                            {messageType === 'text' && (
+                                                <div className={`message-bubble ${isCurrentUser ? 'sent' : 'received'}`}>
+                                                    <p className="message-text">{messageContent}</p>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Image message */}
+                                            {messageType === 'image' && (
+                                                <div className={`message-image-container ${isCurrentUser ? 'sent' : 'received'}`}>
+                                                    <img 
+                                                        src={messageContent}
+                                                        alt="Shared image" 
+                                                        className="message-image"
+                                                        onClick={() => window.open(messageContent, '_blank')}
+                                                    />
+                                                </div>
+                                            )}
+                                            
+                                            <div className={`message-time ${isCurrentUser ? 'message-sent-time' : 'message-received-time'}`}>
+                                                {formatDistanceToNow(new Date(messageTime), { addSuffix: true })}
+                                            </div>
+                                        </div>
+                                    </ListItem>
+                                );
+                            })}
                             <div ref={messagesEndRef} />
                         </List>
                     )}
@@ -308,12 +503,42 @@ const ChatRoom = () => {
                 <IconButton onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="emoji-button">
                     <EmojiIcon />
                 </IconButton>
-                <IconButton className="attach-button">
-                    <AttachFileIcon />
+                
+                <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={handleFileSelect}
+                    ref={fileInputRef}
+                />
+                
+                <IconButton 
+                    onClick={() => fileInputRef.current.click()} 
+                    className="attach-button"
+                    disabled={isUploading}
+                >
+                    {isUploading ? <CircularProgress size={24} /> : <AttachFileIcon />}
                 </IconButton>
+                
+                {previewUrl && (
+                    <Box className="file-preview">
+                        <img src={previewUrl} alt="Preview" className="preview-image" />
+                        <IconButton 
+                            size="small" 
+                            className="remove-preview" 
+                            onClick={() => {
+                                setSelectedFile(null);
+                                setPreviewUrl('');
+                            }}
+                        >
+                            &times;
+                        </IconButton>
+                    </Box>
+                )}
+                
                 <TextField
                     fullWidth
-                    placeholder="Type a message..."
+                    placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     variant="standard"
@@ -322,19 +547,40 @@ const ChatRoom = () => {
                     }}
                     className="message-input"
                 />
+                
                 <IconButton 
                     color="primary" 
                     type="submit"
-                    disabled={!message.trim() || !connected}
+                    disabled={(!message.trim() && !selectedFile) || !connected || isUploading}
                     className="send-button"
                 >
                     <SendIcon />
                 </IconButton>
                 
                 {showEmojiPicker && (
-                    <Box className="emoji-picker-container">
-                        <EmojiPicker onEmojiClick={onEmojiClick} />
-                    </Box>
+                    <div className="emoji-picker-container">
+                        <div style={{ position: 'relative' }}>
+                            <div style={{ position: 'absolute', top: '5px', right: '5px', zIndex: 10 }}>
+                                <IconButton 
+                                    size="small" 
+                                    onClick={() => setShowEmojiPicker(false)}
+                                    style={{ backgroundColor: 'rgba(0,0,0,0.1)' }}
+                                >
+                                    &times;
+                                </IconButton>
+                            </div>
+                            <EmojiPicker 
+                                onEmojiClick={onEmojiClick}
+                                lazyLoadEmojis={true}
+                                emojiStyle="native"
+                                width={320}
+                                height={350}
+                                searchDisabled={false}
+                                skinTonesDisabled={true}
+                                previewConfig={{ showPreview: false }}
+                            />
+                        </div>
+                    </div>
                 )}
             </Paper>
             
