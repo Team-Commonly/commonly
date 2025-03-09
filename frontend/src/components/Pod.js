@@ -312,8 +312,7 @@ const Pod = () => {
                                         <Box className="pod-card-creator">
                                             <Avatar 
                                                 className="pod-creator-avatar"
-                                                src={pod.createdBy?.profilePicture}
-                                                sx={{ bgcolor: getAvatarColor(pod.createdBy?.username || '') }}
+                                                sx={{ bgcolor: getAvatarColor(pod.createdBy?.profilePicture || 'default') }}
                                             >
                                                 {pod.createdBy?.username?.charAt(0).toUpperCase()}
                                             </Avatar>
