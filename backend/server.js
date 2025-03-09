@@ -309,8 +309,5 @@ io.on('connection', (socket) => {
   socket.emit('welcome', { message: 'Connected to chat server successfully' });
 });
 
-// Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 // Start the server
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

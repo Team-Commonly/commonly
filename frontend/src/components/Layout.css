@@ -4,6 +4,7 @@
     min-height: 100vh;
     background-color: #f7f9f9;
     color: #0f1419;
+    transition: all 0.3s ease;
 }
 
 /* Main content area */
@@ -16,6 +17,13 @@
     box-sizing: border-box;
     position: relative;
     z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+/* Dashboard collapsed state */
+.dashboard-collapsed .main-content {
+    width: 100%;
+    margin-left: 0;
 }
 
 /* Pod layout specific styles */
@@ -40,17 +48,32 @@
     border-radius: 0 !important;
     -webkit-box-shadow: none !important;
     -moz-box-shadow: none !important;
+    transition: all 0.3s ease;
 }
 
-/* Fix for search container overlap in pod layout */
+/* Fix for search container in pods layout */
 .pod-layout .search-container {
     position: fixed;
     top: 0;
     left: 280px;
     width: calc(100% - 280px);
-    padding-left: 0;
-    box-shadow: none;
     transition: all 0.3s ease;
+    z-index: 1200; /* Ensure it's above the collapsed dashboard */
+}
+
+/* Dashboard collapsed version of pod layout search container - fix z-index */
+.dashboard-collapsed .pod-layout .search-container {
+    left: 60px; /* Leave space for collapsed dashboard */
+    width: calc(100% - 60px);
+    z-index: 1200; /* Ensure it's above the collapsed dashboard */
+}
+
+/* Toggle dashboard button */
+.toggle-dashboard-button {
+    margin-left: auto !important;
+    margin-right: 15px !important;
+    color: #1da1f2 !important;
+    z-index: 1500; /* Ensure button is clickable */
 }
 
 /* Adjust content for fixed search bar */
@@ -167,10 +190,26 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
-/* Responsive adjustments */
+/* Media queries for responsive design */
 @media (max-width: 1200px) {
-    .content-grid {
-        grid-template-columns: 1fr 300px;
+    .main-content {
+        width: calc(100% - 240px);
+        margin-left: 240px;
+    }
+    
+    .pod-layout .search-container {
+        left: 240px;
+        width: calc(100% - 240px);
+    }
+    
+    .dashboard-collapsed .main-content {
+        width: 100%;
+        margin-left: 0;
+    }
+    
+    .dashboard-collapsed .pod-layout .search-container {
+        left: 60px;
+        width: calc(100% - 60px);
     }
 }
 
@@ -190,12 +229,22 @@
         margin-left: 0;
     }
     
+    .pod-layout .search-container {
+        left: 0;
+        width: 100%;
+    }
+    
     .layout-container {
         flex-direction: column;
     }
     
     .search-container {
         padding: 0 8px;
+    }
+    
+    .dashboard-collapsed .pod-layout .search-container {
+        left: 0;
+        width: 100%;
     }
 }
 

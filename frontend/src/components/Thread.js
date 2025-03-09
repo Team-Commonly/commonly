@@ -230,6 +230,33 @@ const Thread = () => {
                         })}
                     </Typography>
                     
+                    {post.image && (
+                        <Box 
+                            sx={{ 
+                                mt: 1, 
+                                mb: 3, 
+                                borderRadius: '8px',
+                                overflow: 'hidden',
+                                maxHeight: '500px',
+                            }}
+                            className="post-image-container"
+                        >
+                            <Box
+                                component="img"
+                                src={post.image}
+                                alt="Post image"
+                                sx={{
+                                    width: '100%',
+                                    maxHeight: '500px',
+                                    objectFit: 'contain',
+                                    borderRadius: '8px',
+                                    backgroundColor: '#f8f9fa'
+                                }}
+                                className="post-image"
+                            />
+                        </Box>
+                    )}
+                    
                     <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
                         <IconButton onClick={handleLike} color="primary">
                             {liked ? <FavoriteIcon /> : <FavoriteBorderIcon />}
@@ -261,7 +288,16 @@ const Thread = () => {
                         </IconButton>
                         {showEmojiPicker && (
                             <div className="emoji-picker-container">
-                                <EmojiPicker onEmojiClick={onEmojiClick} />
+                                <EmojiPicker 
+                                    onEmojiClick={onEmojiClick}
+                                    width={320}
+                                    height={380}
+                                    emojiStyle="native"
+                                    searchDisabled={false}
+                                    skinTonesDisabled={true}
+                                    previewConfig={{ showPreview: false }}
+                                    style={{ transform: 'none', scale: 1 }}
+                                />
                             </div>
                         )}
                     </div>

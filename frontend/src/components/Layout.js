@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import SearchBar from './SearchBar';
-import { Box, CircularProgress, Container, Paper, useTheme, useMediaQuery } from '@mui/material';
+import { Box, CircularProgress, Container, Paper, useTheme, useMediaQuery, IconButton } from '@mui/material';
 import { useAuth } from '../context/AuthContext';
+import { useLayout } from '../context/LayoutContext';
 import './Layout.css';
 
 const Layout = () => {
     const [searchResults, setSearchResults] = useState(null);
     const { currentUser, loading } = useAuth();
+    const { isDashboardCollapsed, toggleDashboard } = useLayout();
     const navigate = useNavigate();
     const location = useLocation();
     const theme = useTheme();
@@ -39,11 +41,27 @@ const Layout = () => {
     // Use different layout for pod pages
     if (isPodPage) {
         return (
-            <div className={`layout-container pods-view ${isPodDetail ? 'pod-detail' : ''}`}>
+            <div className={`layout-container pods-view ${isPodDetail ? 'pod-detail' : ''} ${isDashboardCollapsed ? 'dashboard-collapsed' : ''}`}>
                 <Dashboard />
                 <div className="main-content pod-layout">
                     <div className="search-container">
                         <SearchBar onSearchResults={setSearchResults} />
+                        <IconButton 
+                            className="toggle-dashboard-button"
+                            onClick={toggleDashboard}
+                            aria-label={isDashboardCollapsed ? "Expand dashboard" : "Collapse dashboard"}
+                            sx={{ ml: 1 }}
+                        >
+                            {isDashboardCollapsed ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="15 18 9 12 15 6"></polyline>
+                                </svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="9 18 15 12 9 6"></polyline>
+                                </svg>
+                            )}
+                        </IconButton>
                     </div>
                     <div className="content-container pod-content">
                         <Outlet context={searchResults} />
@@ -54,11 +72,27 @@ const Layout = () => {
     }
 
     return (
-        <div className="layout-container">
+        <div className={`layout-container ${isDashboardCollapsed ? 'dashboard-collapsed' : ''}`}>
             <Dashboard />
             <div className="main-content">
                 <div className="search-container">
                     <SearchBar onSearchResults={setSearchResults} />
+                    <IconButton 
+                        className="toggle-dashboard-button"
+                        onClick={toggleDashboard}
+                        aria-label={isDashboardCollapsed ? "Expand dashboard" : "Collapse dashboard"}
+                        sx={{ ml: 1 }}
+                    >
+                        {isDashboardCollapsed ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="15 18 9 12 15 6"></polyline>
+                            </svg>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        )}
+                    </IconButton>
                 </div>
                 <Container maxWidth="xl" className="feed-container">
                     <div className="content-grid">

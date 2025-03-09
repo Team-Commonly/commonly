@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
     Container, Typography, Box, Paper, TextField, IconButton, 
     Avatar, Divider, List, ListItem, ListItemText, ListItemAvatar,
-    Button, CircularProgress, AppBar, Toolbar, Badge, Chip, FormControlLabel, Switch
+    Button, CircularProgress, AppBar, Toolbar, Badge, Chip, FormControlLabel, Switch,
+    Portal
 } from '@mui/material';
 import { 
     Send as SendIcon, 
@@ -16,6 +17,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { useLayout } from '../context/LayoutContext';
 import { getAvatarColor } from '../utils/avatarUtils';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
@@ -25,6 +27,7 @@ import './ChatRoom.css';
 const ChatRoom = () => {
     const { currentUser } = useAuth();
     const { socket, connected, pgAvailable, joinPod, leavePod, sendMessage } = useSocket();
+    const { isDashboardCollapsed } = useLayout(); // Using global layout context
     const { podType, roomId } = useParams();
     const navigate = useNavigate();
     const [room, setRoom] = useState(null);
@@ -39,11 +42,13 @@ const ChatRoom = () => {
     const [previewUrl, setPreviewUrl] = useState('');
     const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef(null);
+    const emojiPickerRef = useRef(null);
     
     // Fetch pod details and messages
     useEffect(() => {
         const fetchPodAndMessages = async () => {
             setLoading(true);
+            setMessages([]); // Clear existing messages while loading
             try {
                 // Get the authentication token
                 const token = localStorage.getItem('token');
@@ -59,6 +64,18 @@ const ChatRoom = () => {
                     }
                 };
 
+                // Check database connection status first
+                let usePostgres = pgAvailable;
+                if (typeof pgAvailable === 'undefined') {
+                    try {
+                        const statusRes = await axios.get('/api/pg/status', authHeaders);
+                        usePostgres = statusRes.data.available;
+                    } catch (err) {
+                        console.warn('Failed to check database status:', err);
+                        usePostgres = false;
+                    }
+                }
+
                 // Fetch pod details - include podType in the URL
                 const podResponse = await axios.get(`/api/pods/${podType}/${roomId}`, authHeaders);
                 
@@ -69,11 +86,11 @@ const ChatRoom = () => {
                 setRoom(podResponse.data);
                 
                 // Fetch messages - use the proper API endpoint based on PG availability
-                const messagesEndpoint = pgAvailable 
+                const messagesEndpoint = usePostgres 
                     ? `/api/pg/messages/${roomId}` 
                     : `/api/messages/${roomId}`;
                 
-                console.log(`Fetching messages from: ${messagesEndpoint}, PG available: ${pgAvailable}`);
+                console.log(`Fetching messages from: ${messagesEndpoint}, PG available: ${usePostgres}`);
                 const messagesResponse = await axios.get(messagesEndpoint, authHeaders);
                 setMessages(messagesResponse.data.reverse()); // Reverse to show oldest first
                 setError(null);
@@ -192,7 +209,8 @@ const ChatRoom = () => {
             });
             
             setIsUploading(false);
-            return response.data.url; // The URL of the uploaded file
+            // The URL is now an API endpoint that serves the file from the database
+            return response.data.url;
         } catch (error) {
             console.error('Error uploading file:', error);
             setIsUploading(false);
@@ -236,8 +254,8 @@ const ChatRoom = () => {
                     // Create a temporary message object for optimistic UI
                     const tempImageMessage = {
                         id: Date.now() + 1, // unique temporary ID
-                        content: imageUrl,      // Use content consistently with the server
-                        text: imageUrl,         // For backward compatibility
+                        content: imageUrl,  // Store the API URL that serves the file from the database
+                        text: imageUrl,     // For backward compatibility
                         podId: roomId,
                         messageType: 'image',
                         userId: {
@@ -310,18 +328,30 @@ const ChatRoom = () => {
         }
     };
     
-    const handleBack = () => {
-        navigate(`/pods/${podType}`);
+    // Toggle emoji picker
+    const toggleEmojiPicker = () => {
+        setShowEmojiPicker(prev => !prev);
     };
     
-    // Display offline notification with reconnect button
-    const handleReconnect = () => {
-        // Get the socket instance from context
-        if (socket) {
-            console.log('Attempting to reconnect...');
-            socket.connect();
-        }
-    };
+    // Close emoji picker when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target) && 
+                !event.target.closest('.emoji-button')) {
+                setShowEmojiPicker(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
+
+    // Log when emoji picker visibility changes
+    useEffect(() => {
+        console.log('Emoji picker visibility changed:', showEmojiPicker);
+    }, [showEmojiPicker]);
     
     if (loading) {
         return (
@@ -335,7 +365,7 @@ const ChatRoom = () => {
         return (
             <Box sx={{ p: 3, textAlign: 'center' }}>
                 <Typography color="error">{error}</Typography>
-                <Button variant="contained" onClick={handleBack} sx={{ mt: 2 }}>
+                <Button variant="contained" onClick={() => navigate(`/pods/${podType}`)} sx={{ mt: 2 }}>
                     Back to Rooms
                 </Button>
             </Box>
@@ -343,10 +373,10 @@ const ChatRoom = () => {
     }
     
     return (
-        <Container maxWidth="md" className="chat-room-container">
+        <Container maxWidth="md" className={`chat-room-container ${isDashboardCollapsed ? 'dashboard-collapsed' : ''}`}>
             <AppBar position="fixed" color="default" elevation={1} className="chat-room-header">
                 <Toolbar>
-                    <IconButton edge="start" color="inherit" onClick={handleBack} sx={{ mr: 2 }}>
+                    <IconButton edge="start" color="inherit" onClick={() => navigate(`/pods/${podType}`)} sx={{ mr: 2 }}>
                         <ArrowBackIcon />
                     </IconButton>
                     <Box sx={{ flexGrow: 1 }}>
@@ -378,8 +408,7 @@ const ChatRoom = () => {
                                 <ListItem key={member._id}>
                                     <ListItemAvatar>
                                         <Avatar 
-                                            src={member.profilePicture}
-                                            sx={{ bgcolor: getAvatarColor(member.username || '') }}
+                                            sx={{ bgcolor: getAvatarColor(member.profilePicture || 'default') }}
                                         >
                                             {member.username?.charAt(0).toUpperCase()}
                                         </Avatar>
@@ -453,8 +482,7 @@ const ChatRoom = () => {
                                     >
                                         <ListItemAvatar className="message-avatar">
                                             <Avatar 
-                                                src={profilePicture}
-                                                sx={{ bgcolor: getAvatarColor(username) }}
+                                                sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
                                             >
                                                 {username.charAt(0).toUpperCase()}
                                             </Avatar>
@@ -492,97 +520,160 @@ const ChatRoom = () => {
                             <div ref={messagesEndRef} />
                         </List>
                     )}
-                </Paper>
-            </Box>
-            
-            <Paper 
-                component="form" 
-                onSubmit={handleSendMessage}
-                className="message-input-container"
-            >
-                <IconButton onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="emoji-button">
-                    <EmojiIcon />
-                </IconButton>
-                
-                <input
-                    type="file"
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    onChange={handleFileSelect}
-                    ref={fileInputRef}
-                />
-                
-                <IconButton 
-                    onClick={() => fileInputRef.current.click()} 
-                    className="attach-button"
-                    disabled={isUploading}
-                >
-                    {isUploading ? <CircularProgress size={24} /> : <AttachFileIcon />}
-                </IconButton>
-                
-                {previewUrl && (
-                    <Box className="file-preview">
-                        <img src={previewUrl} alt="Preview" className="preview-image" />
+                    
+                    {/* Render emoji picker in a fixed position above the input field */}
+                    {showEmojiPicker && (
+                        <div className="emoji-picker-wrapper">
+                            <Box 
+                                className="emoji-picker-container"
+                                ref={emojiPickerRef}
+                            >
+                                <Box 
+                                    sx={{ 
+                                        display: 'flex', 
+                                        justifyContent: 'space-between', 
+                                        alignItems: 'center',
+                                        p: 1,
+                                        borderBottom: '1px solid #eee'
+                                    }}
+                                >
+                                    <Typography variant="subtitle2">
+                                        Emoji Picker
+                                    </Typography>
+                                    <IconButton 
+                                        size="small"
+                                        onClick={() => setShowEmojiPicker(false)}
+                                        sx={{
+                                            backgroundColor: 'rgba(0,0,0,0.05)',
+                                            padding: '4px',
+                                            width: '24px',
+                                            height: '24px'
+                                        }}
+                                    >
+                                        &times;
+                                    </IconButton>
+                                </Box>
+                                <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+                                    <EmojiPicker 
+                                        onEmojiClick={onEmojiClick}
+                                        lazyLoadEmojis={true}
+                                        emojiStyle="native"
+                                        width="100%"
+                                        height="100%"
+                                        searchDisabled={false}
+                                        skinTonesDisabled={true}
+                                        previewConfig={{ showPreview: false }}
+                                        style={{ transform: 'none', scale: 1 }}
+                                        emojiVersion="5.0"
+                                        categories={[
+                                            {
+                                                name: "Smileys & People",
+                                                category: "smileys_people"
+                                            },
+                                            {
+                                                name: "Animals & Nature",
+                                                category: "animals_nature"
+                                            },
+                                            {
+                                                name: "Food & Drink",
+                                                category: "food_drink"
+                                            },
+                                            {
+                                                name: "Activities",
+                                                category: "activities"
+                                            },
+                                            {
+                                                name: "Travel & Places",
+                                                category: "travel_places"
+                                            },
+                                            {
+                                                name: "Objects",
+                                                category: "objects"
+                                            },
+                                            {
+                                                name: "Symbols",
+                                                category: "symbols"
+                                            },
+                                            {
+                                                name: "Flags",
+                                                category: "flags"
+                                            }
+                                        ]}
+                                    />
+                                </Box>
+                            </Box>
+                        </div>
+                    )}
+                    
+                    {/* Message input at bottom of messages container */}
+                    <Paper 
+                        component="form" 
+                        onSubmit={handleSendMessage}
+                        className="message-input-container"
+                    >
                         <IconButton 
-                            size="small" 
-                            className="remove-preview" 
-                            onClick={() => {
-                                setSelectedFile(null);
-                                setPreviewUrl('');
-                            }}
+                            onClick={toggleEmojiPicker} 
+                            className="emoji-button"
+                            aria-label="Insert emoji"
                         >
-                            &times;
+                            <EmojiIcon />
                         </IconButton>
-                    </Box>
-                )}
-                
-                <TextField
-                    fullWidth
-                    placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    variant="standard"
-                    InputProps={{
-                        disableUnderline: true,
-                    }}
-                    className="message-input"
-                />
-                
-                <IconButton 
-                    color="primary" 
-                    type="submit"
-                    disabled={(!message.trim() && !selectedFile) || !connected || isUploading}
-                    className="send-button"
-                >
-                    <SendIcon />
-                </IconButton>
-                
-                {showEmojiPicker && (
-                    <div className="emoji-picker-container">
-                        <div style={{ position: 'relative' }}>
-                            <div style={{ position: 'absolute', top: '5px', right: '5px', zIndex: 10 }}>
+                        
+                        <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            onChange={handleFileSelect}
+                            ref={fileInputRef}
+                        />
+                        
+                        <IconButton 
+                            onClick={() => fileInputRef.current.click()} 
+                            className="attach-button"
+                            disabled={isUploading}
+                        >
+                            {isUploading ? <CircularProgress size={24} /> : <AttachFileIcon />}
+                        </IconButton>
+                        
+                        {previewUrl && (
+                            <Box className="file-preview">
+                                <img src={previewUrl} alt="Preview" className="preview-image" />
                                 <IconButton 
                                     size="small" 
-                                    onClick={() => setShowEmojiPicker(false)}
-                                    style={{ backgroundColor: 'rgba(0,0,0,0.1)' }}
+                                    className="remove-preview" 
+                                    onClick={() => {
+                                        setSelectedFile(null);
+                                        setPreviewUrl('');
+                                    }}
                                 >
                                     &times;
                                 </IconButton>
-                            </div>
-                            <EmojiPicker 
-                                onEmojiClick={onEmojiClick}
-                                lazyLoadEmojis={true}
-                                emojiStyle="native"
-                                width={320}
-                                height={350}
-                                searchDisabled={false}
-                                skinTonesDisabled={true}
-                                previewConfig={{ showPreview: false }}
-                            />
-                        </div>
-                    </div>
-                )}
-            </Paper>
+                            </Box>
+                        )}
+                        
+                        <TextField
+                            fullWidth
+                            placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            variant="standard"
+                            InputProps={{
+                                disableUnderline: true,
+                            }}
+                            className="message-input"
+                        />
+                        
+                        <IconButton 
+                            color="primary" 
+                            type="submit"
+                            disabled={(!message.trim() && !selectedFile) || !connected || isUploading}
+                            className="send-button"
+                        >
+                            <SendIcon />
+                        </IconButton>
+                    </Paper>
+                </Paper>
+            </Box>
             
             {!connected && (
                 <Paper className="offline-notification">
@@ -593,7 +684,7 @@ const ChatRoom = () => {
                         variant="contained" 
                         color="primary" 
                         size="small"
-                        onClick={handleReconnect}
+                        onClick={() => socket.connect()}
                         sx={{ mt: 1 }}
                     >
                         Reconnect

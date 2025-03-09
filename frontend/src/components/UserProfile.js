@@ -90,11 +90,8 @@ const UserProfile = () => {
             setUser(response.data);
             handleCloseAvatarDialog();
             
-            // Trigger a refresh of the app context data
-            refreshData();
-            
-            // Trigger a page refresh after a short delay
-            refreshPage(500);
+            // Use the refreshAvatars function instead to ensure consistent avatar display
+            refreshAvatars();
         } catch (err) {
             setError('Failed to update profile. Please try again.');
         } finally {

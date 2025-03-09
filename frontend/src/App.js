@@ -16,6 +16,7 @@ import ChatRoom from './components/ChatRoom';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
+import { LayoutProvider } from './context/LayoutContext';
 import { setupFocusManagement } from './utils/focusUtils';
 import { checkAndRefresh } from './utils/refreshUtils';
 import './App.css';
@@ -183,26 +184,28 @@ function App() {
       <AuthProvider>
         <AppProvider>
           <SocketProvider>
-            <BrowserRouter>
-              <NavigationHandler />
-              <div className="App">
-                <Routes>
-                  <Route path="/" element={<Login />} />
-                  <Route path="/register" element={<Register />} />
-                  <Route path="/verify-email" element={<VerifyEmail />} />
-                  <Route element={<Layout />}>
-                    <Route path="/feed" element={<PostFeed />} />
-                    <Route path="/thread/:id" element={<Thread />} />
-                    <Route path="/profile" element={<UserProfile />} />
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/pods" element={<PodRedirect />} />
-                    <Route path="/pods/:podType" element={<Pod />} />
-                    <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />
-                  </Route>
-                  <Route path="/chat/:podId" element={<Layout><ChatRoom /></Layout>} />
-                </Routes>
-              </div>
-            </BrowserRouter>
+            <LayoutProvider>
+              <BrowserRouter>
+                <NavigationHandler />
+                <div className="App">
+                  <Routes>
+                    <Route path="/" element={<Login />} />
+                    <Route path="/register" element={<Register />} />
+                    <Route path="/verify-email" element={<VerifyEmail />} />
+                    <Route element={<Layout />}>
+                      <Route path="/feed" element={<PostFeed />} />
+                      <Route path="/thread/:id" element={<Thread />} />
+                      <Route path="/profile" element={<UserProfile />} />
+                      <Route path="/dashboard" element={<Dashboard />} />
+                      <Route path="/pods" element={<PodRedirect />} />
+                      <Route path="/pods/:podType" element={<Pod />} />
+                      <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />
+                    </Route>
+                    <Route path="/chat/:podId" element={<Layout><ChatRoom /></Layout>} />
+                  </Routes>
+                </div>
+              </BrowserRouter>
+            </LayoutProvider>
           </SocketProvider>
         </AppProvider>
       </AuthProvider>
