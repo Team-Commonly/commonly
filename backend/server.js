@@ -7,7 +7,9 @@ const postRoutes = require('./routes/posts');
 const userRoutes = require('./routes/users');
 const podRoutes = require('./routes/pods');
 const messageRoutes = require('./routes/messages');
+const uploadsRoutes = require('./routes/uploads');
 const cors = require('cors');
+const path = require('path');
 
 // Conditionally load PostgreSQL routes
 let pgPodRoutes, pgMessageRoutes, pgStatusRoutes;
@@ -50,6 +52,7 @@ app.use('/api/posts', postRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/pods', podRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/uploads', uploadsRoutes);
 
 // Connect to MongoDB (for posts and user data)
 connectDB();
@@ -155,14 +158,16 @@ io.on('connection', (socket) => {
   });
   
   // Send a message to a pod
-  socket.on('sendMessage', async ({ podId, content, userId }) => {
+  socket.on('sendMessage', async ({ podId, content, userId, messageType = 'text' }) => {
     try {
-      // Validate required parameters
+      // Validate required parameters - content must be present
       if (!podId || !content || !userId) {
         console.error('Socket error: Missing required parameters for sendMessage', { podId, userId });
         socket.emit('error', { message: 'Missing required parameters' });
         return;
       }
+      
+      console.log('Socket sendMessage received:', { podId, content, userId, messageType });
       
       // Use PostgreSQL for chat if available
       const isPG = process.env.PG_HOST;
@@ -181,6 +186,7 @@ io.on('connection', (socket) => {
           return;
         }
         
+        // Check membership
         const isMember = await PGPod.isMember(podId, userId);
         if (!isMember) {
           console.error('Socket error: Not authorized to post in this pod', { podId, userId });
@@ -188,9 +194,19 @@ io.on('connection', (socket) => {
           return;
         }
         
-        // Create message in PostgreSQL
-        const newMessage = await PGMessage.create(podId, userId, content);
-        message = await PGMessage.findById(newMessage.id);
+        try {
+          // Create message in PostgreSQL
+          console.log('Creating message in PostgreSQL:', { podId, userId, content, messageType });
+          const newMessage = await PGMessage.create(podId, userId, content, messageType);
+          console.log('Message created successfully:', newMessage);
+          
+          message = await PGMessage.findById(newMessage.id);
+          console.log('Message retrieved for broadcast:', message);
+        } catch (dbError) {
+          console.error('Database error creating message:', dbError);
+          socket.emit('error', { message: 'Failed to save message' });
+          return;
+        }
       } else {
         const Message = require('./models/Message');
         const Pod = require('./models/Pod');
@@ -208,26 +224,75 @@ io.on('connection', (socket) => {
           return;
         }
         
-        // Create message in MongoDB
-        const user = await User.findById(userId);
-        const newMessage = new Message({
-          podId,
-          userId,
-          content
-        });
-        
-        await newMessage.save();
-        
-        // Populate user info
-        message = {
-          ...newMessage.toObject(),
-          username: user.username,
-          profilePicture: user.profilePicture
-        };
+        try {
+          // Create message in MongoDB
+          const user = await User.findById(userId);
+          const newMessage = new Message({
+            podId,
+            userId,
+            content,
+            messageType
+          });
+          
+          await newMessage.save();
+          console.log('Message saved to MongoDB:', newMessage._id);
+          
+          // Populate user info
+          message = {
+            ...newMessage.toObject(),
+            username: user.username,
+            profilePicture: user.profilePicture
+          };
+        } catch (dbError) {
+          console.error('Database error creating message in MongoDB:', dbError);
+          socket.emit('error', { message: 'Failed to save message' });
+          return;
+        }
       }
       
       // Broadcast message to all users in the pod room
-      io.to(`pod_${podId}`).emit('newMessage', message);
+      // Format the message to ensure all fields are present regardless of the source
+      const formattedMessage = {
+        // Ensure ID fields
+        _id: message._id || message.id || Date.now().toString(),
+        id: message._id || message.id || Date.now().toString(),
+        
+        // Ensure content fields
+        content: message.content || message.text || '',
+        text: message.content || message.text || '',
+        
+        // Ensure timestamp fields
+        createdAt: message.createdAt || message.created_at || new Date(),
+        created_at: message.createdAt || message.created_at || new Date(),
+        
+        // Ensure all other fields
+        ...message
+      };
+      
+      // If we have user data, standardize the userId field
+      if (typeof message.userId !== 'object' && message.username) {
+        // User data is separate, not an object
+        formattedMessage.user_id = message.userId || message.user_id;
+        formattedMessage.username = message.username;
+        formattedMessage.profile_picture = message.profile_picture;
+        
+        // Create an object format too for compatibility
+        formattedMessage.userId = {
+          _id: message.userId || message.user_id,
+          username: message.username,
+          profilePicture: message.profile_picture
+        };
+      }
+      
+      // Log the formatted message for debugging
+      console.log('Broadcasting formatted message:', {
+        id: formattedMessage._id,
+        content: formattedMessage.content,
+        userId: formattedMessage.userId,
+        username: formattedMessage.username
+      });
+      
+      io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
       
     } catch (err) {
       console.error('Socket error:', err.message, { podId, userId });
@@ -243,6 +308,9 @@ io.on('connection', (socket) => {
   // Send a welcome message to confirm connection
   socket.emit('welcome', { message: 'Connected to chat server successfully' });
 });
+
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Start the server
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

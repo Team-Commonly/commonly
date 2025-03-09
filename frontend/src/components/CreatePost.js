@@ -41,8 +41,12 @@ const CreatePost = () => {
             setError('Failed to create post. Please try again later.');
         }
     };
-    const onEmojiClick = (emojiData) => {
-        setContent(prevContent => prevContent + emojiData.emoji);
+    const onEmojiClick = (emojiObj) => {
+        // Support both older and newer emoji-picker-react versions
+        const emoji = emojiObj.emoji || (emojiObj.unified && String.fromCodePoint(parseInt(emojiObj.unified, 16)));
+        if (emoji) {
+            setContent(prevContent => prevContent + emoji);
+        }
     };
     return (
         <div className="create-post-container">
