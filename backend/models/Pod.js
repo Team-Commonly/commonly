@@ -12,9 +12,8 @@ const PodSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        required: true,
-        enum: ['chat', 'study', 'games'],
-        default: 'chat'
+        enum: ['public', 'private'],
+        default: 'public'
     },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
@@ -25,6 +24,18 @@ const PodSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     }],
+    messages: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Message'
+    }],
+    announcements: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Announcement'
+    }],
+    externalLinks: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'ExternalLink'
+    }],
     createdAt: {
         type: Date,
         default: Date.now
@@ -33,7 +44,7 @@ const PodSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
-});
+}, { timestamps: true });
 
 // Add the creator to members automatically
 PodSchema.pre('save', function(next) {
