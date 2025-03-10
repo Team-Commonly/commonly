@@ -219,7 +219,7 @@ const Thread = () => {
                                         component="span"
                                         color="primary"
                                         sx={{ fontWeight: 'bold' }}
-                                        onClick={() => navigate(`/feed?tags=${part.substring(1)}`)}
+                                        onClick={() => navigate(`/feed?q=${part.substring(1)}`)}
                                         className="hashtag"
                                     >
                                         {part}
@@ -357,7 +357,7 @@ const Thread = () => {
                                         component="span"
                                         color="primary"
                                         sx={{ fontWeight: 'bold' }}
-                                        onClick={() => navigate(`/feed?tags=${part.substring(1)}`)}
+                                        onClick={() => navigate(`/feed?q=${part.substring(1)}`)}
                                         className="hashtag"
                                     >
                                         {part}
