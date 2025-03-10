@@ -537,7 +537,8 @@ const PostFeed = () => {
                                                     onClick={(e) => {
                                                         e.stopPropagation(); // Prevent navigation
                                                         const tag = part.substring(1);
-                                                        navigate(`/feed?tags=${tag}`);
+                                                        refreshData(); // Refresh data before navigation
+                                                        window.location.href = `/feed?q=${tag}`;
                                                     }}
                                                     className="hashtag"
                                                 >
