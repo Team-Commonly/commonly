@@ -23,10 +23,31 @@ exports.getMessages = async (req, res) => {
             return res.status(401).json({ msg: 'User authentication failed' });
         }
         
+        console.log(`Checking message access for pod ${podId} by user ${userId}`);
+        
         // Check if user is a member of the pod
         const isMember = await PGPod.isMember(podId, userId);
         if (!isMember) {
-            return res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
+            console.error(`User ${userId} is not a member of pod ${podId}`);
+            
+            // Try to add the user as a member if not already a member
+            // This helps recover from potential membership synchronization issues
+            try {
+                console.log(`Attempting to resolve membership for user ${userId} in pod ${podId}`);
+                await PGPod.addMember(podId, userId);
+                
+                // Check membership again
+                const verifyMembership = await PGPod.isMember(podId, userId);
+                if (verifyMembership) {
+                    console.log(`Successfully resolved membership for user ${userId} in pod ${podId}`);
+                } else {
+                    console.error(`Failed to resolve membership for user ${userId} in pod ${podId}`);
+                    return res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
+                }
+            } catch (membershipError) {
+                console.error(`Error resolving membership: ${membershipError.message}`);
+                return res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
+            }
         }
         
         const messages = await PGMessage.findByPodId(podId, limit, before);

@@ -13,15 +13,29 @@
   transition: width 0.3s ease, margin-left 0.3s ease;
 }
 
+/* Main content layout for chat */
+.main-chat-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Chat header that stays at top */
 .chat-room-header {
   background-color: #ffffff !important;
   border-bottom: 1px solid #e0e0e0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
-  z-index: 1100;
+  z-index: 1200;
   position: sticky;
   top: 0;
   width: 100%;
   padding-right: 8px;
+  flex-shrink: 0;
+  border-radius: 0 !important;
+  margin-bottom: 0 !important;
 }
 
 .chat-room-header .MuiToolbar-root {
@@ -30,6 +44,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  border-radius: 0 !important;
 }
 
 .chat-room-header .MuiTypography-root {
@@ -47,6 +62,10 @@
   display: flex !important;
 }
 
+.chat-room-header * {
+  border-radius: 0 !important;
+}
+
 .chat-room-header .members-button {
   position: relative;
   z-index: 1100;
@@ -61,7 +80,7 @@
   top: 12px !important;
   background-color: #1d9bf0 !important;
   color: white !important;
-  z-index: 2000 !important;
+  z-index: 1100 !important; /* Lower z-index */
   box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.3) !important;
   transition: transform 0.2s ease;
 }
@@ -96,178 +115,315 @@
   box-shadow: none !important;
 }
 
-/* Members sidebar positioned as a right sidebar */
+/* Redesigned sidebar as an overlay panel with white background */
 .members-sidebar {
   position: fixed !important;
   top: 0 !important;
   right: 0 !important;
   width: 280px !important;
   height: 100vh !important;
-  background-color: #202636 !important;
-  color: #fff !important;
+  background-color: #ffffff !important; /* Changed to white */
+  color: #333333 !important; /* Changed text color to dark */
   overflow-y: auto !important;
-  z-index: 1500 !important;
+  z-index: 1000 !important; /* Lower z-index to fix search bar overlap */
   padding: 0 !important;
-  box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5) !important;
-  display: block !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: -2px 0 15px rgba(0, 0, 0, 0.1) !important; /* Lighter shadow */
+  display: flex !important;
+  flex-direction: column !important;
+  border-left: 1px solid #e0e0e0 !important; /* Lighter border */
   overscroll-behavior: contain;
-  transition: transform 0.3s ease-in-out !important;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
   transform: translateX(0) !important;
-  pointer-events: auto !important;
+  backface-visibility: hidden;
+  will-change: transform;
 }
 
 .members-sidebar.hidden {
   transform: translateX(100%) !important;
 }
 
+/* Remove the overlay components that block interaction */
+.sidebar-backdrop.visible {
+  display: none !important;
+}
+
+/* Update section styling for white theme */
 .sidebar-section {
   padding: 0 !important;
   margin-bottom: 16px !important;
-  background-color: #22293b !important;
+  background-color: #ffffff !important; /* Changed to white */
+  border-bottom: 1px solid #f0f0f0 !important; /* Light separator */
 }
 
+/* First section in sidebar needs extra spacing */
+.sidebar-section:first-of-type {
+  margin-top: 64px !important; /* Add space for the header */
+  padding-top: 8px !important;
+}
+
+/* Adjust search bar styling for white background */
+.sidebar-search-container {
+  padding: 0 16px;
+  margin-top: 12px;
+  margin-bottom: 16px;
+  position: relative;
+  z-index: 10;
+  width: calc(100% - 32px); /* Ensure proper width calculation */
+}
+
+/* Fix search bar wrapper to prevent overlap */
+.sidebar-search-container .MuiTextField-root {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* Update section title for white theme */
 .sidebar-section-title {
   font-size: 16px !important;
   font-weight: 700 !important;
-  color: #fff !important;
-  margin-bottom: 12px !important;
+  color: #333333 !important; /* Changed to dark */
+  margin-bottom: 8px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  padding: 16px 16px 8px !important;
-  border-bottom: 1px solid rgba(255,255,255,0.1) !important;
+  padding: 16px 16px 12px !important;
+  border-bottom: 1px solid #f0f0f0 !important; /* Light border */
+  position: relative;
+  z-index: 20;
+  order: 1;
 }
 
 .sidebar-section-title .MuiSvgIcon-root {
   font-size: 16px;
+  color: #555555; /* Darker icons */
 }
 
-.sidebar-section-content {
-  padding: 0 16px 16px !important;
-}
-
+/* Update member styling */
 .sidebar-member {
   display: flex;
   align-items: center;
   padding: 8px 0;
   border-radius: 4px;
+  position: relative;
+  margin: 4px 16px;
 }
 
 .sidebar-member:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-}
-
-.sidebar-member-avatar {
-  margin-right: 10px;
+  background-color: #f5f5f5; /* Light hover background */
 }
 
 .sidebar-member-info {
   flex: 1;
+  margin-left: 12px;
 }
 
 .sidebar-member-name {
   font-size: 14px;
   font-weight: 500;
+  color: #333333; /* Dark text for readability */
 }
 
 .sidebar-member-role {
   font-size: 12px;
-  color: #adb5bd;
+  color: #666666; /* Medium gray for secondary text */
 }
 
+/* Add online status indicator */
 .sidebar-member-status {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: #4caf50;
-  margin-left: 8px;
+  background-color: #4caf50; /* Bright green for online */
+  margin-left: 4px;
+  border: 1px solid #ffffff;
 }
 
-.external-link {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  margin: 4px 0;
-  border-radius: 4px;
-  color: #fff;
-  text-decoration: none;
-  font-size: 14px;
-  transition: background-color 0.2s;
+.sidebar-member-status.offline {
+  background-color: #bdbdbd; /* Gray for offline */
 }
 
-.external-link:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+/* Update members count styling */
+.members-count {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-weight: 600 !important;
+  padding: 12px 0 !important;
+  color: #333333 !important; /* Dark text color */
+  margin: 6px 0 !important;
 }
 
-.external-link .MuiSvgIcon-root {
-  margin-right: 10px;
-  font-size: 18px;
+.members-count .MuiSvgIcon-root {
+  font-size: 20px !important;
+  margin-right: 8px !important;
+  color: #1d9bf0 !important; /* Blue icon */
 }
 
+/* Update announcements styling */
 .announcement-item {
   padding: 8px;
   margin-bottom: 8px;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: #f5f8fa; /* Light blue background */
   border-radius: 4px;
+  color: #333333; /* Dark text */
 }
 
 .announcement-title {
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 4px;
+  color: #1d9bf0; /* Blue title */
 }
 
 .announcement-content {
   font-size: 13px;
-  color: #e0e0e0;
+  color: #333333; /* Dark text */
 }
 
 .announcement-time {
   font-size: 11px;
-  color: #adb5bd;
+  color: #666666; /* Medium gray */
   margin-top: 4px;
 }
 
-.task-item {
+/* Update external links styling */
+.external-link {
   display: flex;
   align-items: center;
-  padding: 8px;
-  margin-bottom: 4px;
+  padding: 8px 12px;
+  margin: 4px 0;
   border-radius: 4px;
-  background-color: rgba(255, 255, 255, 0.05);
+  color: #333333; /* Dark text */
+  text-decoration: none;
+  font-size: 14px;
+  transition: background-color 0.2s;
 }
 
-.task-checkbox {
-  margin-right: 8px;
+.external-link:hover {
+  background-color: #f5f8fa; /* Light blue background */
 }
 
-.task-text {
-  font-size: 13px;
-  flex: 1;
+/* Ensure icons in external links have proper background and styling */
+.external-link-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 12px;
+  border-radius: 4px;
+  background-color: #f5f5f5;
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
-.task-due {
-  font-size: 11px;
-  color: #adb5bd;
+.external-link-icon img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
 }
 
-.members-count {
-  font-size: 16px !important;
-  font-weight: 600 !important;
-  color: #fff !important;
+/* Update search field in sidebar */
+.sidebar-section .MuiInputBase-root {
+  border-radius: 4px !important;
+  overflow: hidden !important;
+  background-color: #f5f8fa !important; /* Light blue background */
+  color: #333333 !important; /* Dark text */
+}
+
+.sidebar-section .MuiInputBase-root input {
+  border-radius: 4px !important;
+  color: #333333 !important; /* Dark text */
+}
+
+/* Update text field borders */
+.sidebar-section-content .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline {
+  border-color: #e0e0e0 !important; /* Light border */
+}
+
+/* Update sidebar icon buttons */
+.sidebar-section-title .MuiIconButton-root {
+  color: #666666 !important; /* Medium gray */
+}
+
+.sidebar-section-title .MuiIconButton-root:hover {
+  background-color: #f5f8fa !important; /* Light blue background */
+}
+
+/* Update toggle button to be consistently square */
+.sidebar-toggle-button {
+  position: fixed !important;
+  z-index: 1101 !important;
+  right: 0 !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  background-color: #1d9bf0 !important; /* Twitter blue */
+  color: white !important;
+  padding: 8px !important;
+  min-width: 40px !important;
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 4px 0 0 4px !important; /* Always square on the left side */
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
   display: flex !important;
   align-items: center !important;
-  padding: 16px 12px 8px !important;
+  justify-content: center !important;
+  transition: right 0.3s ease-in-out, transform 0.2s ease !important;
 }
 
-.members-count .MuiSvgIcon-root {
+/* Position the toggle button on the left when sidebar is visible */
+.sidebar-toggle-button.visible {
+  right: 280px !important;
+}
+
+.sidebar-toggle-button .MuiSvgIcon-root {
   font-size: 20px !important;
-  margin-right: 8px !important;
+}
+
+.sidebar-toggle-button:hover {
+  background-color: #0c8bd9 !important;
+  transform: translateY(-50%) scale(1.05) !important;
+}
+
+.editable-form {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border-radius: 4px !important;
+  padding: 10px !important;
+  margin-bottom: 10px !important;
+}
+
+.editable-form .MuiTextField-root {
+  margin-bottom: 8px !important;
+}
+
+.editable-form .MuiOutlinedInput-root {
   color: #fff !important;
 }
 
-/* Close button in members sidebar */
+.editable-form .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.qr-code-preview {
+  max-width: 100% !important;
+  height: auto !important;
+  max-height: 120px !important;
+  border-radius: 4px !important;
+  margin: 8px auto !important;
+  display: block !important;
+}
+
+.qr-code-button {
+  margin-left: auto !important;
+  color: #adb5bd !important;
+  padding: 2px !important;
+}
+
+.sidebar-section-content {
+  padding: 0 16px 16px !important;
+  order: 3;
+}
+
 .members-close-button {
   position: absolute;
   top: 10px;
@@ -281,353 +437,8 @@
   color: #fff;
 }
 
-/* Collapsed dashboard state */
-.chat-room-container.dashboard-collapsed {
-  width: 100%;
-  margin-left: 0;
-}
-
-/* Dashboard collapsed body class affects all layouts */
-body.dashboard-collapsed .message-input-container {
-  left: 50%;
-  width: calc(100% - 32px);
-}
-
-body.dashboard-collapsed .emoji-picker-wrapper {
-  left: calc(50% + 30px) !important;
-  margin-left: -285px !important;
-}
-
-/* Dashboard toggle button styling */
-.toggle-dashboard-button {
-  margin-left: 8px;
-}
-
-/* Message input container */
-.message-input-container {
-  display: flex;
-  align-items: center;
-  padding: 10px 15px;
-  border-radius: 24px;
-  background-color: #fff;
-  border: 1px solid #e0e0e0;
-  position: fixed;
-  bottom: 16px;
-  left: calc(50% + 120px);
-  transform: translateX(-50%);
-  width: calc(100% - 300px);
-  max-width: 700px;
-  margin: 0 auto;
-  z-index: 100;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
-  justify-content: space-between;
-  transition: width 0.3s ease, left 0.3s ease;
-}
-
-.message-input {
-  margin: 0 10px;
-  flex: 1;
-  min-width: 0;
-}
-
-.message-input .MuiInputBase-root {
-  font-size: 15px;
-  padding: 6px 0;
-  width: 100%;
-}
-
-.emoji-button, .attach-button {
-  flex-shrink: 0;
-  color: #1da1f2;
-  margin: 0 4px;
-  transition: all 0.2s ease;
-  min-width: 40px;
-  height: 40px;
-  padding: 8px;
-  border-radius: 50%;
-}
-
-.emoji-button:hover, .attach-button:hover {
-  color: #0c8bd9;
-  background-color: rgba(29, 161, 242, 0.1);
-}
-
-.send-button {
-  flex-shrink: 0;
-  background: linear-gradient(90deg, #1da1f2, #9c27b0) !important;
-  color: white !important;
-  border-radius: 50% !important;
-  padding: 8px !important;
-  min-width: 36px !important;
-  width: 36px !important;
-  height: 36px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  margin-left: 5px !important;
-}
-
-.send-button:hover {
-  background: linear-gradient(90deg, #0c8bd9, #7b1fa2) !important;
-  box-shadow: 0 2px 8px rgba(29, 161, 242, 0.4) !important;
-}
-
-.send-button:disabled {
-  background-color: #e0e0e0 !important;
-  color: #9e9e9e !important;
-}
-
-/* Emoji picker wrapper with improved positioning */
-.emoji-picker-wrapper {
-  position: fixed;
-  bottom: 75px;
-  left: calc(50% + 120px);
-  transform: translateX(-50%);
-  margin-left: -285px;
-  z-index: 9999;
-  transition: left 0.3s ease;
-  animation: fadeInFast 0.15s ease-out;
-  animation-fill-mode: forwards;
-}
-
-.emoji-picker-container {
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.2) !important;
-  border-radius: 12px;
-  overflow: hidden !important;
-  width: 350px !important;
-  height: 450px !important;
-  background-color: white;
-  display: flex;
-  flex-direction: column;
-  z-index: 1000;
-  position: relative;
-  animation: none !important;
-  transition: none !important;
-  transform-origin: top left !important;
-  transform: scale(1) !important;
-}
-
-.emoji-picker-container::after {
-  content: '';
-  position: absolute;
-  bottom: -10px;
-  left: 25px;
-  width: 0;
-  height: 0;
-  border-left: 10px solid transparent;
-  border-right: 10px solid transparent;
-  border-top: 10px solid white;
-  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1));
-}
-
-.emoji-picker-container:after,
-.emoji-picker-container:before {
-  display: none;
-}
-
-.emoji-picker-container .EmojiPickerReact,
-.emoji-picker-container .epr-main,
-.emoji-picker-container .epr-body {
-  --epr-bg-color: #ffffff;
-  --epr-category-label-bg-color: #f7f9f9;
-  --epr-hover-bg-color: #e8f5fe;
-  border: none !important;
-  box-shadow: none !important;
-  width: 100% !important;
-  height: 100% !important;
-  transform: none !important;
-  transform-origin: center center !important;
-  scale: 1 !important;
-  font-size: 16px !important;
-}
-
-.emoji-picker-container .epr-emoji-category-content {
-  transform: none !important;
-  scale: 1 !important;
-}
-
-.emoji-picker-container .epr-emoji-category-content .epr-emoji-img,
-.emoji-picker-container .epr-emoji-category-content span {
-  font-size: 24px !important;
-  transform: none !important;
-  scale: 1 !important;
-  width: auto !important;
-  height: auto !important;
-  min-width: 32px !important;
-  min-height: 32px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-.offline-notification {
-  position: fixed;
-  bottom: 70px;
-  left: 0;
-  right: 0;
-  margin: 0 auto;
-  max-width: 90%;
-  width: 500px;
-  padding: 12px 16px;
-  background-color: rgba(0, 0, 0, 0.8) !important;
-  color: white !important;
-  border-radius: 8px;
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  animation: slideUp 0.3s ease-out;
-}
-
-@keyframes slideUp {
-  from {
-    transform: translateY(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-/* Style for file preview in the message input */
-.file-preview {
-  position: relative;
-  margin: 0 8px;
-  height: 42px;
-  width: 42px;
-  border-radius: 4px;
-  overflow: hidden;
-  border: 1px solid #e0e0e0;
-}
-
-.preview-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.remove-preview {
-  position: absolute !important;
-  top: -8px;
-  right: -8px;
-  width: 20px !important;
-  height: 20px !important;
-  background-color: rgba(0, 0, 0, 0.7) !important;
-  color: white !important;
-  font-size: 12px !important;
-  min-height: 0 !important;
-  padding: 0 !important;
-}
-
-@keyframes fadeInFast {
-  from {
-    opacity: 0;
-    transform: translateY(10px) translateX(-50%);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) translateX(-50%);
-  }
-}
-
-/* Media queries for responsive design */
-@media (max-width: 1200px) {
-  .chat-room-container {
-    width: calc(100% - 200px);
-    margin-left: 200px;
-  }
-  
-  .chat-room-container.dashboard-collapsed {
-    width: 100%;
-    margin-left: 0;
-  }
-  
-  .message-input-container {
-    width: calc(100% - 280px);
-    left: calc(50% + 100px);
-  }
-  
-  .emoji-picker-wrapper {
-    margin-left: -265px;
-  }
-  
-  body.dashboard-collapsed .message-input-container,
-  body.dashboard-collapsed .emoji-picker-wrapper {
-    left: 50%;
-  }
-}
-
-@media (max-width: 768px) {
-  .chat-room-container {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .members-sidebar {
-    width: 100% !important;
-    z-index: 1200 !important; /* Even higher on mobile */
-  }
-  
-  .message-input-container {
-    left: 50%;
-    width: calc(100% - 24px);
-    bottom: 8px;
-    padding: 8px 12px;
-  }
-  
-  .emoji-picker-wrapper {
-    left: 50%;
-    bottom: 65px;
-    margin-left: -200px;
-  }
-  
-  .emoji-picker-container {
-    width: 320px !important;
-    height: 400px !important;
-  }
-  
-  .emoji-picker-container .epr-emoji-category-content .epr-emoji-img,
-  .emoji-picker-container .epr-emoji-category-content span {
-    font-size: 22px !important;
-    min-width: 28px !important;
-    min-height: 28px !important;
-  }
-  
-  .messages-container {
-    padding: 12px;
-    padding-bottom: 70px !important;
-  }
-  
-  .emoji-picker-container::after {
-    left: 30px;
-  }
-  
-  .sidebar-toggle-button.open {
-    right: auto !important;
-    left: 10px !important;
-  }
-}
-
-@media (max-width: 480px) {
-  .message-avatar {
-    min-width: 32px;
-    margin: 0 8px;
-  }
-  
-  .message-avatar .MuiAvatar-root {
-    width: 32px;
-    height: 32px;
-  }
-  
-  .message-bubble {
-    padding: 8px 12px;
-  }
-  
-  .message-content-wrapper {
-    max-width: 90%;
-  }
+body {
+  overflow-x: hidden;
 }
 
 .empty-chat-message {
@@ -736,7 +547,6 @@ body.dashboard-collapsed .emoji-picker-wrapper {
   color: #0f1419;
 }
 
-/* Remove the speech bubble triangles */
 .message-bubble.sent:after,
 .message-bubble.received:after {
   display: none;
@@ -793,7 +603,6 @@ body.dashboard-collapsed .emoji-picker-wrapper {
   cursor: pointer;
 }
 
-/* Dark overlay when members sidebar is open */
 .members-overlay {
   position: fixed !important;
   top: 0 !important;
@@ -809,90 +618,23 @@ body.dashboard-collapsed .emoji-picker-wrapper {
   display: block !important;
 }
 
-/* Sidebar toggle button styling */
-.sidebar-toggle-button {
-  position: fixed !important;
-  z-index: 1051 !important;
-  right: 0 !important;
-  top: 50% !important;
-  transform: translateY(-50%) !important;
-  background-color: #1d9bf0 !important;
-  color: white !important;
-  padding: 12px !important;
-  min-width: 48px !important;
-  width: 48px !important;
-  height: 48px !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5) !important;
-  display: block !important;
-}
-
-.sidebar-toggle-button.open {
-  right: 280px !important;
-}
-
-.sidebar-toggle-button .MuiSvgIcon-root {
-  font-size: 24px !important;
-}
-
-/* Style for editable sections */
-.editable-form {
-  background-color: rgba(255, 255, 255, 0.05) !important;
-  border-radius: 4px !important;
-  padding: 10px !important;
-  margin-bottom: 10px !important;
-}
-
-.editable-form .MuiTextField-root {
-  margin-bottom: 8px !important;
-}
-
-.editable-form .MuiOutlinedInput-root {
-  color: #fff !important;
-}
-
-.editable-form .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline {
-  border-color: rgba(255, 255, 255, 0.2) !important;
-}
-
-/* QR code styles */
-.qr-code-preview {
-  max-width: 100% !important;
-  height: auto !important;
-  max-height: 120px !important;
-  border-radius: 4px !important;
-  margin: 8px auto !important;
-  display: block !important;
-}
-
-.qr-code-button {
-  margin-left: auto !important;
-  color: #adb5bd !important;
-  padding: 2px !important;
-}
-
-/* Restore hover effects */
-.sidebar-toggle-button:hover {
-  background-color: #0c8bd9 !important;
-  transform: translateY(-50%) scale(1.05) !important;
-}
-
-/* Add specific styling for search fields in the sidebar */
-.sidebar-section .MuiInputBase-root {
-  border-radius: 4px !important;
-  overflow: hidden !important;
-}
-
-.sidebar-section .MuiInputBase-root input {
-  border-radius: 4px !important;
-}
-
-/* Make sure interactive elements in sidebar are properly clickable */
-.sidebar-section-title .MuiIconButton-root,
-.external-link,
-.sidebar-member,
-.sidebar-section-content button,
-.sidebar-section-content .MuiTextField-root {
-  position: relative !important;
-  z-index: 1 !important;
-  pointer-events: auto !important;
+/* Adjust message input position - no need to adjust for sidebar */
+.message-input-container {
+  display: flex;
+  align-items: center;
+  padding: 10px 15px;
+  border-radius: 24px;
+  background-color: #fff;
+  border: 1px solid #e0e0e0;
+  position: fixed;
+  bottom: 16px;
+  left: calc(50% + 120px);
+  transform: translateX(-50%);
+  width: calc(100% - 300px);
+  max-width: 700px;
+  margin: 0 auto;
+  z-index: 1000;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+  justify-content: space-between;
+  transition: width 0.3s ease, left 0.3s ease;
 } 
