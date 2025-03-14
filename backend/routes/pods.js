@@ -49,28 +49,17 @@ const upload = multer({
     }
 });
 
-// Get all pods or filter by type
+// ===== ROUTE ORDER MATTERS! =====
+// More specific routes first, generic routes last
+
+// Get all pods
 router.get('/', auth, getAllPods);
-
-// Get pods by type
-router.get('/:type', auth, getPodsByType);
-
-// Get a specific pod
-router.get('/:type/:id', auth, getPodById);
 
 // Create a pod
 router.post('/', auth, createPod);
 
-// Join a pod
-router.post('/:id/join', auth, joinPod);
-
-// Leave a pod
-router.post('/:id/leave', auth, leavePod);
-
-// Delete a pod (only creator can delete)
-router.delete('/:id', auth, deletePod);
-
-// Create announcement for a pod
+// Resource-specific operations
+// Announcements
 router.post('/announcement', auth, async (req, res) => {
     try {
         const { podId, title, content } = req.body;
@@ -112,7 +101,43 @@ router.post('/announcement', auth, async (req, res) => {
     }
 });
 
-// Create external link for a pod
+// Delete an announcement
+router.delete('/announcement/:id', auth, async (req, res) => {
+    try {
+        const announcementId = req.params.id;
+        
+        // Find the announcement
+        const announcement = await Announcement.findById(announcementId);
+        if (!announcement) {
+            return res.status(404).json({ message: 'Announcement not found' });
+        }
+        
+        // Find associated pod
+        const pod = await Pod.findById(announcement.podId);
+        if (!pod) {
+            return res.status(404).json({ message: 'Pod not found' });
+        }
+        
+        // Check if user is pod owner
+        if (pod.createdBy.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Only pod owner can delete announcements' });
+        }
+        
+        // Remove announcement from pod
+        pod.announcements = pod.announcements.filter(id => id.toString() !== announcementId);
+        await pod.save();
+        
+        // Delete announcement
+        await Announcement.findByIdAndDelete(announcementId);
+        
+        return res.status(200).json({ message: 'Announcement deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting announcement:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// External Links
 router.post('/external-link', auth, upload.single('qrCode'), async (req, res) => {
     try {
         const { podId, name, type, url } = req.body;
@@ -163,36 +188,43 @@ router.post('/external-link', auth, upload.single('qrCode'), async (req, res) =>
     }
 });
 
-// Get announcements for a pod
-router.get('/:podId/announcements', auth, async (req, res) => {
+// Delete an external link
+router.delete('/external-link/:id', auth, async (req, res) => {
     try {
-        const { podId } = req.params;
+        const linkId = req.params.id;
         
-        // Find announcements
-        const announcements = await Announcement.find({ podId })
-            .sort({ createdAt: -1 })
-            .populate('createdBy', 'username');
+        // Find the external link
+        const externalLink = await ExternalLink.findById(linkId);
+        if (!externalLink) {
+            return res.status(404).json({ message: 'External link not found' });
+        }
         
-        return res.status(200).json(announcements);
+        // Find associated pod
+        const pod = await Pod.findById(externalLink.podId);
+        if (!pod) {
+            return res.status(404).json({ message: 'Pod not found' });
+        }
+        
+        // Check if user is pod owner
+        if (pod.createdBy.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Only pod owner can delete external links' });
+        }
+        
+        // Remove external link from pod
+        pod.externalLinks = pod.externalLinks.filter(id => id.toString() !== linkId);
+        await pod.save();
+        
+        // Delete QR code file if it exists
+        if (externalLink.qrCodePath && fs.existsSync(externalLink.qrCodePath)) {
+            fs.unlinkSync(externalLink.qrCodePath);
+        }
+        
+        // Delete external link
+        await ExternalLink.findByIdAndDelete(linkId);
+        
+        return res.status(200).json({ message: 'External link deleted successfully' });
     } catch (error) {
-        console.error('Error fetching announcements:', error);
-        return res.status(500).json({ message: 'Server error' });
-    }
-});
-
-// Get external links for a pod
-router.get('/:podId/external-links', auth, async (req, res) => {
-    try {
-        const { podId } = req.params;
-        
-        // Find external links
-        const externalLinks = await ExternalLink.find({ podId })
-            .sort({ createdAt: -1 })
-            .populate('createdBy', 'username');
-        
-        return res.status(200).json(externalLinks);
-    } catch (error) {
-        console.error('Error fetching external links:', error);
+        console.error('Error deleting external link:', error);
         return res.status(500).json({ message: 'Server error' });
     }
 });
@@ -221,5 +253,72 @@ router.get('/external-link/:linkId/qrcode', auth, async (req, res) => {
         return res.status(500).json({ message: 'Server error' });
     }
 });
+
+// Pod-specific operations
+// Join a pod
+router.post('/:id/join', auth, joinPod);
+
+// Leave a pod
+router.post('/:id/leave', auth, leavePod);
+
+// Get announcements for a pod
+router.get('/:podId/announcements', auth, async (req, res) => {
+    try {
+        const podId = req.params.podId;
+        
+        // Validate pod exists
+        const pod = await Pod.findById(podId);
+        if (!pod) {
+            return res.status(404).json({ message: 'Pod not found' });
+        }
+        
+        // Check if user is a member of the pod
+        if (!pod.members.some(member => member.toString() === req.user.id)) {
+            return res.status(403).json({ message: 'Not authorized to view pod announcements' });
+        }
+        
+        // Retrieve announcements for the pod
+        const announcements = await Announcement.find({ podId })
+            .sort({ createdAt: -1 }) // newest first
+            .populate('createdBy', 'username profilePicture');
+        
+        return res.status(200).json(announcements);
+    } catch (error) {
+        console.error('Error retrieving pod announcements:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get external links for a pod
+router.get('/:podId/external-links', auth, async (req, res) => {
+    try {
+        const { podId } = req.params;
+        
+        // Validate pod exists
+        const pod = await Pod.findById(podId);
+        if (!pod) {
+            return res.status(404).json({ message: 'Pod not found' });
+        }
+        
+        // Find external links
+        const externalLinks = await ExternalLink.find({ podId })
+            .sort({ createdAt: -1 })
+            .populate('createdBy', 'username');
+        
+        return res.status(200).json(externalLinks);
+    } catch (error) {
+        console.error('Error fetching external links:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get pods by type
+router.get('/:type', auth, getPodsByType);
+
+// Get a specific pod
+router.get('/:type/:id', auth, getPodById);
+
+// Delete a pod (only creator can delete)
+router.delete('/:id', auth, deletePod);
 
 module.exports = router; 

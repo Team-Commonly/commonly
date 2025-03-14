@@ -10,3 +10,5 @@ build/
 dist/
 
 ca.pem
+
+.cursor/

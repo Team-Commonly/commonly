@@ -106,7 +106,7 @@
   background-color: #202636 !important;
   color: #fff !important;
   overflow-y: auto !important;
-  z-index: 1050 !important;
+  z-index: 1500 !important;
   padding: 0 !important;
   box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5) !important;
   display: block !important;
@@ -114,6 +114,7 @@
   overscroll-behavior: contain;
   transition: transform 0.3s ease-in-out !important;
   transform: translateX(0) !important;
+  pointer-events: auto !important;
 }
 
 .members-sidebar.hidden {
@@ -873,4 +874,25 @@ body.dashboard-collapsed .emoji-picker-wrapper {
 .sidebar-toggle-button:hover {
   background-color: #0c8bd9 !important;
   transform: translateY(-50%) scale(1.05) !important;
+}
+
+/* Add specific styling for search fields in the sidebar */
+.sidebar-section .MuiInputBase-root {
+  border-radius: 4px !important;
+  overflow: hidden !important;
+}
+
+.sidebar-section .MuiInputBase-root input {
+  border-radius: 4px !important;
+}
+
+/* Make sure interactive elements in sidebar are properly clickable */
+.sidebar-section-title .MuiIconButton-root,
+.external-link,
+.sidebar-member,
+.sidebar-section-content button,
+.sidebar-section-content .MuiTextField-root {
+  position: relative !important;
+  z-index: 1 !important;
+  pointer-events: auto !important;
 } 

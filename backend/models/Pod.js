@@ -12,7 +12,7 @@ const PodSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['public', 'private'],
+        enum: ['public', 'private', 'chat'],
         default: 'public'
     },
     createdBy: {
