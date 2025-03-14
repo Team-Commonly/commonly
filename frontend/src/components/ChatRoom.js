@@ -57,17 +57,9 @@ const ChatRoom = () => {
     const fileInputRef = useRef(null);
     const emojiPickerRef = useRef(null);
     
-    // Mock data with English text
-    const announcements = [
-        { id: 1, title: 'Announcement', content: '114.100.120.53:13000', time: '3 days ago' },
-    ];
-    
-    const externalLinks = [
-        { id: 1, name: 'Discord', url: '#', icon: 'discord' },
-        { id: 2, name: 'Telegram', url: '#', icon: 'telegram' },
-        { id: 3, name: 'WeChat', url: '#', icon: 'wechat', isQRCode: true },
-        { id: 4, name: 'GroupMe', url: '#', icon: 'groupme' },
-    ];
+    // State for real data from API
+    const [announcements, setAnnouncements] = useState([]);
+    const [externalLinks, setExternalLinks] = useState([]);
     
     // State for editing
     const [isEditingAnnouncement, setIsEditingAnnouncement] = useState(false);
@@ -79,6 +71,19 @@ const ChatRoom = () => {
     const [newLinkType, setNewLinkType] = useState('discord');
     const [qrCodeImage, setQrCodeImage] = useState(null);
     const qrCodeInputRef = useRef(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    // Mock data with English text
+    const mockAnnouncements = [
+        { id: 1, title: 'Announcement', content: '114.100.120.53:13000', time: '3 days ago' },
+    ];
+    
+    const mockExternalLinks = [
+        { id: 1, name: 'Discord', url: '#', icon: 'discord' },
+        { id: 2, name: 'Telegram', url: '#', icon: 'telegram' },
+        { id: 3, name: 'WeChat', url: '#', icon: 'wechat', isQRCode: true },
+        { id: 4, name: 'GroupMe', url: '#', icon: 'groupme' },
+    ];
     
     // Fetch pod details and messages
     useEffect(() => {
@@ -120,6 +125,26 @@ const ChatRoom = () => {
                 }
                 
                 setRoom(podResponse.data);
+                
+                // Fetch announcements
+                try {
+                    const announcementsResponse = await axios.get(`/api/pods/${roomId}/announcements`, authHeaders);
+                    setAnnouncements(announcementsResponse.data || []);
+                    console.log('Fetched announcements:', announcementsResponse.data);
+                } catch (err) {
+                    console.warn('Failed to fetch announcements:', err);
+                    setAnnouncements(mockAnnouncements);
+                }
+                
+                // Fetch external links
+                try {
+                    const linksResponse = await axios.get(`/api/pods/${roomId}/external-links`, authHeaders);
+                    setExternalLinks(linksResponse.data || []);
+                    console.log('Fetched external links:', linksResponse.data);
+                } catch (err) {
+                    console.warn('Failed to fetch external links:', err);
+                    setExternalLinks(mockExternalLinks);
+                }
                 
                 // Fetch messages - use the proper API endpoint based on PG availability
                 const messagesEndpoint = usePostgres 
@@ -423,6 +448,34 @@ const ChatRoom = () => {
         }
     }, [showMembers]);
     
+    // Function to refresh pod data including announcements and links
+    const refreshData = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setError('Authentication required. Please log in again.');
+                return;
+            }
+
+            const authHeaders = {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            };
+
+            // Fetch pod details with announcements and links
+            const podResponse = await axios.get(`/api/pods/${podType}/${roomId}`, authHeaders);
+            
+            if (!podResponse.data) {
+                throw new Error('Pod not found');
+            }
+            
+            setRoom(podResponse.data);
+        } catch (err) {
+            console.error('Error refreshing pod data:', err);
+        }
+    };
+
     // Handle adding new announcement with backend integration
     const handleAddAnnouncement = async () => {
         if (!newAnnouncementTitle.trim() || !newAnnouncementContent.trim()) {
@@ -439,25 +492,40 @@ const ChatRoom = () => {
                 content: newAnnouncementContent
             };
             
-            // API call to create announcement
-            const response = await axios.post('/api/pods/announcement', announcementData, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
+            console.log('Sending announcement data:', announcementData);
             
-            if (response.status === 201) {
-                // Refresh data after successful creation
-                refreshData();
+            // API call to create announcement - try with error handling
+            try {
+                const response = await axios.post('/api/pods/announcement', announcementData, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
                 
-                // Reset form
-                setIsEditingAnnouncement(false);
-                setNewAnnouncementTitle('');
-                setNewAnnouncementContent('');
+                if (response.status === 201) {
+                    console.log('Announcement created successfully:', response.data);
+                    
+                    // Add the new announcement to the list
+                    setAnnouncements(prev => [response.data, ...prev]);
+                    
+                    // Reset form
+                    setIsEditingAnnouncement(false);
+                    setNewAnnouncementTitle('');
+                    setNewAnnouncementContent('');
+                }
+            } catch (apiError) {
+                console.error('API error creating announcement:', apiError);
+                if (apiError.response && apiError.response.data) {
+                    console.error('API error details:', apiError.response.data);
+                    setError(apiError.response.data.message || 'Failed to create announcement.');
+                } else {
+                    setError('Server error. Please try again later.');
+                }
             }
         } catch (error) {
-            console.error('Error creating announcement:', error);
+            console.error('Error in handleAddAnnouncement:', error);
+            setError('Failed to create announcement. Please try again later.');
         } finally {
             setIsSubmitting(false);
         }
@@ -491,27 +559,42 @@ const ChatRoom = () => {
                 linkData.append('url', newLinkUrl);
             }
             
-            // API call to create external link
-            const response = await axios.post('/api/pods/external-link', linkData, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                    'Content-Type': 'multipart/form-data'
-                }
-            });
+            console.log('Sending external link data:', Object.fromEntries(linkData.entries()));
             
-            if (response.status === 201) {
-                // Refresh data
-                refreshData();
+            // API call to create external link - with proper error handling
+            try {
+                const response = await axios.post('/api/pods/external-link', linkData, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
                 
-                // Reset form
-                setIsEditingLinks(false);
-                setNewLinkName('');
-                setNewLinkUrl('');
-                setNewLinkType('discord');
-                setQrCodeImage(null);
+                if (response.status === 201) {
+                    console.log('External link created successfully:', response.data);
+                    
+                    // Add the new link to the list
+                    setExternalLinks(prev => [response.data, ...prev]);
+                    
+                    // Reset form
+                    setIsEditingLinks(false);
+                    setNewLinkName('');
+                    setNewLinkUrl('');
+                    setNewLinkType('discord');
+                    setQrCodeImage(null);
+                }
+            } catch (apiError) {
+                console.error('API error creating external link:', apiError);
+                if (apiError.response && apiError.response.data) {
+                    console.error('API error details:', apiError.response.data);
+                    setError(apiError.response.data.message || 'Failed to create external link.');
+                } else {
+                    setError('Server error. Please try again later.');
+                }
             }
         } catch (error) {
-            console.error('Error creating external link:', error);
+            console.error('Error in handleAddLink:', error);
+            setError('Failed to create external link. Please try again later.');
         } finally {
             setIsSubmitting(false);
         }
@@ -546,6 +629,58 @@ const ChatRoom = () => {
     useEffect(() => {
         console.log('Sidebar visibility:', showMembers);
     }, [showMembers]);
+    
+    // Handle deleting an announcement
+    const handleDeleteAnnouncement = async (announcementId) => {
+        try {
+            // Get auth token
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setError('Authentication required. Please log in again.');
+                return;
+            }
+            
+            // Make delete request
+            await axios.delete(`/api/pods/announcement/${announcementId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            // Remove from state
+            setAnnouncements(prev => prev.filter(a => a._id !== announcementId && a.id !== announcementId));
+            
+        } catch (error) {
+            console.error('Error deleting announcement:', error);
+            setError('Failed to delete announcement. Please try again.');
+        }
+    };
+    
+    // Handle deleting an external link
+    const handleDeleteExternalLink = async (linkId) => {
+        try {
+            // Get auth token
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setError('Authentication required. Please log in again.');
+                return;
+            }
+            
+            // Make delete request
+            await axios.delete(`/api/pods/external-link/${linkId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            // Remove from state
+            setExternalLinks(prev => prev.filter(link => link._id !== linkId && link.id !== linkId));
+            
+        } catch (error) {
+            console.error('Error deleting external link:', error);
+            setError('Failed to delete external link. Please try again.');
+        }
+    };
     
     // Early exit for loading or error states
     if (loading) {
@@ -598,7 +733,8 @@ const ChatRoom = () => {
                                     borderRadius: '4px',
                                     '& .MuiOutlinedInput-root': {
                                         color: '#fff',
-                                        '& fieldset': { border: 'none' }
+                                        '& fieldset': { border: 'none' },
+                                        borderRadius: '4px' // Ensuring consistent border radius
                                     }
                                 }}
                             />
@@ -627,15 +763,20 @@ const ChatRoom = () => {
                 <div className="sidebar-section">
                     <div className="sidebar-section-title">
                         <span><AnnouncementIcon style={{ marginRight: '8px', fontSize: '16px' }} /> Announcements</span>
-                        {room?.createdBy?._id === currentUser?._id && (
-                            <IconButton 
-                                size="small" 
-                                onClick={() => setIsEditingAnnouncement(!isEditingAnnouncement)}
-                                sx={{ padding: '4px' }}
-                            >
-                                {isEditingAnnouncement ? <CloseIcon fontSize="small" /> : <ChevronRightIcon />}
-                            </IconButton>
-                        )}
+                        <IconButton 
+                            size="small" 
+                            onClick={() => room?.createdBy?._id === currentUser?._id ? setIsEditingAnnouncement(!isEditingAnnouncement) : null}
+                            sx={{ 
+                                padding: '4px',
+                                color: room?.createdBy?._id === currentUser?._id ? 'white' : 'rgba(255,255,255,0.5)', 
+                                '&.Mui-disabled': {
+                                    color: 'rgba(255,255,255,0.3)',
+                                },
+                                cursor: room?.createdBy?._id === currentUser?._id ? 'pointer' : 'not-allowed'
+                            }}
+                        >
+                            {isEditingAnnouncement ? <CloseIcon fontSize="small" /> : <ChevronRightIcon />}
+                        </IconButton>
                     </div>
                     <div className="sidebar-section-content">
                         {isEditingAnnouncement && room?.createdBy?._id === currentUser?._id && (
@@ -672,22 +813,73 @@ const ChatRoom = () => {
                                         }
                                     }}
                                 />
+                                {error && (
+                                    <Box sx={{ 
+                                        p: 1, 
+                                        mb: 1, 
+                                        bgcolor: 'rgba(255,0,0,0.1)', 
+                                        borderRadius: '4px',
+                                        color: '#ff6b6b',
+                                        fontSize: '12px',
+                                        display: 'flex',
+                                        alignItems: 'center'
+                                    }}>
+                                        <span>{error}</span>
+                                        <IconButton 
+                                            size="small" 
+                                            sx={{ ml: 'auto', color: '#ff6b6b', p: '2px' }}
+                                            onClick={() => setError('')}
+                                        >
+                                            <CloseIcon fontSize="small" />
+                                        </IconButton>
+                                    </Box>
+                                )}
                                 <Button 
                                     variant="contained" 
                                     color="primary" 
                                     size="small" 
                                     fullWidth
                                     onClick={handleAddAnnouncement}
+                                    disabled={isSubmitting || !newAnnouncementTitle.trim() || !newAnnouncementContent.trim()}
                                 >
-                                    Save Announcement
+                                    {isSubmitting ? 'Saving...' : 'Save Announcement'}
                                 </Button>
                             </Box>
                         )}
                         {announcements.map(announcement => (
-                            <div key={announcement.id} className="announcement-item">
-                                <div className="announcement-title">{announcement.title}</div>
-                                <div className="announcement-content">{announcement.content}</div>
-                                <div className="announcement-time">{announcement.time}</div>
+                            <div key={announcement._id || announcement.id} className="announcement-item">
+                                <div className="announcement-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                    <div className="announcement-title">{announcement.title}</div>
+                                    {room?.createdBy?._id === currentUser?._id && (
+                                        <IconButton 
+                                            size="small" 
+                                            onClick={() => handleDeleteAnnouncement(announcement._id || announcement.id)}
+                                            sx={{ 
+                                                padding: '2px', 
+                                                color: 'rgba(255,255,255,0.5)',
+                                                '&:hover': { color: '#ff6b6b' } 
+                                            }}
+                                        >
+                                            <CloseIcon fontSize="small" />
+                                        </IconButton>
+                                    )}
+                                </div>
+                                <div className="announcement-content" style={{ 
+                                    wordBreak: 'break-word', 
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: '3',
+                                    WebkitBoxOrient: 'vertical',
+                                    maxHeight: '60px'
+                                }}>
+                                    {announcement.content}
+                                </div>
+                                <div className="announcement-time">
+                                    {announcement.createdAt 
+                                        ? formatDistanceToNow(new Date(announcement.createdAt), { addSuffix: true })
+                                        : announcement.time || 'Recently'}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -697,40 +889,217 @@ const ChatRoom = () => {
                 <div className="sidebar-section">
                     <div className="sidebar-section-title">
                         <span><LinkIcon style={{ marginRight: '8px', fontSize: '16px' }} /> External Links</span>
-                        {room?.createdBy?._id === currentUser?._id && (
-                            <IconButton 
-                                size="small" 
-                                onClick={() => setIsEditingLinks(!isEditingLinks)}
-                                sx={{ padding: '4px' }}
-                            >
-                                {isEditingLinks ? <CloseIcon fontSize="small" /> : <ChevronRightIcon />}
-                            </IconButton>
-                        )}
+                        <IconButton 
+                            size="small" 
+                            onClick={() => room?.createdBy?._id === currentUser?._id ? setIsEditingLinks(!isEditingLinks) : null}
+                            sx={{ 
+                                padding: '4px',
+                                color: room?.createdBy?._id === currentUser?._id ? 'white' : 'rgba(255,255,255,0.5)', 
+                                '&.Mui-disabled': {
+                                    color: 'rgba(255,255,255,0.3)',
+                                },
+                                cursor: room?.createdBy?._id === currentUser?._id ? 'pointer' : 'not-allowed'
+                            }}
+                        >
+                            {isEditingLinks ? <CloseIcon fontSize="small" /> : <ChevronRightIcon />}
+                        </IconButton>
                     </div>
                     <div className="sidebar-section-content">
                         {/* Link edit form */}
                         {isEditingLinks && room?.createdBy?._id === currentUser?._id && (
                             <Box sx={{ mb: 2, p: 1, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
-                                {/* Link form content */}
+                                <TextField
+                                    fullWidth
+                                    placeholder="Link Name (e.g. Discord)"
+                                    value={newLinkName}
+                                    onChange={(e) => setNewLinkName(e.target.value)}
+                                    variant="outlined"
+                                    size="small"
+                                    sx={{ 
+                                        mb: 1,
+                                        '& .MuiOutlinedInput-root': {
+                                            color: '#fff',
+                                            '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }
+                                        }
+                                    }}
+                                />
+                                
+                                <TextField
+                                    select
+                                    fullWidth
+                                    value={newLinkType}
+                                    onChange={(e) => setNewLinkType(e.target.value)}
+                                    variant="outlined"
+                                    size="small"
+                                    sx={{ 
+                                        mb: 1,
+                                        '& .MuiOutlinedInput-root': {
+                                            color: '#fff',
+                                            '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }
+                                        },
+                                        '& .MuiSelect-icon': {
+                                            color: 'rgba(255,255,255,0.7)'
+                                        }
+                                    }}
+                                >
+                                    <MenuItem value="discord">Discord</MenuItem>
+                                    <MenuItem value="telegram">Telegram</MenuItem>
+                                    <MenuItem value="wechat">WeChat</MenuItem>
+                                    <MenuItem value="groupme">GroupMe</MenuItem>
+                                    <MenuItem value="other">Other</MenuItem>
+                                </TextField>
+                                
+                                {newLinkType !== 'wechat' && (
+                                    <TextField
+                                        fullWidth
+                                        placeholder="Link URL"
+                                        value={newLinkUrl}
+                                        onChange={(e) => setNewLinkUrl(e.target.value)}
+                                        variant="outlined"
+                                        size="small"
+                                        sx={{ 
+                                            mb: 1,
+                                            '& .MuiOutlinedInput-root': {
+                                                color: '#fff',
+                                                '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }
+                                            }
+                                        }}
+                                    />
+                                )}
+                                
+                                {newLinkType === 'wechat' && (
+                                    <Box sx={{ textAlign: 'center', mb: 1 }}>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            style={{ display: 'none' }}
+                                            onChange={handleQRCodeUpload}
+                                            ref={qrCodeInputRef}
+                                        />
+                                        
+                                        {qrCodeImage ? (
+                                            <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                                                <img src={qrCodeImage} alt="QR Code" className="qr-code-preview" />
+                                                <IconButton 
+                                                    size="small" 
+                                                    sx={{ 
+                                                        position: 'absolute', 
+                                                        top: -10, 
+                                                        right: -10,
+                                                        bgcolor: 'rgba(0,0,0,0.7)', 
+                                                        color: '#fff',
+                                                        p: '4px',
+                                                        '&:hover': { bgcolor: 'rgba(255,0,0,0.7)' }
+                                                    }}
+                                                    onClick={() => setQrCodeImage(null)}
+                                                >
+                                                    <CloseIcon fontSize="small" />
+                                                </IconButton>
+                                            </Box>
+                                        ) : (
+                                            <Button 
+                                                variant="outlined" 
+                                                color="primary" 
+                                                size="small"
+                                                onClick={() => qrCodeInputRef.current?.click()}
+                                                sx={{ 
+                                                    borderColor: 'rgba(255,255,255,0.3)',
+                                                    color: '#fff',
+                                                    '&:hover': { borderColor: 'rgba(255,255,255,0.5)' }
+                                                }}
+                                            >
+                                                Upload QR Code
+                                            </Button>
+                                        )}
+                                    </Box>
+                                )}
+                                
+                                {error && (
+                                    <Box sx={{ 
+                                        p: 1, 
+                                        mb: 1, 
+                                        bgcolor: 'rgba(255,0,0,0.1)', 
+                                        borderRadius: '4px',
+                                        color: '#ff6b6b',
+                                        fontSize: '12px',
+                                        display: 'flex',
+                                        alignItems: 'center'
+                                    }}>
+                                        <span>{error}</span>
+                                        <IconButton 
+                                            size="small" 
+                                            sx={{ ml: 'auto', color: '#ff6b6b', p: '2px' }}
+                                            onClick={() => setError('')}
+                                        >
+                                            <CloseIcon fontSize="small" />
+                                        </IconButton>
+                                    </Box>
+                                )}
+                                
+                                <Button 
+                                    variant="contained" 
+                                    color="primary" 
+                                    size="small" 
+                                    fullWidth
+                                    onClick={handleAddLink}
+                                    disabled={isSubmitting || !newLinkName.trim() || 
+                                             (newLinkType !== 'wechat' && !newLinkUrl.trim()) || 
+                                             (newLinkType === 'wechat' && !qrCodeImage)}
+                                >
+                                    {isSubmitting ? 'Saving...' : 'Save Link'}
+                                </Button>
                             </Box>
                         )}
                         
                         {externalLinks.map(link => (
-                            <a key={link.id} href={link.url} className="external-link" target="_blank" rel="noopener noreferrer">
-                                {link.icon === 'discord' && (
-                                    <img src="https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6ca814282eca7172c6_icon_clyde_white_RGB.svg" width="18" height="18" alt="Discord" style={{ marginRight: '10px' }} />
+                            <div key={link._id || link.id} className="external-link-container" style={{ 
+                                position: 'relative', 
+                                display: 'flex', 
+                                alignItems: 'center',
+                                marginBottom: '4px' 
+                            }}>
+                                <a 
+                                    href={link.url} 
+                                    className="external-link" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    style={{ flex: 1, paddingRight: room?.createdBy?._id === currentUser?._id ? '30px' : '0' }}
+                                >
+                                    {(link.type === 'discord' || link.icon === 'discord') && (
+                                        <img src="https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6ca814282eca7172c6_icon_clyde_white_RGB.svg" width="18" height="18" alt="Discord" style={{ marginRight: '10px' }} />
+                                    )}
+                                    {(link.type === 'telegram' || link.icon === 'telegram') && (
+                                        <img src="https://telegram.org/img/t_logo.svg" width="18" height="18" alt="Telegram" style={{ marginRight: '10px' }} />
+                                    )}
+                                    {(link.type === 'wechat' || link.icon === 'wechat') && (
+                                        <img src="https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico" width="18" height="18" alt="WeChat" style={{ marginRight: '10px' }} />
+                                    )}
+                                    {(link.type === 'groupme' || link.icon === 'groupme') && (
+                                        <img src="https://groupme.com/favicon.ico" width="18" height="18" alt="GroupMe" style={{ marginRight: '10px' }} />
+                                    )}
+                                    {(link.type === 'other' || !link.type) && (
+                                        <LinkIcon style={{ marginRight: '10px', fontSize: '18px' }} />
+                                    )}
+                                    <span>{link.name}</span>
+                                </a>
+                                {room?.createdBy?._id === currentUser?._id && (
+                                    <IconButton 
+                                        size="small" 
+                                        onClick={() => handleDeleteExternalLink(link._id || link.id)}
+                                        sx={{ 
+                                            position: 'absolute',
+                                            right: '3px',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            padding: '2px', 
+                                            color: 'rgba(255,255,255,0.5)',
+                                            '&:hover': { color: '#ff6b6b' } 
+                                        }}
+                                    >
+                                        <CloseIcon fontSize="small" />
+                                    </IconButton>
                                 )}
-                                {link.icon === 'telegram' && (
-                                    <img src="https://telegram.org/img/t_logo.svg" width="18" height="18" alt="Telegram" style={{ marginRight: '10px' }} />
-                                )}
-                                {link.icon === 'wechat' && (
-                                    <img src="https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico" width="18" height="18" alt="WeChat" style={{ marginRight: '10px' }} />
-                                )}
-                                {link.icon === 'groupme' && (
-                                    <img src="https://groupme.com/favicon.ico" width="18" height="18" alt="GroupMe" style={{ marginRight: '10px' }} />
-                                )}
-                                <span>{link.name}</span>
-                            </a>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -745,7 +1114,7 @@ const ChatRoom = () => {
                     top: '50%',
                     transform: 'translateY(-50%)',
                     zIndex: 1600,
-                    backgroundColor: '#1d9bf0',
+                    backgroundColor: '#202636',
                     color: 'white',
                     border: 'none',
                     borderRadius: showMembers ? '50%' : '4px 0 0 4px',
@@ -753,8 +1122,14 @@ const ChatRoom = () => {
                     height: '50px',
                     cursor: 'pointer',
                     boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
-                    transition: 'right 0.3s ease-in-out'
+                    transition: 'right 0.3s ease-in-out, transform 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px'
                 }}
+                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'}
+                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(-50%)'}
             >
                 {showMembers ? '→' : '←'}
             </button>
@@ -766,7 +1141,7 @@ const ChatRoom = () => {
                         position: 'fixed',
                         top: 0,
                         left: 0,
-                        right: 0,
+                        right: '280px', // Changed from 'right: 0' to leave space for the sidebar
                         bottom: 0,
                         backgroundColor: 'rgba(0, 0, 0, 0.5)',
                         zIndex: 1400
