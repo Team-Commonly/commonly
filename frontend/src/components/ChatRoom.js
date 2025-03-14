@@ -693,52 +693,47 @@ const ChatRoom = () => {
 
     return (
         <>
-            {/* Sidebar - rendered completely outside the main container */}
+            {/* Sidebar backdrop only used on mobile */}
+            <div 
+                className={`sidebar-backdrop ${showMembers ? 'visible' : ''}`}
+                onClick={() => setShowMembers(false)}
+            ></div>
+            
+            {/* Sidebar - now a side panel instead of full overlay */}
             <div 
                 className={`members-sidebar ${!showMembers ? 'hidden' : ''}`}
-                style={{
-                    position: 'fixed',
-                    top: 0,
-                    right: 0,
-                    width: '280px',
-                    height: '100vh',
-                    backgroundColor: '#202636',
-                    color: '#fff',
-                    zIndex: 1500,
-                    boxShadow: '-5px 0 20px rgba(0, 0, 0, 0.5)',
-                    overflowY: 'auto',
-                    transition: 'transform 0.3s ease-in-out',
-                    transform: showMembers ? 'translateX(0)' : 'translateX(100%)'
-                }}
             >
                 {/* Sidebar content */}
                 <div className="sidebar-section">
                     <div className="sidebar-section-title">
                         <div className="members-count">
-                            <PeopleIcon /> Members {room?.members?.length || 0}
+                            <PeopleIcon style={{ color: '#1d9bf0' }} /> Members {room?.members?.length || 0}
                         </div>
                     </div>
+                    
+                    {/* Move search box to its own container */}
+                    <div className="sidebar-search-container">
+                        <TextField 
+                            size="small"
+                            placeholder="Search members..."
+                            variant="outlined"
+                            fullWidth
+                            InputProps={{
+                                startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1, color: '#757575' }} />
+                            }}
+                            sx={{ 
+                                bgcolor: '#f5f8fa', 
+                                borderRadius: '4px',
+                                '& .MuiOutlinedInput-root': {
+                                    color: '#333333',
+                                    '& fieldset': { border: 'none' },
+                                    borderRadius: '4px'
+                                }
+                            }}
+                        />
+                    </div>
+                    
                     <div className="sidebar-section-content">
-                        <Box sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
-                            <TextField 
-                                size="small"
-                                placeholder="Search members..."
-                                variant="outlined"
-                                fullWidth
-                                InputProps={{
-                                    startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1, color: '#adb5bd' }} />
-                                }}
-                                sx={{ 
-                                    bgcolor: 'rgba(255,255,255,0.1)', 
-                                    borderRadius: '4px',
-                                    '& .MuiOutlinedInput-root': {
-                                        color: '#fff',
-                                        '& fieldset': { border: 'none' },
-                                        borderRadius: '4px' // Ensuring consistent border radius
-                                    }
-                                }}
-                            />
-                        </Box>
                         {room?.members?.map(member => (
                             <div key={member._id} className="sidebar-member">
                                 <Avatar 
@@ -753,7 +748,7 @@ const ChatRoom = () => {
                                         <div className="sidebar-member-role">Owner</div>
                                     )}
                                 </div>
-                                <div className="sidebar-member-status"></div>
+                                <div className={`sidebar-member-status ${member._id === currentUser?._id ? '' : (Math.random() > 0.3 ? '' : 'offline')}`}></div>
                             </div>
                         ))}
                     </div>
@@ -762,15 +757,15 @@ const ChatRoom = () => {
                 {/* Announcements section */}
                 <div className="sidebar-section">
                     <div className="sidebar-section-title">
-                        <span><AnnouncementIcon style={{ marginRight: '8px', fontSize: '16px' }} /> Announcements</span>
+                        <span><AnnouncementIcon style={{ marginRight: '8px', fontSize: '16px', color: '#1d9bf0' }} /> Announcements</span>
                         <IconButton 
                             size="small" 
                             onClick={() => room?.createdBy?._id === currentUser?._id ? setIsEditingAnnouncement(!isEditingAnnouncement) : null}
                             sx={{ 
                                 padding: '4px',
-                                color: room?.createdBy?._id === currentUser?._id ? 'white' : 'rgba(255,255,255,0.5)', 
+                                color: room?.createdBy?._id === currentUser?._id ? '#1d9bf0' : 'rgba(0,0,0,0.3)', 
                                 '&.Mui-disabled': {
-                                    color: 'rgba(255,255,255,0.3)',
+                                    color: 'rgba(0,0,0,0.2)',
                                 },
                                 cursor: room?.createdBy?._id === currentUser?._id ? 'pointer' : 'not-allowed'
                             }}
@@ -780,7 +775,7 @@ const ChatRoom = () => {
                     </div>
                     <div className="sidebar-section-content">
                         {isEditingAnnouncement && room?.createdBy?._id === currentUser?._id && (
-                            <Box sx={{ mb: 2, p: 1, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
+                            <Box sx={{ mb: 2, p: 1, bgcolor: '#f5f8fa', borderRadius: '4px' }}>
                                 <TextField
                                     fullWidth
                                     placeholder="Announcement Title"
@@ -791,8 +786,8 @@ const ChatRoom = () => {
                                     sx={{ 
                                         mb: 1,
                                         '& .MuiOutlinedInput-root': {
-                                            color: '#fff',
-                                            '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }
+                                            color: '#333333',
+                                            '& fieldset': { borderColor: '#e0e0e0' }
                                         }
                                     }}
                                 />
@@ -808,8 +803,8 @@ const ChatRoom = () => {
                                     sx={{ 
                                         mb: 1,
                                         '& .MuiOutlinedInput-root': {
-                                            color: '#fff',
-                                            '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }
+                                            color: '#333333',
+                                            '& fieldset': { borderColor: '#e0e0e0' }
                                         }
                                     }}
                                 />
@@ -817,9 +812,9 @@ const ChatRoom = () => {
                                     <Box sx={{ 
                                         p: 1, 
                                         mb: 1, 
-                                        bgcolor: 'rgba(255,0,0,0.1)', 
+                                        bgcolor: 'rgba(255,0,0,0.05)', 
                                         borderRadius: '4px',
-                                        color: '#ff6b6b',
+                                        color: '#ff4040',
                                         fontSize: '12px',
                                         display: 'flex',
                                         alignItems: 'center'
@@ -827,7 +822,7 @@ const ChatRoom = () => {
                                         <span>{error}</span>
                                         <IconButton 
                                             size="small" 
-                                            sx={{ ml: 'auto', color: '#ff6b6b', p: '2px' }}
+                                            sx={{ ml: 'auto', color: '#ff4040', p: '2px' }}
                                             onClick={() => setError('')}
                                         >
                                             <CloseIcon fontSize="small" />
@@ -841,6 +836,11 @@ const ChatRoom = () => {
                                     fullWidth
                                     onClick={handleAddAnnouncement}
                                     disabled={isSubmitting || !newAnnouncementTitle.trim() || !newAnnouncementContent.trim()}
+                                    sx={{
+                                        bgcolor: '#1d9bf0',
+                                        '&:hover': { bgcolor: '#0c8bd9' },
+                                        '&.Mui-disabled': { bgcolor: '#e0e0e0', color: '#9e9e9e' }
+                                    }}
                                 >
                                     {isSubmitting ? 'Saving...' : 'Save Announcement'}
                                 </Button>
@@ -856,8 +856,8 @@ const ChatRoom = () => {
                                             onClick={() => handleDeleteAnnouncement(announcement._id || announcement.id)}
                                             sx={{ 
                                                 padding: '2px', 
-                                                color: 'rgba(255,255,255,0.5)',
-                                                '&:hover': { color: '#ff6b6b' } 
+                                                color: '#a0a0a0',
+                                                '&:hover': { color: '#ff4040', backgroundColor: 'rgba(255,0,0,0.05)' } 
                                             }}
                                         >
                                             <CloseIcon fontSize="small" />
@@ -888,15 +888,15 @@ const ChatRoom = () => {
                 {/* External links section */}
                 <div className="sidebar-section">
                     <div className="sidebar-section-title">
-                        <span><LinkIcon style={{ marginRight: '8px', fontSize: '16px' }} /> External Links</span>
+                        <span><LinkIcon style={{ marginRight: '8px', fontSize: '16px', color: '#1d9bf0' }} /> External Links</span>
                         <IconButton 
                             size="small" 
                             onClick={() => room?.createdBy?._id === currentUser?._id ? setIsEditingLinks(!isEditingLinks) : null}
                             sx={{ 
                                 padding: '4px',
-                                color: room?.createdBy?._id === currentUser?._id ? 'white' : 'rgba(255,255,255,0.5)', 
+                                color: room?.createdBy?._id === currentUser?._id ? '#1d9bf0' : 'rgba(0,0,0,0.3)', 
                                 '&.Mui-disabled': {
-                                    color: 'rgba(255,255,255,0.3)',
+                                    color: 'rgba(0,0,0,0.2)',
                                 },
                                 cursor: room?.createdBy?._id === currentUser?._id ? 'pointer' : 'not-allowed'
                             }}
@@ -907,7 +907,7 @@ const ChatRoom = () => {
                     <div className="sidebar-section-content">
                         {/* Link edit form */}
                         {isEditingLinks && room?.createdBy?._id === currentUser?._id && (
-                            <Box sx={{ mb: 2, p: 1, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
+                            <Box sx={{ mb: 2, p: 1, bgcolor: '#f5f8fa', borderRadius: '4px' }}>
                                 <TextField
                                     fullWidth
                                     placeholder="Link Name (e.g. Discord)"
@@ -918,8 +918,8 @@ const ChatRoom = () => {
                                     sx={{ 
                                         mb: 1,
                                         '& .MuiOutlinedInput-root': {
-                                            color: '#fff',
-                                            '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }
+                                            color: '#333333',
+                                            '& fieldset': { borderColor: '#e0e0e0' }
                                         }
                                     }}
                                 />
@@ -934,11 +934,11 @@ const ChatRoom = () => {
                                     sx={{ 
                                         mb: 1,
                                         '& .MuiOutlinedInput-root': {
-                                            color: '#fff',
-                                            '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }
-                                        },
-                                        '& .MuiSelect-icon': {
-                                            color: 'rgba(255,255,255,0.7)'
+                                            color: '#333333',
+                                            '& fieldset': { borderColor: '#e0e0e0' },
+                                            '& .MuiSelect-icon': {
+                                                color: '#757575'
+                                            }
                                         }
                                     }}
                                 >
@@ -960,8 +960,8 @@ const ChatRoom = () => {
                                         sx={{ 
                                             mb: 1,
                                             '& .MuiOutlinedInput-root': {
-                                                color: '#fff',
-                                                '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }
+                                                color: '#333333',
+                                                '& fieldset': { borderColor: '#e0e0e0' }
                                             }
                                         }}
                                     />
@@ -1003,9 +1003,9 @@ const ChatRoom = () => {
                                                 size="small"
                                                 onClick={() => qrCodeInputRef.current?.click()}
                                                 sx={{ 
-                                                    borderColor: 'rgba(255,255,255,0.3)',
-                                                    color: '#fff',
-                                                    '&:hover': { borderColor: 'rgba(255,255,255,0.5)' }
+                                                    borderColor: '#1d9bf0',
+                                                    color: '#1d9bf0',
+                                                    '&:hover': { borderColor: '#0c8bd9', backgroundColor: 'rgba(29, 161, 242, 0.05)' }
                                                 }}
                                             >
                                                 Upload QR Code
@@ -1018,9 +1018,9 @@ const ChatRoom = () => {
                                     <Box sx={{ 
                                         p: 1, 
                                         mb: 1, 
-                                        bgcolor: 'rgba(255,0,0,0.1)', 
+                                        bgcolor: 'rgba(255,0,0,0.05)', 
                                         borderRadius: '4px',
-                                        color: '#ff6b6b',
+                                        color: '#ff4040',
                                         fontSize: '12px',
                                         display: 'flex',
                                         alignItems: 'center'
@@ -1028,7 +1028,7 @@ const ChatRoom = () => {
                                         <span>{error}</span>
                                         <IconButton 
                                             size="small" 
-                                            sx={{ ml: 'auto', color: '#ff6b6b', p: '2px' }}
+                                            sx={{ ml: 'auto', color: '#ff4040', p: '2px' }}
                                             onClick={() => setError('')}
                                         >
                                             <CloseIcon fontSize="small" />
@@ -1045,6 +1045,11 @@ const ChatRoom = () => {
                                     disabled={isSubmitting || !newLinkName.trim() || 
                                              (newLinkType !== 'wechat' && !newLinkUrl.trim()) || 
                                              (newLinkType === 'wechat' && !qrCodeImage)}
+                                    sx={{
+                                        bgcolor: '#1d9bf0',
+                                        '&:hover': { bgcolor: '#0c8bd9' },
+                                        '&.Mui-disabled': { bgcolor: '#e0e0e0', color: '#9e9e9e' }
+                                    }}
                                 >
                                     {isSubmitting ? 'Saving...' : 'Save Link'}
                                 </Button>
@@ -1065,21 +1070,77 @@ const ChatRoom = () => {
                                     rel="noopener noreferrer"
                                     style={{ flex: 1, paddingRight: room?.createdBy?._id === currentUser?._id ? '30px' : '0' }}
                                 >
+                                    {/* Discord icon */}
                                     {(link.type === 'discord' || link.icon === 'discord') && (
-                                        <img src="https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6ca814282eca7172c6_icon_clyde_white_RGB.svg" width="18" height="18" alt="Discord" style={{ marginRight: '10px' }} />
+                                        <div className="external-link-icon">
+                                            <img 
+                                                src="https://discord.com/assets/f9bb9c4af2b9c32a2c5ee0014661546d.png" 
+                                                width="16" 
+                                                height="16" 
+                                                alt="Discord" 
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.parentNode.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#5865F2"><path d="M19.952,5.672c-1.904-1.531-4.916-1.79-5.044-1.801c-0.201-0.017-0.392,0.097-0.474,0.281 c0.006,0.012-0.072,0.163-0.145,0.398c1.259,0.212,2.806,0.64,4.206,1.509c0.224,0.139,0.293,0.434,0.154,0.659 c-0.09,0.146-0.247,0.226-0.407,0.226c-0.086,0-0.173-0.023-0.252-0.072C15.584,5.38,12.578,5.305,12,5.305S8.415,5.38,6.011,6.872 c-0.225,0.14-0.519,0.07-0.659-0.154c-0.14-0.225-0.07-0.519,0.154-0.659c1.4-0.868,2.947-1.297,4.206-1.509 c-0.074-0.236-0.14-0.386-0.145-0.398C9.484,3.968,9.294,3.852,9.092,3.872c-0.127,0.01-3.139,0.269-5.069,1.822 C3.015,6.625,1,12.073,1,16.783c0,0.083,0.022,0.165,0.063,0.237c1.391,2.443,5.185,3.083,6.05,3.111c0.005,0,0.01,0,0.015,0 c0.153,0,0.297-0.073,0.387-0.197l0.875-1.202c-2.359-0.61-3.564-1.645-3.634-1.706c-0.198-0.175-0.217-0.477-0.042-0.675 c0.175-0.198,0.476-0.217,0.674-0.043c0.029,0.026,2.248,1.909,6.612,1.909c4.372,0,6.591-1.891,6.613-1.91 c0.198-0.172,0.5-0.154,0.674,0.045c0.174,0.198,0.155,0.499-0.042,0.673c-0.07,0.062-1.275,1.096-3.634,1.706l0.875,1.202 c0.09,0.124,0.234,0.197,0.387,0.197c0.005,0,0.01,0,0.015,0c0.865-0.027,4.659-0.667,6.05-3.111 C22.978,16.947,23,16.866,23,16.783C23,12.073,20.985,6.625,19.952,5.672z M8.891,14.87c-0.924,0-1.674-0.857-1.674-1.913 s0.749-1.913,1.674-1.913s1.674,0.857,1.674,1.913S9.816,14.87,8.891,14.87z M15.109,14.87c-0.924,0-1.674-0.857-1.674-1.913 s0.749-1.913,1.674-1.913c0.924,0,1.674,0.857,1.674,1.913S16.033,14.87,15.109,14.87z"></path></svg>';
+                                                }}
+                                            />
+                                        </div>
                                     )}
+                                    
+                                    {/* Telegram icon */}
                                     {(link.type === 'telegram' || link.icon === 'telegram') && (
-                                        <img src="https://telegram.org/img/t_logo.svg" width="18" height="18" alt="Telegram" style={{ marginRight: '10px' }} />
+                                        <div className="external-link-icon" style={{ backgroundColor: '#31a8df' }}>
+                                            <img 
+                                                src="https://telegram.org/img/t_logo.png" 
+                                                width="16" 
+                                                height="16" 
+                                                alt="Telegram" 
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.parentNode.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#FFFFFF"><path d="M19.2,4.4L2.9,10.7c-1.1,0.4-1.1,1.1-0.2,1.3l4.1,1.3l1.6,4.8c0.2,0.5,0.1,0.7,0.6,0.7c0.4,0,0.6-0.2,0.8-0.4 c0.1-0.1,1-1,2-2l4.2,3.1c0.8,0.4,1.3,0.2,1.5-0.7l2.8-13.1C20.6,4.6,19.9,4,19.2,4.4z M17.1,7.4l-7.8,7.1L9,17.8L7.4,13 l9.2-5.8C17,6.9,17.4,7.1,17.1,7.4z"></path></svg>';
+                                                }}
+                                            />
+                                        </div>
                                     )}
+                                    
+                                    {/* WeChat icon */}
                                     {(link.type === 'wechat' || link.icon === 'wechat') && (
-                                        <img src="https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico" width="18" height="18" alt="WeChat" style={{ marginRight: '10px' }} />
+                                        <div className="external-link-icon" style={{ backgroundColor: '#2DC100' }}>
+                                            <img 
+                                                src="https://img.icons8.com/color/48/wechat.png" 
+                                                width="16" 
+                                                height="16" 
+                                                alt="WeChat" 
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.parentNode.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#FFFFFF"><path d="M8.691,2.188C3.891,2.188,0,5.476,0,9.53c0,2.256,1.305,4.296,3.357,5.605c-0.254,0.94-0.636,2.348-0.636,2.348 c-0.034,0.127,0.010,0.267,0.110,0.369c0.073,0.070,0.171,0.108,0.269,0.108c0.049,0,0.098-0.010,0.144-0.029 c0,0,2.022-1.166,2.37-1.366c0.988,0.256,2.015,0.394,3.076,0.394c0.168,0,0.336-0.007,0.504-0.014 c-0.272-0.804-0.418-1.66-0.418-2.546c0-4.439,4.253-8.030,9.504-8.030c0.303,0,0.602,0.015,0.896,0.041 C18.248,3.159,13.93,2.188,8.691,2.188z M5.726,7.537c-0.818,0-1.48-0.662-1.48-1.48s0.662-1.48,1.48-1.48s1.48,0.662,1.48,1.48 S6.544,7.537,5.726,7.537z M11.655,7.537c-0.818,0-1.48-0.662-1.48-1.48-1.48s0.662-1.48,1.48-1.48s1.48,0.662,1.48,1.48 S12.473,7.537,11.655,7.537z M14.727,13.845c0.168,0,0.336,0.007,0.504,0.014c0.605-0.477,1.347-0.843,2.166-1.078 c-0.254-0.095-0.529-0.167-0.818-0.201c-0.013,0-0.026-0.002-0.039-0.002c-0.371-0.043-0.748-0.064-1.124-0.064 c-4.383,0-7.941,3.053-7.941,6.819c0,0.832,0.198,1.609,0.547,2.311c-1.137-1.332-1.82-2.947-1.82-4.705 C6.202,12.503,10.027,13.845,14.727,13.845z M14.447,17.617c-0.649,0-1.172-0.524-1.172-1.172c0-0.649,0.524-1.172,1.172-1.172 c0.649,0,1.172,0.524,1.172,1.172C15.62,17.093,15.096,17.617,14.447,17.617z M19.337,17.617c-0.649,0-1.172-0.524-1.172-1.172 c0-0.649,0.524-1.172,1.172-1.172c0.649,0,1.172,0.524,1.172,1.172C20.51,17.093,19.986,17.617,19.337,17.617z M22.516,16.192 c0-0.006,0-0.012,0-0.017c-0.001-0.004-0.002-0.008-0.002-0.012c-0.254-3.137-3.351-5.605-7.163-5.605 c-3.95,0-7.156,2.651-7.156,5.922s3.206,5.922,7.156,5.922c0.879,0,1.724-0.129,2.524-0.369c0.289,0.166,1.353,0.781,1.705,0.977 c0.045,0.025,0.094,0.037,0.144,0.037c0.105,0,0.205-0.042,0.278-0.115c0.096-0.091,0.139-0.223,0.116-0.352 c0,0-0.34-1.246-0.522-1.914C21.562,19.612,22.516,17.986,22.516,16.192z"></path></svg>';
+                                                }}
+                                            />
+                                        </div>
                                     )}
+                                    
+                                    {/* GroupMe icon */}
                                     {(link.type === 'groupme' || link.icon === 'groupme') && (
-                                        <img src="https://groupme.com/favicon.ico" width="18" height="18" alt="GroupMe" style={{ marginRight: '10px' }} />
+                                        <div className="external-link-icon" style={{ backgroundColor: '#00AFF0' }}>
+                                            <img 
+                                                src="https://web.groupme.com/favicon-32x32.png" 
+                                                width="16" 
+                                                height="16" 
+                                                alt="GroupMe" 
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.parentNode.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#FFFFFF"><path d="M12,2C6.477,2,2,6.477,2,12c0,5.523,4.477,10,10,10s10-4.477,10-10C22,6.477,17.523,2,12,2z M12,5.5 c1.381,0,2.5,1.119,2.5,2.5c0,1.381-1.119,2.5-2.5,2.5c-1.381,0-2.5-1.119-2.5-2.5C9.5,6.619,10.619,5.5,12,5.5z M12,19.2 c-2.733,0-5.153-1.392-6.574-3.5C5.699,13.189,10,12.1,12,12.1c2,0,6.301,1.089,6.574,3.6C17.153,17.808,14.733,19.2,12,19.2z"></path></svg>';
+                                                }}
+                                            />
+                                        </div>
                                     )}
-                                    {(link.type === 'other' || !link.type) && (
-                                        <LinkIcon style={{ marginRight: '10px', fontSize: '18px' }} />
+                                    
+                                    {/* Default/Other icon */}
+                                    {(link.type === 'other' || (!link.type && !link.icon) || (link.type !== 'discord' && link.type !== 'telegram' && link.type !== 'wechat' && link.type !== 'groupme')) && (
+                                        <div className="external-link-icon">
+                                            <LinkIcon style={{ fontSize: '16px', color: '#1d9bf0' }} />
+                                        </div>
                                     )}
+                                    
                                     <span>{link.name}</span>
                                 </a>
                                 {room?.createdBy?._id === currentUser?._id && (
@@ -1092,8 +1153,8 @@ const ChatRoom = () => {
                                             top: '50%',
                                             transform: 'translateY(-50%)',
                                             padding: '2px', 
-                                            color: 'rgba(255,255,255,0.5)',
-                                            '&:hover': { color: '#ff6b6b' } 
+                                            color: '#a0a0a0',
+                                            '&:hover': { color: '#ff4040', backgroundColor: 'rgba(255,0,0,0.05)' } 
                                         }}
                                     >
                                         <CloseIcon fontSize="small" />
@@ -1105,238 +1166,240 @@ const ChatRoom = () => {
                 </div>
             </div>
             
-            {/* Toggle button - also rendered outside the main container */}
+            {/* Toggle button with improved positioning */}
             <button
                 onClick={() => setShowMembers(!showMembers)}
+                className={`sidebar-toggle-button ${showMembers ? 'visible' : ''}`}
                 style={{
                     position: 'fixed',
-                    right: showMembers ? '280px' : '0px',
+                    right: showMembers ? '280px' : '0px', // When sidebar is visible, button is on left side of sidebar
                     top: '50%',
                     transform: 'translateY(-50%)',
                     zIndex: 1600,
-                    backgroundColor: '#202636',
+                    backgroundColor: '#1d9bf0', // Twitter blue to match other UI elements
                     color: 'white',
                     border: 'none',
-                    borderRadius: showMembers ? '50%' : '4px 0 0 4px',
-                    width: '50px',
-                    height: '50px',
+                    borderRadius: '4px 0 0 4px', // Always square, with rounded corners only on left side
+                    width: '40px',
+                    height: '40px',
                     cursor: 'pointer',
-                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
+                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
                     transition: 'right 0.3s ease-in-out, transform 0.2s ease',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '18px'
+                    padding: 0
                 }}
                 onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(-50%)'}
             >
-                {showMembers ? '→' : '←'}
+                {showMembers ? <ArrowRightIcon /> : <ArrowLeftIcon />}
             </button>
             
-            {/* Overlay - also rendered outside */}
-            {showMembers && (
-                <div 
-                    style={{
-                        position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        right: '280px', // Changed from 'right: 0' to leave space for the sidebar
-                        bottom: 0,
-                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                        zIndex: 1400
-                    }}
-                    onClick={() => setShowMembers(false)}
-                />
-            )}
-            
-            {/* Main chat UI */}
-            <Container maxWidth="md" className={`chat-room-container ${isDashboardCollapsed ? 'dashboard-collapsed' : ''}`}>
-                {/* Chat header */}
-                <AppBar position="fixed" color="default" elevation={1} className="chat-room-header">
-                    <Toolbar>
-                        <IconButton edge="start" color="inherit" onClick={() => navigate(`/pods/${podType}`)} sx={{ mr: 2 }}>
-                            <ArrowBackIcon />
-                        </IconButton>
-                        <Box sx={{ flexGrow: 1 }}>
-                            <Typography variant="h6" component="div">
-                                {room?.name || 'Chat Room'}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                {room?.members?.length || 0} members
-                            </Typography>
-                        </Box>
-                    </Toolbar>
-                </AppBar>
-                
-                {/* Chat Content */}
-                <Box className="chat-content-container">
-                    <Paper 
-                        elevation={0} 
-                        className="messages-container"
-                    >
-                        {messages.length === 0 ? (
-                            <Box className="empty-chat-message">
-                                <ChatIcon sx={{ fontSize: 80 }} />
-                                <Typography variant="h5" gutterBottom>
-                                    No messages yet
+            {/* Main chat UI with updated class for sidebar visibility */}
+            <Container maxWidth="md" className={`chat-room-container ${isDashboardCollapsed ? 'dashboard-collapsed' : ''} ${showMembers ? 'sidebar-visible' : ''}`}>
+                <div className="main-chat-content">
+                    {/* Chat header */}
+                    <AppBar position="fixed" color="default" elevation={1} className="chat-room-header">
+                        <Toolbar>
+                            <IconButton edge="start" color="inherit" onClick={() => navigate(`/pods/${podType}`)} sx={{ mr: 2 }}>
+                                <ArrowBackIcon />
+                            </IconButton>
+                            <Box sx={{ flexGrow: 1 }}>
+                                <Typography variant="h6" component="div">
+                                    {room?.name || 'Chat Room'}
                                 </Typography>
-                                <Typography variant="body1" color="text.secondary">
-                                    Be the first to start the conversation!
+                                <Typography variant="caption" color="text.secondary">
+                                    {room?.members?.length || 0} members
                                 </Typography>
                             </Box>
-                        ) : (
-                            <List>
-                                {messages.map((msg) => {
-                                    // Check if msg or msg.userId is undefined or null
-                                    if (!msg) {
-                                        console.warn('Encountered undefined message in messages array');
-                                        return null; // Skip rendering this item
-                                    }
-                                    
-                                    // Safely handle userId which could be an object, string, or undefined
-                                    const isCurrentUser = msg.userId 
-                                        ? (typeof msg.userId === 'object'
-                                            ? msg.userId?._id === currentUser?._id 
-                                            : msg.userId === currentUser?._id)
-                                        : (msg.user_id === currentUser?._id); // Fallback to check user_id field
-                                    
-                                    // Get username with multiple fallbacks
-                                    const username = 
-                                        (msg.userId && typeof msg.userId === 'object' && msg.userId.username) ||
-                                        msg.username || 
-                                        'Unknown User';
-                                    
-                                    // Get profile picture with multiple fallbacks
-                                    const profilePicture = 
-                                        (msg.userId && typeof msg.userId === 'object' && msg.userId.profilePicture) ||
-                                        msg.profile_picture || 
-                                        null;
-                                    
-                                    // Get message content with fallbacks
-                                    const messageContent = msg.content || msg.text || '';
-                                    
-                                    // Get message type with fallback
-                                    const messageType = msg.messageType || msg.message_type || 'text';
-                                    
-                                    // Get message timestamp with fallbacks
-                                    const messageTime = msg.createdAt || msg.created_at || new Date();
-                                    
-                                    return (
-                                        <ListItem 
-                                            key={msg._id || msg.id || Date.now() + Math.random()}
-                                            className={`message-item ${isCurrentUser ? 'sent' : 'received'}`}
-                                        >
-                                            <ListItemAvatar className="message-avatar">
-                                                <div className="message-user">{username}</div>
-                                                <Avatar 
-                                                    sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
-                                                >
-                                                    {username.charAt(0).toUpperCase()}
-                                                </Avatar>
-                                            </ListItemAvatar>
-                                            
-                                            <div className="message-content-wrapper">
-                                                {/* Text message */}
-                                                {messageType === 'text' && (
-                                                    <div className={`message-bubble ${isCurrentUser ? 'sent' : 'received'}`}>
-                                                        <p className="message-text">{messageContent}</p>
-                                                    </div>
-                                                )}
-                                                
-                                                {/* Image message */}
-                                                {messageType === 'image' && (
-                                                    <div className={`message-image-container ${isCurrentUser ? 'sent' : 'received'}`}>
-                                                        <img 
-                                                            src={messageContent}
-                                                            alt="Shared image" 
-                                                            className="message-image"
-                                                            onClick={() => window.open(messageContent, '_blank')}
-                                                        />
-                                                    </div>
-                                                )}
-                                                
-                                                <div className={`message-time ${isCurrentUser ? 'message-sent-time' : 'message-received-time'}`}>
-                                                    {formatDistanceToNow(new Date(messageTime), { addSuffix: true })}
-                                                </div>
-                                            </div>
-                                        </ListItem>
-                                    );
-                                })}
-                                <div ref={messagesEndRef} />
-                            </List>
-                        )}
-                    </Paper>
+                        </Toolbar>
+                    </AppBar>
                     
-                    {/* Message input */}
-                    <Paper 
-                        component="form" 
-                        onSubmit={handleSendMessage}
-                        className="message-input-container"
+                    {/* Chat Content */}
+                    <Box className="chat-content-container">
+                        <Paper 
+                            elevation={0} 
+                            className="messages-container"
+                        >
+                            {messages.length === 0 ? (
+                                <Box className="empty-chat-message">
+                                    <ChatIcon sx={{ fontSize: 80 }} />
+                                    <Typography variant="h5" gutterBottom>
+                                        No messages yet
+                                    </Typography>
+                                    <Typography variant="body1" color="text.secondary">
+                                        Be the first to start the conversation!
+                                    </Typography>
+                                </Box>
+                            ) : (
+                                <List>
+                                    {messages.map((msg) => {
+                                        // Check if msg or msg.userId is undefined or null
+                                        if (!msg) {
+                                            console.warn('Encountered undefined message in messages array');
+                                            return null; // Skip rendering this item
+                                        }
+                                        
+                                        // Safely handle userId which could be an object, string, or undefined
+                                        const isCurrentUser = msg.userId 
+                                            ? (typeof msg.userId === 'object'
+                                                ? msg.userId?._id === currentUser?._id 
+                                                : msg.userId === currentUser?._id)
+                                            : (msg.user_id === currentUser?._id); // Fallback to check user_id field
+                                        
+                                        // Get username with multiple fallbacks
+                                        const username = 
+                                            (msg.userId && typeof msg.userId === 'object' && msg.userId.username) ||
+                                            msg.username || 
+                                            'Unknown User';
+                                        
+                                        // Get profile picture with multiple fallbacks
+                                        const profilePicture = 
+                                            (msg.userId && typeof msg.userId === 'object' && msg.userId.profilePicture) ||
+                                            msg.profile_picture || 
+                                            null;
+                                        
+                                        // Get message content with fallbacks
+                                        const messageContent = msg.content || msg.text || '';
+                                        
+                                        // Get message type with fallback
+                                        const messageType = msg.messageType || msg.message_type || 'text';
+                                        
+                                        // Get message timestamp with fallbacks
+                                        const messageTime = msg.createdAt || msg.created_at || new Date();
+                                        
+                                        return (
+                                            <ListItem 
+                                                key={msg._id || msg.id || Date.now() + Math.random()}
+                                                className={`message-item ${isCurrentUser ? 'sent' : 'received'}`}
+                                            >
+                                                <ListItemAvatar className="message-avatar">
+                                                    <div className="message-user">{username}</div>
+                                                    <Avatar 
+                                                        sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
+                                                    >
+                                                        {username.charAt(0).toUpperCase()}
+                                                    </Avatar>
+                                                </ListItemAvatar>
+                                                
+                                                <div className="message-content-wrapper">
+                                                    {/* Text message */}
+                                                    {messageType === 'text' && (
+                                                        <div className={`message-bubble ${isCurrentUser ? 'sent' : 'received'}`}>
+                                                            <p className="message-text">{messageContent}</p>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Image message */}
+                                                    {messageType === 'image' && (
+                                                        <div className={`message-image-container ${isCurrentUser ? 'sent' : 'received'}`}>
+                                                            <img 
+                                                                src={messageContent}
+                                                                alt="Shared image" 
+                                                                className="message-image"
+                                                                onClick={() => window.open(messageContent, '_blank')}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <div className={`message-time ${isCurrentUser ? 'message-sent-time' : 'message-received-time'}`}>
+                                                        {formatDistanceToNow(new Date(messageTime), { addSuffix: true })}
+                                                    </div>
+                                                </div>
+                                            </ListItem>
+                                        );
+                                    })}
+                                    <div ref={messagesEndRef} />
+                                </List>
+                            )}
+                        </Paper>
+                    </Box>
+                </div>
+                
+                {/* Message input */}
+                <Paper 
+                    component="form" 
+                    onSubmit={handleSendMessage}
+                    className="message-input-container"
+                >
+                    <IconButton 
+                        onClick={toggleEmojiPicker} 
+                        className="emoji-button"
+                        aria-label="Insert emoji"
                     >
-                        <IconButton 
-                            onClick={toggleEmojiPicker} 
-                            className="emoji-button"
-                            aria-label="Insert emoji"
-                        >
-                            <EmojiIcon />
-                        </IconButton>
-                        
-                        <input
-                            type="file"
-                            accept="image/*"
-                            style={{ display: 'none' }}
-                            onChange={handleFileSelect}
-                            ref={fileInputRef}
-                        />
-                        
-                        <IconButton 
-                            onClick={() => fileInputRef.current.click()} 
-                            className="attach-button"
-                            disabled={isUploading}
-                        >
-                            {isUploading ? <CircularProgress size={24} /> : <AttachFileIcon />}
-                        </IconButton>
-                        
-                        {previewUrl && (
-                            <Box className="file-preview">
-                                <img src={previewUrl} alt="Preview" className="preview-image" />
-                                <IconButton 
-                                    size="small" 
-                                    className="remove-preview" 
-                                    onClick={() => {
-                                        setSelectedFile(null);
-                                        setPreviewUrl('');
-                                    }}
-                                >
-                                    &times;
-                                </IconButton>
-                            </Box>
-                        )}
-                        
-                        <TextField
-                            fullWidth
-                            placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            variant="standard"
-                            InputProps={{
-                                disableUnderline: true,
-                            }}
-                            className="message-input"
-                        />
-                        
-                        <IconButton 
-                            color="primary" 
-                            type="submit"
-                            disabled={(!message.trim() && !selectedFile) || !connected || isUploading}
-                            className="send-button"
-                        >
-                            <SendIcon />
-                        </IconButton>
-                    </Paper>
-                </Box>
+                        <EmojiIcon />
+                    </IconButton>
+                    
+                    <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={handleFileSelect}
+                        ref={fileInputRef}
+                    />
+                    
+                    <IconButton 
+                        onClick={() => fileInputRef.current.click()} 
+                        className="attach-button"
+                        disabled={isUploading}
+                    >
+                        {isUploading ? <CircularProgress size={24} /> : <AttachFileIcon />}
+                    </IconButton>
+                    
+                    {previewUrl && (
+                        <Box className="file-preview">
+                            <img src={previewUrl} alt="Preview" className="preview-image" />
+                            <IconButton 
+                                size="small" 
+                                className="remove-preview" 
+                                onClick={() => {
+                                    setSelectedFile(null);
+                                    setPreviewUrl('');
+                                }}
+                            >
+                                &times;
+                            </IconButton>
+                        </Box>
+                    )}
+                    
+                    <TextField
+                        fullWidth
+                        placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        variant="standard"
+                        InputProps={{
+                            disableUnderline: true,
+                        }}
+                        className="message-input"
+                    />
+                    
+                    <IconButton 
+                        color="primary" 
+                        type="submit"
+                        disabled={(!message.trim() && !selectedFile) || !connected || isUploading}
+                        className="send-button"
+                    >
+                        <SendIcon />
+                    </IconButton>
+                </Paper>
             </Container>
+
+            {/* Emoji picker */}
+            {showEmojiPicker && (
+                <div className="emoji-picker-wrapper" ref={emojiPickerRef}>
+                    <div className="emoji-picker-container">
+                        <EmojiPicker 
+                            onEmojiClick={onEmojiClick}
+                            searchDisabled={false}
+                            skinTonesDisabled={true}
+                            width={350}
+                            height={450}
+                        />
+                    </div>
+                </div>
+            )}
         </>
     );
 };

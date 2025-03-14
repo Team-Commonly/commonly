@@ -119,6 +119,12 @@ exports.deletePod = async (req, res) => {
 // Join a pod
 exports.joinPod = async (req, res) => {
     try {
+        console.log('Join pod request received:', { 
+            podId: req.params.id, 
+            userId: req.user.id,
+            userIdType: typeof req.user.id
+        });
+        
         // Check if pod exists
         const pod = await PGPod.findById(req.params.id);
         
@@ -126,15 +132,36 @@ exports.joinPod = async (req, res) => {
             return res.status(404).json({ msg: 'Pod not found' });
         }
         
+        // Check if user is already a member
+        const isMember = await PGPod.isMember(req.params.id, req.user.id);
+        if (isMember) {
+            console.log(`User ${req.user.id} is already a member of pod ${req.params.id}`);
+            // Even if already a member, return success to avoid frontend issues
+            const updatedPod = await PGPod.findById(req.params.id);
+            return res.json(updatedPod);
+        }
+        
         // Add user to pod members
         await PGPod.addMember(req.params.id, req.user.id);
+        console.log(`User ${req.user.id} successfully added to pod ${req.params.id}`);
+        
+        // Verify membership was added successfully
+        const membershipVerified = await PGPod.isMember(req.params.id, req.user.id);
+        if (!membershipVerified) {
+            console.error(`Failed to verify membership after adding user ${req.user.id} to pod ${req.params.id}`);
+        }
         
         // Get updated pod
         const updatedPod = await PGPod.findById(req.params.id);
         
         res.json(updatedPod);
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in pgPodController.joinPod:', err.message);
+        console.error('Request details:', { 
+            podId: req.params.id, 
+            userId: req.user?.id || 'undefined'
+        });
+        
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Pod not found' });
         }

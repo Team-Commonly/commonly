@@ -90,23 +90,32 @@ class Pod {
   
   // Add a member to a pod
   static async addMember(podId, userId) {
-    const query = `
-      INSERT INTO pod_members (pod_id, user_id)
-      VALUES ($1, $2)
-      ON CONFLICT (pod_id, user_id) DO NOTHING
-      RETURNING *
-    `;
+    console.log(`Attempting to add member to pod. PodID: ${podId}, UserID: ${userId}`);
     
-    const result = await pool.query(query, [podId, userId]);
-    
-    // Update the pod's updated_at timestamp
-    await pool.query(`
-      UPDATE pods
-      SET updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-    `, [podId]);
-    
-    return result.rows[0];
+    try {
+      const query = `
+        INSERT INTO pod_members (pod_id, user_id)
+        VALUES ($1, $2)
+        ON CONFLICT (pod_id, user_id) DO NOTHING
+        RETURNING *
+      `;
+      
+      const result = await pool.query(query, [podId, userId]);
+      console.log(`Member addition result:`, result.rows);
+      
+      // Update the pod's updated_at timestamp
+      await pool.query(`
+        UPDATE pods
+        SET updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [podId]);
+      
+      return result.rows[0];
+    } catch (error) {
+      console.error('Error adding member to pod:', error.message);
+      console.error('Parameters:', { podId, userId });
+      throw error;
+    }
   }
   
   // Remove a member from a pod
