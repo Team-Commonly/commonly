@@ -1,0 +1,338 @@
+# Backend Documentation
+
+This document provides details about the backend architecture, API endpoints, and development guidelines for the Commonly application.
+
+## Technology Stack
+
+- **Runtime**: Node.js
+- **Framework**: Express.js
+- **Authentication**: JSON Web Tokens (JWT)
+- **Database Access**: Mongoose (MongoDB) and pg (PostgreSQL)
+- **Real-time Communication**: Socket.io
+- **Validation**: Express Validator
+- **File Handling**: Multer
+- **Email Service**: SendGrid
+- **Testing**: Jest, Supertest, MongoDB Memory Server, pg-mem
+
+## Application Structure
+
+```
+backend/
+├── config/              # Configuration files
+│   ├── db.js           # Database connection setup
+│   └── ...
+├── controllers/         # Request handlers
+│   ├── authController.js
+│   ├── postController.js
+│   ├── podController.js
+│   └── ...
+├── middleware/          # Express middleware
+│   ├── auth.js         # Authentication middleware
+│   ├── errorHandler.js # Error handling middleware
+│   └── ...
+├── models/              # Database models
+│   ├── mongodb/        # MongoDB schemas
+│   ├── postgres/       # PostgreSQL models
+│   └── ...
+├── routes/              # API route definitions
+│   ├── auth.js
+│   ├── posts.js
+│   ├── pods.js
+│   └── ...
+├── utils/               # Utility functions
+│   ├── validation.js
+│   ├── fileUpload.js
+│   └── ...
+├── __tests__/           # Test files
+│   ├── unit/           # Unit tests
+│   ├── integration/    # Integration tests
+│   └── ...
+├── server.js            # Main application entry point
+├── package.json         # Dependencies and scripts
+└── ...
+```
+
+## API Endpoints
+
+### Authentication
+
+| Method | Endpoint               | Description                 | Request Body                          | Response                        |
+|--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
+| POST   | /api/auth/register     | Register a new user         | `{username, email, password}`        | User object with token          |
+| POST   | /api/auth/login        | Login user                  | `{email, password}`                  | User object with token          |
+| GET    | /api/auth/user         | Get current user            | -                                    | User object                     |
+| POST   | /api/auth/forgot       | Request password reset      | `{email}`                            | Success message                 |
+| POST   | /api/auth/reset/:token | Reset password              | `{password}`                         | Success message                 |
+
+### Posts
+
+| Method | Endpoint               | Description                 | Request Body                          | Response                        |
+|--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
+| GET    | /api/posts             | Get all posts               | -                                    | Array of posts                  |
+| GET    | /api/posts/:id         | Get post by ID              | -                                    | Post object                     |
+| POST   | /api/posts             | Create a new post           | `{content, media}`                   | Created post object             |
+| PUT    | /api/posts/:id         | Update a post               | `{content, media}`                   | Updated post object             |
+| DELETE | /api/posts/:id         | Delete a post               | -                                    | Success message                 |
+| POST   | /api/posts/:id/like    | Like a post                 | -                                    | Updated post object             |
+| POST   | /api/posts/:id/comment | Comment on a post           | `{content}`                          | Comment object                  |
+
+### Pods (Chat)
+
+| Method | Endpoint               | Description                 | Request Body                          | Response                        |
+|--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
+| GET    | /api/pods              | Get all pods                | -                                    | Array of pods                   |
+| GET    | /api/pods/:id          | Get pod by ID               | -                                    | Pod object                      |
+| POST   | /api/pods              | Create a new pod            | `{name, description, type}`          | Created pod object              |
+| PUT    | /api/pods/:id          | Update a pod                | `{name, description, type}`          | Updated pod object              |
+| DELETE | /api/pods/:id          | Delete a pod                | -                                    | Success message                 |
+| POST   | /api/pods/:id/join     | Join a pod                  | -                                    | Updated pod object              |
+| POST   | /api/pods/:id/leave    | Leave a pod                 | -                                    | Updated pod object              |
+| GET    | /api/pods/:id/messages | Get pod messages            | -                                    | Array of messages               |
+| POST   | /api/pods/:id/messages | Send a message              | `{content, attachments}`             | Created message object          |
+
+### Users
+
+| Method | Endpoint               | Description                 | Request Body                          | Response                        |
+|--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
+| GET    | /api/users             | Get all users               | -                                    | Array of users                  |
+| GET    | /api/users/:id         | Get user by ID              | -                                    | User object                     |
+| PUT    | /api/users/:id         | Update user profile         | `{bio, avatar, interests}`           | Updated user object             |
+| GET    | /api/users/:id/posts   | Get user's posts            | -                                    | Array of posts                  |
+| POST   | /api/users/:id/follow  | Follow a user               | -                                    | Updated user object             |
+
+## Authentication and Authorization
+
+### JWT Authentication
+
+The application uses JSON Web Tokens (JWT) for authentication:
+
+1. User logs in and receives a JWT token
+2. Client includes the token in the Authorization header for subsequent requests
+3. Server validates the token and identifies the user
+
+### Middleware
+
+The `auth` middleware:
+- Extracts the token from the Authorization header
+- Verifies the token using the JWT secret
+- Attaches the user ID to the request object
+- Returns 401 Unauthorized if token is invalid or missing
+
+## Database Interactions
+
+### MongoDB (via Mongoose)
+
+The application uses Mongoose to interact with MongoDB for most data types:
+
+- User profiles and authentication
+- Posts, comments, and interactions
+- General application data
+
+Example schema:
+```javascript
+const PostSchema = new mongoose.Schema({
+  content: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  likes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  comments: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    content: {
+      type: String,
+      required: true
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  media: {
+    type: String
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+```
+
+### PostgreSQL (via node-postgres)
+
+The application uses the `pg` library to interact with PostgreSQL specifically for chat functionality:
+
+- Chat pods (communities)
+- Messages
+- Pod memberships
+
+Example table creation:
+```sql
+CREATE TABLE pods (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  type VARCHAR(50) NOT NULL,
+  created_by VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE messages (
+  id SERIAL PRIMARY KEY,
+  pod_id INTEGER REFERENCES pods(id),
+  user_id VARCHAR(100) NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## Real-time Communication
+
+The application uses Socket.io for real-time features:
+
+1. **Connection Management**:
+   - User connects and is associated with their user ID
+   - User joins room for each pod they're a member of
+
+2. **Events**:
+   - `message`: New chat message in a pod
+   - `notification`: User notification
+   - `typing`: User is typing indication
+
+3. **Example Socket Events**:
+```javascript
+// Client sends a message
+socket.emit('message', { 
+  podId: '123', 
+  content: 'Hello world!' 
+});
+
+// Server broadcasts the message to all pod members
+io.to('pod-123').emit('message', messageObject);
+```
+
+## Error Handling
+
+The application uses a centralized error handling middleware:
+
+```javascript
+const errorHandler = (err, req, res, next) => {
+  const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  res.status(statusCode);
+  res.json({
+    message: err.message,
+    stack: process.env.NODE_ENV === 'production' ? null : err.stack
+  });
+};
+```
+
+## Testing
+
+The application uses Jest for testing with the following approach:
+
+1. **Unit Tests**: Test individual functions and components
+2. **Integration Tests**: Test API endpoints and database interactions
+3. **Test Database**: Uses in-memory databases for testing:
+   - MongoDB Memory Server for MongoDB tests
+   - pg-mem for PostgreSQL tests
+
+Example test:
+```javascript
+describe('Auth Controller', () => {
+  beforeAll(async () => {
+    await connectDB();
+  });
+  
+  afterAll(async () => {
+    await disconnectDB();
+  });
+  
+  it('should register a new user', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        username: 'testuser',
+        email: 'test@example.com',
+        password: 'password123'
+      });
+    
+    expect(res.statusCode).toEqual(201);
+    expect(res.body).toHaveProperty('token');
+    expect(res.body.user).toHaveProperty('username', 'testuser');
+  });
+});
+```
+
+## Environment Variables
+
+The application requires the following environment variables:
+
+```
+# Server
+NODE_ENV=development
+PORT=5000
+JWT_SECRET=your_jwt_secret
+
+# MongoDB
+MONGO_URI=mongodb://mongo:27017/commonly
+
+# PostgreSQL
+PG_USER=postgres
+PG_PASSWORD=postgres
+PG_HOST=postgres
+PG_PORT=5432
+PG_DATABASE=commonly
+PG_SSL_CA_PATH=/app/ca.pem
+
+# Email
+SENDGRID_API_KEY=your_sendgrid_api_key
+SENDGRID_FROM_EMAIL=no-reply@commonly.com
+
+# Frontend URL (for email links)
+FRONTEND_URL=http://localhost:3000
+```
+
+## Development Guidelines
+
+### API Design Principles
+
+- Use RESTful conventions for endpoints
+- Keep routes organized by resource
+- Use appropriate HTTP status codes
+- Include validation for all input data
+- Implement proper error handling
+- Use middleware for cross-cutting concerns
+
+### Code Style
+
+- Use async/await for asynchronous code
+- Implement controller-service pattern
+- Keep controllers focused on HTTP concerns
+- Extract business logic to service modules
+- Use meaningful variable and function names
+
+### Security Best Practices
+
+- Validate all user input
+- Use parameterized queries
+- Implement rate limiting
+- Set secure HTTP headers
+- Follow the principle of least privilege
+- Keep dependencies updated
+
+## Deployment
+
+The backend is containerized using Docker and deployed as part of the overall application.
+
+See the main [Deployment Guide](./DEPLOYMENT.md) for more details. 

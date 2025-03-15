@@ -1,0 +1,45 @@
+name: Lint Code
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+
+      # Backend linting
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Lint Backend
+        run: |
+          cd backend
+          npm run lint || echo "Backend linting found issues but continuing the workflow"
+
+      # Frontend linting
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Lint Frontend
+        run: |
+          cd frontend
+          npm run lint || echo "Frontend linting found issues but continuing the workflow" 

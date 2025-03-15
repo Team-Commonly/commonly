@@ -4,10 +4,15 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install
+# Install all dependencies including dev dependencies
+RUN npm install --include=dev
 
 COPY . .
 
 EXPOSE 5000
 
+# Add a label to indicate testing is supported
+LABEL com.commonly.testing="true"
+
+# The default command still starts the server
 CMD ["node", "server.js"]
