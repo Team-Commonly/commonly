@@ -12,8 +12,8 @@ const PodSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['public', 'private', 'chat'],
-        default: 'public'
+        enum: ['chat', 'study', 'games'],
+        default: 'chat'
     },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,

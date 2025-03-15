@@ -134,6 +134,8 @@ exports.createPod = async (req, res) => {
 // Join a pod
 exports.joinPod = async (req, res) => {
     try {
+        console.log('Join pod request received:', { params: req.params, body: req.body });
+        
         const { id } = req.params;
         
         if (!id) {
@@ -142,38 +144,60 @@ exports.joinPod = async (req, res) => {
         
         // Access the user ID safely
         const userId = req.userId || req.user.id;
+        console.log('User ID from request:', userId);
+        
         if (!userId) {
             return res.status(401).json({ msg: 'User authentication failed' });
         }
         
         // Check if pod exists
+        console.log('Finding pod with ID:', id);
         const pod = await Pod.findById(id);
+        
         if (!pod) {
             return res.status(404).json({ msg: 'Pod not found' });
         }
         
+        console.log('Pod found:', { podId: pod._id, members: pod.members });
+        
         // Check if user is already a member
-        if (pod.members.includes(userId)) {
+        const isMember = pod.members.some(member => member.toString() === userId.toString());
+        console.log('Is user already a member?', isMember);
+        
+        if (isMember) {
             return res.status(400).json({ msg: 'Already a member of this pod' });
         }
         
         // Add user to pod members
+        console.log('Adding user to pod members');
         pod.members.push(userId);
         pod.updatedAt = Date.now();
+        
+        console.log('Saving pod with new member');
         await pod.save();
         
         // Return the updated pod with populated data
+        console.log('Retrieving updated pod with populated data');
         const updatedPod = await Pod.findById(id)
             .populate('createdBy', 'username profilePicture')
             .populate('members', 'username profilePicture');
         
+        console.log('Join pod successful, returning updated pod');
         res.json(updatedPod);
     } catch (err) {
         console.error('Error in joinPod:', err.message);
+        console.error('Full error:', err);
+        
         if (err.kind === 'ObjectId') {
             return res.status(404).json({ msg: 'Pod not found' });
         }
-        res.status(500).send('Server Error');
+        
+        // Return more specific error information to help with debugging
+        return res.status(500).json({ 
+            msg: 'Server Error', 
+            error: err.message,
+            stack: process.env.NODE_ENV === 'production' ? null : err.stack
+        });
     }
 };
 
