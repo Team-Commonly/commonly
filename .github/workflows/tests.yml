@@ -34,6 +34,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
 
+      # Use Docker Compose GitHub Action
+      - name: Set up Docker Compose
+        uses: isbang/compose-action@v1.5.1
+
       - name: Cache Docker layers
         uses: actions/cache@v3
         with:

@@ -15,31 +15,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16'
-          cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
+      # Use Docker Compose GitHub Action
+      - name: Set up Docker Compose
+        uses: isbang/compose-action@v1.5.1
 
-      # Backend linting
-      - name: Install Backend Dependencies
+      - name: Build Docker containers
         run: |
-          cd backend
-          npm ci
+          docker-compose build backend frontend
 
+      - name: Create containers (don't start services)
+        run: |
+          docker-compose up -d --no-start backend frontend
+
+      # Backend linting in container
       - name: Lint Backend
         run: |
-          cd backend
-          npm run lint || echo "Backend linting found issues but continuing the workflow"
+          docker-compose run --rm backend sh -c "npm install --include=dev && npm run lint"
 
-      # Frontend linting
-      - name: Install Frontend Dependencies
-        run: |
-          cd frontend
-          npm ci
-
+      # Frontend linting in container
       - name: Lint Frontend
         run: |
-          cd frontend
-          npm run lint || echo "Frontend linting found issues but continuing the workflow" 
+          docker-compose run --rm frontend sh -c "npm install --include=dev && npm run lint"
+
+      - name: Clean up
+        if: always()
+        run: docker-compose down 
