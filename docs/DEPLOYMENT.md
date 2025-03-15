@@ -164,9 +164,24 @@ The repository includes GitHub Actions workflows for continuous integration and 
 ### GitHub Actions Workflows
 
 1. **tests.yml**: Runs tests when changes are pushed
+   - Uses Docker Compose to set up testing environment
+   - Executes tests in the backend container
+   
 2. **lint.yml**: Checks code style and quality
+   - Runs linting inside Docker containers
+   - Lints both frontend and backend code
+   
 3. **coverage.yml**: Generates and reports test coverage
+   - Runs tests with coverage enabled in Docker container
+   - Uploads coverage reports as artifacts
+   
 4. **deploy.yml**: Deploys to production (configured for specific branches)
+
+### GitHub Actions Configuration Notes
+
+- All workflows use the `isbang/compose-action` to ensure Docker Compose is properly installed
+- Tests and linting run in containers to ensure consistency across environments
+- This approach eliminates "works on my machine" problems by using the same Docker setup in CI/CD as in development
 
 ### Setting Up GitHub Secrets
 
