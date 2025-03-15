@@ -65,11 +65,11 @@ jobs:
 
       - name: Build and start Docker containers
         run: |
-          docker-compose build
-          docker-compose up -d
+          docker compose build
+          docker compose up -d
 
       - name: Check running containers
-        run: docker-compose ps
+        run: docker compose ps
 
       - name: Wait for containers to be ready
         run: |
@@ -90,10 +90,10 @@ jobs:
         if: failure()
         run: |
           echo "Docker container logs:"
-          docker-compose logs
+          docker compose logs
           echo "Backend logs:"
           docker exec backend cat /app/npm-debug.log || true
 
       - name: Stop containers
         if: always()
-        run: docker-compose down 
+        run: docker compose down 

@@ -21,22 +21,22 @@ jobs:
 
       - name: Build Docker containers
         run: |
-          docker-compose build backend frontend
+          docker compose build backend frontend
 
       - name: Create containers (don't start services)
         run: |
-          docker-compose up -d --no-start backend frontend
+          docker compose up -d --no-start backend frontend
 
       # Backend linting in container
       - name: Lint Backend
         run: |
-          docker-compose run --rm backend sh -c "npm install --include=dev && npm run lint"
+          docker compose run --rm backend sh -c "npm install --include=dev && npm run lint"
 
       # Frontend linting in container
       - name: Lint Frontend
         run: |
-          docker-compose run --rm frontend sh -c "npm install --include=dev && npm run lint"
+          docker compose run --rm frontend sh -c "npm install --include=dev && npm run lint"
 
       - name: Clean up
         if: always()
-        run: docker-compose down 
+        run: docker compose down 
