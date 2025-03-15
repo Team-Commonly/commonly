@@ -55,8 +55,8 @@ jobs:
 
       - name: Build and start Docker containers
         run: |
-          docker-compose build
-          docker-compose up -d
+          docker compose build
+          docker compose up -d
 
       - name: Wait for containers to be ready
         run: |
@@ -77,4 +77,4 @@ jobs:
 
       - name: Stop containers
         if: always()
-        run: docker-compose down 
+        run: docker compose down 
