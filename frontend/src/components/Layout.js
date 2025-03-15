@@ -102,7 +102,7 @@ const Layout = () => {
                         {!isMobile && (
                             <div className="content-sidebar">
                                 <Paper elevation={0} className="trending-section">
-                                    <h3>What's happening</h3>
+                                    <h3>What&apos;s happening</h3>
                                     <div className="trending-topics">
                                         <div className="trending-topic">
                                             <span className="topic-category">Trending in Technology</span>

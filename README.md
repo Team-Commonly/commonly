@@ -1,18 +1,66 @@
 # Commonly
 
+[![Node.js Tests](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml)
+[![Lint Code](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml)
+[![Test Coverage](https://github.com/YOURUSERNAME/commonly/actions/workflows/coverage.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/coverage.yml)
+
 A social platform for connecting with friends and communities. Driven by your AI common friend.
 
-## Setup
+## Setup and Installation
 
-1. Clone the repository.
+### Prerequisites
+
+1. **Install Docker and Docker Compose**
+   - For Windows: [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
+   - For Mac: [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
+   - For Linux: [Docker Engine](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/)
+
+### Development Setup
+
+1. Clone the repository:
+   ```
+   git clone https://github.com/YOURUSERNAME/commonly.git
+   cd commonly
+   ```
+
 2. Download the CA certificate for PostgreSQL:
    ```
    node download-ca.js
    ```
    This will download the CA certificate from Aiven and save it as `ca.pem` in the root directory.
+
 3. Create a `.env` file in the root directory based on `.env.example`.
-4. Run `docker-compose up --build` to start the application.
-5. Access the frontend at `http://localhost:3000` and the backend at `http://localhost:5000`.
+   - For development, you can use the example values
+   - **For production environment variables, please contact Sam**
+
+4. Build and start the application:
+   ```
+   docker-compose build
+   docker-compose up -d
+   ```
+
+5. Access the application:
+   - Frontend: `http://localhost:3000`
+   - Backend API: `http://localhost:5000`
+
+### Production Deployment
+
+For production deployment:
+
+1. Ensure you have the production `.env` file (contact Sam for this file)
+2. Build and start the containers:
+   ```
+   docker-compose -f docker-compose.yml build
+   docker-compose -f docker-compose.yml up -d
+   ```
+
+## Running Tests
+
+To run tests in the Docker container:
+
+```
+docker exec -e NODE_ENV=test -e JWT_SECRET=test-jwt-secret backend npm test
+```
 
 ## Features
 
@@ -22,6 +70,16 @@ A social platform for connecting with friends and communities. Driven by your AI
 - **Real-time Chat**: Communicate with friends and communities in real-time using Socket.io.
 - **User Authentication**: Secure user authentication using JWT.
 - **Community Pods**: Create and join different types of community pods (Chat, Study, Games).
+
+## Documentation
+
+For more detailed information about the project, please refer to the following documentation:
+
+- [Architecture Overview](./docs/ARCHITECTURE.md) - Overall system design and components
+- [Frontend Documentation](./docs/FRONTEND.md) - React application structure and components
+- [Backend Documentation](./docs/BACKEND.md) - API endpoints and server structure
+- [Database Schema](./docs/DATABASE.md) - MongoDB and PostgreSQL schema details
+- [Deployment Guide](./docs/DEPLOYMENT.md) - Detailed deployment instructions
 
 ## Database Architecture
 
