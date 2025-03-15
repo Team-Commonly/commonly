@@ -86,7 +86,7 @@ const Login = () => {
                             </Typography>
                         )}
                         <Typography variant="body2" align="center" sx={{ mt: 2 }}>
-                            Don't have an account? <Link to="/register">Register here</Link>
+                            Don&apos;t have an account? <Link to="/register">Register here</Link>
                         </Typography>
                     </form>
                 </Paper>

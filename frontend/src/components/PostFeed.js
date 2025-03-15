@@ -191,6 +191,13 @@ const PostFeed = () => {
         blurActiveElement();
     };
 
+    // Add a function to refresh the page after a delay
+    const refreshPage = (delay = 0) => {
+        setTimeout(() => {
+            window.location.reload();
+        }, delay);
+    };
+
     const handleDeletePost = async () => {
         if (!selectedPostId) return;
         
