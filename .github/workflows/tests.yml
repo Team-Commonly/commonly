@@ -12,13 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      MONGO_URI: mongodb://mongo:27017/commonly
       JWT_SECRET: test-jwt-secret
-      PG_USER: postgres
-      PG_PASSWORD: postgres
-      PG_HOST: postgres
-      PG_PORT: 5432
-      PG_DATABASE: commonly
       SENDGRID_API_KEY: fake-api-key
       SENDGRID_FROM_EMAIL: test@example.com
       FRONTEND_URL: http://localhost:3000
@@ -30,70 +24,16 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
 
-      # Use Docker Compose GitHub Action
-      - name: Set up Docker Compose
-        uses: isbang/compose-action@v1.5.1
-
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Create .env file
+      - name: Install dependencies
         run: |
-          echo "MONGO_URI=${{ env.MONGO_URI }}" > .env
-          echo "JWT_SECRET=${{ env.JWT_SECRET }}" >> .env
-          echo "PG_USER=${{ env.PG_USER }}" >> .env
-          echo "PG_PASSWORD=${{ env.PG_PASSWORD }}" >> .env
-          echo "PG_HOST=${{ env.PG_HOST }}" >> .env
-          echo "PG_PORT=${{ env.PG_PORT }}" >> .env
-          echo "PG_DATABASE=${{ env.PG_DATABASE }}" >> .env
-          echo "SENDGRID_API_KEY=${{ env.SENDGRID_API_KEY }}" >> .env
-          echo "SENDGRID_FROM_EMAIL=${{ env.SENDGRID_FROM_EMAIL }}" >> .env
-          echo "FRONTEND_URL=${{ env.FRONTEND_URL }}" >> .env
-          cat .env
-
-      - name: Build and start Docker containers
-        run: |
-          docker compose build
-          docker compose up -d
-
-      - name: Check running containers
-        run: docker compose ps
-
-      - name: Wait for containers to be ready
-        run: |
-          # Give the containers time to start up
-          sleep 15
-          # Check if backend is running
-          docker ps | grep backend
-
-      - name: Install backend dependencies
-        run: |
-          docker exec backend npm install --include=dev
-          docker exec backend npm list --depth=0
+          cd backend
+          npm install --include=dev
 
       - name: Run tests
-        run: docker exec -e NODE_ENV=test -e JWT_SECRET=test-jwt-secret backend npm test
-
-      - name: Show logs if tests fail
-        if: failure()
         run: |
-          echo "Docker container logs:"
-          docker compose logs
-          echo "Backend logs:"
-          docker exec backend cat /app/npm-debug.log || true
-
-      - name: Stop containers
-        if: always()
-        run: docker compose down 
+          cd backend
+          npm test 
