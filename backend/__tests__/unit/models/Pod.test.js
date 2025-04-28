@@ -21,7 +21,7 @@ describe('Pod Model Tests', () => {
     testUser = new User({
       username: 'testuser',
       email: 'test@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     });
     await testUser.save();
   });
@@ -35,7 +35,7 @@ describe('Pod Model Tests', () => {
       name: 'Test Pod',
       description: 'This is a test pod',
       type: 'chat',
-      createdBy: testUser._id
+      createdBy: testUser._id,
     };
 
     const pod = new Pod(podData);
@@ -48,7 +48,7 @@ describe('Pod Model Tests', () => {
     expect(savedPod.createdBy.toString()).toBe(testUser._id.toString());
     expect(savedPod.createdAt).toBeDefined();
     expect(savedPod.updatedAt).toBeDefined();
-    
+
     // Test that creator is automatically added as member
     expect(savedPod.members).toHaveLength(1);
     expect(savedPod.members[0].toString()).toBe(testUser._id.toString());
@@ -59,14 +59,14 @@ describe('Pod Model Tests', () => {
     const podWithoutName = new Pod({
       description: 'Test pod description',
       type: 'chat',
-      createdBy: testUser._id
+      createdBy: testUser._id,
     });
 
     // Test missing createdBy
     const podWithoutCreator = new Pod({
       name: 'Test Pod',
       description: 'Test pod description',
-      type: 'chat'
+      type: 'chat',
     });
 
     await expect(podWithoutName.save()).rejects.toThrow();
@@ -78,7 +78,7 @@ describe('Pod Model Tests', () => {
       name: 'Test Pod',
       description: 'Test pod description',
       type: 'invalid_type', // Not in enum list
-      createdBy: testUser._id
+      createdBy: testUser._id,
     });
 
     await expect(podWithInvalidType.save()).rejects.toThrow();
@@ -88,7 +88,7 @@ describe('Pod Model Tests', () => {
     const pod = new Pod({
       name: 'Test Pod',
       description: 'Test pod description',
-      createdBy: testUser._id
+      createdBy: testUser._id,
       // No type provided, should default to 'chat'
     });
 
@@ -101,14 +101,14 @@ describe('Pod Model Tests', () => {
     const secondUser = new User({
       username: 'seconduser',
       email: 'second@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     });
     await secondUser.save();
 
     const thirdUser = new User({
       username: 'thirduser',
       email: 'third@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     });
     await thirdUser.save();
 
@@ -117,22 +117,22 @@ describe('Pod Model Tests', () => {
       name: 'Members Test Pod',
       description: 'Testing pod members',
       createdBy: testUser._id,
-      members: [secondUser._id] // Add secondUser as member initially
+      members: [secondUser._id], // Add secondUser as member initially
     });
 
     let savedPod = await pod.save();
 
     // The creator should be automatically added as member even if not in initial members
     expect(savedPod.members).toHaveLength(2);
-    expect(savedPod.members.map(id => id.toString())).toContain(testUser._id.toString());
-    expect(savedPod.members.map(id => id.toString())).toContain(secondUser._id.toString());
+    expect(savedPod.members.map((id) => id.toString())).toContain(testUser._id.toString());
+    expect(savedPod.members.map((id) => id.toString())).toContain(secondUser._id.toString());
 
     // Add third user
     savedPod.members.push(thirdUser._id);
     savedPod = await savedPod.save();
 
     expect(savedPod.members).toHaveLength(3);
-    expect(savedPod.members.map(id => id.toString())).toContain(thirdUser._id.toString());
+    expect(savedPod.members.map((id) => id.toString())).toContain(thirdUser._id.toString());
   });
 
   it('should handle references to messages, announcements, and externalLinks', async () => {
@@ -146,18 +146,18 @@ describe('Pod Model Tests', () => {
       createdBy: testUser._id,
       messages: [mockMessageId],
       announcements: [mockAnnouncementId],
-      externalLinks: [mockExternalLinkId]
+      externalLinks: [mockExternalLinkId],
     });
 
     const savedPod = await pod.save();
 
     expect(savedPod.messages).toHaveLength(1);
     expect(savedPod.messages[0].toString()).toBe(mockMessageId.toString());
-    
+
     expect(savedPod.announcements).toHaveLength(1);
     expect(savedPod.announcements[0].toString()).toBe(mockAnnouncementId.toString());
-    
+
     expect(savedPod.externalLinks).toHaveLength(1);
     expect(savedPod.externalLinks[0].toString()).toBe(mockExternalLinkId.toString());
   });
-}); 
+});

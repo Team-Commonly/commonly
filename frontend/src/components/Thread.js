@@ -1,7 +1,8 @@
+/* eslint-disable max-len */
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Chip, Menu, MenuItem, CircularProgress } from '@mui/material';
+import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Menu, MenuItem, CircularProgress } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';

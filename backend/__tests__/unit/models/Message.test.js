@@ -1,3 +1,4 @@
+// eslint-disable-next-line no-unused-vars
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
@@ -23,7 +24,7 @@ describe('Message Model Tests', () => {
     testUser = new User({
       username: 'testuser',
       email: 'test@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     });
     await testUser.save();
 
@@ -31,7 +32,7 @@ describe('Message Model Tests', () => {
       name: 'Test Pod',
       description: 'Test pod description',
       type: 'chat',
-      createdBy: testUser._id
+      createdBy: testUser._id,
     });
     await testPod.save();
   });
@@ -45,7 +46,7 @@ describe('Message Model Tests', () => {
       podId: testPod._id,
       userId: testUser._id,
       content: 'This is a test message',
-      messageType: 'text'
+      messageType: 'text',
     };
 
     const message = new Message(messageData);
@@ -64,19 +65,19 @@ describe('Message Model Tests', () => {
     // Test missing podId
     const messageWithoutPodId = new Message({
       userId: testUser._id,
-      content: 'Test message content'
+      content: 'Test message content',
     });
 
     // Test missing userId
     const messageWithoutUserId = new Message({
       podId: testPod._id,
-      content: 'Test message content'
+      content: 'Test message content',
     });
 
     // Test missing content
     const messageWithoutContent = new Message({
       podId: testPod._id,
-      userId: testUser._id
+      userId: testUser._id,
     });
 
     await expect(messageWithoutPodId.save()).rejects.toThrow();
@@ -89,7 +90,7 @@ describe('Message Model Tests', () => {
       podId: testPod._id,
       userId: testUser._id,
       content: 'Test message content',
-      messageType: 'invalid_type' // Not in enum list
+      messageType: 'invalid_type', // Not in enum list
     });
 
     await expect(messageWithInvalidType.save()).rejects.toThrow();
@@ -99,7 +100,7 @@ describe('Message Model Tests', () => {
     const message = new Message({
       podId: testPod._id,
       userId: testUser._id,
-      content: 'Test message content'
+      content: 'Test message content',
       // No messageType provided, should default to 'text'
     });
 
@@ -111,7 +112,7 @@ describe('Message Model Tests', () => {
     const message = new Message({
       podId: testPod._id,
       userId: testUser._id,
-      content: 'Test message content'
+      content: 'Test message content',
     });
 
     await message.save();
@@ -124,8 +125,8 @@ describe('Message Model Tests', () => {
 
     expect(populatedMessage.podId).toBeDefined();
     expect(populatedMessage.podId.name).toBe(testPod.name);
-    
+
     expect(populatedMessage.userId).toBeDefined();
     expect(populatedMessage.userId.username).toBe(testUser.username);
   });
-}); 
+});
