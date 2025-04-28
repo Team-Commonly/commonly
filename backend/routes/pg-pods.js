@@ -1,14 +1,15 @@
 const express = require('express');
+
 const router = express.Router();
 const auth = require('../middleware/auth');
-const { 
-    getAllPods, 
-    getPodById, 
-    createPod, 
-    updatePod, 
-    deletePod, 
-    joinPod, 
-    leavePod 
+const {
+  getAllPods,
+  getPodById,
+  createPod,
+  updatePod,
+  deletePod,
+  joinPod,
+  leavePod,
 } = require('../controllers/pgPodController');
 
 // Get all pods or filter by type
@@ -32,4 +33,4 @@ router.post('/:id/join', auth, joinPod);
 // Leave a pod
 router.post('/:id/leave', auth, leavePod);
 
-module.exports = router; 
+module.exports = router;

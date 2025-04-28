@@ -1,5 +1,6 @@
+/* eslint-disable max-len */
 import React, { useState, useEffect } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import SearchBar from './SearchBar';
 import { Box, CircularProgress, Container, Paper, useTheme, useMediaQuery, IconButton } from '@mui/material';
@@ -9,9 +10,8 @@ import './Layout.css';
 
 const Layout = () => {
     const [searchResults, setSearchResults] = useState(null);
-    const { currentUser, loading } = useAuth();
+    const { loading } = useAuth();
     const { isDashboardCollapsed, toggleDashboard } = useLayout();
-    const navigate = useNavigate();
     const location = useLocation();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));

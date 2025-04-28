@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import axios from 'axios';
 import { Button, CircularProgress } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
@@ -11,22 +12,29 @@ const SearchBar = ({ onSearchResults }) => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // On mount, set query from URL if present
-    useEffect(() => {
-        const searchParams = new URLSearchParams(location.search);
-        const queryParam = searchParams.get('q');
-        if (queryParam) {
-            setQuery(queryParam);
+    // This function fetches all posts without navigation
+    const fetchAllPostsWithoutNavigation = useCallback(async () => {
+        try {
+            setIsSearching(true);
+            const response = await axios.get('/api/posts', {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
             
-            // If on feed page, perform search
-            if (location.pathname === '/feed') {
-                performLocalSearch(queryParam);
+            if (typeof onSearchResults === 'function') {
+                onSearchResults(response.data);
             }
+        } catch (err) {
+            console.error('Failed to fetch posts:', err);
+            if (typeof onSearchResults === 'function') {
+                onSearchResults([]);
+            }
+        } finally {
+            setIsSearching(false);
         }
-    }, [location.pathname]);
+    }, [onSearchResults]);
 
     // This function performs the search without navigation
-    const performLocalSearch = async (searchQuery) => {
+    const performLocalSearch = useCallback(async (searchQuery) => {
         if (!searchQuery.trim()) {
             fetchAllPostsWithoutNavigation();
             return;
@@ -49,28 +57,21 @@ const SearchBar = ({ onSearchResults }) => {
         } finally {
             setIsSearching(false);
         }
-    };
+    }, [fetchAllPostsWithoutNavigation, onSearchResults]);
 
-    // This function fetches all posts without navigation
-    const fetchAllPostsWithoutNavigation = async () => {
-        try {
-            setIsSearching(true);
-            const response = await axios.get('/api/posts', {
-                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-            });
+    // On mount, set query from URL if present
+    useEffect(() => {
+        const searchParams = new URLSearchParams(location.search);
+        const queryParam = searchParams.get('q');
+        if (queryParam) {
+            setQuery(queryParam);
             
-            if (typeof onSearchResults === 'function') {
-                onSearchResults(response.data);
+            // If on feed page, perform search
+            if (location.pathname === '/feed') {
+                performLocalSearch(queryParam);
             }
-        } catch (err) {
-            console.error('Failed to fetch posts:', err);
-            if (typeof onSearchResults === 'function') {
-                onSearchResults([]);
-            }
-        } finally {
-            setIsSearching(false);
         }
-    };
+    }, [location.pathname, location.search, performLocalSearch]);
 
     // This function performs search with navigation to feed
     const performSearchWithNavigation = async (searchQuery) => {
@@ -160,6 +161,10 @@ const SearchBar = ({ onSearchResults }) => {
             </form>
         </div>
     );
+};
+
+SearchBar.propTypes = {
+    onSearchResults: PropTypes.func.isRequired
 };
 
 export default SearchBar;

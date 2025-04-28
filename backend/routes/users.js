@@ -1,4 +1,5 @@
 const express = require('express');
+
 const router = express.Router();
 const auth = require('../middleware/auth');
 const { getCurrentProfile, updateProfile, getUserById } = require('../controllers/userController');
@@ -18,4 +19,4 @@ router.put('/profile', auth, updateProfile);
 // @access  Private
 router.get('/:id', auth, getUserById);
 
-module.exports = router; 
+module.exports = router;

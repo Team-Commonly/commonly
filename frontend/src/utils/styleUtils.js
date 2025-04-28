@@ -75,10 +75,12 @@ export const forceImmediateStyleApplication = () => {
   }, 0);
 };
 
-export default {
+const styleUtils = {
   forceReflow,
   reloadStylesheets,
   applyStylesToElements,
   applyBodyClass,
   forceImmediateStyleApplication
-}; 
+};
+
+export default styleUtils; 
