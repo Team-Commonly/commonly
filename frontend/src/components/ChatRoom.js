@@ -1,10 +1,10 @@
+/* eslint-disable max-len */
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
     Container, Typography, Box, Paper, TextField, IconButton, 
-    Avatar, Divider, List, ListItem, ListItemText, ListItemAvatar,
-    Button, CircularProgress, AppBar, Toolbar, Badge, Chip, FormControlLabel, Switch,
-    Portal, MenuItem
+    Avatar, List, ListItem, ListItemAvatar,
+    Button, CircularProgress, AppBar, Toolbar, MenuItem
 } from '@mui/material';
 import { 
     Send as SendIcon, 
@@ -16,15 +16,9 @@ import {
     Close as CloseIcon,
     Announcement as AnnouncementIcon,
     Link as LinkIcon,
-    AssignmentTurnedIn as TaskIcon,
-    Event as EventIcon,
     Search as SearchIcon,
-    ExpandMore as ExpandMoreIcon,
-    CheckCircle as CheckCircleIcon,
-    RadioButtonUnchecked as UncheckedIcon,
     ChevronRight as ChevronRightIcon,
     KeyboardArrowRight as ArrowRightIcon,
-    Menu as MenuIcon,
     KeyboardArrowLeft as ArrowLeftIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
@@ -34,7 +28,6 @@ import { useLayout } from '../context/LayoutContext';
 import { getAvatarColor } from '../utils/avatarUtils';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import './ChatRoom.css';
 
 const ChatRoom = () => {
@@ -73,20 +66,20 @@ const ChatRoom = () => {
     const qrCodeInputRef = useRef(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     
-    // Mock data with English text
-    const mockAnnouncements = [
-        { id: 1, title: 'Announcement', content: '114.100.120.53:13000', time: '3 days ago' },
-    ];
-    
-    const mockExternalLinks = [
-        { id: 1, name: 'Discord', url: '#', icon: 'discord' },
-        { id: 2, name: 'Telegram', url: '#', icon: 'telegram' },
-        { id: 3, name: 'WeChat', url: '#', icon: 'wechat', isQRCode: true },
-        { id: 4, name: 'GroupMe', url: '#', icon: 'groupme' },
-    ];
-    
     // Fetch pod details and messages
     useEffect(() => {
+        // Mock data with English text
+        const mockAnnouncements = [
+            { id: 1, title: 'Announcement', content: '114.100.120.53:13000', time: '3 days ago' },
+        ];
+        
+        const mockExternalLinks = [
+            { id: 1, name: 'Discord', url: '#', icon: 'discord' },
+            { id: 2, name: 'Telegram', url: '#', icon: 'telegram' },
+            { id: 3, name: 'WeChat', url: '#', icon: 'wechat', isQRCode: true },
+            { id: 4, name: 'GroupMe', url: '#', icon: 'groupme' },
+        ];
+        
         const fetchPodAndMessages = async () => {
             setLoading(true);
             setMessages([]); // Clear existing messages while loading
@@ -249,34 +242,6 @@ const ChatRoom = () => {
                 setPreviewUrl(reader.result);
             };
             reader.readAsDataURL(file);
-        }
-    };
-    
-    const uploadFile = async () => {
-        if (!selectedFile) return null;
-        
-        const formData = new FormData();
-        formData.append('image', selectedFile);
-        
-        try {
-            setIsUploading(true);
-            const token = localStorage.getItem('token');
-            
-            const response = await axios.post('/api/uploads', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            setIsUploading(false);
-            // The URL is now an API endpoint that serves the file from the database
-            return response.data.url;
-        } catch (error) {
-            console.error('Error uploading file:', error);
-            setIsUploading(false);
-            setError('Failed to upload image');
-            return null;
         }
     };
     
@@ -448,34 +413,6 @@ const ChatRoom = () => {
         }
     }, [showMembers]);
     
-    // Function to refresh pod data including announcements and links
-    const refreshData = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                setError('Authentication required. Please log in again.');
-                return;
-            }
-
-            const authHeaders = {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            };
-
-            // Fetch pod details with announcements and links
-            const podResponse = await axios.get(`/api/pods/${podType}/${roomId}`, authHeaders);
-            
-            if (!podResponse.data) {
-                throw new Error('Pod not found');
-            }
-            
-            setRoom(podResponse.data);
-        } catch (err) {
-            console.error('Error refreshing pod data:', err);
-        }
-    };
-
     // Handle adding new announcement with backend integration
     const handleAddAnnouncement = async () => {
         if (!newAnnouncementTitle.trim() || !newAnnouncementContent.trim()) {
@@ -1296,7 +1233,7 @@ const ChatRoom = () => {
                                                         <div className={`message-image-container ${isCurrentUser ? 'sent' : 'received'}`}>
                                                             <img 
                                                                 src={messageContent}
-                                                                alt="Shared image" 
+                                                                alt="Shared" 
                                                                 className="message-image"
                                                                 onClick={() => window.open(messageContent, '_blank')}
                                                             />

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+/* eslint-disable max-len */
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
     Container, Typography, Box, Grid, Card, CardContent, CardActions, 
     Button, TextField, Dialog, DialogTitle, DialogContent, DialogActions,
     FormControl, InputLabel, Select, MenuItem, CircularProgress, Tabs, Tab,
-    AppBar, Toolbar, IconButton, Badge, Avatar, FormControlLabel, Switch
+    AppBar, Toolbar, Badge, Avatar
 } from '@mui/material';
 import { 
     Add as AddIcon, 
@@ -12,13 +13,11 @@ import {
     People as PeopleIcon 
 } from '@mui/icons-material';
 import axios from 'axios';
-import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { getAvatarColor } from '../utils/avatarUtils';
 import './Pod.css';
 
 const Pod = () => {
-    const { pgAvailable } = useSocket();
     const { currentUser } = useAuth();
     const [pods, setPods] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -31,8 +30,8 @@ const Pod = () => {
     const navigate = useNavigate();
     const { podType } = useParams();
     
-    // Get pod type based on tab value or URL parameter
-    const getPodType = () => {
+    // Get pod type based on tab value or URL parameter - wrapped in useCallback
+    const getPodType = useCallback(() => {
         if (podType) {
             return podType;
         }
@@ -47,7 +46,7 @@ const Pod = () => {
             default:
                 return 'chat';
         }
-    };
+    }, [podType, tabValue]);
     
     // Set tab value based on URL parameter when component mounts
     useEffect(() => {
@@ -97,7 +96,7 @@ const Pod = () => {
         };
         
         fetchPods();
-    }, [tabValue, podType]);
+    }, [tabValue, podType, getPodType]);
     
     // Filter pods based on search query and tab value
     const filteredPods = React.useMemo(() => {
@@ -112,7 +111,7 @@ const Pod = () => {
             
             return podTypeMatch && searchMatch;
         });
-    }, [pods, tabValue, searchQuery]);
+    }, [pods, searchQuery, getPodType]);
     
     // Handle creating a new room
     const handleCreateRoom = async () => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { 
     List, ListItem, ListItemIcon, ListItemText, Typography, 
@@ -19,21 +19,7 @@ import './Dashboard.css';
 const Dashboard = () => {
     const { currentUser, userLoading, refreshData } = useAppContext();
     const { isDashboardCollapsed, toggleDashboard } = useLayout();
-    const [error, setError] = useState('');
     const location = useLocation();
-
-    const sidebarStyles = {
-        width: 280,
-        height: '100vh',
-        position: 'fixed',
-        left: 0,
-        top: 0,
-        backgroundColor: '#ffffff',
-        boxShadow: '3px 0 10px rgba(0,0,0,0.15)',
-        padding: '20px 0',
-        overflowY: 'auto',
-        zIndex: 1100
-    };
 
     // Function to handle navigation with refresh
     const handleNavigation = (path) => {
@@ -43,8 +29,6 @@ const Dashboard = () => {
         // Use window.location for a full page refresh
         window.location.href = path;
     };
-
-    if (error) return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
 
     return (
         <div className={`dashboard ${isDashboardCollapsed ? 'collapsed' : ''}`}>
