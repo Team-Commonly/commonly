@@ -1,4 +1,5 @@
 const express = require('express');
+
 const router = express.Router();
 const auth = require('../middleware/auth');
 const { checkStatus, syncUser } = require('../controllers/pgStatusController');
@@ -9,4 +10,4 @@ router.get('/', checkStatus);
 // Sync a user from MongoDB to PostgreSQL for chat functionality
 router.post('/sync-user', auth, syncUser);
 
-module.exports = router; 
+module.exports = router;

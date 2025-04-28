@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import PropTypes from 'prop-types';
 import io from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import axios from 'axios';
@@ -146,4 +147,8 @@ export const SocketProvider = ({ children }) => {
             {children}
         </SocketContext.Provider>
     );
+};
+
+SocketProvider.propTypes = {
+    children: PropTypes.node.isRequired
 }; 
