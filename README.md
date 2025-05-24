@@ -80,6 +80,7 @@ For more detailed information about the project, please refer to the following d
 - [Backend Documentation](./docs/BACKEND.md) - API endpoints and server structure
 - [Database Schema](./docs/DATABASE.md) - MongoDB and PostgreSQL schema details
 - [Deployment Guide](./docs/DEPLOYMENT.md) - Detailed deployment instructions
+- [Linting Policy](./docs/LINTING.md) - Code style guidelines and auto-fix setup
 
 ## Database Architecture
 

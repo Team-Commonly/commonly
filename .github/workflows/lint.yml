@@ -22,25 +22,21 @@ jobs:
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
 
+      - name: Install root dependencies
+        run: npm install --include=dev
+
       - name: Install backend dependencies
         run: |
           cd backend
           npm install --include=dev
-
-      - name: Lint Backend
-        run: |
-          cd backend
-          npm run lint
 
       - name: Install frontend dependencies
         run: |
           cd frontend
           npm install --include=dev
 
-      - name: Lint Frontend
-        run: |
-          cd frontend
-          npm run lint
+      - name: Lint Code
+        run: npm run lint
 
       - name: Show logs if linting fails
         if: failure()
