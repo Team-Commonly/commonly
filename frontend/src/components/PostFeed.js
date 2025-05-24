@@ -1,13 +1,13 @@
-import React, { useEffect, useState } from 'react';
+/* eslint-disable max-len */
+import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
-import { Link, useOutletContext, useNavigate } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { 
     Typography, Avatar, Box, Button, Container, IconButton, Menu, MenuItem, 
-    Paper, TextField, Divider, CircularProgress, Skeleton, Card, CardContent
+    Paper, TextField, Divider, CircularProgress, Skeleton
 } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import { 
-    Add as AddIcon, 
     ChatBubbleOutline, 
     FavoriteBorder, 
     Favorite, 
@@ -26,7 +26,6 @@ import './PostFeed.css'; // Import the CSS file
 const PostFeed = () => {
     const { 
         currentUser, 
-        posts: contextPosts, 
         setPosts: setContextPosts, 
         refreshData,
         removePost,
@@ -226,7 +225,7 @@ const PostFeed = () => {
     };
 
     // Define the fetch posts function
-    const fetchPosts = async () => {
+    const fetchPosts = useCallback(async () => {
         try {
             const res = await axios.get('/api/posts', {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -251,7 +250,7 @@ const PostFeed = () => {
             setError('Failed to fetch posts. Please try again later.');
             setPosts([]);
         }
-    };
+    }, [currentUser, setContextPosts]);
 
     // If we have search results, use them
     useEffect(() => {
@@ -276,7 +275,7 @@ const PostFeed = () => {
         else if (currentUser) {
             fetchPosts();
         }
-    }, [searchResults, currentUser, setContextPosts]);
+    }, [searchResults, currentUser, setContextPosts, fetchPosts]);
 
     if (error) return <Typography color="error" sx={{ p: 2, mt: 8 }}>{error}</Typography>;
 

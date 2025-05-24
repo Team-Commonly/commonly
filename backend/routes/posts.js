@@ -1,10 +1,13 @@
 const express = require('express');
-const { createPost, getPosts, getPostById, addComment, searchPosts, likePost, deletePost, deleteComment } = require('../controllers/postController');
-const { authenticate } = require('../middleware/authMiddleware');
+const {
+  createPost, getPosts, getPostById, addComment, searchPosts, likePost, deletePost, deleteComment,
+} = require('../controllers/postController');
+const { _authenticate } = require('../middleware/authMiddleware');
+
 const router = express.Router();
 const auth = require('../middleware/auth');
-const Post = require('../models/Post');
-const User = require('../models/User');
+const _Post = require('../models/Post');
+const _User = require('../models/User');
 
 // @route   POST api/posts
 // @desc    Create a post

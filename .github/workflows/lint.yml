@@ -1,4 +1,4 @@
-name: Lint Code
+name: Lint
 
 on:
   push:
@@ -8,34 +8,41 @@ on:
 
 jobs:
   lint:
-    name: Lint Code
+    name: Code Quality
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Use Docker Compose GitHub Action
-      - name: Set up Docker Compose
-        uses: isbang/compose-action@v1.5.1
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
 
-      - name: Build Docker containers
-        run: |
-          docker compose build backend frontend
+      - name: Install root dependencies
+        run: npm install --include=dev
 
-      - name: Create containers (don't start services)
+      - name: Install backend dependencies
         run: |
-          docker compose up -d --no-start backend frontend
+          cd backend
+          npm install --include=dev
 
-      # Backend linting in container
-      - name: Lint Backend
+      - name: Install frontend dependencies
         run: |
-          docker compose run --rm backend sh -c "npm install --include=dev && npm run lint"
+          cd frontend
+          npm install --include=dev
 
-      # Frontend linting in container
-      - name: Lint Frontend
+      - name: Lint Code
+        run: npm run lint
+
+      - name: Show logs if linting fails
+        if: failure()
         run: |
-          docker compose run --rm frontend sh -c "npm install --include=dev && npm run lint"
+          echo "Docker container logs:"
+          docker compose logs
 
       - name: Clean up
         if: always()

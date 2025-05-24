@@ -21,10 +21,9 @@ import EditIcon from '@mui/icons-material/Edit';
 import { avatarOptions, getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
-import { refreshPage } from '../utils/refreshUtils';
 
 const UserProfile = () => {
-    const { currentUser, refreshData, refreshAvatars } = useAppContext();
+    const { refreshAvatars } = useAppContext();
     const [user, setUser] = useState(null);
     const [userStats, setUserStats] = useState({ postCount: 0, commentCount: 0 });
     const [error, setError] = useState('');
