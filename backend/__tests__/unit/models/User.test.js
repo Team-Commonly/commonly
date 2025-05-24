@@ -1,3 +1,4 @@
+// eslint-disable-next-line no-unused-vars
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
@@ -20,7 +21,7 @@ describe('User Model Tests', () => {
     const userData = {
       username: 'testuser',
       email: 'test@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     };
 
     const user = new User(userData);
@@ -40,25 +41,25 @@ describe('User Model Tests', () => {
   it('should not save a user without required fields', async () => {
     const userWithoutUsername = new User({
       email: 'test@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     });
 
     const userWithoutEmail = new User({
       username: 'testuser',
-      password: 'Password123!'
+      password: 'Password123!',
     });
 
     const userWithoutPassword = new User({
       username: 'testuser',
-      email: 'test@example.com'
+      email: 'test@example.com',
     });
 
     // Test missing username
     await expect(userWithoutUsername.save()).rejects.toThrow();
-    
+
     // Test missing email
     await expect(userWithoutEmail.save()).rejects.toThrow();
-    
+
     // Test missing password
     await expect(userWithoutPassword.save()).rejects.toThrow();
   });
@@ -68,7 +69,7 @@ describe('User Model Tests', () => {
     const firstUser = new User({
       username: 'sameusername',
       email: 'first@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     });
     await firstUser.save();
 
@@ -76,7 +77,7 @@ describe('User Model Tests', () => {
     const secondUser = new User({
       username: 'sameusername',
       email: 'second@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     });
 
     await expect(secondUser.save()).rejects.toThrow();
@@ -87,7 +88,7 @@ describe('User Model Tests', () => {
     const firstUser = new User({
       username: 'firstuser',
       email: 'same@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     });
     await firstUser.save();
 
@@ -95,7 +96,7 @@ describe('User Model Tests', () => {
     const secondUser = new User({
       username: 'seconduser',
       email: 'same@example.com',
-      password: 'Password123!'
+      password: 'Password123!',
     });
 
     await expect(secondUser.save()).rejects.toThrow();
@@ -106,7 +107,7 @@ describe('User Model Tests', () => {
     const user = new User({
       username: 'testuser',
       email: 'test@example.com',
-      password
+      password,
     });
 
     const savedUser = await user.save();
@@ -120,7 +121,7 @@ describe('User Model Tests', () => {
     const user = new User({
       username: 'testuser',
       email: 'test@example.com',
-      password
+      password,
     });
 
     await user.save();
@@ -133,4 +134,4 @@ describe('User Model Tests', () => {
     const incorrectPasswordMatch = await user.comparePassword('WrongPassword123!');
     expect(incorrectPasswordMatch).toBe(false);
   });
-}); 
+});

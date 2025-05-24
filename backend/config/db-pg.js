@@ -3,12 +3,12 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 // PostgreSQL connection configuration
-let pgConfig = {
+const pgConfig = {
   user: process.env.PG_USER,
   password: process.env.PG_PASSWORD,
   host: process.env.PG_HOST,
   port: process.env.PG_PORT || 5432,
-  database: process.env.PG_DATABASE
+  database: process.env.PG_DATABASE,
 };
 
 // Add SSL configuration if CA path is provided
@@ -16,11 +16,11 @@ if (process.env.PG_SSL_CA_PATH) {
   try {
     const caPath = process.env.PG_SSL_CA_PATH;
     console.log(`Using CA certificate from: ${caPath}`);
-    
+
     if (fs.existsSync(caPath)) {
       pgConfig.ssl = {
         rejectUnauthorized: true,
-        ca: fs.readFileSync(caPath).toString()
+        ca: fs.readFileSync(caPath).toString(),
       };
       console.log('SSL configuration added with CA certificate');
     } else {
@@ -55,11 +55,11 @@ const connectPG = async () => {
       port: pgConfig.port,
       database: pgConfig.database,
       user: pgConfig.user,
-      ssl: pgConfig.ssl ? 'Enabled' : 'Disabled'
+      ssl: pgConfig.ssl ? 'Enabled' : 'Disabled',
     });
     // Don't exit the process, just log the error
     return null;
   }
 };
 
-module.exports = { pool, connectPG }; 
+module.exports = { pool, connectPG };

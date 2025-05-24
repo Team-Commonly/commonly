@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import axios from 'axios';
 
 // Create context
@@ -12,7 +13,6 @@ export const AppProvider = ({ children }) => {
     const [userLoading, setUserLoading] = useState(true);
     const [postsLoading, setPostsLoading] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
-    const [avatarRefreshTrigger, setAvatarRefreshTrigger] = useState(0);
 
     // Function to trigger a refresh of data
     const refreshData = useCallback(() => {
@@ -21,8 +21,6 @@ export const AppProvider = ({ children }) => {
     
     // Function to specifically refresh avatar colors across all components
     const refreshAvatars = useCallback(() => {
-        setAvatarRefreshTrigger(prev => prev + 1);
-        
         // Also trigger a full data refresh to ensure consistency
         refreshData();
         
@@ -119,6 +117,10 @@ export const AppProvider = ({ children }) => {
             {children}
         </AppContext.Provider>
     );
+};
+
+AppProvider.propTypes = {
+    children: PropTypes.node.isRequired
 };
 
 // Custom hook to use the context

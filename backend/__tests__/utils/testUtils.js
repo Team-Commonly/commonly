@@ -15,11 +15,11 @@ const setupMongoDb = async () => {
       },
       instance: {
         dbName: 'jest-test-db',
-      }
+      },
     });
-    
+
     const mongoUri = mongoServer.getUri();
-    
+
     await mongoose.connect(mongoUri);
     console.log('Connected to in-memory MongoDB');
   } catch (error) {
@@ -44,11 +44,12 @@ const closeMongoDb = async () => {
 const clearMongoDb = async () => {
   try {
     const { collections } = mongoose.connection;
-    
-    for (const key in collections) {
+    const collectionNames = Object.keys(collections);
+
+    await Promise.all(collectionNames.map(async (key) => {
       const collection = collections[key];
       await collection.deleteMany({});
-    }
+    }));
   } catch (error) {
     console.error('Error clearing MongoDB data:', error);
     throw error;
@@ -62,16 +63,16 @@ let pgPool;
 const setupPgDb = async () => {
   try {
     pgDb = newDb();
-    
+
     // Enable UUID extension
     pgDb.public.registerFunction({
       name: 'gen_random_uuid',
       implementation: () => require('crypto').randomUUID(),
     });
-    
+
     // Connect to the in-memory PostgreSQL
     pgPool = pgDb.adapters.createPg().pool();
-    
+
     // Create tables - modify this based on your schema
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS pods (
@@ -83,7 +84,7 @@ const setupPgDb = async () => {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
+
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS pod_members (
         pod_id VARCHAR(24) NOT NULL,
@@ -92,7 +93,7 @@ const setupPgDb = async () => {
         PRIMARY KEY (pod_id, user_id)
       )
     `);
-    
+
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS messages (
         id VARCHAR(24) PRIMARY KEY,
@@ -103,9 +104,9 @@ const setupPgDb = async () => {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
+
     console.log('Connected to in-memory PostgreSQL');
-    
+
     return pgPool;
   } catch (error) {
     console.error('Error setting up in-memory PostgreSQL:', error);
@@ -139,9 +140,7 @@ const closePgDb = async () => {
 };
 
 // JWT utilities
-const generateTestToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '1h' });
-};
+const generateTestToken = (userId) => jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
 // Test data generation
 const createTestUser = async (User, override = {}) => {
@@ -149,9 +148,9 @@ const createTestUser = async (User, override = {}) => {
     username: 'testuser',
     email: 'test@example.com',
     password: 'Password123!',
-    ...override
+    ...override,
   };
-  
+
   const user = new User(defaultUser);
   await user.save();
   return user;
@@ -164,9 +163,9 @@ const createTestPod = async (Pod, userId, override = {}) => {
     type: 'chat',
     createdBy: userId,
     members: [userId],
-    ...override
+    ...override,
   };
-  
+
   const pod = new Pod(defaultPod);
   await pod.save();
   return pod;
@@ -178,9 +177,9 @@ const createTestMessage = async (Message, podId, userId, override = {}) => {
     userId,
     content: 'Test message content',
     messageType: 'text',
-    ...override
+    ...override,
   };
-  
+
   const message = new Message(defaultMessage);
   await message.save();
   return message;
@@ -196,5 +195,5 @@ module.exports = {
   generateTestToken,
   createTestUser,
   createTestPod,
-  createTestMessage
-}; 
+  createTestMessage,
+};

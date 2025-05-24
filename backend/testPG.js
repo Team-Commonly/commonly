@@ -11,7 +11,7 @@ async function testPG() {
     // 2. Check table structures
     console.log('\nChecking table structures:');
     const tables = ['pods', 'pod_members', 'messages', 'users'];
-    
+
     for (const table of tables) {
       try {
         const result = await pool.query(`
@@ -20,7 +20,7 @@ async function testPG() {
           WHERE table_name = $1
           ORDER BY ordinal_position
         `, [table]);
-        
+
         console.log(`\nTable: ${table}`);
         console.table(result.rows);
       } catch (err) {
@@ -31,14 +31,14 @@ async function testPG() {
     // 3. Create test pod with MongoDB-style ID
     const testPodId = '111111111111111111111111'; // MongoDB-style ObjectId (24 chars)
     console.log('\nTrying to create a test pod with ID:', testPodId);
-    
+
     try {
       await pool.query(`
         INSERT INTO pods (id, name, description, type, created_by)
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (id) DO NOTHING
       `, [testPodId, 'Test Pod', 'Test description', 'chat', 'test_user']);
-      
+
       console.log('Test pod creation successful!');
     } catch (err) {
       console.error('Error creating test pod:', err.message);
@@ -59,12 +59,11 @@ async function testPG() {
         INSERT INTO messages (pod_id, user_id, content)
         VALUES ($1, $2, $3)
       `, [testPodId, 'test_user', 'Test message content']);
-      
+
       console.log('Test message creation successful!');
     } catch (err) {
       console.error('Error creating test message:', err.message);
     }
-
   } catch (err) {
     console.error('General error:', err);
   } finally {
@@ -74,4 +73,4 @@ async function testPG() {
 }
 
 // Run the test
-testPG(); 
+testPG();

@@ -10,7 +10,8 @@
 		"test:watch": "jest --watch",
 		"test:coverage": "jest --coverage",
 		"test:ci": "jest --forceExit --detectOpenHandles",
-		"lint": "eslint . --ext .js"
+		"lint": "eslint . --ext .js",
+		"lint:fix": "eslint . --ext .js --fix"
 	},
 	"dependencies": {
 		"@sendgrid/mail": "^7.7.0",
@@ -20,6 +21,7 @@
 		"express": "^4.18.2",
 		"helmet": "^7.1.0",
 		"jsonwebtoken": "^9.0.0",
+		"mongodb": "^6.3.0",
 		"mongoose": "^7.0.3",
 		"morgan": "^1.10.0",
 		"multer": "^1.4.5-lts.1",
@@ -27,6 +29,7 @@
 		"socket.io": "^4.7.2"
 	},
 	"devDependencies": {
+		"@jest/globals": "^29.7.0",
 		"eslint": "^8.56.0",
 		"eslint-config-airbnb-base": "^15.0.0",
 		"eslint-plugin-import": "^2.29.1",
