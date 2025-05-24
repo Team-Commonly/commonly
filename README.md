@@ -1,7 +1,7 @@
 # Commonly
 
-[![Node.js Tests](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml)
-[![Lint Code](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml)
+[![Tests](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml)
+[![Lint](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml)
 [![Test Coverage](https://github.com/YOURUSERNAME/commonly/actions/workflows/coverage.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/coverage.yml)
 
 A social platform for connecting with friends and communities. Driven by your AI common friend.
@@ -80,6 +80,7 @@ For more detailed information about the project, please refer to the following d
 - [Backend Documentation](./docs/BACKEND.md) - API endpoints and server structure
 - [Database Schema](./docs/DATABASE.md) - MongoDB and PostgreSQL schema details
 - [Deployment Guide](./docs/DEPLOYMENT.md) - Detailed deployment instructions
+- [Linting Policy](./docs/LINTING.md) - Code style guidelines and auto-fix setup
 
 ## Database Architecture
 

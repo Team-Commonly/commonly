@@ -1,0 +1,29 @@
+{
+  "name": "commonly",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "docker-compose up",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm start",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "lint:backend": "cd backend && npm run lint",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:fix": "npm run lint:fix:backend && npm run lint:fix:frontend",
+    "lint:fix:backend": "cd backend && npm run lint:fix",
+    "lint:fix:frontend": "cd frontend && npm run lint:fix",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.0.11",
+    "lint-staged": "^16.0.0"
+  },
+  "lint-staged": {
+    "backend/**/*.js": [
+      "./backend/node_modules/.bin/eslint --fix"
+    ],
+    "frontend/src/**/*.{js,jsx}": [
+      "./frontend/node_modules/.bin/eslint --fix"
+    ]
+  }
+}

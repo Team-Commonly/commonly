@@ -1,14 +1,17 @@
 const request = require('supertest');
 const express = require('express');
+// eslint-disable-next-line no-unused-vars
 const mongoose = require('mongoose');
 const User = require('../../models/User');
 const authRoutes = require('../../routes/auth');
-const { setupMongoDb, closeMongoDb, clearMongoDb, generateTestToken } = require('../utils/testUtils');
+const {
+  setupMongoDb, closeMongoDb, clearMongoDb, generateTestToken,
+} = require('../utils/testUtils');
 
 // Mock SendGrid to prevent actual emails from being sent
 jest.mock('@sendgrid/mail', () => ({
   setApiKey: jest.fn(),
-  send: jest.fn().mockResolvedValue(true)
+  send: jest.fn().mockResolvedValue(true),
 }));
 
 describe('Auth Routes Integration Tests', () => {
@@ -21,12 +24,12 @@ describe('Auth Routes Integration Tests', () => {
     // Create a minimal Express app for testing
     app = express();
     app.use(express.json());
-    
+
     // Set environment variables for testing
     process.env.JWT_SECRET = 'test-jwt-secret';
     process.env.FRONTEND_URL = 'http://localhost:3000';
     process.env.SENDGRID_FROM_EMAIL = 'test@example.com';
-    
+
     // Register auth routes
     app.use('/api/auth', authRoutes);
   });
@@ -45,7 +48,7 @@ describe('Auth Routes Integration Tests', () => {
       const userData = {
         username: 'testuser',
         email: 'test@example.com',
-        password: 'Password123!'
+        password: 'Password123!',
       };
 
       const response = await request(app)
@@ -67,7 +70,7 @@ describe('Auth Routes Integration Tests', () => {
       const existingUser = new User({
         username: 'existinguser',
         email: 'existing@example.com',
-        password: 'Password123!'
+        password: 'Password123!',
       });
       await existingUser.save();
 
@@ -75,7 +78,7 @@ describe('Auth Routes Integration Tests', () => {
       const userData = {
         username: 'newuser',
         email: 'existing@example.com',
-        password: 'Password123!'
+        password: 'Password123!',
       };
 
       const response = await request(app)
@@ -90,7 +93,7 @@ describe('Auth Routes Integration Tests', () => {
       // Missing username
       const missingUsername = {
         email: 'test@example.com',
-        password: 'Password123!'
+        password: 'Password123!',
       };
 
       await request(app)
@@ -101,7 +104,7 @@ describe('Auth Routes Integration Tests', () => {
       // Missing email
       const missingEmail = {
         username: 'testuser',
-        password: 'Password123!'
+        password: 'Password123!',
       };
 
       await request(app)
@@ -112,7 +115,7 @@ describe('Auth Routes Integration Tests', () => {
       // Missing password
       const missingPassword = {
         username: 'testuser',
-        email: 'test@example.com'
+        email: 'test@example.com',
       };
 
       await request(app)
@@ -129,13 +132,13 @@ describe('Auth Routes Integration Tests', () => {
         username: 'testuser',
         email: 'test@example.com',
         password: 'Password123!',
-        verified: true
+        verified: true,
       });
       await user.save();
 
       const loginData = {
         email: 'test@example.com',
-        password: 'Password123!'
+        password: 'Password123!',
       };
 
       const response = await request(app)
@@ -153,13 +156,13 @@ describe('Auth Routes Integration Tests', () => {
         username: 'testuser',
         email: 'test@example.com',
         password: 'Password123!',
-        verified: false
+        verified: false,
       });
       await user.save();
 
       const loginData = {
         email: 'test@example.com',
-        password: 'Password123!'
+        password: 'Password123!',
       };
 
       const response = await request(app)
@@ -176,13 +179,13 @@ describe('Auth Routes Integration Tests', () => {
         username: 'testuser',
         email: 'test@example.com',
         password: 'Password123!',
-        verified: true
+        verified: true,
       });
       await user.save();
 
       const loginData = {
         email: 'test@example.com',
-        password: 'WrongPassword123!'
+        password: 'WrongPassword123!',
       };
 
       const response = await request(app)
@@ -196,7 +199,7 @@ describe('Auth Routes Integration Tests', () => {
     it('should not login a non-existent user', async () => {
       const loginData = {
         email: 'nonexistent@example.com',
-        password: 'Password123!'
+        password: 'Password123!',
       };
 
       const response = await request(app)
@@ -215,7 +218,7 @@ describe('Auth Routes Integration Tests', () => {
         username: 'testuser',
         email: 'test@example.com',
         password: 'Password123!',
-        verified: false
+        verified: false,
       });
       await user.save();
 
@@ -249,7 +252,7 @@ describe('Auth Routes Integration Tests', () => {
         username: 'testuser',
         email: 'test@example.com',
         password: 'Password123!',
-        verified: true
+        verified: true,
       });
       await user.save();
 
@@ -292,7 +295,7 @@ describe('Auth Routes Integration Tests', () => {
         username: 'testuser',
         email: 'test@example.com',
         password: 'Password123!',
-        profilePicture: 'default'
+        profilePicture: 'default',
       });
       await user.save();
 
@@ -300,7 +303,7 @@ describe('Auth Routes Integration Tests', () => {
       const token = generateTestToken(user._id);
 
       const updateData = {
-        profilePicture: 'new-profile-pic-url'
+        profilePicture: 'new-profile-pic-url',
       };
 
       const response = await request(app)
@@ -318,7 +321,7 @@ describe('Auth Routes Integration Tests', () => {
 
     it('should return 401 without token', async () => {
       const updateData = {
-        profilePicture: 'new-profile-pic-url'
+        profilePicture: 'new-profile-pic-url',
       };
 
       const response = await request(app)
@@ -329,4 +332,4 @@ describe('Auth Routes Integration Tests', () => {
       expect(response.body.msg).toContain('No token');
     });
   });
-}); 
+});
