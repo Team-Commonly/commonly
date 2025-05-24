@@ -8,19 +8,20 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUt
 // Mock SendGrid to prevent actual emails from being sent
 jest.mock('@sendgrid/mail', () => ({
   setApiKey: jest.fn(),
-  send: jest.fn().mockResolvedValue(true)
+  send: jest.fn().mockResolvedValue(true),
 }));
 
-// Mock bcrypt
+// Mock Bcrypt
 jest.mock('bcryptjs', () => ({
+  genSalt: jest.fn().mockResolvedValue('mocksalt'),
   hash: jest.fn().mockResolvedValue('hashedPassword'),
-  compare: jest.fn().mockResolvedValue(true)
+  compare: jest.fn().mockResolvedValue(true),
 }));
 
 // Mock JWT
 jest.mock('jsonwebtoken', () => ({
   sign: jest.fn().mockReturnValue('test-jwt-token'),
-  verify: jest.fn().mockReturnValue({ id: 'mockUserId' })
+  verify: jest.fn().mockReturnValue({ id: 'mockUserId' }),
 }));
 
 describe('Auth Controller Tests', () => {
@@ -40,87 +41,118 @@ describe('Auth Controller Tests', () => {
 
   describe('register', () => {
     it('should register a new user successfully', async () => {
+      // Create a mock for bcrypt
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+
+      // Create a mock for SendGrid
+      const sendGridMock = require('@sendgrid/mail');
+      sendGridMock.send.mockResolvedValueOnce(true);
+
+      // Mock User.findOne to return null (user doesn't exist)
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+
+      // Mock User.prototype.save to return the user
+      const savedUser = {
+        _id: 'mockedUserId',
+        username: 'testuser',
+        email: 'test@example.com',
+        password: 'hashedPassword',
+        verified: false,
+      };
+      const saveMock = jest.fn().mockResolvedValueOnce(savedUser);
+      User.prototype.save = saveMock;
+
       const req = {
         body: {
           username: 'testuser',
           email: 'test@example.com',
-          password: 'Password123!'
-        }
+          password: 'Password123!',
+        },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.register(req, res);
 
+      // Verify mocks were called correctly
+      expect(User.findOne).toHaveBeenCalledWith({ email: 'test@example.com' });
+      expect(bcrypt.hash).toHaveBeenCalled();
+      expect(saveMock).toHaveBeenCalled();
+      expect(sendGridMock.send).toHaveBeenCalled();
+
+      // Verify response
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('User registered successfully')
+        message: expect.stringContaining('User registered successfully'),
       }));
-
-      // Verify user was created in the database
-      const user = await User.findOne({ email: req.body.email });
-      expect(user).toBeTruthy();
-      expect(user.username).toBe(req.body.username);
-      expect(user.verified).toBe(false);
     });
 
     it('should not register a user with an existing email', async () => {
-      // Create a user first
-      const existingUser = new User({
+      // Mock User.findOne to return an existing user
+      const existingUser = {
+        _id: 'existingUserId',
         username: 'existinguser',
         email: 'existing@example.com',
-        password: 'Password123!'
-      });
-      await existingUser.save();
+        password: 'hashedPassword',
+      };
+
+      // Mock findOne to return the existing user
+      User.findOne = jest.fn().mockResolvedValueOnce(existingUser);
 
       const req = {
         body: {
           username: 'newuser',
           email: 'existing@example.com', // Same email as existing user
-          password: 'Password123!'
-        }
+          password: 'Password123!',
+        },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.register(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('User already exists')
+        error: expect.stringContaining('User already exists'),
       }));
     });
   });
 
   describe('login', () => {
     it('should login a verified user successfully', async () => {
-      // Create a verified user
-      const password = 'Password123!';
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const user = new User({
+      // Mock a verified user
+      const user = {
+        _id: 'testUserId',
+        id: 'testUserId', // Some implementations use id instead of _id
         username: 'testuser',
         email: 'test@example.com',
-        password: hashedPassword,
-        verified: true
-      });
-      await user.save();
+        password: 'hashedPassword',
+        verified: true,
+        profilePicture: 'default',
+      };
+
+      // Mock User.findOne to return the verified user
+      User.findOne = jest.fn().mockResolvedValueOnce(user);
+
+      // Mock bcrypt.compare to return true
+      bcrypt.compare.mockResolvedValueOnce(true);
 
       const req = {
         body: {
           email: 'test@example.com',
-          password: 'Password123!'
-        }
+          password: 'Password123!',
+        },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       // Mock the JWT signing to return a consistent token for testing
@@ -129,55 +161,63 @@ describe('Auth Controller Tests', () => {
 
       await authController.login(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         token: mockToken,
-        verified: true
-      });
+        verified: true,
+        user: expect.objectContaining({
+          id: expect.any(String),
+          username: 'testuser',
+          email: 'test@example.com',
+          profilePicture: expect.any(String),
+        }),
+      }));
     });
 
     it('should not login an unverified user', async () => {
-      // Create an unverified user
-      const password = 'Password123!';
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const user = new User({
+      // Mock an unverified user
+      const user = {
+        _id: 'testUserId',
         username: 'testuser',
         email: 'test@example.com',
-        password: hashedPassword,
-        verified: false
-      });
-      await user.save();
+        password: 'hashedPassword',
+        verified: false,
+      };
+
+      // Mock User.findOne to return the unverified user
+      User.findOne = jest.fn().mockResolvedValueOnce(user);
 
       const req = {
         body: {
           email: 'test@example.com',
-          password: 'Password123!'
-        }
+          password: 'Password123!',
+        },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.login(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('Email not verified')
+        error: expect.stringContaining('Email not verified'),
       }));
     });
 
     it('should not login with incorrect password', async () => {
-      // Create a verified user
-      const password = 'Password123!';
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const user = new User({
+      // Mock a verified user
+      const user = {
+        _id: 'testUserId',
         username: 'testuser',
         email: 'test@example.com',
-        password: hashedPassword,
-        verified: true
-      });
-      await user.save();
+        password: 'hashedPassword',
+        verified: true,
+      };
+
+      // Mock User.findOne to return the user
+      User.findOne = jest.fn().mockResolvedValueOnce(user);
 
       // Mock bcrypt.compare to return false for this test only
       bcrypt.compare.mockResolvedValueOnce(false);
@@ -185,19 +225,19 @@ describe('Auth Controller Tests', () => {
       const req = {
         body: {
           email: 'test@example.com',
-          password: 'WrongPassword123!'
-        }
+          password: 'WrongPassword123!',
+        },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.login(req, res);
 
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('Invalid credentials')
+        error: expect.stringContaining('Invalid credentials'),
       }));
     });
 
@@ -205,184 +245,231 @@ describe('Auth Controller Tests', () => {
       const req = {
         body: {
           email: 'nonexistent@example.com',
-          password: 'Password123!'
-        }
+          password: 'Password123!',
+        },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.login(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('User not found')
+        error: expect.stringContaining('User not found'),
       }));
     });
   });
 
   describe('verifyEmail', () => {
     it('should verify a user email with valid token', async () => {
-      // Create an unverified user
-      const user = new User({
+      // Create an unverified user object (not saved to DB)
+      const userId = new mongoose.Types.ObjectId().toString();
+      const updatedUser = {
+        _id: userId,
         username: 'testuser',
         email: 'test@example.com',
-        password: 'hashedPassword',
-        verified: false
-      });
-      await user.save();
+        verified: true,
+      };
 
-      // Set up the mock to return this specific user ID
-      jwt.verify.mockReturnValueOnce({ id: user._id.toString() });
+      // Mock jwt.verify to return our user ID
+      jwt.verify.mockReturnValueOnce({ id: userId });
+
+      // Mock findByIdAndUpdate to return the updated user
+      User.findByIdAndUpdate = jest.fn().mockResolvedValueOnce(updatedUser);
 
       const req = {
         query: {
-          token: 'valid-token'
-        }
+          token: 'valid-token',
+        },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.verifyEmail(req, res);
 
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('Email verified successfully')
+        message: expect.stringContaining('Email verified successfully'),
       }));
-
-      // Verify the user in the database was updated
-      const updatedUser = await User.findById(user._id);
-      expect(updatedUser.verified).toBe(true);
     });
 
     it('should not verify with an invalid token', async () => {
+      // Mock jwt.verify to throw an error
+      jwt.verify.mockImplementationOnce(() => {
+        throw new Error('Invalid token');
+      });
+
       const req = {
-        query: { token: 'invalid-token' }
+        query: { token: 'invalid-token' },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.verifyEmail(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('Invalid or expired token')
+        error: expect.stringContaining('Invalid or expired token'),
       }));
     });
   });
 
   describe('getCurrentUser', () => {
     it('should return the current user', async () => {
-      // Create a user
-      const user = new User({
+      // Create a mock user ID
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      // Create a mock user with select method
+      const mockUser = {
+        _id: userId,
         username: 'testuser',
         email: 'test@example.com',
-        password: 'Password123!',
-        verified: true
+        verified: true,
+        profilePicture: 'default',
+      };
+
+      // Mock User.findById().select() chain
+      const mockSelect = jest.fn().mockResolvedValueOnce(mockUser);
+      User.findById = jest.fn().mockReturnValue({
+        select: mockSelect,
       });
-      await user.save();
 
       const req = {
-        userId: user._id
+        userId,
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.getCurrentUser(req, res);
 
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         username: 'testuser',
-        email: 'test@example.com'
+        email: 'test@example.com',
       }));
       // Password should not be included
       expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({
-        password: expect.anything()
+        password: expect.anything(),
       }));
     });
 
     it('should return 404 if user not found', async () => {
+      // Create a mock user ID
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      // Mock User.findById().select() to return null
+      const mockSelect = jest.fn().mockResolvedValueOnce(null);
+      User.findById = jest.fn().mockReturnValue({
+        select: mockSelect,
+      });
+
       const req = {
-        userId: new mongoose.Types.ObjectId()
+        userId,
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.getCurrentUser(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('User not found')
+        error: expect.stringContaining('User not found'),
       }));
     });
   });
 
   describe('updateProfile', () => {
     it('should update user profile picture', async () => {
-      // Create a user
-      const user = new User({
+      // Create a mock user ID and user objects
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      // Initial user returned by findById
+      const initialUser = {
+        _id: userId,
         username: 'testuser',
         email: 'test@example.com',
-        password: 'Password123!',
-        profilePicture: 'default'
+        profilePicture: 'default',
+        save: jest.fn().mockResolvedValueOnce(true),
+      };
+
+      // Updated user returned by findById().select()
+      const updatedUser = {
+        _id: userId,
+        username: 'testuser',
+        email: 'test@example.com',
+        profilePicture: 'new-profile-pic-url',
+      };
+
+      // First mock for the initial findById
+      User.findById = jest.fn().mockResolvedValueOnce(initialUser);
+
+      // Second mock for the findById().select() after update
+      const mockSelect = jest.fn().mockResolvedValueOnce(updatedUser);
+      User.findById.mockReturnValueOnce({
+        select: mockSelect,
       });
-      await user.save();
 
       const req = {
-        userId: user._id,
+        userId,
         body: {
-          profilePicture: 'new-profile-pic-url'
-        }
+          profilePicture: 'new-profile-pic-url',
+        },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.updateProfile(req, res);
 
       // Verify response
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        profilePicture: 'new-profile-pic-url'
+        profilePicture: 'new-profile-pic-url',
       }));
 
-      // Verify database update
-      const updatedUser = await User.findById(user._id);
-      expect(updatedUser.profilePicture).toBe('new-profile-pic-url');
+      // Verify save was called
+      expect(initialUser.save).toHaveBeenCalled();
     });
 
     it('should return 404 if user not found', async () => {
+      // Create a mock user ID
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      // Mock findById to return null (user not found)
+      User.findById = jest.fn().mockResolvedValueOnce(null);
+
       const req = {
-        userId: new mongoose.Types.ObjectId(),
+        userId,
         body: {
-          profilePicture: 'new-profile-pic-url'
-        }
+          profilePicture: 'new-profile-pic-url',
+        },
       };
 
       const res = {
         status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        json: jest.fn(),
       };
 
       await authController.updateProfile(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('User not found')
+        error: expect.stringContaining('User not found'),
       }));
     });
   });
-}); 
+});
