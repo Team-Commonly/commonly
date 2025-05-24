@@ -27,6 +27,9 @@ module.exports = {
     'no-param-reassign': ['error', { props: false }],
     'func-names': 'off',
     'linebreak-style': 'off', // Don't enforce Windows/Unix line endings
+
+    // Fix for ESLint version compatibility issue
+    'prefer-regex-literals': 'off',
   },
   overrides: [
     {

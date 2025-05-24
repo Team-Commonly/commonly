@@ -20,10 +20,10 @@
   },
   "lint-staged": {
     "backend/**/*.js": [
-      "eslint --fix"
+      "./backend/node_modules/.bin/eslint --fix"
     ],
     "frontend/src/**/*.{js,jsx}": [
-      "eslint --fix"
+      "./frontend/node_modules/.bin/eslint --fix"
     ]
   }
 }
