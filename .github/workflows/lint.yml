@@ -1,4 +1,4 @@
-name: Lint Code
+name: Lint
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint:
-    name: Lint Code
+    name: Code Quality
     runs-on: ubuntu-latest
 
     steps:

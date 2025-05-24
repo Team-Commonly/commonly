@@ -1,7 +1,7 @@
 # Commonly
 
-[![Node.js Tests](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml)
-[![Lint Code](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml)
+[![Tests](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/tests.yml)
+[![Lint](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/lint.yml)
 [![Test Coverage](https://github.com/YOURUSERNAME/commonly/actions/workflows/coverage.yml/badge.svg)](https://github.com/YOURUSERNAME/commonly/actions/workflows/coverage.yml)
 
 A social platform for connecting with friends and communities. Driven by your AI common friend.
