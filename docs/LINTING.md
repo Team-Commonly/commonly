@@ -63,15 +63,20 @@ For a better development experience, configure your IDE to use ESLint:
 
 ### VS Code
 1. Install the ESLint extension
-2. Add the following to your workspace settings:
+2. The project includes a `.vscode/settings.json` file with optimal settings for ESLint auto-fix
+3. Alternatively, you can manually add the following to your workspace settings:
 ```json
 {
   "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": true
+    "source.fixAll.eslint": "explicit"
   },
   "eslint.validate": [
     "javascript",
     "javascriptreact"
+  ],
+  "eslint.workingDirectories": [
+    "backend",
+    "frontend"
   ]
 }
 ```
