@@ -57,14 +57,21 @@ exports.getMessages = async (req, res) => {
 exports.createMessage = async (req, res) => {
   try {
     const { podId } = req.params;
-    const { text, attachments } = req.body;
+    const {
+      content,
+      text,
+      attachments,
+      messageType = 'text',
+    } = req.body;
+
+    const finalContent = content || text;
 
     if (!podId) {
       return res.status(400).json({ msg: 'Pod ID is required' });
     }
 
-    if (!text && (!attachments || attachments.length === 0)) {
-      return res.status(400).json({ msg: 'Message text or attachments are required' });
+    if (!finalContent && (!attachments || attachments.length === 0)) {
+      return res.status(400).json({ msg: 'Message content or attachments are required' });
     }
 
     // Check if pod exists
@@ -88,9 +95,10 @@ exports.createMessage = async (req, res) => {
     }
 
     const newMessage = new Message({
-      text: text || '',
+      content: finalContent || '',
       podId,
       userId,
+      messageType,
       attachments: attachments || [],
     });
 
