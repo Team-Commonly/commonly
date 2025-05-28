@@ -22,6 +22,7 @@
         "start": "react-scripts start",
         "build": "react-scripts build",
         "test": "react-scripts test",
+        "test:coverage": "react-scripts test --coverage --watchAll=false",
         "eject": "react-scripts eject",
         "lint": "eslint src --ext .js,.jsx",
         "lint:fix": "eslint src --ext .js,.jsx --fix"
