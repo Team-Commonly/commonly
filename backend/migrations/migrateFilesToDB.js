@@ -6,12 +6,6 @@ const File = require('../models/File');
 
 dotenv.config();
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-
 // Path to the uploads directory
 const uploadsDir = path.join(__dirname, '../uploads');
 
@@ -23,6 +17,7 @@ async function migrateFiles() {
   if (!fs.existsSync(uploadsDir)) {
     console.log('Uploads directory does not exist. Nothing to migrate.');
     process.exit(0);
+    return;
   }
 
   // Get all files in the uploads directory
@@ -31,9 +26,15 @@ async function migrateFiles() {
   if (files.length === 0) {
     console.log('No files found in uploads directory. Nothing to migrate.');
     process.exit(0);
+    return;
   }
 
   console.log(`Found ${files.length} files to migrate.`);
+
+  await mongoose.connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  });
 
   // Counter for migrated files
   let migratedCount = 0;
@@ -91,11 +92,16 @@ async function migrateFiles() {
   }
 
   console.log(`Migration complete. Migrated ${migratedCount} files.`);
+  await mongoose.disconnect();
   process.exit(0);
 }
 
-// Run migration
-migrateFiles().catch((error) => {
-  console.error('Migration failed:', error);
-  process.exit(1);
-});
+// Run migration if executed directly
+if (require.main === module) {
+  migrateFiles().catch((error) => {
+    console.error('Migration failed:', error);
+    process.exit(1);
+  });
+}
+
+module.exports = migrateFiles;
