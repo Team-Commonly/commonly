@@ -30,16 +30,25 @@ jobs:
 
       - name: Install dependencies
         run: |
+          npm install --include=dev
           cd backend
           npm install --include=dev
+          cd ../frontend
+          npm install --include=dev
+          cd ..
 
-      - name: Run tests with coverage
+      - name: Run backend tests with coverage
         run: |
           cd backend
-          npm run test:coverage
+          npm test -- --coverage
+
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          npm test -- --watchAll=false
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: backend/coverage/ 
+          path: backend/coverage/
