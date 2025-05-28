@@ -94,8 +94,12 @@ async function migrateFiles() {
   process.exit(0);
 }
 
-// Run migration
-migrateFiles().catch((error) => {
-  console.error('Migration failed:', error);
-  process.exit(1);
-});
+// Run migration if executed directly
+if (require.main === module) {
+  migrateFiles().catch((error) => {
+    console.error('Migration failed:', error);
+    process.exit(1);
+  });
+}
+
+module.exports = migrateFiles;

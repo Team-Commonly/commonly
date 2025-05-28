@@ -98,4 +98,8 @@ const seedPods = async () => {
   }
 };
 
-seedPods();
+if (require.main === module) {
+  seedPods();
+}
+
+module.exports = seedPods;
