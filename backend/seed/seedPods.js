@@ -7,17 +7,12 @@ const User = require('../models/User');
 // Load environment variables
 dotenv.config();
 
-// Connect to MongoDB
-const mongoURI = 'mongodb://mongodb:27017/commonly';
-mongoose.connect(mongoURI)
-  .then(() => console.log('MongoDB connected for seeding'))
-  .catch((err) => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
-  });
+// MongoDB URI
+const mongoURI = process.env.MONGO_URI || 'mongodb://mongodb:27017/commonly';
 
 const seedPods = async () => {
   try {
+    await mongoose.connect(mongoURI);
     // Find a user or create one if none exists
     let user = await User.findOne();
 
@@ -91,11 +86,17 @@ const seedPods = async () => {
     await Pod.insertMany(pods);
 
     console.log('Pods seeded successfully');
+    await mongoose.disconnect();
     process.exit(0);
   } catch (err) {
     console.error('Error seeding pods:', err);
+    await mongoose.disconnect();
     process.exit(1);
   }
 };
 
-seedPods();
+if (require.main === module) {
+  seedPods();
+}
+
+module.exports = seedPods;
