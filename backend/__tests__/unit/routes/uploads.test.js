@@ -19,4 +19,13 @@ describe('uploads routes', () => {
     await request(app).get('/api/uploads/test').expect(200);
     expect(File.findByFileName).toHaveBeenCalledWith('test');
   });
+  it('returns 404 when file not found', async () => {
+    File.findByFileName.mockResolvedValue(null);
+    await request(app).get('/api/uploads/missing').expect(404);
+  });
+
+  it('returns 500 on error', async () => {
+    File.findByFileName.mockRejectedValue(new Error('fail'));
+    await request(app).get('/api/uploads/oops').expect(500);
+  });
 });
