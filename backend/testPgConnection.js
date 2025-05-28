@@ -53,4 +53,8 @@ async function testConnection() {
   }
 }
 
-testConnection();
+if (require.main === module) {
+  testConnection();
+}
+
+module.exports = testConnection;
