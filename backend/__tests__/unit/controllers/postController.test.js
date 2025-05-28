@@ -23,4 +23,22 @@ describe('postController', () => {
     await controller.addComment(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
   });
+
+  it('likePost toggles like state', async () => {
+    const post = { _id: 'p1', userId: 'u1', likes: 0, likedBy: [], save: jest.fn() };
+    Post.findById.mockResolvedValue(post);
+    const req = { params: { id: 'p1' }, userId: 'u1' };
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    await controller.likePost(req, res);
+    expect(post.likes).toBe(1);
+    expect(post.likedBy).toContain('u1');
+  });
+
+  it('likePost returns 404 for missing post', async () => {
+    Post.findById.mockResolvedValue(null);
+    const req = { params: { id: 'p1' }, userId: 'u1' };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await controller.likePost(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
 });

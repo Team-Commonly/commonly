@@ -86,5 +86,9 @@ async function syncPods() {
   }
 }
 
-// Run the sync
-syncPods();
+// Run the sync if executed directly
+if (require.main === module) {
+  syncPods();
+}
+
+module.exports = syncPods;
