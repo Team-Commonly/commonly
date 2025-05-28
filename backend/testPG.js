@@ -72,5 +72,9 @@ async function testPG() {
   }
 }
 
-// Run the test
-testPG();
+if (require.main === module) {
+  // Run the test when executed directly
+  testPG();
+}
+
+module.exports = testPG;

@@ -356,5 +356,9 @@ io.on('connection', (socket) => {
   socket.emit('welcome', { message: 'Connected to chat server successfully' });
 });
 
-// Start the server
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Start the server only when executed directly
+if (require.main === module) {
+  server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+
+module.exports = { app, server };
