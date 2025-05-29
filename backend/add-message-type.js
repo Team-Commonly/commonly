@@ -34,5 +34,9 @@ async function addMessageTypeColumn() {
   }
 }
 
-// Run the migration
-addMessageTypeColumn();
+if (require.main === module) {
+  // Run the migration only when executed directly
+  addMessageTypeColumn();
+}
+
+module.exports = addMessageTypeColumn;
