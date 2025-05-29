@@ -66,6 +66,7 @@ When modifying code in either package:
 1. Run `npm lint` at the repo root.
 2. Run `npm test` in the affected package(s).
 
+ - Always add or update tests when introducing new features. This applies to both the backend and the frontend. Prioritise expanding overall test coverage.
 These commands require no additional setup other than installing dependencies (already included in the repository).
 
 ## Developer utilities
