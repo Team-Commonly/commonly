@@ -14,6 +14,7 @@ const userRoutes = require('./routes/users');
 const podRoutes = require('./routes/pods');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
+const docsRoutes = require('./routes/docs');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes;
 let pgMessageRoutes;
@@ -67,6 +68,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/pods', podRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/uploads', uploadsRoutes);
+app.use('/api/docs', docsRoutes);
 
 // Connect to MongoDB (for posts and user data)
 connectDB();
