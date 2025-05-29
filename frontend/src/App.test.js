@@ -41,3 +41,14 @@ test('adds class to body on mount', () => {
   });
   expect(document.body.classList.contains('modern-ui')).toBe(true);
 });
+
+test('removes class on unmount', () => {
+  act(() => {
+    root.render(<App />);
+  });
+  expect(document.body.classList.contains('modern-ui')).toBe(true);
+  act(() => {
+    root.unmount();
+  });
+  expect(document.body.classList.contains('modern-ui')).toBe(false);
+});
