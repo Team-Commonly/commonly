@@ -10,6 +10,7 @@ module.exports = {
     '!**/coverage/**',
     '!**/jest.config.js',
     '!**/__tests__/utils/**',
+    '!server.js',
   ],
   verbose: true,
 };
