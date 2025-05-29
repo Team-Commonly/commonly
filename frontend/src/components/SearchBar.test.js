@@ -22,12 +22,14 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = ReactDOM.createRoot(container);
+  localStorage.setItem('token', 't');
 });
 
 afterEach(() => {
   root.unmount();
   container.remove();
   container = null;
+  localStorage.clear();
 });
 
 test('typing triggers local search on feed page', async () => {
@@ -64,4 +66,46 @@ test('submitting navigates to feed with query', () => {
     TestUtils.Simulate.submit(form);
   });
   expect(navigate).toHaveBeenCalledWith({ pathname: '/feed', search: 'q=abc' });
+});
+
+test('mount with query param triggers search', async () => {
+  const navigate = jest.fn();
+  useNavigate.mockReturnValue(navigate);
+  useLocation.mockReturnValue({ pathname: '/feed', search: '?q=tag' });
+  axios.get.mockResolvedValue({ data: ['x'] });
+  const onResults = jest.fn();
+  await TestUtils.act(async () => {
+    root.render(<SearchBar onSearchResults={onResults} />);
+  });
+  await TestUtils.act(async () => Promise.resolve());
+  expect(axios.get).toHaveBeenCalledWith('/api/posts/search', { params: { query: 'tag' } });
+  expect(onResults).toHaveBeenCalledWith(['x']);
+});
+
+test('empty submit fetches all posts', async () => {
+  const navigate = jest.fn();
+  useNavigate.mockReturnValue(navigate);
+  useLocation.mockReturnValue({ pathname: '/feed', search: '' });
+  axios.get.mockResolvedValue({ data: ['all'] });
+  const onResults = jest.fn();
+  await TestUtils.act(async () => {
+    root.render(<SearchBar onSearchResults={onResults} />);
+  });
+  const form = container.querySelector('form');
+  await TestUtils.act(async () => {
+    TestUtils.Simulate.submit(form);
+  });
+  expect(axios.get).toHaveBeenCalledWith('/api/posts', { headers: { Authorization: 'Bearer t' } });
+  expect(onResults).toHaveBeenCalledWith(['all']);
+});
+
+test('adds pod-search class on pod pages', () => {
+  useNavigate.mockReturnValue(jest.fn());
+  useLocation.mockReturnValue({ pathname: '/pods/chat', search: '' });
+  const onResults = jest.fn();
+  TestUtils.act(() => {
+    root.render(<SearchBar onSearchResults={onResults} />);
+  });
+  const div = container.querySelector('.search-bar');
+  expect(div.className).toContain('pod-search');
 });
