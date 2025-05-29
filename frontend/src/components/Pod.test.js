@@ -70,3 +70,30 @@ test('join button posts and navigates', async () => {
   expect(axios.post).toHaveBeenCalledWith('/api/pods/1/join', {}, { headers: { Authorization: 'Bearer t' } });
   expect(navigate).toHaveBeenCalledWith('/pods/chat/1');
 });
+
+async function renderPodWithData(data) {
+  axios.get.mockResolvedValueOnce({ data });
+  await TestUtils.act(async () => {
+    root.render(<Pod />);
+  });
+  await TestUtils.act(async () => Promise.resolve());
+}
+
+test('tab change navigates', async () => {
+  const navigate = jest.fn();
+  useNavigate.mockReturnValue(navigate);
+  await renderPod();
+  const studyTab = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Study');
+  await TestUtils.act(async () => { TestUtils.Simulate.click(studyTab); });
+  expect(navigate).toHaveBeenCalledWith('/pods/study');
+});
+
+test('search filters pods', async () => {
+  const pod2 = { ...mockPod, _id: '2', name: 'Other', description: 'Desc', type: 'chat' };
+  await renderPodWithData([mockPod, pod2]);
+  const input = container.querySelector('input');
+  TestUtils.act(() => { TestUtils.Simulate.change(input, { target: { value: 'Other' } }); });
+  expect(container.textContent).toContain('Other');
+  TestUtils.act(() => { TestUtils.Simulate.change(input, { target: { value: 'None' } }); });
+  expect(container.textContent).toContain('No pods found');
+});
