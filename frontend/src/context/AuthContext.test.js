@@ -59,3 +59,26 @@ test('logout clears token and user', () => {
   expect(localStorage.getItem('token')).toBeNull();
   expect(global.testAuth.currentUser).toBeNull();
 });
+
+test('login stores token and user', async () => {
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Alice' } } });
+  await act(async () => {
+    await global.testAuth.login('a', 'b');
+  });
+  expect(localStorage.getItem('token')).toBe('tok');
+  expect(global.testAuth.currentUser).toEqual({ name: 'Alice' });
+  expect(axios.post).toHaveBeenCalledWith('/api/auth/login', { email: 'a', password: 'b' });
+});
+
+test('updateProfile sends auth header and updates user', async () => {
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Init' } } });
+  await act(async () => { await global.testAuth.login('a', 'b'); });
+  axios.put.mockResolvedValueOnce({ data: { name: 'Updated' } });
+  await act(async () => {
+    await global.testAuth.updateProfile({ foo: 'bar' });
+  });
+  expect(axios.put).toHaveBeenCalledWith('/api/users/profile', { foo: 'bar' }, {
+    headers: { Authorization: 'Bearer tok', 'Content-Type': 'multipart/form-data' }
+  });
+  expect(global.testAuth.currentUser).toEqual({ name: 'Updated' });
+});
