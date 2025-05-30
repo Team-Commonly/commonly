@@ -11,6 +11,7 @@ development.
   its own Jest test suite.
 - `frontend/` – React application bootstrapped with `react-scripts`.
 - `docs/` – Detailed architecture and development docs.
+- `docs/design/` – Design proposals for new features.
 - `docker-compose.yml` – Spins up the full stack locally.
 - `package.json` in the repo root – exposes lint scripts that call into
   each package.
@@ -36,8 +37,12 @@ and development conventions:
 - `DEPLOYMENT.md`
 - `LINTING.md`
 
-Use these documents as a reference when implementing new features or
-updating existing code.
+Design documents in `docs/design/` provide additional details for upcoming
+features. Review them and add new design docs when planning major
+functionality.
+
+Use these documents and any relevant design docs as a reference when
+implementing new features or updating existing code.
 When you add or modify features, update the relevant docs and this AGENTS file so future agents have accurate guidance.
 
 ## Running tests
