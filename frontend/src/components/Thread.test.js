@@ -1,6 +1,6 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
-import TestUtils from 'react-dom/test-utils';
+import { createRoot } from 'react-dom/client';
+import * as TestUtils from 'react-dom/test-utils';
 import Thread from './Thread';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
@@ -23,7 +23,7 @@ beforeEach(() => {
   jest.resetAllMocks();
   container = document.createElement('div');
   document.body.appendChild(container);
-  root = ReactDOM.createRoot(container);
+  root = createRoot(container);
   localStorage.setItem('token', 't');
   useParams.mockReturnValue({ id: '1' });
   useNavigate.mockReturnValue(jest.fn());
@@ -76,4 +76,70 @@ test('liking post sends request', async () => {
   const likeBtn = container.querySelector('button');
   await TestUtils.act(async () => { TestUtils.Simulate.click(likeBtn); });
   expect(axios.post).toHaveBeenCalledWith('/api/posts/1/like', {}, { headers: { Authorization: 'Bearer t' } });
+});
+
+test('emoji picker opens when emoji button is clicked', async () => {
+  await renderThread();
+  const emojiButton = container.querySelector('[data-testid="emoji-button"]');
+  expect(emojiButton).toBeTruthy();
+  
+  await TestUtils.act(async () => {
+    TestUtils.Simulate.click(emojiButton);
+  });
+  
+  const emojiPicker = document.querySelector('.emoji-picker-portal');
+  expect(emojiPicker).toBeTruthy();
+});
+
+test('emoji picker closes when clicking outside', async () => {
+  await renderThread();
+  
+  // Open emoji picker
+  const emojiButton = container.querySelector('[data-testid="emoji-button"]');
+  await TestUtils.act(async () => {
+    TestUtils.Simulate.click(emojiButton);
+  });
+  
+  let emojiPicker = document.querySelector('.emoji-picker-portal');
+  expect(emojiPicker).toBeTruthy();
+  
+  // Simulate clicking outside by triggering the document mousedown handler
+  await TestUtils.act(async () => {
+    // Create a proper mock DOM element
+    const mockElement = document.createElement('div');
+    mockElement.closest = jest.fn().mockReturnValue(null);
+    
+    const event = new MouseEvent('mousedown', { bubbles: true });
+    Object.defineProperty(event, 'target', {
+      value: mockElement,
+      enumerable: true
+    });
+    
+    document.dispatchEvent(event);
+  });
+  
+  emojiPicker = document.querySelector('.emoji-picker-portal');
+  expect(emojiPicker).toBeFalsy();
+});
+
+test('emoji picker portal has correct structure', async () => {
+  await renderThread();
+  const emojiButton = container.querySelector('[data-testid="emoji-button"]');
+  
+  await TestUtils.act(async () => {
+    TestUtils.Simulate.click(emojiButton);
+  });
+  
+  const emojiPicker = document.querySelector('.emoji-picker-portal');
+  expect(emojiPicker).toBeTruthy();
+  
+  const emojiContainer = emojiPicker.querySelector('.emoji-picker-container');
+  expect(emojiContainer).toBeTruthy();
+});
+
+test('emoji button is accessible in comment form', async () => {
+  await renderThread();
+  const emojiButton = container.querySelector('[data-testid="emoji-button"]');
+  expect(emojiButton).toBeTruthy();
+  expect(emojiButton.getAttribute('data-testid')).toBe('emoji-button');
 });

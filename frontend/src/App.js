@@ -200,11 +200,11 @@ function App() {
                       <Route path="/dashboard" element={<Dashboard />} />
                       <Route path="/pods" element={<PodRedirect />} />
                       <Route path="/pods/:podType" element={<Pod />} />
-                    <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />
-                  </Route>
-                  <Route path="/chat/:podId" element={<Layout><ChatRoom /></Layout>} />
-                  <Route path="/dev/api" element={<Layout><ApiDevPage /></Layout>} />
-                </Routes>
+                      <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />
+                      <Route path="/dev/api" element={<ApiDevPage />} />
+                    </Route>
+                    <Route path="/chat/:podId" element={<Layout><ChatRoom /></Layout>} />
+                  </Routes>
                 </div>
               </BrowserRouter>
             </LayoutProvider>
