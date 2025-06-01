@@ -18,12 +18,15 @@ import {
 } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import EditIcon from '@mui/icons-material/Edit';
+import DeveloperModeIcon from '@mui/icons-material/DeveloperMode';
 import { avatarOptions, getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
+import { useNavigate } from 'react-router-dom';
 
 const UserProfile = () => {
     const { refreshAvatars } = useAppContext();
+    const navigate = useNavigate();
     const [user, setUser] = useState(null);
     const [userStats, setUserStats] = useState({ postCount: 0, commentCount: 0 });
     const [error, setError] = useState('');
@@ -183,6 +186,19 @@ const UserProfile = () => {
                             </Paper>
                         </Grid>
                     </Grid>
+                    
+                    <Divider sx={{ my: 3 }} />
+                    
+                    <Box sx={{ textAlign: 'center' }}>
+                        <Button
+                            variant="outlined"
+                            startIcon={<DeveloperModeIcon />}
+                            onClick={() => navigate('/dev/api')}
+                            sx={{ mb: 2 }}
+                        >
+                            API Development Tools
+                        </Button>
+                    </Box>
                 </CardContent>
             </Card>
 
