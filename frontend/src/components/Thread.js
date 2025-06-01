@@ -29,6 +29,7 @@ const Thread = () => {
     const [selectedItemId, setSelectedItemId] = useState(null);
     const [itemType, setItemType] = useState(null); // 'post' or 'comment'
     const [loading, setLoading] = useState(true);
+    const emojiButtonRef = React.useRef(null);
 
     useEffect(() => {
         const fetchPost = async () => {
@@ -173,6 +174,28 @@ const Thread = () => {
         }
     };
 
+    // Handle clicking outside emoji picker
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (showEmojiPicker && 
+                emojiButtonRef.current && 
+                !emojiButtonRef.current.contains(event.target) &&
+                !event.target.closest('.emoji-picker-portal')) {
+                setShowEmojiPicker(false);
+            }
+        };
+
+        if (showEmojiPicker) {
+            document.addEventListener('mousedown', handleClickOutside);
+            document.addEventListener('touchstart', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('touchstart', handleClickOutside);
+        };
+    }, [showEmojiPicker]);
+
     if (error) return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
     if (loading) return (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -281,26 +304,14 @@ const Thread = () => {
                             placeholder="Write a comment..."
                         />
                         <IconButton
+                            ref={emojiButtonRef}
                             className="emoji-button"
                             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                             color="primary"
+                            data-testid="emoji-button"
                         >
                             <EmojiEmotionsIcon />
                         </IconButton>
-                        {showEmojiPicker && (
-                            <div className="emoji-picker-container">
-                                <EmojiPicker 
-                                    onEmojiClick={onEmojiClick}
-                                    width={320}
-                                    height={380}
-                                    emojiStyle="native"
-                                    searchDisabled={false}
-                                    skinTonesDisabled={true}
-                                    previewConfig={{ showPreview: false }}
-                                    style={{ transform: 'none', scale: 1 }}
-                                />
-                            </div>
-                        )}
                     </div>
                     <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
                         <Button
@@ -314,6 +325,61 @@ const Thread = () => {
                     </Box>
                 </form>
             </div>
+
+            {/* Emoji Picker Portal - Positioned outside the comment form container */}
+            {showEmojiPicker && (
+                <Box 
+                    className="emoji-picker-portal"
+                    sx={{ 
+                        position: 'fixed', 
+                        zIndex: 1300,
+                        top: (() => {
+                            if (emojiButtonRef.current) {
+                                const rect = emojiButtonRef.current.getBoundingClientRect();
+                                return rect && typeof rect.bottom === 'number' ? rect.bottom + 5 : '50%';
+                            }
+                            return '50%';
+                        })(),
+                        left: (() => {
+                            if (emojiButtonRef.current) {
+                                const rect = emojiButtonRef.current.getBoundingClientRect();
+                                return rect && typeof rect.left === 'number' ? rect.left : '50%';
+                            }
+                            return '50%';
+                        })(),
+                        transform: (() => {
+                            if (emojiButtonRef.current) {
+                                const rect = emojiButtonRef.current.getBoundingClientRect();
+                                return rect && typeof rect.bottom === 'number' ? 'none' : 'translate(-50%, -50%)';
+                            }
+                            return 'translate(-50%, -50%)';
+                        })()
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <Box 
+                        className="emoji-picker-container"
+                        sx={{
+                            backgroundColor: '#fff',
+                            borderRadius: '12px',
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+                            border: '1px solid #e1e8ed',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        <EmojiPicker 
+                            onEmojiClick={onEmojiClick}
+                            width={320}
+                            height={380}
+                            emojiStyle="native"
+                            searchDisabled={false}
+                            skinTonesDisabled={true}
+                            previewConfig={{ showPreview: false }}
+                            style={{ transform: 'none', scale: 1 }}
+                        />
+                    </Box>
+                </Box>
+            )}
 
             <Typography variant="h6" sx={{ mb: 2 }}>
                 Comments ({post.comments.length})
