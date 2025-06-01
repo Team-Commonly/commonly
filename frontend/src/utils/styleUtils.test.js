@@ -3,9 +3,19 @@ import { forceReflow, applyBodyClass, applyStylesToElements, reloadStylesheets, 
 describe('styleUtils', () => {
   test('forceReflow reads offsetHeight', () => {
     const el = document.createElement('div');
-    const spy = jest.spyOn(el, 'offsetHeight', 'get').mockReturnValue(0);
+    
+    // Mock offsetHeight as a getter
+    let offsetHeightCalled = false;
+    Object.defineProperty(el, 'offsetHeight', {
+      get: jest.fn(() => {
+        offsetHeightCalled = true;
+        return 100;
+      }),
+      configurable: true
+    });
+    
     forceReflow(el);
-    expect(spy).toHaveBeenCalled();
+    expect(offsetHeightCalled).toBe(true);
   });
 
   test('applyBodyClass adds and removes class on body', () => {

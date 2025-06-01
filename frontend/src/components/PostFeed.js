@@ -47,12 +47,35 @@ const PostFeed = () => {
     const [selectedImage, setSelectedImage] = useState(null);
     const [imagePreview, setImagePreview] = useState(null);
     const fileInputRef = React.useRef(null);
+    const emojiButtonRef = React.useRef(null);
     
     // Extract hashtags from content
     useEffect(() => {
         const extractedTags = postContent.match(/#[\w]+/g) || [];
         setTags(extractedTags.map(tag => tag.slice(1))); // Remove # from tags
     }, [postContent]);
+    
+    // Handle clicking outside emoji picker
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (showEmojiPicker && 
+                emojiButtonRef.current && 
+                !emojiButtonRef.current.contains(event.target) &&
+                !event.target.closest('.emoji-picker-portal')) {
+                setShowEmojiPicker(false);
+            }
+        };
+
+        if (showEmojiPicker) {
+            document.addEventListener('mousedown', handleClickOutside);
+            document.addEventListener('touchstart', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('touchstart', handleClickOutside);
+        };
+    }, [showEmojiPicker]);
     
     const handleCreatePost = async (e) => {
         e.preventDefault();
@@ -347,10 +370,12 @@ const PostFeed = () => {
                         }}>
                             <Box sx={{ display: 'flex', gap: 1, position: 'relative' }}>
                                 <IconButton 
+                                    ref={emojiButtonRef}
                                     color="primary" 
                                     size="small"
                                     onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                                     className="emoji-button"
+                                    data-testid="emoji-button"
                                 >
                                     <EmojiEmotionsIcon fontSize="small" />
                                 </IconButton>
@@ -368,29 +393,6 @@ const PostFeed = () => {
                                     ref={fileInputRef}
                                     style={{ display: 'none' }}
                                 />
-                                {showEmojiPicker && (
-                                    <Box 
-                                        className="emoji-picker-container"
-                                        sx={{ 
-                                            position: 'absolute', 
-                                            zIndex: 1000,
-                                            top: '100%',
-                                            left: '0',
-                                            marginTop: '5px'
-                                        }}
-                                    >
-                                        <EmojiPicker 
-                                            onEmojiClick={onEmojiClick} 
-                                            width={320}
-                                            height={380}
-                                            emojiStyle="native"
-                                            searchDisabled={false}
-                                            skinTonesDisabled={true}
-                                            previewConfig={{ showPreview: false }}
-                                            style={{ transform: 'none', scale: 1 }}
-                                        />
-                                    </Box>
-                                )}
                             </Box>
                             <Button 
                                 variant="contained" 
@@ -442,6 +444,61 @@ const PostFeed = () => {
                     </Box>
                 </Box>
             </Paper>
+            
+            {/* Emoji Picker Portal - Positioned outside the post container */}
+            {showEmojiPicker && (
+                <Box 
+                    className="emoji-picker-portal"
+                    sx={{ 
+                        position: 'fixed', 
+                        zIndex: 1300,
+                        top: (() => {
+                            if (emojiButtonRef.current) {
+                                const rect = emojiButtonRef.current.getBoundingClientRect();
+                                return rect && typeof rect.bottom === 'number' ? rect.bottom + 5 : '50%';
+                            }
+                            return '50%';
+                        })(),
+                        left: (() => {
+                            if (emojiButtonRef.current) {
+                                const rect = emojiButtonRef.current.getBoundingClientRect();
+                                return rect && typeof rect.left === 'number' ? rect.left : '50%';
+                            }
+                            return '50%';
+                        })(),
+                        transform: (() => {
+                            if (emojiButtonRef.current) {
+                                const rect = emojiButtonRef.current.getBoundingClientRect();
+                                return rect && typeof rect.bottom === 'number' ? 'none' : 'translate(-50%, -50%)';
+                            }
+                            return 'translate(-50%, -50%)';
+                        })()
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <Box 
+                        className="emoji-picker-container"
+                        sx={{
+                            backgroundColor: '#fff',
+                            borderRadius: '12px',
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+                            border: '1px solid #e1e8ed',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        <EmojiPicker 
+                            onEmojiClick={onEmojiClick} 
+                            width={320}
+                            height={380}
+                            emojiStyle="native"
+                            searchDisabled={false}
+                            skinTonesDisabled={true}
+                            previewConfig={{ showPreview: false }}
+                            style={{ transform: 'none', scale: 1 }}
+                        />
+                    </Box>
+                </Box>
+            )}
             
             <Divider sx={{ mb: 3 }} />
             
