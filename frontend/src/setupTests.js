@@ -1,3 +1,6 @@
+// Import jest-dom matchers
+import '@testing-library/jest-dom';
+
 // Mock axios
 jest.mock('axios', () => ({
   default: {
@@ -35,12 +38,29 @@ Element.prototype.getBoundingClientRect = jest.fn(() => ({
   toJSON: jest.fn()
 }));
 
-// Mock window.getComputedStyle
-window.getComputedStyle = jest.fn(() => ({
-  getPropertyValue: jest.fn(() => ''),
-  width: '120px',
-  height: '120px'
-}));
+// Mock getComputedStyle for DOM accessibility API
+Object.defineProperty(window, 'getComputedStyle', {
+  value: (_element) => ({
+    getPropertyValue: (property) => {
+      // Return appropriate values for common CSS properties
+      if (property === 'display') return 'block';
+      if (property === 'visibility') return 'visible';
+      if (property === 'opacity') return '1';
+      if (property === 'position') return 'static';
+      if (property === 'clip') return 'auto';
+      if (property === 'clip-path') return 'none';
+      return '';
+    },
+    display: 'block',
+    visibility: 'visible',
+    opacity: '1',
+    position: 'static',
+    clip: 'auto',
+    'clip-path': 'none'
+  }),
+  writable: true,
+  configurable: true
+});
 
 // Mock HTMLElement properties
 Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
@@ -81,6 +101,9 @@ jest.mock('@mui/material/TextareaAutosize', () => {
     });
   });
   MockTextareaAutosize.displayName = 'MockTextareaAutosize';
+  MockTextareaAutosize.propTypes = {
+    minRows: require('prop-types').number,
+  };
   return MockTextareaAutosize;
 });
 
@@ -98,9 +121,6 @@ beforeAll(() => {
         message.includes('Warning: An update to') ||
         message.includes('Warning: `ReactDOMTestUtils.act`') ||
         message.includes('Warning: Function components cannot be given refs') ||
-        message.includes('Warning: React does not recognize the') ||
-        message.includes('act(...)') ||
-        message.includes('ReactDOMTestUtils') ||
         message.includes('When testing, code that causes React state updates')
       ) {
         return;
