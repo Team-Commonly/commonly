@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import TestUtils from 'react-dom/test-utils';
+import { MemoryRouter } from 'react-router-dom';
 import UserProfile from './UserProfile';
 import { useAppContext } from '../context/AppContext';
 const axios = require('axios').default;
@@ -35,7 +36,11 @@ async function renderProfile() {
     .mockResolvedValueOnce({ data: { _id: 'u', username: 'user', email: 'e@example.com', createdAt: '2023-01-01' } })
     .mockResolvedValueOnce({ data: [] });
   await TestUtils.act(async () => {
-    root.render(<UserProfile />);
+    root.render(
+      <MemoryRouter>
+        <UserProfile />
+      </MemoryRouter>
+    );
   });
   await TestUtils.act(async () => Promise.resolve());
 }
@@ -49,7 +54,11 @@ test('displays user info after fetch', async () => {
 test('shows error when fetch fails', async () => {
   axios.get.mockRejectedValue(new Error('fail'));
   await TestUtils.act(async () => {
-    root.render(<UserProfile />);
+    root.render(
+      <MemoryRouter>
+        <UserProfile />
+      </MemoryRouter>
+    );
   });
   await TestUtils.act(async () => Promise.resolve());
   expect(container.textContent).toContain('Failed to fetch user data');

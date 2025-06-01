@@ -637,4 +637,163 @@ body {
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
   justify-content: space-between;
   transition: width 0.3s ease, left 0.3s ease;
+  flex-wrap: wrap;
+}
+
+/* File preview styles */
+.file-preview {
+  position: relative;
+  margin: 8px 0;
+  width: 100%;
+  order: -1; /* Place preview above the input row */
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  background-color: #f8f9fa;
+  border-radius: 12px;
+  padding: 8px;
+  border: 1px solid #e1e8ed;
+}
+
+.preview-image {
+  max-width: 80px !important;
+  max-height: 60px !important;
+  width: auto !important;
+  height: auto !important;
+  border-radius: 8px;
+  object-fit: cover;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.remove-preview {
+  position: absolute !important;
+  top: -4px !important;
+  right: -4px !important;
+  background-color: #ff4757 !important;
+  color: white !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  font-size: 12px !important;
+  border-radius: 50% !important;
+  border: 2px solid white !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  z-index: 10 !important;
+}
+
+.remove-preview:hover {
+  background-color: #ff3838 !important;
+  transform: scale(1.1);
+}
+
+/* Ensure message input and buttons stay in a row */
+.message-input {
+  flex: 1 !important;
+  margin: 0 8px !important;
+}
+
+.emoji-button,
+.attach-button,
+.send-button {
+  flex-shrink: 0 !important;
+}
+
+/* Emoji picker styles */
+.emoji-picker-wrapper {
+  position: fixed !important;
+  bottom: 100px !important; /* Position above the message input */
+  left: calc(50% + 120px) !important;
+  transform: translateX(-50%) !important;
+  z-index: 1100 !important; /* Higher than message input */
+  width: auto !important;
+  max-width: 320px !important; /* Smaller width */
+}
+
+.emoji-picker-container {
+  position: relative !important;
+  background-color: #ffffff !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+  border: 1px solid #e1e8ed !important;
+  overflow: hidden !important;
+}
+
+/* Style the emoji picker component itself */
+.emoji-picker-container .EmojiPickerReact {
+  width: 280px !important; /* Smaller width */
+  height: 300px !important; /* Smaller height */
+  border: none !important;
+  box-shadow: none !important;
+  background-color: #ffffff !important;
+}
+
+/* Style emoji picker body */
+.emoji-picker-container .epr-body {
+  height: 200px !important; /* Smaller body height */
+}
+
+/* Make emoji picker scroll area smaller */
+.emoji-picker-container .epr-emoji-category-content {
+  max-height: 180px !important;
+}
+
+/* Style individual emojis */
+.emoji-picker-container .epr-emoji {
+  width: 28px !important;
+  height: 28px !important;
+  margin: 2px !important;
+}
+
+/* Style the search input in emoji picker */
+.emoji-picker-container .epr-search-container input {
+  background-color: #f8f9fa !important;
+  border: 1px solid #e1e8ed !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+}
+
+/* Style emoji categories */
+.emoji-picker-container .epr-category-nav {
+  background-color: #f8f9fa !important;
+  border-bottom: 1px solid #e1e8ed !important;
+  padding: 8px !important;
+}
+
+.emoji-picker-container .epr-cat-btn {
+  width: 28px !important;
+  height: 28px !important;
+  margin: 2px !important;
+  border-radius: 6px !important;
+}
+
+/* Add a small arrow pointing to the emoji button */
+.emoji-picker-container::after {
+  content: '';
+  position: absolute !important;
+  bottom: -8px !important;
+  left: 20px !important; /* Position near the emoji button */
+  width: 0 !important;
+  height: 0 !important;
+  border-left: 8px solid transparent !important;
+  border-right: 8px solid transparent !important;
+  border-top: 8px solid #ffffff !important;
+  z-index: 1101 !important;
+}
+
+/* Add border for the arrow */
+.emoji-picker-container::before {
+  content: '';
+  position: absolute !important;
+  bottom: -9px !important;
+  left: 19px !important;
+  width: 0 !important;
+  height: 0 !important;
+  border-left: 9px solid transparent !important;
+  border-right: 9px solid transparent !important;
+  border-top: 9px solid #e1e8ed !important;
+  z-index: 1100 !important;
 } 
