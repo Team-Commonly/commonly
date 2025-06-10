@@ -26,7 +26,7 @@
 .pod-container {
   padding-top: 0 !important;
   min-height: calc(100vh - 64px);
-  background-color: #f7f9f9 !important;
+  background-color: #f8fafe !important;
   max-width: 100% !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
@@ -34,19 +34,17 @@
 
 .pod-app-bar {
   background-color: #ffffff !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
-  border-bottom: 1px solid #e0e0e0;
+  box-shadow: 0 1px 3px rgba(25, 118, 210, 0.1) !important;
+  border-bottom: 1px solid #e3f2fd;
   z-index: 1000;
   position: sticky !important;
   top: 0;
 }
 
 .pod-title {
-  font-weight: 800 !important;
+  font-weight: 700 !important;
   font-size: 1.5rem !important;
-  background: linear-gradient(90deg, #1da1f2, #9c27b0);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #1da1f2 !important;
   letter-spacing: -0.5px;
 }
 
@@ -62,7 +60,7 @@
 
 .pod-search .MuiOutlinedInput-root.Mui-focused {
   background-color: #ffffff;
-  box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.2);
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
 }
 
 .pod-search .MuiOutlinedInput-notchedOutline {
@@ -71,19 +69,20 @@
 
 .pod-tabs {
   background-color: #ffffff;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e3f2fd;
 }
 
 .pod-tab {
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   text-transform: none !important;
   min-width: 120px !important;
   font-size: 15px !important;
   transition: all 0.2s ease !important;
+  color: #666666 !important;
 }
 
 .pod-tab.Mui-selected {
-  color: #1da1f2 !important;
+  color: #1976d2 !important;
 }
 
 .pod-grid {
@@ -99,84 +98,103 @@
   transition: transform 0.3s, box-shadow 0.3s;
   border-radius: 16px !important;
   overflow: hidden;
-  border: 1px solid #e0e0e0;
+  border: 1px solid #e3f2fd;
   background-color: #ffffff;
+  box-shadow: 0 2px 8px rgba(25, 118, 210, 0.08);
 }
 
 .pod-card:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15) !important;
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(25, 118, 210, 0.15) !important;
+  border-color: #bbdefb;
 }
 
 .pod-card-title {
   margin-bottom: 12px !important;
-  font-weight: 800 !important;
+  font-weight: 700 !important;
   font-size: 1.25rem !important;
-  color: #0f1419 !important;
+  color: #1da1f2 !important;
   line-height: 1.3 !important;
 }
 
 .pod-card-description {
   margin-bottom: 20px !important;
   min-height: 60px !important;
-  color: #536471 !important;
+  color: #666666 !important;
   font-size: 0.95rem !important;
   line-height: 1.5 !important;
+}
+
+.pod-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px !important;
+  padding: 12px 16px;
+  background-color: #f8fafe;
+  border-radius: 12px;
+  border: 1px solid #e3f2fd;
 }
 
 .pod-card-creator {
   display: flex;
   align-items: center;
-  margin-bottom: 16px !important;
-  padding: 8px;
-  background-color: #f7f9f9;
-  border-radius: 12px;
+  gap: 8px;
 }
 
 .pod-creator-avatar {
-  margin-right: 12px !important;
-  width: 36px !important;
-  height: 36px !important;
-  font-size: 16px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  margin-right: 0 !important;
+}
+
+.creator-text {
+  color: #666666 !important;
+  font-weight: 500 !important;
+  font-size: 0.875rem !important;
 }
 
 .pod-card-members {
   display: flex;
   align-items: center;
-  margin-bottom: 12px !important;
-  color: #536471 !important;
-  padding: 8px;
-  background-color: #f7f9f9;
-  border-radius: 12px;
+  gap: 6px;
 }
 
 .pod-card-members svg {
-  margin-right: 12px !important;
-  font-size: 1.5rem !important;
   color: #1da1f2 !important;
+  font-size: 1.25rem !important;
+}
+
+.member-count {
+  color: #1da1f2 !important;
+  font-weight: 600 !important;
+  font-size: 0.875rem !important;
+  background-color: rgba(29, 161, 242, 0.1) !important;
+  padding: 2px 8px !important;
+  border-radius: 12px !important;
+  min-width: 20px !important;
+  text-align: center !important;
 }
 
 .pod-card-actions {
   margin-top: auto !important;
   padding: 16px !important;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #e3f2fd;
 }
 
 .pod-card-actions .MuiButton-root {
-  border-radius: 30px !important;
+  border-radius: 12px !important;
   text-transform: none !important;
-  font-weight: 700 !important;
-  padding: 10px 24px !important;
+  font-weight: 600 !important;
+  padding: 12px 24px !important;
   font-size: 16px !important;
-  background: linear-gradient(90deg, #1da1f2, #9c27b0) !important;
-  box-shadow: 0 4px 12px rgba(29, 161, 242, 0.3) !important;
+  background-color: #1da1f2 !important;
+  box-shadow: 0 3px 12px rgba(29, 161, 242, 0.3) !important;
   transition: all 0.3s ease !important;
 }
 
 .pod-card-actions .MuiButton-root:hover {
-  box-shadow: 0 6px 16px rgba(29, 161, 242, 0.4) !important;
-  transform: translateY(-2px) !important;
+  background-color: #1a91da !important;
+  box-shadow: 0 4px 16px rgba(29, 161, 242, 0.4) !important;
+  transform: translateY(-1px) !important;
 }
 
 .pod-loading {
@@ -201,45 +219,54 @@
   align-items: center;
   height: 400px !important;
   text-align: center;
-  border-radius: 24px !important;
-  background-color: #ffffff !important;
-  padding: 40px !important;
-  border: 2px dashed #1da1f2 !important;
-  margin: 40px auto !important;
-  max-width: 600px !important;
+  color: #666666 !important;
 }
 
 .pod-empty svg {
   color: #1da1f2 !important;
-  opacity: 0.8 !important;
-  margin-bottom: 24px !important;
-  font-size: 80px !important;
+  margin-bottom: 16px !important;
 }
 
 .pod-empty .MuiButton-root {
   margin-top: 24px !important;
-  border-radius: 30px !important;
+  border-radius: 12px !important;
   text-transform: none !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   padding: 12px 32px !important;
-  font-size: 16px !important;
-  background: linear-gradient(90deg, #1da1f2, #9c27b0) !important;
-  box-shadow: 0 4px 12px rgba(29, 161, 242, 0.3) !important;
+  background-color: #1da1f2 !important;
+  box-shadow: 0 3px 12px rgba(29, 161, 242, 0.3) !important;
+}
+
+.pod-empty .MuiButton-root:hover {
+  background-color: #1a91da !important;
+  box-shadow: 0 4px 16px rgba(29, 161, 242, 0.4) !important;
 }
 
 .create-room-button {
-  background: linear-gradient(90deg, #1da1f2, #9c27b0) !important;
-  border-radius: 30px !important;
+  border-radius: 12px !important;
   text-transform: none !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   padding: 10px 24px !important;
-  box-shadow: 0 4px 12px rgba(29, 161, 242, 0.3) !important;
-  transition: all 0.3s ease !important;
+  background-color: #1da1f2 !important;
+  box-shadow: 0 3px 12px rgba(29, 161, 242, 0.3) !important;
+  border: none !important;
+  color: #ffffff !important;
 }
 
 .create-room-button:hover {
-  box-shadow: 0 6px 16px rgba(29, 161, 242, 0.4) !important;
-  transform: translateY(-2px) !important;
+  background-color: #1a91da !important;
+  box-shadow: 0 4px 16px rgba(29, 161, 242, 0.4) !important;
+}
+
+/* Ensure dialog buttons also match */
+.MuiDialog-root .MuiButton-contained {
+  background-color: #1da1f2 !important;
+  box-shadow: 0 3px 12px rgba(29, 161, 242, 0.3) !important;
+}
+
+.MuiDialog-root .MuiButton-contained:hover {
+  background-color: #1a91da !important;
+  box-shadow: 0 4px 16px rgba(29, 161, 242, 0.4) !important;
 }
 
 @media (max-width: 960px) {
@@ -254,6 +281,28 @@
   }
   
   .pod-card-description {
-    min-height: 40px !important;
+    font-size: 0.9rem !important;
   }
+}
+
+/* Prevent unwanted hover text and hidden elements */
+.pod-card * {
+    position: relative;
+}
+
+.pod-card *:not(.summary-content *):not(.MuiTooltip-tooltip) {
+    overflow: hidden;
+}
+
+/* Ensure no elements have browser tooltips */
+.pod-card [title]:not(.MuiIconButton-root) {
+    title: none !important;
+  }
+
+/* Hide any potentially floating text */
+.pod-card::before,
+.pod-card::after,
+.pod-card *::before,
+.pod-card *::after {
+    display: none !important;
 } 
