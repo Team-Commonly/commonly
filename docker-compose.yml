@@ -51,6 +51,7 @@ services:
       - SENDGRID_API_KEY=${SENDGRID_API_KEY}
       - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
       - FRONTEND_URL=${FRONTEND_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       # Test-specific environment variables
       - TEST_JWT_SECRET=test-jwt-secret
       - TEST_MONGO_URI=mongodb://mongo:27017/commonly-test

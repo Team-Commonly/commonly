@@ -5,7 +5,7 @@ import {
     Container, Typography, Box, Grid, Card, CardContent, CardActions, 
     Button, TextField, Dialog, DialogTitle, DialogContent, DialogActions,
     FormControl, InputLabel, Select, MenuItem, CircularProgress, Tabs, Tab,
-    AppBar, Toolbar, Badge, Avatar
+    AppBar, Toolbar, Avatar
 } from '@mui/material';
 import { 
     Add as AddIcon, 
@@ -15,6 +15,7 @@ import {
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { getAvatarColor } from '../utils/avatarUtils';
+import PodSummary from './PodSummary';
 import './Pod.css';
 
 const Pod = () => {
@@ -305,27 +306,39 @@ const Pod = () => {
                                         <Typography variant="h5" component="div" className="pod-card-title">
                                             {pod.name}
                                         </Typography>
-                                        <Typography variant="body2" color="text.secondary" className="pod-card-description">
-                                            {pod.description}
-                                        </Typography>
+                                        
+                                        {/* AI Summary only - no redundant description */}
+                                        <PodSummary 
+                                            podId={pod._id} 
+                                            podName={pod.name} 
+                                            podType={getPodType()} 
+                                            originalDescription={pod.description}
+                                        />
+                                        
+                                        <Box className="pod-card-footer">
                                         <Box className="pod-card-creator">
                                             <Avatar 
                                                 className="pod-creator-avatar"
-                                                sx={{ bgcolor: getAvatarColor(pod.createdBy?.profilePicture || 'default') }}
+                                                    sx={{ 
+                                                        bgcolor: getAvatarColor(pod.createdBy?.profilePicture || 'default'),
+                                                        color: 'white',
+                                                        width: 28,
+                                                        height: 28,
+                                                        fontSize: '0.875rem'
+                                                    }}
                                             >
                                                 {pod.createdBy?.username?.charAt(0).toUpperCase()}
                                             </Avatar>
-                                            <Typography variant="body2">
-                                                Created by: {pod.createdBy?.username}
+                                                <Typography variant="body2" className="creator-text">
+                                                    @{pod.createdBy?.username}
                                             </Typography>
                                         </Box>
                                         <Box className="pod-card-members">
-                                            <Badge badgeContent={pod.members?.length || 0} color="primary">
                                                 <PeopleIcon />
-                                            </Badge>
-                                            <Typography variant="body2">
-                                                {pod.members?.length || 0} members
+                                                <Typography variant="body2" className="member-count">
+                                                    {pod.members?.length || 0}
                                             </Typography>
+                                            </Box>
                                         </Box>
                                     </CardContent>
                                     <CardActions className="pod-card-actions">
