@@ -78,8 +78,10 @@ connectDB();
 // Start the summarizer scheduler
 const schedulerService = require('./services/schedulerService');
 
-console.log('Starting summarizer scheduler...');
-schedulerService.start();
+if (process.env.NODE_ENV !== 'test') {
+  console.log('Starting summarizer scheduler...');
+  schedulerService.start();
+}
 
 // Connect to PostgreSQL if configured (for chat functionality)
 if (process.env.PG_HOST) {
