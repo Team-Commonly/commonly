@@ -142,7 +142,8 @@ jest.mock('@mui/material', () => {
     Pagination: MockComponent('Pagination'),
     Breadcrumbs: MockComponent('Breadcrumbs'),
     Link: MockComponent('Link'),
-    Stack: MockComponent('Stack')
+    Stack: MockComponent('Stack'),
+    Collapse: MockComponent('Collapse')
   };
 });
 
@@ -152,7 +153,7 @@ jest.mock('@mui/icons-material', () => {
   return {
     Add: () => mockReact.createElement('span', { 'data-testid': 'add-icon' }, '+'),
     Search: () => mockReact.createElement('span', { 'data-testid': 'search-icon' }, '🔍'),
-    People: () => mockReact.createElement('span', { 'data-testid': 'people-icon' }, '��'),
+    People: () => mockReact.createElement('span', { 'data-testid': 'people-icon' }, '👥'),
     Chat: () => mockReact.createElement('span', { 'data-testid': 'chat-icon' }, '💬'),
     School: () => mockReact.createElement('span', { 'data-testid': 'school-icon' }, '🎓'),
     Work: () => mockReact.createElement('span', { 'data-testid': 'work-icon' }, '💼'),
@@ -173,7 +174,14 @@ jest.mock('@mui/icons-material', () => {
     ArrowBack: () => mockReact.createElement('span', { 'data-testid': 'arrow-back-icon' }, '←'),
     ArrowForward: () => mockReact.createElement('span', { 'data-testid': 'arrow-forward-icon' }, '→'),
     ExpandMore: () => mockReact.createElement('span', { 'data-testid': 'expand-more-icon' }, '▼'),
-    ExpandLess: () => mockReact.createElement('span', { 'data-testid': 'expand-less-icon' }, '▲')
+    ExpandLess: () => mockReact.createElement('span', { 'data-testid': 'expand-less-icon' }, '▲'),
+    Refresh: () => mockReact.createElement('span', { 'data-testid': 'refresh-icon' }, '🔄'),
+    TrendingUp: () => mockReact.createElement('span', { 'data-testid': 'trending-up-icon' }, '📈'),
+    PostAdd: () => mockReact.createElement('span', { 'data-testid': 'post-add-icon' }, '📝'),
+    SportsEsports: () => mockReact.createElement('span', { 'data-testid': 'sports-esports-icon' }, '🎮'),
+    Launch: () => mockReact.createElement('span', { 'data-testid': 'launch-icon' }, '🚀'),
+    Whatshot: () => mockReact.createElement('span', { 'data-testid': 'whatshot-icon' }, '🔥'),
+    Lightbulb: () => mockReact.createElement('span', { 'data-testid': 'lightbulb-icon' }, '💡')
   };
 });
 
