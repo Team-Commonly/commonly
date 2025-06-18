@@ -15,6 +15,7 @@ const podRoutes = require('./routes/pods');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
 const docsRoutes = require('./routes/docs');
+const summariesRoutes = require('./routes/summaries');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes;
 let pgMessageRoutes;
@@ -69,9 +70,18 @@ app.use('/api/pods', podRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);
+app.use('/api/summaries', summariesRoutes);
 
 // Connect to MongoDB (for posts and user data)
 connectDB();
+
+// Start the summarizer scheduler
+const schedulerService = require('./services/schedulerService');
+
+if (process.env.NODE_ENV !== 'test') {
+  console.log('Starting summarizer scheduler...');
+  schedulerService.start();
+}
 
 // Connect to PostgreSQL if configured (for chat functionality)
 if (process.env.PG_HOST) {
