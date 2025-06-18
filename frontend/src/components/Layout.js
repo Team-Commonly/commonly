@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import SearchBar from './SearchBar';
+import WhatsHappening from './WhatsHappening';
 import { Box, CircularProgress, Container, Paper, useTheme, useMediaQuery, IconButton } from '@mui/material';
 import { useAuth } from '../context/AuthContext';
 import { useLayout } from '../context/LayoutContext';
@@ -101,26 +102,7 @@ const Layout = () => {
                         </div>
                         {!isMobile && (
                             <div className="content-sidebar">
-                                <Paper elevation={0} className="trending-section">
-                                    <h3>What&apos;s happening</h3>
-                                    <div className="trending-topics">
-                                        <div className="trending-topic">
-                                            <span className="topic-category">Trending in Technology</span>
-                                            <h4>#AIRevolution</h4>
-                                            <span className="topic-posts">2,543 posts</span>
-                                        </div>
-                                        <div className="trending-topic">
-                                            <span className="topic-category">Entertainment</span>
-                                            <h4>New streaming releases</h4>
-                                            <span className="topic-posts">1,287 posts</span>
-                                        </div>
-                                        <div className="trending-topic">
-                                            <span className="topic-category">Science</span>
-                                            <h4>#SpaceExploration</h4>
-                                            <span className="topic-posts">4,892 posts</span>
-                                        </div>
-                                    </div>
-                                </Paper>
+                                <WhatsHappening />
                             </div>
                         )}
                     </div>
