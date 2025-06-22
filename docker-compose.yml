@@ -38,21 +38,38 @@ services:
       - mongo
       - postgres
     environment:
+      # Application settings
       - NODE_ENV=development
-      - MONGO_URI=${MONGO_URI}
-      - JWT_SECRET=${JWT_SECRET}
       - PORT=5000
+      
+      # Database settings
+      - MONGO_URI=${MONGO_URI}
       - PG_USER=${PG_USER}
       - PG_PASSWORD=${PG_PASSWORD}
       - PG_HOST=${PG_HOST}
       - PG_PORT=${PG_PORT}
       - PG_DATABASE=${PG_DATABASE}
       - PG_SSL_CA_PATH=/app/ca.pem
+      
+      # Authentication
+      - JWT_SECRET=${JWT_SECRET}
+      
+      # Email settings
       - SENDGRID_API_KEY=${SENDGRID_API_KEY}
       - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      
+      # Frontend URL
       - FRONTEND_URL=${FRONTEND_URL}
+      
+      # AI Integration
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      # Test-specific environment variables
+      
+      # Discord Integration
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY}
+      
+      # Test settings
       - TEST_JWT_SECRET=test-jwt-secret
       - TEST_MONGO_URI=mongodb://mongo:27017/commonly-test
     volumes:
@@ -75,6 +92,8 @@ services:
       - backend
     environment:
       - REACT_APP_API_URL=http://localhost:5000
+      # Add Discord client ID for frontend
+      - REACT_APP_DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
     volumes:
       - ./frontend:/app
       - /app/node_modules

@@ -28,6 +28,7 @@ import { useLayout } from '../context/LayoutContext';
 import { getAvatarColor } from '../utils/avatarUtils';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
+import DiscordIntegration from './DiscordIntegration';
 import './ChatRoom.css';
 
 const ChatRoom = () => {
@@ -1101,6 +1102,19 @@ const ChatRoom = () => {
                         ))}
                     </div>
                 </div>
+                
+                {/* Discord Integration section */}
+                {room?.createdBy?._id === currentUser?._id && (
+                    <div className="sidebar-section">
+                        <div className="sidebar-section-title">
+                            <span style={{ marginRight: '8px', fontSize: '16px', color: '#5865F2' }}>🤖</span>
+                            Discord Integration
+                        </div>
+                        <div className="sidebar-section-content">
+                            <DiscordIntegration podId={roomId} />
+                        </div>
+                    </div>
+                )}
             </div>
             
             {/* Toggle button with improved positioning */}
