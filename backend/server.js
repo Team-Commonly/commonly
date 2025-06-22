@@ -16,6 +16,9 @@ const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
+const integrationRoutes = require('./routes/integrations');
+const discordWebhookRoutes = require('./routes/webhooks/discord');
+const discordRoutes = require('./routes/discord');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes;
 let pgMessageRoutes;
@@ -60,6 +63,11 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
 }));
+
+// Raw body middleware for Discord signature verification
+app.use('/api/discord/interactions', express.raw({ type: 'application/json' }));
+
+// JSON parsing for all other routes
 app.use(express.json());
 
 // Routes
@@ -71,6 +79,9 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);
 app.use('/api/summaries', summariesRoutes);
+app.use('/api/integrations', integrationRoutes);
+app.use('/api/webhooks/discord', discordWebhookRoutes);
+app.use('/api/discord', discordRoutes);
 
 // Connect to MongoDB (for posts and user data)
 connectDB();
