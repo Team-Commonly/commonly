@@ -16,8 +16,10 @@
 	"dependencies": {
 		"@google/generative-ai": "^0.2.1",
 		"@sendgrid/mail": "^7.7.0",
+		"axios": "^1.10.0",
 		"bcryptjs": "^2.4.3",
 		"cors": "^2.8.5",
+		"discord.js": "^14.20.0",
 		"dotenv": "^16.0.3",
 		"express": "^4.18.2",
 		"helmet": "^7.1.0",
@@ -29,7 +31,9 @@
 		"node-cron": "^3.0.3",
 		"node-fetch": "^2.7.0",
 		"pg": "^8.11.3",
-		"socket.io": "^4.7.2"
+		"socket.io": "^4.7.2",
+		"tweetnacl": "^1.0.3",
+		"tweetnacl-util": "^0.15.1"
 	},
 	"devDependencies": {
 		"@jest/globals": "^29.7.0",
