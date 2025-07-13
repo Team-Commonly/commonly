@@ -14,6 +14,8 @@ import Pod from './components/Pod';
 import PodRedirect from './components/PodRedirect';
 import ChatRoom from './components/ChatRoom';
 import ApiDevPage from './components/ApiDevPage';
+import DiscordCallback from './components/DiscordCallback';
+import ProtectedRoute from './components/ProtectedRoute';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
@@ -201,9 +203,16 @@ function App() {
                       <Route path="/pods" element={<PodRedirect />} />
                       <Route path="/pods/:podType" element={<Pod />} />
                       <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />
-                      <Route path="/dev/api" element={<ApiDevPage />} />
+                      <Route path="/dev/api" element={
+                        <ProtectedRoute requireAdmin={true}>
+                          <ApiDevPage />
+                        </ProtectedRoute>
+                      } />
                     </Route>
                     <Route path="/chat/:podId" element={<Layout><ChatRoom /></Layout>} />
+                    <Route path="/discord/callback" element={<DiscordCallback />} />
+                    <Route path="/discord/success" element={<DiscordCallback type="success" />} />
+                    <Route path="/discord/error" element={<DiscordCallback type="error" />} />
                   </Routes>
                 </div>
               </BrowserRouter>

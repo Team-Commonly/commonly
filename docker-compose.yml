@@ -66,6 +66,7 @@ services:
       
       # Discord Integration
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY}
       
@@ -85,6 +86,7 @@ services:
       context: ./frontend
       args:
         - REACT_APP_API_URL=${REACT_APP_API_URL}
+        - REACT_APP_DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
     container_name: frontend
     ports:
       - "3000:80"
@@ -92,7 +94,6 @@ services:
       - backend
     environment:
       - REACT_APP_API_URL=http://localhost:5000
-      # Add Discord client ID for frontend
       - REACT_APP_DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
     volumes:
       - ./frontend:/app

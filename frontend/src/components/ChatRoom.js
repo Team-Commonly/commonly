@@ -19,7 +19,8 @@ import {
     Search as SearchIcon,
     ChevronRight as ChevronRightIcon,
     KeyboardArrowRight as ArrowRightIcon,
-    KeyboardArrowLeft as ArrowLeftIcon
+    KeyboardArrowLeft as ArrowLeftIcon,
+    Apps as AppsIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -1103,12 +1104,11 @@ const ChatRoom = () => {
                     </div>
                 </div>
                 
-                {/* Discord Integration section */}
+                {/* Apps section */}
                 {room?.createdBy?._id === currentUser?._id && (
                     <div className="sidebar-section">
                         <div className="sidebar-section-title">
-                            <span style={{ marginRight: '8px', fontSize: '16px', color: '#5865F2' }}>🤖</span>
-                            Discord Integration
+                            <span><AppsIcon style={{ marginRight: '8px', fontSize: '16px', color: '#5865F2' }} /> Apps</span>
                         </div>
                         <div className="sidebar-section-content">
                             <DiscordIntegration podId={roomId} />

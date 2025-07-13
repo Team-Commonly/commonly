@@ -1,11 +1,14 @@
 const express = require('express');
+const axios = require('axios');
 
 const router = express.Router();
 const auth = require('../middleware/auth');
+const adminAuth = require('../middleware/adminAuth');
 const Integration = require('../models/Integration');
 const DiscordIntegration = require('../models/DiscordIntegration');
 const DiscordService = require('../services/discordService');
 const Pod = require('../models/Pod');
+const User = require('../models/User');
 
 // Get all integrations for a pod
 router.get('/:podId', auth, async (req, res) => {
@@ -15,7 +18,9 @@ router.get('/:podId', auth, async (req, res) => {
     const integrations = await Integration.find({
       podId,
       isActive: true,
-    }).populate('platformIntegration');
+    })
+      .populate('createdBy', 'username email')
+      .populate('platformIntegration');
 
     res.json(integrations);
   } catch (error) {
@@ -49,20 +54,33 @@ router.post('/', auth, async (req, res) => {
     let platformIntegration;
 
     switch (type) {
-      case 'discord':
+      case 'discord': {
+        // Create Discord webhook automatically
+        const webhookResponse = await axios.post(`https://discord.com/api/channels/${config.channelId}/webhooks`, {
+          name: 'Commonly Bot',
+          avatar: null, // Could add a bot avatar URL here
+        }, {
+          headers: {
+            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        const webhook = webhookResponse.data;
+
         platformIntegration = new DiscordIntegration({
           integrationId: integration._id,
           serverId: config.serverId,
           serverName: config.serverName,
           channelId: config.channelId,
           channelName: config.channelName,
-          webhookUrl: config.webhookUrl,
-          webhookId: config.webhookId,
-          botToken: config.botToken,
+          webhookUrl: `https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`,
+          webhookId: webhook.id,
+          botToken: process.env.DISCORD_BOT_TOKEN,
           permissions: config.permissions || ['read_messages', 'send_messages'],
         });
         break;
-
+      }
       default:
         return res.status(400).json({ message: 'Unsupported integration type' });
     }
@@ -75,6 +93,13 @@ router.post('/', auth, async (req, res) => {
 
     if (!initialized) {
       return res.status(500).json({ message: 'Failed to initialize integration' });
+    }
+
+    // Connect the integration to update status from pending to connected
+    const connected = await service.connect();
+
+    if (!connected) {
+      console.warn('Integration initialized but failed to connect');
     }
 
     res.status(201).json({
@@ -269,6 +294,63 @@ router.post('/:id/send', auth, async (req, res) => {
   }
 });
 
+// Get all integrations (admin only)
+router.get('/admin/all', auth, adminAuth, async (req, res) => {
+  try {
+    const integrations = await Integration.find({ isActive: true })
+      .populate('podId', 'name type createdBy')
+      .populate('createdBy', 'username email')
+      .populate('platformIntegration')
+      .sort({ createdAt: -1 });
+
+    res.json(integrations);
+  } catch (error) {
+    console.error('Error fetching all integrations:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get user's integrations across all pods
+router.get('/user/all', auth, async (req, res) => {
+  try {
+    const integrations = await Integration.find({
+      createdBy: req.user.id,
+      isActive: true,
+    })
+      .populate('podId', 'name type')
+      .populate('platformIntegration')
+      .sort({ createdAt: -1 });
+
+    res.json(integrations);
+  } catch (error) {
+    console.error('Error fetching user integrations:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Check if user can delete integration
+const canDeleteIntegration = async (integration, userId) => {
+  const user = await User.findById(userId);
+
+  // Admin can delete any integration
+  if (user.role === 'admin') {
+    return true;
+  }
+
+  // Pod owner can delete integrations in their pod
+  const pod = await Pod.findById(integration.podId);
+  if (pod && pod.createdBy.toString() === userId) {
+    return true;
+  }
+
+  // Integration creator can delete their own integration
+  if (integration.createdBy.toString() === userId) {
+    return true;
+  }
+
+  return false;
+};
+
 // Delete an integration
 router.delete('/:id', auth, async (req, res) => {
   try {
@@ -279,9 +361,9 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Integration not found' });
     }
 
-    // Check if user owns the pod
-    const pod = await Pod.findById(integration.podId);
-    if (!pod || pod.createdBy.toString() !== req.user.id) {
+    // Check if user can delete this integration
+    const canDelete = await canDeleteIntegration(integration, req.user.id);
+    if (!canDelete) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -295,7 +377,12 @@ router.delete('/:id', auth, async (req, res) => {
         return res.status(400).json({ message: 'Unsupported integration type' });
     }
 
-    await service.disconnect();
+    try {
+      await service.disconnect();
+    } catch (error) {
+      console.warn('Error disconnecting service during deletion:', error);
+      // Continue with deletion even if disconnect fails
+    }
 
     // Delete platform-specific integration
     switch (integration.type) {
