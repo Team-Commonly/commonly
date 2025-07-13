@@ -11,7 +11,11 @@
 		"test:coverage": "jest --coverage",
 		"test:ci": "jest --forceExit --detectOpenHandles",
 		"lint": "eslint . --ext .js",
-		"lint:fix": "eslint . --ext .js --fix"
+		"lint:fix": "eslint . --ext .js --fix",
+		"discord:deploy": "node scripts/deploy-discord-commands.js deploy",
+		"discord:verify": "node scripts/deploy-discord-commands.js verify",
+		"discord:register": "node scripts/register-discord-commands.js",
+		"discord:list": "node scripts/register-discord-commands.js list"
 	},
 	"dependencies": {
 		"@google/generative-ai": "^0.2.1",

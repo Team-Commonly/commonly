@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const IntegrationSchema = new mongoose.Schema({
+  installationId: {
+    type: String,
+    unique: true,
+    sparse: true, // Allow null/undefined for non-Discord integrations
+  },
   podId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Pod',
@@ -19,8 +24,31 @@ const IntegrationSchema = new mongoose.Schema({
     default: 'pending',
   },
   config: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {},
+    serverId: String,
+    serverName: String,
+    channelId: String,
+    channelName: String,
+    webhookUrl: String,
+    botToken: String,
+    permissions: [String],
+    webhookListenerEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    lastSummaryAt: Date,
+    messageBuffer: [{
+      messageId: String,
+      authorId: String,
+      authorName: String,
+      content: String,
+      timestamp: Date,
+      attachments: [String],
+      reactions: [String],
+    }],
+    maxBufferSize: {
+      type: Number,
+      default: 1000,
+    },
   },
   lastSync: {
     type: Date,
@@ -48,10 +76,24 @@ const IntegrationSchema = new mongoose.Schema({
 IntegrationSchema.index({ podId: 1, type: 1 });
 IntegrationSchema.index({ status: 1 });
 IntegrationSchema.index({ createdBy: 1 });
+IntegrationSchema.index({ installationId: 1 }, { unique: true, sparse: true });
 
 // Virtual for platform-specific integration
 IntegrationSchema.virtual('platformIntegration', {
-  refPath: 'type',
+  ref() {
+    switch (this.type) {
+      case 'discord':
+        return 'DiscordIntegration';
+      case 'telegram':
+        return 'TelegramIntegration';
+      case 'slack':
+        return 'SlackIntegration';
+      case 'messenger':
+        return 'MessengerIntegration';
+      default:
+        return null;
+    }
+  },
   localField: '_id',
   foreignField: 'integrationId',
   justOne: true,

@@ -19,6 +19,10 @@ Before deploying the application, ensure you have the following:
    - 4GB RAM
    - 20GB disk space
 
+4. **Discord Integration (Optional)**:
+   - Discord application credentials (see [Discord App Setup](./DISCORD_APP_SETUP.md))
+   - Bot token with proper permissions
+
 ## Local Development Deployment
 
 ### Step 1: Clone the Repository
@@ -56,6 +60,11 @@ REACT_APP_API_URL=http://localhost:5000
 SENDGRID_API_KEY=your_sendgrid_api_key
 SENDGRID_FROM_EMAIL=no-reply@commonly.com
 FRONTEND_URL=http://localhost:3000
+
+# Discord Integration (optional)
+DISCORD_CLIENT_ID=your_discord_client_id
+DISCORD_BOT_TOKEN=your_discord_bot_token
+DISCORD_PUBLIC_KEY=your_discord_public_key
 ```
 
 2. Download the CA certificate (if using external PostgreSQL):
@@ -71,10 +80,13 @@ docker-compose build
 docker-compose up -d
 ```
 
+**Note:** If Discord credentials are provided, slash commands will be automatically registered during container startup.
+
 ### Step 4: Verify the Deployment
 
 1. Access the frontend at: http://localhost:3000
 2. Access the backend API at: http://localhost:5000
+3. Check Discord integration health: http://localhost:5000/api/discord/health
 
 ## Production Deployment
 
@@ -97,6 +109,7 @@ docker-compose up -d
    - Production database URIs
    - API keys for external services
    - HTTPS configuration
+   - Discord integration credentials (if applicable)
 
 2. Place the `.env` file in the project root directory.
 
@@ -143,6 +156,8 @@ docker-compose up -d
    docker-compose -f docker-compose.yml up -d
    ```
 
+**Discord Integration:** Commands are automatically registered during startup if Discord credentials are provided.
+
 ### Step 5: Verify the Deployment
 
 1. Check the container status:
@@ -156,6 +171,59 @@ docker-compose up -d
    ```
 
 3. Access the application using your domain name or server IP.
+
+4. Verify Discord integration (if configured):
+   ```bash
+   curl http://your-domain.com/api/discord/health
+   ```
+
+## Discord Command Registration
+
+The application includes automated Discord slash command registration that integrates with the deployment process.
+
+### Automatic Registration
+
+Commands are automatically registered when:
+- The container starts (if Discord credentials are provided)
+- A new Discord integration is created
+- The application is deployed
+
+### Manual Registration
+
+If you need to manually register commands:
+
+```bash
+# Deploy commands for all integrations
+npm run discord:deploy
+
+# Verify registration status
+npm run discord:verify
+
+# Check health
+curl http://localhost:5000/api/discord/health
+```
+
+### Health Monitoring
+
+Monitor Discord integration health:
+
+```bash
+# Health check endpoint
+GET /api/discord/health
+
+# Expected response
+{
+  "status": "healthy",
+  "integrations": [...],
+  "summary": {
+    "total": 1,
+    "registered": 1,
+    "failed": 0
+  }
+}
+```
+
+For detailed Discord deployment information, see [Discord Deployment Guide](./DISCORD_DEPLOYMENT.md).
 
 ## Continuous Deployment
 
@@ -299,6 +367,18 @@ logstash:
     - elasticsearch
 ```
 
+### Discord Integration Monitoring
+
+Monitor Discord integration health:
+
+```bash
+# Set up health check monitoring
+*/5 * * * * curl -f http://localhost:5000/api/discord/health || echo "Discord health check failed"
+
+# Check logs for Discord-related issues
+docker-compose logs backend | grep -i discord
+```
+
 ## Troubleshooting
 
 ### Common Issues
@@ -318,6 +398,12 @@ logstash:
    - Verify CORS configuration in backend
    - Check for network issues between containers
 
+4. **Discord commands not appearing**:
+   - Check Discord integration health: `curl http://localhost:5000/api/discord/health`
+   - Verify bot permissions in Discord Developer Portal
+   - Check container logs for Discord registration errors
+   - Manually register commands: `npm run discord:deploy`
+
 ### Getting Support
 
 For deployment issues or questions:
@@ -325,3 +411,4 @@ For deployment issues or questions:
 1. Open an issue on the GitHub repository
 2. Contact Sam for production environment files or credentials
 3. Refer to the documentation in the `docs` directory 
+4. Check Discord integration status and logs 
