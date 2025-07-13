@@ -1,7 +1,8 @@
 const axios = require('axios');
-const { Client, Intents } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
 const DiscordIntegration = require('../models/DiscordIntegration');
 const Integration = require('../models/Integration');
+const DiscordCommandService = require('./discordCommandService');
 const summarizerService = require('./summarizerService');
 const config = require('../config/discord');
 
@@ -14,14 +15,17 @@ class DiscordService {
     this.integrationId = integrationId;
     this.client = new Client({
       intents: [
-        Intents.FLAGS.GUILDS,
-        Intents.FLAGS.GUILD_MESSAGES,
-        Intents.FLAGS.GUILD_WEBHOOKS,
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildWebhooks,
       ],
     });
 
     // Initialize bot with universal token
     this.client.login(config.botToken);
+
+    // Initialize command service
+    this.commandService = null;
   }
 
   async initialize() {
@@ -34,6 +38,16 @@ class DiscordService {
       }
 
       this.integration = integration;
+
+      // Use guild ID as installation ID for better identification
+      const guildId = integration.platformIntegration?.serverId || integration.config?.serverId;
+      if (!guildId) {
+        throw new Error('Guild ID not found in integration');
+      }
+
+      // Initialize command service with guild ID as installation ID
+      this.commandService = new DiscordCommandService(guildId);
+
       return true;
     } catch (error) {
       console.error('Error initializing Discord service:', error);
@@ -510,6 +524,400 @@ class DiscordService {
       }
     } catch (error) {
       console.error('Error triggering summarization:', error);
+    }
+  }
+
+  /**
+   * Handle Discord slash commands
+   */
+  async handleSlashCommand(commandName, interaction) {
+    try {
+      if (!this.commandService) {
+        return {
+          success: false,
+          content: '❌ Command service not initialized.',
+        };
+      }
+
+      switch (commandName) {
+        case 'commonly-summary':
+          return await this.commandService.handleSummaryCommand();
+
+        case 'discord-status':
+          return await this.commandService.handleStatusCommand();
+
+        case 'discord-enable':
+          return await this.commandService.handleEnableCommand();
+
+        case 'discord-disable':
+          return await this.commandService.handleDisableCommand();
+
+        default:
+          return {
+            success: false,
+            content: '❌ Unknown command.',
+          };
+      }
+    } catch (error) {
+      console.error('Error handling slash command:', error);
+      return {
+        success: false,
+        content: '❌ An error occurred while processing the command.',
+      };
+    }
+  }
+
+  /**
+   * Register slash commands for a specific guild (server)
+   * This is the main method for command registration
+   */
+  async registerSlashCommands(guildId = null) {
+    try {
+      // Use provided guildId or get from integration
+      const targetGuildId = guildId || this.integration?.platformIntegration?.serverId || this.integration?.config?.serverId;
+
+      if (!targetGuildId) {
+        throw new Error('Guild ID is required for command registration');
+      }
+
+      console.log(`🔧 Registering commands for guild: ${targetGuildId}`);
+
+      // Define the slash commands
+      const commands = [
+        {
+          name: 'commonly-summary',
+          description: 'Get the most recent summary from the linked chat pod',
+          type: 1, // CHAT_INPUT
+        },
+        {
+          name: 'discord-status',
+          description: 'Show the status of Discord integration',
+          type: 1,
+        },
+        {
+          name: 'discord-enable',
+          description: 'Enable webhook listener for Discord channel',
+          type: 1,
+        },
+        {
+          name: 'discord-disable',
+          description: 'Disable webhook listener for Discord channel',
+          type: 1,
+        },
+      ];
+
+      // Register commands with Discord API
+      const url = `https://discord.com/api/v10/applications/${config.clientId}/guilds/${targetGuildId}/commands`;
+
+      const response = await axios.put(url, commands, {
+        headers: {
+          Authorization: `Bot ${config.botToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.status === 200 || response.status === 201) {
+        console.log(`✅ Successfully registered ${commands.length} commands for guild ${targetGuildId}`);
+
+        // Update integration with registration info
+        if (this.integration) {
+          await Integration.findByIdAndUpdate(this.integrationId, {
+            'config.commandsRegistered': true,
+            'config.lastCommandRegistration': new Date(),
+            'config.registeredGuildId': targetGuildId,
+          });
+        }
+
+        return true;
+      }
+      throw new Error(`Discord API returned status ${response.status}`);
+    } catch (error) {
+      console.error('❌ Failed to register commands:', error.message);
+
+      // Update integration with error info
+      if (this.integration) {
+        await Integration.findByIdAndUpdate(this.integrationId, {
+          'config.commandsRegistered': false,
+          'config.lastRegistrationError': error.message,
+          'config.lastRegistrationAttempt': new Date(),
+        });
+      }
+
+      return false;
+    }
+  }
+
+  /**
+   * Register commands for all active Discord integrations
+   * This is used during deployment
+   */
+  static async registerCommandsForAllIntegrations() {
+    try {
+      console.log('🚀 Starting Discord command registration for all integrations...');
+
+      const integrations = await Integration.find({
+        type: 'discord',
+        isActive: true,
+      });
+
+      if (integrations.length === 0) {
+        console.log('ℹ️  No active Discord integrations found');
+        return { success: true, registered: 0, failed: 0 };
+      }
+
+      console.log(`📋 Found ${integrations.length} active Discord integration(s)`);
+
+      let registered = 0;
+      let failed = 0;
+      const results = [];
+
+      for (const integration of integrations) {
+        try {
+          const guildId = integration.platformIntegration?.serverId || integration.config?.serverId;
+
+          if (!guildId) {
+            console.log(`⚠️  Integration ${integration._id}: Missing guild ID`);
+            failed++;
+            results.push({ integrationId: integration._id, success: false, error: 'Missing guild ID' });
+            continue;
+          }
+
+          console.log(`🔧 Registering commands for integration ${integration._id} (Guild: ${guildId})`);
+
+          // Create a temporary service instance for registration
+          const tempService = new DiscordService(integration._id);
+          await tempService.initialize();
+
+          const success = await tempService.registerSlashCommands(guildId);
+
+          if (success) {
+            registered++;
+            results.push({ integrationId: integration._id, guildId, success: true });
+            console.log(`✅ Successfully registered commands for guild ${guildId}`);
+          } else {
+            failed++;
+            results.push({
+              integrationId: integration._id, guildId, success: false, error: 'Registration failed',
+            });
+            console.log(`❌ Failed to register commands for guild ${guildId}`);
+          }
+        } catch (error) {
+          failed++;
+          results.push({ integrationId: integration._id, success: false, error: error.message });
+          console.error(`❌ Error registering commands for integration ${integration._id}:`, error.message);
+        }
+      }
+
+      console.log('\n📊 Registration Summary:');
+      console.log(`   ✅ Successfully registered: ${registered}`);
+      console.log(`   ❌ Failed: ${failed}`);
+      console.log(`   📋 Total integrations: ${integrations.length}`);
+
+      return {
+        success: failed === 0,
+        registered,
+        failed,
+        total: integrations.length,
+        results,
+      };
+    } catch (error) {
+      console.error('❌ Error in bulk command registration:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Verify command registration status
+   * Checks if commands are properly registered for a guild
+   */
+  async verifyCommandRegistration(guildId = null) {
+    try {
+      const targetGuildId = guildId || this.integration?.platformIntegration?.serverId || this.integration?.config?.serverId;
+
+      if (!targetGuildId) {
+        throw new Error('Guild ID is required for verification');
+      }
+
+      const url = `https://discord.com/api/v10/applications/${config.clientId}/guilds/${targetGuildId}/commands`;
+
+      const response = await axios.get(url, {
+        headers: {
+          Authorization: `Bot ${config.botToken}`,
+        },
+      });
+
+      if (response.status === 200) {
+        const registeredCommands = response.data;
+        const expectedCommands = ['commonly-summary', 'discord-status', 'discord-enable', 'discord-disable'];
+        const foundCommands = registeredCommands.map((cmd) => cmd.name);
+
+        const missingCommands = expectedCommands.filter((cmd) => !foundCommands.includes(cmd));
+
+        return {
+          success: missingCommands.length === 0,
+          registeredCommands: foundCommands,
+          missingCommands,
+          totalExpected: expectedCommands.length,
+          totalFound: foundCommands.length,
+        };
+      }
+      throw new Error(`Discord API returned status ${response.status}`);
+    } catch (error) {
+      console.error('❌ Error verifying command registration:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Handle Discord interaction (slash command response)
+   */
+  async handleInteraction(interaction) {
+    try {
+      if (interaction.type === 2) { // APPLICATION_COMMAND
+        const commandName = interaction.data.name;
+        const result = await this.handleSlashCommand(commandName, interaction);
+
+        // Send response back to Discord
+        const responseData = {
+          type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
+          data: {
+            content: result.content,
+            flags: result.success ? 0 : 64, // 64 = EPHEMERAL for errors
+          },
+        };
+
+        return responseData;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error handling interaction:', error);
+      return {
+        type: 4,
+        data: {
+          content: '❌ An error occurred while processing the interaction.',
+          flags: 64, // EPHEMERAL
+        },
+      };
+    }
+  }
+
+  /**
+   * Send followup message using interaction token
+   * Follows Discord's official followup message format
+   */
+  async sendFollowupMessage(interactionToken, message, options = {}) {
+    try {
+      const { ephemeral = false, embeds = [], components = [] } = options;
+
+      const payload = {
+        content: message,
+        flags: ephemeral ? 64 : 0, // 64 = EPHEMERAL
+      };
+
+      if (embeds.length > 0) {
+        payload.embeds = embeds;
+      }
+
+      if (components.length > 0) {
+        payload.components = components;
+      }
+
+      const response = await axios.post(
+        `https://discord.com/api/v10/webhooks/${config.applicationId}/${interactionToken}`,
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Error sending followup message:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Edit original interaction response
+   */
+  async editOriginalResponse(interactionToken, message, options = {}) {
+    try {
+      const { embeds = [], components = [] } = options;
+
+      const payload = {
+        content: message,
+      };
+
+      if (embeds.length > 0) {
+        payload.embeds = embeds;
+      }
+
+      if (components.length > 0) {
+        payload.components = components;
+      }
+
+      const response = await axios.patch(
+        `https://discord.com/api/v10/webhooks/${config.applicationId}/${interactionToken}/messages/@original`,
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Error editing original response:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete original interaction response
+   */
+  async deleteOriginalResponse(interactionToken) {
+    try {
+      await axios.delete(
+        `https://discord.com/api/v10/webhooks/${config.applicationId}/${interactionToken}/messages/@original`,
+      );
+      return true;
+    } catch (error) {
+      console.error('Error deleting original response:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Defer response for long-running operations
+   * Use this when processing might take longer than 3 seconds
+   */
+  async deferResponse(interactionToken, ephemeral = false) {
+    try {
+      const payload = {
+        type: 5, // DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+        data: {
+          flags: ephemeral ? 64 : 0,
+        },
+      };
+
+      const response = await axios.post(
+        `https://discord.com/api/v10/interactions/${interactionToken}/callback`,
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Error deferring response:', error);
+      throw error;
     }
   }
 }

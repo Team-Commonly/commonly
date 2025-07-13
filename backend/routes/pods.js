@@ -315,10 +315,22 @@ router.get('/:podId/external-links', auth, async (req, res) => {
   }
 });
 
-// Get pods by type
-router.get('/:type', auth, getPodsByType);
+// Get pods by type or specific pod by ID
+router.get('/:param', auth, async (req, res) => {
+  const { param } = req.params;
 
-// Get a specific pod
+  // Check if param is a MongoDB ObjectId (24 hex characters)
+  const isObjectId = /^[0-9a-fA-F]{24}$/.test(param);
+
+  if (isObjectId) {
+    // Treat as pod ID
+    return getPodById(req, res);
+  }
+  // Treat as pod type
+  return getPodsByType(req, res);
+});
+
+// Get a specific pod by type and ID
 router.get('/:type/:id', auth, getPodById);
 
 // Delete a pod (only creator can delete)

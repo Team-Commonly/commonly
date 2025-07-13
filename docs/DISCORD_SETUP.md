@@ -93,6 +93,51 @@ This guide will walk you through setting up Discord integration with Commonly.
 3. Send a message in your Discord channel to test the webhook
 4. Check that the message appears in your Commonly chat
 
+## Step 10: Using Discord Slash Commands
+
+Once your Discord integration is set up, you can use slash commands in your Discord server to interact with Commonly:
+
+### Available Commands
+
+#### `/commonly-summary`
+- **Description**: Get the most recent summary from the linked chat pod
+- **Usage**: Type `/commonly-summary` in any channel where the bot has access
+- **Response**: Returns the latest AI-generated summary of chat activity
+
+#### `/discord-status`
+- **Description**: Show the status of Discord integration
+- **Usage**: Type `/discord-status` to check integration health
+- **Response**: Shows server name, channel name, webhook status, and last sync time
+
+#### `/discord-enable`
+- **Description**: Enable webhook listener for Discord channel
+- **Usage**: Type `/discord-enable` to start listening to channel activity
+- **Response**: Confirms that webhook listener is now active
+
+#### `/discord-disable`
+- **Description**: Disable webhook listener for Discord channel
+- **Usage**: Type `/discord-disable` to stop listening to channel activity
+- **Response**: Confirms that webhook listener is now disabled
+
+### Registering Commands
+
+If slash commands don't appear in your Discord server:
+
+1. **Automatic Registration**: Commands are automatically registered when you create a Discord integration
+2. **Manual Registration**: If needed, you can manually register commands:
+   ```bash
+   curl -X POST http://your-server/api/discord/register-commands/INTEGRATION_ID
+   ```
+3. **Command Permissions**: Ensure the bot has the `applications.commands` scope when invited to your server
+
+### Command Permissions
+
+- **Server Members**: Anyone in the server can use these commands
+- **Bot Permissions**: The bot needs to be able to send messages in the channel
+- **Response Visibility**: 
+  - Success responses are visible to everyone in the channel
+  - Error responses are ephemeral (only visible to the command user)
+
 ## Troubleshooting
 
 ### Bot Token Issues
@@ -163,6 +208,10 @@ If you encounter issues:
 ### Webhook Endpoints
 - `POST /api/webhooks/discord` - Discord webhook receiver
 - `POST /api/discord/test-webhook` - Test webhook connection
+
+### Slash Command Endpoints
+- `POST /api/discord/interactions` - Handle Discord slash command interactions
+- `POST /api/discord/register-commands/:integrationId` - Register slash commands for a guild
 
 ### Utility Endpoints
 - `GET /api/discord/channels/:integrationId` - Get available channels
