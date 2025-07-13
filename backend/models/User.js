@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
@@ -7,6 +8,9 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   verified: { type: Boolean, default: false },
   profilePicture: { type: String, default: 'default' },
+  role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  apiToken: { type: String, unique: true, sparse: true },
+  apiTokenCreatedAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -18,6 +22,17 @@ userSchema.pre('save', async function (next) {
 
 userSchema.methods.comparePassword = async function (password) {
   return bcrypt.compare(password, this.password);
+};
+
+userSchema.methods.generateApiToken = function () {
+  this.apiToken = `cm_${crypto.randomBytes(32).toString('hex')}`;
+  this.apiTokenCreatedAt = new Date();
+  return this.apiToken;
+};
+
+userSchema.methods.revokeApiToken = function () {
+  this.apiToken = undefined;
+  this.apiTokenCreatedAt = undefined;
 };
 
 module.exports = mongoose.model('User', userSchema);
