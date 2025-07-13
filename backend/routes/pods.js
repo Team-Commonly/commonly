@@ -323,10 +323,12 @@ router.get('/:param', auth, async (req, res) => {
   const isObjectId = /^[0-9a-fA-F]{24}$/.test(param);
 
   if (isObjectId) {
-    // Treat as pod ID
+    // Treat as pod ID - fix the parameter name
+    req.params.id = param;
     return getPodById(req, res);
   }
-  // Treat as pod type
+  // Treat as pod type - fix the parameter name
+  req.params.type = param;
   return getPodsByType(req, res);
 });
 
