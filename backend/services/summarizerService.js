@@ -46,6 +46,22 @@ Please create a vibrant, engaging 2-3 sentence summary that:
 
 Write as if you're updating community members on what they missed. Be specific about the content rather than just mentioning numbers.`;
     }
+    
+    if (type === 'discord') {
+      return `You are a community manager creating an engaging summary of recent Discord channel activity.
+
+Here are the recent messages from the Discord channel:
+${content}
+
+Please create a descriptive, engaging 2-3 sentence summary that:
+- Captures what people were actually discussing and doing
+- Highlights interesting conversations, decisions, or topics
+- Uses a natural, conversational tone
+- Focuses on the content and context, not just participant counts
+- Makes the activity sound meaningful and engaging
+
+Write as if you're telling someone what they missed in the Discord channel. Be specific about the actual conversations and topics rather than just listing keywords.`;
+    }
     return `You are a community manager summarizing chat activity across multiple chat rooms.
 
 Here are summaries from various chat rooms:
@@ -241,6 +257,41 @@ Focus on what people are actually talking about rather than just activity levels
     const result = await Summary.deleteMany({ createdAt: { $lt: cutoffDate } });
     console.log(`Cleaned up ${result.deletedCount} old summaries`);
     return result;
+  }
+
+  /**
+   * Garbage collection for daily digest preparation
+   * Keeps 24 hours of summaries for daily digest generation, removes older ones
+   */
+  static async garbageCollectForDigest() {
+    try {
+      const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+      
+      // Clean up corrupted summaries with unrealistic message counts
+      const corruptedResult = await Summary.deleteMany({
+        'metadata.totalItems': { $gt: 100000 } // Remove summaries with >100k messages (clearly corrupted)
+      });
+      
+      if (corruptedResult.deletedCount > 0) {
+        console.log(`🗑️  Removed ${corruptedResult.deletedCount} corrupted summaries with unrealistic message counts`);
+      }
+      
+      // Keep summaries from last 24 hours for daily digest
+      // Remove summaries older than 24 hours (except daily digest summaries)
+      const result = await Summary.deleteMany({ 
+        createdAt: { $lt: cutoffDate },
+        type: { $ne: 'daily-digest' } // Don't delete daily digest summaries
+      });
+      
+      console.log(`🗑️  Garbage collected ${result.deletedCount} summaries older than 24 hours`);
+      return {
+        deletedCount: result.deletedCount + corruptedResult.deletedCount,
+        cutoffDate
+      };
+    } catch (error) {
+      console.error('Error during garbage collection:', error);
+      throw error;
+    }
   }
 
   async summarizeAllPosts() {

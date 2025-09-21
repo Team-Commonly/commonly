@@ -1,0 +1,24 @@
+FROM node:18
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies including dev dependencies
+RUN npm install --include=dev
+
+# Copy the rest of the application code
+COPY . .
+
+EXPOSE 5000
+
+# Add a label to indicate this is development
+LABEL com.commonly.environment="development"
+
+# Make scripts executable
+RUN chmod +x /app/start.sh
+RUN chmod +x /app/scripts/*.js || true
+
+# For development, use nodemon for auto-restart
+CMD ["npm", "run", "dev"]
