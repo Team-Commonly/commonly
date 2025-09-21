@@ -1,0 +1,468 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Paper, 
+  Box, 
+  Typography, 
+  Button, 
+  CircularProgress, 
+  Alert,
+  Card,
+  CardContent,
+  IconButton,
+  Tooltip,
+  Chip,
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  Tabs,
+  Tab
+} from '@mui/material';
+import { 
+  Refresh as RefreshIcon,
+  History as HistoryIcon,
+  Email as EmailIcon,
+  AutoAwesome as AutoAwesomeIcon,
+  Schedule as ScheduleIcon,
+  Article as ArticleIcon,
+  Close as CloseIcon,
+  Analytics as AnalyticsIcon
+} from '@mui/icons-material';
+import { formatDistanceToNow } from 'date-fns';
+import axios from 'axios';
+import ReactMarkdown from 'react-markdown';
+import AnalyticsDashboard from './analytics/AnalyticsDashboard';
+
+const DailyDigest = () => {
+  const [digest, setDigest] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [digestHistory, setDigestHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
+
+  const fetchLatestDigest = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const response = await axios.get('/api/summaries/daily-digest', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setDigest(response.data);
+      setError(null);
+    } catch (err) {
+      if (err.response?.status === 404) {
+        setDigest(null);
+        setError('No daily digest found. Generate your first one or wait for the next ' +
+          'scheduled generation at 6 AM UTC.');
+      } else {
+        setError(err.response?.data?.error || 'Failed to fetch daily digest');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateDigest = async () => {
+    try {
+      setGenerating(true);
+      setError(null);
+
+      const token = localStorage.getItem('token');
+      const response = await axios.post('/api/summaries/daily-digest/generate', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setDigest(response.data.digest);
+      
+      // Show success message
+      setTimeout(() => {
+        setError(null);
+      }, 3000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to generate daily digest');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const fetchDigestHistory = async () => {
+    try {
+      setHistoryLoading(true);
+      const token = localStorage.getItem('token');
+      
+      const response = await axios.get('/api/summaries/daily-digest/history?limit=10', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setDigestHistory(response.data);
+    } catch (err) {
+      console.error('Failed to fetch digest history:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const openHistory = () => {
+    setHistoryOpen(true);
+    fetchDigestHistory();
+  };
+
+  const viewHistoricalDigest = (historicalDigest) => {
+    setDigest(historicalDigest);
+    setHistoryOpen(false);
+  };
+
+  useEffect(() => {
+    fetchLatestDigest();
+  }, []);
+
+  if (loading) {
+    return (
+      <Paper elevation={0} sx={{ p: 3, textAlign: 'center' }}>
+        <CircularProgress size={24} />
+        <Typography variant="body2" sx={{ mt: 1 }}>
+          Loading your daily digest...
+        </Typography>
+      </Paper>
+    );
+  }
+
+  return (
+    <Box>
+      <Paper elevation={0} sx={{ mb: 2 }}>
+        {/* Header */}
+        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <EmailIcon sx={{ mr: 1, color: 'primary.main' }} />
+              <Typography variant="h6" component="h2" sx={{ fontWeight: 600 }}>
+                Daily Digest
+              </Typography>
+              {digest && (
+                <Chip
+                  size="small"
+                  label="Latest"
+                  color="primary"
+                  variant="outlined"
+                  sx={{ ml: 1, fontSize: '0.7rem', height: 20 }}
+                />
+              )}
+            </Box>
+            
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Tooltip title="View digest history">
+                <IconButton size="small" onClick={openHistory}>
+                  <HistoryIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Tooltip>
+              
+              <Tooltip title={generating ? "Generating fresh digest..." : "Generate fresh digest"}>
+                <IconButton 
+                  size="small" 
+                  onClick={generateDigest}
+                  disabled={generating}
+                >
+                  {generating ? (
+                    <CircularProgress size={18} />
+                  ) : (
+                    <RefreshIcon sx={{ fontSize: 18 }} />
+                  )}
+                </IconButton>
+              </Tooltip>
+            </Box>
+          </Box>
+
+          {/* Quick Stats */}
+          {digest && (
+            <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+              <Chip
+                size="small"
+                icon={<ScheduleIcon sx={{ fontSize: 14 }} />}
+                label={formatDistanceToNow(new Date(digest.createdAt), { addSuffix: true })}
+                variant="outlined"
+                sx={{ fontSize: '0.7rem', height: 22 }}
+              />
+              {digest.metadata?.totalItems && (
+                <Chip
+                  size="small"
+                  icon={<ArticleIcon sx={{ fontSize: 14 }} />}
+                  label={`${digest.metadata.totalItems} items analyzed`}
+                  variant="outlined"
+                  sx={{ fontSize: '0.7rem', height: 22 }}
+                />
+              )}
+              {digest.metadata?.subscribedPods && (
+                <Chip
+                  size="small"
+                  icon={<AutoAwesomeIcon sx={{ fontSize: 14 }} />}
+                  label={`${digest.metadata.subscribedPods} communities`}
+                  variant="outlined"
+                  sx={{ fontSize: '0.7rem', height: 22 }}
+                />
+              )}
+            </Box>
+          )}
+        </Box>
+
+        {/* Tabs */}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)} aria-label="digest tabs">
+            <Tab icon={<EmailIcon />} label="Digest" />
+            <Tab icon={<AnalyticsIcon />} label="Analytics" />
+          </Tabs>
+        </Box>
+
+        {/* Content */}
+        <Box sx={{ p: 2 }}>
+          {activeTab === 0 && (
+            <>
+              {error && (
+                <Alert 
+                  severity={digest ? "info" : "warning"} 
+                  sx={{ mb: 2 }}
+                  action={
+                    !digest && (
+                      <Button 
+                        color="inherit" 
+                        size="small" 
+                        onClick={generateDigest}
+                        disabled={generating}
+                      >
+                        Generate Now
+                      </Button>
+                    )
+                  }
+                >
+                  {error}
+                </Alert>
+              )}
+
+              {generating && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <CircularProgress size={16} sx={{ mr: 1 }} />
+                    Generating your personalized daily digest... This may take a few moments.
+                  </Box>
+                </Alert>
+              )}
+
+              {digest ? (
+            <Card variant="outlined" sx={{ backgroundColor: 'background.paper' }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h5" component="h3" sx={{ mb: 2, color: 'primary.main' }}>
+                  {digest.title}
+                </Typography>
+                
+                <Box sx={{ 
+                  '& h1': { fontSize: '1.5rem', fontWeight: 600, mt: 3, mb: 2, color: 'primary.main' },
+                  '& h2': { fontSize: '1.25rem', fontWeight: 600, mt: 2, mb: 1.5, color: 'text.primary' },
+                  '& h3': { fontSize: '1.1rem', fontWeight: 600, mt: 2, mb: 1, color: 'text.primary' },
+                  '& p': { mb: 1.5, lineHeight: 1.6 },
+                  '& ul': { mb: 1.5, pl: 2 },
+                  '& li': { mb: 0.5 },
+                  '& blockquote': {
+                    borderLeft: '4px solid',
+                    borderLeftColor: 'primary.main',
+                    pl: 2,
+                    ml: 0,
+                    mb: 2,
+                    py: 1,
+                    backgroundColor: 'grey.50',
+                    fontStyle: 'italic'
+                  },
+                  '& hr': {
+                    border: 'none',
+                    borderTop: '1px solid',
+                    borderColor: 'divider',
+                    my: 3
+                  },
+                  '& strong': { fontWeight: 600 },
+                  '& em': { fontStyle: 'italic' }
+                }}>
+                  <ReactMarkdown>{digest.content}</ReactMarkdown>
+                </Box>
+
+                {/* Analytics Preview */}
+                {digest.analytics && (
+                  (() => {
+                    const hasQuotes = digest.analytics.quotes?.length > 0;
+                    const hasInsights = digest.analytics.insights?.length > 0;
+                    const hasTimeline = digest.analytics.timeline?.length > 0;
+                    const hasMood = digest.analytics.atmosphere?.overall_sentiment;
+                    
+                    // Only show analytics if there's meaningful data
+                    if (hasQuotes || hasInsights || hasTimeline || hasMood) {
+                      return (
+                        <Box sx={{ mt: 3, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                          <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
+                            📊 Digest Analytics
+                          </Typography>
+                          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                            {hasQuotes && (
+                              <Chip
+                                size="small"
+                                label={`${digest.analytics.quotes.length} quotes`}
+                                variant="outlined"
+                                sx={{ fontSize: '0.7rem', height: 20 }}
+                              />
+                            )}
+                            {hasInsights && (
+                              <Chip
+                                size="small"
+                                label={`${digest.analytics.insights.length} insights`}
+                                variant="outlined"
+                                sx={{ fontSize: '0.7rem', height: 20 }}
+                              />
+                            )}
+                            {hasTimeline && (
+                              <Chip
+                                size="small"
+                                label={`${digest.analytics.timeline.length} events`}
+                                variant="outlined"
+                                sx={{ fontSize: '0.7rem', height: 20 }}
+                              />
+                            )}
+                            {hasMood && (
+                              <Chip
+                                size="small"
+                                label={`${digest.analytics.atmosphere.overall_sentiment} mood`}
+                                color={digest.analytics.atmosphere.overall_sentiment.includes('positive') ? 
+                                'success' : 'default'}
+                                variant="outlined"
+                                sx={{ fontSize: '0.7rem', height: 20 }}
+                              />
+                            )}
+                          </Box>
+                        </Box>
+                      );
+                    }
+                    return null;
+                  })()
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <EmailIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" sx={{ mb: 1 }}>
+                No Daily Digest Yet
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Daily digests are automatically generated every morning at 6 AM UTC.<br />
+                You can also generate one manually right now.
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={generateDigest}
+                disabled={generating}
+                startIcon={generating ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
+              >
+                {generating ? 'Generating...' : 'Generate My Digest'}
+              </Button>
+            </Box>
+          )}
+            </>
+          )}
+          
+          {activeTab === 1 && (
+            <AnalyticsDashboard defaultTimeRange="24h" />
+          )}
+        </Box>
+      </Paper>
+
+      {/* History Dialog */}
+      <Dialog
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <HistoryIcon sx={{ mr: 1 }} />
+              Digest History
+            </Box>
+            <IconButton onClick={() => setHistoryOpen(false)}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {historyLoading ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <CircularProgress />
+              <Typography sx={{ mt: 1 }}>Loading digest history...</Typography>
+            </Box>
+          ) : digestHistory.length > 0 ? (
+            <List>
+              {digestHistory.map((historicalDigest, index) => (
+                <React.Fragment key={historicalDigest._id || index}>
+                  <ListItem
+                    onClick={() => viewHistoricalDigest(historicalDigest)}
+                    sx={{ 
+                      borderRadius: 1,
+                      mb: 1,
+                      cursor: 'pointer',
+                      '&:hover': {
+                        backgroundColor: 'action.hover'
+                      }
+                    }}
+                  >
+                    <ListItemText
+                      primary={historicalDigest.title}
+                      secondary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                          <Typography variant="caption">
+                            {formatDistanceToNow(new Date(historicalDigest.createdAt), { addSuffix: true })}
+                          </Typography>
+                          {historicalDigest.metadata?.totalItems && (
+                            <Chip
+                              size="small"
+                              label={`${historicalDigest.metadata.totalItems} items`}
+                              variant="outlined"
+                              sx={{ fontSize: '0.65rem', height: 18 }}
+                            />
+                          )}
+                        </Box>
+                      }
+                    />
+                    <ListItemSecondaryAction>
+                      <Button size="small" variant="outlined">
+                        View
+                      </Button>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                  {index < digestHistory.length - 1 && <Divider />}
+                </React.Fragment>
+              ))}
+            </List>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <HistoryIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+              <Typography>No digest history found</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Generate your first digest to start building history
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHistoryOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default DailyDigest;

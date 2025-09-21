@@ -1,0 +1,35 @@
+FROM node:18
+
+WORKDIR /app
+
+# Copy package files first for better layer caching
+COPY package*.json ./
+
+# Install dependencies with cache optimization
+RUN npm ci --only=production=false --prefer-offline --no-audit
+
+# Copy the rest of the application code
+COPY . .
+
+# Set environment variables for development
+ENV NODE_ENV=development
+ENV REACT_APP_API_URL=http://localhost:5000
+
+# Optimize file watching for lower CPU usage
+ENV CHOKIDAR_USEPOLLING=false
+ENV WATCHPACK_POLLING=false
+ENV FAST_REFRESH=true
+
+# Optimize build performance
+ENV GENERATE_SOURCEMAP=false
+ENV ESLINT_NO_DEV_ERRORS=true
+ENV TSC_COMPILE_ON_ERROR=true
+ENV CI=false
+
+EXPOSE 3000
+
+# Add a label to indicate this is development
+LABEL com.commonly.environment="development"
+
+# For development, use the development server
+CMD ["npm", "start"]
