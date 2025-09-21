@@ -4,7 +4,7 @@ const express = require('express');
 
 jest.mock('../../config/db', () => jest.fn());
 
-const mockConnectPG = jest.fn();
+const mockConnectPG = jest.fn().mockResolvedValue(null);
 jest.mock('../../config/db-pg', () => ({ connectPG: mockConnectPG }));
 const mockInitPGDB = jest.fn();
 jest.mock('../../config/init-pg-db', () => mockInitPGDB);

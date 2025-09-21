@@ -19,6 +19,7 @@ const summariesRoutes = require('./routes/summaries');
 const integrationRoutes = require('./routes/integrations');
 const discordWebhookRoutes = require('./routes/webhooks/discord');
 const discordRoutes = require('./routes/discord');
+const analyticsRoutes = require('./routes/analytics');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes;
 let pgMessageRoutes;
@@ -55,6 +56,10 @@ const io = socketIo(server, {
   },
   transports: ['websocket', 'polling'],
 });
+
+// Initialize socket instance for other services
+const socketConfig = require('./config/socket');
+socketConfig.init(io);
 const PORT = process.env.PORT || 5000;
 
 // Middleware
@@ -82,6 +87,13 @@ app.use('/api/summaries', summariesRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/webhooks/discord', discordWebhookRoutes);
 app.use('/api/discord', discordRoutes);
+app.use('/api/analytics', analyticsRoutes);
+
+// Test routes (development only)
+if (process.env.NODE_ENV === 'development') {
+  const testBotRoutes = require('./routes/test-bot');
+  app.use('/api/test/bot', testBotRoutes);
+}
 
 // Connect to MongoDB (for posts and user data)
 connectDB();
@@ -216,25 +228,24 @@ io.on('connection', (socket) => {
       let message;
       let podInstance;
 
-      // Use the global pgAvailable flag instead of checking process.env.PG_HOST
+      // Check pod membership in MongoDB (always), but store messages in PostgreSQL if available
+      podInstance = await Pod.findById(podId);
+      if (!podInstance) {
+        console.error('Socket error: Pod not found', { podId });
+        socket.emit('error', { message: 'Pod not found' });
+        return;
+      }
+
+      // Check membership using MongoDB pod model
+      if (!podInstance.members.includes(userId)) {
+        console.error('Socket error: Not authorized to post in this pod', { podId, userId });
+        socket.emit('error', { message: 'Not authorized to post in this pod' });
+        return;
+      }
+
+      // Use PostgreSQL for messages if available, otherwise fallback to MongoDB
       if (pgAvailable) {
         try {
-          // Check if pod exists and user is a member
-          podInstance = await PGPod.findById(podId);
-          if (!podInstance) {
-            console.error('Socket error: Pod not found', { podId });
-            socket.emit('error', { message: 'Pod not found' });
-            return;
-          }
-
-          // Check membership
-          const isMember = await PGPod.isMember(podId, userId);
-          if (!isMember) {
-            console.error('Socket error: Not authorized to post in this pod', { podId, userId });
-            socket.emit('error', { message: 'Not authorized to post in this pod' });
-            return;
-          }
-
           // Create message in PostgreSQL
           console.log('Creating message in PostgreSQL:', { podId, userId, content, messageType });
           const newMessage = await PGMessage.create(podId, userId, content, messageType);
@@ -245,18 +256,6 @@ io.on('connection', (socket) => {
         } catch (dbError) {
           console.error('Database error with PostgreSQL, falling back to MongoDB:', dbError);
           try {
-            // Check if pod exists and user is a member
-            podInstance = await Pod.findById(podId);
-            if (!podInstance) {
-              socket.emit('error', { message: 'Pod not found' });
-              return;
-            }
-
-            if (!podInstance.members.includes(userId)) {
-              socket.emit('error', { message: 'Not authorized to post in this pod' });
-              return;
-            }
-
             // Create message in MongoDB
             const user = await User.findById(userId);
             const newMessage = new Message({
@@ -283,18 +282,6 @@ io.on('connection', (socket) => {
         }
       } else {
         console.log('Using MongoDB for messages (PostgreSQL not available)');
-        // Check if pod exists and user is a member
-        podInstance = await Pod.findById(podId);
-        if (!podInstance) {
-          socket.emit('error', { message: 'Pod not found' });
-          return;
-        }
-
-        if (!podInstance.members.includes(userId)) {
-          socket.emit('error', { message: 'Not authorized to post in this pod' });
-          return;
-        }
-
         try {
           // Create message in MongoDB
           const user = await User.findById(userId);
@@ -345,13 +332,13 @@ io.on('connection', (socket) => {
         // User data is separate, not an object
         formattedMessage.user_id = message.userId || message.user_id;
         formattedMessage.username = message.username;
-        formattedMessage.profile_picture = message.profile_picture;
+        formattedMessage.profile_picture = message.profile_picture || message.profilePicture;
 
         // Create an object format too for compatibility
         formattedMessage.userId = {
           _id: message.userId || message.user_id,
           username: message.username,
-          profilePicture: message.profile_picture,
+          profilePicture: message.profile_picture || message.profilePicture,
         };
       }
 
@@ -361,6 +348,8 @@ io.on('connection', (socket) => {
         content: formattedMessage.content,
         userId: formattedMessage.userId,
         username: formattedMessage.username,
+        profile_picture: formattedMessage.profile_picture,
+        'userId.profilePicture': formattedMessage.userId?.profilePicture,
       });
 
       io.to(`pod_${podId}`).emit('newMessage', formattedMessage);

@@ -63,7 +63,7 @@ class Message {
       }
 
       query += `
-        ORDER BY m.created_at DESC
+        ORDER BY m.created_at ASC
         LIMIT $${queryParams.length + 1}
       `;
 
