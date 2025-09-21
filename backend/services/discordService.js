@@ -47,6 +47,7 @@ class DiscordService {
 
       // Initialize command service with guild ID as installation ID
       this.commandService = new DiscordCommandService(guildId);
+      await this.commandService.initialize();
 
       return true;
     } catch (error) {
@@ -237,7 +238,12 @@ class DiscordService {
     try {
       const { limit = 50, before } = options;
 
-      const url = `${this.baseUrl}/channels/${this.discordIntegration.channelId}/messages`;
+      const channelId = this.integration?.config?.channelId;
+      if (!channelId) {
+        throw new Error('Channel ID not found in integration config');
+      }
+
+      const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
       const params = { limit };
 
       if (before) {
@@ -246,7 +252,7 @@ class DiscordService {
 
       const response = await axios.get(url, {
         headers: {
-          Authorization: `Bot ${this.discordIntegration.botToken}`,
+          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
           'Content-Type': 'application/json',
         },
         params,
@@ -261,10 +267,10 @@ class DiscordService {
         embeds: msg.embeds,
       }));
 
-      // Update message history
-      await this.updateMessageHistory(messages);
-
-      return messages;
+      // Filter out bot messages for cleaner content
+      const filteredMessages = messages.filter(msg => !msg.author?.bot);
+      
+      return filteredMessages;
     } catch (error) {
       console.error('Error fetching Discord messages:', error);
       throw error;
@@ -473,30 +479,103 @@ class DiscordService {
   }
 
   /**
-   * Update message history
+   * Sync Discord messages from last hour to Commonly pod
+   * Used by both manual /discord-push command and automatic hourly sync
    */
-  async updateMessageHistory(messages) {
+  async syncRecentMessages(timeRangeHours = 1) {
     try {
-      // Add new messages to history
-      messages.forEach((message) => {
-        const exists = this.discordIntegration.messageHistory.some(
-          (msg) => msg.messageId === message.messageId,
-        );
-
-        if (!exists) {
-          this.discordIntegration.messageHistory.push(message);
-          this.discordIntegration.messageCount += 1;
-        }
-      });
-
-      // Keep only last 100 messages
-      if (this.discordIntegration.messageHistory.length > 100) {
-        this.discordIntegration.messageHistory = this.discordIntegration.messageHistory.slice(-100);
+      if (!this.integration?.config?.webhookListenerEnabled) {
+        throw new Error('Discord sync not enabled for this integration');
       }
 
-      await this.discordIntegration.save();
+      // Fetch recent messages from Discord
+      const messages = await this.fetchMessages({ limit: 50 });
+      
+      if (!messages || messages.length === 0) {
+        return {
+          success: true,
+          messageCount: 0,
+          content: 'No recent Discord activity found to sync.'
+        };
+      }
+
+      // Filter messages from the specified time range (default: last hour)
+      const timeAgo = new Date(Date.now() - timeRangeHours * 60 * 60 * 1000);
+      
+      console.log(`🔍 Discord message debugging - Total messages fetched: ${messages.length}`);
+      if (messages.length > 0) {
+        console.log('📝 Sample Discord message structure:', {
+          author: messages[0].author,
+          content: messages[0].content,
+          timestamp: messages[0].timestamp,
+          id: messages[0].id
+        });
+      }
+      
+      const recentMessages = messages.filter(msg => {
+        const msgTime = new Date(msg.timestamp);
+        const isInTimeRange = msgTime >= timeAgo;
+        // For now, assume all messages are human since author is a string
+        // TODO: Need to check if bot detection needs different logic
+        const isHuman = true;
+        const hasContent = msg.content && msg.content.trim().length > 0;
+        
+        console.log(`📊 Message filter debug - Time: ${isInTimeRange}, Human: ${isHuman}, Content: ${hasContent}, User: ${msg.author || 'NO_USERNAME'}`);
+        
+        return isInTimeRange && isHuman && hasContent;
+      });
+
+      if (recentMessages.length === 0) {
+        return {
+          success: true,
+          messageCount: 0,
+          content: `No Discord activity found in the last ${timeRangeHours} hour(s).`
+        };
+      }
+
+      // Create Discord summary from recent messages
+      const timeRange = { start: timeAgo, end: new Date() };
+      const discordSummary = await this.commandService.createDiscordSummary(recentMessages, timeRange.start, timeRange.end);
+
+      // Post summary to Commonly pod via bot
+      const CommonlyBotService = require('./commonlyBotService');
+      const botService = new CommonlyBotService();
+      const result = await botService.postDiscordSummaryToPod(
+        this.integration.podId,
+        discordSummary,
+        this.integration._id
+      );
+
+      if (result.success) {
+        // Save to Discord summary history
+        const DiscordSummaryHistory = require('../models/DiscordSummaryHistory');
+        const summaryRecord = new DiscordSummaryHistory({
+          integrationId: this.integration._id,
+          summaryType: timeRangeHours === 1 ? 'hourly' : 'manual',
+          content: discordSummary.content,
+          messageCount: recentMessages.length,
+          timeRange,
+          postedToCommonly: true,
+          postedToDiscord: false,
+        });
+        await summaryRecord.save();
+
+        return {
+          success: true,
+          messageCount: recentMessages.length,
+          content: `Synced ${recentMessages.length} Discord message(s) to Commonly pod.`
+        };
+      } else {
+        throw new Error('Failed to post Discord summary to Commonly pod');
+      }
+
     } catch (error) {
-      console.error('Error updating message history:', error);
+      console.error('Error syncing Discord messages:', error);
+      return {
+        success: false,
+        messageCount: 0,
+        content: `Failed to sync Discord messages: ${error.message}`
+      };
     }
   }
 
@@ -551,6 +630,9 @@ class DiscordService {
 
         case 'discord-disable':
           return await this.commandService.handleDisableCommand();
+
+        case 'discord-push':
+          return await this.commandService.handlePushCommand(this);
 
         default:
           return {

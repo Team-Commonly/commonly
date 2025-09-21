@@ -9,7 +9,8 @@ import {
     Person as PersonIcon, 
     ExitToApp as LogoutIcon,
     Chat as ChatIcon,
-    ChevronLeft as ChevronLeftIcon
+    ChevronLeft as ChevronLeftIcon,
+    Email as EmailIcon
 } from '@mui/icons-material';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
@@ -103,6 +104,17 @@ const Dashboard = () => {
                         <PersonIcon />
                     </ListItemIcon>
                     <ListItemText primary="Profile" />
+                </ListItem>
+                
+                <ListItem 
+                    button 
+                    onClick={() => handleNavigation('/digest')}
+                    selected={location.pathname === '/digest'}
+                >
+                    <ListItemIcon>
+                        <EmailIcon />
+                    </ListItemIcon>
+                    <ListItemText primary="Daily Digest" />
                 </ListItem>
                 
                 <ListItem 
