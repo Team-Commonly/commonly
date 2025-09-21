@@ -88,8 +88,34 @@ const WhatsHappening = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleRefresh = () => {
-    fetchSummaries(true);
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      // First trigger fresh summary generation
+      console.log('Triggering fresh summary generation...');
+      await axios.post('/api/summaries/trigger', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Wait a moment for summaries to be generated
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Then fetch the updated summaries
+      await fetchSummaries(false);
+      
+    } catch (error) {
+      console.error('Error during refresh:', error);
+      // Fall back to just fetching existing summaries
+      await fetchSummaries(false);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleTagClick = (tag) => {
@@ -451,7 +477,7 @@ const WhatsHappening = () => {
               What&apos;s happening
             </Typography>
           </Box>
-          <Tooltip title="Refresh summaries">
+          <Tooltip title={refreshing ? "Generating fresh summaries..." : "Generate fresh summaries"}>
             <IconButton 
               size="small" 
               onClick={handleRefresh}
@@ -626,7 +652,7 @@ const WhatsHappening = () => {
       {!error && (summaries.posts || summaries.chats) && (
         <Box sx={{ p: 1.5, pt: 1 }}>
           <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-            Summaries updated hourly using AI
+            Summaries updated hourly using AI • Click refresh for fresh summaries
           </Typography>
         </Box>
       )}

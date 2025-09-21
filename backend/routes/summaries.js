@@ -2,6 +2,7 @@ const express = require('express');
 
 const router = express.Router();
 const summarizerService = require('../services/summarizerService');
+const Summary = require('../models/Summary');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('../services/chatSummarizerService');
@@ -10,6 +11,7 @@ const ChatSummarizerService = chatSummarizerService.constructor;
 const schedulerService = require('../services/schedulerService');
 
 const SchedulerService = schedulerService.constructor;
+const dailyDigestService = require('../services/dailyDigestService');
 const auth = require('../middleware/auth');
 
 // GET /api/summaries - Get recent summaries
@@ -48,6 +50,10 @@ router.post('/trigger', auth, async (req, res) => {
   try {
     // For now, anyone can trigger it for testing.
     // In production, you might want to check admin privileges
+    
+    // Trigger garbage collection first
+    await SummarizerService.garbageCollectForDigest();
+    
     const result = await SchedulerService.triggerSummarizer();
     res.json({ message: 'Summarizer triggered successfully', result });
   } catch (error) {
@@ -200,6 +206,104 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
   } catch (error) {
     console.error('Error refreshing pod summary:', error);
     res.status(500).json({ error: 'Failed to refresh pod summary' });
+  }
+});
+
+// GET /api/summaries/daily-digest - Get user's daily digest
+router.get('/daily-digest', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get the most recent daily digest for this user
+    const dailyDigest = await Summary.findOne({
+      type: 'daily-digest',
+      'metadata.userId': userId
+    }).sort({ createdAt: -1 }).lean();
+
+    if (!dailyDigest) {
+      return res.status(404).json({ error: 'No daily digest found. Daily digests are generated every morning at 6 AM UTC.' });
+    }
+
+    res.json(dailyDigest);
+  } catch (error) {
+    console.error('Error fetching daily digest:', error);
+    res.status(500).json({ error: 'Failed to fetch daily digest' });
+  }
+});
+
+// POST /api/summaries/daily-digest/generate - Manually generate daily digest for current user
+router.post('/daily-digest/generate', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    console.log(`Manual daily digest generation requested for user: ${userId}`);
+    
+    // Trigger garbage collection first
+    await SummarizerService.garbageCollectForDigest();
+    
+    // Generate fresh daily digest
+    const digest = await dailyDigestService.generateUserDailyDigest(userId);
+
+    res.json({
+      message: 'Daily digest generated successfully',
+      digest,
+    });
+  } catch (error) {
+    console.error('Error generating daily digest:', error);
+    res.status(500).json({ error: 'Failed to generate daily digest' });
+  }
+});
+
+// GET /api/summaries/daily-digest/history - Get user's daily digest history
+router.get('/daily-digest/history', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 7 } = req.query; // Default to last 7 days
+    
+    const digestHistory = await Summary.find({
+      type: 'daily-digest',
+      'metadata.userId': userId
+    })
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit, 10))
+    .select('title content createdAt timeRange metadata.totalItems metadata.subscribedPods')
+    .lean();
+
+    res.json(digestHistory);
+  } catch (error) {
+    console.error('Error fetching daily digest history:', error);
+    res.status(500).json({ error: 'Failed to fetch daily digest history' });
+  }
+});
+
+// POST /api/summaries/daily-digest/trigger-all - Manually trigger daily digest generation for all users (admin only)
+router.post('/daily-digest/trigger-all', auth, async (req, res) => {
+  try {
+    // In production, you should check admin privileges here
+    
+    console.log('Manual daily digest generation requested for all users');
+    
+    // Trigger garbage collection first
+    await SummarizerService.garbageCollectForDigest();
+    
+    // Generate daily digests for all users
+    const results = await dailyDigestService.generateAllDailyDigests();
+
+    const successful = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+
+    res.json({
+      message: 'Daily digest generation completed',
+      results: {
+        total: results.length,
+        successful,
+        failed,
+        details: results
+      }
+    });
+  } catch (error) {
+    console.error('Error triggering daily digest generation for all users:', error);
+    res.status(500).json({ error: 'Failed to trigger daily digest generation' });
   }
 });
 

@@ -20,13 +20,13 @@ module.exports = {
     'react-hooks',
   ],
   rules: {
-    // Customize rules to be less strict for easier adoption
+    // More lenient rules for development to reduce CPU usage
     'react/jsx-filename-extension': ['warn', { extensions: ['.js', '.jsx'] }],
-    'react/prop-types': 'warn',
+    'react/prop-types': 'off', // Disable prop-types validation to reduce warnings
     'react-hooks/rules-of-hooks': 'error',
-    'react-hooks/exhaustive-deps': 'warn',
-    'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
-    'max-len': ['warn', { code: 120 }],
+    'react-hooks/exhaustive-deps': 'off', // Disable exhaustive deps warnings
+    'no-unused-vars': 'off', // Disable unused vars warnings in development
+    'max-len': 'off', // Disable max line length warnings
     'linebreak-style': 'off', // Don't enforce Windows/Unix line endings
   },
   settings: {

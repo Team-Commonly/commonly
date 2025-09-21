@@ -86,6 +86,11 @@ class DiscordCommandDeployment {
         description: 'Disable webhook listener for Discord channel',
         type: 1,
       },
+      {
+        name: 'discord-push',
+        description: 'Push Discord activity from last hour to Commonly pod now',
+        type: 1,
+      },
     ];
 
     console.log(`🔧 Registering ${commands.length} global commands...`);
@@ -200,7 +205,7 @@ class DiscordCommandDeployment {
 
       if (response.status === 200) {
         const registeredCommands = response.data;
-        const expectedCommands = ['commonly-summary', 'discord-status', 'discord-enable', 'discord-disable'];
+        const expectedCommands = ['commonly-summary', 'discord-status', 'discord-enable', 'discord-disable', 'discord-push'];
         const foundCommands = registeredCommands.map((cmd) => cmd.name);
 
         const missingCommands = expectedCommands.filter((cmd) => !foundCommands.includes(cmd));
