@@ -43,7 +43,7 @@ const getDiscordOAuthUrl = (podId) => {
   return `https://discord.com/api/oauth2/authorize?client_id=${clientId}&scope=${scopes}&permissions=${permissions}&redirect_uri=${redirectUri}&response_type=code&state=${state}&t=${timestamp}`;
 };
 
-const DiscordIntegration = ({ podId }) => {
+const DiscordIntegration = ({ podId, viewOnly = false }) => {
   const { user } = useContext(AuthContext);
   const [integrations, setIntegrations] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -53,30 +53,27 @@ const DiscordIntegration = ({ podId }) => {
   const [integrationToDelete, setIntegrationToDelete] = useState(null);
   const [podInfo, setPodInfo] = useState(null);
 
-  // Check if user can delete integration
+  // Check if user can delete integration (only used in non-viewOnly mode)
   const canDeleteIntegration = (integration) => {
-    if (!user) {
-      return false;
-    }
+    if (viewOnly) return false; // No delete in view-only mode
+    
+    if (!user) return false;
     
     // Admin can delete any integration
-    if (user.role === 'admin') {
-      return true;
-    }
+    if (user.role === 'admin') return true;
     
     // Get user ID (different auth contexts use different field names)
     const currentUserId = user.id || user._id;
     
     // Pod owner can delete integrations in their pod
-    if (podInfo && podInfo.createdBy === currentUserId) {
-      return true;
+    if (podInfo) {
+      const podOwnerId = typeof podInfo.createdBy === 'string' ? podInfo.createdBy : podInfo.createdBy?._id;
+      if (podOwnerId === currentUserId) return true;
     }
     
     // Integration creator can delete their own integration
     const integrationCreatorId = integration.createdBy?._id || integration.createdBy;
-    if (integrationCreatorId === currentUserId) {
-      return true;
-    }
+    if (integrationCreatorId === currentUserId) return true;
     
     return false;
   };
@@ -348,30 +345,32 @@ const DiscordIntegration = ({ podId }) => {
                       </IconButton>
                     </Tooltip>
                     
-                    <Tooltip title={canDeleteIntegration(integration) ? "Delete Integration" : "No permission to delete"}>
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          if (canDeleteIntegration(integration)) {
-                            handleDeleteClick(integration);
-                          }
-                        }}
-                        disabled={loading || !canDeleteIntegration(integration)}
-                        sx={{ 
-                          color: canDeleteIntegration(integration) ? 'error.main' : 'text.disabled',
-                          opacity: canDeleteIntegration(integration) ? 0.8 : 0.4,
-                          '&:hover': { 
-                            opacity: canDeleteIntegration(integration) ? 1 : 0.4,
-                            color: canDeleteIntegration(integration) ? 'error.dark' : 'text.disabled',
-                            backgroundColor: canDeleteIntegration(integration) ? 'rgba(244, 67, 54, 0.1)' : 'transparent',
-                            transform: canDeleteIntegration(integration) ? 'scale(1.1)' : 'none'
-                          },
-                          transition: 'all 0.2s ease'
-                        }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+                    {!viewOnly && (
+                      <Tooltip title={canDeleteIntegration(integration) ? "Delete Integration" : "No permission to delete"}>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            if (canDeleteIntegration(integration)) {
+                              handleDeleteClick(integration);
+                            }
+                          }}
+                          disabled={loading || !canDeleteIntegration(integration)}
+                          sx={{ 
+                            color: canDeleteIntegration(integration) ? 'error.main' : 'text.disabled',
+                            opacity: canDeleteIntegration(integration) ? 0.8 : 0.4,
+                            '&:hover': { 
+                              opacity: canDeleteIntegration(integration) ? 1 : 0.4,
+                              color: canDeleteIntegration(integration) ? 'error.dark' : 'text.disabled',
+                              backgroundColor: canDeleteIntegration(integration) ? 'rgba(244, 67, 54, 0.1)' : 'transparent',
+                              transform: canDeleteIntegration(integration) ? 'scale(1.1)' : 'none'
+                            },
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </Box>
                 </Box>
               </CardContent>

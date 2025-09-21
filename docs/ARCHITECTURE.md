@@ -47,17 +47,26 @@ Commonly follows a modern microservices-inspired architecture with the following
 
 ### Databases
 
-The application employs a dual database architecture:
+The application employs a **dual database architecture** with specific data separation:
 
-1. **MongoDB**:
-   - Primary database for user accounts, posts, and general application data
+1. **MongoDB** (Primary):
+   - **User Management**: User accounts, profiles, authentication
+   - **Content Management**: Posts, comments, likes, notifications
+   - **Pod Management**: Chat community metadata and membership
    - Schema-less design allows for flexible document structures
-   - Used for: User profiles, posts, comments, likes, and notifications
 
-2. **PostgreSQL**:
-   - Specialized relational database for chat functionality
-   - Strong consistency and transaction support
-   - Used for: Chat pods (communities), messages, and related structured data
+2. **PostgreSQL** (Chat-Focused):
+   - **Message Storage**: All chat messages (default storage)
+   - **User References**: Synchronized user data for message joins
+   - **Pod References**: Synchronized pod data for chat functionality
+   - Strong consistency and ACID transactions for message integrity
+
+#### Database Synchronization Strategy
+
+- **Pod Creation**: Pods are created in both MongoDB (primary) and PostgreSQL (reference)
+- **User Sync**: Active users are synchronized to PostgreSQL as needed for message joins
+- **Message Storage**: All messages default to PostgreSQL with MongoDB fallback
+- **Membership Checks**: Pod membership is always validated via MongoDB (authoritative)
 
 ### External Services
 

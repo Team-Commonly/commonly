@@ -15,6 +15,7 @@ import PodRedirect from './components/PodRedirect';
 import ChatRoom from './components/ChatRoom';
 import ApiDevPage from './components/ApiDevPage';
 import DiscordCallback from './components/DiscordCallback';
+import DailyDigest from './components/DailyDigest';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
@@ -200,6 +201,7 @@ function App() {
                       <Route path="/thread/:id" element={<Thread />} />
                       <Route path="/profile" element={<UserProfile />} />
                       <Route path="/dashboard" element={<Dashboard />} />
+                      <Route path="/digest" element={<DailyDigest />} />
                       <Route path="/pods" element={<PodRedirect />} />
                       <Route path="/pods/:podType" element={<Pod />} />
                       <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />

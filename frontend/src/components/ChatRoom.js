@@ -148,7 +148,7 @@ const ChatRoom = () => {
                 
                 console.log(`Fetching messages from: ${messagesEndpoint}, PG available: ${usePostgres}`);
                 const messagesResponse = await axios.get(messagesEndpoint, authHeaders);
-                setMessages(messagesResponse.data.reverse()); // Reverse to show oldest first
+                setMessages(messagesResponse.data); // Backend already returns messages in oldest-first order
                 setError(null);
             } catch (err) {
                 console.error('Error fetching pod data:', err);
@@ -1104,14 +1104,17 @@ const ChatRoom = () => {
                     </div>
                 </div>
                 
-                {/* Apps section */}
+                {/* Apps section - View only, delete from profile page */}
                 {room?.createdBy?._id === currentUser?._id && (
                     <div className="sidebar-section">
                         <div className="sidebar-section-title">
                             <span><AppsIcon style={{ marginRight: '8px', fontSize: '16px', color: '#5865F2' }} /> Apps</span>
+                            <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                                Manage in Profile
+                            </Typography>
                         </div>
                         <div className="sidebar-section-content">
-                            <DiscordIntegration podId={roomId} />
+                            <DiscordIntegration podId={roomId} viewOnly={true} />
                         </div>
                     </div>
                 )}
@@ -1209,6 +1212,7 @@ const ChatRoom = () => {
                                         const profilePicture = 
                                             (msg.userId && typeof msg.userId === 'object' && msg.userId.profilePicture) ||
                                             msg.profile_picture || 
+                                            msg.profilePicture ||  // Handle camelCase from socket messages
                                             null;
                                         
                                         // Get message content with fallbacks
@@ -1226,7 +1230,6 @@ const ChatRoom = () => {
                                                 className={`message-item ${isCurrentUser ? 'sent' : 'received'}`}
                                             >
                                                 <ListItemAvatar className="message-avatar">
-                                                    <div className="message-user">{username}</div>
                                                     <Avatar 
                                                         sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
                                                     >
@@ -1235,6 +1238,7 @@ const ChatRoom = () => {
                                                 </ListItemAvatar>
                                                 
                                                 <div className="message-content-wrapper">
+                                                    <div className="message-user">{username}</div>
                                                     {/* Text message */}
                                                     {messageType === 'text' && (
                                                         <div className={`message-bubble ${isCurrentUser ? 'sent' : 'received'}`}>
