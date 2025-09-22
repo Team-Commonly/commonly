@@ -1,5 +1,7 @@
 const cron = require('node-cron');
 const summarizerService = require('./summarizerService');
+const Integration = require('../models/Integration');
+const DiscordService = require('./discordService');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('./chatSummarizerService');
@@ -110,7 +112,6 @@ class SchedulerService {
     try {
       // Step 0: Garbage collect old summaries for daily digest preparation
       console.log('Step 0: Garbage collecting old summaries...');
-      const SummarizerService = summarizerService.constructor;
       await SummarizerService.garbageCollectForDigest();
 
       // Step 1: Sync Discord integrations (fetch recent messages and post to pods)
@@ -174,9 +175,6 @@ class SchedulerService {
    */
   static async syncAllDiscordIntegrations() {
     try {
-      const Integration = require('../models/Integration');
-      const DiscordService = require('./discordService');
-
       // Find all active Discord integrations with webhook listeners enabled
       const discordIntegrations = await Integration.find({
         type: 'discord',

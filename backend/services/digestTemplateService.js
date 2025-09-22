@@ -199,7 +199,7 @@ Your communities continue to grow and evolve. Keep an eye out for new conversati
   /**
    * Generate section-specific content based on data availability
    */
-  static buildConditionalSections(insights, user) {
+  static buildConditionalSections(insights, _user) {
     const sections = [];
 
     // Quotes section - only if we have meaningful quotes

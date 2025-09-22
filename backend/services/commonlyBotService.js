@@ -16,6 +16,15 @@ try {
 // Fallback MongoDB Message model
 const Message = require('../models/Message');
 
+// PostgreSQL connection
+let dbPg;
+try {
+  dbPg = require('../config/db-pg');
+} catch (error) {
+  console.warn('PostgreSQL db config not available');
+  dbPg = null;
+}
+
 /**
  * Commonly Bot Service
  * Manages the bot user and posts external integration summaries to pods
@@ -401,7 +410,7 @@ ${updateContent}
     }
 
     try {
-      const { pool } = require('../config/db-pg');
+      const { pool } = dbPg;
 
       // Check if bot user already exists in PostgreSQL
       const checkQuery = 'SELECT _id FROM users WHERE _id = $1';
