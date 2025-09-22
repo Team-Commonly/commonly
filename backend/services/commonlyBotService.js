@@ -7,7 +7,9 @@ let PGMessage;
 try {
   PGMessage = require('../models/pg/Message');
 } catch (error) {
-  console.warn('PostgreSQL Message model not available, using MongoDB fallback');
+  console.warn(
+    'PostgreSQL Message model not available, using MongoDB fallback',
+  );
   PGMessage = null;
 }
 
@@ -41,7 +43,7 @@ class CommonlyBotService {
       this.botUser = new User({
         username: this.BOT_USERNAME,
         email: this.BOT_EMAIL,
-        password: 'bot-password-' + Date.now(), // Random password, won't be used for login
+        password: `bot-password-${Date.now()}`, // Random password, won't be used for login
         verified: true,
         profilePicture: 'purple', // Cute purple avatar for the bot
         role: 'user',
@@ -63,7 +65,7 @@ class CommonlyBotService {
   async postDiscordSummaryToPod(podId, discordSummary, integrationId) {
     try {
       const bot = await this.getBotUser();
-      
+
       // Check if pod exists
       const pod = await Pod.findById(podId);
       if (!pod) {
@@ -87,10 +89,15 @@ class CommonlyBotService {
         try {
           // Ensure bot user is synchronized to PostgreSQL users table
           await this.syncBotUserToPostgreSQL(bot);
-          
+
           // Create message in PostgreSQL (ensure podId is string)
-          const newMessage = await PGMessage.create(podId.toString(), bot._id.toString(), messageContent, 'text');
-          
+          const newMessage = await PGMessage.create(
+            podId.toString(),
+            bot._id.toString(),
+            messageContent,
+            'text',
+          );
+
           // Format message for consistency with MongoDB format
           message = {
             _id: newMessage.id,
@@ -107,55 +114,60 @@ class CommonlyBotService {
             createdAt: newMessage.created_at,
             metadata: {
               source: 'discord-integration',
-              integrationId: integrationId,
+              integrationId,
               summaryType: discordSummary.summaryType || 'discord-hourly',
               originalMessageCount: discordSummary.messageCount || 0,
-            }
+            },
           };
-          
+
           console.log('✅ Discord summary message created in PostgreSQL');
         } catch (pgError) {
-          console.error('PostgreSQL message creation failed, falling back to MongoDB:', pgError);
-          
+          console.error(
+            'PostgreSQL message creation failed, falling back to MongoDB:',
+            pgError,
+          );
+
           // Fallback to MongoDB
           const mongoMessage = new Message({
             content: messageContent,
             userId: bot._id,
-            podId: podId,
+            podId,
             messageType: 'text',
             metadata: {
               source: 'discord-integration',
-              integrationId: integrationId,
+              integrationId,
               summaryType: discordSummary.summaryType || 'discord-hourly',
               originalMessageCount: discordSummary.messageCount || 0,
-            }
+            },
           });
 
           await mongoMessage.save();
           await mongoMessage.populate('userId', 'username profilePicture');
           message = mongoMessage;
-          
-          console.log('✅ Discord summary message created in MongoDB (fallback)');
+
+          console.log(
+            '✅ Discord summary message created in MongoDB (fallback)',
+          );
         }
       } else {
         // Use MongoDB
         const mongoMessage = new Message({
           content: messageContent,
           userId: bot._id,
-          podId: podId,
+          podId,
           messageType: 'text',
           metadata: {
             source: 'discord-integration',
-            integrationId: integrationId,
+            integrationId,
             summaryType: discordSummary.summaryType || 'discord-hourly',
             originalMessageCount: discordSummary.messageCount || 0,
-          }
+          },
         });
 
         await mongoMessage.save();
         await mongoMessage.populate('userId', 'username profilePicture');
         message = mongoMessage;
-        
+
         console.log('✅ Discord summary message created in MongoDB');
       }
 
@@ -175,29 +187,34 @@ class CommonlyBotService {
           username: message.username || bot.username,
           profile_picture: message.profile_picture || bot.profilePicture,
           createdAt: message.createdAt,
-          metadata: message.metadata
+          metadata: message.metadata,
         };
-        
-        console.log(`🎨 Bot user data - Username: ${formattedMessage.username}, ProfilePicture: ${formattedMessage.profile_picture}`);
-        
+
+        console.log(
+          `🎨 Bot user data - Username: ${formattedMessage.username}, ProfilePicture: ${formattedMessage.profile_picture}`,
+        );
+
         io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
-        console.log(`📨 Discord summary posted to pod ${pod.name} by Commonly Bot (with socket emission)`);
+        console.log(
+          `📨 Discord summary posted to pod ${pod.name} by Commonly Bot (with socket emission)`,
+        );
       } catch (socketError) {
         console.error('Failed to emit socket message:', socketError);
-        console.log(`📨 Discord summary posted to pod ${pod.name} by Commonly Bot (without socket emission)`);
+        console.log(
+          `📨 Discord summary posted to pod ${pod.name} by Commonly Bot (without socket emission)`,
+        );
       }
-      
+
       return {
         success: true,
-        message: message,
-        pod: pod
+        message,
+        pod,
       };
-
     } catch (error) {
       console.error('Error posting Discord summary to pod:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -206,7 +223,7 @@ class CommonlyBotService {
    * Format Discord summary for posting in Commonly pod
    */
   formatDiscordSummaryForPod(discordSummary) {
-    const timeRange = discordSummary.timeRange 
+    const timeRange = discordSummary.timeRange
       ? `${new Date(discordSummary.timeRange.start).toLocaleTimeString()} - ${new Date(discordSummary.timeRange.end).toLocaleTimeString()}`
       : 'Recent activity';
 
@@ -227,10 +244,15 @@ ${discordSummary.content}
   /**
    * Post a general external integration update
    */
-  async postIntegrationUpdate(podId, integrationName, updateContent, metadata = {}) {
+  async postIntegrationUpdate(
+    podId,
+    integrationName,
+    updateContent,
+    metadata = {},
+  ) {
     try {
       const bot = await this.getBotUser();
-      
+
       const pod = await Pod.findById(podId);
       if (!pod) {
         throw new Error(`Pod ${podId} not found`);
@@ -255,10 +277,15 @@ ${updateContent}
         try {
           // Ensure bot user is synchronized to PostgreSQL users table
           await this.syncBotUserToPostgreSQL(bot);
-          
+
           // Create message in PostgreSQL (ensure podId is string)
-          const newMessage = await PGMessage.create(podId.toString(), bot._id.toString(), messageContent, 'text');
-          
+          const newMessage = await PGMessage.create(
+            podId.toString(),
+            bot._id.toString(),
+            messageContent,
+            'text',
+          );
+
           // Format message for consistency with MongoDB format
           message = {
             _id: newMessage.id,
@@ -276,65 +303,69 @@ ${updateContent}
             metadata: {
               source: 'external-integration',
               integrationType: integrationName.toLowerCase(),
-              ...metadata
-            }
+              ...metadata,
+            },
           };
-          
+
           console.log('✅ Integration update message created in PostgreSQL');
         } catch (pgError) {
-          console.error('PostgreSQL message creation failed, falling back to MongoDB:', pgError);
-          
+          console.error(
+            'PostgreSQL message creation failed, falling back to MongoDB:',
+            pgError,
+          );
+
           // Fallback to MongoDB
           const mongoMessage = new Message({
             content: messageContent,
             userId: bot._id,
-            podId: podId,
+            podId,
             messageType: 'text',
             metadata: {
               source: 'external-integration',
               integrationType: integrationName.toLowerCase(),
-              ...metadata
-            }
+              ...metadata,
+            },
           });
 
           await mongoMessage.save();
           await mongoMessage.populate('userId', 'username profilePicture');
           message = mongoMessage;
-          
-          console.log('✅ Integration update message created in MongoDB (fallback)');
+
+          console.log(
+            '✅ Integration update message created in MongoDB (fallback)',
+          );
         }
       } else {
         // Use MongoDB
         const mongoMessage = new Message({
           content: messageContent,
           userId: bot._id,
-          podId: podId,
+          podId,
           messageType: 'text',
           metadata: {
             source: 'external-integration',
             integrationType: integrationName.toLowerCase(),
-            ...metadata
-          }
+            ...metadata,
+          },
         });
 
         await mongoMessage.save();
         await mongoMessage.populate('userId', 'username profilePicture');
         message = mongoMessage;
-        
+
         console.log('✅ Integration update message created in MongoDB');
       }
 
       return {
         success: true,
-        message: message,
-        pod: pod
+        message,
+        pod,
       };
-
     } catch (error) {
       console.error('Error posting integration update:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -357,7 +388,7 @@ ${updateContent}
       username: bot.username,
       profilePicture: bot.profilePicture,
       role: bot.role,
-      createdAt: bot.createdAt
+      createdAt: bot.createdAt,
     };
   }
 
@@ -371,15 +402,15 @@ ${updateContent}
 
     try {
       const { pool } = require('../config/db-pg');
-      
+
       // Check if bot user already exists in PostgreSQL
       const checkQuery = 'SELECT _id FROM users WHERE _id = $1';
       const checkResult = await pool.query(checkQuery, [bot._id.toString()]);
-      
+
       if (checkResult.rows.length > 0) {
         return; // User already exists, no need to sync
       }
-      
+
       // Insert bot user in PostgreSQL users table (first time only)
       const insertQuery = `
         INSERT INTO users (_id, username, profile_picture, created_at, updated_at)
@@ -391,7 +422,7 @@ ${updateContent}
         bot.username,
         bot.profilePicture,
         bot.createdAt,
-        new Date()
+        new Date(),
       ]);
 
       console.log(`✅ Bot user synchronized to PostgreSQL: ${bot.username}`);

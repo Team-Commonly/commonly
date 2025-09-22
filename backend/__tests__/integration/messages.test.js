@@ -52,8 +52,10 @@ describe('Message Routes Integration Tests', () => {
   it('should get messages for a pod when user is a member', async () => {
     const user = await createTestUser(User);
     const pod = await createTestPod(Pod, user._id);
-    const mockMessages = [{ id: 1, content: 'Hello', user_id: user._id.toString() }];
-    
+    const mockMessages = [
+      { id: 1, content: 'Hello', user_id: user._id.toString() },
+    ];
+
     PGMessage.findByPodId.mockResolvedValue(mockMessages);
     const token = generateTestToken(user._id);
 
@@ -64,13 +66,20 @@ describe('Message Routes Integration Tests', () => {
 
     expect(Array.isArray(response.body)).toBe(true);
     expect(response.body[0].content).toBe('Hello');
-    expect(PGMessage.findByPodId).toHaveBeenCalledWith(pod._id.toString(), 50, undefined);
+    expect(PGMessage.findByPodId).toHaveBeenCalledWith(
+      pod._id.toString(),
+      50,
+      undefined,
+    );
   });
 
   it('should return 401 if user is not a member of the pod', async () => {
     const creator = await createTestUser(User, { username: 'creator' });
     const pod = await createTestPod(Pod, creator._id);
-    const outsider = await createTestUser(User, { username: 'outsider', email: 'out@example.com' });
+    const outsider = await createTestUser(User, {
+      username: 'outsider',
+      email: 'out@example.com',
+    });
     const token = generateTestToken(outsider._id);
 
     const response = await request(app)
@@ -84,8 +93,12 @@ describe('Message Routes Integration Tests', () => {
   it('should create a message successfully', async () => {
     const user = await createTestUser(User);
     const pod = await createTestPod(Pod, user._id);
-    const mockMessage = { id: 1, content: 'Hi there', user_id: user._id.toString() };
-    
+    const mockMessage = {
+      id: 1,
+      content: 'Hi there',
+      user_id: user._id.toString(),
+    };
+
     PGMessage.create.mockResolvedValue(mockMessage);
     const token = generateTestToken(user._id);
 
@@ -97,10 +110,10 @@ describe('Message Routes Integration Tests', () => {
 
     expect(response.body.content).toBe('Hi there');
     expect(PGMessage.create).toHaveBeenCalledWith(
-      pod._id.toString(), 
-      user._id.toString(), 
-      'Hi there', 
-      'text'
+      pod._id.toString(),
+      user._id.toString(),
+      'Hi there',
+      'text',
     );
   });
 

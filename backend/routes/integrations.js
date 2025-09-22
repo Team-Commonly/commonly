@@ -56,15 +56,19 @@ router.post('/', auth, async (req, res) => {
     switch (type) {
       case 'discord': {
         // Create Discord webhook automatically
-        const webhookResponse = await axios.post(`https://discord.com/api/channels/${config.channelId}/webhooks`, {
-          name: 'Commonly Bot',
-          avatar: null, // Could add a bot avatar URL here
-        }, {
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-            'Content-Type': 'application/json',
+        const webhookResponse = await axios.post(
+          `https://discord.com/api/channels/${config.channelId}/webhooks`,
+          {
+            name: 'Commonly Bot',
+            avatar: null, // Could add a bot avatar URL here
           },
-        });
+          {
+            headers: {
+              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        );
 
         const webhook = webhookResponse.data;
 
@@ -82,7 +86,9 @@ router.post('/', auth, async (req, res) => {
         break;
       }
       default:
-        return res.status(400).json({ message: 'Unsupported integration type' });
+        return res
+          .status(400)
+          .json({ message: 'Unsupported integration type' });
     }
 
     await platformIntegration.save();
@@ -92,7 +98,9 @@ router.post('/', auth, async (req, res) => {
     const initialized = await service.initialize();
 
     if (!initialized) {
-      return res.status(500).json({ message: 'Failed to initialize integration' });
+      return res
+        .status(500)
+        .json({ message: 'Failed to initialize integration' });
     }
 
     // Connect the integration to update status from pending to connected
@@ -135,7 +143,9 @@ router.post('/:id/connect', auth, async (req, res) => {
         service = new DiscordService(id);
         break;
       default:
-        return res.status(400).json({ message: 'Unsupported integration type' });
+        return res
+          .status(400)
+          .json({ message: 'Unsupported integration type' });
     }
 
     const connected = await service.connect();
@@ -174,7 +184,9 @@ router.post('/:id/disconnect', auth, async (req, res) => {
         service = new DiscordService(id);
         break;
       default:
-        return res.status(400).json({ message: 'Unsupported integration type' });
+        return res
+          .status(400)
+          .json({ message: 'Unsupported integration type' });
     }
 
     const disconnected = await service.disconnect();
@@ -213,7 +225,9 @@ router.get('/:id/stats', auth, async (req, res) => {
         service = new DiscordService(id);
         break;
       default:
-        return res.status(400).json({ message: 'Unsupported integration type' });
+        return res
+          .status(400)
+          .json({ message: 'Unsupported integration type' });
     }
 
     const stats = await service.getStats();
@@ -248,7 +262,9 @@ router.get('/:id/messages', auth, async (req, res) => {
         service = new DiscordService(id);
         break;
       default:
-        return res.status(400).json({ message: 'Unsupported integration type' });
+        return res
+          .status(400)
+          .json({ message: 'Unsupported integration type' });
     }
 
     const messages = await service.fetchMessages({ limit, before });
@@ -283,7 +299,9 @@ router.post('/:id/send', auth, async (req, res) => {
         service = new DiscordService(id);
         break;
       default:
-        return res.status(400).json({ message: 'Unsupported integration type' });
+        return res
+          .status(400)
+          .json({ message: 'Unsupported integration type' });
     }
 
     const result = await service.sendMessage(message);
@@ -374,7 +392,9 @@ router.delete('/:id', auth, async (req, res) => {
         service = new DiscordService(id);
         break;
       default:
-        return res.status(400).json({ message: 'Unsupported integration type' });
+        return res
+          .status(400)
+          .json({ message: 'Unsupported integration type' });
     }
 
     try {

@@ -85,7 +85,9 @@ async function migrateFiles() {
       await newFile.save();
 
       migratedCount++;
-      console.log(`Migrated file ${fileName} (${migratedCount}/${files.length})`);
+      console.log(
+        `Migrated file ${fileName} (${migratedCount}/${files.length})`,
+      );
     } catch (error) {
       console.error(`Error migrating file ${fileName}:`, error.message);
     }

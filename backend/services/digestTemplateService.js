@@ -3,14 +3,13 @@
  * Provides unified, consistent formatting for daily digest newsletters
  */
 class DigestTemplateService {
-  
   /**
    * Generate a unified daily digest template
    */
   static createDigestPrompt(organizedData, user) {
     const { username } = user;
     const date = new Date().toDateString();
-    
+
     return `Create a personalized daily digest newsletter for ${username} using this EXACT format and structure:
 
 COMMUNITY DATA:
@@ -139,7 +138,7 @@ IMPORTANT: Return ONLY the JSON object, no additional text or explanation.`;
   static createFallbackDigest(user, insights, startTime, endTime) {
     const { username } = user;
     const date = endTime.toDateString();
-    
+
     return `# 🌅 Daily Digest - ${date}
 
 Good morning, ${username}!
@@ -172,26 +171,29 @@ Your communities continue to grow and evolve. Keep an eye out for new conversati
    */
   static getPersonalizedGreeting(user, timeOfDay, activityLevel) {
     const { username } = user;
-    
+
     const greetings = {
       morning: {
         high: `Rise and shine, ${username}! Your communities were buzzing overnight.`,
         medium: `Good morning, ${username}! Here's what happened while you were away.`,
-        low: `Morning, ${username}! It was a quiet night, but there are still some gems to discover.`
+        low: `Morning, ${username}! It was a quiet night, but there are still some gems to discover.`,
       },
       afternoon: {
         high: `Good afternoon, ${username}! Catching up on a busy day in your communities?`,
         medium: `Hey ${username}! Ready for your daily community roundup?`,
-        low: `Hi ${username}! Not much happened, but here's what's worth knowing.`
+        low: `Hi ${username}! Not much happened, but here's what's worth knowing.`,
       },
       evening: {
         high: `Evening, ${username}! Your communities had quite the active day.`,
         medium: `Good evening, ${username}! Time to catch up on today's highlights.`,
-        low: `Evening, ${username}! A peaceful day in your communities, but still some nice moments to share.`
-      }
+        low: `Evening, ${username}! A peaceful day in your communities, but still some nice moments to share.`,
+      },
     };
-    
-    return greetings[timeOfDay]?.[activityLevel] || `Hello, ${username}! Here's your daily community digest.`;
+
+    return (
+      greetings[timeOfDay]?.[activityLevel]
+      || `Hello, ${username}! Here's your daily community digest.`
+    );
   }
 
   /**
@@ -199,7 +201,7 @@ Your communities continue to grow and evolve. Keep an eye out for new conversati
    */
   static buildConditionalSections(insights, user) {
     const sections = [];
-    
+
     // Quotes section - only if we have meaningful quotes
     if (insights.bestQuotes && insights.bestQuotes.length > 0) {
       const topQuote = insights.bestQuotes[0];
@@ -208,26 +210,29 @@ Your communities continue to grow and evolve. Keep an eye out for new conversati
 > 
 > *— @${topQuote.author} in ${topQuote.context}*`);
     }
-    
+
     // Key insights - only if we have significant insights
     if (insights.keyInsights && insights.keyInsights.length > 0) {
       let insightText = '### 🎯 Key Insights\n';
-      insights.keyInsights.slice(0, 3).forEach(insight => {
+      insights.keyInsights.slice(0, 3).forEach((insight) => {
         insightText += `- **${insight.type.replace('_', ' ').toUpperCase()}**: ${insight.description}\n`;
       });
       sections.push(insightText.trim());
     }
-    
+
     // Timeline events - only if significant activity
     if (insights.timeline && insights.timeline.length > 0) {
       let timelineText = '### ⏰ Timeline Highlights\n';
-      insights.timeline.slice(0, 3).forEach(event => {
-        const time = new Date(event.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      insights.timeline.slice(0, 3).forEach((event) => {
+        const time = new Date(event.timestamp).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+        });
         timelineText += `- **${time}**: ${event.description}\n`;
       });
       sections.push(timelineText.trim());
     }
-    
+
     return sections.join('\n\n');
   }
 
@@ -236,28 +241,28 @@ Your communities continue to grow and evolve. Keep an eye out for new conversati
    */
   static formatCommunityPulse(atmosphere, metadata) {
     const moodEmojis = {
-      'very_positive': '🌟',
-      'positive': '😊', 
-      'neutral': '😐',
-      'negative': '😔',
-      'very_negative': '😞'
+      very_positive: '🌟',
+      positive: '😊',
+      neutral: '😐',
+      negative: '😔',
+      very_negative: '😞',
     };
-    
+
     const energyEmojis = {
-      'very_high': '🚀',
-      'high': '⚡',
-      'medium': '🔋',
-      'low': '🔅',
-      'very_low': '💤'
+      very_high: '🚀',
+      high: '⚡',
+      medium: '🔋',
+      low: '🔅',
+      very_low: '💤',
     };
-    
+
     const engagementEmojis = {
-      'intense': '🔥',
-      'deep': '🎯',
-      'moderate': '💬',
-      'superficial': '👋'
+      intense: '🔥',
+      deep: '🎯',
+      moderate: '💬',
+      superficial: '👋',
     };
-    
+
     return `## 📊 Community Pulse
 
 - **Overall Mood**: ${moodEmojis[atmosphere?.overall_sentiment] || '😊'} ${atmosphere?.overall_sentiment?.replace('_', ' ') || 'Positive'}

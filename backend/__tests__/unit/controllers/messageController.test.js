@@ -57,10 +57,10 @@ describe('messageController', () => {
       const mockMessage = { id: 1, content: 'test' };
       Pod.findById.mockResolvedValue({ members: ['u1'] });
       PGMessage.create.mockResolvedValue(mockMessage);
-      const req = { 
-        params: { podId: 'p1' }, 
-        body: { content: 'test' }, 
-        user: { id: 'u1' } 
+      const req = {
+        params: { podId: 'p1' },
+        body: { content: 'test' },
+        user: { id: 'u1' },
       };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.createMessage(req, res);

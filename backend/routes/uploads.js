@@ -16,7 +16,11 @@ const upload = multer({
   },
   fileFilter(req, file, cb) {
     // Accept all common image formats
-    if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp|JPG|JPEG|PNG|GIF|WEBP)$/)) {
+    if (
+      !file.originalname.match(
+        /\.(jpg|jpeg|png|gif|webp|JPG|JPEG|PNG|GIF|WEBP)$/,
+      )
+    ) {
       return cb(new Error('Only image files are allowed!'), false);
     }
     cb(null, true);
@@ -31,7 +35,7 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
     }
 
     // Generate a unique filename
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const fileName = `${uniqueSuffix}.${req.file.originalname.split('.').pop()}`;
 
     // Create a new file document

@@ -31,7 +31,7 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const ext = path.extname(file.originalname);
     cb(null, `qrcode-${uniqueSuffix}${ext}`);
   },
@@ -78,7 +78,9 @@ router.post('/announcement', auth, async (req, res) => {
 
     // Check if user is pod owner
     if (pod.createdBy.toString() !== req.user.id) {
-      return res.status(403).json({ message: 'Only pod owner can create announcements' });
+      return res
+        .status(403)
+        .json({ message: 'Only pod owner can create announcements' });
     }
 
     // Create announcement
@@ -121,17 +123,23 @@ router.delete('/announcement/:id', auth, async (req, res) => {
 
     // Check if user is pod owner
     if (pod.createdBy.toString() !== req.user.id) {
-      return res.status(403).json({ message: 'Only pod owner can delete announcements' });
+      return res
+        .status(403)
+        .json({ message: 'Only pod owner can delete announcements' });
     }
 
     // Remove announcement from pod
-    pod.announcements = pod.announcements.filter((id) => id.toString() !== announcementId);
+    pod.announcements = pod.announcements.filter(
+      (id) => id.toString() !== announcementId,
+    );
     await pod.save();
 
     // Delete announcement
     await Announcement.findByIdAndDelete(announcementId);
 
-    return res.status(200).json({ message: 'Announcement deleted successfully' });
+    return res
+      .status(200)
+      .json({ message: 'Announcement deleted successfully' });
   } catch (error) {
     console.error('Error deleting announcement:', error);
     return res.status(500).json({ message: 'Server error' });
@@ -139,57 +147,64 @@ router.delete('/announcement/:id', auth, async (req, res) => {
 });
 
 // External Links
-router.post('/external-link', auth, upload.single('qrCode'), async (req, res) => {
-  try {
-    const {
-      podId, name, type, url,
-    } = req.body;
+router.post(
+  '/external-link',
+  auth,
+  upload.single('qrCode'),
+  async (req, res) => {
+    try {
+      const {
+        podId, name, type, url,
+      } = req.body;
 
-    // Validate request
-    if (!podId || !name || !type) {
-      return res.status(400).json({ message: 'Missing required fields' });
+      // Validate request
+      if (!podId || !name || !type) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      // Find pod
+      const pod = await Pod.findById(podId);
+      if (!pod) {
+        return res.status(404).json({ message: 'Pod not found' });
+      }
+
+      // Check if user is pod owner
+      if (pod.createdBy.toString() !== req.user.id) {
+        return res
+          .status(403)
+          .json({ message: 'Only pod owner can add external links' });
+      }
+
+      // Create external link
+      const externalLink = new ExternalLink({
+        podId,
+        name,
+        type,
+        createdBy: req.user.id,
+      });
+
+      // Set URL or QR code path
+      if (type === 'wechat' && req.file) {
+        externalLink.qrCodePath = req.file.path;
+      } else if (url) {
+        externalLink.url = url;
+      } else {
+        return res.status(400).json({ message: 'URL or QR code is required' });
+      }
+
+      await externalLink.save();
+
+      // Update pod with external link
+      pod.externalLinks.push(externalLink._id);
+      await pod.save();
+
+      return res.status(201).json(externalLink);
+    } catch (error) {
+      console.error('Error creating external link:', error);
+      return res.status(500).json({ message: 'Server error' });
     }
-
-    // Find pod
-    const pod = await Pod.findById(podId);
-    if (!pod) {
-      return res.status(404).json({ message: 'Pod not found' });
-    }
-
-    // Check if user is pod owner
-    if (pod.createdBy.toString() !== req.user.id) {
-      return res.status(403).json({ message: 'Only pod owner can add external links' });
-    }
-
-    // Create external link
-    const externalLink = new ExternalLink({
-      podId,
-      name,
-      type,
-      createdBy: req.user.id,
-    });
-
-    // Set URL or QR code path
-    if (type === 'wechat' && req.file) {
-      externalLink.qrCodePath = req.file.path;
-    } else if (url) {
-      externalLink.url = url;
-    } else {
-      return res.status(400).json({ message: 'URL or QR code is required' });
-    }
-
-    await externalLink.save();
-
-    // Update pod with external link
-    pod.externalLinks.push(externalLink._id);
-    await pod.save();
-
-    return res.status(201).json(externalLink);
-  } catch (error) {
-    console.error('Error creating external link:', error);
-    return res.status(500).json({ message: 'Server error' });
-  }
-});
+  },
+);
 
 // Delete an external link
 router.delete('/external-link/:id', auth, async (req, res) => {
@@ -210,11 +225,15 @@ router.delete('/external-link/:id', auth, async (req, res) => {
 
     // Check if user is pod owner
     if (pod.createdBy.toString() !== req.user.id) {
-      return res.status(403).json({ message: 'Only pod owner can delete external links' });
+      return res
+        .status(403)
+        .json({ message: 'Only pod owner can delete external links' });
     }
 
     // Remove external link from pod
-    pod.externalLinks = pod.externalLinks.filter((id) => id.toString() !== linkId);
+    pod.externalLinks = pod.externalLinks.filter(
+      (id) => id.toString() !== linkId,
+    );
     await pod.save();
 
     // Delete QR code file if it exists
@@ -225,7 +244,9 @@ router.delete('/external-link/:id', auth, async (req, res) => {
     // Delete external link
     await ExternalLink.findByIdAndDelete(linkId);
 
-    return res.status(200).json({ message: 'External link deleted successfully' });
+    return res
+      .status(200)
+      .json({ message: 'External link deleted successfully' });
   } catch (error) {
     console.error('Error deleting external link:', error);
     return res.status(500).json({ message: 'Server error' });
@@ -277,7 +298,9 @@ router.get('/:podId/announcements', auth, async (req, res) => {
 
     // Check if user is a member of the pod
     if (!pod.members.some((member) => member.toString() === req.user.id)) {
-      return res.status(403).json({ message: 'Not authorized to view pod announcements' });
+      return res
+        .status(403)
+        .json({ message: 'Not authorized to view pod announcements' });
     }
 
     // Retrieve announcements for the pod

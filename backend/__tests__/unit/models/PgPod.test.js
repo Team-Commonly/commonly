@@ -30,10 +30,10 @@ describe('PostgreSQL Pod Model Tests', () => {
   beforeEach(() => {
     // Reset all mocks before each test
     jest.clearAllMocks();
-    
+
     // We'll skip the actual database setup since we're fully mocking the Pod methods
     // and just test that the methods are called with the right arguments
-    
+
     // Mock successful query responses
     pool.query.mockResolvedValue({ rows: [] });
   });

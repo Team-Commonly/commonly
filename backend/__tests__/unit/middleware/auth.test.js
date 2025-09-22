@@ -101,9 +101,11 @@ describe('Auth Middleware Tests', () => {
 
     // Verify that res.status and res.json were called with correct arguments
     expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      msg: expect.stringContaining('No token'),
-    }));
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringContaining('No token'),
+      }),
+    );
 
     // Verify that next was not called
     expect(next).not.toHaveBeenCalled();
@@ -127,9 +129,11 @@ describe('Auth Middleware Tests', () => {
 
     // Verify that res.status and res.json were called with correct arguments
     expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      msg: expect.stringContaining('Token is not valid'),
-    }));
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringContaining('Token is not valid'),
+      }),
+    );
 
     // Verify that next was not called
     expect(next).not.toHaveBeenCalled();
@@ -156,9 +160,11 @@ describe('Auth Middleware Tests', () => {
 
     // Verify that res.status and res.json were called with correct arguments
     expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      msg: expect.stringContaining('Invalid token structure'),
-    }));
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringContaining('Invalid token structure'),
+      }),
+    );
 
     // Verify that next was not called
     expect(next).not.toHaveBeenCalled();
