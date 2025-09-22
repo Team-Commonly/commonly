@@ -12,7 +12,14 @@ router.get('/keywords', auth, async (req, res) => {
     const userId = req.user.id;
 
     // Calculate time range
-    const hours = timeRange === '7d' ? 168 : timeRange === '3d' ? 72 : 24;
+    let hours;
+    if (timeRange === '7d') {
+      hours = 168;
+    } else if (timeRange === '3d') {
+      hours = 72;
+    } else {
+      hours = 24;
+    }
     const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     // Build query
@@ -91,7 +98,14 @@ router.get('/topics', auth, async (req, res) => {
     const userId = req.user.id;
 
     // Calculate time range
-    const hours = timeRange === '7d' ? 168 : timeRange === '3d' ? 72 : 24;
+    let hours;
+    if (timeRange === '7d') {
+      hours = 168;
+    } else if (timeRange === '3d') {
+      hours = 72;
+    } else {
+      hours = 24;
+    }
     const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     // Get summaries
@@ -314,7 +328,14 @@ router.get('/summary', auth, async (req, res) => {
     const userId = req.user.id;
 
     // Calculate time range
-    const hours = timeRange === '7d' ? 168 : timeRange === '3d' ? 72 : 24;
+    let hours;
+    if (timeRange === '7d') {
+      hours = 168;
+    } else if (timeRange === '3d') {
+      hours = 72;
+    } else {
+      hours = 24;
+    }
     const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     // Get summaries
