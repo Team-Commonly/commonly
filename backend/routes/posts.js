@@ -1,6 +1,13 @@
 const express = require('express');
 const {
-  createPost, getPosts, getPostById, addComment, searchPosts, likePost, deletePost, deleteComment,
+  createPost,
+  getPosts,
+  getPostById,
+  addComment,
+  searchPosts,
+  likePost,
+  deletePost,
+  deleteComment,
 } = require('../controllers/postController');
 const { _authenticate } = require('../middleware/authMiddleware');
 

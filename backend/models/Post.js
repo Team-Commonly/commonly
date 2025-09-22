@@ -28,7 +28,7 @@ postSchema.statics.getCommentCount = function (userId) {
     { $unwind: '$comments' },
     { $match: { 'comments.userId': new mongoose.Types.ObjectId(userId) } },
     { $group: { _id: null, total: { $sum: 1 } } },
-  ]).then((result) => (result[0]?.total || 0));
+  ]).then((result) => result[0]?.total || 0);
 };
 
 module.exports = mongoose.model('Post', postSchema);

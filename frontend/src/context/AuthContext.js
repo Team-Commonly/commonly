@@ -4,6 +4,7 @@ import axios from 'axios';
 
 const AuthContext = createContext();
 
+export { AuthContext };
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
@@ -108,6 +109,7 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider
       value={{
         currentUser,
+        user: currentUser, // Alias for backward compatibility
         token,
         loading,
         error,

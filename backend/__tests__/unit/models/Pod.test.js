@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
-const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
+const {
+  setupMongoDb,
+  closeMongoDb,
+  clearMongoDb,
+} = require('../../utils/testUtils');
 
 describe('Pod Model Tests', () => {
   // Setup test user for references
@@ -124,15 +128,21 @@ describe('Pod Model Tests', () => {
 
     // The creator should be automatically added as member even if not in initial members
     expect(savedPod.members).toHaveLength(2);
-    expect(savedPod.members.map((id) => id.toString())).toContain(testUser._id.toString());
-    expect(savedPod.members.map((id) => id.toString())).toContain(secondUser._id.toString());
+    expect(savedPod.members.map((id) => id.toString())).toContain(
+      testUser._id.toString(),
+    );
+    expect(savedPod.members.map((id) => id.toString())).toContain(
+      secondUser._id.toString(),
+    );
 
     // Add third user
     savedPod.members.push(thirdUser._id);
     savedPod = await savedPod.save();
 
     expect(savedPod.members).toHaveLength(3);
-    expect(savedPod.members.map((id) => id.toString())).toContain(thirdUser._id.toString());
+    expect(savedPod.members.map((id) => id.toString())).toContain(
+      thirdUser._id.toString(),
+    );
   });
 
   it('should handle references to messages, announcements, and externalLinks', async () => {
@@ -155,9 +165,13 @@ describe('Pod Model Tests', () => {
     expect(savedPod.messages[0].toString()).toBe(mockMessageId.toString());
 
     expect(savedPod.announcements).toHaveLength(1);
-    expect(savedPod.announcements[0].toString()).toBe(mockAnnouncementId.toString());
+    expect(savedPod.announcements[0].toString()).toBe(
+      mockAnnouncementId.toString(),
+    );
 
     expect(savedPod.externalLinks).toHaveLength(1);
-    expect(savedPod.externalLinks[0].toString()).toBe(mockExternalLinkId.toString());
+    expect(savedPod.externalLinks[0].toString()).toBe(
+      mockExternalLinkId.toString(),
+    );
   });
 });
