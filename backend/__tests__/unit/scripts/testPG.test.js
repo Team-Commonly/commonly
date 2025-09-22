@@ -1,4 +1,6 @@
-jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn(), end: jest.fn() } }));
+jest.mock('../../../config/db-pg', () => ({
+  pool: { query: jest.fn(), end: jest.fn() },
+}));
 const testPG = require('../../../testPG');
 const { pool } = require('../../../config/db-pg');
 

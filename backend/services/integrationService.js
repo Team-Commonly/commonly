@@ -87,7 +87,8 @@ class IntegrationService {
       await Integration.findByIdAndUpdate(this.integrationId, {
         status,
         errorMessage,
-        lastSync: status === 'connected' ? new Date() : this.integration?.lastSync,
+        lastSync:
+          status === 'connected' ? new Date() : this.integration?.lastSync,
       });
 
       // Update local reference

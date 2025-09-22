@@ -2,7 +2,9 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../../../models/File', () => ({
-  findByFileName: jest.fn().mockResolvedValue({ data: Buffer.from('x'), contentType: 'text/plain' }),
+  findByFileName: jest
+    .fn()
+    .mockResolvedValue({ data: Buffer.from('x'), contentType: 'text/plain' }),
 }));
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());

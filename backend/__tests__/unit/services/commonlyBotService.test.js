@@ -19,21 +19,21 @@ describe('CommonlyBotService', () => {
 
   beforeEach(() => {
     botService = new CommonlyBotService();
-    
+
     mockBot = {
       _id: 'bot123',
       username: 'commonly-bot',
       email: 'bot@commonly.app',
       profilePicture: 'purple',
       createdAt: new Date(),
-      save: jest.fn().mockResolvedValue(true)
+      save: jest.fn().mockResolvedValue(true),
     };
 
     mockPod = {
       _id: 'pod123',
       name: 'Test Pod',
       members: ['user1'],
-      save: jest.fn().mockResolvedValue(true)
+      save: jest.fn().mockResolvedValue(true),
     };
 
     jest.clearAllMocks();
@@ -42,9 +42,9 @@ describe('CommonlyBotService', () => {
   describe('getBotUser', () => {
     it('should return existing bot user', async () => {
       User.findOne.mockResolvedValue(mockBot);
-      
+
       const result = await botService.getBotUser();
-      
+
       expect(result).toBe(mockBot);
       expect(User.findOne).toHaveBeenCalledWith({ username: 'commonly-bot' });
     });
@@ -52,14 +52,16 @@ describe('CommonlyBotService', () => {
     it('should create new bot user if not exists', async () => {
       User.findOne.mockResolvedValue(null);
       User.prototype.save = jest.fn().mockResolvedValue(mockBot);
-      
+
       const result = await botService.getBotUser();
-      
-      expect(User).toHaveBeenCalledWith(expect.objectContaining({
-        username: 'commonly-bot',
-        email: 'bot@commonly.app',
-        profilePicture: 'purple'
-      }));
+
+      expect(User).toHaveBeenCalledWith(
+        expect.objectContaining({
+          username: 'commonly-bot',
+          email: 'bot@commonly.app',
+          profilePicture: 'purple',
+        }),
+      );
     });
   });
 
@@ -67,25 +69,25 @@ describe('CommonlyBotService', () => {
     beforeEach(() => {
       User.findOne.mockResolvedValue(mockBot);
       Pod.findById.mockResolvedValue(mockPod);
-      
+
       // Mock PostgreSQL message creation
       PGMessage.create.mockResolvedValue({
         id: 'msg123',
         content: 'test message',
         message_type: 'text',
-        created_at: new Date()
+        created_at: new Date(),
       });
 
       // Mock socket
       const mockIo = {
         to: jest.fn().mockReturnThis(),
-        emit: jest.fn()
+        emit: jest.fn(),
       };
       socketConfig.getIO.mockReturnValue(mockIo);
 
       // Mock PostgreSQL pool
       const mockPool = {
-        query: jest.fn().mockResolvedValue({ rows: [] })
+        query: jest.fn().mockResolvedValue({ rows: [] }),
       };
       require('../../../config/db-pg').pool = mockPool;
 
@@ -98,10 +100,14 @@ describe('CommonlyBotService', () => {
         content: 'Test summary content',
         messageCount: 5,
         serverName: 'Test Server',
-        channelName: 'general'
+        channelName: 'general',
       };
 
-      const result = await botService.postDiscordSummaryToPod('pod123', discordSummary, 'integration123');
+      const result = await botService.postDiscordSummaryToPod(
+        'pod123',
+        discordSummary,
+        'integration123',
+      );
 
       expect(result.success).toBe(true);
       expect(Pod.findById).toHaveBeenCalledWith('pod123');
@@ -109,19 +115,23 @@ describe('CommonlyBotService', () => {
         'pod123',
         'bot123',
         expect.stringContaining('Discord Update from #general'),
-        'text'
+        'text',
       );
     });
 
     it('should add bot to pod members if not already member', async () => {
       mockPod.members = ['other-user']; // Bot not in members
-      
+
       const discordSummary = {
         content: 'Test summary',
-        messageCount: 3
+        messageCount: 3,
       };
 
-      await botService.postDiscordSummaryToPod('pod123', discordSummary, 'integration123');
+      await botService.postDiscordSummaryToPod(
+        'pod123',
+        discordSummary,
+        'integration123',
+      );
 
       expect(mockPod.members).toContain('bot123');
       expect(mockPod.save).toHaveBeenCalled();
@@ -129,8 +139,12 @@ describe('CommonlyBotService', () => {
 
     it('should return error if pod not found', async () => {
       Pod.findById.mockResolvedValue(null);
-      
-      const result = await botService.postDiscordSummaryToPod('invalid-pod', {}, 'integration123');
+
+      const result = await botService.postDiscordSummaryToPod(
+        'invalid-pod',
+        {},
+        'integration123',
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Pod invalid-pod not found');
@@ -144,11 +158,15 @@ describe('CommonlyBotService', () => {
         channelName: 'react-help',
         timeRange: {
           start: '2023-07-14T10:00:00Z',
-          end: '2023-07-14T11:00:00Z'
-        }
+          end: '2023-07-14T11:00:00Z',
+        },
       };
 
-      await botService.postDiscordSummaryToPod('pod123', discordSummary, 'integration123');
+      await botService.postDiscordSummaryToPod(
+        'pod123',
+        discordSummary,
+        'integration123',
+      );
 
       const [, , messageContent] = PGMessage.create.mock.calls[0];
       expect(messageContent).toContain('🎮 Discord Update from #react-help');
@@ -161,7 +179,7 @@ describe('CommonlyBotService', () => {
   describe('syncBotUserToPostgreSQL', () => {
     beforeEach(() => {
       const mockPool = {
-        query: jest.fn()
+        query: jest.fn(),
       };
       require('../../../config/db-pg').pool = mockPool;
       process.env.PG_HOST = 'localhost';
@@ -177,11 +195,11 @@ describe('CommonlyBotService', () => {
 
       expect(mockPool.query).toHaveBeenCalledWith(
         'SELECT _id FROM users WHERE _id = $1',
-        ['bot123']
+        ['bot123'],
       );
       expect(mockPool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO users'),
-        expect.arrayContaining(['bot123', 'commonly-bot', 'purple'])
+        expect.arrayContaining(['bot123', 'commonly-bot', 'purple']),
       );
     });
 
@@ -197,7 +215,9 @@ describe('CommonlyBotService', () => {
     it('should handle PostgreSQL unavailable gracefully', async () => {
       process.env.PG_HOST = undefined;
 
-      await expect(botService.syncBotUserToPostgreSQL(mockBot)).resolves.not.toThrow();
+      await expect(
+        botService.syncBotUserToPostgreSQL(mockBot),
+      ).resolves.not.toThrow();
     });
   });
 
@@ -208,17 +228,17 @@ describe('CommonlyBotService', () => {
       PGMessage.create.mockResolvedValue({
         id: 'msg123',
         content: 'integration update',
-        created_at: new Date()
+        created_at: new Date(),
       });
       process.env.PG_HOST = 'localhost';
     });
 
     it('should post integration update successfully', async () => {
       const result = await botService.postIntegrationUpdate(
-        'pod123', 
-        'Slack', 
+        'pod123',
+        'Slack',
         'New message from Slack channel',
-        { channel: '#general' }
+        { channel: '#general' },
       );
 
       expect(result.success).toBe(true);
@@ -226,7 +246,7 @@ describe('CommonlyBotService', () => {
         'pod123',
         'bot123',
         expect.stringContaining('🔗 Slack Update'),
-        'text'
+        'text',
       );
     });
   });
@@ -234,15 +254,15 @@ describe('CommonlyBotService', () => {
   describe('getBotInfo', () => {
     it('should return bot info for display', async () => {
       User.findOne.mockResolvedValue(mockBot);
-      
+
       const result = await botService.getBotInfo();
-      
+
       expect(result).toEqual({
         id: 'bot123',
         username: 'commonly-bot',
         profilePicture: 'purple',
         role: undefined,
-        createdAt: mockBot.createdAt
+        createdAt: mockBot.createdAt,
       });
     });
   });
@@ -250,17 +270,17 @@ describe('CommonlyBotService', () => {
   describe('botExists', () => {
     it('should return true if bot exists', async () => {
       User.findOne.mockResolvedValue(mockBot);
-      
+
       const result = await botService.botExists();
-      
+
       expect(result).toBe(true);
     });
 
     it('should return false if bot does not exist', async () => {
       User.findOne.mockResolvedValue(null);
-      
+
       const result = await botService.botExists();
-      
+
       expect(result).toBe(false);
     });
   });

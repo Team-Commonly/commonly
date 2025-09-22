@@ -1,9 +1,9 @@
-const Integration = require('../models/Integration');
-const DiscordSummaryHistory = require('../models/DiscordSummaryHistory');
-const Summary = require('../models/Summary');
-const DiscordService = require('./discordService');
-const CommonlyBotService = require('./commonlyBotService');
-const summarizerService = require('./summarizerService');
+const Integration = require("../models/Integration");
+const DiscordSummaryHistory = require("../models/DiscordSummaryHistory");
+const Summary = require("../models/Summary");
+const DiscordService = require("./discordService");
+const CommonlyBotService = require("./commonlyBotService");
+const summarizerService = require("./summarizerService");
 
 /**
  * Discord Command Service
@@ -23,10 +23,10 @@ class DiscordCommandService {
       // Find integration by guild ID (server ID)
       this.integration = await Integration.findOne({
         $or: [
-          { 'platformIntegration.serverId': this.guildId },
-          { 'config.serverId': this.guildId },
+          { "platformIntegration.serverId": this.guildId },
+          { "config.serverId": this.guildId },
         ],
-        type: 'discord',
+        type: "discord",
         isActive: true,
       });
 
@@ -35,7 +35,7 @@ class DiscordCommandService {
       }
       return true;
     } catch (error) {
-      console.error('Error initializing Discord command service:', error);
+      console.error("Error initializing Discord command service:", error);
       return false;
     }
   }
@@ -54,21 +54,22 @@ class DiscordCommandService {
       if (!this.integration) {
         return {
           success: false,
-          content: '❌ Discord integration not found. Please install the bot first.',
+          content:
+            "❌ Discord integration not found. Please install the bot first.",
         };
       }
 
       // Always get the latest pod-specific summary from Commonly DB
       // This command shows what's happening in the linked Commonly pod
       const latestSummary = await Summary.findOne({
-        type: 'chats',
+        type: "chats",
         podId: this.integration.podId,
       }).sort({ createdAt: -1 });
 
       if (!latestSummary) {
         return {
           success: true,
-          content: '📝 No recent summaries available for this chat pod.',
+          content: "📝 No recent summaries available for this chat pod.",
         };
       }
 
@@ -80,10 +81,10 @@ class DiscordCommandService {
         content: formattedSummary,
       };
     } catch (error) {
-      console.error('Error handling summary command:', error);
+      console.error("Error handling summary command:", error);
       return {
         success: false,
-        content: '❌ An error occurred while fetching the summary.',
+        content: "❌ An error occurred while fetching the summary.",
       };
     }
   }
@@ -102,23 +103,26 @@ class DiscordCommandService {
       const result = await this.handleSummaryCommand();
 
       // Send followup message with the result
-      await discordService.sendFollowupMessage(interactionToken, result.content);
+      await discordService.sendFollowupMessage(
+        interactionToken,
+        result.content,
+      );
 
       return result;
     } catch (error) {
-      console.error('Error handling summary command with defer:', error);
+      console.error("Error handling summary command with defer:", error);
 
       // Send error as followup
       const discordService = new DiscordService(this.integration._id);
       await discordService.sendFollowupMessage(
         interactionToken,
-        '❌ An error occurred while fetching the summary.',
+        "❌ An error occurred while fetching the summary.",
         { ephemeral: true },
       );
 
       return {
         success: false,
-        content: '❌ An error occurred while fetching the summary.',
+        content: "❌ An error occurred while fetching the summary.",
       };
     }
   }
@@ -136,19 +140,22 @@ class DiscordCommandService {
       if (!this.integration) {
         return {
           success: false,
-          content: '❌ Discord integration not found.',
+          content: "❌ Discord integration not found.",
         };
       }
 
       // Populate pod information
-      await this.integration.populate('podId', 'name type');
+      await this.integration.populate("podId", "name type");
 
       const { status } = this.integration;
-      const podName = this.integration.podId?.name || 'Unknown Pod';
-      const podType = this.integration.podId?.type || 'unknown';
-      const serverName = this.integration.config.serverName || 'Unknown Server';
-      const channelName = this.integration.config.channelName || 'Unknown Channel';
-      const syncEnabled = this.integration.config.webhookListenerEnabled ? '✅ Enabled' : '❌ Disabled';
+      const podName = this.integration.podId?.name || "Unknown Pod";
+      const podType = this.integration.podId?.type || "unknown";
+      const serverName = this.integration.config.serverName || "Unknown Server";
+      const channelName =
+        this.integration.config.channelName || "Unknown Channel";
+      const syncEnabled = this.integration.config.webhookListenerEnabled
+        ? "✅ Enabled"
+        : "❌ Disabled";
 
       const statusMessage = `🤖 **Discord Integration Status**
 
@@ -157,17 +164,17 @@ class DiscordCommandService {
 🏠 **Server:** ${serverName}
 📺 **Channel:** ${channelName}
 🔗 **Auto Sync:** ${syncEnabled}
-⏰ **Last Sync:** ${this.integration.lastSync ? new Date(this.integration.lastSync).toLocaleString() : 'Never'}`;
+⏰ **Last Sync:** ${this.integration.lastSync ? new Date(this.integration.lastSync).toLocaleString() : "Never"}`;
 
       return {
         success: true,
         content: statusMessage,
       };
     } catch (error) {
-      console.error('Error handling status command:', error);
+      console.error("Error handling status command:", error);
       return {
         success: false,
-        content: '❌ An error occurred while fetching the status.',
+        content: "❌ An error occurred while fetching the status.",
       };
     }
   }
@@ -186,24 +193,25 @@ class DiscordCommandService {
       if (!this.integration) {
         return {
           success: false,
-          content: '❌ Discord integration not found.',
+          content: "❌ Discord integration not found.",
         };
       }
 
       // Update integration to enable webhook listener
       await Integration.findByIdAndUpdate(this.integration._id, {
-        'config.webhookListenerEnabled': true,
+        "config.webhookListenerEnabled": true,
       });
 
       return {
         success: true,
-        content: '✅ Auto sync enabled! Discord channel activity will now be fetched and summarized hourly, then posted to your Commonly pod by @commonly-bot.',
+        content:
+          "✅ Auto sync enabled! Discord channel activity will now be fetched and summarized hourly, then posted to your Commonly pod by @commonly-bot.",
       };
     } catch (error) {
-      console.error('Error handling enable command:', error);
+      console.error("Error handling enable command:", error);
       return {
         success: false,
-        content: '❌ An error occurred while enabling the webhook listener.',
+        content: "❌ An error occurred while enabling the webhook listener.",
       };
     }
   }
@@ -222,24 +230,25 @@ class DiscordCommandService {
       if (!this.integration) {
         return {
           success: false,
-          content: '❌ Discord integration not found.',
+          content: "❌ Discord integration not found.",
         };
       }
 
       // Update integration to disable webhook listener
       await Integration.findByIdAndUpdate(this.integration._id, {
-        'config.webhookListenerEnabled': false,
+        "config.webhookListenerEnabled": false,
       });
 
       return {
         success: true,
-        content: '🔕 Auto sync disabled. Discord channel activity will no longer be fetched or posted to your Commonly pod.',
+        content:
+          "🔕 Auto sync disabled. Discord channel activity will no longer be fetched or posted to your Commonly pod.",
       };
     } catch (error) {
-      console.error('Error handling disable command:', error);
+      console.error("Error handling disable command:", error);
       return {
         success: false,
-        content: '❌ An error occurred while disabling the webhook listener.',
+        content: "❌ An error occurred while disabling the webhook listener.",
       };
     }
   }
@@ -257,7 +266,7 @@ class DiscordCommandService {
       if (!this.integration) {
         return {
           success: false,
-          content: '❌ Discord integration not found.',
+          content: "❌ Discord integration not found.",
         };
       }
 
@@ -265,13 +274,14 @@ class DiscordCommandService {
       if (!this.integration.config.webhookListenerEnabled) {
         return {
           success: false,
-          content: '⚠️ Auto sync is disabled. Use `/discord-enable` first to enable Discord activity sync.',
+          content:
+            "⚠️ Auto sync is disabled. Use `/discord-enable` first to enable Discord activity sync.",
         };
       }
 
       // Use the unified Discord sync method
       const syncResult = await discordServiceInstance.syncRecentMessages(1); // 1 hour
-      
+
       // Format the response for Discord command
       if (syncResult.success && syncResult.messageCount > 0) {
         return {
@@ -289,12 +299,11 @@ class DiscordCommandService {
           content: `❌ ${syncResult.content}`,
         };
       }
-
     } catch (error) {
-      console.error('Error handling push command:', error);
+      console.error("Error handling push command:", error);
       return {
         success: false,
-        content: '❌ An error occurred while pushing Discord activity.',
+        content: "❌ An error occurred while pushing Discord activity.",
       };
     }
   }
@@ -306,28 +315,37 @@ class DiscordCommandService {
     // AI-powered summarization for meaningful Discord activity summaries
     // Since author is a string, we can't check .bot property
     // For now, include all messages (bot detection may need different approach)
-    const userMessages = messages.filter(msg => msg.author && msg.content);
-    const uniqueUsers = [...new Set(userMessages.map(msg => msg.author))];
-    
+    const userMessages = messages.filter((msg) => msg.author && msg.content);
+    const uniqueUsers = [...new Set(userMessages.map((msg) => msg.author))];
+
     let content;
     if (userMessages.length === 0) {
-      content = 'Recent Discord activity consisted mainly of bot messages and system notifications.';
+      content =
+        "Recent Discord activity consisted mainly of bot messages and system notifications.";
     } else if (userMessages.length <= 2) {
       // For very few messages, show them directly
-      content = userMessages.map(msg => `${msg.author}: ${msg.content}`).join('\n');
+      content = userMessages
+        .map((msg) => `${msg.author}: ${msg.content}`)
+        .join("\n");
     } else {
       // Use AI summarization for meaningful content
       try {
-        const messageContent = userMessages.map(msg => 
-          `${msg.author}: ${msg.content}`
-        ).join('\n');
-        
-        content = await summarizerService.generateSummary(messageContent, 'discord');
+        const messageContent = userMessages
+          .map((msg) => `${msg.author}: ${msg.content}`)
+          .join("\n");
+
+        content = await summarizerService.generateSummary(
+          messageContent,
+          "discord",
+        );
       } catch (error) {
-        console.error('Failed to generate AI summary for Discord messages:', error);
+        console.error(
+          "Failed to generate AI summary for Discord messages:",
+          error,
+        );
         // Fallback to simple summary
         const topUsers = uniqueUsers.slice(0, 3);
-        content = `Active discussion with ${uniqueUsers.length} participants (${topUsers.join(', ')}${uniqueUsers.length > 3 ? ' and others' : ''}).`;
+        content = `Active discussion with ${uniqueUsers.length} participants (${topUsers.join(", ")}${uniqueUsers.length > 3 ? " and others" : ""}).`;
       }
     }
 
@@ -338,9 +356,9 @@ class DiscordCommandService {
         start: startTime,
         end: endTime,
       },
-      serverName: this.integration?.config?.serverName || 'Discord Server',
-      channelName: this.integration?.config?.channelName || 'general',
-      summaryType: 'manual'
+      serverName: this.integration?.config?.serverName || "Discord Server",
+      channelName: this.integration?.config?.channelName || "general",
+      summaryType: "manual",
     };
   }
 
@@ -348,20 +366,75 @@ class DiscordCommandService {
    * Extract topics from messages (simple keyword extraction)
    */
   extractTopics(messages) {
-    const text = messages.map(msg => msg.content).join(' ').toLowerCase();
-    const commonWords = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'can', 'may', 'might', 'must', 'shall', 'a', 'an', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them'];
-    
+    const text = messages
+      .map((msg) => msg.content)
+      .join(" ")
+      .toLowerCase();
+    const commonWords = [
+      "the",
+      "and",
+      "or",
+      "but",
+      "in",
+      "on",
+      "at",
+      "to",
+      "for",
+      "of",
+      "with",
+      "by",
+      "is",
+      "are",
+      "was",
+      "were",
+      "be",
+      "been",
+      "have",
+      "has",
+      "had",
+      "do",
+      "does",
+      "did",
+      "will",
+      "would",
+      "could",
+      "should",
+      "can",
+      "may",
+      "might",
+      "must",
+      "shall",
+      "a",
+      "an",
+      "this",
+      "that",
+      "these",
+      "those",
+      "i",
+      "you",
+      "he",
+      "she",
+      "it",
+      "we",
+      "they",
+      "me",
+      "him",
+      "her",
+      "us",
+      "them",
+    ];
+
     const words = text.match(/\b\w+\b/g) || [];
     const wordCount = {};
-    
-    words.forEach(word => {
+
+    words.forEach((word) => {
       if (word.length > 3 && !commonWords.includes(word)) {
         wordCount[word] = (wordCount[word] || 0) + 1;
       }
     });
-    
+
     return Object.entries(wordCount)
-      .sort(([,a], [,b]) => b - a)
+      .sort(([, a], [, b]) => b - a)
       .slice(0, 3)
       .map(([word]) => word);
   }
@@ -371,13 +444,14 @@ class DiscordCommandService {
    */
   formatSummaryForDiscord(summary) {
     // Handle both DiscordSummaryHistory and Summary schemas
-    const timeRange = summary.timeRange 
+    const timeRange = summary.timeRange
       ? `${new Date(summary.timeRange.start).toLocaleString()} - ${new Date(summary.timeRange.end).toLocaleString()}`
       : `Recent activity`;
-    
-    const messageCount = summary.messageCount || summary.metadata?.totalItems || 'Unknown';
-    const summaryType = summary.summaryType || summary.type || 'chat';
-    const title = summary.title || 'Chat Summary';
+
+    const messageCount =
+      summary.messageCount || summary.metadata?.totalItems || "Unknown";
+    const summaryType = summary.summaryType || summary.type || "chat";
+    const title = summary.title || "Chat Summary";
 
     return `📊 **${title}**
 
@@ -396,16 +470,16 @@ ${summary.content}
    */
   getStatusEmoji(status) {
     switch (status) {
-      case 'connected':
-        return '🟢';
-      case 'disconnected':
-        return '🔴';
-      case 'error':
-        return '🟡';
-      case 'pending':
-        return '🟠';
+      case "connected":
+        return "🟢";
+      case "disconnected":
+        return "🔴";
+      case "error":
+        return "🟡";
+      case "pending":
+        return "🟠";
       default:
-        return '⚪';
+        return "⚪";
     }
   }
 }

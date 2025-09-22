@@ -18,7 +18,9 @@ module.exports = async function (req, res, next) {
   // Check if this is an API token (starts with 'cm_')
   if (token.startsWith('cm_')) {
     try {
-      const user = await User.findOne({ apiToken: token }).select('_id username email role');
+      const user = await User.findOne({ apiToken: token }).select(
+        '_id username email role',
+      );
 
       if (!user) {
         return res.status(401).json({ msg: 'Invalid API token' });
