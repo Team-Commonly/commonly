@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const Post = require('../../../models/Post');
-const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
+const {
+  setupMongoDb,
+  closeMongoDb,
+  clearMongoDb,
+} = require('../../utils/testUtils');
 
 describe('Post Model Tests', () => {
   let user;
@@ -15,7 +19,11 @@ describe('Post Model Tests', () => {
   });
 
   beforeEach(async () => {
-    user = new User({ username: 'user', email: 'user@example.com', password: 'Pass123!' });
+    user = new User({
+      username: 'user',
+      email: 'user@example.com',
+      password: 'Pass123!',
+    });
     await user.save();
   });
 
@@ -24,7 +32,11 @@ describe('Post Model Tests', () => {
   });
 
   it('counts posts and comments for a user', async () => {
-    const p1 = new Post({ userId: user._id, content: 'one', comments: [{ userId: user._id, text: 'c' }] });
+    const p1 = new Post({
+      userId: user._id,
+      content: 'one',
+      comments: [{ userId: user._id, text: 'c' }],
+    });
     const p2 = new Post({ userId: user._id, content: 'two' });
     await p1.save();
     await p2.save();

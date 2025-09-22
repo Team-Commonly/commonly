@@ -60,7 +60,10 @@ async function syncPods() {
               try {
                 await PGPod.addMember(mongoPodId, memberId.toString());
               } catch (memberErr) {
-                console.error(`Error adding member ${memberId} to pod ${mongoPodId}:`, memberErr.message);
+                console.error(
+                  `Error adding member ${memberId} to pod ${mongoPodId}:`,
+                  memberErr.message,
+                );
               }
             }
           }

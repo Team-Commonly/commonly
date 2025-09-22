@@ -32,7 +32,11 @@ describe('pods routes - announcements', () => {
       save: podSave,
     });
     const annSave = jest.fn();
-    Announcement.mockImplementation((data) => ({ ...data, save: annSave, _id: 'a1' }));
+    Announcement.mockImplementation((data) => ({
+      ...data,
+      save: annSave,
+      _id: 'a1',
+    }));
 
     await request(app)
       .post('/api/pods/announcement')
@@ -55,12 +59,18 @@ describe('pods routes - announcements', () => {
 
   it('returns 404 when pod not found', async () => {
     Pod.findById.mockResolvedValue(null);
-    await request(app).post('/api/pods/announcement').send({ podId: 'p1', title: 't', content: 'c' }).expect(404);
+    await request(app)
+      .post('/api/pods/announcement')
+      .send({ podId: 'p1', title: 't', content: 'c' })
+      .expect(404);
   });
 
   it('returns 403 when user is not owner', async () => {
     Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'other' } });
-    await request(app).post('/api/pods/announcement').send({ podId: 'p1', title: 't', content: 'c' }).expect(403);
+    await request(app)
+      .post('/api/pods/announcement')
+      .send({ podId: 'p1', title: 't', content: 'c' })
+      .expect(403);
   });
 
   it('returns 404 when pod missing on announcements fetch', async () => {
@@ -74,7 +84,9 @@ describe('pods routes - announcements', () => {
       sort: jest.fn().mockReturnThis(),
       populate: jest.fn().mockResolvedValue(['a1']),
     });
-    const res = await request(app).get('/api/pods/p1/announcements').expect(200);
+    const res = await request(app)
+      .get('/api/pods/p1/announcements')
+      .expect(200);
     expect(res.body).toEqual(['a1']);
   });
 });

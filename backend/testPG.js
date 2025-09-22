@@ -14,12 +14,15 @@ async function testPG() {
 
     for (const table of tables) {
       try {
-        const result = await pool.query(`
+        const result = await pool.query(
+          `
           SELECT column_name, data_type, character_maximum_length
           FROM information_schema.columns
           WHERE table_name = $1
           ORDER BY ordinal_position
-        `, [table]);
+        `,
+          [table],
+        );
 
         console.log(`\nTable: ${table}`);
         console.table(result.rows);
@@ -33,11 +36,14 @@ async function testPG() {
     console.log('\nTrying to create a test pod with ID:', testPodId);
 
     try {
-      await pool.query(`
+      await pool.query(
+        `
         INSERT INTO pods (id, name, description, type, created_by)
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (id) DO NOTHING
-      `, [testPodId, 'Test Pod', 'Test description', 'chat', 'test_user']);
+      `,
+        [testPodId, 'Test Pod', 'Test description', 'chat', 'test_user'],
+      );
 
       console.log('Test pod creation successful!');
     } catch (err) {
@@ -46,7 +52,9 @@ async function testPG() {
 
     // 4. Query the test pod
     try {
-      const result = await pool.query('SELECT * FROM pods WHERE id = $1', [testPodId]);
+      const result = await pool.query('SELECT * FROM pods WHERE id = $1', [
+        testPodId,
+      ]);
       console.log('\nTest pod query result:', result.rows[0] || 'No pod found');
     } catch (err) {
       console.error('Error querying test pod:', err.message);
@@ -55,10 +63,13 @@ async function testPG() {
     // 5. Test creating a message
     try {
       console.log('\nTrying to create a test message for pod:', testPodId);
-      await pool.query(`
+      await pool.query(
+        `
         INSERT INTO messages (pod_id, user_id, content)
         VALUES ($1, $2, $3)
-      `, [testPodId, 'test_user', 'Test message content']);
+      `,
+        [testPodId, 'test_user', 'Test message content'],
+      );
 
       console.log('Test message creation successful!');
     } catch (err) {

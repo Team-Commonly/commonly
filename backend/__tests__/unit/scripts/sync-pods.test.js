@@ -2,7 +2,9 @@ const mongoose = require('mongoose');
 const PGPod = require('../../../models/pg/Pod');
 const Pod = require('../../../models/Pod');
 
-jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn(), end: jest.fn() } }));
+jest.mock('../../../config/db-pg', () => ({
+  pool: { query: jest.fn(), end: jest.fn() },
+}));
 const { pool } = require('../../../config/db-pg');
 const syncPods = require('../../../sync-pods');
 
@@ -19,7 +21,10 @@ describe('syncPods', () => {
     delete process.env.MONGO_URI;
     process.env.MONGO_URI = '';
     await syncPods();
-    expect(console.error).toHaveBeenCalledWith('Error:', 'MONGO_URI environment variable is not set');
+    expect(console.error).toHaveBeenCalledWith(
+      'Error:',
+      'MONGO_URI environment variable is not set',
+    );
   });
 
   it('syncs no pods when mongo returns empty', async () => {

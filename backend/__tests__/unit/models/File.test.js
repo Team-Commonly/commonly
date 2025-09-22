@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const File = require('../../../models/File');
-const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
+const {
+  setupMongoDb,
+  closeMongoDb,
+  clearMongoDb,
+} = require('../../utils/testUtils');
 
 describe('File Model Tests', () => {
   let testUser;
