@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Summary = require('../models/Summary');
-const Pod = require('../models/Pod');
+const _Pod = require('../models/Pod');
 const User = require('../models/User');
 const DigestTemplateService = require('./digestTemplateService');
 
@@ -49,7 +49,7 @@ class DailyDigestService {
         .lean();
 
       if (summaries.length === 0) {
-        return this.createEmptyDigest(user, startTime, endTime);
+        return DailyDigestService.createEmptyDigest(user, startTime, endTime);
       }
 
       // Organize summaries by pod and type
@@ -62,7 +62,7 @@ class DailyDigestService {
       );
 
       // Extract key insights across all conversations
-      const insights = this.extractCrossConversationInsights(summaries);
+      const insights = DailyDigestService.extractCrossConversationInsights(summaries);
 
       // Create and save daily digest summary
       const digestSummary = await Summary.create({
@@ -150,7 +150,7 @@ class DailyDigestService {
     } catch (error) {
       console.error('Error generating digest content with AI:', error);
       // Use template service for fallback
-      const insights = this.extractCrossConversationInsights([]);
+      const insights = DailyDigestService.extractCrossConversationInsights([]);
       return DigestTemplateService.createFallbackDigest(
         user,
         insights,
@@ -163,7 +163,7 @@ class DailyDigestService {
   /**
    * Create AI prompt for daily digest generation
    */
-  createDigestPrompt(organizedData, user) {
+  static createDigestPrompt(organizedData, user) {
     const { byPod, timeline } = organizedData;
 
     let podSummaries = '';
@@ -208,7 +208,7 @@ Make it engaging, informative, and personal. Use markdown formatting for structu
   /**
    * Extract insights across all conversations
    */
-  extractCrossConversationInsights(summaries) {
+  static extractCrossConversationInsights(summaries) {
     const allQuotes = [];
     const allInsights = [];
     const allTimeline = [];
@@ -238,15 +238,15 @@ Make it engaging, informative, and personal. Use markdown formatting for structu
         // Aggregate atmosphere data
         if (summary.analytics.atmosphere) {
           const atm = summary.analytics.atmosphere;
-          sentimentScores.push(this.sentimentToScore(atm.overall_sentiment));
-          energyLevels.push(this.energyToScore(atm.energy_level));
+          sentimentScores.push(DailyDigestService.sentimentToScore(atm.overall_sentiment));
+          energyLevels.push(DailyDigestService.energyToScore(atm.energy_level));
         }
       }
     });
 
     // Sort and get top items
-    const topUsers = this.getTopItems(allUsers, 5);
-    const topTags = this.getTopItems(allTags, 8);
+    const topUsers = DailyDigestService.getTopItems(allUsers, 5);
+    const topTags = DailyDigestService.getTopItems(allTags, 8);
     const bestQuotes = allQuotes
       .sort((a, b) => (b.reactions || 0) - (a.reactions || 0))
       .slice(0, 5);
@@ -269,8 +269,8 @@ Make it engaging, informative, and personal. Use markdown formatting for structu
       keyInsights,
       timeline,
       overallAtmosphere: {
-        overall_sentiment: this.scoreToSentiment(this.average(sentimentScores)),
-        energy_level: this.scoreToEnergy(this.average(energyLevels)),
+        overall_sentiment: DailyDigestService.scoreToSentiment(DailyDigestService.average(sentimentScores)),
+        energy_level: DailyDigestService.scoreToEnergy(DailyDigestService.average(energyLevels)),
         engagement_quality:
           totalMessages > 100
             ? 'intense'
@@ -302,12 +302,12 @@ Make it engaging, informative, and personal. Use markdown formatting for structu
   /**
    * Create empty digest for quiet days
    */
-  createEmptyDigest(user, startTime, endTime) {
+  static createEmptyDigest(user, startTime, endTime) {
     return {
       title: `Daily Digest for ${user.username} - ${endTime.toDateString()}`,
       content: `# 🌅 Daily Digest - ${endTime.toDateString()}
 
-Good ${this.getTimeOfDayGreeting()}, ${user.username}!
+Good ${DailyDigestService.getTimeOfDayGreeting()}, ${user.username}!
 
 It looks like it was a quiet day in your communities. Sometimes the best conversations happen during the calm moments.
 
@@ -391,7 +391,7 @@ This might be a great time to start a new conversation or share something intere
   }
 
   // Utility methods
-  getTopItems(items, limit) {
+  static getTopItems(items, limit) {
     const counts = {};
     items.forEach((item) => {
       counts[item] = (counts[item] || 0) + 1;
@@ -402,7 +402,7 @@ This might be a great time to start a new conversation or share something intere
       .map(([item]) => item);
   }
 
-  sentimentToScore(sentiment) {
+  static sentimentToScore(sentiment) {
     const scores = {
       very_negative: 1,
       negative: 2,
@@ -413,7 +413,7 @@ This might be a great time to start a new conversation or share something intere
     return scores[sentiment] || 3;
   }
 
-  energyToScore(energy) {
+  static energyToScore(energy) {
     const scores = {
       very_low: 1,
       low: 2,
@@ -424,7 +424,7 @@ This might be a great time to start a new conversation or share something intere
     return scores[energy] || 3;
   }
 
-  scoreToSentiment(score) {
+  static scoreToSentiment(score) {
     if (score >= 4.5) return 'very_positive';
     if (score >= 3.5) return 'positive';
     if (score >= 2.5) return 'neutral';
@@ -432,7 +432,7 @@ This might be a great time to start a new conversation or share something intere
     return 'very_negative';
   }
 
-  scoreToEnergy(score) {
+  static scoreToEnergy(score) {
     if (score >= 4.5) return 'very_high';
     if (score >= 3.5) return 'high';
     if (score >= 2.5) return 'medium';
@@ -440,18 +440,18 @@ This might be a great time to start a new conversation or share something intere
     return 'very_low';
   }
 
-  average(arr) {
+  static average(arr) {
     return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 3;
   }
 
-  getTimeOfDayGreeting() {
+  static getTimeOfDayGreeting() {
     const hour = new Date().getHours();
     if (hour < 12) return 'morning';
     if (hour < 17) return 'afternoon';
     return 'evening';
   }
 
-  generateFallbackDigest(organizedData, user) {
+  static generateFallbackDigest(organizedData, user) {
     const { byPod } = organizedData;
     const podCount = Object.keys(byPod).length;
     const totalMessages = Object.values(byPod).reduce(
@@ -461,7 +461,7 @@ This might be a great time to start a new conversation or share something intere
 
     return `# 🌅 Daily Digest - ${new Date().toDateString()}
 
-Good ${this.getTimeOfDayGreeting()}, ${user.username}!
+Good ${DailyDigestService.getTimeOfDayGreeting()}, ${user.username}!
 
 ## 📊 Community Overview
 - **Active Communities**: ${podCount}
