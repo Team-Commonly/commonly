@@ -192,7 +192,7 @@ describe('CommonlyBotService', () => {
         .mockResolvedValueOnce({ rows: [] }) // User doesn't exist
         .mockResolvedValueOnce({ rows: [{ _id: 'bot123' }] }); // Insert success
 
-      await botService.syncBotUserToPostgreSQL(mockBot);
+      await CommonlyBotService.syncBotUserToPostgreSQL(mockBot);
 
       expect(mockPool.query).toHaveBeenCalledWith(
         'SELECT _id FROM users WHERE _id = $1',
@@ -208,7 +208,7 @@ describe('CommonlyBotService', () => {
       const mockPool = dbPg.pool;
       mockPool.query.mockResolvedValueOnce({ rows: [{ _id: 'bot123' }] });
 
-      await botService.syncBotUserToPostgreSQL(mockBot);
+      await CommonlyBotService.syncBotUserToPostgreSQL(mockBot);
 
       expect(mockPool.query).toHaveBeenCalledTimes(1); // Only check query, no insert
     });
@@ -217,7 +217,7 @@ describe('CommonlyBotService', () => {
       process.env.PG_HOST = undefined;
 
       await expect(
-        botService.syncBotUserToPostgreSQL(mockBot),
+        CommonlyBotService.syncBotUserToPostgreSQL(mockBot),
       ).resolves.not.toThrow();
     });
   });
