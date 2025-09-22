@@ -5,6 +5,7 @@ const socketConfig = require('../config/socket');
 // Use PostgreSQL for messages if available, fallback to MongoDB
 let PGMessage;
 try {
+  // eslint-disable-next-line global-require
   PGMessage = require('../models/pg/Message');
 } catch (error) {
   console.warn(
@@ -19,6 +20,7 @@ const Message = require('../models/Message');
 // PostgreSQL connection
 let dbPg;
 try {
+  // eslint-disable-next-line global-require
   dbPg = require('../config/db-pg');
 } catch (error) {
   console.warn('PostgreSQL db config not available');

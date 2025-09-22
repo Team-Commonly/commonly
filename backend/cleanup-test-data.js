@@ -22,10 +22,12 @@ async function cleanupTestData() {
       testPods.map((p) => `${p.name} (${p._id})`),
     );
 
-    for (const pod of testPods) {
-      await Pod.findByIdAndDelete(pod._id);
-      console.log('✅ Deleted pod:', pod.name);
-    }
+    await Promise.all(
+      testPods.map(async (pod) => {
+        await Pod.findByIdAndDelete(pod._id);
+        console.log('✅ Deleted pod:', pod.name);
+      }),
+    );
 
     // Clean up test users
     const testUsers = await User.find({
@@ -37,10 +39,12 @@ async function cleanupTestData() {
       testUsers.map((u) => u.username),
     );
 
-    for (const user of testUsers) {
-      await User.findByIdAndDelete(user._id);
-      console.log('✅ Deleted user:', user.username);
-    }
+    await Promise.all(
+      testUsers.map(async (user) => {
+        await User.findByIdAndDelete(user._id);
+        console.log('✅ Deleted user:', user.username);
+      }),
+    );
 
     // Clean up test summaries
     const testSummaries = await Summary.find({
@@ -53,9 +57,11 @@ async function cleanupTestData() {
 
     console.log('Found test summaries:', testSummaries.length);
 
-    for (const summary of testSummaries) {
-      await Summary.findByIdAndDelete(summary._id);
-    }
+    await Promise.all(
+      testSummaries.map(async (summary) => {
+        await Summary.findByIdAndDelete(summary._id);
+      }),
+    );
 
     console.log('✅ Deleted', testSummaries.length, 'test summaries');
     console.log('🎉 Cleanup completed successfully!');
