@@ -47,10 +47,12 @@ const clearMongoDb = async () => {
     const { collections } = mongoose.connection;
     const collectionNames = Object.keys(collections);
 
-    await Promise.all(collectionNames.map(async (key) => {
-      const collection = collections[key];
-      await collection.deleteMany({});
-    }));
+    await Promise.all(
+      collectionNames.map(async (key) => {
+        const collection = collections[key];
+        await collection.deleteMany({});
+      }),
+    );
   } catch (error) {
     console.error('Error clearing MongoDB data:', error);
     throw error;

@@ -1,50 +1,55 @@
-const DiscordService = require('./services/discordService');
-const DiscordCommandService = require('./services/discordCommandService');
-const Integration = require('./models/Integration');
+const DiscordService = require("./services/discordService");
+const DiscordCommandService = require("./services/discordCommandService");
+const Integration = require("./models/Integration");
 
 /**
  * Test Discord Interaction Standards Compliance
  * This script verifies our implementation follows Discord's official interaction standards
  */
 async function testDiscordInteractions() {
-  console.log('🧪 Testing Discord Interaction Standards Compliance...\n');
+  console.log("🧪 Testing Discord Interaction Standards Compliance...\n");
 
   try {
     // Find a Discord integration to test with
-    const integration = await Integration.findOne({ type: 'discord', isActive: true });
+    const integration = await Integration.findOne({
+      type: "discord",
+      isActive: true,
+    });
 
     if (!integration) {
-      console.log('❌ No active Discord integration found. Please create one first.');
+      console.log(
+        "❌ No active Discord integration found. Please create one first.",
+      );
       return;
     }
 
     console.log(`📋 Testing with integration: ${integration._id}`);
-    console.log(`🏠 Server: ${integration.config.serverName || 'Unknown'}`);
-    console.log(`📺 Channel: ${integration.config.channelName || 'Unknown'}\n`);
+    console.log(`🏠 Server: ${integration.config.serverName || "Unknown"}`);
+    console.log(`📺 Channel: ${integration.config.channelName || "Unknown"}\n`);
 
     // Test 1: Verify Interaction Structure Handling
-    console.log('🔍 Test 1: Interaction Structure Handling');
+    console.log("🔍 Test 1: Interaction Structure Handling");
     await testInteractionStructure();
-    console.log('');
+    console.log("");
 
     // Test 2: Verify Response Format
-    console.log('📝 Test 2: Response Format Compliance');
+    console.log("📝 Test 2: Response Format Compliance");
     await testResponseFormat();
-    console.log('');
+    console.log("");
 
     // Test 3: Verify Command Service
-    console.log('🤖 Test 3: Command Service Integration');
+    console.log("🤖 Test 3: Command Service Integration");
     await testCommandService(integration);
-    console.log('');
+    console.log("");
 
     // Test 4: Verify Error Handling
-    console.log('⚠️ Test 4: Error Handling');
+    console.log("⚠️ Test 4: Error Handling");
     await testErrorHandling();
-    console.log('');
+    console.log("");
 
-    console.log('🎉 Discord interaction standards compliance tests completed!');
+    console.log("🎉 Discord interaction standards compliance tests completed!");
   } catch (error) {
-    console.error('❌ Error testing Discord interactions:', error);
+    console.error("❌ Error testing Discord interactions:", error);
   }
 }
 
@@ -52,53 +57,55 @@ async function testDiscordInteractions() {
  * Test 1: Verify we handle Discord's interaction structure correctly
  */
 async function testInteractionStructure() {
-  console.log('  Testing interaction object structure...');
+  console.log("  Testing interaction object structure...");
 
   // Mock Discord interaction object following official structure
   const mockInteraction = {
-    id: '1234567890123456789',
-    application_id: '9876543210987654321',
+    id: "1234567890123456789",
+    application_id: "9876543210987654321",
     type: 2, // APPLICATION_COMMAND
     data: {
-      id: '1111111111111111111',
-      name: 'discord-status',
+      id: "1111111111111111111",
+      name: "discord-status",
       type: 1, // CHAT_INPUT
-      guild_id: '2222222222222222222',
+      guild_id: "2222222222222222222",
     },
-    guild_id: '2222222222222222222',
-    channel_id: '3333333333333333333',
+    guild_id: "2222222222222222222",
+    channel_id: "3333333333333333333",
     member: {
       user: {
-        id: '4444444444444444444',
-        username: 'testuser',
+        id: "4444444444444444444",
+        username: "testuser",
       },
     },
-    token: 'mock_interaction_token_12345',
+    token: "mock_interaction_token_12345",
     version: 1,
   };
 
   // Verify required fields are present
-  const requiredFields = ['id', 'type', 'data', 'token', 'version'];
-  const missingFields = requiredFields.filter((field) => !mockInteraction[field]);
+  const requiredFields = ["id", "type", "data", "token", "version"];
+  const missingFields = requiredFields.filter(
+    (field) => !mockInteraction[field],
+  );
 
   if (missingFields.length > 0) {
-    console.log(`  ❌ Missing required fields: ${missingFields.join(', ')}`);
+    console.log(`  ❌ Missing required fields: ${missingFields.join(", ")}`);
     return false;
   }
 
   // Verify interaction type
   if (mockInteraction.type !== 2) {
-    console.log('  ❌ Invalid interaction type');
+    console.log("  ❌ Invalid interaction type");
     return false;
   }
 
   // Verify command data structure
   if (!mockInteraction.data || !mockInteraction.data.name) {
-    console.log('  ❌ Invalid command data structure');
+    console.log("  ❌ Invalid command data structure");
     return false;
   }
 
-  console.log('  ✅ Interaction structure handling is correct');
+  console.log("  ✅ Interaction structure handling is correct");
   return true;
 }
 
@@ -106,13 +113,13 @@ async function testInteractionStructure() {
  * Test 2: Verify response format follows Discord standards
  */
 async function testResponseFormat() {
-  console.log('  Testing response format compliance...');
+  console.log("  Testing response format compliance...");
 
   // Test valid response format
   const validResponse = {
     type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
     data: {
-      content: 'Test response message',
+      content: "Test response message",
       flags: 0, // No flags
     },
   };
@@ -121,7 +128,7 @@ async function testResponseFormat() {
   const ephemeralResponse = {
     type: 4,
     data: {
-      content: 'Error message',
+      content: "Error message",
       flags: 64, // EPHEMERAL flag
     },
   };
@@ -156,7 +163,7 @@ async function testResponseFormat() {
     }
   }
 
-  console.log('  ✅ Response format compliance is correct');
+  console.log("  ✅ Response format compliance is correct");
   return true;
 }
 
@@ -164,47 +171,49 @@ async function testResponseFormat() {
  * Test 3: Verify command service integration
  */
 async function testCommandService(integration) {
-  console.log('  Testing command service integration...');
+  console.log("  Testing command service integration...");
 
   try {
     // Initialize command service
-    const commandService = new DiscordCommandService(integration.installationId);
+    const commandService = new DiscordCommandService(
+      integration.installationId,
+    );
     const initialized = await commandService.initialize();
 
     if (!initialized) {
-      console.log('  ❌ Failed to initialize command service');
+      console.log("  ❌ Failed to initialize command service");
       return false;
     }
 
     // Test status command
     const statusResult = await commandService.handleStatusCommand();
-    if (!statusResult || typeof statusResult.success !== 'boolean') {
-      console.log('  ❌ Invalid status command response format');
+    if (!statusResult || typeof statusResult.success !== "boolean") {
+      console.log("  ❌ Invalid status command response format");
       return false;
     }
 
     // Test summary command
     const summaryResult = await commandService.handleSummaryCommand();
-    if (!summaryResult || typeof summaryResult.success !== 'boolean') {
-      console.log('  ❌ Invalid summary command response format');
+    if (!summaryResult || typeof summaryResult.success !== "boolean") {
+      console.log("  ❌ Invalid summary command response format");
       return false;
     }
 
     // Test enable command
     const enableResult = await commandService.handleEnableCommand();
-    if (!enableResult || typeof enableResult.success !== 'boolean') {
-      console.log('  ❌ Invalid enable command response format');
+    if (!enableResult || typeof enableResult.success !== "boolean") {
+      console.log("  ❌ Invalid enable command response format");
       return false;
     }
 
     // Test disable command
     const disableResult = await commandService.handleDisableCommand();
-    if (!disableResult || typeof disableResult.success !== 'boolean') {
-      console.log('  ❌ Invalid disable command response format');
+    if (!disableResult || typeof disableResult.success !== "boolean") {
+      console.log("  ❌ Invalid disable command response format");
       return false;
     }
 
-    console.log('  ✅ Command service integration is correct');
+    console.log("  ✅ Command service integration is correct");
     return true;
   } catch (error) {
     console.log(`  ❌ Command service integration error: ${error.message}`);
@@ -216,13 +225,13 @@ async function testCommandService(integration) {
  * Test 4: Verify error handling
  */
 async function testErrorHandling() {
-  console.log('  Testing error handling...');
+  console.log("  Testing error handling...");
 
   // Test invalid command handling
   const mockInvalidCommand = {
     type: 2,
     data: {
-      name: 'invalid-command',
+      name: "invalid-command",
       type: 1,
     },
   };
@@ -231,10 +240,10 @@ async function testErrorHandling() {
   const mockMissingIntegration = {
     type: 2,
     data: {
-      name: 'discord-status',
+      name: "discord-status",
       type: 1,
     },
-    guild_id: 'non-existent-guild',
+    guild_id: "non-existent-guild",
   };
 
   // Test malformed interaction
@@ -243,7 +252,9 @@ async function testErrorHandling() {
     // Missing data field
   };
 
-  console.log('  ✅ Error handling tests completed (manual verification required)');
+  console.log(
+    "  ✅ Error handling tests completed (manual verification required)",
+  );
   return true;
 }
 
@@ -251,46 +262,50 @@ async function testErrorHandling() {
  * Test Discord API endpoint compliance
  */
 async function testApiEndpoints() {
-  console.log('  Testing API endpoint compliance...');
+  console.log("  Testing API endpoint compliance...");
 
   // Test interaction callback endpoint format
-  const callbackUrl = 'https://discord.com/api/v10/interactions/{interaction.id}/{interaction.token}/callback';
+  const callbackUrl =
+    "https://discord.com/api/v10/interactions/{interaction.id}/{interaction.token}/callback";
   console.log(`  Expected callback URL format: ${callbackUrl}`);
 
   // Test webhook followup endpoint format
-  const followupUrl = 'https://discord.com/api/v10/webhooks/{application.id}/{interaction.token}';
+  const followupUrl =
+    "https://discord.com/api/v10/webhooks/{application.id}/{interaction.token}";
   console.log(`  Expected followup URL format: ${followupUrl}`);
 
   // Test original message endpoint format
-  const originalUrl = 'https://discord.com/api/v10/webhooks/{application.id}/{interaction.token}/messages/@original';
+  const originalUrl =
+    "https://discord.com/api/v10/webhooks/{application.id}/{interaction.token}/messages/@original";
   console.log(`  Expected original message URL format: ${originalUrl}`);
 
-  console.log('  ✅ API endpoint compliance is correct');
+  console.log("  ✅ API endpoint compliance is correct");
   return true;
 }
 
 // Run the test if this file is executed directly
 if (require.main === module) {
   // Connect to database first
-  const mongoose = require('mongoose');
+  const mongoose = require("mongoose");
   const { MONGODB_URI } = process.env;
 
   if (!MONGODB_URI) {
-    console.error('❌ MONGODB_URI environment variable is required');
+    console.error("❌ MONGODB_URI environment variable is required");
     process.exit(1);
   }
 
-  mongoose.connect(MONGODB_URI)
+  mongoose
+    .connect(MONGODB_URI)
     .then(() => {
-      console.log('📦 Connected to MongoDB');
+      console.log("📦 Connected to MongoDB");
       return testDiscordInteractions();
     })
     .then(() => {
-      console.log('✅ Interaction standards test completed');
+      console.log("✅ Interaction standards test completed");
       process.exit(0);
     })
     .catch((error) => {
-      console.error('❌ Interaction standards test failed:', error);
+      console.error("❌ Interaction standards test failed:", error);
       process.exit(1);
     });
 }

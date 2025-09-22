@@ -3,7 +3,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
 const authController = require('../../../controllers/authController');
-const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
+const {
+  setupMongoDb,
+  closeMongoDb,
+  clearMongoDb,
+} = require('../../utils/testUtils');
 
 // Mock SendGrid to prevent actual emails from being sent
 jest.mock('@sendgrid/mail', () => ({
@@ -85,9 +89,11 @@ describe('Auth Controller Tests', () => {
 
       // Verify response
       expect(res.status).toHaveBeenCalledWith(201);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('User registered successfully'),
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('User registered successfully'),
+        }),
+      );
     });
 
     it('should not register a user with an existing email', async () => {
@@ -118,9 +124,11 @@ describe('Auth Controller Tests', () => {
       await authController.register(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('User already exists'),
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('User already exists'),
+        }),
+      );
     });
   });
 
@@ -161,16 +169,18 @@ describe('Auth Controller Tests', () => {
 
       await authController.login(req, res);
 
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        token: mockToken,
-        verified: true,
-        user: expect.objectContaining({
-          id: expect.any(String),
-          username: 'testuser',
-          email: 'test@example.com',
-          profilePicture: expect.any(String),
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          token: mockToken,
+          verified: true,
+          user: expect.objectContaining({
+            id: expect.any(String),
+            username: 'testuser',
+            email: 'test@example.com',
+            profilePicture: expect.any(String),
+          }),
         }),
-      }));
+      );
     });
 
     it('should not login an unverified user', async () => {
@@ -201,9 +211,11 @@ describe('Auth Controller Tests', () => {
       await authController.login(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('Email not verified'),
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('Email not verified'),
+        }),
+      );
     });
 
     it('should not login with incorrect password', async () => {
@@ -236,9 +248,11 @@ describe('Auth Controller Tests', () => {
 
       await authController.login(req, res);
 
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('Invalid credentials'),
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('Invalid credentials'),
+        }),
+      );
     });
 
     it('should not login a non-existent user', async () => {
@@ -257,9 +271,11 @@ describe('Auth Controller Tests', () => {
       await authController.login(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('User not found'),
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('User not found'),
+        }),
+      );
     });
   });
 
@@ -293,9 +309,11 @@ describe('Auth Controller Tests', () => {
 
       await authController.verifyEmail(req, res);
 
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('Email verified successfully'),
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Email verified successfully'),
+        }),
+      );
     });
 
     it('should not verify with an invalid token', async () => {
@@ -316,9 +334,11 @@ describe('Auth Controller Tests', () => {
       await authController.verifyEmail(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('Invalid or expired token'),
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('Invalid or expired token'),
+        }),
+      );
     });
   });
 
@@ -353,14 +373,18 @@ describe('Auth Controller Tests', () => {
 
       await authController.getCurrentUser(req, res);
 
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        username: 'testuser',
-        email: 'test@example.com',
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          username: 'testuser',
+          email: 'test@example.com',
+        }),
+      );
       // Password should not be included
-      expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({
-        password: expect.anything(),
-      }));
+      expect(res.json).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          password: expect.anything(),
+        }),
+      );
     });
 
     it('should return 404 if user not found', async () => {
@@ -385,9 +409,11 @@ describe('Auth Controller Tests', () => {
       await authController.getCurrentUser(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('User not found'),
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('User not found'),
+        }),
+      );
     });
   });
 
@@ -437,9 +463,11 @@ describe('Auth Controller Tests', () => {
       await authController.updateProfile(req, res);
 
       // Verify response
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        profilePicture: 'new-profile-pic-url',
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          profilePicture: 'new-profile-pic-url',
+        }),
+      );
 
       // Verify save was called
       expect(initialUser.save).toHaveBeenCalled();
@@ -467,9 +495,11 @@ describe('Auth Controller Tests', () => {
       await authController.updateProfile(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('User not found'),
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('User not found'),
+        }),
+      );
     });
   });
 });

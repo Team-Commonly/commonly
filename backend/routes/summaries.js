@@ -18,8 +18,10 @@ const auth = require('../middleware/auth');
 router.get('/', auth, async (req, res) => {
   try {
     const { type, limit = 10 } = req.query;
-    const summaries = await SummarizerService
-      .getRecentSummaries(type, parseInt(limit, 10));
+    const summaries = await SummarizerService.getRecentSummaries(
+      type,
+      parseInt(limit, 10),
+    );
     res.json(summaries);
   } catch (error) {
     console.error('Error fetching summaries:', error);
@@ -50,10 +52,10 @@ router.post('/trigger', auth, async (req, res) => {
   try {
     // For now, anyone can trigger it for testing.
     // In production, you might want to check admin privileges
-    
+
     // Trigger garbage collection first
     await SummarizerService.garbageCollectForDigest();
-    
+
     const result = await SchedulerService.triggerSummarizer();
     res.json({ message: 'Summarizer triggered successfully', result });
   } catch (error) {
@@ -66,7 +68,9 @@ router.post('/trigger', auth, async (req, res) => {
 router.post('/debug', auth, async (req, res) => {
   try {
     if (process.env.NODE_ENV === 'production') {
-      return res.status(403).json({ error: 'Debug endpoints not available in production' });
+      return res
+        .status(403)
+        .json({ error: 'Debug endpoints not available in production' });
     }
 
     const result = await SchedulerService.triggerSummarizer();
@@ -99,8 +103,10 @@ router.get('/status', auth, async (req, res) => {
 router.get('/chat-rooms', auth, async (req, res) => {
   try {
     const { limit = 5 } = req.query;
-    const chatRoomSummaries = await ChatSummarizerService
-      .getRecentChatSummariesByPodType('chat', parseInt(limit, 10));
+    const chatRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType(
+      'chat',
+      parseInt(limit, 10),
+    );
     res.json(chatRoomSummaries);
   } catch (error) {
     console.error('Error fetching chat room summaries:', error);
@@ -123,8 +129,10 @@ router.get('/chat-rooms/latest', auth, async (req, res) => {
 router.get('/study-rooms', auth, async (req, res) => {
   try {
     const { limit = 5 } = req.query;
-    const studyRoomSummaries = await ChatSummarizerService
-      .getRecentChatSummariesByPodType('study', parseInt(limit, 10));
+    const studyRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType(
+      'study',
+      parseInt(limit, 10),
+    );
     res.json(studyRoomSummaries);
   } catch (error) {
     console.error('Error fetching study room summaries:', error);
@@ -136,8 +144,10 @@ router.get('/study-rooms', auth, async (req, res) => {
 router.get('/game-rooms', auth, async (req, res) => {
   try {
     const { limit = 5 } = req.query;
-    const gameRoomSummaries = await ChatSummarizerService
-      .getRecentChatSummariesByPodType('games', parseInt(limit, 10));
+    const gameRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType(
+      'games',
+      parseInt(limit, 10),
+    );
     res.json(gameRoomSummaries);
   } catch (error) {
     console.error('Error fetching game room summaries:', error);
@@ -177,8 +187,7 @@ router.get('/pods', auth, async (req, res) => {
     }
 
     const podIdArray = podIds.split(',').map((id) => id.trim());
-    const podSummaries = await ChatSummarizerService
-      .getMultiplePodSummaries(podIdArray);
+    const podSummaries = await ChatSummarizerService.getMultiplePodSummaries(podIdArray);
     res.json(podSummaries);
   } catch (error) {
     console.error('Error fetching pod summaries:', error);
@@ -196,7 +205,9 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
     const summary = await chatSummarizerService.summarizePodMessages(podId);
 
     if (!summary) {
-      return res.status(404).json({ error: 'No messages found for this pod in the last hour' });
+      return res
+        .status(404)
+        .json({ error: 'No messages found for this pod in the last hour' });
     }
 
     res.json({
@@ -213,15 +224,22 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
 router.get('/daily-digest', auth, async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     // Get the most recent daily digest for this user
     const dailyDigest = await Summary.findOne({
       type: 'daily-digest',
-      'metadata.userId': userId
-    }).sort({ createdAt: -1 }).lean();
+      'metadata.userId': userId,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
 
     if (!dailyDigest) {
-      return res.status(404).json({ error: 'No daily digest found. Daily digests are generated every morning at 6 AM UTC.' });
+      return res
+        .status(404)
+        .json({
+          error:
+            'No daily digest found. Daily digests are generated every morning at 6 AM UTC.',
+        });
     }
 
     res.json(dailyDigest);
@@ -235,12 +253,12 @@ router.get('/daily-digest', auth, async (req, res) => {
 router.post('/daily-digest/generate', auth, async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     console.log(`Manual daily digest generation requested for user: ${userId}`);
-    
+
     // Trigger garbage collection first
     await SummarizerService.garbageCollectForDigest();
-    
+
     // Generate fresh daily digest
     const digest = await dailyDigestService.generateUserDailyDigest(userId);
 
@@ -259,15 +277,17 @@ router.get('/daily-digest/history', auth, async (req, res) => {
   try {
     const userId = req.user.id;
     const { limit = 7 } = req.query; // Default to last 7 days
-    
+
     const digestHistory = await Summary.find({
       type: 'daily-digest',
-      'metadata.userId': userId
+      'metadata.userId': userId,
     })
-    .sort({ createdAt: -1 })
-    .limit(parseInt(limit, 10))
-    .select('title content createdAt timeRange metadata.totalItems metadata.subscribedPods')
-    .lean();
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit, 10))
+      .select(
+        'title content createdAt timeRange metadata.totalItems metadata.subscribedPods',
+      )
+      .lean();
 
     res.json(digestHistory);
   } catch (error) {
@@ -280,17 +300,17 @@ router.get('/daily-digest/history', auth, async (req, res) => {
 router.post('/daily-digest/trigger-all', auth, async (req, res) => {
   try {
     // In production, you should check admin privileges here
-    
+
     console.log('Manual daily digest generation requested for all users');
-    
+
     // Trigger garbage collection first
     await SummarizerService.garbageCollectForDigest();
-    
+
     // Generate daily digests for all users
     const results = await dailyDigestService.generateAllDailyDigests();
 
-    const successful = results.filter(r => r.success).length;
-    const failed = results.filter(r => !r.success).length;
+    const successful = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
 
     res.json({
       message: 'Daily digest generation completed',
@@ -298,12 +318,17 @@ router.post('/daily-digest/trigger-all', auth, async (req, res) => {
         total: results.length,
         successful,
         failed,
-        details: results
-      }
+        details: results,
+      },
     });
   } catch (error) {
-    console.error('Error triggering daily digest generation for all users:', error);
-    res.status(500).json({ error: 'Failed to trigger daily digest generation' });
+    console.error(
+      'Error triggering daily digest generation for all users:',
+      error,
+    );
+    res
+      .status(500)
+      .json({ error: 'Failed to trigger daily digest generation' });
   }
 });
 

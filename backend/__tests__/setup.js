@@ -12,7 +12,7 @@ if (process.env.TEST_VERBOSE !== 'true') {
     error: jest.fn(),
     info: jest.fn(),
   };
-  
+
   // Keep actual console for test debugging
   global.originalConsole = originalConsole;
 }

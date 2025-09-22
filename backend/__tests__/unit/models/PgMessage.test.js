@@ -15,13 +15,15 @@ describe('PG Message model', () => {
   it('create inserts message and updates pod timestamp', async () => {
     pool.query
       .mockResolvedValueOnce({
-        rows: [{
-          id: '1',
-          pod_id: 'p',
-          user_id: 'u',
-          content: 'c',
-          message_type: 'text',
-        }],
+        rows: [
+          {
+            id: '1',
+            pod_id: 'p',
+            user_id: 'u',
+            content: 'c',
+            message_type: 'text',
+          },
+        ],
       })
       .mockResolvedValueOnce({});
     const result = await Message.create('p', 'u', 'c', 'text');
@@ -46,16 +48,18 @@ describe('PG Message model', () => {
 
   it('findByPodId formats returned rows', async () => {
     pool.query.mockResolvedValueOnce({
-      rows: [{
-        id: '1',
-        pod_id: 'p',
-        user_id: 'u',
-        content: 'hi',
-        message_type: 'text',
-        created_at: new Date(),
-        username: 'name',
-        profile_picture: 'pic',
-      }],
+      rows: [
+        {
+          id: '1',
+          pod_id: 'p',
+          user_id: 'u',
+          content: 'hi',
+          message_type: 'text',
+          created_at: new Date(),
+          username: 'name',
+          profile_picture: 'pic',
+        },
+      ],
     });
     const res = await Message.findByPodId('p');
     expect(pool.query).toHaveBeenCalled();
@@ -66,16 +70,18 @@ describe('PG Message model', () => {
 
   it('findById returns formatted message', async () => {
     pool.query.mockResolvedValueOnce({
-      rows: [{
-        id: '1',
-        pod_id: 'p',
-        user_id: 'u',
-        content: 'hi',
-        message_type: 'text',
-        created_at: new Date(),
-        username: 'name',
-        profile_picture: 'pic',
-      }],
+      rows: [
+        {
+          id: '1',
+          pod_id: 'p',
+          user_id: 'u',
+          content: 'hi',
+          message_type: 'text',
+          created_at: new Date(),
+          username: 'name',
+          profile_picture: 'pic',
+        },
+      ],
     });
     const msg = await Message.findById('1');
     expect(pool.query).toHaveBeenCalledWith(expect.any(String), ['1']);

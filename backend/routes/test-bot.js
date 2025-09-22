@@ -1,4 +1,5 @@
 const express = require('express');
+
 const router = express.Router();
 const auth = require('../middleware/auth');
 const CommonlyBotService = require('../services/commonlyBotService');
@@ -16,16 +17,18 @@ router.post('/discord-summary', auth, async (req, res) => {
 
   try {
     const { podId, discordSummary, integrationId } = req.body;
-    
+
     if (!podId || !discordSummary) {
-      return res.status(400).json({ message: 'podId and discordSummary are required' });
+      return res
+        .status(400)
+        .json({ message: 'podId and discordSummary are required' });
     }
 
     const botService = new CommonlyBotService();
     const result = await botService.postDiscordSummaryToPod(
-      podId, 
-      discordSummary, 
-      integrationId || 'test-integration'
+      podId,
+      discordSummary,
+      integrationId || 'test-integration',
     );
 
     if (result.success) {
@@ -35,16 +38,15 @@ router.post('/discord-summary', auth, async (req, res) => {
         data: {
           messageId: result.message._id,
           podName: result.pod.name,
-          botUser: await botService.getBotInfo()
-        }
+          botUser: await botService.getBotInfo(),
+        },
       });
     } else {
       res.status(500).json({
         success: false,
-        message: result.error
+        message: result.error,
       });
     }
-
   } catch (error) {
     console.error('Error in test Discord summary:', error);
     res.status(500).json({ message: 'Server error' });
@@ -60,13 +62,12 @@ router.get('/bot-info', auth, async (req, res) => {
   try {
     const botService = new CommonlyBotService();
     const botInfo = await botService.getBotInfo();
-    
+
     res.json({
       success: true,
       botExists: await botService.botExists(),
-      botInfo: botInfo
+      botInfo,
     });
-
   } catch (error) {
     console.error('Error getting bot info:', error);
     res.status(500).json({ message: 'Server error' });

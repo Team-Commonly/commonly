@@ -21,9 +21,11 @@ class DailyDigestService {
   async generateUserDailyDigest(userId) {
     try {
       console.log(`Generating daily digest for user ${userId}`);
-      
+
       // Get user and their subscribed pods
-      const user = await User.findById(userId).populate('subscribedPods').lean();
+      const user = await User.findById(userId)
+        .populate('subscribedPods')
+        .lean();
       if (!user) {
         throw new Error(`User ${userId} not found`);
       }
@@ -32,16 +34,19 @@ class DailyDigestService {
       const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
 
       // Get all summaries from the last 24 hours for user's subscribed pods
-      const podIds = user.subscribedPods?.map(pod => pod._id) || [];
-      
+      const podIds = user.subscribedPods?.map((pod) => pod._id) || [];
+
       const summaries = await Summary.find({
         $or: [
           { podId: { $in: podIds } }, // Pod-specific summaries
           { type: 'posts' }, // General post summaries
-          { type: 'chats', podId: { $exists: false } } // Overall chat summaries
+          { type: 'chats', podId: { $exists: false } }, // Overall chat summaries
         ],
-        createdAt: { $gte: startTime, $lte: endTime }
-      }).populate('podId', 'name type').sort({ createdAt: 1 }).lean();
+        createdAt: { $gte: startTime, $lte: endTime },
+      })
+        .populate('podId', 'name type')
+        .sort({ createdAt: 1 })
+        .lean();
 
       if (summaries.length === 0) {
         return this.createEmptyDigest(user, startTime, endTime);
@@ -49,13 +54,16 @@ class DailyDigestService {
 
       // Organize summaries by pod and type
       const organizedData = this.organizeSummariesForDigest(summaries);
-      
+
       // Generate comprehensive digest using AI
-      const digestContent = await this.generateDigestContent(organizedData, user);
-      
+      const digestContent = await this.generateDigestContent(
+        organizedData,
+        user,
+      );
+
       // Extract key insights across all conversations
       const insights = this.extractCrossConversationInsights(summaries);
-      
+
       // Create and save daily digest summary
       const digestSummary = await Summary.create({
         type: 'daily-digest',
@@ -67,20 +75,19 @@ class DailyDigestService {
           topTags: insights.topTags,
           topUsers: insights.topUsers,
           subscribedPods: podIds.length,
-          userId: userId.toString()
+          userId: userId.toString(),
         },
         analytics: {
           timeline: insights.timeline,
           quotes: insights.bestQuotes,
           insights: insights.keyInsights,
           atmosphere: insights.overallAtmosphere,
-          participation: insights.participationOverview
-        }
+          participation: insights.participationOverview,
+        },
       });
 
       console.log(`✓ Generated daily digest for ${user.username}`);
       return digestSummary;
-
     } catch (error) {
       console.error(`Error generating daily digest for user ${userId}:`, error);
       throw error;
@@ -93,24 +100,24 @@ class DailyDigestService {
   organizeSummariesForDigest(summaries) {
     const byPod = {};
     const timeline = [];
-    
-    summaries.forEach(summary => {
+
+    summaries.forEach((summary) => {
       const podName = summary.podId?.name || 'General';
       const podType = summary.podId?.type || summary.type;
-      
+
       if (!byPod[podName]) {
         byPod[podName] = {
           podType,
           summaries: [],
           totalMessages: 0,
           quotes: [],
-          insights: []
+          insights: [],
         };
       }
-      
+
       byPod[podName].summaries.push(summary);
       byPod[podName].totalMessages += summary.metadata?.totalItems || 0;
-      
+
       // Extract analytics data if available
       if (summary.analytics) {
         byPod[podName].quotes.push(...(summary.analytics.quotes || []));
@@ -119,15 +126,23 @@ class DailyDigestService {
       }
     });
 
-    return { byPod, timeline: timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)) };
+    return {
+      byPod,
+      timeline: timeline.sort(
+        (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+      ),
+    };
   }
 
   /**
    * Generate digest content using AI with unified template
    */
   async generateDigestContent(organizedData, user) {
-    const prompt = DigestTemplateService.createDigestPrompt(organizedData, user);
-    
+    const prompt = DigestTemplateService.createDigestPrompt(
+      organizedData,
+      user,
+    );
+
     try {
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
@@ -136,7 +151,12 @@ class DailyDigestService {
       console.error('Error generating digest content with AI:', error);
       // Use template service for fallback
       const insights = this.extractCrossConversationInsights([]);
-      return DigestTemplateService.createFallbackDigest(user, insights, new Date(), new Date());
+      return DigestTemplateService.createFallbackDigest(
+        user,
+        insights,
+        new Date(),
+        new Date(),
+      );
     }
   }
 
@@ -145,18 +165,18 @@ class DailyDigestService {
    */
   createDigestPrompt(organizedData, user) {
     const { byPod, timeline } = organizedData;
-    
+
     let podSummaries = '';
     Object.entries(byPod).forEach(([podName, data]) => {
       podSummaries += `\n## ${podName} (${data.podType})\n`;
       podSummaries += `Messages: ${data.totalMessages}\n`;
-      data.summaries.forEach(summary => {
+      data.summaries.forEach((summary) => {
         podSummaries += `- ${summary.content}\n`;
       });
-      
+
       if (data.quotes.length > 0) {
-        podSummaries += `Notable quotes:\n`;
-        data.quotes.slice(0, 3).forEach(quote => {
+        podSummaries += 'Notable quotes:\n';
+        data.quotes.slice(0, 3).forEach((quote) => {
           podSummaries += `  "${quote.text}" - ${quote.author}\n`;
         });
       }
@@ -169,7 +189,10 @@ Community Activity Summary:
 ${podSummaries}
 
 Timeline of Events:
-${timeline.slice(0, 10).map(event => `${event.timestamp}: ${event.description}`).join('\n')}
+${timeline
+    .slice(0, 10)
+    .map((event) => `${event.timestamp}: ${event.description}`)
+    .join('\n')}
 
 Create a well-structured daily digest that includes:
 
@@ -191,27 +214,27 @@ Make it engaging, informative, and personal. Use markdown formatting for structu
     const allTimeline = [];
     const allUsers = [];
     const allTags = [];
-    
+
     let totalMessages = 0;
-    let sentimentScores = [];
-    let energyLevels = [];
-    
-    summaries.forEach(summary => {
+    const sentimentScores = [];
+    const energyLevels = [];
+
+    summaries.forEach((summary) => {
       totalMessages += summary.metadata?.totalItems || 0;
-      
+
       if (summary.metadata?.topUsers) {
         allUsers.push(...summary.metadata.topUsers);
       }
-      
+
       if (summary.metadata?.topTags) {
         allTags.push(...summary.metadata.topTags);
       }
-      
+
       if (summary.analytics) {
         allQuotes.push(...(summary.analytics.quotes || []));
         allInsights.push(...(summary.analytics.insights || []));
         allTimeline.push(...(summary.analytics.timeline || []));
-        
+
         // Aggregate atmosphere data
         if (summary.analytics.atmosphere) {
           const atm = summary.analytics.atmosphere;
@@ -227,7 +250,7 @@ Make it engaging, informative, and personal. Use markdown formatting for structu
     const bestQuotes = allQuotes
       .sort((a, b) => (b.reactions || 0) - (a.reactions || 0))
       .slice(0, 5);
-    
+
     const keyInsights = allInsights
       .sort((a, b) => {
         const impactScore = { high: 3, medium: 2, low: 1 };
@@ -248,24 +271,31 @@ Make it engaging, informative, and personal. Use markdown formatting for structu
       overallAtmosphere: {
         overall_sentiment: this.scoreToSentiment(this.average(sentimentScores)),
         energy_level: this.scoreToEnergy(this.average(energyLevels)),
-        engagement_quality: totalMessages > 100 ? 'intense' : totalMessages > 50 ? 'deep' : totalMessages > 20 ? 'moderate' : 'superficial',
+        engagement_quality:
+          totalMessages > 100
+            ? 'intense'
+            : totalMessages > 50
+              ? 'deep'
+              : totalMessages > 20
+                ? 'moderate'
+                : 'superficial',
         community_cohesion: Math.min(topUsers.length / 10, 1),
         topics_diversity: Math.min(topTags.length / 15, 1),
-        dominant_emotions: ['engagement', 'community']
+        dominant_emotions: ['engagement', 'community'],
       },
       participationOverview: {
-        most_active_users: topUsers.slice(0, 5).map(user => ({
+        most_active_users: topUsers.slice(0, 5).map((user) => ({
           username: user,
           message_count: 0, // Would need more complex tracking
           engagement_score: 0.8,
-          role: 'contributor'
+          role: 'contributor',
         })),
         engagement_patterns: {
           peak_hours: [],
           discussion_length_avg: totalMessages / summaries.length,
-          response_time_avg: 5
-        }
-      }
+          response_time_avg: 5,
+        },
+      },
     };
   }
 
@@ -301,9 +331,9 @@ This might be a great time to start a new conversation or share something intere
           engagement_quality: 'low',
           community_cohesion: 0.5,
           topics_diversity: 0.2,
-          dominant_emotions: ['calm']
-        }
-      }
+          dominant_emotions: ['calm'],
+        },
+      },
     };
   }
 
@@ -313,16 +343,22 @@ This might be a great time to start a new conversation or share something intere
   async generateAllDailyDigests() {
     try {
       console.log('🌅 Starting daily digest generation for all users...');
-      
+
       // Get users who have subscribed pods or recent activity
       const activeUsers = await User.find({
         $or: [
           { subscribedPods: { $exists: true, $ne: [] } },
-          { lastActive: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } // Active in last 7 days
-        ]
+          {
+            lastActive: {
+              $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+            },
+          }, // Active in last 7 days
+        ],
       }).lean();
 
-      console.log(`Found ${activeUsers.length} active users for daily digest generation`);
+      console.log(
+        `Found ${activeUsers.length} active users for daily digest generation`,
+      );
 
       const results = [];
       for (const user of activeUsers) {
@@ -330,14 +366,23 @@ This might be a great time to start a new conversation or share something intere
           const digest = await this.generateUserDailyDigest(user._id);
           results.push({ userId: user._id, success: true, digest });
         } catch (error) {
-          console.error(`Failed to generate digest for user ${user._id}:`, error);
-          results.push({ userId: user._id, success: false, error: error.message });
+          console.error(
+            `Failed to generate digest for user ${user._id}:`,
+            error,
+          );
+          results.push({
+            userId: user._id,
+            success: false,
+            error: error.message,
+          });
         }
       }
 
-      const successful = results.filter(r => r.success).length;
-      console.log(`✅ Generated daily digests: ${successful}/${activeUsers.length} successful`);
-      
+      const successful = results.filter((r) => r.success).length;
+      console.log(
+        `✅ Generated daily digests: ${successful}/${activeUsers.length} successful`,
+      );
+
       return results;
     } catch (error) {
       console.error('Error generating daily digests:', error);
@@ -348,22 +393,34 @@ This might be a great time to start a new conversation or share something intere
   // Utility methods
   getTopItems(items, limit) {
     const counts = {};
-    items.forEach(item => {
+    items.forEach((item) => {
       counts[item] = (counts[item] || 0) + 1;
     });
     return Object.entries(counts)
-      .sort(([,a], [,b]) => b - a)
+      .sort(([, a], [, b]) => b - a)
       .slice(0, limit)
       .map(([item]) => item);
   }
 
   sentimentToScore(sentiment) {
-    const scores = { very_negative: 1, negative: 2, neutral: 3, positive: 4, very_positive: 5 };
+    const scores = {
+      very_negative: 1,
+      negative: 2,
+      neutral: 3,
+      positive: 4,
+      very_positive: 5,
+    };
     return scores[sentiment] || 3;
   }
 
   energyToScore(energy) {
-    const scores = { very_low: 1, low: 2, medium: 3, high: 4, very_high: 5 };
+    const scores = {
+      very_low: 1,
+      low: 2,
+      medium: 3,
+      high: 4,
+      very_high: 5,
+    };
     return scores[energy] || 3;
   }
 
@@ -397,7 +454,10 @@ This might be a great time to start a new conversation or share something intere
   generateFallbackDigest(organizedData, user) {
     const { byPod } = organizedData;
     const podCount = Object.keys(byPod).length;
-    const totalMessages = Object.values(byPod).reduce((sum, pod) => sum + pod.totalMessages, 0);
+    const totalMessages = Object.values(byPod).reduce(
+      (sum, pod) => sum + pod.totalMessages,
+      0,
+    );
 
     return `# 🌅 Daily Digest - ${new Date().toDateString()}
 
@@ -408,9 +468,11 @@ Good ${this.getTimeOfDayGreeting()}, ${user.username}!
 - **Total Messages**: ${totalMessages}
 - **Engagement**: ${totalMessages > 50 ? 'High' : totalMessages > 20 ? 'Medium' : 'Low'}
 
-${Object.entries(byPod).map(([podName, data]) => 
-  `### ${podName}\n${data.summaries.map(s => `- ${s.content}`).join('\n')}`
-).join('\n\n')}
+${Object.entries(byPod)
+    .map(
+      ([podName, data]) => `### ${podName}\n${data.summaries.map((s) => `- ${s.content}`).join('\n')}`,
+    )
+    .join('\n\n')}
 
 ---
 *Your personalized daily digest • Generated with ❤️ by Commonly AI*`;

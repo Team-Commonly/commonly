@@ -12,12 +12,21 @@ class DiscordController {
    */
   static async createIntegration(req, res) {
     try {
-      const { podId, serverId, serverName, channelId, channelName, webhookUrl, botToken } = req.body;
+      const {
+        podId,
+        serverId,
+        serverName,
+        channelId,
+        channelName,
+        webhookUrl,
+        botToken,
+      } = req.body;
 
       // Validate required fields
       if (!podId || !serverId || !channelId || !webhookUrl || !botToken) {
         return res.status(400).json({
-          message: 'Missing required fields: podId, serverId, channelId, webhookUrl, botToken',
+          message:
+            'Missing required fields: podId, serverId, channelId, webhookUrl, botToken',
         });
       }
 
@@ -65,8 +74,12 @@ class DiscordController {
       if (!initialized) {
         // Clean up if initialization fails
         await Integration.findByIdAndDelete(integration._id);
-        await DiscordIntegration.findOneAndDelete({ integrationId: integration._id });
-        return res.status(500).json({ message: 'Failed to initialize Discord integration' });
+        await DiscordIntegration.findOneAndDelete({
+          integrationId: integration._id,
+        });
+        return res
+          .status(500)
+          .json({ message: 'Failed to initialize Discord integration' });
       }
 
       // Test connection
@@ -95,9 +108,13 @@ class DiscordController {
         return res.status(404).json({ message: 'Integration not found' });
       }
 
-      const discordIntegration = await DiscordIntegration.findOne({ integrationId: id });
+      const discordIntegration = await DiscordIntegration.findOne({
+        integrationId: id,
+      });
       if (!discordIntegration) {
-        return res.status(404).json({ message: 'Discord integration not found' });
+        return res
+          .status(404)
+          .json({ message: 'Discord integration not found' });
       }
 
       res.json({
@@ -123,9 +140,13 @@ class DiscordController {
         return res.status(404).json({ message: 'Integration not found' });
       }
 
-      const discordIntegration = await DiscordIntegration.findOne({ integrationId: id });
+      const discordIntegration = await DiscordIntegration.findOne({
+        integrationId: id,
+      });
       if (!discordIntegration) {
-        return res.status(404).json({ message: 'Discord integration not found' });
+        return res
+          .status(404)
+          .json({ message: 'Discord integration not found' });
       }
 
       // Update fields if provided
@@ -222,7 +243,9 @@ class DiscordController {
 
       // Basic validation
       if (!webhookUrl.includes('discord.com/api/webhooks/')) {
-        return res.status(400).json({ message: 'Invalid Discord webhook URL format' });
+        return res
+          .status(400)
+          .json({ message: 'Invalid Discord webhook URL format' });
       }
 
       // Try to send a test message

@@ -47,7 +47,9 @@ describe('server pg status route', () => {
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
     // wait for async initialization
-    await new Promise((resolve) => { setImmediate(resolve); });
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
     const res = await request(app).get('/api/pg/status');
     expect(res.body).toEqual({ available: true });
   });
@@ -57,7 +59,9 @@ describe('server pg status route', () => {
     mockConnectPG.mockResolvedValue(null);
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
-    await new Promise((resolve) => { setImmediate(resolve); });
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
     const res = await request(app).get('/api/pg/status');
     expect(res.body).toEqual({ available: false });
   });
@@ -68,7 +72,9 @@ describe('server pg status route', () => {
     mockInitPGDB.mockResolvedValue(false);
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
-    await new Promise((resolve) => { setImmediate(resolve); });
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
     const res = await request(app).get('/api/pg/status');
     expect(res.body).toEqual({ available: false });
   });
@@ -79,7 +85,9 @@ describe('server pg status route', () => {
     mockInitPGDB.mockRejectedValue(new Error('fail'));
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
-    await new Promise((resolve) => { setImmediate(resolve); });
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
     const res = await request(app).get('/api/pg/status');
     expect(res.body).toEqual({ available: false });
   });

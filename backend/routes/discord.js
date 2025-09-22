@@ -36,7 +36,11 @@ function verifySignature(req) {
     const publicKeyBytes = Buffer.from(DISCORD_PUBLIC_KEY, 'hex');
     const message = Buffer.from(timestamp + body, 'utf8');
 
-    const isValid = nacl.sign.detached.verify(message, signatureBytes, publicKeyBytes);
+    const isValid = nacl.sign.detached.verify(
+      message,
+      signatureBytes,
+      publicKeyBytes,
+    );
     console.log('- Signature verification result:', isValid);
     return isValid;
   } catch (error) {
@@ -58,13 +62,18 @@ async function handleInstallationEvent(interaction) {
     // Check if this installation is already bound to a pod
     const existingIntegration = await Integration.findOne({ installationId });
     if (existingIntegration) {
-      console.log('Installation already bound to pod:', existingIntegration.podId);
+      console.log(
+        'Installation already bound to pod:',
+        existingIntegration.podId,
+      );
       return { success: true, message: 'Installation already exists' };
     }
 
     // For now, we'll need to get the podId from the installation context
     // This will be enhanced when we implement the frontend installation flow
-    console.log('Installation event received - pod binding will be handled by frontend flow');
+    console.log(
+      'Installation event received - pod binding will be handled by frontend flow',
+    );
 
     return { success: true, message: 'Installation event received' };
   } catch (error) {
@@ -87,11 +96,14 @@ router.get('/channels/:guildId', auth, async (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const response = await axios.get(`https://discord.com/api/guilds/${guildId}/channels`, {
-      headers: {
-        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+    const response = await axios.get(
+      `https://discord.com/api/guilds/${guildId}/channels`,
+      {
+        headers: {
+          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+        },
       },
-    });
+    );
 
     // Filter for text channels only
     const textChannels = response.data
@@ -104,7 +116,10 @@ router.get('/channels/:guildId', auth, async (req, res) => {
 
     res.json(textChannels);
   } catch (error) {
-    console.error('Error fetching Discord channels:', error.response?.data || error.message);
+    console.error(
+      'Error fetching Discord channels:',
+      error.response?.data || error.message,
+    );
     res.status(500).json({ message: 'Failed to fetch channels' });
   }
 });
@@ -120,7 +135,10 @@ router.get('/channels/:guildId', auth, async (req, res) => {
 
 // Discord Interactions endpoint
 router.post('/interactions', async (req, res) => {
-  console.log('Received Discord interaction (raw body):', req.body.toString('utf8'));
+  console.log(
+    'Received Discord interaction (raw body):',
+    req.body.toString('utf8'),
+  );
 
   // Verify Discord signature (required for security)
   if (!verifySignature(req)) {
@@ -138,7 +156,11 @@ router.post('/interactions', async (req, res) => {
   }
 
   const {
-    type, data, id: interactionId, token: interactionToken, guild_id: guildId,
+    type,
+    data,
+    id: interactionId,
+    token: interactionToken,
+    guild_id: guildId,
   } = interaction;
 
   // Handle ping (required for Discord to verify the endpoint)
@@ -171,7 +193,8 @@ router.post('/interactions', async (req, res) => {
   }
 
   // Handle application commands (slash commands)
-  if (type === 2 && data?.type === 1) { // APPLICATION_COMMAND with CHAT_INPUT
+  if (type === 2 && data?.type === 1) {
+    // APPLICATION_COMMAND with CHAT_INPUT
     console.log('Processing slash command:', data.name, 'in guild:', guildId);
 
     try {
@@ -186,7 +209,8 @@ router.post('/interactions', async (req, res) => {
         return res.json({
           type: 4,
           data: {
-            content: '❌ Discord integration not found for this server. Please install the bot first.',
+            content:
+              '❌ Discord integration not found for this server. Please install the bot first.',
             flags: 64, // EPHEMERAL
           },
         });
@@ -277,7 +301,9 @@ router.get('/binding/:podId', async (req, res) => {
     });
 
     if (!integration) {
-      return res.status(404).json({ error: 'No Discord integration found for this pod' });
+      return res
+        .status(404)
+        .json({ error: 'No Discord integration found for this pod' });
     }
 
     const discordIntegration = await DiscordIntegration.findOne({
@@ -330,12 +356,16 @@ router.post('/register-commands/:integrationId', async (req, res) => {
     }
 
     if (integration.type !== 'discord') {
-      return res.status(400).json({ error: 'Integration is not a Discord integration' });
+      return res
+        .status(400)
+        .json({ error: 'Integration is not a Discord integration' });
     }
 
     const guildId = integration.config.serverId;
     if (!guildId) {
-      return res.status(400).json({ error: 'Server ID not found in integration config' });
+      return res
+        .status(400)
+        .json({ error: 'Server ID not found in integration config' });
     }
 
     // Create Discord service and register commands
@@ -395,10 +425,17 @@ router.get('/health', async (req, res) => {
 
     if (response.status === 200) {
       const registeredCommands = response.data;
-      const expectedCommands = ['commonly-summary', 'discord-status', 'discord-enable', 'discord-disable'];
+      const expectedCommands = [
+        'commonly-summary',
+        'discord-status',
+        'discord-enable',
+        'discord-disable',
+      ];
       const foundCommands = registeredCommands.map((cmd) => cmd.name);
 
-      const missingCommands = expectedCommands.filter((cmd) => !foundCommands.includes(cmd));
+      const missingCommands = expectedCommands.filter(
+        (cmd) => !foundCommands.includes(cmd),
+      );
 
       const healthReport = {
         timestamp: new Date().toISOString(),
@@ -442,7 +479,9 @@ router.post('/register-all', async (req, res) => {
 
     res.json({
       success: result.success,
-      message: result.success ? 'All commands registered successfully' : 'Some commands failed to register',
+      message: result.success
+        ? 'All commands registered successfully'
+        : 'Some commands failed to register',
       details: result,
     });
   } catch (error) {
@@ -457,32 +496,38 @@ router.post('/register-all', async (req, res) => {
 // Discord OAuth callback endpoint
 router.get('/callback', async (req, res) => {
   try {
-    const {
-      code, state, guild_id: guildId,
-    } = req.query;
+    const { code, state, guild_id: guildId } = req.query;
 
     if (!code) {
-      return res.redirect(`${process.env.FRONTEND_URL}/discord/error?error=No authorization code received`);
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/discord/error?error=No authorization code received`,
+      );
     }
 
     // Extract pod ID from state
     const podId = state?.replace('pod_', '');
     if (!podId) {
-      return res.redirect(`${process.env.FRONTEND_URL}/discord/error?error=Invalid state parameter`);
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/discord/error?error=Invalid state parameter`,
+      );
     }
 
     // Exchange code for access token
-    await axios.post('https://discord.com/api/oauth2/token', {
-      client_id: process.env.DISCORD_CLIENT_ID,
-      client_secret: process.env.DISCORD_CLIENT_SECRET,
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/discord/callback`,
-    }, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+    await axios.post(
+      'https://discord.com/api/oauth2/token',
+      {
+        client_id: process.env.DISCORD_CLIENT_ID,
+        client_secret: process.env.DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/discord/callback`,
       },
-    });
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      },
+    );
 
     // Token response received successfully
 
@@ -490,11 +535,14 @@ router.get('/callback', async (req, res) => {
     let serverName = 'Unknown Server';
     if (guildId) {
       try {
-        const guildResponse = await axios.get(`https://discord.com/api/guilds/${guildId}`, {
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+        const guildResponse = await axios.get(
+          `https://discord.com/api/guilds/${guildId}`,
+          {
+            headers: {
+              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            },
           },
-        });
+        );
         serverName = guildResponse.data.name;
       } catch (error) {
         console.log('Could not fetch guild info:', error.response?.data);
@@ -509,7 +557,10 @@ router.get('/callback', async (req, res) => {
 
     res.redirect(successUrl.toString());
   } catch (error) {
-    console.error('Discord OAuth callback error:', error.response?.data || error.message);
+    console.error(
+      'Discord OAuth callback error:',
+      error.response?.data || error.message,
+    );
     const errorUrl = new URL(`${process.env.FRONTEND_URL}/discord/error`);
     errorUrl.searchParams.append('error', 'OAuth authorization failed');
     res.redirect(errorUrl.toString());
