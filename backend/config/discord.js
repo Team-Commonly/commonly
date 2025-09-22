@@ -3,7 +3,8 @@ const { PermissionFlagsBits } = require('discord.js');
 const discordConfig = {
   // Bot configuration
   clientId: process.env.DISCORD_CLIENT_ID,
-  applicationId: process.env.DISCORD_APPLICATION_ID || process.env.DISCORD_CLIENT_ID,
+  applicationId:
+    process.env.DISCORD_APPLICATION_ID || process.env.DISCORD_CLIENT_ID,
   botToken: process.env.DISCORD_BOT_TOKEN,
 
   // Permission configuration

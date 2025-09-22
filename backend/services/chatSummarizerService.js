@@ -23,45 +23,63 @@ class ChatSummarizerService {
 
   async generateEnhancedSummary(content, podName, messages) {
     try {
-      const prompt = ChatSummarizerService.createEnhancedPrompt(content, podName);
+      const prompt = ChatSummarizerService.createEnhancedPrompt(
+        content,
+        podName,
+      );
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
-      
+
       // Parse the JSON response
       let analyticsData;
       try {
         analyticsData = JSON.parse(response.text());
       } catch (parseError) {
-        console.warn('Failed to parse enhanced summary JSON, falling back to basic summary:', parseError);
+        console.warn(
+          'Failed to parse enhanced summary JSON, falling back to basic summary:',
+          parseError,
+        );
         return {
           summary: await this.generateSummary(content, podName),
-          analytics: ChatSummarizerService.generateFallbackAnalytics(messages, podName)
+          analytics: ChatSummarizerService.generateFallbackAnalytics(
+            messages,
+            podName,
+          ),
         };
       }
 
       return {
         summary: analyticsData.summary,
-        analytics: analyticsData
+        analytics: analyticsData,
       };
     } catch (error) {
-      console.error('Error generating enhanced chat summary with Gemini:', error);
+      console.error(
+        'Error generating enhanced chat summary with Gemini:',
+        error,
+      );
       return {
-        summary: ChatSummarizerService.generateFallbackSummary(content, podName),
-        analytics: ChatSummarizerService.generateFallbackAnalytics(messages, podName)
+        summary: ChatSummarizerService.generateFallbackSummary(
+          content,
+          podName,
+        ),
+        analytics: ChatSummarizerService.generateFallbackAnalytics(
+          messages,
+          podName,
+        ),
       };
     }
   }
 
   static generateFallbackAnalytics(messages, podName) {
     const userCounts = {};
-    messages.forEach(msg => {
+    messages.forEach((msg) => {
       if (msg.username) {
         userCounts[msg.username] = (userCounts[msg.username] || 0) + 1;
       }
     });
 
     const sortedUsers = Object.entries(userCounts)
-      .sort(([,a], [,b]) => b - a)
+      .sort(([, a], [, b]) => b - a)
       .slice(0, 5);
 
     return {
@@ -74,21 +92,21 @@ class ChatSummarizerService {
         engagement_quality: 'moderate',
         community_cohesion: 0.5,
         topics_diversity: 0.5,
-        dominant_emotions: ['neutral']
+        dominant_emotions: ['neutral'],
       },
       participation: {
         most_active_users: sortedUsers.map(([username, count]) => ({
           username,
           message_count: count,
           engagement_score: Math.min(count / messages.length, 1),
-          role: 'contributor'
+          role: 'contributor',
         })),
         engagement_patterns: {
           peak_hours: [],
           discussion_length_avg: messages.length,
-          response_time_avg: 5
-        }
-      }
+          response_time_avg: 5,
+        },
+      },
     };
   }
 
@@ -196,7 +214,8 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
   }
 
   static generateFallbackSummary(content, podName) {
-    const messageCount = content.split('\n')
+    const messageCount = content
+      .split('\n')
       .filter((line) => line.trim()).length;
     return `${messageCount} messages were exchanged in ${podName}, featuring active conversations and community interactions.`;
   }
@@ -242,7 +261,11 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
         ORDER BY m.created_at ASC
       `;
 
-      const messagesResult = await pool.query(query, [podId, startTime, endTime]);
+      const messagesResult = await pool.query(query, [
+        podId,
+        startTime,
+        endTime,
+      ]);
       const messages = messagesResult.rows;
 
       // Get pod info from MongoDB
@@ -254,19 +277,28 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 
       // Validate message count is reasonable (prevent data corruption)
       if (messages.length > 10000) {
-        console.error(`Suspicious message count ${messages.length} for pod ${podId} in 1 hour - skipping summarization`);
+        console.error(
+          `Suspicious message count ${messages.length} for pod ${podId} in 1 hour - skipping summarization`,
+        );
         return null;
       }
 
       if (messages.length === 0) {
-        return ChatSummarizerService.createEmptySummary(podId, pod.name, startTime, endTime);
+        return ChatSummarizerService.createEmptySummary(
+          podId,
+          pod.name,
+          startTime,
+          endTime,
+        );
       }
 
       // Prepare content for summarization
-      const content = messages.map((message) => {
-        const username = message.username || 'Unknown';
-        return `@${username}: ${message.content}`;
-      }).join('\n');
+      const content = messages
+        .map((message) => {
+          const username = message.username || 'Unknown';
+          return `@${username}: ${message.content}`;
+        })
+        .join('\n');
 
       const summaryText = await this.generateSummary(content, pod.name);
 
@@ -276,7 +308,11 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
         3,
       );
 
-      const title = ChatSummarizerService.generateTitle(pod.name, messages.length, topUsers);
+      const title = ChatSummarizerService.generateTitle(
+        pod.name,
+        messages.length,
+        topUsers,
+      );
 
       // Validate pod name exists
       if (!pod.name) {
@@ -368,9 +404,13 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
       }));
 
       const summaries = await Promise.all(summaryPromises);
-      const successfulSummaries = summaries.filter((summary) => summary !== null);
+      const successfulSummaries = summaries.filter(
+        (summary) => summary !== null,
+      );
 
-      console.log(`Successfully created ${successfulSummaries.length} chat summaries`);
+      console.log(
+        `Successfully created ${successfulSummaries.length} chat summaries`,
+      );
       return successfulSummaries;
     } catch (error) {
       console.error('Error summarizing all active chats:', error);
@@ -486,8 +526,10 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
       const latestSummaries = {};
       summaries.forEach((summary) => {
         const podId = summary.podId.toString();
-        if (!latestSummaries[podId]
-            || summary.createdAt > latestSummaries[podId].createdAt) {
+        if (
+          !latestSummaries[podId]
+          || summary.createdAt > latestSummaries[podId].createdAt
+        ) {
           latestSummaries[podId] = summary;
         }
       });

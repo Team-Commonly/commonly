@@ -1,10 +1,10 @@
-const axios = require('axios');
-const { Client, GatewayIntentBits } = require('discord.js');
-const DiscordIntegration = require('../models/DiscordIntegration');
-const Integration = require('../models/Integration');
-const DiscordCommandService = require('./discordCommandService');
-const summarizerService = require('./summarizerService');
-const config = require('../config/discord');
+const axios = require("axios");
+const { Client, GatewayIntentBits } = require("discord.js");
+const DiscordIntegration = require("../models/DiscordIntegration");
+const Integration = require("../models/Integration");
+const DiscordCommandService = require("./discordCommandService");
+const summarizerService = require("./summarizerService");
+const config = require("../config/discord");
 
 /**
  * Discord Integration Service
@@ -30,19 +30,22 @@ class DiscordService {
 
   async initialize() {
     try {
-      const integration = await Integration.findById(this.integrationId)
-        .populate('platformIntegration');
+      const integration = await Integration.findById(
+        this.integrationId,
+      ).populate("platformIntegration");
 
       if (!integration) {
-        throw new Error('Integration not found');
+        throw new Error("Integration not found");
       }
 
       this.integration = integration;
 
       // Use guild ID as installation ID for better identification
-      const guildId = integration.platformIntegration?.serverId || integration.config?.serverId;
+      const guildId =
+        integration.platformIntegration?.serverId ||
+        integration.config?.serverId;
       if (!guildId) {
-        throw new Error('Guild ID not found in integration');
+        throw new Error("Guild ID not found in integration");
       }
 
       // Initialize command service with guild ID as installation ID
@@ -51,7 +54,7 @@ class DiscordService {
 
       return true;
     } catch (error) {
-      console.error('Error initializing Discord service:', error);
+      console.error("Error initializing Discord service:", error);
       return false;
     }
   }
@@ -76,19 +79,23 @@ class DiscordService {
 
       return webhook;
     } catch (error) {
-      console.error('Error creating webhook:', error);
+      console.error("Error creating webhook:", error);
       throw error;
     }
   }
 
   async connect() {
     try {
-      const guild = await this.client.guilds.fetch(this.integration.platformIntegration.serverId);
+      const guild = await this.client.guilds.fetch(
+        this.integration.platformIntegration.serverId,
+      );
       if (!guild) {
         throw new Error(config.errors.SERVER_NOT_FOUND);
       }
 
-      const channel = await guild.channels.fetch(this.integration.platformIntegration.channelId);
+      const channel = await guild.channels.fetch(
+        this.integration.platformIntegration.channelId,
+      );
       if (!channel) {
         throw new Error(config.errors.CHANNEL_NOT_FOUND);
       }
@@ -109,17 +116,17 @@ class DiscordService {
 
       // Update integration status
       await Integration.findByIdAndUpdate(this.integrationId, {
-        status: 'connected',
+        status: "connected",
         lastSync: new Date(),
       });
 
       return true;
     } catch (error) {
-      console.error('Error connecting to Discord:', error);
+      console.error("Error connecting to Discord:", error);
 
       // Update integration status
       await Integration.findByIdAndUpdate(this.integrationId, {
-        status: 'error',
+        status: "error",
         lastError: error.message,
       });
 
@@ -132,26 +139,30 @@ class DiscordService {
       // Remove webhook if it exists
       if (this.integration.platformIntegration.webhookId) {
         try {
-          const channel = await this.client.channels.fetch(this.integration.platformIntegration.channelId);
+          const channel = await this.client.channels.fetch(
+            this.integration.platformIntegration.channelId,
+          );
           const webhooks = await channel.fetchWebhooks();
-          const webhook = webhooks.get(this.integration.platformIntegration.webhookId);
+          const webhook = webhooks.get(
+            this.integration.platformIntegration.webhookId,
+          );
           if (webhook) {
             await webhook.delete();
           }
         } catch (error) {
-          console.warn('Error removing webhook:', error);
+          console.warn("Error removing webhook:", error);
         }
       }
 
       // Update integration status
       await Integration.findByIdAndUpdate(this.integrationId, {
-        status: 'disconnected',
+        status: "disconnected",
         lastSync: new Date(),
       });
 
       return true;
     } catch (error) {
-      console.error('Error disconnecting from Discord:', error);
+      console.error("Error disconnecting from Discord:", error);
       return false;
     }
   }
@@ -159,14 +170,14 @@ class DiscordService {
   async sendMessage(message) {
     try {
       if (!this.integration.platformIntegration.webhookUrl) {
-        throw new Error('Webhook URL not found');
+        throw new Error("Webhook URL not found");
       }
 
       // Apply rate limiting
       const now = Date.now();
       const recentMessages = await Integration.find({
         _id: this.integrationId,
-        'messageHistory.timestamp': {
+        "messageHistory.timestamp": {
           $gt: now - config.messageRateLimit.timeWindow,
         },
       }).count();
@@ -176,15 +187,18 @@ class DiscordService {
       }
 
       // Send message via webhook
-      const response = await fetch(this.integration.platformIntegration.webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: message,
-          username: config.webhookName,
-          avatar_url: config.webhookAvatar,
-        }),
-      });
+      const response = await fetch(
+        this.integration.platformIntegration.webhookUrl,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: message,
+            username: config.webhookName,
+            avatar_url: config.webhookAvatar,
+          }),
+        },
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -195,7 +209,7 @@ class DiscordService {
         $push: {
           messageHistory: {
             timestamp: now,
-            type: 'outgoing',
+            type: "outgoing",
             content: message,
           },
         },
@@ -203,7 +217,7 @@ class DiscordService {
 
       return true;
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error("Error sending message:", error);
       throw error;
     }
   }
@@ -214,11 +228,11 @@ class DiscordService {
         { $match: { _id: this.integrationId } },
         {
           $project: {
-            messageCount: { $size: '$messageHistory' },
+            messageCount: { $size: "$messageHistory" },
             lastSync: 1,
             status: 1,
             uptime: {
-              $subtract: [new Date(), '$createdAt'],
+              $subtract: [new Date(), "$createdAt"],
             },
           },
         },
@@ -226,7 +240,7 @@ class DiscordService {
 
       return stats[0];
     } catch (error) {
-      console.error('Error getting stats:', error);
+      console.error("Error getting stats:", error);
       return null;
     }
   }
@@ -240,7 +254,7 @@ class DiscordService {
 
       const channelId = this.integration?.config?.channelId;
       if (!channelId) {
-        throw new Error('Channel ID not found in integration config');
+        throw new Error("Channel ID not found in integration config");
       }
 
       const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
@@ -253,7 +267,7 @@ class DiscordService {
       const response = await axios.get(url, {
         headers: {
           Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         params,
       });
@@ -268,11 +282,11 @@ class DiscordService {
       }));
 
       // Filter out bot messages for cleaner content
-      const filteredMessages = messages.filter(msg => !msg.author?.bot);
-      
+      const filteredMessages = messages.filter((msg) => !msg.author?.bot);
+
       return filteredMessages;
     } catch (error) {
-      console.error('Error fetching Discord messages:', error);
+      console.error("Error fetching Discord messages:", error);
       throw error;
     }
   }
@@ -287,7 +301,7 @@ class DiscordService {
       const response = await axios.get(url, {
         headers: {
           Authorization: `Bot ${this.discordIntegration.botToken}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
       });
 
@@ -300,7 +314,7 @@ class DiscordService {
           position: channel.position,
         }));
     } catch (error) {
-      console.error('Error fetching Discord channels:', error);
+      console.error("Error fetching Discord channels:", error);
       throw error;
     }
   }
@@ -313,7 +327,7 @@ class DiscordService {
       await this.initialize();
       return this.integration.status;
     } catch (error) {
-      return 'error';
+      return "error";
     }
   }
 
@@ -326,7 +340,7 @@ class DiscordService {
       const botResponse = await axios.get(`${this.baseUrl}/users/@me`, {
         headers: {
           Authorization: `Bot ${this.discordIntegration.botToken}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
       });
 
@@ -335,7 +349,7 @@ class DiscordService {
 
       return botResponse.status === 200;
     } catch (error) {
-      console.error('Error testing Discord connection:', error);
+      console.error("Error testing Discord connection:", error);
       return false;
     }
   }
@@ -344,16 +358,18 @@ class DiscordService {
    * Validate Discord configuration
    */
   static async validateConfig(discordConfig) {
-    const requiredFields = ['serverId', 'channelId', 'webhookUrl', 'botToken'];
+    const requiredFields = ["serverId", "channelId", "webhookUrl", "botToken"];
 
-    const missingFields = requiredFields.filter((field) => !discordConfig[field]);
+    const missingFields = requiredFields.filter(
+      (field) => !discordConfig[field],
+    );
     if (missingFields.length > 0) {
-      throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+      throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
     }
 
     // Validate webhook URL format
-    if (!discordConfig.webhookUrl.includes('discord.com/api/webhooks/')) {
-      throw new Error('Invalid Discord webhook URL format');
+    if (!discordConfig.webhookUrl.includes("discord.com/api/webhooks/")) {
+      throw new Error("Invalid Discord webhook URL format");
     }
 
     return true;
@@ -382,10 +398,10 @@ class DiscordService {
           break;
 
         default:
-          console.log('Unhandled Discord event type:', event.type);
+          console.log("Unhandled Discord event type:", event.type);
       }
     } catch (error) {
-      console.error('Error handling Discord webhook:', error);
+      console.error("Error handling Discord webhook:", error);
       throw error;
     }
   }
@@ -415,16 +431,17 @@ class DiscordService {
 
       // Keep only last 100 messages
       if (this.discordIntegration.messageHistory.length > 100) {
-        this.discordIntegration.messageHistory = this.discordIntegration.messageHistory.slice(-100);
+        this.discordIntegration.messageHistory =
+          this.discordIntegration.messageHistory.slice(-100);
       }
 
       await this.discordIntegration.save();
-      await this.updateStatus('connected');
+      await this.updateStatus("connected");
 
       // Trigger summarization if needed
       await this.triggerSummarization();
     } catch (error) {
-      console.error('Error handling message creation:', error);
+      console.error("Error handling message creation:", error);
     }
   }
 
@@ -454,7 +471,7 @@ class DiscordService {
         await this.discordIntegration.save();
       }
     } catch (error) {
-      console.error('Error handling message update:', error);
+      console.error("Error handling message update:", error);
     }
   }
 
@@ -468,13 +485,14 @@ class DiscordService {
       }
 
       // Remove message from history
-      this.discordIntegration.messageHistory = this.discordIntegration.messageHistory.filter(
-        (msg) => msg.messageId !== messageData.id,
-      );
+      this.discordIntegration.messageHistory =
+        this.discordIntegration.messageHistory.filter(
+          (msg) => msg.messageId !== messageData.id,
+        );
 
       await this.discordIntegration.save();
     } catch (error) {
-      console.error('Error handling message deletion:', error);
+      console.error("Error handling message deletion:", error);
     }
   }
 
@@ -485,43 +503,47 @@ class DiscordService {
   async syncRecentMessages(timeRangeHours = 1) {
     try {
       if (!this.integration?.config?.webhookListenerEnabled) {
-        throw new Error('Discord sync not enabled for this integration');
+        throw new Error("Discord sync not enabled for this integration");
       }
 
       // Fetch recent messages from Discord
       const messages = await this.fetchMessages({ limit: 50 });
-      
+
       if (!messages || messages.length === 0) {
         return {
           success: true,
           messageCount: 0,
-          content: 'No recent Discord activity found to sync.'
+          content: "No recent Discord activity found to sync.",
         };
       }
 
       // Filter messages from the specified time range (default: last hour)
       const timeAgo = new Date(Date.now() - timeRangeHours * 60 * 60 * 1000);
-      
-      console.log(`🔍 Discord message debugging - Total messages fetched: ${messages.length}`);
+
+      console.log(
+        `🔍 Discord message debugging - Total messages fetched: ${messages.length}`,
+      );
       if (messages.length > 0) {
-        console.log('📝 Sample Discord message structure:', {
+        console.log("📝 Sample Discord message structure:", {
           author: messages[0].author,
           content: messages[0].content,
           timestamp: messages[0].timestamp,
-          id: messages[0].id
+          id: messages[0].id,
         });
       }
-      
-      const recentMessages = messages.filter(msg => {
+
+      const recentMessages = messages.filter((msg) => {
         const msgTime = new Date(msg.timestamp);
         const isInTimeRange = msgTime >= timeAgo;
         // For now, assume all messages are human since author is a string
         // TODO: Need to check if bot detection needs different logic
         const isHuman = true;
         const hasContent = msg.content && msg.content.trim().length > 0;
-        
-        console.log(`📊 Message filter debug - Time: ${isInTimeRange}, Human: ${isHuman}, Content: ${hasContent}, User: ${msg.author || 'NO_USERNAME'}`);
-        
+
+        console.log(
+          `📊 Message filter debug - Time: ${isInTimeRange}, Human: ${isHuman}, Content: ${hasContent}, User: ${msg.author || "NO_USERNAME"}`,
+        );
+
         return isInTimeRange && isHuman && hasContent;
       });
 
@@ -529,29 +551,33 @@ class DiscordService {
         return {
           success: true,
           messageCount: 0,
-          content: `No Discord activity found in the last ${timeRangeHours} hour(s).`
+          content: `No Discord activity found in the last ${timeRangeHours} hour(s).`,
         };
       }
 
       // Create Discord summary from recent messages
       const timeRange = { start: timeAgo, end: new Date() };
-      const discordSummary = await this.commandService.createDiscordSummary(recentMessages, timeRange.start, timeRange.end);
+      const discordSummary = await this.commandService.createDiscordSummary(
+        recentMessages,
+        timeRange.start,
+        timeRange.end,
+      );
 
       // Post summary to Commonly pod via bot
-      const CommonlyBotService = require('./commonlyBotService');
+      const CommonlyBotService = require("./commonlyBotService");
       const botService = new CommonlyBotService();
       const result = await botService.postDiscordSummaryToPod(
         this.integration.podId,
         discordSummary,
-        this.integration._id
+        this.integration._id,
       );
 
       if (result.success) {
         // Save to Discord summary history
-        const DiscordSummaryHistory = require('../models/DiscordSummaryHistory');
+        const DiscordSummaryHistory = require("../models/DiscordSummaryHistory");
         const summaryRecord = new DiscordSummaryHistory({
           integrationId: this.integration._id,
-          summaryType: timeRangeHours === 1 ? 'hourly' : 'manual',
+          summaryType: timeRangeHours === 1 ? "hourly" : "manual",
           content: discordSummary.content,
           messageCount: recentMessages.length,
           timeRange,
@@ -563,18 +589,17 @@ class DiscordService {
         return {
           success: true,
           messageCount: recentMessages.length,
-          content: `Synced ${recentMessages.length} Discord message(s) to Commonly pod.`
+          content: `Synced ${recentMessages.length} Discord message(s) to Commonly pod.`,
         };
       } else {
-        throw new Error('Failed to post Discord summary to Commonly pod');
+        throw new Error("Failed to post Discord summary to Commonly pod");
       }
-
     } catch (error) {
-      console.error('Error syncing Discord messages:', error);
+      console.error("Error syncing Discord messages:", error);
       return {
         success: false,
         messageCount: 0,
-        content: `Failed to sync Discord messages: ${error.message}`
+        content: `Failed to sync Discord messages: ${error.message}`,
       };
     }
   }
@@ -587,22 +612,23 @@ class DiscordService {
       // Get recent messages for summarization
       const { recentMessages } = this.discordIntegration;
 
-      if (recentMessages.length >= 10) { // Summarize every 10 messages
+      if (recentMessages.length >= 10) {
+        // Summarize every 10 messages
         const messageTexts = recentMessages
           .slice(-10)
           .map((msg) => `${msg.author}: ${msg.content}`)
-          .join('\n');
+          .join("\n");
 
         const summary = await summarizerService.summarizeText(messageTexts, {
-          source: 'discord',
+          source: "discord",
           integrationId: this.integrationId,
         });
 
         // Store summary or send to chat
-        console.log('Discord summary generated:', summary);
+        console.log("Discord summary generated:", summary);
       }
     } catch (error) {
-      console.error('Error triggering summarization:', error);
+      console.error("Error triggering summarization:", error);
     }
   }
 
@@ -614,37 +640,37 @@ class DiscordService {
       if (!this.commandService) {
         return {
           success: false,
-          content: '❌ Command service not initialized.',
+          content: "❌ Command service not initialized.",
         };
       }
 
       switch (commandName) {
-        case 'commonly-summary':
+        case "commonly-summary":
           return await this.commandService.handleSummaryCommand();
 
-        case 'discord-status':
+        case "discord-status":
           return await this.commandService.handleStatusCommand();
 
-        case 'discord-enable':
+        case "discord-enable":
           return await this.commandService.handleEnableCommand();
 
-        case 'discord-disable':
+        case "discord-disable":
           return await this.commandService.handleDisableCommand();
 
-        case 'discord-push':
+        case "discord-push":
           return await this.commandService.handlePushCommand(this);
 
         default:
           return {
             success: false,
-            content: '❌ Unknown command.',
+            content: "❌ Unknown command.",
           };
       }
     } catch (error) {
-      console.error('Error handling slash command:', error);
+      console.error("Error handling slash command:", error);
       return {
         success: false,
-        content: '❌ An error occurred while processing the command.',
+        content: "❌ An error occurred while processing the command.",
       };
     }
   }
@@ -656,10 +682,13 @@ class DiscordService {
   async registerSlashCommands(guildId = null) {
     try {
       // Use provided guildId or get from integration
-      const targetGuildId = guildId || this.integration?.platformIntegration?.serverId || this.integration?.config?.serverId;
+      const targetGuildId =
+        guildId ||
+        this.integration?.platformIntegration?.serverId ||
+        this.integration?.config?.serverId;
 
       if (!targetGuildId) {
-        throw new Error('Guild ID is required for command registration');
+        throw new Error("Guild ID is required for command registration");
       }
 
       console.log(`🔧 Registering commands for guild: ${targetGuildId}`);
@@ -667,23 +696,23 @@ class DiscordService {
       // Define the slash commands
       const commands = [
         {
-          name: 'commonly-summary',
-          description: 'Get the most recent summary from the linked chat pod',
+          name: "commonly-summary",
+          description: "Get the most recent summary from the linked chat pod",
           type: 1, // CHAT_INPUT
         },
         {
-          name: 'discord-status',
-          description: 'Show the status of Discord integration',
+          name: "discord-status",
+          description: "Show the status of Discord integration",
           type: 1,
         },
         {
-          name: 'discord-enable',
-          description: 'Enable webhook listener for Discord channel',
+          name: "discord-enable",
+          description: "Enable webhook listener for Discord channel",
           type: 1,
         },
         {
-          name: 'discord-disable',
-          description: 'Disable webhook listener for Discord channel',
+          name: "discord-disable",
+          description: "Disable webhook listener for Discord channel",
           type: 1,
         },
       ];
@@ -694,19 +723,21 @@ class DiscordService {
       const response = await axios.put(url, commands, {
         headers: {
           Authorization: `Bot ${config.botToken}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
       });
 
       if (response.status === 200 || response.status === 201) {
-        console.log(`✅ Successfully registered ${commands.length} commands for guild ${targetGuildId}`);
+        console.log(
+          `✅ Successfully registered ${commands.length} commands for guild ${targetGuildId}`,
+        );
 
         // Update integration with registration info
         if (this.integration) {
           await Integration.findByIdAndUpdate(this.integrationId, {
-            'config.commandsRegistered': true,
-            'config.lastCommandRegistration': new Date(),
-            'config.registeredGuildId': targetGuildId,
+            "config.commandsRegistered": true,
+            "config.lastCommandRegistration": new Date(),
+            "config.registeredGuildId": targetGuildId,
           });
         }
 
@@ -714,14 +745,14 @@ class DiscordService {
       }
       throw new Error(`Discord API returned status ${response.status}`);
     } catch (error) {
-      console.error('❌ Failed to register commands:', error.message);
+      console.error("❌ Failed to register commands:", error.message);
 
       // Update integration with error info
       if (this.integration) {
         await Integration.findByIdAndUpdate(this.integrationId, {
-          'config.commandsRegistered': false,
-          'config.lastRegistrationError': error.message,
-          'config.lastRegistrationAttempt': new Date(),
+          "config.commandsRegistered": false,
+          "config.lastRegistrationError": error.message,
+          "config.lastRegistrationAttempt": new Date(),
         });
       }
 
@@ -735,19 +766,23 @@ class DiscordService {
    */
   static async registerCommandsForAllIntegrations() {
     try {
-      console.log('🚀 Starting Discord command registration for all integrations...');
+      console.log(
+        "🚀 Starting Discord command registration for all integrations...",
+      );
 
       const integrations = await Integration.find({
-        type: 'discord',
+        type: "discord",
         isActive: true,
       });
 
       if (integrations.length === 0) {
-        console.log('ℹ️  No active Discord integrations found');
+        console.log("ℹ️  No active Discord integrations found");
         return { success: true, registered: 0, failed: 0 };
       }
 
-      console.log(`📋 Found ${integrations.length} active Discord integration(s)`);
+      console.log(
+        `📋 Found ${integrations.length} active Discord integration(s)`,
+      );
 
       let registered = 0;
       let failed = 0;
@@ -755,16 +790,24 @@ class DiscordService {
 
       for (const integration of integrations) {
         try {
-          const guildId = integration.platformIntegration?.serverId || integration.config?.serverId;
+          const guildId =
+            integration.platformIntegration?.serverId ||
+            integration.config?.serverId;
 
           if (!guildId) {
             console.log(`⚠️  Integration ${integration._id}: Missing guild ID`);
             failed++;
-            results.push({ integrationId: integration._id, success: false, error: 'Missing guild ID' });
+            results.push({
+              integrationId: integration._id,
+              success: false,
+              error: "Missing guild ID",
+            });
             continue;
           }
 
-          console.log(`🔧 Registering commands for integration ${integration._id} (Guild: ${guildId})`);
+          console.log(
+            `🔧 Registering commands for integration ${integration._id} (Guild: ${guildId})`,
+          );
 
           // Create a temporary service instance for registration
           const tempService = new DiscordService(integration._id);
@@ -774,23 +817,39 @@ class DiscordService {
 
           if (success) {
             registered++;
-            results.push({ integrationId: integration._id, guildId, success: true });
-            console.log(`✅ Successfully registered commands for guild ${guildId}`);
+            results.push({
+              integrationId: integration._id,
+              guildId,
+              success: true,
+            });
+            console.log(
+              `✅ Successfully registered commands for guild ${guildId}`,
+            );
           } else {
             failed++;
             results.push({
-              integrationId: integration._id, guildId, success: false, error: 'Registration failed',
+              integrationId: integration._id,
+              guildId,
+              success: false,
+              error: "Registration failed",
             });
             console.log(`❌ Failed to register commands for guild ${guildId}`);
           }
         } catch (error) {
           failed++;
-          results.push({ integrationId: integration._id, success: false, error: error.message });
-          console.error(`❌ Error registering commands for integration ${integration._id}:`, error.message);
+          results.push({
+            integrationId: integration._id,
+            success: false,
+            error: error.message,
+          });
+          console.error(
+            `❌ Error registering commands for integration ${integration._id}:`,
+            error.message,
+          );
         }
       }
 
-      console.log('\n📊 Registration Summary:');
+      console.log("\n📊 Registration Summary:");
       console.log(`   ✅ Successfully registered: ${registered}`);
       console.log(`   ❌ Failed: ${failed}`);
       console.log(`   📋 Total integrations: ${integrations.length}`);
@@ -803,7 +862,7 @@ class DiscordService {
         results,
       };
     } catch (error) {
-      console.error('❌ Error in bulk command registration:', error);
+      console.error("❌ Error in bulk command registration:", error);
       return { success: false, error: error.message };
     }
   }
@@ -814,10 +873,13 @@ class DiscordService {
    */
   async verifyCommandRegistration(guildId = null) {
     try {
-      const targetGuildId = guildId || this.integration?.platformIntegration?.serverId || this.integration?.config?.serverId;
+      const targetGuildId =
+        guildId ||
+        this.integration?.platformIntegration?.serverId ||
+        this.integration?.config?.serverId;
 
       if (!targetGuildId) {
-        throw new Error('Guild ID is required for verification');
+        throw new Error("Guild ID is required for verification");
       }
 
       const url = `https://discord.com/api/v10/applications/${config.clientId}/guilds/${targetGuildId}/commands`;
@@ -830,10 +892,17 @@ class DiscordService {
 
       if (response.status === 200) {
         const registeredCommands = response.data;
-        const expectedCommands = ['commonly-summary', 'discord-status', 'discord-enable', 'discord-disable'];
+        const expectedCommands = [
+          "commonly-summary",
+          "discord-status",
+          "discord-enable",
+          "discord-disable",
+        ];
         const foundCommands = registeredCommands.map((cmd) => cmd.name);
 
-        const missingCommands = expectedCommands.filter((cmd) => !foundCommands.includes(cmd));
+        const missingCommands = expectedCommands.filter(
+          (cmd) => !foundCommands.includes(cmd),
+        );
 
         return {
           success: missingCommands.length === 0,
@@ -845,7 +914,7 @@ class DiscordService {
       }
       throw new Error(`Discord API returned status ${response.status}`);
     } catch (error) {
-      console.error('❌ Error verifying command registration:', error.message);
+      console.error("❌ Error verifying command registration:", error.message);
       return { success: false, error: error.message };
     }
   }
@@ -855,7 +924,8 @@ class DiscordService {
    */
   async handleInteraction(interaction) {
     try {
-      if (interaction.type === 2) { // APPLICATION_COMMAND
+      if (interaction.type === 2) {
+        // APPLICATION_COMMAND
         const commandName = interaction.data.name;
         const result = await this.handleSlashCommand(commandName, interaction);
 
@@ -873,11 +943,11 @@ class DiscordService {
 
       return null;
     } catch (error) {
-      console.error('Error handling interaction:', error);
+      console.error("Error handling interaction:", error);
       return {
         type: 4,
         data: {
-          content: '❌ An error occurred while processing the interaction.',
+          content: "❌ An error occurred while processing the interaction.",
           flags: 64, // EPHEMERAL
         },
       };
@@ -910,14 +980,14 @@ class DiscordService {
         payload,
         {
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
         },
       );
 
       return response.data;
     } catch (error) {
-      console.error('Error sending followup message:', error);
+      console.error("Error sending followup message:", error);
       throw error;
     }
   }
@@ -946,14 +1016,14 @@ class DiscordService {
         payload,
         {
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
         },
       );
 
       return response.data;
     } catch (error) {
-      console.error('Error editing original response:', error);
+      console.error("Error editing original response:", error);
       throw error;
     }
   }
@@ -968,7 +1038,7 @@ class DiscordService {
       );
       return true;
     } catch (error) {
-      console.error('Error deleting original response:', error);
+      console.error("Error deleting original response:", error);
       throw error;
     }
   }
@@ -991,14 +1061,14 @@ class DiscordService {
         payload,
         {
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
         },
       );
 
       return response.data;
     } catch (error) {
-      console.error('Error deferring response:', error);
+      console.error("Error deferring response:", error);
       throw error;
     }
   }

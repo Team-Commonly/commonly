@@ -3,43 +3,43 @@ jest.mock('discord.js', () => ({
   Client: jest.fn().mockImplementation(() => ({
     login: jest.fn().mockResolvedValue('logged_in'),
     guilds: {
-      fetch: jest.fn()
+      fetch: jest.fn(),
     },
     channels: {
-      fetch: jest.fn()
-    }
+      fetch: jest.fn(),
+    },
   })),
   GatewayIntentBits: {
     Guilds: 'Guilds',
     GuildMessages: 'GuildMessages',
-    GuildWebhooks: 'GuildWebhooks'
-  }
+    GuildWebhooks: 'GuildWebhooks',
+  },
 }));
 
 // Mock models
 jest.mock('../../../models/Integration');
 jest.mock('../../../models/DiscordIntegration', () => ({
-  findByIdAndUpdate: jest.fn()
+  findByIdAndUpdate: jest.fn(),
 }));
 jest.mock('../../../models/DiscordSummaryHistory', () => jest.fn().mockImplementation(() => ({
-  save: jest.fn()
+  save: jest.fn(),
 })));
 jest.mock('../../../services/discordCommandService');
 jest.mock('../../../services/commonlyBotService');
 jest.mock('../../../config/discord');
 jest.mock('axios');
 
+const axios = require('axios');
 const DiscordService = require('../../../services/discordService');
 const Integration = require('../../../models/Integration');
 const DiscordCommandService = require('../../../services/discordCommandService');
 const CommonlyBotService = require('../../../services/commonlyBotService');
-const axios = require('axios');
 
 // Mock the Discord config
 jest.mock('../../../config/discord', () => ({
   botToken: 'test-bot-token',
   clientId: 'test-client-id',
-  applicationId: 'test-app-id'
+  applicationId: 'test-app-id',
 }));
 
 describe('DiscordService', () => {
@@ -56,28 +56,30 @@ describe('DiscordService', () => {
       config: {
         channelId: 'channel123',
         serverId: 'guild123',
-        webhookListenerEnabled: true
+        webhookListenerEnabled: true,
       },
       platformIntegration: {
         serverId: 'guild123',
         channelId: 'channel123',
-        webhookUrl: 'https://discord.com/api/webhooks/123/abc'
-      }
+        webhookUrl: 'https://discord.com/api/webhooks/123/abc',
+      },
     };
 
     // Mock Integration model
     Integration.findById = jest.fn().mockReturnValue({
-      populate: jest.fn().mockResolvedValue(mockIntegration)
+      populate: jest.fn().mockResolvedValue(mockIntegration),
     });
-    Integration.findByIdAndUpdate = jest.fn().mockResolvedValue(mockIntegration);
+    Integration.findByIdAndUpdate = jest
+      .fn()
+      .mockResolvedValue(mockIntegration);
 
     // Mock DiscordCommandService
     mockCommandService = {
       initialize: jest.fn().mockResolvedValue(true),
       createDiscordSummary: jest.fn().mockResolvedValue({
         content: 'Test summary',
-        messageCount: 2
-      })
+        messageCount: 2,
+      }),
     };
     DiscordCommandService.mockImplementation(() => mockCommandService);
 
@@ -85,8 +87,8 @@ describe('DiscordService', () => {
     mockCommonlyBotService = {
       postDiscordSummaryToPod: jest.fn().mockResolvedValue({
         success: true,
-        message: { id: 'msg123' }
-      })
+        message: { id: 'msg123' },
+      }),
     };
     CommonlyBotService.mockImplementation(() => mockCommonlyBotService);
 
@@ -97,7 +99,7 @@ describe('DiscordService', () => {
 
     discordService = new DiscordService('integration123');
     discordService.integration = mockIntegration;
-    
+
     jest.clearAllMocks();
   });
 
@@ -111,9 +113,9 @@ describe('DiscordService', () => {
 
     it('should fail initialization with invalid integration', async () => {
       Integration.findById = jest.fn().mockReturnValue({
-        populate: jest.fn().mockResolvedValue(null)
+        populate: jest.fn().mockResolvedValue(null),
       });
-      
+
       const result = await discordService.initialize();
       expect(result).toBe(false);
     });
@@ -125,31 +127,39 @@ describe('DiscordService', () => {
         guilds: {
           fetch: jest.fn().mockResolvedValue({
             channels: {
-              fetch: jest.fn().mockResolvedValue({ id: 'channel123' })
-            }
-          })
-        }
+              fetch: jest.fn().mockResolvedValue({ id: 'channel123' }),
+            },
+          }),
+        },
       };
     });
 
     it('should connect to Discord successfully', async () => {
       const result = await discordService.connect();
       expect(result).toBe(true);
-      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith('integration123', {
-        status: 'connected',
-        lastSync: expect.any(Date)
-      });
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        'integration123',
+        {
+          status: 'connected',
+          lastSync: expect.any(Date),
+        },
+      );
     });
 
     it('should handle connection errors', async () => {
-      discordService.client.guilds.fetch.mockRejectedValue(new Error('Guild not found'));
-      
+      discordService.client.guilds.fetch.mockRejectedValue(
+        new Error('Guild not found'),
+      );
+
       const result = await discordService.connect();
       expect(result).toBe(false);
-      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith('integration123', {
-        status: 'error',
-        lastError: 'Guild not found'
-      });
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        'integration123',
+        {
+          status: 'error',
+          lastError: 'Guild not found',
+        },
+      );
     });
   });
 
@@ -157,15 +167,20 @@ describe('DiscordService', () => {
     it('should disconnect from Discord', async () => {
       const result = await discordService.disconnect();
       expect(result).toBe(true);
-      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith('integration123', {
-        status: 'disconnected',
-        lastSync: expect.any(Date)
-      });
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        'integration123',
+        {
+          status: 'disconnected',
+          lastSync: expect.any(Date),
+        },
+      );
     });
 
     it('should handle disconnect errors gracefully', async () => {
-      Integration.findByIdAndUpdate.mockRejectedValue(new Error('Database error'));
-      
+      Integration.findByIdAndUpdate.mockRejectedValue(
+        new Error('Database error'),
+      );
+
       const result = await discordService.disconnect();
       expect(result).toBe(false);
     });
@@ -184,36 +199,38 @@ describe('DiscordService', () => {
           messageId: 'msg1',
           content: 'Hello world',
           author: 'user1',
-          timestamp: new Date()
+          timestamp: new Date(),
         },
         {
           messageId: 'msg2',
           content: 'How are you?',
           author: 'user2',
-          timestamp: new Date()
-        }
+          timestamp: new Date(),
+        },
       ];
 
       discordService.fetchMessages.mockResolvedValue(mockMessages);
-      
+
       const result = await discordService.syncRecentMessages(1);
 
       expect(result.success).toBe(true);
       expect(result.messageCount).toBe(2);
-      expect(mockCommonlyBotService.postDiscordSummaryToPod).toHaveBeenCalledWith(
+      expect(
+        mockCommonlyBotService.postDiscordSummaryToPod,
+      ).toHaveBeenCalledWith(
         'pod123',
         expect.objectContaining({
-          content: 'Test summary'
+          content: 'Test summary',
         }),
-        'integration123'
+        'integration123',
       );
     });
 
     it('should return early when sync is disabled', async () => {
       discordService.integration.config.webhookListenerEnabled = false;
-      
+
       const result = await discordService.syncRecentMessages(1);
-      
+
       expect(result.success).toBe(false);
       expect(result.content).toContain('Discord sync not enabled');
     });
@@ -225,7 +242,9 @@ describe('DiscordService', () => {
 
       expect(result.success).toBe(true);
       expect(result.messageCount).toBe(0);
-      expect(mockCommonlyBotService.postDiscordSummaryToPod).not.toHaveBeenCalled();
+      expect(
+        mockCommonlyBotService.postDiscordSummaryToPod,
+      ).not.toHaveBeenCalled();
     });
 
     it('should handle bot service errors gracefully', async () => {
@@ -234,14 +253,14 @@ describe('DiscordService', () => {
           messageId: 'msg1',
           content: 'Test message',
           author: 'user1',
-          timestamp: new Date()
-        }
+          timestamp: new Date(),
+        },
       ];
 
       discordService.fetchMessages.mockResolvedValue(mockMessages);
       mockCommonlyBotService.postDiscordSummaryToPod.mockResolvedValue({
         success: false,
-        error: 'Failed to post'
+        error: 'Failed to post',
       });
 
       const result = await discordService.syncRecentMessages(1);
@@ -256,17 +275,20 @@ describe('DiscordService', () => {
         messageId: 'msg1',
         content: 'Old message',
         author: 'user1',
-        timestamp: new Date(now.getTime() - 2 * 60 * 60 * 1000) // 2 hours ago
+        timestamp: new Date(now.getTime() - 2 * 60 * 60 * 1000), // 2 hours ago
       };
       const recentMessage = {
         messageId: 'msg2',
         content: 'Recent message',
         author: 'user2',
-        timestamp: now
+        timestamp: now,
       };
 
-      discordService.fetchMessages.mockResolvedValue([oldMessage, recentMessage]);
-      
+      discordService.fetchMessages.mockResolvedValue([
+        oldMessage,
+        recentMessage,
+      ]);
+
       const result = await discordService.syncRecentMessages(1); // 1 hour range
 
       expect(result.success).toBe(true);
@@ -293,9 +315,9 @@ describe('DiscordService', () => {
             author: { username: 'user1', bot: false },
             timestamp: new Date().toISOString(),
             attachments: [],
-            embeds: []
-          }
-        ]
+            embeds: [],
+          },
+        ],
       };
 
       axios.get.mockResolvedValue(mockApiResponse);
@@ -308,9 +330,9 @@ describe('DiscordService', () => {
         'https://discord.com/api/v10/channels/channel123/messages',
         expect.objectContaining({
           headers: expect.objectContaining({
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`
-          })
-        })
+            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+          }),
+        }),
       );
     });
 
@@ -324,29 +346,35 @@ describe('DiscordService', () => {
   describe('registerSlashCommands', () => {
     it('should register commands successfully', async () => {
       axios.put.mockResolvedValue({ status: 200 });
-      
+
       const result = await discordService.registerSlashCommands('guild123');
-      
+
       expect(result).toBe(true);
       expect(axios.put).toHaveBeenCalled();
-      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith('integration123', {
-        'config.commandsRegistered': true,
-        'config.lastCommandRegistration': expect.any(Date),
-        'config.registeredGuildId': 'guild123'
-      });
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        'integration123',
+        {
+          'config.commandsRegistered': true,
+          'config.lastCommandRegistration': expect.any(Date),
+          'config.registeredGuildId': 'guild123',
+        },
+      );
     });
 
     it('should handle registration failures', async () => {
       axios.put.mockResolvedValue({ status: 500 });
-      
+
       const result = await discordService.registerSlashCommands('guild123');
-      
+
       expect(result).toBe(false);
-      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith('integration123', {
-        'config.commandsRegistered': false,
-        'config.lastRegistrationError': expect.any(String),
-        'config.lastRegistrationAttempt': expect.any(Date)
-      });
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        'integration123',
+        {
+          'config.commandsRegistered': false,
+          'config.lastRegistrationError': expect.any(String),
+          'config.lastRegistrationAttempt': expect.any(Date),
+        },
+      );
     });
   });
 });

@@ -13,18 +13,28 @@ const userSchema = new mongoose.Schema({
   apiTokenCreatedAt: { type: Date },
 
   // Daily digest and subscription preferences
-  subscribedPods: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Pod',
-  }],
+  subscribedPods: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Pod',
+    },
+  ],
   digestPreferences: {
     enabled: { type: Boolean, default: true },
-    frequency: { type: String, enum: ['daily', 'weekly', 'never'], default: 'daily' },
+    frequency: {
+      type: String,
+      enum: ['daily', 'weekly', 'never'],
+      default: 'daily',
+    },
     deliveryTime: { type: String, default: '06:00' }, // UTC time in HH:MM format
     includeQuotes: { type: Boolean, default: true },
     includeInsights: { type: Boolean, default: true },
     includeTimeline: { type: Boolean, default: true },
-    minActivityLevel: { type: String, enum: ['low', 'medium', 'high'], default: 'low' },
+    minActivityLevel: {
+      type: String,
+      enum: ['low', 'medium', 'high'],
+      default: 'low',
+    },
   },
 
   // Activity tracking for digest relevance

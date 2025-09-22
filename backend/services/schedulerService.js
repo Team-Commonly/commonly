@@ -20,43 +20,55 @@ class SchedulerService {
     console.log('Starting summarizer scheduler...');
 
     // Run summarizer every hour at minute 0
-    const summarizerJob = cron.schedule('0 * * * *', async () => {
-      console.log('Running hourly summarizer...');
-      try {
-        await SchedulerService.runSummarizer();
-      } catch (error) {
-        console.error('Error in scheduled summarizer:', error);
-      }
-    }, {
-      scheduled: false,
-      timezone: 'UTC',
-    });
+    const summarizerJob = cron.schedule(
+      '0 * * * *',
+      async () => {
+        console.log('Running hourly summarizer...');
+        try {
+          await SchedulerService.runSummarizer();
+        } catch (error) {
+          console.error('Error in scheduled summarizer:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
 
     // Generate daily digests at 6 AM UTC (early morning for most users)
-    const dailyDigestJob = cron.schedule('0 6 * * *', async () => {
-      console.log('Running daily digest generation...');
-      try {
-        await dailyDigestService.generateAllDailyDigests();
-      } catch (error) {
-        console.error('Error in scheduled daily digest generation:', error);
-      }
-    }, {
-      scheduled: false,
-      timezone: 'UTC',
-    });
+    const dailyDigestJob = cron.schedule(
+      '0 6 * * *',
+      async () => {
+        console.log('Running daily digest generation...');
+        try {
+          await dailyDigestService.generateAllDailyDigests();
+        } catch (error) {
+          console.error('Error in scheduled daily digest generation:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
 
     // Clean up old summaries daily at 2 AM UTC
-    const cleanupJob = cron.schedule('0 2 * * *', async () => {
-      console.log('Running daily cleanup...');
-      try {
-        await SummarizerService.cleanOldSummaries(30); // Keep 30 days of daily digests
-      } catch (error) {
-        console.error('Error in scheduled cleanup:', error);
-      }
-    }, {
-      scheduled: false,
-      timezone: 'UTC',
-    });
+    const cleanupJob = cron.schedule(
+      '0 2 * * *',
+      async () => {
+        console.log('Running daily cleanup...');
+        try {
+          await SummarizerService.cleanOldSummaries(30); // Keep 30 days of daily digests
+        } catch (error) {
+          console.error('Error in scheduled cleanup:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
 
     this.jobs = [summarizerJob, dailyDigestJob, cleanupJob];
     this.jobs.forEach((job) => job.start());
@@ -117,7 +129,9 @@ class SchedulerService {
       ]);
 
       // Log results
-      console.log(`✓ Created ${chatRoomSummaries.length} individual chat room summaries`);
+      console.log(
+        `✓ Created ${chatRoomSummaries.length} individual chat room summaries`,
+      );
 
       if (postSummary.status === 'fulfilled') {
         console.log(`✓ Posts summary created: "${postSummary.value.title}"`);
@@ -126,7 +140,9 @@ class SchedulerService {
       }
 
       if (chatSummary.status === 'fulfilled') {
-        console.log(`✓ Overall chat summary created: "${chatSummary.value.title}"`);
+        console.log(
+          `✓ Overall chat summary created: "${chatSummary.value.title}"`,
+        );
       } else {
         console.error('✗ Overall chat summary failed:', chatSummary.reason);
       }
@@ -165,35 +181,40 @@ class SchedulerService {
       const discordIntegrations = await Integration.find({
         type: 'discord',
         isActive: true,
-        'config.webhookListenerEnabled': true
+        'config.webhookListenerEnabled': true,
       });
 
-      console.log(`Found ${discordIntegrations.length} active Discord integration(s)`);
+      console.log(
+        `Found ${discordIntegrations.length} active Discord integration(s)`,
+      );
 
       const results = [];
       for (const integration of discordIntegrations) {
         try {
           const discordService = new DiscordService(integration._id);
           await discordService.initialize();
-          
+
           const syncResult = await discordService.syncRecentMessages(1); // 1 hour
           results.push({
             integrationId: integration._id,
             success: syncResult.success,
             messageCount: syncResult.messageCount,
-            content: syncResult.content
+            content: syncResult.content,
           });
 
           if (syncResult.success && syncResult.messageCount > 0) {
             console.log(`✓ Discord sync successful: ${syncResult.content}`);
           }
         } catch (error) {
-          console.error(`Error syncing Discord integration ${integration._id}:`, error);
+          console.error(
+            `Error syncing Discord integration ${integration._id}:`,
+            error,
+          );
           results.push({
             integrationId: integration._id,
             success: false,
             messageCount: 0,
-            content: error.message
+            content: error.message,
           });
         }
       }
