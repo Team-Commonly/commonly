@@ -3,6 +3,7 @@ module.exports = {
   testPathIgnorePatterns: [
     '/node_modules/',
     '__tests__/utils/testUtils.js',
+    '__tests__/setup.js',
   ],
   collectCoverageFrom: [
     '**/*.js',
@@ -13,4 +14,10 @@ module.exports = {
     '!server.js',
   ],
   verbose: true,
+  // Increase timeouts for database setup
+  testTimeout: 30000,
+  setupFilesAfterEnv: ['<rootDir>/__tests__/setup.js'],
+  // Handle module mocking better
+  clearMocks: true,
+  restoreMocks: true,
 };

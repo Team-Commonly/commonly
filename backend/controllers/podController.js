@@ -66,7 +66,9 @@ exports.getPodById = async (req, res) => {
 
     // If type is specified, ensure pod is of that type
     if (type && pod.type !== type) {
-      return res.status(404).json({ error: 'Pod not found or is not of specified type' });
+      return res
+        .status(404)
+        .json({ error: 'Pod not found or is not of specified type' });
     }
 
     return res.json(pod);
@@ -138,7 +140,10 @@ exports.createPod = async (req, res) => {
 // Join a pod
 exports.joinPod = async (req, res) => {
   try {
-    console.log('Join pod request received:', { params: req.params, body: req.body });
+    console.log('Join pod request received:', {
+      params: req.params,
+      body: req.body,
+    });
 
     const { id } = req.params;
 
@@ -165,7 +170,9 @@ exports.joinPod = async (req, res) => {
     console.log('Pod found:', { podId: pod._id, members: pod.members });
 
     // Check if user is already a member
-    const isMember = pod.members.some((member) => member.toString() === userId.toString());
+    const isMember = pod.members.some(
+      (member) => member.toString() === userId.toString(),
+    );
     console.log('Is user already a member?', isMember);
 
     if (isMember) {
@@ -220,7 +227,9 @@ exports.leavePod = async (req, res) => {
     }
 
     // Remove user from members
-    pod.members = pod.members.filter((member) => member.toString() !== req.userId);
+    pod.members = pod.members.filter(
+      (member) => member.toString() !== req.userId,
+    );
     pod.updatedAt = Date.now();
 
     await pod.save();

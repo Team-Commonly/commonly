@@ -8,9 +8,10 @@ let mongoServer;
 
 const setupMongoDb = async () => {
   try {
-    // Use the simplified API for v7+
+    // Use compatible MongoDB version for current system
     mongoServer = await MongoMemoryServer.create({
       binary: {
+        version: '7.0.11', // Use a more recent stable version
         skipMD5: true,
       },
       instance: {
@@ -46,10 +47,12 @@ const clearMongoDb = async () => {
     const { collections } = mongoose.connection;
     const collectionNames = Object.keys(collections);
 
-    await Promise.all(collectionNames.map(async (key) => {
-      const collection = collections[key];
-      await collection.deleteMany({});
-    }));
+    await Promise.all(
+      collectionNames.map(async (key) => {
+        const collection = collections[key];
+        await collection.deleteMany({});
+      }),
+    );
   } catch (error) {
     console.error('Error clearing MongoDB data:', error);
     throw error;
@@ -185,10 +188,21 @@ const createTestMessage = async (Message, podId, userId, override = {}) => {
   return message;
 };
 
+// Combined teardown function
+const teardownMongoDb = async (server) => {
+  try {
+    await clearMongoDb();
+    await closeMongoDb();
+  } catch (error) {
+    console.error('Error during MongoDB teardown:', error);
+  }
+};
+
 module.exports = {
   setupMongoDb,
   closeMongoDb,
   clearMongoDb,
+  teardownMongoDb,
   setupPgDb,
   clearPgDb,
   closePgDb,

@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-module.exports = function (req, res, next) {
+module.exports = async function (req, res, next) {
   // Get token from header - support both Authorization and x-auth-token headers
   let token = req.header('Authorization')?.replace('Bearer ', '');
 
@@ -14,7 +15,34 @@ module.exports = function (req, res, next) {
     return res.status(401).json({ msg: 'No token, authorization denied' });
   }
 
-  // Verify token
+  // Check if this is an API token (starts with 'cm_')
+  if (token.startsWith('cm_')) {
+    try {
+      const user = await User.findOne({ apiToken: token }).select(
+        '_id username email role',
+      );
+
+      if (!user) {
+        return res.status(401).json({ msg: 'Invalid API token' });
+      }
+
+      // Set user info for API token
+      req.userId = user._id.toString();
+      req.user = {
+        id: user._id.toString(),
+        username: user.username,
+        email: user.email,
+        role: user.role,
+      };
+
+      return next();
+    } catch (err) {
+      console.error('API token validation error:', err.message);
+      return res.status(401).json({ msg: 'API token validation failed' });
+    }
+  }
+
+  // Verify JWT token
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 

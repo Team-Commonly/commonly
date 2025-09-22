@@ -16,12 +16,16 @@ const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
+const integrationRoutes = require('./routes/integrations');
+const discordWebhookRoutes = require('./routes/webhooks/discord');
+const discordRoutes = require('./routes/discord');
+const analyticsRoutes = require('./routes/analytics');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes;
 let pgMessageRoutes;
 let pgStatusRoutes;
 let PGMessage;
-let PGPod;
+let _PGPod;
 const Message = require('./models/Message');
 const Pod = require('./models/Pod');
 const User = require('./models/User');
@@ -34,7 +38,7 @@ if (process.env.PG_HOST) {
   pgMessageRoutes = require('./routes/pg-messages');
   pgStatusRoutes = require('./routes/pg-status');
   PGMessage = require('./models/pg/Message');
-  PGPod = require('./models/pg/Pod');
+  _PGPod = require('./models/pg/Pod');
 }
 
 // Load environment variables
@@ -52,14 +56,26 @@ const io = socketIo(server, {
   },
   transports: ['websocket', 'polling'],
 });
+
+// Initialize socket instance for other services
+const socketConfig = require('./config/socket');
+
+socketConfig.init(io);
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
-}));
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
+  }),
+);
+
+// Raw body middleware for Discord signature verification
+app.use('/api/discord/interactions', express.raw({ type: 'application/json' }));
+
+// JSON parsing for all other routes
 app.use(express.json());
 
 // Routes
@@ -71,6 +87,16 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);
 app.use('/api/summaries', summariesRoutes);
+app.use('/api/integrations', integrationRoutes);
+app.use('/api/webhooks/discord', discordWebhookRoutes);
+app.use('/api/discord', discordRoutes);
+app.use('/api/analytics', analyticsRoutes);
+
+// Test routes (development only)
+if (process.env.NODE_ENV === 'development') {
+  const testBotRoutes = require('./routes/test-bot');
+  app.use('/api/test/bot', testBotRoutes);
+}
 
 // Connect to MongoDB (for posts and user data)
 connectDB();
@@ -86,53 +112,65 @@ if (process.env.NODE_ENV !== 'test') {
 // Connect to PostgreSQL if configured (for chat functionality)
 if (process.env.PG_HOST) {
   console.log('Attempting to connect to PostgreSQL for chat functionality...');
-  connectPG().then((pgPool) => {
-    if (pgPool) {
-      // Initialize PostgreSQL database
-      initializePGDB().then((success) => {
-        if (success) {
-          // Set global flag that PostgreSQL is available
-          pgAvailable = true;
-          // Register PostgreSQL routes for chat functionality
-          app.use('/api/pg/pods', pgPodRoutes);
-          app.use('/api/pg/messages', pgMessageRoutes);
-          app.use('/api/pg/status', pgStatusRoutes);
-          console.log('PostgreSQL routes registered for chat functionality');
-        } else {
-          pgAvailable = false;
-          console.warn('PostgreSQL database initialization failed, chat functionality will use MongoDB');
-          // Register a dummy status endpoint to indicate PostgreSQL is not available
-          app.use('/api/pg/status', (req, res) => {
-            res.json({ available: false });
+  connectPG()
+    .then((pgPool) => {
+      if (pgPool) {
+        // Initialize PostgreSQL database
+        initializePGDB()
+          .then((success) => {
+            if (success) {
+              // Set global flag that PostgreSQL is available
+              pgAvailable = true;
+              // Register PostgreSQL routes for chat functionality
+              app.use('/api/pg/pods', pgPodRoutes);
+              app.use('/api/pg/messages', pgMessageRoutes);
+              app.use('/api/pg/status', pgStatusRoutes);
+              console.log(
+                'PostgreSQL routes registered for chat functionality',
+              );
+            } else {
+              pgAvailable = false;
+              console.warn(
+                'PostgreSQL database initialization failed, chat functionality will use MongoDB',
+              );
+              // Register a dummy status endpoint to indicate PostgreSQL is not available
+              app.use('/api/pg/status', (req, res) => {
+                res.json({ available: false });
+              });
+            }
+          })
+          .catch((err) => {
+            pgAvailable = false;
+            console.error('Error initializing PostgreSQL database:', err);
+            // Register a dummy status endpoint to indicate PostgreSQL is not available
+            app.use('/api/pg/status', (req, res) => {
+              res.json({ available: false });
+            });
           });
-        }
-      }).catch((err) => {
+      } else {
         pgAvailable = false;
-        console.error('Error initializing PostgreSQL database:', err);
+        console.warn(
+          'PostgreSQL connection failed, chat functionality will use MongoDB',
+        );
         // Register a dummy status endpoint to indicate PostgreSQL is not available
         app.use('/api/pg/status', (req, res) => {
           res.json({ available: false });
         });
-      });
-    } else {
+      }
+    })
+    .catch((err) => {
       pgAvailable = false;
-      console.warn('PostgreSQL connection failed, chat functionality will use MongoDB');
+      console.error('Error connecting to PostgreSQL:', err);
       // Register a dummy status endpoint to indicate PostgreSQL is not available
       app.use('/api/pg/status', (req, res) => {
         res.json({ available: false });
       });
-    }
-  }).catch((err) => {
-    pgAvailable = false;
-    console.error('Error connecting to PostgreSQL:', err);
-    // Register a dummy status endpoint to indicate PostgreSQL is not available
-    app.use('/api/pg/status', (req, res) => {
-      res.json({ available: false });
     });
-  });
 } else {
   pgAvailable = false;
-  console.log('PostgreSQL connection not configured. Chat functionality will use MongoDB.');
+  console.log(
+    'PostgreSQL connection not configured. Chat functionality will use MongoDB.',
+  );
   // Register a dummy status endpoint to indicate PostgreSQL is not available
   app.use('/api/pg/status', (req, res) => {
     res.json({ available: false });
@@ -168,7 +206,9 @@ io.use((socket, next) => {
 
 // Socket.io event handlers
 io.on('connection', (socket) => {
-  console.log(`New client connected (id: ${socket.id}, user: ${socket.userId})`);
+  console.log(
+    `New client connected (id: ${socket.id}, user: ${socket.userId})`,
+  );
 
   // Join a pod room
   socket.on('joinPod', (podId) => {
@@ -191,61 +231,109 @@ io.on('connection', (socket) => {
   });
 
   // Send a message to a pod
-  socket.on('sendMessage', async ({ podId, content, userId, messageType = 'text' }) => {
-    try {
-      // Validate required parameters - content must be present
-      if (!podId || !content || !userId) {
-        console.error('Socket error: Missing required parameters for sendMessage', { podId, userId });
-        socket.emit('error', { message: 'Missing required parameters' });
-        return;
-      }
+  socket.on(
+    'sendMessage',
+    async ({ podId, content, userId, messageType = 'text' }) => {
+      try {
+        // Validate required parameters - content must be present
+        if (!podId || !content || !userId) {
+          console.error(
+            'Socket error: Missing required parameters for sendMessage',
+            { podId, userId },
+          );
+          socket.emit('error', { message: 'Missing required parameters' });
+          return;
+        }
 
-      console.log('Socket sendMessage received:', { podId, content, userId, messageType });
+        console.log('Socket sendMessage received:', {
+          podId,
+          content,
+          userId,
+          messageType,
+        });
 
-      let message;
-      let podInstance;
+        let message;
+        // Check pod membership in MongoDB (always), but store messages in PostgreSQL if available
+        const podInstance = await Pod.findById(podId);
+        if (!podInstance) {
+          console.error('Socket error: Pod not found', { podId });
+          socket.emit('error', { message: 'Pod not found' });
+          return;
+        }
 
-      // Use the global pgAvailable flag instead of checking process.env.PG_HOST
-      if (pgAvailable) {
-        try {
-          // Check if pod exists and user is a member
-          podInstance = await PGPod.findById(podId);
-          if (!podInstance) {
-            console.error('Socket error: Pod not found', { podId });
-            socket.emit('error', { message: 'Pod not found' });
-            return;
-          }
+        // Check membership using MongoDB pod model
+        if (!podInstance.members.includes(userId)) {
+          console.error('Socket error: Not authorized to post in this pod', {
+            podId,
+            userId,
+          });
+          socket.emit('error', {
+            message: 'Not authorized to post in this pod',
+          });
+          return;
+        }
 
-          // Check membership
-          const isMember = await PGPod.isMember(podId, userId);
-          if (!isMember) {
-            console.error('Socket error: Not authorized to post in this pod', { podId, userId });
-            socket.emit('error', { message: 'Not authorized to post in this pod' });
-            return;
-          }
-
-          // Create message in PostgreSQL
-          console.log('Creating message in PostgreSQL:', { podId, userId, content, messageType });
-          const newMessage = await PGMessage.create(podId, userId, content, messageType);
-          console.log('Message created successfully:', newMessage);
-
-          message = await PGMessage.findById(newMessage.id);
-          console.log('Message retrieved for broadcast:', message);
-        } catch (dbError) {
-          console.error('Database error with PostgreSQL, falling back to MongoDB:', dbError);
+        // Use PostgreSQL for messages if available, otherwise fallback to MongoDB
+        if (pgAvailable) {
           try {
-            // Check if pod exists and user is a member
-            podInstance = await Pod.findById(podId);
-            if (!podInstance) {
-              socket.emit('error', { message: 'Pod not found' });
+            // Create message in PostgreSQL
+            console.log('Creating message in PostgreSQL:', {
+              podId,
+              userId,
+              content,
+              messageType,
+            });
+            const newMessage = await PGMessage.create(
+              podId,
+              userId,
+              content,
+              messageType,
+            );
+            console.log('Message created successfully:', newMessage);
+
+            message = await PGMessage.findById(newMessage.id);
+            console.log('Message retrieved for broadcast:', message);
+          } catch (dbError) {
+            console.error(
+              'Database error with PostgreSQL, falling back to MongoDB:',
+              dbError,
+            );
+            try {
+              // Create message in MongoDB
+              const user = await User.findById(userId);
+              const newMessage = new Message({
+                podId,
+                userId,
+                content,
+                messageType,
+              });
+
+              await newMessage.save();
+              console.log(
+                'Message saved to MongoDB after PG fallback:',
+                newMessage._id,
+              );
+
+              // Populate user info
+              message = {
+                ...newMessage.toObject(),
+                username: user.username,
+                profilePicture: user.profilePicture,
+              };
+            } catch (mongoDbError) {
+              console.error(
+                'Failed to save message in MongoDB fallback:',
+                mongoDbError,
+              );
+              socket.emit('error', {
+                message: 'Failed to save message to any database',
+              });
               return;
             }
-
-            if (!podInstance.members.includes(userId)) {
-              socket.emit('error', { message: 'Not authorized to post in this pod' });
-              return;
-            }
-
+          }
+        } else {
+          console.log('Using MongoDB for messages (PostgreSQL not available)');
+          try {
             // Create message in MongoDB
             const user = await User.findById(userId);
             const newMessage = new Message({
@@ -256,7 +344,7 @@ io.on('connection', (socket) => {
             });
 
             await newMessage.save();
-            console.log('Message saved to MongoDB after PG fallback:', newMessage._id);
+            console.log('Message saved to MongoDB:', newMessage._id);
 
             // Populate user info
             message = {
@@ -264,104 +352,73 @@ io.on('connection', (socket) => {
               username: user.username,
               profilePicture: user.profilePicture,
             };
-          } catch (mongoDbError) {
-            console.error('Failed to save message in MongoDB fallback:', mongoDbError);
-            socket.emit('error', { message: 'Failed to save message to any database' });
+          } catch (dbError) {
+            console.error(
+              'Database error creating message in MongoDB:',
+              dbError,
+            );
+            socket.emit('error', { message: 'Failed to save message' });
             return;
           }
         }
-      } else {
-        console.log('Using MongoDB for messages (PostgreSQL not available)');
-        // Check if pod exists and user is a member
-        podInstance = await Pod.findById(podId);
-        if (!podInstance) {
-          socket.emit('error', { message: 'Pod not found' });
-          return;
-        }
 
-        if (!podInstance.members.includes(userId)) {
-          socket.emit('error', { message: 'Not authorized to post in this pod' });
-          return;
-        }
+        // Broadcast message to all users in the pod room
+        // Format the message to ensure all fields are present regardless of the source
+        const formattedMessage = {
+          // Ensure ID fields
+          _id: message._id || message.id || Date.now().toString(),
+          id: message._id || message.id || Date.now().toString(),
 
-        try {
-          // Create message in MongoDB
-          const user = await User.findById(userId);
-          const newMessage = new Message({
-            podId,
-            userId,
-            content,
-            messageType,
-          });
+          // Ensure content fields
+          content: message.content || message.text || '',
+          text: message.content || message.text || '',
 
-          await newMessage.save();
-          console.log('Message saved to MongoDB:', newMessage._id);
+          // Ensure timestamp fields
+          createdAt: message.createdAt || message.created_at || new Date(),
+          created_at: message.createdAt || message.created_at || new Date(),
 
-          // Populate user info
-          message = {
-            ...newMessage.toObject(),
-            username: user.username,
-            profilePicture: user.profilePicture,
-          };
-        } catch (dbError) {
-          console.error('Database error creating message in MongoDB:', dbError);
-          socket.emit('error', { message: 'Failed to save message' });
-          return;
-        }
-      }
-
-      // Broadcast message to all users in the pod room
-      // Format the message to ensure all fields are present regardless of the source
-      const formattedMessage = {
-        // Ensure ID fields
-        _id: message._id || message.id || Date.now().toString(),
-        id: message._id || message.id || Date.now().toString(),
-
-        // Ensure content fields
-        content: message.content || message.text || '',
-        text: message.content || message.text || '',
-
-        // Ensure timestamp fields
-        createdAt: message.createdAt || message.created_at || new Date(),
-        created_at: message.createdAt || message.created_at || new Date(),
-
-        // Ensure all other fields
-        ...message,
-      };
-
-      // If we have user data, standardize the userId field
-      if (typeof message.userId !== 'object' && message.username) {
-        // User data is separate, not an object
-        formattedMessage.user_id = message.userId || message.user_id;
-        formattedMessage.username = message.username;
-        formattedMessage.profile_picture = message.profile_picture;
-
-        // Create an object format too for compatibility
-        formattedMessage.userId = {
-          _id: message.userId || message.user_id,
-          username: message.username,
-          profilePicture: message.profile_picture,
+          // Ensure all other fields
+          ...message,
         };
+
+        // If we have user data, standardize the userId field
+        if (typeof message.userId !== 'object' && message.username) {
+          // User data is separate, not an object
+          formattedMessage.user_id = message.userId || message.user_id;
+          formattedMessage.username = message.username;
+          formattedMessage.profile_picture = message.profile_picture || message.profilePicture;
+
+          // Create an object format too for compatibility
+          formattedMessage.userId = {
+            _id: message.userId || message.user_id,
+            username: message.username,
+            profilePicture: message.profile_picture || message.profilePicture,
+          };
+        }
+
+        // Log the formatted message for debugging
+        console.log('Broadcasting formatted message:', {
+          id: formattedMessage._id,
+          content: formattedMessage.content,
+          userId: formattedMessage.userId,
+          username: formattedMessage.username,
+          profile_picture: formattedMessage.profile_picture,
+          'userId.profilePicture': formattedMessage.userId?.profilePicture,
+        });
+
+        io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
+      } catch (err) {
+        console.error('Socket error:', err.message, { podId, userId });
+        socket.emit('error', { message: 'Server error' });
       }
-
-      // Log the formatted message for debugging
-      console.log('Broadcasting formatted message:', {
-        id: formattedMessage._id,
-        content: formattedMessage.content,
-        userId: formattedMessage.userId,
-        username: formattedMessage.username,
-      });
-
-      io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
-    } catch (err) {
-      console.error('Socket error:', err.message, { podId, userId });
-      socket.emit('error', { message: 'Server error' });
-    }
-  });
+    },
+  );
 
   // Disconnect event
   socket.on('disconnect', (reason) => {
-    console.log(`Client disconnected (id: ${socket.id}, user: ${socket.userId}). Reason: ${reason}`);
+    console.log(
+      `Client disconnected (id: ${socket.id}, user: ${socket.userId}). Reason: ${reason}`,
+    );
   });
 
   // Send a welcome message to confirm connection

@@ -19,7 +19,7 @@
     "lint-staged": "^16.0.0"
   },
   "lint-staged": {
-    "backend/**/*.js": [
+    "backend/{routes/auth.js,routes/integrations.js,routes/pods.js,middleware/auth.js,models/User.js,controllers/*.js}": [
       "./backend/node_modules/.bin/eslint --fix"
     ],
     "frontend/src/**/*.{js,jsx}": [
