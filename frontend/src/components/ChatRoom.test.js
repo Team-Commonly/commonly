@@ -12,7 +12,14 @@ jest.mock('axios', () => ({
   __esModule: true,
   default: { get: jest.fn(), post: jest.fn() }
 }));
-jest.mock('../context/AuthContext', () => ({ useAuth: jest.fn() }));
+jest.mock('../context/AuthContext', () => ({
+  useAuth: jest.fn(),
+  AuthContext: {
+    _currentValue: { user: { _id: 'u', username: 'me', profilePicture: null } },
+    Provider: ({ children }) => children,
+    Consumer: ({ children }) => children({ user: { _id: 'u', username: 'me', profilePicture: null } })
+  }
+}));
 jest.mock('../context/SocketContext', () => ({ useSocket: jest.fn() }));
 jest.mock('../context/LayoutContext', () => ({ useLayout: jest.fn() }));
 jest.mock('react-router-dom', () => ({ useParams: jest.fn(), useNavigate: jest.fn() }));
