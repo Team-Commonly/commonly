@@ -80,7 +80,7 @@ class CommonlyBotService {
       }
 
       // Format the Discord summary for the pod
-      const messageContent = this.formatDiscordSummaryForPod(discordSummary);
+      const messageContent = CommonlyBotService.formatDiscordSummaryForPod(discordSummary);
 
       let message;
 
@@ -88,7 +88,7 @@ class CommonlyBotService {
       if (PGMessage && process.env.PG_HOST) {
         try {
           // Ensure bot user is synchronized to PostgreSQL users table
-          await this.syncBotUserToPostgreSQL(bot);
+          await CommonlyBotService.syncBotUserToPostgreSQL(bot);
 
           // Create message in PostgreSQL (ensure podId is string)
           const newMessage = await PGMessage.create(
@@ -222,7 +222,7 @@ class CommonlyBotService {
   /**
    * Format Discord summary for posting in Commonly pod
    */
-  formatDiscordSummaryForPod(discordSummary) {
+  static formatDiscordSummaryForPod(discordSummary) {
     const timeRange = discordSummary.timeRange
       ? `${new Date(discordSummary.timeRange.start).toLocaleTimeString()} - ${new Date(discordSummary.timeRange.end).toLocaleTimeString()}`
       : 'Recent activity';
@@ -276,7 +276,7 @@ ${updateContent}
       if (PGMessage && process.env.PG_HOST) {
         try {
           // Ensure bot user is synchronized to PostgreSQL users table
-          await this.syncBotUserToPostgreSQL(bot);
+          await CommonlyBotService.syncBotUserToPostgreSQL(bot);
 
           // Create message in PostgreSQL (ensure podId is string)
           const newMessage = await PGMessage.create(
@@ -395,7 +395,7 @@ ${updateContent}
   /**
    * Sync bot user to PostgreSQL users table (only if not already synced)
    */
-  async syncBotUserToPostgreSQL(bot) {
+  static async syncBotUserToPostgreSQL(bot) {
     if (!PGMessage || !process.env.PG_HOST) {
       return; // PostgreSQL not available
     }
