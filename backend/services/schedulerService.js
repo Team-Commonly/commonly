@@ -186,36 +186,39 @@ class SchedulerService {
         `Found ${discordIntegrations.length} active Discord integration(s)`,
       );
 
-      const results = [];
-      for (const integration of discordIntegrations) {
-        try {
-          const discordService = new DiscordService(integration._id);
-          await discordService.initialize();
+      const results = await Promise.allSettled(
+        discordIntegrations.map(async (integration) => {
+          try {
+            const discordService = new DiscordService(integration._id);
+            await discordService.initialize();
 
-          const syncResult = await discordService.syncRecentMessages(1); // 1 hour
-          results.push({
-            integrationId: integration._id,
-            success: syncResult.success,
-            messageCount: syncResult.messageCount,
-            content: syncResult.content,
-          });
+            const syncResult = await discordService.syncRecentMessages(1); // 1 hour
+            const result = {
+              integrationId: integration._id,
+              success: syncResult.success,
+              messageCount: syncResult.messageCount,
+              content: syncResult.content,
+            };
 
-          if (syncResult.success && syncResult.messageCount > 0) {
-            console.log(`✓ Discord sync successful: ${syncResult.content}`);
+            if (syncResult.success && syncResult.messageCount > 0) {
+              console.log(`✓ Discord sync successful: ${syncResult.content}`);
+            }
+
+            return result;
+          } catch (error) {
+            console.error(
+              `Error syncing Discord integration ${integration._id}:`,
+              error,
+            );
+            return {
+              integrationId: integration._id,
+              success: false,
+              messageCount: 0,
+              content: error.message,
+            };
           }
-        } catch (error) {
-          console.error(
-            `Error syncing Discord integration ${integration._id}:`,
-            error,
-          );
-          results.push({
-            integrationId: integration._id,
-            success: false,
-            messageCount: 0,
-            content: error.message,
-          });
-        }
-      }
+        }),
+      ).then((settled) => settled.map((result) => (result.status === 'fulfilled' ? result.value : result.reason)));
 
       return results;
     } catch (error) {
