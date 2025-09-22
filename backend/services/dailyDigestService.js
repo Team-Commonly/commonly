@@ -53,7 +53,7 @@ class DailyDigestService {
       }
 
       // Organize summaries by pod and type
-      const organizedData = this.organizeSummariesForDigest(summaries);
+      const organizedData = DailyDigestService.organizeSummariesForDigest(summaries);
 
       // Generate comprehensive digest using AI
       const digestContent = await this.generateDigestContent(
@@ -97,7 +97,7 @@ class DailyDigestService {
   /**
    * Organize summaries by pod and extract timeline
    */
-  organizeSummariesForDigest(summaries) {
+  static organizeSummariesForDigest(summaries) {
     const byPod = {};
     const timeline = [];
 

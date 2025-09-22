@@ -111,7 +111,9 @@ class ChatSummarizerService {
   }
 
   static createPrompt(content, podName) {
-    return `Analyze the following chat messages from the "${podName}" community chat and create a brief, engaging summary. Focus on main discussion topics, popular conversations, and community interactions. Make it conversational and informative:
+    return `Analyze the following chat messages from the "${podName}" community chat and create a brief, engaging summary.
+Focus on main discussion topics, popular conversations, and community interactions.
+Make it conversational and informative:
 
 ${content}
 
@@ -119,7 +121,8 @@ Provide a summary in 2-3 sentences that captures the essence of the conversation
   }
 
   static createEnhancedPrompt(content, podName) {
-    return `You are an AI community analyst tasked with creating a comprehensive analysis of chat messages from the "${podName}" community. Analyze the following messages and extract detailed insights for a daily digest.
+    return `You are an AI community analyst tasked with creating a comprehensive analysis of chat messages from the "${podName}" community.
+Analyze the following messages and extract detailed insights for a daily digest.
 
 Chat Messages:
 ${content}
@@ -210,7 +213,8 @@ Please provide a JSON response with the following structure:
   }
 }
 
-Focus on extracting meaningful insights, notable quotes, discussion pivots, and community dynamics. Be analytical but concise.`;
+Focus on extracting meaningful insights, notable quotes, discussion pivots, and community dynamics.
+Be analytical but concise.`;
   }
 
   static generateFallbackSummary(content, podName) {
