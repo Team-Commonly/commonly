@@ -70,7 +70,7 @@ class ChatSummarizerService {
     }
   }
 
-  static generateFallbackAnalytics(messages, podName) {
+  static generateFallbackAnalytics(messages, _podName) {
     const userCounts = {};
     messages.forEach((msg) => {
       if (msg.username) {

@@ -11,6 +11,7 @@ jest.mock('../../../config/db-pg');
 
 const PGMessage = require('../../../models/pg/Message');
 const socketConfig = require('../../../config/socket');
+const dbPg = require('../../../config/db-pg');
 
 describe('CommonlyBotService', () => {
   let botService;
@@ -89,7 +90,7 @@ describe('CommonlyBotService', () => {
       const mockPool = {
         query: jest.fn().mockResolvedValue({ rows: [] }),
       };
-      require('../../../config/db-pg').pool = mockPool;
+      dbPg.pool = mockPool;
 
       // Mock process.env
       process.env.PG_HOST = 'localhost';
@@ -181,12 +182,12 @@ describe('CommonlyBotService', () => {
       const mockPool = {
         query: jest.fn(),
       };
-      require('../../../config/db-pg').pool = mockPool;
+      dbPg.pool = mockPool;
       process.env.PG_HOST = 'localhost';
     });
 
     it('should sync bot user to PostgreSQL if not exists', async () => {
-      const mockPool = require('../../../config/db-pg').pool;
+      const mockPool = dbPg.pool;
       mockPool.query
         .mockResolvedValueOnce({ rows: [] }) // User doesn't exist
         .mockResolvedValueOnce({ rows: [{ _id: 'bot123' }] }); // Insert success
@@ -204,7 +205,7 @@ describe('CommonlyBotService', () => {
     });
 
     it('should skip sync if user already exists', async () => {
-      const mockPool = require('../../../config/db-pg').pool;
+      const mockPool = dbPg.pool;
       mockPool.query.mockResolvedValueOnce({ rows: [{ _id: 'bot123' }] });
 
       await botService.syncBotUserToPostgreSQL(mockBot);
