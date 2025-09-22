@@ -89,8 +89,8 @@ class KeywordExtractionService {
       });
 
       // Build co-occurrence relationships
-      for (let i = 0; i < users.length; i++) {
-        for (let j = i + 1; j < users.length; j++) {
+      for (let i = 0; i < users.length; i += 1) {
+        for (let j = i + 1; j < users.length; j += 1) {
           const pair = [users[i], users[j]].sort().join('-');
           relationships.set(pair, (relationships.get(pair) || 0) + 1);
         }
