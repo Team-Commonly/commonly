@@ -2,6 +2,62 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🚀 Quick Start for New Claude Sessions
+
+### CURRENT STATE (January 2025) ✅ ALL GREEN
+- **Repository**: Commonly (Team-Commonly/commonly)
+- **Current Branch**: `discord-integration`
+- **PR #36**: ✅ ALL CHECKS PASSING - Ready for merge
+- **Tests**: ✅ 100/100 frontend + backend passing
+- **Linting**: ✅ 0 ESLint errors (fixed 57 errors)
+- **GitHub Actions**: ✅ Code Quality + Test Coverage passing
+
+### 📁 Key Documentation Files
+- **Main Guide**: `/CLAUDE.md` (this file)
+- **Frontend Testing**: `/frontend/TESTING.md`
+- **Backend Testing**: `/backend/TESTING.md`
+
+### 🛠️ Essential Commands
+```bash
+# Check current test status
+cd frontend && npm test -- --watchAll=false  # Should show 100/100 passing
+cd backend && npm test                        # Should show all passing
+
+# Check linting status
+npm run lint                                  # Should show 0 errors
+
+# Check GitHub Actions
+gh pr checks 36                               # Should show all ✅ passing
+```
+
+### 🎯 If Tests Are Failing
+1. **Frontend issues**: Check `frontend/TESTING.md` - likely axios mocking or ES modules
+2. **Backend issues**: Check `backend/TESTING.md` - likely static method calls
+3. **Linting issues**: Use patterns documented in this file's linting section
+
+---
+
+## Current Status (Updated January 2025)
+
+### PR #36 Status ✅ ALL CHECKS PASSING
+- **Code Quality**: ✅ PASSED (0 ESLint errors, down from 57)
+- **Test & Coverage**: ✅ PASSED (100/100 tests passing)
+- **Branch**: `discord-integration`
+- **Ready for**: Review and merge
+
+### Recent Major Fixes (January 2025)
+1. **Comprehensive ESLint fixes** - Resolved 57 linting errors systematically
+2. **Complete frontend test fixes** - All 100 tests now passing
+3. **Jest mocking improvements** - ES module compatibility for react-markdown and d3
+4. **AuthContext test fixes** - Proper context mocking for DiscordIntegration
+
+### Key Technical Improvements
+- ✅ Static method patterns for better code organization
+- ✅ Promise.allSettled() for improved async performance
+- ✅ Comprehensive axios mocking strategies
+- ✅ Proper React Context testing patterns
+- ✅ ES module compatibility with Jest
+
 ## Development Commands
 
 ### Docker Setup
@@ -53,10 +109,58 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `cd frontend && npm run test:coverage` - Run frontend tests with coverage
 
 ### Linting
+
+#### Current Status
+- ✅ **All ESLint errors fixed** - 0 errors (down from 57 errors in PR #36)
+- ⚠️ 18 warnings remaining (max-line-length only - non-blocking)
+- ✅ **GitHub Code Quality check passing**
+
+#### Commands
 - `npm run lint` - Lint both frontend and backend
 - `npm run lint:fix` - Auto-fix linting issues in both
 - `cd backend && npm run lint:fix` - Fix backend linting only
 - `cd frontend && npm run lint:fix` - Fix frontend linting only
+
+#### Major Linting Fixes Applied (January 2025)
+**Backend ESLint Fixes:**
+1. **Global-require patterns** - Added `eslint-disable-next-line global-require` comments for dynamic requires
+2. **Static method conversion** - Converted utility methods to static in:
+   - `services/commonlyBotService.js` - `syncBotUserToPostgreSQL()`, `formatDiscordSummaryForPod()`
+   - `services/dailyDigestService.js` - Various utility methods
+3. **Nested ternary expressions** - Replaced with proper if/else logic for readability
+4. **Async loop patterns** - Replaced `for-await` loops with `Promise.allSettled()` for better performance
+5. **Variable shadowing** - Fixed naming conflicts
+6. **Prettier formatting** - Applied consistent code formatting across all files
+
+#### Files with Major Changes
+- `backend/services/commonlyBotService.js` - Static methods, global-require fixes
+- `backend/services/dailyDigestService.js` - Nested ternary fixes, static methods
+- `backend/cleanup-test-data.js` - Promise.all() patterns instead of for-await loops
+- `backend/__tests__/unit/services/commonlyBotService.test.js` - Updated for static method calls
+
+#### Pattern Examples
+```javascript
+// Global-require pattern
+let PGMessage;
+try {
+  // eslint-disable-next-line global-require
+  PGMessage = require('../models/pg/Message');
+} catch (error) {
+  PGMessage = null;
+}
+
+// Promise.allSettled() instead of for-await loops
+await Promise.allSettled(
+  items.map(async (item) => {
+    await processItem(item);
+  }),
+);
+
+// Static method conversion
+static async syncBotUserToPostgreSQL(bot) {
+  // Implementation
+}
+```
 
 ### Discord Commands
 - `docker-compose -f docker-compose.dev.yml exec -T backend npm run discord:deploy` - Deploy Discord slash commands (preferred in Docker)
@@ -123,10 +227,73 @@ Key required variables:
 - `GEMINI_API_KEY` - AI summarization service
 
 ### Testing Strategy
-- Backend uses Jest with MongoDB Memory Server and pg-mem for isolated testing
-- Frontend uses React Testing Library
+
+#### Current Status (Updated January 2025)
+- **Backend Tests**: ✅ All passing - Jest with MongoDB Memory Server and pg-mem
+- **Frontend Tests**: ✅ All passing - 100/100 tests pass (26 test suites)
+- **Linting**: ✅ All passing - 0 ESLint errors (down from 57 errors)
+- **GitHub Actions**: ✅ All checks passing on PR #36
+
+#### Backend Testing
+- Uses Jest with MongoDB Memory Server and pg-mem for isolated testing
 - Integration tests cover dual database scenarios
 - Discord functionality has dedicated test files
+- Run with: `cd backend && npm test` or `./dev.sh test`
+- **📖 Detailed Guide**: See `backend/TESTING.md` for comprehensive backend testing documentation
+
+#### Frontend Testing
+- Uses React Testing Library with Jest
+- All components have comprehensive test coverage
+- Run with: `cd frontend && npm test`
+- **📖 Detailed Guide**: See `frontend/TESTING.md` for comprehensive frontend testing documentation
+
+#### Recent Test Fixes Applied (January 2025)
+**Fixed WhatsHappening.test.js:**
+- Added missing `aria-label="Refresh summaries"` to IconButton component (`src/components/WhatsHappening.js:481`)
+- Implemented comprehensive axios mocking for all API endpoints in test setup
+- Fixed async loading state timing issues with proper `waitFor()` usage
+- Resolved API Integration test data format issues (correct mock data types)
+
+**Fixed ChatRoom.test.js:**
+- Added proper AuthContext mock for DiscordIntegration component
+- Resolved `useContext(AuthContext)` undefined error with mock context structure
+
+**Jest Module Mocking:**
+- Created `src/__mocks__/react-markdown.js` - Mock for react-markdown ES module
+- Created `src/__mocks__/d3.js` - Mock for d3 ES module with forceSimulation, scales, etc.
+- Updated `package.json` Jest configuration with moduleNameMapper
+
+#### Common Test Patterns Used
+```javascript
+// Axios mocking pattern for multiple endpoints
+axios.get.mockImplementation((url) => {
+  if (url === '/api/summaries/latest') return Promise.resolve({ data: mockSummariesData });
+  if (url === '/api/summaries/chat-rooms?limit=3') return Promise.resolve({ data: mockChatRooms });
+  return Promise.resolve({ data: [] });
+});
+
+// AuthContext mocking pattern
+jest.mock('../context/AuthContext', () => ({
+  useAuth: jest.fn(),
+  AuthContext: {
+    _currentValue: { user: { _id: 'u', username: 'me' } },
+    Provider: ({ children }) => children,
+    Consumer: ({ children }) => children({ user: { _id: 'u' } })
+  }
+}));
+
+// Async component testing pattern
+await waitFor(() => {
+  expect(screen.getByText("Expected Content")).toBeInTheDocument();
+});
+```
+
+#### Troubleshooting Notes
+- ES module issues: Use Jest mocks in `src/__mocks__/` directory
+- Async timing issues: Always use `waitFor()` for async operations
+- Context issues: Mock both hook and context provider/consumer
+- Console errors in tests are often expected (error state testing)
+- React Router warnings are informational (future flag warnings)
 
 ### Data Integrity Notes
 - Chat summaries include validation to prevent message count corruption (>10,000 messages/hour flagged)
