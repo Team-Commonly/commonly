@@ -33,20 +33,30 @@ exports.getMessages = async (req, res) => {
       // Try to add the user as a member if not already a member
       // This helps recover from potential membership synchronization issues
       try {
-        console.log(`Attempting to resolve membership for user ${userId} in pod ${podId}`);
+        console.log(
+          `Attempting to resolve membership for user ${userId} in pod ${podId}`,
+        );
         await PGPod.addMember(podId, userId);
 
         // Check membership again
         const verifyMembership = await PGPod.isMember(podId, userId);
         if (verifyMembership) {
-          console.log(`Successfully resolved membership for user ${userId} in pod ${podId}`);
+          console.log(
+            `Successfully resolved membership for user ${userId} in pod ${podId}`,
+          );
         } else {
-          console.error(`Failed to resolve membership for user ${userId} in pod ${podId}`);
-          return res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
+          console.error(
+            `Failed to resolve membership for user ${userId} in pod ${podId}`,
+          );
+          return res
+            .status(401)
+            .json({ msg: 'Not authorized to view messages in this pod' });
         }
       } catch (membershipError) {
         console.error(`Error resolving membership: ${membershipError.message}`);
-        return res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
+        return res
+          .status(401)
+          .json({ msg: 'Not authorized to view messages in this pod' });
       }
     }
 
@@ -87,14 +97,12 @@ exports.createMessage = async (req, res) => {
     // Check if user is a member of the pod
     const isMember = await PGPod.isMember(podId, userId);
     if (!isMember) {
-      return res.status(401).json({ msg: 'Not authorized to post in this pod' });
+      return res
+        .status(401)
+        .json({ msg: 'Not authorized to post in this pod' });
     }
 
-    const newMessage = await PGMessage.create(
-      podId,
-      userId,
-      content,
-    );
+    const newMessage = await PGMessage.create(podId, userId, content);
 
     // Get the message with user details
     const message = await PGMessage.findById(newMessage.id);
@@ -123,13 +131,12 @@ exports.updateMessage = async (req, res) => {
 
     // Check if user is the creator of the message
     if (message.user_id !== req.user.id) {
-      return res.status(401).json({ msg: 'Not authorized to update this message' });
+      return res
+        .status(401)
+        .json({ msg: 'Not authorized to update this message' });
     }
 
-    const updatedMessage = await PGMessage.update(
-      req.params.id,
-      content,
-    );
+    const updatedMessage = await PGMessage.update(req.params.id, content);
 
     res.json(updatedMessage);
   } catch (err) {
@@ -167,7 +174,9 @@ exports.deleteMessage = async (req, res) => {
       // Check if user is the pod creator
       const pod = await PGPod.findById(message.pod_id);
       if (!pod || pod.created_by !== userId) {
-        return res.status(401).json({ msg: 'Not authorized to delete this message' });
+        return res
+          .status(401)
+          .json({ msg: 'Not authorized to delete this message' });
       }
     }
 

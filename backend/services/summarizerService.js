@@ -22,7 +22,9 @@ class SummarizerService {
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
       const summaryText = response.text();
-      console.log(`✓ Gemini API returned summary for ${type}: "${summaryText.substring(0, 100)}..."`);
+      console.log(
+        `✓ Gemini API returned summary for ${type}: "${summaryText.substring(0, 100)}..."`,
+      );
       return summaryText;
     } catch (error) {
       console.error('Error generating summary with Gemini:', error);
@@ -45,6 +47,22 @@ Please create a vibrant, engaging 2-3 sentence summary that:
 - Makes the community sound active and welcoming
 
 Write as if you're updating community members on what they missed. Be specific about the content rather than just mentioning numbers.`;
+    }
+
+    if (type === 'discord') {
+      return `You are a community manager creating an engaging summary of recent Discord channel activity.
+
+Here are the recent messages from the Discord channel:
+${content}
+
+Please create a descriptive, engaging 2-3 sentence summary that:
+- Captures what people were actually discussing and doing
+- Highlights interesting conversations, decisions, or topics
+- Uses a natural, conversational tone
+- Focuses on the content and context, not just participant counts
+- Makes the activity sound meaningful and engaging
+
+Write as if you're telling someone what they missed in the Discord channel. Be specific about the actual conversations and topics rather than just listing keywords.`;
     }
     return `You are a community manager summarizing chat activity across multiple chat rooms.
 
@@ -74,7 +92,9 @@ Focus on what people are actually talking about rather than just activity levels
 
       const posts = await Post.find({
         createdAt: { $gte: startTime, $lte: endTime },
-      }).populate('userId', 'username').lean();
+      })
+        .populate('userId', 'username')
+        .lean();
 
       if (posts.length === 0) {
         return await SummarizerService.createEmptySummary(
@@ -84,11 +104,13 @@ Focus on what people are actually talking about rather than just activity levels
       }
 
       // Prepare content for summarization
-      const content = posts.map((post) => {
-        const username = post.userId?.username || 'Unknown';
-        const tags = post.tags?.length ? ` #${post.tags.join(' #')}` : '';
-        return `@${username}: ${post.content}${tags}`;
-      }).join('\n');
+      const content = posts
+        .map((post) => {
+          const username = post.userId?.username || 'Unknown';
+          const tags = post.tags?.length ? ` #${post.tags.join(' #')}` : '';
+          return `@${username}: ${post.content}${tags}`;
+        })
+        .join('\n');
 
       const summaryText = await this.generateSummary(content, 'posts');
 
@@ -100,7 +122,11 @@ Focus on what people are actually talking about rather than just activity levels
         3,
       );
 
-      const title = SummarizerService.generateTitle('posts', posts.length, topTags);
+      const title = SummarizerService.generateTitle(
+        'posts',
+        posts.length,
+        topTags,
+      );
 
       return await Summary.create({
         type: 'posts',
@@ -138,10 +164,12 @@ Focus on what people are actually talking about rather than just activity levels
       }
 
       // Prepare content for overall chat summarization
-      const content = chatSummaries.map((summary) => {
-        const podName = summary.metadata?.podName || 'Unknown Pod';
-        return `${podName}: ${summary.content}`;
-      }).join('\n');
+      const content = chatSummaries
+        .map((summary) => {
+          const podName = summary.metadata?.podName || 'Unknown Pod';
+          return `${podName}: ${summary.content}`;
+        })
+        .join('\n');
 
       const summaryText = await this.generateSummary(content, 'chats');
 
@@ -150,12 +178,18 @@ Focus on what people are actually talking about rather than just activity levels
         (sum, s) => sum + (s.metadata?.totalItems || 0),
         0,
       );
-      const allPods = chatSummaries.map((s) => s.metadata?.podName).filter(Boolean);
+      const allPods = chatSummaries
+        .map((s) => s.metadata?.podName)
+        .filter(Boolean);
       const topPods = SummarizerService.getTopItems(allPods, 3);
       const allUsers = chatSummaries.flatMap((s) => s.metadata?.topUsers || []);
       const topUsers = SummarizerService.getTopItems(allUsers, 3);
 
-      const title = SummarizerService.generateTitle('chats', totalMessages, topPods);
+      const title = SummarizerService.generateTitle(
+        'chats',
+        totalMessages,
+        topPods,
+      );
 
       return await Summary.create({
         type: 'chats',
@@ -182,7 +216,10 @@ Focus on what people are actually talking about rather than just activity levels
       type,
       title,
       content,
-      timeRange: { start: new Date(Date.now() - 60 * 60 * 1000), end: new Date() },
+      timeRange: {
+        start: new Date(Date.now() - 60 * 60 * 1000),
+        end: new Date(),
+      },
       metadata: {
         totalItems: 0,
         topTags: [],
@@ -243,6 +280,45 @@ Focus on what people are actually talking about rather than just activity levels
     return result;
   }
 
+  /**
+   * Garbage collection for daily digest preparation
+   * Keeps 24 hours of summaries for daily digest generation, removes older ones
+   */
+  static async garbageCollectForDigest() {
+    try {
+      const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+
+      // Clean up corrupted summaries with unrealistic message counts
+      const corruptedResult = await Summary.deleteMany({
+        'metadata.totalItems': { $gt: 100000 }, // Remove summaries with >100k messages (clearly corrupted)
+      });
+
+      if (corruptedResult.deletedCount > 0) {
+        console.log(
+          `🗑️  Removed ${corruptedResult.deletedCount} corrupted summaries with unrealistic message counts`,
+        );
+      }
+
+      // Keep summaries from last 24 hours for daily digest
+      // Remove summaries older than 24 hours (except daily digest summaries)
+      const result = await Summary.deleteMany({
+        createdAt: { $lt: cutoffDate },
+        type: { $ne: 'daily-digest' }, // Don't delete daily digest summaries
+      });
+
+      console.log(
+        `🗑️  Garbage collected ${result.deletedCount} summaries older than 24 hours`,
+      );
+      return {
+        deletedCount: result.deletedCount + corruptedResult.deletedCount,
+        cutoffDate,
+      };
+    } catch (error) {
+      console.error('Error during garbage collection:', error);
+      throw error;
+    }
+  }
+
   async summarizeAllPosts() {
     try {
       // Get all posts from the database (limited to recent ones for performance)
@@ -255,7 +331,8 @@ Focus on what people are actually talking about rather than just activity levels
       if (posts.length === 0) {
         return {
           title: 'No Posts Yet',
-          content: 'The community hasn\'t shared any posts yet. Be the first to start a conversation!',
+          content:
+            "The community hasn't shared any posts yet. Be the first to start a conversation!",
           metadata: {
             totalItems: 0,
             topTags: [],
@@ -266,11 +343,13 @@ Focus on what people are actually talking about rather than just activity levels
       }
 
       // Prepare content for summarization
-      const content = posts.map((post) => {
-        const username = post.userId?.username || 'Unknown';
-        const tags = post.tags?.length ? ` #${post.tags.join(' #')}` : '';
-        return `@${username}: ${post.content}${tags}`;
-      }).join('\n');
+      const content = posts
+        .map((post) => {
+          const username = post.userId?.username || 'Unknown';
+          const tags = post.tags?.length ? ` #${post.tags.join(' #')}` : '';
+          return `@${username}: ${post.content}${tags}`;
+        })
+        .join('\n');
 
       // Use a special prompt for all-time summary
       const prompt = `You are creating a comprehensive overview of a community's posts. 
@@ -287,11 +366,14 @@ Please create an engaging 3-4 sentence community overview that:
 This is for new visitors to understand what the community is all about. Focus on the content and conversations, not just statistics.`;
 
       console.log('Generating all-posts summary with Gemini API...');
-      const result = await this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+      const result = await this.genAI
+        .getGenerativeModel({ model: 'gemini-2.0-flash' })
         .generateContent(prompt);
       const response = await result.response;
       const summaryText = response.text();
-      console.log(`✓ Gemini API returned all-posts summary: "${summaryText.substring(0, 100)}..."`);
+      console.log(
+        `✓ Gemini API returned all-posts summary: "${summaryText.substring(0, 100)}..."`,
+      );
 
       // Extract metadata
       const allTags = posts.flatMap((post) => post.tags || []);
@@ -321,7 +403,8 @@ This is for new visitors to understand what the community is all about. Focus on
       const posts = await Post.find({}).countDocuments();
       return {
         title: `Community Overview • ${posts} posts`,
-        content: 'Our community has shared various thoughts, ideas, and discussions. Join the conversation and see what everyone is talking about!',
+        content:
+          'Our community has shared various thoughts, ideas, and discussions. Join the conversation and see what everyone is talking about!',
         metadata: {
           totalItems: posts,
           topTags: [],

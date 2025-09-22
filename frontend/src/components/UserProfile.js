@@ -14,15 +14,29 @@ import {
     DialogTitle, 
     DialogContent, 
     DialogActions,
-    IconButton
+    IconButton,
+    Tabs,
+    Tab,
+    Chip,
+    TextField,
+    Alert,
+    Tooltip,
+    Snackbar
 } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import EditIcon from '@mui/icons-material/Edit';
 import DeveloperModeIcon from '@mui/icons-material/DeveloperMode';
+import AppsIcon from '@mui/icons-material/Apps';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import KeyIcon from '@mui/icons-material/Key';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { avatarOptions, getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import { useNavigate } from 'react-router-dom';
+import AppsManagement from './AppsManagement';
 
 const UserProfile = () => {
     const { refreshAvatars } = useAppContext();
@@ -33,19 +47,35 @@ const UserProfile = () => {
     const [openAvatarDialog, setOpenAvatarDialog] = useState(false);
     const [selectedAvatar, setSelectedAvatar] = useState('default');
     const [isUpdating, setIsUpdating] = useState(false);
+    const [currentTab, setCurrentTab] = useState(0);
+    const [apiToken, setApiToken] = useState(null);
+    const [apiTokenCreatedAt, setApiTokenCreatedAt] = useState(null);
+    const [isGeneratingToken, setIsGeneratingToken] = useState(false);
+    const [isRevokingToken, setIsRevokingToken] = useState(false);
+    const [showToken, setShowToken] = useState(false);
+    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
 
     useEffect(() => {
         const fetchUserData = async () => {
             try {
-                const [userRes, postsRes] = await Promise.all([
+                const [userRes, postsRes, tokenRes] = await Promise.all([
                     axios.get('/api/auth/profile', {
                         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                     }),
-                    axios.get('/api/posts')
+                    axios.get('/api/posts'),
+                    axios.get('/api/auth/api-token', {
+                        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                    }).catch(() => ({ data: { hasToken: false } }))
                 ]);
 
                 setUser(userRes.data);
                 setSelectedAvatar(userRes.data.profilePicture || 'default');
+
+                // Set API token info
+                if (tokenRes.data.hasToken) {
+                    setApiToken(tokenRes.data.token);
+                    setApiTokenCreatedAt(tokenRes.data.createdAt);
+                }
 
                 // Calculate post count and comment count
                 const userPosts = postsRes.data.filter(post => post.userId._id === userRes.data._id);
@@ -99,6 +129,73 @@ const UserProfile = () => {
         } finally {
             setIsUpdating(false);
         }
+    };
+
+    const handleGenerateApiToken = async () => {
+        setIsGeneratingToken(true);
+        try {
+            const response = await axios.post('/api/auth/api-token/generate', {}, {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+            
+            setApiToken(response.data.apiToken);
+            setApiTokenCreatedAt(response.data.createdAt);
+            setShowToken(true);
+            setSnackbar({
+                open: true,
+                message: 'API token generated successfully',
+                severity: 'success'
+            });
+        } catch (err) {
+            setSnackbar({
+                open: true,
+                message: 'Failed to generate API token',
+                severity: 'error'
+            });
+        } finally {
+            setIsGeneratingToken(false);
+        }
+    };
+
+    const handleRevokeApiToken = async () => {
+        setIsRevokingToken(true);
+        try {
+            await axios.delete('/api/auth/api-token', {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+            
+            setApiToken(null);
+            setApiTokenCreatedAt(null);
+            setShowToken(false);
+            setSnackbar({
+                open: true,
+                message: 'API token revoked successfully',
+                severity: 'success'
+            });
+        } catch (err) {
+            setSnackbar({
+                open: true,
+                message: 'Failed to revoke API token',
+                severity: 'error'
+            });
+        } finally {
+            setIsRevokingToken(false);
+        }
+    };
+
+    const handleCopyToken = () => {
+        if (apiToken) {
+            navigator.clipboard.writeText(apiToken);
+            setSnackbar({
+                open: true,
+                message: 'API token copied to clipboard',
+                severity: 'success'
+            });
+        }
+    };
+
+    const handleCloseSnackbar = () => {
+        setSnackbar({ ...snackbar, open: false });
     };
 
     if (error) return (
@@ -189,16 +286,165 @@ const UserProfile = () => {
                     
                     <Divider sx={{ my: 3 }} />
                     
-                    <Box sx={{ textAlign: 'center' }}>
-                        <Button
-                            variant="outlined"
-                            startIcon={<DeveloperModeIcon />}
-                            onClick={() => navigate('/dev/api')}
-                            sx={{ mb: 2 }}
-                        >
-                            API Development Tools
-                        </Button>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography variant="h6" color="primary">
+                            Account Type
+                        </Typography>
+                        <Chip 
+                            icon={user.role === 'admin' ? <AdminPanelSettingsIcon /> : undefined}
+                            label={user.role === 'admin' ? 'Administrator' : 'User'}
+                            color={user.role === 'admin' ? 'primary' : 'default'}
+                            variant={user.role === 'admin' ? 'filled' : 'outlined'}
+                        />
                     </Box>
+                    
+                    {user.role === 'admin' && (
+                        <Box sx={{ textAlign: 'center', mt: 2 }}>
+                            <Button
+                                variant="outlined"
+                                startIcon={<DeveloperModeIcon />}
+                                onClick={() => navigate('/dev/api')}
+                            >
+                                API Development Tools
+                            </Button>
+                        </Box>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Profile Tabs */}
+            <Card>
+                <Tabs 
+                    value={currentTab} 
+                    onChange={(e, newValue) => setCurrentTab(newValue)}
+                    sx={{ borderBottom: 1, borderColor: 'divider' }}
+                >
+                    <Tab label="Overview" />
+                    <Tab 
+                        label="Apps" 
+                        icon={<AppsIcon />} 
+                        iconPosition="start"
+                    />
+                    <Tab 
+                        label="API Token" 
+                        icon={<KeyIcon />} 
+                        iconPosition="start"
+                    />
+                </Tabs>
+                
+                <CardContent>
+                    {currentTab === 0 && (
+                        <Box>
+                            <Typography variant="h6" gutterBottom>
+                                Account Overview
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                View your account statistics and recent activity here.
+                            </Typography>
+                        </Box>
+                    )}
+                    
+                    {currentTab === 1 && <AppsManagement />}
+                    
+                    {currentTab === 2 && (
+                        <Box>
+                            <Typography variant="h6" gutterBottom>
+                                API Token Management
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                Generate an API token to access the Commonly API programmatically. 
+                                Keep your token secure and don&apos;t share it publicly.
+                            </Typography>
+                            
+                            {apiToken ? (
+                                <Box sx={{ mt: 3 }}>
+                                    <Alert severity="info" sx={{ mb: 3 }}>
+                                        Your API token was created on {' '}
+                                        {new Date(apiTokenCreatedAt).toLocaleDateString()} at {' '}
+                                        {new Date(apiTokenCreatedAt).toLocaleTimeString()}
+                                    </Alert>
+                                    
+                                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
+                                        <TextField
+                                            label="API Token"
+                                            value={showToken ? apiToken : '••••••••••••••••••••••••••••••••'}
+                                            fullWidth
+                                            variant="outlined"
+                                            InputProps={{
+                                                readOnly: true,
+                                                sx: { fontFamily: 'monospace' }
+                                            }}
+                                        />
+                                        <Tooltip title="Copy to clipboard">
+                                            <IconButton onClick={handleCopyToken} color="primary">
+                                                <ContentCopyIcon />
+                                            </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title={showToken ? "Hide token" : "Show token"}>
+                                            <IconButton 
+                                                onClick={() => setShowToken(!showToken)}
+                                                color="primary"
+                                            >
+                                                {showToken ? <EditIcon /> : <KeyIcon />}
+                                            </IconButton>
+                                        </Tooltip>
+                                    </Box>
+                                    
+                                    <Box sx={{ display: 'flex', gap: 2 }}>
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={<RefreshIcon />}
+                                            onClick={handleGenerateApiToken}
+                                            disabled={isGeneratingToken}
+                                        >
+                                            {isGeneratingToken ? 'Regenerating...' : 'Regenerate'}
+                                        </Button>
+                                        <Button
+                                            variant="outlined"
+                                            color="error"
+                                            startIcon={<DeleteIcon />}
+                                            onClick={handleRevokeApiToken}
+                                            disabled={isRevokingToken}
+                                        >
+                                            {isRevokingToken ? 'Revoking...' : 'Revoke'}
+                                        </Button>
+                                    </Box>
+                                </Box>
+                            ) : (
+                                <Box sx={{ mt: 3, textAlign: 'center' }}>
+                                    <Typography variant="body1" gutterBottom>
+                                        No API token has been generated yet.
+                                    </Typography>
+                                    <Button
+                                        variant="contained"
+                                        startIcon={<KeyIcon />}
+                                        onClick={handleGenerateApiToken}
+                                        disabled={isGeneratingToken}
+                                        sx={{ mt: 2 }}
+                                    >
+                                        {isGeneratingToken ? 'Generating...' : 'Generate API Token'}
+                                    </Button>
+                                </Box>
+                            )}
+                            
+                            <Divider sx={{ my: 3 }} />
+                            
+                            <Typography variant="h6" gutterBottom>
+                                Usage Example
+                            </Typography>
+                            <Paper sx={{ p: 2, bgcolor: 'grey.100', mt: 2 }}>
+                                <Typography 
+                                    variant="body2" 
+                                    component="pre" 
+                                    sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}
+                                >
+{`curl -H "Authorization: Bearer YOUR_API_TOKEN" \\
+     -H "Content-Type: application/json" \\
+     ${window.location.origin}/api/auth/profile`}
+                                </Typography>
+                            </Paper>
+                        </Box>
+                    )}
                 </CardContent>
             </Card>
 
@@ -240,6 +486,22 @@ const UserProfile = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Snackbar for notifications */}
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={4000}
+                onClose={handleCloseSnackbar}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert 
+                    onClose={handleCloseSnackbar} 
+                    severity={snackbar.severity}
+                    variant="filled"
+                >
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
         </Box>
     );
 };

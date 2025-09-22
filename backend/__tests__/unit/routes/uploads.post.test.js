@@ -3,7 +3,9 @@ const express = require('express');
 
 jest.mock('../../../models/File', () => {
   const saveMock = jest.fn();
-  const File = jest.fn().mockImplementation((data) => ({ ...data, save: saveMock }));
+  const File = jest
+    .fn()
+    .mockImplementation((data) => ({ ...data, save: saveMock }));
   File.findByFileName = jest.fn();
   File.__saveMock = saveMock;
   return File;

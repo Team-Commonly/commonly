@@ -1,6 +1,13 @@
 jest.mock('../../../config/db-pg', () => {
-  const mClient = { query: jest.fn().mockResolvedValue({ rows: [{ exists: true }] }), release: jest.fn() };
-  const mPool = { query: jest.fn(), connect: jest.fn().mockResolvedValue(mClient), end: jest.fn() };
+  const mClient = {
+    query: jest.fn().mockResolvedValue({ rows: [{ exists: true }] }),
+    release: jest.fn(),
+  };
+  const mPool = {
+    query: jest.fn(),
+    connect: jest.fn().mockResolvedValue(mClient),
+    end: jest.fn(),
+  };
   return { pool: mPool, connectPG: jest.fn(async () => mPool) };
 });
 

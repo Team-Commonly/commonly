@@ -18,7 +18,11 @@ describe('pgStatusController', () => {
   it('syncUser returns 404 if user missing', async () => {
     User.findById.mockResolvedValue(null);
     const req = { userId: 'u1' };
-    const res = { status: jest.fn().mockReturnThis(), json: jest.fn(), send: jest.fn() };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+      send: jest.fn(),
+    };
     await controller.syncUser(req, res);
     expect(res.status).toHaveBeenCalledWith(404);
   });

@@ -5,7 +5,10 @@ const mongoose = require('mongoose');
 const User = require('../../models/User');
 const authRoutes = require('../../routes/auth');
 const {
-  setupMongoDb, closeMongoDb, clearMongoDb, generateTestToken,
+  setupMongoDb,
+  closeMongoDb,
+  clearMongoDb,
+  generateTestToken,
 } = require('../utils/testUtils');
 
 // Mock SendGrid to prevent actual emails from being sent
@@ -271,9 +274,7 @@ describe('Auth Routes Integration Tests', () => {
     });
 
     it('should return 401 without token', async () => {
-      const response = await request(app)
-        .get('/api/auth/user')
-        .expect(401);
+      const response = await request(app).get('/api/auth/user').expect(401);
 
       expect(response.body.msg).toContain('No token');
     });

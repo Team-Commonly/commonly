@@ -1,4 +1,4 @@
-FROM node:16
+FROM node:18
 
 WORKDIR /app
 
@@ -14,5 +14,8 @@ EXPOSE 5000
 # Add a label to indicate testing is supported
 LABEL com.commonly.testing="true"
 
-# The default command still starts the server
-CMD ["node", "server.js"]
+# Make the startup script executable
+RUN chmod +x /app/start.sh
+
+# Use the startup script as the default command
+CMD ["/bin/bash", "/app/start.sh"]
