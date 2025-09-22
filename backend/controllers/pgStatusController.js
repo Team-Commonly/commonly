@@ -40,7 +40,9 @@ exports.syncUser = async (req, res) => {
       user.profilePicture || null,
     ]);
 
-    console.log(`User ${user.username} synchronized with PostgreSQL for chat functionality`);
+    console.log(
+      `User ${user.username} synchronized with PostgreSQL for chat functionality`,
+    );
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error syncing user to PostgreSQL for chat:', err.message);

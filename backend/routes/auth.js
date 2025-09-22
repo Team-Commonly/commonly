@@ -4,7 +4,12 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const {
-  register, login, getCurrentUser, verifyEmail, updateProfile, getProfile,
+  register,
+  login,
+  getCurrentUser,
+  verifyEmail,
+  updateProfile,
+  getProfile,
 } = require('../controllers/authController');
 
 // @route   POST api/auth/register
@@ -101,7 +106,9 @@ router.get('/api-token', auth, async (req, res) => {
   try {
     // eslint-disable-next-line global-require
     const User = require('../models/User');
-    const user = await User.findById(req.user.id).select('apiToken apiTokenCreatedAt');
+    const user = await User.findById(req.user.id).select(
+      'apiToken apiTokenCreatedAt',
+    );
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });

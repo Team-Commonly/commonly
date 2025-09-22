@@ -13,7 +13,13 @@ class Pod {
       RETURNING *
     `;
 
-    const result = await pool.query(query, [podId, name, description, type, createdBy]);
+    const result = await pool.query(query, [
+      podId,
+      name,
+      description,
+      type,
+      createdBy,
+    ]);
 
     // Add creator as a member
     await this.addMember(result.rows[0].id, createdBy);
@@ -90,7 +96,9 @@ class Pod {
 
   // Add a member to a pod
   static async addMember(podId, userId) {
-    console.log(`Attempting to add member to pod. PodID: ${podId}, UserID: ${userId}`);
+    console.log(
+      `Attempting to add member to pod. PodID: ${podId}, UserID: ${userId}`,
+    );
 
     try {
       const query = `
@@ -104,11 +112,14 @@ class Pod {
       console.log('Member addition result:', result.rows);
 
       // Update the pod's updated_at timestamp
-      await pool.query(`
+      await pool.query(
+        `
         UPDATE pods
         SET updated_at = CURRENT_TIMESTAMP
         WHERE id = $1
-      `, [podId]);
+      `,
+        [podId],
+      );
 
       return result.rows[0];
     } catch (error) {
@@ -132,7 +143,11 @@ class Pod {
 
   // Check if a user is a member of a pod
   static async isMember(podId, userId) {
-    console.log('Checking membership with params:', { podId, userId, podIdType: typeof podId });
+    console.log('Checking membership with params:', {
+      podId,
+      userId,
+      podIdType: typeof podId,
+    });
 
     const query = `
       SELECT * FROM pod_members

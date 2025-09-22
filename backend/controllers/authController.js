@@ -33,7 +33,9 @@ exports.register = async (req, res) => {
     await user.save();
 
     // Generate email verification token
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: '1d',
+    });
 
     // Create email message with verification link
     const msg = {
@@ -48,7 +50,12 @@ exports.register = async (req, res) => {
     // Send email
     await sgMail.send(msg);
 
-    return res.status(201).json({ message: 'User registered successfully. Check your email for verification.' });
+    return res
+      .status(201)
+      .json({
+        message:
+          'User registered successfully. Check your email for verification.',
+      });
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: 'Server error' });
@@ -61,7 +68,11 @@ exports.verifyEmail = async (req, res) => {
     const { token } = req.query;
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await User.findByIdAndUpdate(decoded.id, { verified: true }, { new: true });
+    const user = await User.findByIdAndUpdate(
+      decoded.id,
+      { verified: true },
+      { new: true },
+    );
     if (!user) return res.status(400).json({ error: 'Invalid token' });
 
     res.json({ message: 'Email verified successfully' });
@@ -79,13 +90,17 @@ exports.login = async (req, res) => {
 
     // Check if the email is verified
     if (!user.verified) {
-      return res.status(400).json({ error: 'Email not verified. Please check your inbox.' });
+      return res
+        .status(400)
+        .json({ error: 'Email not verified. Please check your inbox.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: '1h',
+    });
 
     return res.json({
       token,

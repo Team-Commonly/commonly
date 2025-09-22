@@ -22,7 +22,7 @@ describe('Discord Integration Routes', () => {
 
   beforeAll(async () => {
     await setupMongoDb();
-    
+
     app = express();
     app.use(express.json());
     process.env.JWT_SECRET = 'test-jwt-secret';
@@ -53,9 +53,7 @@ describe('Discord Integration Routes', () => {
     });
 
     it('should require authentication for Discord routes', async () => {
-      const response = await request(app)
-        .get('/api/discord/test')
-        .expect(404); // Route doesn't exist, but we're testing that middleware is in place
+      const response = await request(app).get('/api/discord/test').expect(404); // Route doesn't exist, but we're testing that middleware is in place
 
       expect(response.status).toBe(404);
     });

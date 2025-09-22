@@ -2,7 +2,11 @@ const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
 const ExternalLink = require('../../../models/ExternalLink');
-const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
+const {
+  setupMongoDb,
+  closeMongoDb,
+  clearMongoDb,
+} = require('../../utils/testUtils');
 
 describe('ExternalLink Model Tests', () => {
   let user;
@@ -17,7 +21,11 @@ describe('ExternalLink Model Tests', () => {
   });
 
   beforeEach(async () => {
-    user = new User({ username: 'user', email: 'e@example.com', password: 'Pass123!' });
+    user = new User({
+      username: 'user',
+      email: 'e@example.com',
+      password: 'Pass123!',
+    });
     await user.save();
     pod = new Pod({
       name: 'Pod',
