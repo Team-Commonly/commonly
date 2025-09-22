@@ -21,16 +21,205 @@ class ChatSummarizerService {
     }
   }
 
+  async generateEnhancedSummary(content, podName, messages) {
+    try {
+      const prompt = ChatSummarizerService.createEnhancedPrompt(
+        content,
+        podName,
+      );
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+
+      // Parse the JSON response
+      let analyticsData;
+      try {
+        analyticsData = JSON.parse(response.text());
+      } catch (parseError) {
+        console.warn(
+          'Failed to parse enhanced summary JSON, falling back to basic summary:',
+          parseError,
+        );
+        return {
+          summary: await this.generateSummary(content, podName),
+          analytics: ChatSummarizerService.generateFallbackAnalytics(
+            messages,
+            podName,
+          ),
+        };
+      }
+
+      return {
+        summary: analyticsData.summary,
+        analytics: analyticsData,
+      };
+    } catch (error) {
+      console.error(
+        'Error generating enhanced chat summary with Gemini:',
+        error,
+      );
+      return {
+        summary: ChatSummarizerService.generateFallbackSummary(
+          content,
+          podName,
+        ),
+        analytics: ChatSummarizerService.generateFallbackAnalytics(
+          messages,
+          podName,
+        ),
+      };
+    }
+  }
+
+  static generateFallbackAnalytics(messages, _podName) {
+    const userCounts = {};
+    messages.forEach((msg) => {
+      if (msg.username) {
+        userCounts[msg.username] = (userCounts[msg.username] || 0) + 1;
+      }
+    });
+
+    const sortedUsers = Object.entries(userCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5);
+
+    return {
+      timeline: [],
+      quotes: [],
+      insights: [],
+      atmosphere: {
+        overall_sentiment: 'neutral',
+        energy_level: messages.length > 10 ? 'medium' : 'low',
+        engagement_quality: 'moderate',
+        community_cohesion: 0.5,
+        topics_diversity: 0.5,
+        dominant_emotions: ['neutral'],
+      },
+      participation: {
+        most_active_users: sortedUsers.map(([username, count]) => ({
+          username,
+          message_count: count,
+          engagement_score: Math.min(count / messages.length, 1),
+          role: 'contributor',
+        })),
+        engagement_patterns: {
+          peak_hours: [],
+          discussion_length_avg: messages.length,
+          response_time_avg: 5,
+        },
+      },
+    };
+  }
+
   static createPrompt(content, podName) {
-    return `Analyze the following chat messages from the "${podName}" community chat and create a brief, engaging summary. Focus on main discussion topics, popular conversations, and community interactions. Make it conversational and informative:
+    return `Analyze the following chat messages from the "${podName}" community chat and create a brief, engaging summary.
+Focus on main discussion topics, popular conversations, and community interactions.
+Make it conversational and informative:
 
 ${content}
 
 Provide a summary in 2-3 sentences that captures the essence of the conversations in this chat room.`;
   }
 
+  static createEnhancedPrompt(content, podName) {
+    return `You are an AI community analyst tasked with creating a comprehensive analysis of chat messages from the "${podName}" community.
+Analyze the following messages and extract detailed insights for a daily digest.
+
+Chat Messages:
+${content}
+
+Please provide a JSON response with the following structure:
+
+{
+  "summary": "2-3 sentence summary of the main discussions",
+  "timeline": [
+    {
+      "timestamp": "ISO timestamp of the event",
+      "event": "type of event (peak_activity, topic_shift, new_participant, heated_discussion, etc.)",
+      "description": "What happened during this event",
+      "participants": ["list of usernames involved"],
+      "intensity": 1-10
+    }
+  ],
+  "quotes": [
+    {
+      "text": "The actual quote text",
+      "author": "username",
+      "timestamp": "ISO timestamp",
+      "context": "What was being discussed when this was said",
+      "sentiment": "positive/negative/neutral/humorous/insightful",
+      "reactions": 0
+    }
+  ],
+  "insights": [
+    {
+      "type": "trend/sentiment_shift/new_topic/consensus/disagreement/revelation",
+      "description": "Description of the insight",
+      "confidence": 0.0-1.0,
+      "impact": "low/medium/high",
+      "participants": ["usernames involved"],
+      "timestamp": "ISO timestamp"
+    }
+  ],
+  "atmosphere": {
+    "overall_sentiment": "very_positive/positive/neutral/negative/very_negative",
+    "energy_level": "very_low/low/medium/high/very_high",
+    "engagement_quality": "superficial/moderate/deep/intense",
+    "community_cohesion": 0.0-1.0,
+    "topics_diversity": 0.0-1.0,
+    "dominant_emotions": ["happiness", "excitement", "concern", "curiosity"]
+  },
+  "participation": {
+    "most_active_users": [
+      {
+        "username": "username",
+        "message_count": 5,
+        "engagement_score": 0.8,
+        "role": "moderator/contributor/lurker/newcomer"
+      }
+    ],
+    "engagement_patterns": {
+      "peak_hours": [14, 15, 20],
+      "discussion_length_avg": 4.5,
+      "response_time_avg": 2.3
+    }
+  },
+  "keywords": {
+    "main_topics": [
+      {
+        "keyword": "discussion topic or keyword",
+        "frequency": 12,
+        "sentiment": "positive/negative/neutral",
+        "context": "How this keyword was used in discussions",
+        "related_users": ["usernames who mentioned this"],
+        "trending": true
+      }
+    ],
+    "trending_phrases": [
+      {
+        "phrase": "multi-word phrase or concept",
+        "frequency": 8,
+        "first_mentioned": "ISO timestamp",
+        "context": "Context where this phrase emerged"
+      }
+    ],
+    "topic_clusters": [
+      {
+        "cluster_name": "General topic area",
+        "keywords": ["related", "keywords", "in", "cluster"],
+        "message_count": 15,
+        "participants": ["usernames involved in this topic"]
+      }
+    ]
+  }
+}
+
+Focus on extracting meaningful insights, notable quotes, discussion pivots, and community dynamics.
+Be analytical but concise.`;
+  }
+
   static generateFallbackSummary(content, podName) {
-    const messageCount = content.split('\n')
+    const messageCount = content
+      .split('\n')
       .filter((line) => line.trim()).length;
     return `${messageCount} messages were exchanged in ${podName}, featuring active conversations and community interactions.`;
   }
@@ -76,7 +265,11 @@ Provide a summary in 2-3 sentences that captures the essence of the conversation
         ORDER BY m.created_at ASC
       `;
 
-      const messagesResult = await pool.query(query, [podId, startTime, endTime]);
+      const messagesResult = await pool.query(query, [
+        podId,
+        startTime,
+        endTime,
+      ]);
       const messages = messagesResult.rows;
 
       // Get pod info from MongoDB
@@ -86,15 +279,30 @@ Provide a summary in 2-3 sentences that captures the essence of the conversation
         return null;
       }
 
+      // Validate message count is reasonable (prevent data corruption)
+      if (messages.length > 10000) {
+        console.error(
+          `Suspicious message count ${messages.length} for pod ${podId} in 1 hour - skipping summarization`,
+        );
+        return null;
+      }
+
       if (messages.length === 0) {
-        return ChatSummarizerService.createEmptySummary(podId, pod.name, startTime, endTime);
+        return ChatSummarizerService.createEmptySummary(
+          podId,
+          pod.name,
+          startTime,
+          endTime,
+        );
       }
 
       // Prepare content for summarization
-      const content = messages.map((message) => {
-        const username = message.username || 'Unknown';
-        return `@${username}: ${message.content}`;
-      }).join('\n');
+      const content = messages
+        .map((message) => {
+          const username = message.username || 'Unknown';
+          return `@${username}: ${message.content}`;
+        })
+        .join('\n');
 
       const summaryText = await this.generateSummary(content, pod.name);
 
@@ -104,7 +312,17 @@ Provide a summary in 2-3 sentences that captures the essence of the conversation
         3,
       );
 
-      const title = ChatSummarizerService.generateTitle(pod.name, messages.length, topUsers);
+      const title = ChatSummarizerService.generateTitle(
+        pod.name,
+        messages.length,
+        topUsers,
+      );
+
+      // Validate pod name exists
+      if (!pod.name) {
+        console.error(`Pod ${podId} has no name - skipping summarization`);
+        return null;
+      }
 
       // Store summary in MongoDB
       return Summary.create({
@@ -190,9 +408,13 @@ Provide a summary in 2-3 sentences that captures the essence of the conversation
       }));
 
       const summaries = await Promise.all(summaryPromises);
-      const successfulSummaries = summaries.filter((summary) => summary !== null);
+      const successfulSummaries = summaries.filter(
+        (summary) => summary !== null,
+      );
 
-      console.log(`Successfully created ${successfulSummaries.length} chat summaries`);
+      console.log(
+        `Successfully created ${successfulSummaries.length} chat summaries`,
+      );
       return successfulSummaries;
     } catch (error) {
       console.error('Error summarizing all active chats:', error);
@@ -308,8 +530,10 @@ Provide a summary in 2-3 sentences that captures the essence of the conversation
       const latestSummaries = {};
       summaries.forEach((summary) => {
         const podId = summary.podId.toString();
-        if (!latestSummaries[podId]
-            || summary.createdAt > latestSummaries[podId].createdAt) {
+        if (
+          !latestSummaries[podId]
+          || summary.createdAt > latestSummaries[podId].createdAt
+        ) {
           latestSummaries[podId] = summary;
         }
       });

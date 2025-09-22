@@ -32,9 +32,17 @@ describe('pods routes - external links', () => {
 
   it('creates external link with url', async () => {
     const podSave = jest.fn();
-    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'user1' }, externalLinks: [], save: podSave });
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      externalLinks: [],
+      save: podSave,
+    });
     const linkSave = jest.fn();
-    ExternalLink.mockImplementation((data) => ({ ...data, _id: 'l1', save: linkSave }));
+    ExternalLink.mockImplementation((data) => ({
+      ...data,
+      _id: 'l1',
+      save: linkSave,
+    }));
 
     await request(app)
       .post('/api/pods/external-link')
@@ -46,12 +54,14 @@ describe('pods routes - external links', () => {
       })
       .expect(201);
 
-    expect(ExternalLink).toHaveBeenCalledWith(expect.objectContaining({
-      podId: 'p1',
-      name: 'Link',
-      type: 'discord',
-      createdBy: 'user1',
-    }));
+    expect(ExternalLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        podId: 'p1',
+        name: 'Link',
+        type: 'discord',
+        createdBy: 'user1',
+      }),
+    );
     expect(linkSave).toHaveBeenCalled();
     expect(podSave).toHaveBeenCalled();
   });
@@ -88,8 +98,15 @@ describe('pods routes - external links', () => {
 
   it('deletes external link successfully', async () => {
     const podSave = jest.fn();
-    ExternalLink.findById.mockResolvedValue({ podId: 'p1', qrCodePath: 'code.png' });
-    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'user1' }, externalLinks: ['l1'], save: podSave });
+    ExternalLink.findById.mockResolvedValue({
+      podId: 'p1',
+      qrCodePath: 'code.png',
+    });
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      externalLinks: ['l1'],
+      save: podSave,
+    });
     fs.existsSync.mockReturnValue(true);
 
     await request(app).delete('/api/pods/external-link/l1').expect(200);
@@ -111,7 +128,11 @@ describe('pods routes - external links', () => {
   });
 
   it('fetches qrcode when user is member', async () => {
-    ExternalLink.findById.mockResolvedValue({ podId: 'p1', type: 'wechat', qrCodePath: 'code.png' });
+    ExternalLink.findById.mockResolvedValue({
+      podId: 'p1',
+      type: 'wechat',
+      qrCodePath: 'code.png',
+    });
     Pod.findById.mockResolvedValue({ members: ['user1'] });
 
     await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
@@ -123,7 +144,11 @@ describe('pods routes - external links', () => {
   });
 
   it('returns 403 when user not member for qrcode', async () => {
-    ExternalLink.findById.mockResolvedValue({ podId: 'p1', type: 'wechat', qrCodePath: 'code.png' });
+    ExternalLink.findById.mockResolvedValue({
+      podId: 'p1',
+      type: 'wechat',
+      qrCodePath: 'code.png',
+    });
     Pod.findById.mockResolvedValue({ members: [] });
     await request(app).get('/api/pods/external-link/l1/qrcode').expect(403);
   });
@@ -135,7 +160,9 @@ describe('pods routes - external links', () => {
       populate: jest.fn().mockResolvedValue(['l1']),
     });
 
-    const res = await request(app).get('/api/pods/p1/external-links').expect(200);
+    const res = await request(app)
+      .get('/api/pods/p1/external-links')
+      .expect(200);
     expect(res.body).toEqual(['l1']);
   });
 

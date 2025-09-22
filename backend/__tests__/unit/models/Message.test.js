@@ -3,7 +3,11 @@ const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
 const Message = require('../../../models/Message');
-const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
+const {
+  setupMongoDb,
+  closeMongoDb,
+  clearMongoDb,
+} = require('../../utils/testUtils');
 
 describe('Message Model Tests', () => {
   // Setup test user and pod for references

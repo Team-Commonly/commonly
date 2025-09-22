@@ -4,4 +4,9 @@ build/
 dist/
 .env
 .env.*
-*.log 
+*.log
+test-discord-*.js
+scripts/deploy-discord-commands.js
+scripts/register-discord-commands.js
+services/discordService.js
+services/discordCommandService.js 

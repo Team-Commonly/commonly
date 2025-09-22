@@ -13,7 +13,9 @@ COPY . .
 
 # Add build arguments for environment variables
 ARG REACT_APP_API_URL
+ARG REACT_APP_DISCORD_CLIENT_ID
 ENV REACT_APP_API_URL=${REACT_APP_API_URL}
+ENV REACT_APP_DISCORD_CLIENT_ID=${REACT_APP_DISCORD_CLIENT_ID}
 # Ensure ESLint warnings don't fail the build
 ENV CI=false
 

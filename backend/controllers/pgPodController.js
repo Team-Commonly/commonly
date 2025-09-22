@@ -38,12 +38,7 @@ exports.createPod = async (req, res) => {
   try {
     const { name, description, type } = req.body;
 
-    const newPod = await PGPod.create(
-      name,
-      description,
-      type,
-      req.user.id,
-    );
+    const newPod = await PGPod.create(name, description, type, req.user.id);
 
     res.json(newPod);
   } catch (err) {
@@ -69,11 +64,7 @@ exports.updatePod = async (req, res) => {
       return res.status(401).json({ msg: 'Not authorized to update this pod' });
     }
 
-    const updatedPod = await PGPod.update(
-      req.params.id,
-      name,
-      description,
-    );
+    const updatedPod = await PGPod.update(req.params.id, name, description);
 
     res.json(updatedPod);
   } catch (err) {
@@ -135,7 +126,9 @@ exports.joinPod = async (req, res) => {
     // Check if user is already a member
     const isMember = await PGPod.isMember(req.params.id, req.user.id);
     if (isMember) {
-      console.log(`User ${req.user.id} is already a member of pod ${req.params.id}`);
+      console.log(
+        `User ${req.user.id} is already a member of pod ${req.params.id}`,
+      );
       // Even if already a member, return success to avoid frontend issues
       const updatedPod = await PGPod.findById(req.params.id);
       return res.json(updatedPod);
@@ -143,12 +136,16 @@ exports.joinPod = async (req, res) => {
 
     // Add user to pod members
     await PGPod.addMember(req.params.id, req.user.id);
-    console.log(`User ${req.user.id} successfully added to pod ${req.params.id}`);
+    console.log(
+      `User ${req.user.id} successfully added to pod ${req.params.id}`,
+    );
 
     // Verify membership was added successfully
     const membershipVerified = await PGPod.isMember(req.params.id, req.user.id);
     if (!membershipVerified) {
-      console.error(`Failed to verify membership after adding user ${req.user.id} to pod ${req.params.id}`);
+      console.error(
+        `Failed to verify membership after adding user ${req.user.id} to pod ${req.params.id}`,
+      );
     }
 
     // Get updated pod

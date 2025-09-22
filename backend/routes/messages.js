@@ -2,7 +2,11 @@ const express = require('express');
 
 const router = express.Router();
 const auth = require('../middleware/auth');
-const { getMessages, createMessage, deleteMessage } = require('../controllers/messageController');
+const {
+  getMessages,
+  createMessage,
+  deleteMessage,
+} = require('../controllers/messageController');
 
 // Get messages for a specific pod
 router.get('/:podId', auth, getMessages);

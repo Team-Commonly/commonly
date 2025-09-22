@@ -25,7 +25,13 @@ describe('postController', () => {
   });
 
   it('likePost toggles like state', async () => {
-    const post = { _id: 'p1', userId: 'u1', likes: 0, likedBy: [], save: jest.fn() };
+    const post = {
+      _id: 'p1',
+      userId: 'u1',
+      likes: 0,
+      likedBy: [],
+      save: jest.fn(),
+    };
     Post.findById.mockResolvedValue(post);
     const req = { params: { id: 'p1' }, userId: 'u1' };
     const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };

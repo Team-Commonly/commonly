@@ -33,14 +33,20 @@ describe('PG Pod model additional tests', () => {
   it('update returns updated row', async () => {
     pool.query.mockResolvedValue({ rows: [{ id: 'p1', name: 'n' }] });
     const res = await Pod.update('p1', 'n', 'd');
-    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE pods'), ['n', 'd', 'p1']);
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE pods'),
+      ['n', 'd', 'p1'],
+    );
     expect(res).toEqual({ id: 'p1', name: 'n' });
   });
 
   it('delete returns deleted row', async () => {
     pool.query.mockResolvedValue({ rows: [{ id: 'p1' }] });
     const res = await Pod.delete('p1');
-    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM pods'), ['p1']);
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM pods'),
+      ['p1'],
+    );
     expect(res).toEqual({ id: 'p1' });
   });
 
@@ -61,7 +67,10 @@ describe('PG Pod model additional tests', () => {
   it('removeMember deletes member', async () => {
     pool.query.mockResolvedValue({ rows: [{ id: '1' }] });
     const res = await Pod.removeMember('p1', 'u1');
-    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM pod_members'), ['p1', 'u1']);
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM pod_members'),
+      ['p1', 'u1'],
+    );
     expect(res).toEqual({ id: '1' });
   });
 });
