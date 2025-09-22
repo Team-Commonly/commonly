@@ -1,76 +1,81 @@
 const mongoose = require('mongoose');
 
-const IntegrationSchema = new mongoose.Schema({
-  installationId: {
-    type: String,
-    unique: true,
-    sparse: true, // Allow null/undefined for non-Discord integrations
-  },
-  podId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Pod',
-    required: true,
-  },
-  type: {
-    type: String,
-    required: true,
-    enum: ['discord', 'telegram', 'slack', 'messenger'],
-    default: 'discord',
-  },
-  status: {
-    type: String,
-    required: true,
-    enum: ['connected', 'disconnected', 'error', 'pending'],
-    default: 'pending',
-  },
-  config: {
-    serverId: String,
-    serverName: String,
-    channelId: String,
-    channelName: String,
-    webhookUrl: String,
-    botToken: String,
-    permissions: [String],
-    webhookListenerEnabled: {
+const IntegrationSchema = new mongoose.Schema(
+  {
+    installationId: {
+      type: String,
+      unique: true,
+      sparse: true, // Allow null/undefined for non-Discord integrations
+    },
+    podId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Pod',
+      required: true,
+    },
+    type: {
+      type: String,
+      required: true,
+      enum: ['discord', 'telegram', 'slack', 'messenger'],
+      default: 'discord',
+    },
+    status: {
+      type: String,
+      required: true,
+      enum: ['connected', 'disconnected', 'error', 'pending'],
+      default: 'pending',
+    },
+    config: {
+      serverId: String,
+      serverName: String,
+      channelId: String,
+      channelName: String,
+      webhookUrl: String,
+      botToken: String,
+      permissions: [String],
+      webhookListenerEnabled: {
+        type: Boolean,
+        default: false,
+      },
+      lastSummaryAt: Date,
+      messageBuffer: [
+        {
+          messageId: String,
+          authorId: String,
+          authorName: String,
+          content: String,
+          timestamp: Date,
+          attachments: [String],
+          reactions: [String],
+        },
+      ],
+      maxBufferSize: {
+        type: Number,
+        default: 1000,
+      },
+    },
+    lastSync: {
+      type: Date,
+      default: null,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    errorMessage: {
+      type: String,
+      default: null,
+    },
+    isActive: {
       type: Boolean,
-      default: false,
-    },
-    lastSummaryAt: Date,
-    messageBuffer: [{
-      messageId: String,
-      authorId: String,
-      authorName: String,
-      content: String,
-      timestamp: Date,
-      attachments: [String],
-      reactions: [String],
-    }],
-    maxBufferSize: {
-      type: Number,
-      default: 1000,
+      default: true,
     },
   },
-  lastSync: {
-    type: Date,
-    default: null,
+  {
+    timestamps: true,
+    collection: 'integrations',
   },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-  },
-  errorMessage: {
-    type: String,
-    default: null,
-  },
-  isActive: {
-    type: Boolean,
-    default: true,
-  },
-}, {
-  timestamps: true,
-  collection: 'integrations',
-});
+);
 
 // Index for efficient queries
 IntegrationSchema.index({ podId: 1, type: 1 });

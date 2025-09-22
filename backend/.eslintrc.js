@@ -4,9 +4,7 @@ module.exports = {
     es6: true,
     jest: true,
   },
-  extends: [
-    'airbnb-base',
-  ],
+  extends: ['airbnb-base'],
   parserOptions: {
     ecmaVersion: 2020,
   },
@@ -18,10 +16,13 @@ module.exports = {
     'consistent-return': 'off',
 
     // Allow unused variables in certain contexts
-    'no-unused-vars': ['warn', {
-      argsIgnorePattern: '^_',
-      varsIgnorePattern: '^_',
-    }],
+    'no-unused-vars': [
+      'warn',
+      {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+      },
+    ],
     'max-len': ['warn', { code: 120 }],
     'no-underscore-dangle': 'off', // Allow _id from MongoDB
     'no-param-reassign': ['error', { props: false }],
@@ -44,7 +45,12 @@ module.exports = {
     },
     {
       // For migration and utility scripts
-      files: ['**/migrations/**/*.js', '**/utils/**/*.js', 'sync-pods.js', 'testPG.js'],
+      files: [
+        '**/migrations/**/*.js',
+        '**/utils/**/*.js',
+        'sync-pods.js',
+        'testPG.js',
+      ],
       rules: {
         'no-restricted-syntax': 'off',
         'no-await-in-loop': 'off',

@@ -9,7 +9,9 @@ const Post = require('../../models/Post');
 const summaryRoutes = require('../../routes/summaries');
 const authMiddleware = require('../../middleware/auth');
 const {
-  setupMongoDb, closeMongoDb, clearMongoDb,
+  setupMongoDb,
+  closeMongoDb,
+  clearMongoDb,
 } = require('../utils/testUtils');
 
 describe('Summaries Routes Integration Tests', () => {
@@ -106,7 +108,8 @@ describe('Summaries Routes Integration Tests', () => {
       type: 'chats',
       podId: testPods.chat,
       title: 'Active Chat Discussion',
-      content: 'Users discussed various topics including technology and current events.',
+      content:
+        'Users discussed various topics including technology and current events.',
       timeRange: { start: oneHourAgo, end: now },
       metadata: {
         totalItems: 15,
@@ -120,7 +123,8 @@ describe('Summaries Routes Integration Tests', () => {
       type: 'chats',
       podId: testPods.study,
       title: 'Study Session Summary',
-      content: 'Students collaborated on assignments and shared study resources.',
+      content:
+        'Students collaborated on assignments and shared study resources.',
       timeRange: { start: oneHourAgo, end: now },
       metadata: {
         totalItems: 8,
@@ -148,7 +152,8 @@ describe('Summaries Routes Integration Tests', () => {
     await Summary.create({
       type: 'posts',
       title: 'Community Posts Overview',
-      content: 'The community shared various posts about technology, lifestyle, and discussions.',
+      content:
+        'The community shared various posts about technology, lifestyle, and discussions.',
       timeRange: { start: oneHourAgo, end: now },
       metadata: {
         totalItems: 25,
@@ -188,13 +193,18 @@ describe('Summaries Routes Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('posts');
       expect(response.body).toHaveProperty('chats');
-      expect(response.body.posts).toHaveProperty('title', 'Community Posts Overview');
-      expect(response.body.chats).toHaveProperty('title', 'Overall Chat Activity');
+      expect(response.body.posts).toHaveProperty(
+        'title',
+        'Community Posts Overview',
+      );
+      expect(response.body.chats).toHaveProperty(
+        'title',
+        'Overall Chat Activity',
+      );
     });
 
     test('should return 401 without authentication', async () => {
-      const response = await request(app)
-        .get('/api/summaries/latest');
+      const response = await request(app).get('/api/summaries/latest');
 
       expect(response.status).toBe(401);
     });
@@ -209,8 +219,10 @@ describe('Summaries Routes Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
       expect(response.body.length).toBeGreaterThan(0);
-      
-      const chatSummary = response.body.find((s) => s.metadata?.podName === 'Test Chat Room');
+
+      const chatSummary = response.body.find(
+        (s) => s.metadata?.podName === 'Test Chat Room',
+      );
       expect(chatSummary).toBeDefined();
       expect(chatSummary.title).toBe('Active Chat Discussion');
       expect(chatSummary.metadata.totalItems).toBe(15);
@@ -234,8 +246,10 @@ describe('Summaries Routes Integration Tests', () => {
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
-      
-      const studySummary = response.body.find((s) => s.metadata?.podName === 'Test Study Group');
+
+      const studySummary = response.body.find(
+        (s) => s.metadata?.podName === 'Test Study Group',
+      );
       expect(studySummary).toBeDefined();
       expect(studySummary.title).toBe('Study Session Summary');
       expect(studySummary.metadata.totalItems).toBe(8);
@@ -250,8 +264,10 @@ describe('Summaries Routes Integration Tests', () => {
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
-      
-      const gameSummary = response.body.find((s) => s.metadata?.podName === 'Test Game Room');
+
+      const gameSummary = response.body.find(
+        (s) => s.metadata?.podName === 'Test Game Room',
+      );
       expect(gameSummary).toBeDefined();
       expect(gameSummary.title).toBe('Gaming Session');
       expect(gameSummary.metadata.totalItems).toBe(22);
@@ -333,4 +349,4 @@ describe('Summaries Routes Integration Tests', () => {
       expect(response.body.error).toBe('Failed to fetch pod summary');
     });
   });
-}); 
+});

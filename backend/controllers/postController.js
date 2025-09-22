@@ -4,7 +4,10 @@ exports.createPost = async (req, res) => {
   const { content, image, tags } = req.body;
   try {
     const post = new Post({
-      userId: req.userId, content, image, tags,
+      userId: req.userId,
+      content,
+      image,
+      tags,
     });
     await post.save();
     res.status(201).json(post);
@@ -166,7 +169,9 @@ exports.deletePost = async (req, res) => {
 
     // Check if the user is the owner of the post
     if (post.userId.toString() !== req.userId) {
-      return res.status(403).json({ error: 'You are not authorized to delete this post' });
+      return res
+        .status(403)
+        .json({ error: 'You are not authorized to delete this post' });
     }
 
     await Post.findByIdAndDelete(req.params.id);
@@ -187,7 +192,9 @@ exports.deleteComment = async (req, res) => {
     }
 
     // Find the comment index
-    const commentIndex = post.comments.findIndex((comment) => comment._id.toString() === commentId);
+    const commentIndex = post.comments.findIndex(
+      (comment) => comment._id.toString() === commentId,
+    );
 
     if (commentIndex === -1) {
       return res.status(404).json({ error: 'Comment not found' });
@@ -195,7 +202,9 @@ exports.deleteComment = async (req, res) => {
 
     // Check if the user is the owner of the comment
     if (post.comments[commentIndex].userId.toString() !== req.userId) {
-      return res.status(403).json({ error: 'You are not authorized to delete this comment' });
+      return res
+        .status(403)
+        .json({ error: 'You are not authorized to delete this comment' });
     }
 
     // Remove the comment using splice

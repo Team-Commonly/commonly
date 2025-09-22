@@ -10,7 +10,8 @@ router.post('/', async (req, res) => {
     const event = req.body;
 
     // Handle Discord webhook verification
-    if (event.type === 1) { // PING
+    if (event.type === 1) {
+      // PING
       return res.json({ type: 1 }); // PONG
     }
 
@@ -94,9 +95,14 @@ router.post('/test/:integrationId', async (req, res) => {
     const isConnected = await service.testConnection();
 
     if (isConnected) {
-      res.json({ success: true, message: 'Webhook connection test successful' });
+      res.json({
+        success: true,
+        message: 'Webhook connection test successful',
+      });
     } else {
-      res.status(400).json({ success: false, message: 'Webhook connection test failed' });
+      res
+        .status(400)
+        .json({ success: false, message: 'Webhook connection test failed' });
     }
   } catch (error) {
     console.error('Error testing webhook:', error);
