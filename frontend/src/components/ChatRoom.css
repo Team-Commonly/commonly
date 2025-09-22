@@ -464,6 +464,7 @@ body {
   padding: 0;
   display: flex;
   position: relative;
+  align-items: flex-start; /* Align all items to top */
 }
 
 .message-item.sent {
@@ -480,6 +481,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  align-self: flex-start; /* Align avatar to top of message content */
+  margin-top: 4px; /* Slight offset to align with username text */
 }
 
 .message-avatar .MuiAvatar-root {
@@ -492,29 +495,26 @@ body {
   font-weight: 600;
   font-size: 12px;
   color: #71767b;
-  position: absolute;
-  top: -20px;
-  width: 100%;
-  text-align: center;
+  margin-bottom: 4px;
   white-space: nowrap;
-  max-width: none;
-  overflow: visible;
-  left: 0;
-  transform: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
 }
 
-.message-item.sent .message-user,
+.message-item.sent .message-user {
+  text-align: right;
+}
+
 .message-item.received .message-user {
-  text-align: center;
-  left: 0;
-  transform: none;
+  text-align: left;
 }
 
 .message-content-wrapper {
   display: flex;
   flex-direction: column;
   max-width: 70%;
-  margin-top: 25px; /* Push content down to accommodate username */
+  margin-top: 0; /* No top margin needed with Google Chat style */
 }
 
 .message-item.sent .message-content-wrapper {

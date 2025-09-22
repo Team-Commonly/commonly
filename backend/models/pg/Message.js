@@ -4,7 +4,11 @@ class Message {
   // Create a new message
   static async create(podId, userId, content, messageType = 'text') {
     console.log('Creating message with params:', {
-      podId, userId, content, messageType, podIdType: typeof podId,
+      podId,
+      userId,
+      content,
+      messageType,
+      podIdType: typeof podId,
     });
 
     const query = `
@@ -16,20 +20,31 @@ class Message {
     try {
       // For text messages, content contains the text
       // For image messages, content contains the image URL
-      const result = await pool.query(query, [podId, userId, content || '', messageType]);
+      const result = await pool.query(query, [
+        podId,
+        userId,
+        content || '',
+        messageType,
+      ]);
 
       // Update the pod's updated_at timestamp
-      await pool.query(`
+      await pool.query(
+        `
         UPDATE pods
         SET updated_at = CURRENT_TIMESTAMP
         WHERE id = $1
-      `, [podId]);
+      `,
+        [podId],
+      );
 
       return result.rows[0];
     } catch (error) {
       console.error('SQL Error in Message.create:', error.message);
       console.error('Query parameters:', {
-        podId, userId, content, messageType,
+        podId,
+        userId,
+        content,
+        messageType,
       });
       throw error;
     }
@@ -63,7 +78,7 @@ class Message {
       }
 
       query += `
-        ORDER BY m.created_at DESC
+        ORDER BY m.created_at ASC
         LIMIT $${queryParams.length + 1}
       `;
 
@@ -97,11 +112,13 @@ class Message {
 
           // User information - both as separate fields and as an object
           user_id: userId,
-          userId: msg.username ? {
-            _id: userId,
-            username: msg.username || 'Unknown User',
-            profilePicture: msg.profile_picture,
-          } : userId, // If username isn't available, just use the ID
+          userId: msg.username
+            ? {
+              _id: userId,
+              username: msg.username || 'Unknown User',
+              profilePicture: msg.profile_picture,
+            }
+            : userId, // If username isn't available, just use the ID
         };
       });
     } catch (error) {
@@ -161,11 +178,13 @@ class Message {
 
         // User information
         user_id: userId,
-        userId: msg.username ? {
-          _id: userId,
-          username: msg.username || 'Unknown User',
-          profilePicture: msg.profile_picture,
-        } : userId, // If username isn't available, just use the ID
+        userId: msg.username
+          ? {
+            _id: userId,
+            username: msg.username || 'Unknown User',
+            profilePicture: msg.profile_picture,
+          }
+          : userId, // If username isn't available, just use the ID
       };
     } catch (error) {
       console.error('Error in findById:', error.message);

@@ -1,5 +1,6 @@
+// Use MongoDB for pod membership checks and PostgreSQL for messages
 const Pod = require('../models/Pod');
-const Message = require('../models/Message');
+const PGMessage = require('../models/pg/Message');
 
 // Get messages for a specific pod
 exports.getMessages = async (req, res) => {
@@ -11,7 +12,7 @@ exports.getMessages = async (req, res) => {
       return res.status(400).json({ msg: 'Pod ID is required' });
     }
 
-    // Check if pod exists
+    // Check if pod exists in MongoDB
     const pod = await Pod.findById(podId);
     if (!pod) {
       return res.status(404).json({ msg: 'Pod not found' });
@@ -24,26 +25,25 @@ exports.getMessages = async (req, res) => {
       return res.status(401).json({ msg: 'User authentication failed' });
     }
 
-    // Convert user ID and pod members to strings for consistent comparison
+    // Check if user is a member using MongoDB Pod model
     const userIdStr = userId.toString();
-    const isUserMember = pod.members.some((memberId) => memberId.toString() === userIdStr);
-
+    const isUserMember = pod.members.some(
+      (memberId) => memberId.toString() === userIdStr,
+    );
     if (!isUserMember) {
-      return res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
+      return res
+        .status(401)
+        .json({ msg: 'Not authorized to view messages in this pod' });
     }
 
-    // Build query
-    const query = { podId };
-    if (before) {
-      query.createdAt = { $lt: new Date(before) };
-    }
+    // Get messages from PostgreSQL (already ordered DESC - newest first)
+    const messages = await PGMessage.findByPodId(
+      podId,
+      parseInt(limit, 10),
+      before,
+    );
 
-    const messages = await Message.find(query)
-      .populate('userId', 'username profilePicture')
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit, 10));
-
-    res.json(messages.reverse()); // Reverse to get oldest first
+    res.json(messages);
   } catch (err) {
     console.error('Error in getMessages:', err.message);
     if (err.kind === 'ObjectId') {
@@ -66,10 +66,12 @@ exports.createMessage = async (req, res) => {
     const messageContent = content || text;
 
     if (!messageContent && (!attachments || attachments.length === 0)) {
-      return res.status(400).json({ msg: 'Message text or attachments are required' });
+      return res
+        .status(400)
+        .json({ msg: 'Message text or attachments are required' });
     }
 
-    // Check if pod exists
+    // Check if pod exists in MongoDB
     const pod = await Pod.findById(podId);
     if (!pod) {
       return res.status(404).json({ msg: 'Pod not found' });
@@ -81,29 +83,24 @@ exports.createMessage = async (req, res) => {
       return res.status(401).json({ msg: 'User authentication failed' });
     }
 
-    // Convert user ID and pod members to strings for consistent comparison
+    // Check if user is a member using MongoDB Pod model
     const userIdStr = userId.toString();
-    const isUserMember = pod.members.some((memberId) => memberId.toString() === userIdStr);
-
+    const isUserMember = pod.members.some(
+      (memberId) => memberId.toString() === userIdStr,
+    );
     if (!isUserMember) {
-      return res.status(401).json({ msg: 'Not authorized to post in this pod' });
+      return res
+        .status(401)
+        .json({ msg: 'Not authorized to post in this pod' });
     }
 
-    const newMessage = new Message({
-      content: messageContent || '',
+    // Create message in PostgreSQL
+    const message = await PGMessage.create(
       podId,
       userId,
-      attachments: attachments || [],
-    });
-
-    const message = await newMessage.save();
-
-    // Update pod's updatedAt
-    pod.updatedAt = Date.now();
-    await pod.save();
-
-    // Populate the user data
-    await message.populate('userId', 'username profilePicture');
+      messageContent || '',
+      'text',
+    );
 
     res.json(message);
   } catch (err) {
@@ -118,7 +115,7 @@ exports.createMessage = async (req, res) => {
 // Delete a message
 exports.deleteMessage = async (req, res) => {
   try {
-    const message = await Message.findById(req.params.id);
+    const message = await PGMessage.findById(req.params.id);
 
     if (!message) {
       return res.status(404).json({ msg: 'Message not found' });
@@ -131,15 +128,17 @@ exports.deleteMessage = async (req, res) => {
     }
 
     // Check if user is the creator of the message
-    if (message.userId.toString() !== userId.toString()) {
-      // Check if user is the creator of the pod
-      const pod = await Pod.findById(message.podId);
+    if (message.user_id.toString() !== userId.toString()) {
+      // Check if user is the creator of the pod using MongoDB
+      const pod = await Pod.findById(message.pod_id);
       if (!pod || pod.createdBy.toString() !== userId.toString()) {
-        return res.status(401).json({ msg: 'Not authorized to delete this message' });
+        return res
+          .status(401)
+          .json({ msg: 'Not authorized to delete this message' });
       }
     }
 
-    await Message.deleteOne({ _id: req.params.id });
+    await PGMessage.delete(req.params.id);
 
     res.json({ msg: 'Message deleted' });
   } catch (err) {

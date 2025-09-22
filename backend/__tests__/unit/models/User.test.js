@@ -1,7 +1,11 @@
 // eslint-disable-next-line no-unused-vars
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
-const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
+const {
+  setupMongoDb,
+  closeMongoDb,
+  clearMongoDb,
+} = require('../../utils/testUtils');
 
 describe('User Model Tests', () => {
   // Setup and teardown for MongoDB

@@ -18,7 +18,11 @@ describe('podController', () => {
   it('deletePod denies delete if user is not creator', async () => {
     Pod.findById.mockResolvedValue({ createdBy: 'creator' });
     const req = { params: { id: 'p1' }, userId: 'other' };
-    const res = { status: jest.fn().mockReturnThis(), json: jest.fn(), send: jest.fn() };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+      send: jest.fn(),
+    };
     await podController.deletePod(req, res);
     expect(res.status).toHaveBeenCalledWith(401);
   });
