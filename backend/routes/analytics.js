@@ -169,7 +169,14 @@ router.get('/activity', auth, async (req, res) => {
     const userId = req.user.id;
 
     // Calculate time range
-    const hours = timeRange === '30d' ? 720 : timeRange === '7d' ? 168 : 24;
+    let hours;
+    if (timeRange === '30d') {
+      hours = 720;
+    } else if (timeRange === '7d') {
+      hours = 168;
+    } else {
+      hours = 24;
+    }
     const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     // Get summaries
@@ -223,7 +230,14 @@ router.get('/users', auth, async (req, res) => {
     const userId = req.user.id;
 
     // Calculate time range
-    const hours = timeRange === '30d' ? 720 : timeRange === '7d' ? 168 : 24;
+    let hours;
+    if (timeRange === '30d') {
+      hours = 720;
+    } else if (timeRange === '7d') {
+      hours = 168;
+    } else {
+      hours = 24;
+    }
     const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     // Get summaries
