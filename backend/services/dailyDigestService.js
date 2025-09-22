@@ -271,14 +271,12 @@ Make it engaging, informative, and personal. Use markdown formatting for structu
       overallAtmosphere: {
         overall_sentiment: DailyDigestService.scoreToSentiment(DailyDigestService.average(sentimentScores)),
         energy_level: DailyDigestService.scoreToEnergy(DailyDigestService.average(energyLevels)),
-        engagement_quality:
-          totalMessages > 100
-            ? 'intense'
-            : totalMessages > 50
-              ? 'deep'
-              : totalMessages > 20
-                ? 'moderate'
-                : 'superficial',
+        engagement_quality: (() => {
+          if (totalMessages > 100) return 'intense';
+          if (totalMessages > 50) return 'deep';
+          if (totalMessages > 20) return 'moderate';
+          return 'superficial';
+        })(),
         community_cohesion: Math.min(topUsers.length / 10, 1),
         topics_diversity: Math.min(topTags.length / 15, 1),
         dominant_emotions: ['engagement', 'community'],
@@ -360,23 +358,24 @@ This might be a great time to start a new conversation or share something intere
         `Found ${activeUsers.length} active users for daily digest generation`,
       );
 
-      const results = [];
-      for (const user of activeUsers) {
-        try {
-          const digest = await this.generateUserDailyDigest(user._id);
-          results.push({ userId: user._id, success: true, digest });
-        } catch (error) {
-          console.error(
-            `Failed to generate digest for user ${user._id}:`,
-            error,
-          );
-          results.push({
-            userId: user._id,
-            success: false,
-            error: error.message,
-          });
-        }
-      }
+      const results = await Promise.allSettled(
+        activeUsers.map(async (user) => {
+          try {
+            const digest = await this.generateUserDailyDigest(user._id);
+            return { userId: user._id, success: true, digest };
+          } catch (error) {
+            console.error(
+              `Failed to generate digest for user ${user._id}:`,
+              error,
+            );
+            return {
+              userId: user._id,
+              success: false,
+              error: error.message,
+            };
+          }
+        }),
+      ).then((settled) => settled.map((result) => (result.status === 'fulfilled' ? result.value : result.reason)));
 
       const successful = results.filter((r) => r.success).length;
       console.log(
@@ -466,7 +465,11 @@ Good ${DailyDigestService.getTimeOfDayGreeting()}, ${user.username}!
 ## 📊 Community Overview
 - **Active Communities**: ${podCount}
 - **Total Messages**: ${totalMessages}
-- **Engagement**: ${totalMessages > 50 ? 'High' : totalMessages > 20 ? 'Medium' : 'Low'}
+- **Engagement**: ${(() => {
+    if (totalMessages > 50) return 'High';
+    if (totalMessages > 20) return 'Medium';
+    return 'Low';
+  })()}
 
 ${Object.entries(byPod)
     .map(
