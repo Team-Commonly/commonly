@@ -478,11 +478,12 @@ const WhatsHappening = () => {
             </Typography>
           </Box>
           <Tooltip title={refreshing ? "Generating fresh summaries..." : "Generate fresh summaries"}>
-            <IconButton 
-              size="small" 
+            <IconButton
+              size="small"
               onClick={handleRefresh}
               disabled={refreshing}
-              sx={{ 
+              aria-label="Refresh summaries"
+              sx={{
                 opacity: refreshing ? 0.5 : 1,
                 transition: 'opacity 0.3s ease'
               }}

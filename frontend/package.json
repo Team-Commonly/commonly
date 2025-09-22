@@ -51,8 +51,9 @@
         ]
     },
     "jest": {
-        "transformIgnorePatterns": [
-            "node_modules/(?!(react-markdown|vfile|vfile-message|unified|bail|is-plain-obj|trough|remark-parse|remark-rehype|rehype-react|property-information|hast-util-whitespace|space-separated-tokens|comma-separated-tokens|pretty-bytes|mdast-util-to-hast|unist-util-position|unist-util-visit|mdast-util-definitions|mdast-util-to-string|unist-util-stringify-position|unist-util-is|mdast-util-find-and-replace|escape-string-regexp|unist-util-visit-parents|unist-util-generated|hast-util-parse-selector|hastscript|web-namespaces|hast-util-from-parse5|devlop|micromark|micromark-util-chunked|micromark-util-combine-extensions|micromark-util-character|micromark-util-decode-numeric-character-reference|micromark-util-decode-string|micromark-util-normalize-identifier|micromark-util-resolve-all|micromark-util-sanitize-uri|micromark-util-subtokenize|micromark-util-symbol|micromark-util-types|decode-named-character-reference|character-entities)/)"
-        ]
+        "moduleNameMapper": {
+            "^react-markdown$": "<rootDir>/src/__mocks__/react-markdown.js",
+            "^d3$": "<rootDir>/src/__mocks__/d3.js"
+        }
     }
 }

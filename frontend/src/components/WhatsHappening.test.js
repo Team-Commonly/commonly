@@ -117,28 +117,54 @@ describe('WhatsHappening Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockNavigate.mockClear();
-    
+
     // Setup localStorage mock to return test token
     localStorageMock.getItem.mockImplementation((key) => {
       if (key === 'token') return 'test-token';
       return null;
     });
-    
-    // Setup axios mocks
-    axios.get.mockClear();
+
+    // Setup default axios mocks for all tests
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/summaries/latest') {
+        return Promise.resolve({ data: mockSummariesData });
+      }
+      if (url === '/api/summaries/chat-rooms?limit=3') {
+        return Promise.resolve({ data: mockChatRooms });
+      }
+      if (url === '/api/summaries/study-rooms?limit=3') {
+        return Promise.resolve({ data: mockStudyRooms });
+      }
+      if (url === '/api/summaries/game-rooms?limit=3') {
+        return Promise.resolve({ data: mockGameRooms });
+      }
+      if (url === '/api/summaries/all-posts') {
+        return Promise.resolve({ data: mockAllPosts });
+      }
+      if (url === '/api/summaries/trigger') {
+        return Promise.resolve({ data: { success: true } });
+      }
+      return Promise.reject(new Error('Unknown URL'));
+    });
   });
 
   describe('Component Rendering', () => {
     test('renders basic structure with title and refresh button', async () => {
       renderWithRouter(<WhatsHappening />);
-      
-      expect(screen.getByText("What's happening")).toBeInTheDocument();
-      expect(screen.getByLabelText('Refresh summaries')).toBeInTheDocument();
+
+      // Wait for loading to complete
+      await waitFor(() => {
+        expect(screen.getByText("What's happening")).toBeInTheDocument();
+        expect(screen.getByLabelText('Refresh summaries')).toBeInTheDocument();
+      });
     });
 
     test('displays error state when API calls fail', async () => {
+      // Override default mock to simulate failure
+      axios.get.mockRejectedValue(new Error('API Error'));
+
       renderWithRouter(<WhatsHappening />);
-      
+
       await waitFor(() => {
         expect(screen.getByText('Unable to load summaries')).toBeInTheDocument();
         expect(screen.getByText('Failed to fetch summaries')).toBeInTheDocument();
@@ -146,26 +172,6 @@ describe('WhatsHappening Component', () => {
     });
 
     test('displays content when API calls succeed', async () => {
-      // Mock successful API responses
-      axios.get.mockImplementation((url) => {
-        if (url === '/api/summaries/latest') {
-          return Promise.resolve({ data: mockSummariesData });
-        }
-        if (url === '/api/summaries/chat-rooms?limit=3') {
-          return Promise.resolve({ data: mockChatRooms });
-        }
-        if (url === '/api/summaries/study-rooms?limit=3') {
-          return Promise.resolve({ data: mockStudyRooms });
-        }
-        if (url === '/api/summaries/game-rooms?limit=3') {
-          return Promise.resolve({ data: mockGameRooms });
-        }
-        if (url === '/api/summaries/all-posts') {
-          return Promise.resolve({ data: mockAllPosts });
-        }
-        return Promise.reject(new Error('Unknown URL'));
-      });
-
       renderWithRouter(<WhatsHappening />);
 
       await waitFor(() => {
@@ -177,17 +183,30 @@ describe('WhatsHappening Component', () => {
 
   describe('Refresh Functionality', () => {
     test('refresh button is clickable', async () => {
+      // Override axios to ensure immediate resolution for this test
+      axios.get.mockImplementation((url) => {
+        return Promise.resolve({
+          data: url === '/api/summaries/latest' ? mockSummariesData : []
+        });
+      });
+
       renderWithRouter(<WhatsHappening />);
-      
+
+      // Wait for component to load and show main content
+      await waitFor(() => {
+        expect(screen.getByText("What's happening")).toBeInTheDocument();
+      }, { timeout: 3000 });
+
+      // Find and test the refresh button
       const refreshButton = screen.getByLabelText('Refresh summaries');
       expect(refreshButton).toBeInTheDocument();
-      
-      await act(async () => {
-        fireEvent.click(refreshButton);
-      });
-      
-      // Should not throw error
-      expect(refreshButton).toBeInTheDocument();
+      expect(refreshButton).not.toBeDisabled();
+
+      // Click the button - this should trigger the refresh functionality
+      fireEvent.click(refreshButton);
+
+      // After clicking refresh, the component might re-render
+      // Just verify the click action was completed without errors
     });
 
     test('refresh button makes API calls when clicked', async () => {
@@ -234,8 +253,11 @@ describe('WhatsHappening Component', () => {
 
   describe('Error Handling', () => {
     test('displays error message when all API calls fail', async () => {
+      // Override default mock to simulate failure
+      axios.get.mockRejectedValue(new Error('API Error'));
+
       renderWithRouter(<WhatsHappening />);
-      
+
       await waitFor(() => {
         expect(screen.getByText('Unable to load summaries')).toBeInTheDocument();
         expect(screen.getByText('Failed to fetch summaries')).toBeInTheDocument();
@@ -262,9 +284,24 @@ describe('WhatsHappening Component', () => {
 
   describe('API Integration', () => {
     test('makes API calls with correct URLs and headers', async () => {
-      // Mock successful API responses
+      // Mock successful API responses with correct data types
       axios.get.mockImplementation((url) => {
-        return Promise.resolve({ data: mockSummariesData });
+        if (url === '/api/summaries/latest') {
+          return Promise.resolve({ data: mockSummariesData });
+        }
+        if (url === '/api/summaries/chat-rooms?limit=3') {
+          return Promise.resolve({ data: mockChatRooms });
+        }
+        if (url === '/api/summaries/study-rooms?limit=3') {
+          return Promise.resolve({ data: mockStudyRooms });
+        }
+        if (url === '/api/summaries/game-rooms?limit=3') {
+          return Promise.resolve({ data: mockGameRooms });
+        }
+        if (url === '/api/summaries/all-posts') {
+          return Promise.resolve({ data: mockAllPosts });
+        }
+        return Promise.resolve({ data: [] });
       });
 
       renderWithRouter(<WhatsHappening />);
@@ -371,19 +408,28 @@ describe('WhatsHappening Component', () => {
   });
 
   describe('Accessibility', () => {
-    test('has proper ARIA labels', () => {
+    test('has proper ARIA labels', async () => {
       renderWithRouter(<WhatsHappening />);
-      
-      const refreshButton = screen.getByLabelText('Refresh summaries');
-      expect(refreshButton).toBeInTheDocument();
+
+      // Wait for loading to complete and element to be available
+      await waitFor(() => {
+        const refreshButton = screen.getByLabelText('Refresh summaries');
+        expect(refreshButton).toBeInTheDocument();
+      });
     });
 
-    test('is keyboard accessible', () => {
+    test('is keyboard accessible', async () => {
       renderWithRouter(<WhatsHappening />);
-      
-      const buttons = screen.getAllByRole('button');
-      buttons.forEach(button => {
-        expect(button).toHaveAttribute('tabindex');
+
+      // Wait for loading to complete
+      await waitFor(() => {
+        const buttons = screen.getAllByRole('button');
+        expect(buttons.length).toBeGreaterThan(0);
+
+        buttons.forEach(button => {
+          // IconButtons don't always have explicit tabindex, but they should be focusable
+          expect(button.tabIndex).toBeGreaterThanOrEqual(0);
+        });
       });
     });
   });
