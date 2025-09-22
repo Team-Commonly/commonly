@@ -25,7 +25,7 @@ let pgPodRoutes;
 let pgMessageRoutes;
 let pgStatusRoutes;
 let PGMessage;
-let PGPod;
+let _PGPod;
 const Message = require('./models/Message');
 const Pod = require('./models/Pod');
 const User = require('./models/User');
@@ -38,7 +38,7 @@ if (process.env.PG_HOST) {
   pgMessageRoutes = require('./routes/pg-messages');
   pgStatusRoutes = require('./routes/pg-status');
   PGMessage = require('./models/pg/Message');
-  const _PGPod = require('./models/pg/Pod');
+  _PGPod = require('./models/pg/Pod');
 }
 
 // Load environment variables
