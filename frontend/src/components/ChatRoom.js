@@ -1,10 +1,10 @@
 /* eslint-disable max-len */
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { 
-    Container, Typography, Box, Paper, TextField, IconButton, 
+import {
+    Container, Typography, Box, Paper, TextField, IconButton,
     Avatar, List, ListItem, ListItemAvatar,
-    Button, CircularProgress, AppBar, Toolbar, MenuItem
+    Button, CircularProgress, AppBar, Toolbar, MenuItem, useMediaQuery, useTheme
 } from '@mui/material';
 import { 
     Send as SendIcon, 
@@ -38,6 +38,9 @@ const ChatRoom = () => {
     const { isDashboardCollapsed } = useLayout(); // Using global layout context
     const { podType, roomId } = useParams();
     const navigate = useNavigate();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+    const isTablet = useMediaQuery(theme.breakpoints.between('md', 'lg'));
     const [room, setRoom] = useState(null);
     const [messages, setMessages] = useState([]);
     const [message, setMessage] = useState('');
@@ -51,6 +54,7 @@ const ChatRoom = () => {
     const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef(null);
     const emojiPickerRef = useRef(null);
+    const sidebarRef = useRef(null);
     
     // State for real data from API
     const [announcements, setAnnouncements] = useState([]);
@@ -169,7 +173,8 @@ const ChatRoom = () => {
             setLoading(false);
         }
     }, [roomId, podType, pgAvailable]);
-    
+
+
     // Join pod room when socket connects
     useEffect(() => {
         if (connected && roomId && !error) {
@@ -364,7 +369,7 @@ const ChatRoom = () => {
     // Close emoji picker when clicking outside
     useEffect(() => {
         const handleClickOutside = (event) => {
-            if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target) && 
+            if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target) &&
                 !event.target.closest('.emoji-button')) {
                 setShowEmojiPicker(false);
             }
@@ -375,6 +380,23 @@ const ChatRoom = () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, []);
+
+    // Close sidebar when clicking outside on mobile and tablet
+    useEffect(() => {
+        const handleSidebarClickOutside = (event) => {
+            if ((isMobile || isTablet) && showMembers && sidebarRef.current &&
+                !sidebarRef.current.contains(event.target) &&
+                !event.target.closest('.members-button') &&
+                !event.target.closest('.sidebar-toggle-button')) {
+                setShowMembers(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleSidebarClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleSidebarClickOutside);
+        };
+    }, [isMobile, isTablet, showMembers]);
 
     // Log when emoji picker visibility changes
     useEffect(() => {
@@ -639,7 +661,8 @@ const ChatRoom = () => {
             ></div>
             
             {/* Sidebar - now a side panel instead of full overlay */}
-            <div 
+            <div
+                ref={sidebarRef}
                 className={`members-sidebar ${!showMembers ? 'hidden' : ''}`}
             >
                 {/* Sidebar content */}
@@ -1273,10 +1296,10 @@ const ChatRoom = () => {
                 </div>
                 
                 {/* Message input */}
-                <Paper 
-                    component="form" 
+                <Paper
+                    component="form"
                     onSubmit={handleSendMessage}
-                    className="message-input-container"
+                    className={`message-input-container ${showMembers ? 'sidebar-visible' : 'sidebar-hidden'}`}
                 >
                     <IconButton 
                         onClick={toggleEmojiPicker} 
