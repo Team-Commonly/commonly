@@ -1,18 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { 
-    Card, 
-    CardContent, 
-    Typography, 
-    Avatar, 
-    Box, 
-    Paper, 
-    Grid, 
-    Divider, 
-    Button, 
-    Dialog, 
-    DialogTitle, 
-    DialogContent, 
+import {
+    Card,
+    CardContent,
+    Typography,
+    Avatar,
+    Box,
+    Paper,
+    Grid,
+    Divider,
+    Button,
+    Dialog,
+    DialogTitle,
+    DialogContent,
     DialogActions,
     IconButton,
     Tabs,
@@ -34,6 +34,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { avatarOptions, getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
+import { useLayout } from '../context/LayoutContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import { useNavigate } from 'react-router-dom';
 import AppsManagement from './AppsManagement';
@@ -325,9 +326,9 @@ const UserProfile = () => {
                         icon={<AppsIcon />} 
                         iconPosition="start"
                     />
-                    <Tab 
-                        label="API Token" 
-                        icon={<KeyIcon />} 
+                    <Tab
+                        label="API Token"
+                        icon={<KeyIcon />}
                         iconPosition="start"
                     />
                 </Tabs>
@@ -445,6 +446,7 @@ const UserProfile = () => {
                             </Paper>
                         </Box>
                     )}
+
                 </CardContent>
             </Card>
 
