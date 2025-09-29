@@ -169,8 +169,8 @@ body.dashboard-collapsed .main-content {
 }
 
 body.dashboard-collapsed .chat-room-container {
-  width: calc(100% - 60px) !important;
-  margin-left: 60px !important;
+  width: 100% !important;
+  margin-left: 0 !important;
 }
 
 @media (max-width: 1200px) {
