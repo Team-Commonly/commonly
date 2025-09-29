@@ -1,3 +1,5 @@
+
+/* Base chat room container styles */
 .chat-room-container {
   display: flex;
   flex-direction: column;
@@ -8,10 +10,35 @@
   background-color: #f7f9f9;
   position: relative;
   overflow: hidden;
-  width: calc(100% - 240px);
-  margin-left: 240px;
-  transition: width 0.3s ease, margin-left 0.3s ease;
+  transition: width 0.3s ease, margin-left 0.3s ease, margin-right 0.3s ease;
+  border: none;
+  box-shadow: none;
+  /* Default when sidebar is hidden */
+  width: auto !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important; /* Space for toggle button */
 }
+
+.chat-room-container.dashboard-collapsed {
+  /* When dashboard collapsed and sidebar hidden */
+  width: auto !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Auto-scale chat area based on sidebar state - works for all screen sizes */
+.chat-room-container.sidebar-visible {
+  width: auto !important; /* Use available space */
+  margin-right: 280px !important; /* Exactly sidebar width - no gap */
+  margin-left: 0 !important; /* Keep dashboard space */
+}
+
+.chat-room-container.sidebar-visible.dashboard-collapsed {
+  width: auto !important; /* Use available space */
+  margin-right: 280px !important; /* Exactly sidebar width - no gap */
+  margin-left: 0 !important; /* Extend to full left edge */
+}
+
 
 /* Main content layout for chat */
 .main-chat-content {
@@ -26,8 +53,8 @@
 /* Chat header that stays at top */
 .chat-room-header {
   background-color: #ffffff !important;
-  border-bottom: 1px solid #e0e0e0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  border-bottom: none; /* Remove bottom border for cleaner look */
+  box-shadow: none !important; /* Remove shadow for cleaner look */
   z-index: 1200;
   position: sticky;
   top: 0;
@@ -39,7 +66,7 @@
 }
 
 .chat-room-header .MuiToolbar-root {
-  padding: 0 16px;
+  padding: 0 16px 0 20px; /* Add left padding to align with dashboard edge */
   min-height: 64px;
   display: flex;
   align-items: center;
@@ -109,10 +136,17 @@
   border-radius: 0;
   height: calc(100vh - 145px); /* Adjust for header and input area */
   border: none;
-  padding: 20px;
+  padding: 20px 20px 20px 20px; /* Consistent padding aligned with dashboard edge */
+  margin-left: 0; /* Remove margin to extend to full edge */
   width: 100%;
   max-width: 100%;
   box-shadow: none !important;
+  transition: width 0.3s ease, margin-right 0.3s ease;
+}
+
+/* Adjust messages container when sidebar is visible */
+.chat-room-container.sidebar-visible .messages-container {
+  margin-right: 0; /* Sidebar space is handled by container */
 }
 
 /* Redesigned sidebar as an overlay panel with white background */
@@ -152,7 +186,7 @@
   padding: 0 !important;
   margin-bottom: 16px !important;
   background-color: #ffffff !important; /* Changed to white */
-  border-bottom: 1px solid #f0f0f0 !important; /* Light separator */
+  border-bottom: 1px solid #f8f8f8 !important; /* Even lighter separator */
 }
 
 /* First section in sidebar needs extra spacing */
@@ -187,7 +221,7 @@
   align-items: center !important;
   justify-content: space-between !important;
   padding: 16px 16px 12px !important;
-  border-bottom: 1px solid #f0f0f0 !important; /* Light border */
+  border-bottom: 1px solid #f8f8f8 !important; /* Even lighter border */
   position: relative;
   z-index: 20;
   order: 1;
@@ -461,7 +495,7 @@ body {
 
 .message-item {
   margin-bottom: 24px;
-  padding: 0;
+  padding: 0; /* Remove extra padding since container has it */
   display: flex;
   position: relative;
   align-items: flex-start; /* Align all items to top */
@@ -618,14 +652,14 @@ body {
   display: block !important;
 }
 
-/* Adjust message input position - no need to adjust for sidebar */
+/* Message input with responsive sidebar adjustment */
 .message-input-container {
   display: flex;
   align-items: center;
   padding: 10px 15px;
   border-radius: 24px;
   background-color: #fff;
-  border: 1px solid #e0e0e0;
+  border: 1px solid #e8e8e8; /* Lighter border */
   position: fixed;
   bottom: 16px;
   left: calc(50% + 120px);
@@ -634,10 +668,176 @@ body {
   max-width: 700px;
   margin: 0 auto;
   z-index: 1000;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); /* Much lighter shadow */
   justify-content: space-between;
-  transition: width 0.3s ease, left 0.3s ease;
+  transition: width 0.3s ease, left 0.3s ease, right 0.3s ease;
   flex-wrap: wrap;
+}
+
+/* Input box aligns with chat area boundaries */
+.message-input-container.sidebar-visible {
+  left: 350px !important; /* Align with chat area left edge (240px + 20px padding) */
+  right: 350px !important; /* Exactly sidebar width - no extra margin */
+  width: auto !important; /* Use available space between left and right */
+  transform: none !important; /* Remove centering transform */
+  max-width: none !important; /* Remove max-width constraint */
+}
+
+.message-input-container.sidebar-hidden {
+  left: 350px !important; /* Keep consistent with dashboard */
+  right: 70px !important; /* Space for toggle button (40px + 20px margin) */
+  width: auto !important;
+  transform: none !important;
+  max-width: none !important;
+}
+
+/* Input adjustments for collapsed dashboard - align with full chat area */
+.chat-room-container.dashboard-collapsed .message-input-container.sidebar-visible {
+  left: 140px !important; /* Align with full left edge + padding */
+  right: 350px !important; /* Exactly sidebar width - no extra margin */
+}
+
+.chat-room-container.dashboard-collapsed .message-input-container.sidebar-hidden {
+  left: 140px !important; /* Align with full left edge + padding */
+  right: 150px !important; /* Space for toggle button (40px + 20px margin) */
+}
+
+/* Add responsive media queries for better mobile/tablet experience */
+@media (max-width: 1024px) and (min-width: 769px) {
+  /* Tablet: Sidebar overlay with backdrop and content adjustment */
+  .members-sidebar {
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.2) !important;
+    border-left: 2px solid #e0e0e0 !important;
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(8px) !important;
+  }
+
+  /* Content extends properly with sidebar spacing on tablet */
+  .chat-room-container.sidebar-visible {
+    width: auto !important;
+    margin-right: 280px !important; /* Leave space for sidebar */
+    margin-left: 0 !important;
+  }
+
+  .chat-room-container.sidebar-visible.dashboard-collapsed {
+    width: auto !important;
+    margin-right: 280px !important; /* Leave space for sidebar */
+    margin-left: 0 !important;
+  }
+
+  /* Input container aligns with chat area on tablet */
+  .message-input-container.sidebar-visible {
+    left: 300px !important;
+    right: 300px !important; /* Space for sidebar (280px + 20px margin) */
+    width: auto !important;
+    transform: none !important;
+  }
+
+  .message-input-container.sidebar-hidden {
+    left: 300px !important;
+    right: 60px !important; /* Space for toggle button */
+    width: auto !important;
+    transform: none !important;
+  }
+
+  /* Dashboard collapsed adjustments for tablet */
+  .chat-room-container.dashboard-collapsed .message-input-container.sidebar-visible {
+    left: 60px !important; /* Full left edge */
+    right: 300px !important; /* Space for sidebar (280px + 20px margin) */
+  }
+
+  .chat-room-container.dashboard-collapsed .message-input-container.sidebar-hidden {
+    left: 60px !important; /* Full left edge */
+    right: 60px !important; /* Space for toggle button */
+  }
+
+  /* Add overlay backdrop for tablet when sidebar is open */
+  .members-sidebar:not(.hidden)::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.15);
+    z-index: -1;
+  }
+}
+
+
+@media (max-width: 768px) {
+  /* Mobile: Sidebar becomes full-screen overlay */
+  .members-sidebar {
+    width: 100% !important;
+    background-color: rgba(255, 255, 255, 0.98) !important;
+    backdrop-filter: blur(10px) !important;
+  }
+
+  /* Mobile: Chat content doesn't move when sidebar is open (overlay mode) */
+  .chat-room-container.sidebar-visible {
+    width: auto !important;
+    margin-right: 0 !important; /* Sidebar is overlay, no space needed */
+    margin-left: 240px !important;
+  }
+
+  .chat-room-container.sidebar-visible.dashboard-collapsed {
+    width: auto !important;
+    margin-left: 0 !important; /* Full left edge for mobile */
+    margin-right: 0 !important;
+  }
+
+  /* Mobile input adjustments - align with chat area */
+  .message-input-container.sidebar-visible {
+    left: 260px !important; /* Align with chat area */
+    right: 20px !important; /* Normal right margin since sidebar is overlay */
+    width: auto !important;
+    transform: none !important;
+    z-index: 999 !important; /* Lower than sidebar */
+  }
+
+  .message-input-container.sidebar-hidden {
+    left: 260px !important;
+    right: 20px !important;
+    width: auto !important;
+    transform: none !important;
+  }
+
+  /* Dashboard collapsed adjustments for mobile */
+  .chat-room-container.dashboard-collapsed .message-input-container.sidebar-visible {
+    left: 20px !important; /* Full left edge */
+    right: 20px !important; /* Sidebar is overlay on mobile */
+  }
+
+  .chat-room-container.dashboard-collapsed .message-input-container.sidebar-hidden {
+    left: 20px !important; /* Full left edge */
+    right: 20px !important;
+  }
+
+  /* Add overlay backdrop when sidebar is open on mobile */
+  .members-sidebar:not(.hidden)::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.3);
+    z-index: -1;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Small mobile: Ensure input is always accessible */
+  .message-input-container {
+    bottom: 8px !important;
+    width: calc(100% - 16px) !important;
+    margin: 0 8px !important;
+    padding: 8px 12px !important;
+  }
+
+  .members-sidebar {
+    padding-top: 20px !important;
+  }
 }
 
 /* File preview styles */
@@ -701,12 +901,11 @@ body {
   flex-shrink: 0 !important;
 }
 
-/* Emoji picker styles */
+/* Emoji picker styles - align with input box */
 .emoji-picker-wrapper {
   position: fixed !important;
   bottom: 100px !important; /* Position above the message input */
-  left: calc(50% + 120px) !important;
-  transform: translateX(-50%) !important;
+  left: 280px !important; /* Align with input left edge */
   z-index: 1100 !important; /* Higher than message input */
   width: auto !important;
   max-width: 320px !important; /* Smaller width */
