@@ -1,5 +1,7 @@
 # Discord Integration Documentation
 
+**Skills**: `Third-party Integrations` `Backend Development` `OAuth2` `Webhooks`
+
 This directory contains all documentation related to Discord integration with Commonly.
 
 ## Overview
