@@ -1,5 +1,7 @@
 # Database Documentation
 
+**Skills**: `Database Management` `MongoDB` `PostgreSQL` `Schema Design`
+
 This directory contains documentation for the dual-database architecture (MongoDB + PostgreSQL).
 
 ## Overview
