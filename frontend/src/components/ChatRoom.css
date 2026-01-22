@@ -136,7 +136,7 @@
   border-radius: 0;
   height: calc(100vh - 145px); /* Adjust for header and input area */
   border: none;
-  padding: 20px 20px 20px 20px; /* Consistent padding aligned with dashboard edge */
+  padding: 20px 20px 90px 20px; /* Bottom padding for composer */
   margin-left: 0; /* Remove margin to extend to full edge */
   width: 100%;
   max-width: 100%;
@@ -391,14 +391,15 @@
   right: 0 !important;
   top: 50% !important;
   transform: translateY(-50%) !important;
-  background-color: #1d9bf0 !important; /* Twitter blue */
-  color: white !important;
-  padding: 8px !important;
-  min-width: 40px !important;
-  width: 40px !important;
-  height: 40px !important;
-  border-radius: 4px 0 0 4px !important; /* Always square on the left side */
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
+  background-color: #eff6ff !important;
+  color: #1d4ed8 !important;
+  padding: 0 !important;
+  min-width: 36px !important;
+  width: 36px !important;
+  height: 44px !important;
+  border-radius: 10px 0 0 10px !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -415,8 +416,8 @@
 }
 
 .sidebar-toggle-button:hover {
-  background-color: #0c8bd9 !important;
-  transform: translateY(-50%) scale(1.05) !important;
+  background-color: #dbeafe !important;
+  transform: translateY(-50%) scale(1.03) !important;
 }
 
 .editable-form {
@@ -655,11 +656,12 @@ body {
 /* Message input with responsive sidebar adjustment */
 .message-input-container {
   display: flex;
-  align-items: center;
-  padding: 10px 15px;
-  border-radius: 24px;
-  background-color: #fff;
-  border: 1px solid #e8e8e8; /* Lighter border */
+  flex-direction: column;
+  align-items: stretch;
+  padding: 10px 16px;
+  border-radius: 16px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
   position: fixed;
   bottom: 16px;
   left: calc(50% + 120px);
@@ -668,10 +670,8 @@ body {
   max-width: 700px;
   margin: 0 auto;
   z-index: 1000;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); /* Much lighter shadow */
-  justify-content: space-between;
+  box-shadow: 0 -2px 8px rgba(15, 23, 42, 0.06);
   transition: width 0.3s ease, left 0.3s ease, right 0.3s ease;
-  flex-wrap: wrap;
 }
 
 /* Input box aligns with chat area boundaries */
@@ -890,40 +890,103 @@ body {
 }
 
 /* Ensure message input and buttons stay in a row */
-.message-input {
-  flex: 1 !important;
-  margin: 0 8px !important;
+.composer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-tools {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .emoji-button,
-.attach-button,
+.attach-button {
+  width: 36px !important;
+  height: 36px !important;
+  background-color: #eff6ff !important;
+  color: #475569 !important;
+}
+
+.emoji-button:hover,
+.attach-button:hover {
+  background-color: #dbeafe !important;
+}
+
+.emoji-button.active {
+  background-color: #bfdbfe !important;
+  color: #1d4ed8 !important;
+}
+
+.message-input {
+  flex: 1 !important;
+  margin: 0 !important;
+}
+
+.message-input .MuiInputBase-root {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+}
+
+.message-input .MuiInputBase-root.Mui-focused {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.message-input .MuiInputBase-input::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
 .send-button {
-  flex-shrink: 0 !important;
+  height: 44px;
+  border-radius: 22px;
+  padding: 0 16px;
+  text-transform: none;
+  font-weight: 600;
+  background-color: #2563eb !important;
+}
+
+.send-button.Mui-disabled {
+  background-color: #e2e8f0 !important;
+  color: #94a3b8 !important;
+}
+
+.composer-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #64748b;
+  text-align: right;
 }
 
 /* Emoji picker styles - align with input box */
 .emoji-picker-wrapper {
   position: fixed !important;
-  bottom: 100px !important; /* Position above the message input */
+  bottom: 96px !important; /* Position above the message input */
   left: 280px !important; /* Align with input left edge */
   z-index: 1100 !important; /* Higher than message input */
   width: auto !important;
-  max-width: 320px !important; /* Smaller width */
+  max-width: 280px !important;
 }
 
 .emoji-picker-container {
   position: relative !important;
   background-color: #ffffff !important;
   border-radius: 12px !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
-  border: 1px solid #e1e8ed !important;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12) !important;
+  border: 1px solid #e2e8f0 !important;
   overflow: hidden !important;
 }
 
 /* Style the emoji picker component itself */
 .emoji-picker-container .EmojiPickerReact {
-  width: 280px !important; /* Smaller width */
-  height: 300px !important; /* Smaller height */
+  width: 280px !important;
+  height: 320px !important;
   border: none !important;
   box-shadow: none !important;
   background-color: #ffffff !important;
@@ -931,12 +994,12 @@ body {
 
 /* Style emoji picker body */
 .emoji-picker-container .epr-body {
-  height: 200px !important; /* Smaller body height */
+  height: 210px !important;
 }
 
 /* Make emoji picker scroll area smaller */
 .emoji-picker-container .epr-emoji-category-content {
-  max-height: 180px !important;
+  max-height: 190px !important;
 }
 
 /* Style individual emojis */
@@ -948,8 +1011,8 @@ body {
 
 /* Style the search input in emoji picker */
 .emoji-picker-container .epr-search-container input {
-  background-color: #f8f9fa !important;
-  border: 1px solid #e1e8ed !important;
+  background-color: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
   border-radius: 8px !important;
   padding: 8px 12px !important;
   font-size: 14px !important;
@@ -957,8 +1020,8 @@ body {
 
 /* Style emoji categories */
 .emoji-picker-container .epr-category-nav {
-  background-color: #f8f9fa !important;
-  border-bottom: 1px solid #e1e8ed !important;
+  background-color: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
   padding: 8px !important;
 }
 

@@ -2,9 +2,10 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Menu, MenuItem, CircularProgress } from '@mui/material';
+import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Menu, MenuItem, CircularProgress, Tooltip } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
+import SendIcon from '@mui/icons-material/Send';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
 import FavoriteIcon from '@mui/icons-material/Favorite';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -208,21 +209,18 @@ const Thread = () => {
         <Box sx={{ maxWidth: 800, mx: 'auto', p: 3, mt: 8 }}>
             <Card sx={{ mb: 4 }}>
                 <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Avatar sx={{ 
-                                bgcolor: getAvatarColor(post.userId.profilePicture), 
-                                mr: 2 
-                            }}>
+                    <div className="post-header">
+                        <div className="post-meta">
+                            <Avatar className="post-avatar" sx={{ bgcolor: getAvatarColor(post.userId.profilePicture) }}>
                                 {post.userId.username.charAt(0).toUpperCase()}
                             </Avatar>
-                            <Box>
+                            <div className="post-meta-text">
                                 <Typography variant="h6">{post.userId.username}</Typography>
                                 <Typography variant="caption" color="text.secondary">
                                     {formatDistanceToNow(new Date(post.createdAt))} ago
                                 </Typography>
-                            </Box>
-                        </Box>
+                            </div>
+                        </div>
                         {currentUser && (currentUser._id === post.userId._id) && (
                             <IconButton 
                                 size="small" 
@@ -233,96 +231,104 @@ const Thread = () => {
                                 <MoreVertIcon />
                             </IconButton>
                         )}
-                    </Box>
-                    <Typography variant="body1" sx={{ mt: 2, mb: 2, textAlign: 'left' }}>
-                        {post.content.split(/(#\w+)/g).map((part, index) => {
-                            if (part.startsWith('#')) {
-                                return (
-                                    <Typography
-                                        key={index}
-                                        component="span"
-                                        color="primary"
-                                        sx={{ fontWeight: 'bold' }}
-                                        onClick={() => navigate(`/feed?q=${part.substring(1)}`)}
-                                        className="hashtag"
-                                    >
-                                        {part}
-                                    </Typography>
-                                );
-                            }
-                            return part;
-                        })}
-                    </Typography>
-                    
-                    {post.image && (
-                        <Box 
-                            sx={{ 
-                                mt: 1, 
-                                mb: 3, 
-                                borderRadius: '8px',
-                                overflow: 'hidden',
-                                maxHeight: '500px',
-                            }}
-                            className="post-image-container"
-                        >
-                            <Box
-                                component="img"
-                                src={post.image}
-                                alt="Post image"
-                                sx={{
-                                    width: '100%',
-                                    maxHeight: '500px',
-                                    objectFit: 'contain',
-                                    borderRadius: '8px',
-                                    backgroundColor: '#f8f9fa'
-                                }}
-                                className="post-image"
-                            />
-                        </Box>
-                    )}
-                    
-                    <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-                        <IconButton onClick={handleLike} color="primary">
-                            {liked ? <FavoriteIcon /> : <FavoriteBorderIcon />}
-                        </IconButton>
-                        <Typography variant="body2" color="text.secondary">
-                            {post.likes || 0} likes
+                    </div>
+                    <div className="post-body">
+                        <Typography variant="body1" sx={{ mt: 2, mb: 2, textAlign: 'left' }}>
+                            {post.content.split(/(#\w+)/g).map((part, index) => {
+                                if (part.startsWith('#')) {
+                                    return (
+                                        <Typography
+                                            key={index}
+                                            component="span"
+                                            color="primary"
+                                            sx={{ fontWeight: 'bold' }}
+                                            onClick={() => navigate(`/feed?q=${part.substring(1)}`)}
+                                            className="hashtag"
+                                        >
+                                            {part}
+                                        </Typography>
+                                    );
+                                }
+                                return part;
+                            })}
                         </Typography>
-                    </Box>
+                    
+                        {post.image && (
+                            <Box 
+                                sx={{ 
+                                    mt: 1, 
+                                    mb: 3, 
+                                    borderRadius: '8px',
+                                    overflow: 'hidden',
+                                    maxHeight: '500px',
+                                }}
+                                className="post-image-container"
+                            >
+                                <Box
+                                    component="img"
+                                    src={post.image}
+                                    alt="Post image"
+                                    sx={{
+                                        width: '100%',
+                                        maxHeight: '500px',
+                                        objectFit: 'contain',
+                                        borderRadius: '8px',
+                                        backgroundColor: '#f8f9fa'
+                                    }}
+                                    className="post-image"
+                                />
+                            </Box>
+                        )}
+                    
+                        <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
+                            <IconButton onClick={handleLike} color="primary">
+                                {liked ? <FavoriteIcon /> : <FavoriteBorderIcon />}
+                            </IconButton>
+                            <Typography variant="body2" color="text.secondary">
+                                {post.likes || 0} likes
+                            </Typography>
+                        </Box>
+                    </div>
                 </CardContent>
             </Card>
 
             <Divider sx={{ mb: 3 }} />
 
             <div className="thread-comment-form">
-                <form onSubmit={handleCommentSubmit}>
-                    <div className="comment-input-container">
+                <form onSubmit={handleCommentSubmit} className="comment-composer">
+                    <div className="comment-composer-row">
+                        <div className="comment-tools">
+                            <Tooltip title="Emoji" placement="top">
+                                <IconButton
+                                    ref={emojiButtonRef}
+                                    className={`emoji-button ${showEmojiPicker ? 'active' : ''}`}
+                                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                    color="primary"
+                                    data-testid="emoji-button"
+                                    aria-label="Insert emoji"
+                                >
+                                    <EmojiEmotionsIcon />
+                                </IconButton>
+                            </Tooltip>
+                        </div>
                         <textarea
                             className="comment-textarea"
                             value={comment}
                             onChange={(e) => setComment(e.target.value)}
                             placeholder="Write a comment..."
                         />
-                        <IconButton
-                            ref={emojiButtonRef}
-                            className="emoji-button"
-                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                            color="primary"
-                            data-testid="emoji-button"
-                        >
-                            <EmojiEmotionsIcon />
-                        </IconButton>
-                    </div>
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
                         <Button
                             type="submit"
                             variant="contained"
                             color="primary"
                             disabled={!comment.trim()}
+                            className="comment-send-button"
+                            endIcon={<SendIcon />}
                         >
-                            Post Comment
+                            Post
                         </Button>
-                    </Box>
+                    </div>
+                    <div className="comment-hint">Shift+Enter for newline</div>
                 </form>
             </div>
 
@@ -386,36 +392,38 @@ const Thread = () => {
             </Typography>
 
             {post.comments.map((comment) => (
-                <Paper key={comment._id} sx={{ p: 2, mb: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                            <Avatar sx={{ 
-                                width: 32, 
-                                height: 32, 
-                                mr: 1, 
+                <Paper key={comment._id} className="comment-item">
+                    <div className="comment-row">
+                        <Avatar 
+                            className="comment-avatar"
+                            sx={{ 
                                 bgcolor: getAvatarColor(comment.userId && comment.userId.profilePicture) 
-                            }}>
-                                {comment.userId && comment.userId.username ? comment.userId.username.charAt(0).toUpperCase() : '?'}
-                            </Avatar>
-                            <Box>
-                                <Typography variant="subtitle2">{comment.userId && comment.userId.username ? comment.userId.username : 'Unknown User'}</Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    {formatDistanceToNow(new Date(comment.createdAt))} ago
-                                </Typography>
-                            </Box>
-                        </Box>
-                        {currentUser && comment.userId && (currentUser._id === comment.userId._id) && (
-                            <IconButton 
-                                size="small" 
-                                onClick={(e) => handleMenuOpen(e, comment._id, 'comment')}
-                                aria-label="comment options"
-                                id="post-options-button"
-                            >
-                                <MoreVertIcon />
-                            </IconButton>
-                        )}
-                    </Box>
-                    <Typography variant="body2" sx={{ mt: 1, textAlign: 'left' }}>
+                            }}
+                        >
+                            {comment.userId && comment.userId.username ? comment.userId.username.charAt(0).toUpperCase() : '?'}
+                        </Avatar>
+                        <div className="comment-content">
+                            <div className="comment-header">
+                                <div className="comment-meta">
+                                    <Typography variant="subtitle2">
+                                        {comment.userId && comment.userId.username ? comment.userId.username : 'Unknown User'}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        {formatDistanceToNow(new Date(comment.createdAt))} ago
+                                    </Typography>
+                                </div>
+                                {currentUser && comment.userId && (currentUser._id === comment.userId._id) && (
+                                    <IconButton 
+                                        size="small" 
+                                        onClick={(e) => handleMenuOpen(e, comment._id, 'comment')}
+                                        aria-label="comment options"
+                                        id="post-options-button"
+                                    >
+                                        <MoreVertIcon />
+                                    </IconButton>
+                                )}
+                            </div>
+                            <Typography variant="body2" className="comment-body">
                         {comment.text.split(/(#\w+)/g).map((part, index) => {
                             if (part.startsWith('#')) {
                                 return (
@@ -433,7 +441,9 @@ const Thread = () => {
                             }
                             return part;
                         })}
-                    </Typography>
+                            </Typography>
+                        </div>
+                    </div>
                 </Paper>
             ))}
 

@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, TextField, IconButton,
     Avatar, List, ListItem, ListItemAvatar,
-    Button, CircularProgress, AppBar, Toolbar, MenuItem, useMediaQuery, useTheme
+    Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme
 } from '@mui/material';
 import { 
     Send as SendIcon, 
@@ -346,6 +346,18 @@ const ChatRoom = () => {
             console.error('Failed to send message:', err);
             setError('Failed to send message. Please try again.');
         }
+    };
+
+    const handleMessageKeyDown = (event) => {
+        if (event.key !== 'Enter') {
+            return;
+        }
+        if (event.shiftKey) {
+            event.stopPropagation();
+            return;
+        }
+        event.preventDefault();
+        handleSendMessage(event);
     };
     
     const onEmojiClick = (emojiObj) => {
@@ -1147,34 +1159,12 @@ const ChatRoom = () => {
             <button
                 onClick={() => setShowMembers(!showMembers)}
                 className={`sidebar-toggle-button ${showMembers ? 'visible' : ''}`}
-                style={{
-                    position: 'fixed',
-                    right: showMembers ? '280px' : '0px', // When sidebar is visible, button is on left side of sidebar
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    zIndex: 1600,
-                    backgroundColor: '#1d9bf0', // Twitter blue to match other UI elements
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px 0 0 4px', // Always square, with rounded corners only on left side
-                    width: '40px',
-                    height: '40px',
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
-                    transition: 'right 0.3s ease-in-out, transform 0.2s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 0
-                }}
-                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'}
-                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(-50%)'}
             >
                 {showMembers ? <ArrowRightIcon /> : <ArrowLeftIcon />}
             </button>
             
             {/* Main chat UI with updated class for sidebar visibility */}
-            <Container maxWidth="md" className={`chat-room-container ${isDashboardCollapsed ? 'dashboard-collapsed' : ''} ${showMembers ? 'sidebar-visible' : ''}`}>
+            <Container maxWidth={false} disableGutters className={`chat-room-container ${isDashboardCollapsed ? 'dashboard-collapsed' : ''} ${showMembers ? 'sidebar-visible' : ''}`}>
                 <div className="main-chat-content">
                     {/* Chat header */}
                     <AppBar position="fixed" color="default" elevation={1} className="chat-room-header">
@@ -1301,30 +1291,6 @@ const ChatRoom = () => {
                     onSubmit={handleSendMessage}
                     className={`message-input-container ${showMembers ? 'sidebar-visible' : 'sidebar-hidden'}`}
                 >
-                    <IconButton 
-                        onClick={toggleEmojiPicker} 
-                        className="emoji-button"
-                        aria-label="Insert emoji"
-                    >
-                        <EmojiIcon />
-                    </IconButton>
-                    
-                    <input
-                        type="file"
-                        accept="image/*"
-                        style={{ display: 'none' }}
-                        onChange={handleFileSelect}
-                        ref={fileInputRef}
-                    />
-                    
-                    <IconButton 
-                        onClick={() => fileInputRef.current.click()} 
-                        className="attach-button"
-                        disabled={isUploading}
-                    >
-                        {isUploading ? <CircularProgress size={24} /> : <AttachFileIcon />}
-                    </IconButton>
-                    
                     {previewUrl && (
                         <Box className="file-preview">
                             <img src={previewUrl} alt="Preview" className="preview-image" />
@@ -1340,27 +1306,67 @@ const ChatRoom = () => {
                             </IconButton>
                         </Box>
                     )}
+
+                    <div className="composer-row">
+                        <div className="composer-tools">
+                            <Tooltip title="Emoji" placement="top">
+                                <IconButton 
+                                    onClick={toggleEmojiPicker} 
+                                    className={`emoji-button ${showEmojiPicker ? 'active' : ''}`}
+                                    aria-label="Insert emoji"
+                                >
+                                    <EmojiIcon />
+                                </IconButton>
+                            </Tooltip>
+                            
+                            <Tooltip title="Attach" placement="top">
+                                <IconButton 
+                                    component="label"
+                                    className="attach-button"
+                                    disabled={isUploading}
+                                    aria-label="Attach image"
+                                >
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        style={{ display: 'none' }}
+                                        onChange={handleFileSelect}
+                                        ref={fileInputRef}
+                                    />
+                                    {isUploading ? <CircularProgress size={20} /> : <AttachFileIcon />}
+                                </IconButton>
+                            </Tooltip>
+                        </div>
+                        
+                        <TextField
+                            fullWidth
+                            placeholder={selectedFile ? 'Add a caption...' : `Message #${room?.name || 'chat'}`}
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            onKeyDown={handleMessageKeyDown}
+                            variant="standard"
+                            multiline
+                            maxRows={5}
+                            InputProps={{
+                                disableUnderline: true,
+                            }}
+                            className="message-input"
+                        />
+                        
+                        <Button 
+                            color="primary"
+                            type="submit"
+                            variant="contained"
+                            disableElevation
+                            disabled={(!message.trim() && !selectedFile) || !connected || isUploading}
+                            className="send-button"
+                            endIcon={<SendIcon />}
+                        >
+                            Send
+                        </Button>
+                    </div>
                     
-                    <TextField
-                        fullWidth
-                        placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        variant="standard"
-                        InputProps={{
-                            disableUnderline: true,
-                        }}
-                        className="message-input"
-                    />
-                    
-                    <IconButton 
-                        color="primary" 
-                        type="submit"
-                        disabled={(!message.trim() && !selectedFile) || !connected || isUploading}
-                        className="send-button"
-                    >
-                        <SendIcon />
-                    </IconButton>
+                    <div className="composer-hint">Shift+Enter for newline</div>
                 </Paper>
             </Container>
 
