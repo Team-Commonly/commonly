@@ -74,6 +74,14 @@ When modifying code in either package:
  - Always add or update tests when introducing new features. This applies to both the backend and the frontend. Prioritise expanding overall test coverage.
 These commands require no additional setup other than installing dependencies (already included in the repository).
 
+## Local development note
+
+The dev backend container installs dependencies on first boot if `/app/node_modules` is empty, so the first `./dev.sh up` may take longer.
+
+## Frontend UI note
+
+Chat and thread composers share a consistent layout (tool cluster + multiline input + labeled send button). Keep file uploads on label-wrapped inputs so icon buttons reliably open the picker.
+
 ## Developer utilities
 
 - The backend exposes documentation at `/api/docs/backend`.

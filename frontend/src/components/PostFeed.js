@@ -380,19 +380,20 @@ const PostFeed = () => {
                                     <EmojiEmotionsIcon fontSize="small" />
                                 </IconButton>
                                 <IconButton 
+                                    component="label"
                                     color="primary" 
                                     size="small"
-                                    onClick={() => fileInputRef.current.click()}
+                                    aria-label="Attach image"
                                 >
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleImageUpload}
+                                        ref={fileInputRef}
+                                        style={{ display: 'none' }}
+                                    />
                                     <ImageIcon fontSize="small" />
                                 </IconButton>
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={handleImageUpload}
-                                    ref={fileInputRef}
-                                    style={{ display: 'none' }}
-                                />
                             </Box>
                             <Button 
                                 variant="contained" 
