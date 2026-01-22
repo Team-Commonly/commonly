@@ -74,6 +74,12 @@ frontend/
 - **MessageList**: Displays chat messages
 - **MessageInput**: Input for sending new messages
 
+## UI Conventions
+
+- **Chat composer**: grouped emoji/attach tools, multiline input (Enter to send, Shift+Enter for newline), and labeled Send button for clarity.
+- **Thread comments**: avatar + content alignment matches chat layout; comment composer mirrors chat styling.
+- **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
+
 ## Context Providers
 
 - **AuthContext**: Manages user authentication state
