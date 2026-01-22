@@ -1,5 +1,7 @@
 # Architecture Documentation
 
+**Skills**: `System Design` `Backend Development` `Frontend Development` `DevOps`
+
 This directory contains high-level system architecture documentation.
 
 ## Overview

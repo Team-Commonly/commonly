@@ -1,5 +1,7 @@
 # Deployment Documentation
 
+**Skills**: `DevOps & Infrastructure` `Docker` `CI/CD` `Monitoring`
+
 This directory contains deployment, DevOps, and infrastructure documentation.
 
 ## Overview

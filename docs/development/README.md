@@ -1,5 +1,7 @@
 # Development Documentation
 
+**Skills**: `Backend Development` `Frontend Development` `Testing & Quality` `Real-time Systems`
+
 This directory contains development guides for frontend, backend, and code quality.
 
 ## Overview

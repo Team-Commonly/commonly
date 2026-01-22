@@ -1,5 +1,7 @@
 # AI Features Documentation
 
+**Skills**: `AI & Prompt Engineering` `Backend Development` `NLP` `Gemini API`
+
 This directory contains documentation for AI-powered features including summarization, daily digests, and analytics.
 
 ## Overview
