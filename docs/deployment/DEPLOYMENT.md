@@ -80,6 +80,9 @@ docker-compose build
 docker-compose up -d
 ```
 
+Note: In development, the backend container will install dependencies on first boot if
+`/app/node_modules` is empty. This can make the initial startup take longer.
+
 **Note:** If Discord credentials are provided, slash commands will be automatically registered during container startup.
 
 ### Step 4: Verify the Deployment
