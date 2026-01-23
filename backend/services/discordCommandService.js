@@ -445,10 +445,19 @@ class DiscordCommandService {
    * Format summary for Discord display
    */
   formatSummaryForDiscord(summary) {
+    const formatDiscordTimestamp = (value) => {
+      if (!value) return null;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return null;
+      return `<t:${Math.floor(date.getTime() / 1000)}:f>`;
+    };
+
     // Handle both DiscordSummaryHistory and Summary schemas
-    const timeRange = summary.timeRange
-      ? `${new Date(summary.timeRange.start).toLocaleString()} - ${new Date(summary.timeRange.end).toLocaleString()}`
-      : `Recent activity`;
+    const startTag = formatDiscordTimestamp(summary.timeRange?.start);
+    const endTag = formatDiscordTimestamp(summary.timeRange?.end);
+    const timeRange = startTag && endTag
+      ? `${startTag} – ${endTag}`
+      : "Recent activity";
 
     const messageCount =
       summary.messageCount || summary.metadata?.totalItems || "Unknown";
