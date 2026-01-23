@@ -22,7 +22,7 @@ import {
     KeyboardArrowLeft as ArrowLeftIcon,
     Apps as AppsIcon
 } from '@mui/icons-material';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useLayout } from '../context/LayoutContext';
@@ -31,6 +31,74 @@ import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
 import DiscordIntegration from './DiscordIntegration';
 import './ChatRoom.css';
+
+/**
+ * Parse bot message content - detects structured bot messages
+ * Returns { isBotMessage: true, data: {...} } or { isBotMessage: false }
+ */
+const parseBotMessage = (content) => {
+    if (!content || typeof content !== 'string') {
+        return { isBotMessage: false };
+    }
+
+    // Check for new structured format
+    if (content.startsWith('[BOT_MESSAGE]')) {
+        try {
+            const jsonStr = content.substring('[BOT_MESSAGE]'.length);
+            const data = JSON.parse(jsonStr);
+            return { isBotMessage: true, data };
+        } catch (e) {
+            return { isBotMessage: false };
+        }
+    }
+
+    // Check for legacy format (🎮 Discord Update)
+    if (content.includes('🎮 Discord Update from #')) {
+        // Parse legacy format into structured data
+        const channelMatch = content.match(/Discord Update from #(\S+)/);
+        const messageCountMatch = content.match(/💬 (\d+) messages in (\S+)/);
+        const timeMatch = content.match(/Activity Summary \(([^)]+)\)/);
+        const summaryMatch = content.match(/in \S+\n\n([\s\S]*?)\n\n—Commonly Bot/);
+
+        return {
+            isBotMessage: true,
+            isLegacy: true,
+            data: {
+                type: 'discord-summary',
+                channel: channelMatch ? channelMatch[1] : 'general',
+                server: messageCountMatch ? messageCountMatch[2] : 'Discord',
+                messageCount: messageCountMatch ? parseInt(messageCountMatch[1], 10) : 0,
+                timeRange: timeMatch ? { display: timeMatch[1] } : null,
+                summary: summaryMatch ? summaryMatch[1].trim() : content,
+            }
+        };
+    }
+
+    return { isBotMessage: false };
+};
+
+/**
+ * Format time range for display in user's local timezone
+ */
+const formatTimeRange = (timeRange) => {
+    if (!timeRange) return 'Recent activity';
+
+    // Legacy format already has display string
+    if (timeRange.display) return timeRange.display;
+
+    // New format with ISO timestamps
+    if (timeRange.start && timeRange.end) {
+        try {
+            const start = new Date(timeRange.start);
+            const end = new Date(timeRange.end);
+            return `${format(start, 'h:mm a')} - ${format(end, 'h:mm a')}`;
+        } catch (e) {
+            return 'Recent activity';
+        }
+    }
+
+    return 'Recent activity';
+};
 
 const ChatRoom = () => {
     const { currentUser } = useAuth();
@@ -1230,26 +1298,79 @@ const ChatRoom = () => {
                                         
                                         // Get message content with fallbacks
                                         const messageContent = msg.content || msg.text || '';
-                                        
+
                                         // Get message type with fallback
                                         const messageType = msg.messageType || msg.message_type || 'text';
-                                        
+
                                         // Get message timestamp with fallbacks
                                         const messageTime = msg.createdAt || msg.created_at || new Date();
-                                        
+
+                                        // Check if this is a bot message
+                                        const isBot = username === 'commonly-bot';
+                                        const botParsed = isBot ? parseBotMessage(messageContent) : { isBotMessage: false };
+
+                                        // Render bot messages with formatted content inside regular bubble
+                                        if (botParsed.isBotMessage && botParsed.data) {
+                                            const botData = botParsed.data;
+                                            return (
+                                                <ListItem
+                                                    key={msg._id || msg.id || Date.now() + Math.random()}
+                                                    className="message-item received"
+                                                >
+                                                    <ListItemAvatar className="message-avatar">
+                                                        <Avatar sx={{ bgcolor: '#5865F2' }}>🤖</Avatar>
+                                                    </ListItemAvatar>
+
+                                                    <div className="message-content-wrapper">
+                                                        <div className="message-user">
+                                                            {username}
+                                                            <span className="bot-badge">BOT</span>
+                                                        </div>
+                                                        <div className="message-bubble received bot-bubble">
+                                                            <div className="bot-content">
+                                                                <div className="bot-title">
+                                                                    <span>🎮</span> Discord Update from{' '}
+                                                                    {botData.channelUrl ? (
+                                                                        <a
+                                                                            href={botData.channelUrl}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="channel-link"
+                                                                        >
+                                                                            #{botData.channel}
+                                                                        </a>
+                                                                    ) : (
+                                                                        <strong>#{botData.channel}</strong>
+                                                                    )}
+                                                                </div>
+                                                                <div className="bot-meta">
+                                                                    <span>💬 {botData.messageCount} messages</span>
+                                                                    <span>🕐 {formatTimeRange(botData.timeRange)}</span>
+                                                                </div>
+                                                                <div className="bot-summary">{botData.summary}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="message-time message-received-time">
+                                                            {formatDistanceToNow(new Date(messageTime), { addSuffix: true })}
+                                                        </div>
+                                                    </div>
+                                                </ListItem>
+                                            );
+                                        }
+
                                         return (
-                                            <ListItem 
+                                            <ListItem
                                                 key={msg._id || msg.id || Date.now() + Math.random()}
                                                 className={`message-item ${isCurrentUser ? 'sent' : 'received'}`}
                                             >
                                                 <ListItemAvatar className="message-avatar">
-                                                    <Avatar 
+                                                    <Avatar
                                                         sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
                                                     >
                                                         {username.charAt(0).toUpperCase()}
                                                     </Avatar>
                                                 </ListItemAvatar>
-                                                
+
                                                 <div className="message-content-wrapper">
                                                     <div className="message-user">{username}</div>
                                                     {/* Text message */}
@@ -1258,19 +1379,19 @@ const ChatRoom = () => {
                                                             <p className="message-text">{messageContent}</p>
                                                         </div>
                                                     )}
-                                                    
+
                                                     {/* Image message */}
                                                     {messageType === 'image' && (
                                                         <div className={`message-image-container ${isCurrentUser ? 'sent' : 'received'}`}>
-                                                            <img 
+                                                            <img
                                                                 src={messageContent}
-                                                                alt="Shared" 
+                                                                alt="Shared"
                                                                 className="message-image"
                                                                 onClick={() => window.open(messageContent, '_blank')}
                                                             />
                                                         </div>
                                                     )}
-                                                    
+
                                                     <div className={`message-time ${isCurrentUser ? 'message-sent-time' : 'message-received-time'}`}>
                                                         {formatDistanceToNow(new Date(messageTime), { addSuffix: true })}
                                                     </div>
