@@ -338,7 +338,7 @@ Focus on what people are actually talking about rather than just activity levels
       const posts = await Post.find({})
         .populate('userId', 'username')
         .sort({ createdAt: -1 })
-        .limit(100) // Limit to 100 most recent posts for performance
+        .limit(10) // Limit to 10 most recent posts for concise summaries
         .lean();
 
       if (posts.length === 0) {
@@ -397,7 +397,7 @@ This is for new visitors to understand what the community is all about. Focus on
       );
 
       // Generate title for all posts
-      const title = `Community Overview • ${posts.length} posts`;
+      const title = `Community Overview • ${posts.length} recent posts`;
 
       return {
         title,
@@ -406,7 +406,7 @@ This is for new visitors to understand what the community is all about. Focus on
           totalItems: posts.length,
           topTags,
           topUsers,
-          timeRange: 'All time',
+          timeRange: 'Recent posts',
         },
       };
     } catch (error) {
@@ -415,14 +415,14 @@ This is for new visitors to understand what the community is all about. Focus on
       // Fallback if Gemini fails
       const posts = await Post.find({}).countDocuments();
       return {
-        title: `Community Overview • ${posts} posts`,
+        title: `Community Overview • ${Math.min(posts, 10)} recent posts`,
         content:
           'Our community has shared various thoughts, ideas, and discussions. Join the conversation and see what everyone is talking about!',
         metadata: {
-          totalItems: posts,
+          totalItems: Math.min(posts, 10),
           topTags: [],
           topUsers: [],
-          timeRange: 'All time',
+          timeRange: 'Recent posts',
         },
       };
     }
