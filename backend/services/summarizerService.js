@@ -150,11 +150,24 @@ Focus on what people are actually talking about rather than just activity levels
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - 60 * 60 * 1000); // 1 hour ago
 
-      // Get chat summaries from MongoDB (created by chatSummarizerService)
-      const chatSummaries = await Summary.find({
-        type: 'chats',
-        createdAt: { $gte: startTime, $lte: endTime },
-      }).lean();
+      // Get latest chat summary per pod within the last hour
+      const chatSummaries = await Summary.aggregate([
+        {
+          $match: {
+            type: 'chats',
+            createdAt: { $gte: startTime, $lte: endTime },
+            podId: { $ne: null },
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: '$podId',
+            summary: { $first: '$$ROOT' },
+          },
+        },
+        { $replaceRoot: { newRoot: '$summary' } },
+      ]);
 
       if (chatSummaries.length === 0) {
         return await SummarizerService.createEmptySummary(
