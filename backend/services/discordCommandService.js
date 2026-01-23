@@ -358,6 +358,8 @@ class DiscordCommandService {
       },
       serverName: this.integration?.config?.serverName || "Discord Server",
       channelName: this.integration?.config?.channelName || "general",
+      serverId: this.integration?.config?.serverId || null,
+      channelId: this.integration?.config?.channelId || null,
       summaryType: "manual",
     };
   }

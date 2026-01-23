@@ -1058,4 +1058,222 @@ body {
   border-right: 9px solid transparent !important;
   border-top: 9px solid #e1e8ed !important;
   z-index: 1100 !important;
+}
+
+/* ============================================
+   Bot Message Card Styles
+   ============================================ */
+
+.message-item.bot-message {
+  justify-content: center;
+  padding: 8px 16px;
+}
+
+.bot-message-card {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  padding: 0;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.bot-message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #5865F2 0%, #4752C4 100%);
+  color: white;
+}
+
+.bot-avatar {
+  flex-shrink: 0;
+}
+
+.bot-header-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.bot-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.bot-badge {
+  background: #5865F2;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* Bot message content styling */
+.bot-bubble {
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%) !important;
+  border: 1px solid #e0e0e0 !important;
+}
+
+.bot-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bot-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bot-title strong {
+  color: #5865F2;
+}
+
+.channel-link {
+  color: #5865F2;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.channel-link:hover {
+  color: #4752C4;
+  text-decoration: underline;
+}
+
+.bot-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #666;
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.bot-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bot-summary {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #444;
+  margin-top: 4px;
+}
+
+.bot-time {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.bot-message-content {
+  padding: 14px;
+}
+
+.bot-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.discord-icon {
+  font-size: 18px;
+}
+
+.channel-name {
+  font-weight: 600;
+  color: #5865F2;
+  font-size: 14px;
+}
+
+.server-name {
+  color: #6c757d;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.bot-summary-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #495057;
+}
+
+.stat-icon {
+  font-size: 14px;
+}
+
+.stat-value {
+  font-weight: 600;
+  color: #212529;
+}
+
+.stat-label {
+  color: #6c757d;
+}
+
+.bot-summary-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #343a40;
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .bot-message-card {
+    background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+    border-color: #404040;
+  }
+
+  .bot-summary-header {
+    border-bottom-color: #404040;
+  }
+
+  .bot-summary-text {
+    background: #1a1a1a;
+    border-color: #404040;
+    color: #e0e0e0;
+  }
+
+  .channel-name {
+    color: #7289da;
+  }
+
+  .server-name,
+  .stat-label {
+    color: #a0a0a0;
+  }
+
+  .stat-value {
+    color: #e0e0e0;
+  }
 } 
