@@ -21,11 +21,35 @@ class DiscordService {
       ],
     });
 
-    // Initialize bot with universal token
-    this.client.login(config.botToken);
+    this.clientReady = false;
+    this.client.on("error", (error) => {
+      console.error("Discord client error:", error);
+    });
+    this.client.on("shardError", (error) => {
+      console.error("Discord shard error:", error);
+    });
 
     // Initialize command service
     this.commandService = null;
+  }
+
+  async ensureClientReady() {
+    if (this.clientReady) {
+      return true;
+    }
+
+    if (!config.botToken) {
+      throw new Error("Discord bot token not configured");
+    }
+
+    try {
+      await this.client.login(config.botToken);
+      this.clientReady = true;
+      return true;
+    } catch (error) {
+      console.error("Error logging in Discord client:", error);
+      throw error;
+    }
   }
 
   async initialize() {
@@ -61,6 +85,7 @@ class DiscordService {
 
   async createWebhook(channelId) {
     try {
+      await this.ensureClientReady();
       const channel = await this.client.channels.fetch(channelId);
       if (!channel) {
         throw new Error(config.errors.CHANNEL_NOT_FOUND);
@@ -86,6 +111,7 @@ class DiscordService {
 
   async connect() {
     try {
+      await this.ensureClientReady();
       const guild = await this.client.guilds.fetch(
         this.integration.platformIntegration.serverId,
       );
@@ -136,6 +162,7 @@ class DiscordService {
 
   async disconnect() {
     try {
+      await this.ensureClientReady();
       // Remove webhook if it exists
       if (this.integration.platformIntegration.webhookId) {
         try {
