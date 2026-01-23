@@ -485,26 +485,8 @@ const recentMessages = messages.filter(msg => {
 - `services/commonlyBotService.js` - Bot user management and pod posting
 - `services/schedulerService.js` - Hourly Discord sync integration (`syncAllDiscordIntegrations()`)
 
-#### Bot Message Display (Updated January 2025)
-Bot messages from `@commonly-bot` are displayed with enhanced formatting in the chat UI:
-- **Structured JSON Format**: Bot messages use `[BOT_MESSAGE]` prefix with JSON payload for rich display
-- **Local Timezone**: Time ranges displayed in user's browser timezone (using ISO timestamps)
-- **Visual Styling**: BOT badge, Discord-themed colors, organized layout with title/meta/summary sections
-- **Channel Hyperlinks**: `#channel` names link directly to the Discord channel
-- **Legacy Support**: Old plain-text bot messages are parsed and displayed with the same rich format
-
-**Bot Message Data Structure:**
-```javascript
-{
-  type: 'discord-summary',
-  channel: 'general',
-  channelUrl: 'https://discord.com/channels/{serverId}/{channelId}',
-  server: 'commonly-playground',
-  messageCount: 10,
-  timeRange: { start: 'ISO timestamp', end: 'ISO timestamp' },
-  summary: 'AI-generated summary text'
-}
-```
+#### Bot Message Display
+Moved to `docs/discord/DISCORD.md`.
 
 #### Performance Optimizations
 - **Reduced Memory Usage**: 815MB → 203MB (60% improvement) in development containers
