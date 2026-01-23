@@ -121,6 +121,28 @@ Immediately push Discord activity from the last hour to your Commonly pod.
 ```
 ```
 
+## 🧾 **Bot Message Display**
+
+Bot messages from `@commonly-bot` render with structured formatting in the Commonly chat UI:
+- **Structured JSON Format**: Bot messages use a `[BOT_MESSAGE]` prefix with JSON payload for rich display.
+- **Local Timezone**: Time ranges are stored as ISO timestamps so the UI can render in the viewer’s local timezone.
+- **Visual Styling**: BOT badge, Discord-themed colors, organized layout with title/meta/summary sections.
+- **Channel Links**: `#channel` names link directly to the Discord channel.
+- **Legacy Support**: Older plain-text bot messages are parsed into the same rich format.
+
+**Bot Message Data Structure:**
+```javascript
+{
+  type: 'discord-summary',
+  channel: 'general',
+  channelUrl: 'https://discord.com/channels/{serverId}/{channelId}',
+  server: 'commonly-playground',
+  messageCount: 10,
+  timeRange: { start: 'ISO timestamp', end: 'ISO timestamp' },
+  summary: 'AI-generated summary text'
+}
+```
+
 ## 🔧 **Setup & Configuration**
 
 ### **Bot Installation**
@@ -414,6 +436,8 @@ const sendSummaryToDiscord = async (integration, summary) => {
   await discordService.sendChannelMessage(discordMessage);
 };
 ```
+
+**Timezone handling:** `/commonly-summary` uses Discord timestamp tags (`<t:unix:f>`) so each viewer sees the time range in their local timezone.
 
 ## 🎨 **Message Formatting**
 
