@@ -232,24 +232,41 @@ class CommonlyBotService {
 
   /**
    * Format Discord summary for posting in Commonly pod
+   * Uses ISO timestamps so frontend can display in user's local timezone
    */
   static formatDiscordSummaryForPod(discordSummary) {
-    const timeRange = discordSummary.timeRange
-      ? `${new Date(discordSummary.timeRange.start).toLocaleTimeString()} - ${new Date(discordSummary.timeRange.end).toLocaleTimeString()}`
-      : 'Recent activity';
-
-    const messageCount = discordSummary.messageCount || 'some';
+    const messageCount = discordSummary.messageCount || 0;
     const serverName = discordSummary.serverName || 'Discord';
     const channelName = discordSummary.channelName || 'channel';
+    const serverId = discordSummary.serverId || null;
+    const channelId = discordSummary.channelId || null;
 
-    return `🎮 Discord Update from #${channelName}
+    // Store timestamps in ISO format for frontend parsing
+    const startTime = discordSummary.timeRange?.start
+      ? new Date(discordSummary.timeRange.start).toISOString()
+      : null;
+    const endTime = discordSummary.timeRange?.end
+      ? new Date(discordSummary.timeRange.end).toISOString()
+      : null;
 
-📊 Activity Summary (${timeRange})
-💬 ${messageCount} messages in ${serverName}
+    // Build Discord channel URL if we have the IDs
+    const channelUrl = serverId && channelId
+      ? `https://discord.com/channels/${serverId}/${channelId}`
+      : null;
 
-${discordSummary.content}
+    // Use structured JSON format that frontend can parse and display nicely
+    const botMessage = {
+      type: 'discord-summary',
+      channel: channelName,
+      channelUrl,
+      server: serverName,
+      messageCount,
+      timeRange: { start: startTime, end: endTime },
+      summary: discordSummary.content,
+    };
 
-—Commonly Bot 🤖`;
+    // Return as JSON string with marker for frontend detection
+    return `[BOT_MESSAGE]${JSON.stringify(botMessage)}`;
   }
 
   /**
