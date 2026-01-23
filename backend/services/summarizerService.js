@@ -15,6 +15,12 @@ class SummarizerService {
     this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   }
 
+  static allPostsCache = {
+    summary: null,
+    createdAt: 0,
+    cooldownUntil: 0,
+  };
+
   async generateSummary(content, type) {
     try {
       console.log(`Generating ${type} summary with Gemini API...`);
@@ -334,6 +340,14 @@ Focus on what people are actually talking about rather than just activity levels
 
   async summarizeAllPosts() {
     try {
+      const now = Date.now();
+      if (
+        SummarizerService.allPostsCache.summary
+        && now - SummarizerService.allPostsCache.createdAt < 5 * 60 * 1000
+      ) {
+        return SummarizerService.allPostsCache.summary;
+      }
+
       // Get all posts from the database (limited to recent ones for performance)
       const posts = await Post.find({})
         .populate('userId', 'username')
@@ -378,15 +392,20 @@ Please create an engaging 3-4 sentence community overview that:
 
 This is for new visitors to understand what the community is all about. Focus on the content and conversations, not just statistics.`;
 
-      console.log('Generating all-posts summary with Gemini API...');
-      const result = await this.genAI
-        .getGenerativeModel({ model: 'gemini-2.0-flash' })
-        .generateContent(prompt);
-      const response = await result.response;
-      const summaryText = response.text();
-      console.log(
-        `✓ Gemini API returned all-posts summary: "${summaryText.substring(0, 100)}..."`,
-      );
+      let summaryText;
+      if (now < SummarizerService.allPostsCache.cooldownUntil) {
+        summaryText = SummarizerService.generateFallbackSummary(content, 'posts');
+      } else {
+        console.log('Generating all-posts summary with Gemini API...');
+        const result = await this.genAI
+          .getGenerativeModel({ model: 'gemini-2.0-flash' })
+          .generateContent(prompt);
+        const response = await result.response;
+        summaryText = response.text();
+        console.log(
+          `✓ Gemini API returned all-posts summary: "${summaryText.substring(0, 100)}..."`,
+        );
+      }
 
       // Extract metadata
       const allTags = posts.flatMap((post) => post.tags || []);
@@ -399,7 +418,7 @@ This is for new visitors to understand what the community is all about. Focus on
       // Generate title for all posts
       const title = `Community Overview • ${posts.length} recent posts`;
 
-      return {
+      const summary = {
         title,
         content: summaryText,
         metadata: {
@@ -409,12 +428,25 @@ This is for new visitors to understand what the community is all about. Focus on
           timeRange: 'Recent posts',
         },
       };
+      SummarizerService.allPostsCache = {
+        summary,
+        createdAt: now,
+        cooldownUntil: SummarizerService.allPostsCache.cooldownUntil,
+      };
+      return summary;
     } catch (error) {
       console.error('Error summarizing all posts:', error);
 
+      if (
+        `${error?.message || ''}`.includes('429')
+        || `${error?.message || ''}`.includes('Resource exhausted')
+      ) {
+        SummarizerService.allPostsCache.cooldownUntil = Date.now() + 10 * 60 * 1000;
+      }
+
       // Fallback if Gemini fails
       const posts = await Post.find({}).countDocuments();
-      return {
+      const summary = {
         title: `Community Overview • ${Math.min(posts, 10)} recent posts`,
         content:
           'Our community has shared various thoughts, ideas, and discussions. Join the conversation and see what everyone is talking about!',
@@ -425,6 +457,12 @@ This is for new visitors to understand what the community is all about. Focus on
           timeRange: 'Recent posts',
         },
       };
+      SummarizerService.allPostsCache = {
+        summary,
+        createdAt: Date.now(),
+        cooldownUntil: SummarizerService.allPostsCache.cooldownUntil,
+      };
+      return summary;
     }
   }
 }
