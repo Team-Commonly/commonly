@@ -115,7 +115,7 @@ describe('CommonlyBotService', () => {
       expect(PGMessage.create).toHaveBeenCalledWith(
         'pod123',
         'bot123',
-        expect.stringContaining('Discord Update from #general'),
+        expect.stringContaining('[BOT_MESSAGE]'),
         'text',
       );
     });
@@ -170,10 +170,19 @@ describe('CommonlyBotService', () => {
       );
 
       const [, , messageContent] = PGMessage.create.mock.calls[0];
-      expect(messageContent).toContain('🎮 Discord Update from #react-help');
-      expect(messageContent).toContain('💬 10 messages in Dev Community');
-      expect(messageContent).toContain('Great discussion about React');
-      expect(messageContent).toContain('—Commonly Bot 🤖');
+      expect(messageContent).toContain('[BOT_MESSAGE]');
+      const payload = JSON.parse(messageContent.replace(/^\[BOT_MESSAGE\]/, ''));
+      expect(payload).toMatchObject({
+        type: 'discord-summary',
+        channel: 'react-help',
+        server: 'Dev Community',
+        messageCount: 10,
+        summary: 'Great discussion about React',
+      });
+      expect(payload.timeRange).toEqual({
+        start: new Date('2023-07-14T10:00:00Z').toISOString(),
+        end: new Date('2023-07-14T11:00:00Z').toISOString(),
+      });
     });
   });
 
