@@ -51,70 +51,63 @@ router.post('/', auth, async (req, res) => {
     await integration.save();
 
     // Create platform-specific integration
-    let platformIntegration;
+    let platformIntegration = null;
 
-    switch (type) {
-      case 'discord': {
-        // Create Discord webhook automatically
-        const webhookResponse = await axios.post(
-          `https://discord.com/api/channels/${config.channelId}/webhooks`,
-          {
-            name: 'Commonly Bot',
-            avatar: null, // Could add a bot avatar URL here
+    if (type === 'discord') {
+      // Create Discord webhook automatically
+      const webhookResponse = await axios.post(
+        `https://discord.com/api/channels/${config.channelId}/webhooks`,
+        {
+          name: 'Commonly Bot',
+          avatar: null, // Could add a bot avatar URL here
+        },
+        {
+          headers: {
+            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            'Content-Type': 'application/json',
           },
-          {
-            headers: {
-              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-          },
-        );
+        },
+      );
 
-        const webhook = webhookResponse.data;
+      const webhook = webhookResponse.data;
 
-        platformIntegration = new DiscordIntegration({
-          integrationId: integration._id,
-          serverId: config.serverId,
-          serverName: config.serverName,
-          channelId: config.channelId,
-          channelName: config.channelName,
-          webhookUrl: `https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`,
-          webhookId: webhook.id,
-          botToken: process.env.DISCORD_BOT_TOKEN,
-          permissions: config.permissions || ['read_messages', 'send_messages'],
-        });
-        break;
-      }
-      case 'slack': {
-        // No platform specific collection yet; just accept config
-        platformIntegration = null;
-        break;
-      }
-      default:
-        return res
-          .status(400)
-          .json({ message: 'Unsupported integration type' });
-    }
-
-    if (platformIntegration) {
+      platformIntegration = new DiscordIntegration({
+        integrationId: integration._id,
+        serverId: config.serverId,
+        serverName: config.serverName,
+        channelId: config.channelId,
+        channelName: config.channelName,
+        webhookUrl: `https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`,
+        webhookId: webhook.id,
+        botToken: process.env.DISCORD_BOT_TOKEN,
+        permissions: config.permissions || ['read_messages', 'send_messages'],
+      });
       await platformIntegration.save();
+    } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp'].includes(type)) {
+      // No platform-specific record required; mark as connected immediately
+      integration.status = 'connected';
+      await integration.save();
+    } else {
+      return res.status(400).json({ message: 'Unsupported integration type' });
     }
 
-    // Initialize the integration service
-    const service = new DiscordService(integration._id);
-    const initialized = await service.initialize();
+    // Initialize the integration service for Discord only
+    if (type === 'discord') {
+      const service = new DiscordService(integration._id);
+      const initialized = await service.initialize();
 
-    if (!initialized) {
-      return res
-        .status(500)
-        .json({ message: 'Failed to initialize integration' });
-    }
+      if (!initialized) {
+        return res
+          .status(500)
+          .json({ message: 'Failed to initialize integration' });
+      }
 
-    // Connect the integration to update status from pending to connected
-    const connected = await service.connect();
+      // Connect the integration to update status from pending to connected
+      const connected = await service.connect();
 
-    if (!connected) {
-      console.warn('Integration initialized but failed to connect');
+      if (!connected) {
+        console.warn('Integration initialized but failed to connect');
+      }
     }
 
     res.status(201).json({
