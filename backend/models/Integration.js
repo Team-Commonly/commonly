@@ -15,7 +15,7 @@ const IntegrationSchema = new mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: ['discord', 'telegram', 'slack', 'messenger'],
+      enum: ['discord', 'telegram', 'slack', 'messenger', 'groupme', 'whatsapp'],
       default: 'discord',
     },
     status: {
