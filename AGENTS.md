@@ -36,6 +36,8 @@ and development conventions:
 - `DATABASE.md`
 - `DEPLOYMENT.md`
 - `LINTING.md`
+- Integration providers live in `backend/integrations/providers/` (discord, slack, groupme, telegram).
+- Webhook routes for integrations are under `/api/webhooks/<provider>/<integrationId>`.
 - `whatsapp/WHATSAPP_INTEGRATION_PLAN.md` (for WhatsApp work)
 - `integrations/INTEGRATION_CONTRACT.md` (for any new external integration)
 - `integrations/COMMONLY_APP_PLATFORM.md` (for app/installation flow like GitHub Apps)
@@ -90,3 +92,7 @@ Chat and thread composers share a consistent layout (tool cluster + multiline in
 
 - The backend exposes documentation at `/api/docs/backend`.
 - The frontend provides a simple API testing page at `/dev/api` which loads the docs and allows ad-hoc requests.
+- Webhook endpoints now include Slack, GroupMe, and Telegram:
+  - `/api/webhooks/slack/:integrationId` (raw-body signature verify)
+  - `/api/webhooks/groupme/:integrationId`
+  - `/api/webhooks/telegram/:integrationId` (optional secret token header)
