@@ -1,7 +1,6 @@
 const cron = require('node-cron');
 const summarizerService = require('./summarizerService');
 const Integration = require('../models/Integration');
-const DiscordService = require('./discordService');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('./chatSummarizerService');
@@ -189,10 +188,11 @@ class SchedulerService {
       const results = await Promise.allSettled(
         discordIntegrations.map(async (integration) => {
           try {
-            const discordService = new DiscordService(integration._id);
-            await discordService.initialize();
+            const registry = require('../integrations');
+            const provider = registry.get('discord', integration);
+            await provider.validateConfig();
 
-            const syncResult = await discordService.syncRecentMessages(1); // 1 hour
+            const syncResult = await provider.syncRecent({ hours: 1 }); // 1 hour
             const result = {
               integrationId: integration._id,
               success: syncResult.success,
