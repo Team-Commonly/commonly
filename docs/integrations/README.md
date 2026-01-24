@@ -8,4 +8,5 @@ Contents:
 - `GROUPME_PLAN.md` — GroupMe ingest-only plan (bot callback + summary).
 - `MESSENGER_PLAN.md` — Messenger notes (deferred; Page token path only).
 - `WHATSAPP_READONLY_PLAN.md` — WhatsApp Cloud API ingest-only plan.
+- `TELEGRAM` (see `docs/telegram/README.md`) — webhook ingest with optional secret token.
 - Code scaffold lives in `packages/integration-sdk/` for open-sourcing the contract and registry.

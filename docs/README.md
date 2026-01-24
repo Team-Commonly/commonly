@@ -17,6 +17,7 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 | [slack/](./slack/) | Slack integration notes | 1 |
 | [google-chat/](./google-chat/) | Google Chat integration notes | 1 |
 | [groupme/](./groupme/) | GroupMe integration notes | 1 |
+| [telegram/](./telegram/) | Telegram ingest-only bot webhook notes | 1 |
 | [ai-features/](./ai-features/) | AI summarization, daily digests, analytics | 3 |
 | [database/](./database/) | MongoDB & PostgreSQL schemas, migrations | 2 |
 | [architecture/](./architecture/) | System architecture overview | 1 |
@@ -57,6 +58,9 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 ### GroupMe Integration (Planned)
 - [GroupMe Overview](./groupme/README.md)
 
+### Telegram Integration (Planned)
+- [Telegram Overview](./telegram/README.md)
+
 ### AI Features
 - [AI Features Overview](./ai-features/AI_FEATURES.md)
 - [Daily Digests](./ai-features/DAILY_DIGESTS.md)
@@ -83,4 +87,4 @@ See [.claude/skills/](../.claude/skills/) for documentation organized by experti
 | Real-time Systems | Socket.io, WebSockets |
 | Testing & Quality | Jest, ESLint |
 
-## Total Documentation Files: 32
+## Total Documentation Files: 35
