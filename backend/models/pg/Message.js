@@ -78,7 +78,7 @@ class Message {
       }
 
       query += `
-        ORDER BY m.created_at ASC
+        ORDER BY m.created_at DESC
         LIMIT $${queryParams.length + 1}
       `;
 
@@ -86,8 +86,11 @@ class Message {
 
       const result = await pool.query(query, queryParams);
 
+      // Return newest messages first, then flip to chronological for UI rendering
+      const rows = result.rows.slice().reverse();
+
       // Format the results to be consistent with both MongoDB format and frontend expectations
-      return result.rows.map((msg) => {
+      return rows.map((msg) => {
         // Make sure we have both formats of IDs
         const messageId = msg.id ? msg.id.toString() : '';
         const userId = msg.user_id || '';
