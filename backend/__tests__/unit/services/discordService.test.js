@@ -2,6 +2,7 @@
 jest.mock('discord.js', () => ({
   Client: jest.fn().mockImplementation(() => ({
     login: jest.fn().mockResolvedValue('logged_in'),
+    on: jest.fn(),
     guilds: {
       fetch: jest.fn(),
     },
@@ -99,6 +100,7 @@ describe('DiscordService', () => {
 
     discordService = new DiscordService('integration123');
     discordService.integration = mockIntegration;
+    discordService.ensureClientReady = jest.fn().mockResolvedValue(true);
 
     jest.clearAllMocks();
   });
