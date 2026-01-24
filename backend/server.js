@@ -17,7 +17,9 @@ const uploadsRoutes = require('./routes/uploads');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
 const integrationRoutes = require('./routes/integrations');
+const appPlatformRoutes = require('./routes/apps');
 const discordWebhookRoutes = require('./routes/webhooks/discord');
+const slackWebhookRoutes = require('./routes/webhooks/slack');
 const discordRoutes = require('./routes/discord');
 const analyticsRoutes = require('./routes/analytics');
 // Conditionally load PostgreSQL routes and models
@@ -75,6 +77,16 @@ app.use(
 // Raw body middleware for Discord signature verification
 app.use('/api/discord/interactions', express.raw({ type: 'application/json' }));
 
+// Slack needs the exact raw payload for signature verification; capture it while still parsing JSON
+app.use(
+  '/api/webhooks/slack',
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf.toString();
+    },
+  }),
+);
+
 // JSON parsing for all other routes
 app.use(express.json());
 
@@ -88,7 +100,9 @@ app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);
 app.use('/api/summaries', summariesRoutes);
 app.use('/api/integrations', integrationRoutes);
+app.use('/api/apps', appPlatformRoutes);
 app.use('/api/webhooks/discord', discordWebhookRoutes);
+app.use('/api/webhooks/slack', slackWebhookRoutes);
 app.use('/api/discord', discordRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
