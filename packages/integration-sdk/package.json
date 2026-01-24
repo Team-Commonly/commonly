@@ -1,0 +1,19 @@
+{
+  "name": "@commonly/integration-sdk",
+  "version": "0.1.0",
+  "description": "Pluggable integration contract and registry for Commonly external chat providers.",
+  "license": "MIT",
+  "main": "src/index.js",
+  "types": "",
+  "type": "commonjs",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node ./tests/contract.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/commonly/integration-sdk"
+  }
+}
