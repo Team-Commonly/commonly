@@ -1,4 +1,4 @@
-# GroupMe Integration Overview (Draft)
+# GroupMe Integration (Ingest-only v1)
 
 ## Why GroupMe
 - Simple bot model: bot belongs to one group; can post messages and receive messages via callback URL.
@@ -13,15 +13,20 @@
 - Send: `https://api.groupme.com/v3/bots/post` with `bot_id` and `text`
 - Receive: Commonly exposes webhook to receive bot callbacks
 
-## Data Flow
-1) Create bot in GroupMe Dev portal with callback URL pointing to Commonly.
-2) Group messages hit callback → provider normalizes → summarize → post back via bot.
+## Data Flow (ingest-only)
+1) Create a bot in GroupMe Dev portal; set the callback URL to `https://<your-host>/api/webhooks/groupme/<integrationId>`.
+2) Invite the bot to the target group (one bot per group).
+3) Group messages hit the callback → provider normalizes → buffer → summarizer posts inside Commonly.
 
 ## Limitations
 - Bot is tied to a single group; one bot per group.
 - No slash commands; only text payloads.
 
-## TODO (now in progress)
-- ✅ Provider implementation registered (`groupmeProvider`)
+## Status / TODO
+- ✅ Provider registered (`groupmeProvider`)
 - ✅ Webhook route `/api/webhooks/groupme/:integrationId`
-- Config UI: bot id + group id + callback URL hint
+- UI: add fields for Bot ID, Group ID, and copyable callback URL (pending)
+
+## Notes
+- Ingest-only: we do not send messages back in v1 (avoids loops and keeps scope narrow).
+- Bot is tied to a single group; create multiple integrations for multiple groups.
