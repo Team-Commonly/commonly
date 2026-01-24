@@ -8,8 +8,9 @@ Safely ingest WhatsApp conversations for summarization without sending outbound 
 2) **Device-based (not recommended)**: Any headless/bridge approach risks account bans. Do **not** pursue.
 
 ## Data Flow (Cloud API)
-- Verify webhook: GET hub.challenge with verify_token.
-- Receive messages: POST entry[].changes[].value.messages[]. Normalize and buffer.
+- Verify webhook: GET with `hub.mode`, `hub.challenge`, `hub.verify_token`; respond with challenge on match.
+- (Optional) Verify signature: `X-Hub-Signature-256` HMAC SHA256 over raw body using app secret.
+- Receive messages: POST `entry[].changes[].value.messages[]` → normalize and buffer.
 - Summarizer picks buffered messages → post summary to Commonly pod.
 - No outbound send in v1 to minimize policy review.
 
@@ -18,6 +19,7 @@ Safely ingest WhatsApp conversations for summarization without sending outbound 
 - wabaId (optional for display)
 - accessToken
 - verifyToken
+- appSecret (optional; required if we enable signature validation)
 
 ## Anti-Ban / Compliance
 - Use Cloud API only; no unofficial libraries.
@@ -26,4 +28,4 @@ Safely ingest WhatsApp conversations for summarization without sending outbound 
 ## Open Items
 - Signature validation (X-Hub-Signature-256) — add when keys available.
 - Pagination for history if needed (conversations endpoint) — deferred.
-
+- UI flow for user-provided webhook verify token and generated webhook URL.

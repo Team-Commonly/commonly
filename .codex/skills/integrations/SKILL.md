@@ -25,6 +25,9 @@ description: Third-party integration context for Discord, Slack, GroupMe, Telegr
 | [slack/README.md](../../../docs/slack/README.md) | Slack webhook + signing secret notes |
 | [groupme/README.md](../../../docs/groupme/README.md) | GroupMe bot ingest-only plan |
 | [telegram/README.md](../../../docs/telegram/README.md) | Telegram webhook ingest with secret token |
+| [integrations/WHATSAPP_READONLY_PLAN.md](../../../docs/integrations/WHATSAPP_READONLY_PLAN.md) | WhatsApp Cloud API ingest-only |
+| [integrations/MESSENGER_PLAN.md](../../../docs/integrations/MESSENGER_PLAN.md) | Messenger Page ingest-only plan |
+| [integrations/WECHAT_READONLY_PLAN.md](../../../docs/integrations/WECHAT_READONLY_PLAN.md) | WeChat Official Account ingest-only plan |
 | [integrations/INTEGRATION_CONTRACT.md](../../../docs/integrations/INTEGRATION_CONTRACT.md) | Provider contract and schema |
 | [integrations/COMMONLY_APP_PLATFORM.md](../../../docs/integrations/COMMONLY_APP_PLATFORM.md) | App platform design |
 
