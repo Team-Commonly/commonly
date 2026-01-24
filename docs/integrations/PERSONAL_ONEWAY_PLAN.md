@@ -1,1 +1,45 @@
-# Personal One-way Sync Plan (Messenger, WhatsApp, WeChat)\n\nGoal: Allow an individual to forward their own chat messages into a Commonly pod for summarization, without sending messages back to the platform. Focus on official APIs where possible to minimize account risk.\n\n## Shared Principles\n- **Ingest-only**: Receive messages via webhooks; no outbound send to avoid policy violations and rate limits.\n- **User-provided auth**: Tokens/keys supplied by the user; we store encrypted and scoped per integration.\n- **Per-integration isolation**: Separate webhook endpoints per integrationId; no cross-talk between providers.\n- **Minimal PII retention**: Keep only message text, sender id/display, timestamp, attachment URLs when required for summary; allow user to delete buffers.\n\n## Messenger (Meta) — Page-based only\n- Use **Page access tokens** (no personal accounts) + Webhook verify token.\n- Webhook verify: `hub.mode`, `hub.challenge`, `hub.verify_token`.\n- Events: `messages`, `messaging_postbacks` delivered via the Page.\n- Setup flow (user): create Page + app, subscribe page to webhook, paste Page access token + verify token into Commonly.\n- Risk: Requires Meta app in “Live” mode with Page Messaging permission; personal account tokens not allowed.\n- Outbound: disabled in v1.\n\n## WhatsApp — Cloud API only\n- Use WhatsApp Business Platform (Cloud API) with phone_number_id + access token + verify token.\n- Webhook verify: `hub.mode`, `hub.challenge`, `hub.verify_token`; signature header `X-Hub-Signature-256` available (add when keys provided).\n- Ingest messages from `entry[].changes[].value.messages[]` → normalize to Commonly buffer.\n- Outbound: disabled in v1 to avoid template approval overhead.\n- Risk: Must respect Meta policies; avoid device/bridge methods to prevent bans.\n\n## WeChat — Official Account (OA) passive ingest\n- Channel: Service/Subscription Official Account server callbacks.\n- Verify: SHA1 of `token|timestamp|nonce`, respond with `echostr` on GET.\n- Messages: XML POST with text/image/etc.; normalize text and basic media URLs only.\n- Auth: developer sets `token` in OA settings and configures Commonly webhook URL; no user OAuth required for ingest-only.\n- Risk: Strict on-content rules; keep processing server-side only, no replies.\n\n## Data Mapping (all)\n- messageId, authorId, authorName, content, timestamp, attachments (URLs if present), raw payload (optional, short-term).\n\n## Webhook Endpoints (planned)\n- `/api/webhooks/messenger/:integrationId`\n- `/api/webhooks/whatsapp/:integrationId`\n- `/api/webhooks/wechat/:integrationId`\n\n## Open Questions\n- Do we need media proxying for images (riskier for WA/WeChat)?\n- Should we add per-provider rate limits to protect from floods?\n- User self-serve UI for verifying webhook status (last event time)?\n\n## Next Steps\n1) Implement webhook verify + ingest-only providers for Messenger (Page), WhatsApp Cloud API, WeChat OA.\n2) Add docs for end-user setup flows (tokens, verify token, webhook URL examples).\n3) UI: per-provider forms with required fields and generated webhook URL + instructions.\n4) Add provider-specific unit tests for verify + ingest.\n*** End Patch ***!
+# Personal One-way Sync Plan (Messenger, WhatsApp, WeChat)
+
+Goal: let an individual forward their own chat messages into a Commonly pod for summarization, without sending messages back to the platforms. Stick to official APIs to avoid bans.
+
+## Shared Principles
+- **Ingest-only**: Webhooks only; no outbound send in v1.
+- **User-provided auth**: Tokens/keys supplied by the user; store encrypted per integration.
+- **Isolation**: Separate webhook per integrationId; no cross-talk between providers.
+- **Minimal PII**: Store text, sender id/name, timestamp, lightweight attachments; allow buffer deletion.
+
+## Messenger (Meta, Page-based)
+- Auth: Page Access Token + verify token (user supplies both).
+- Verify: `hub.mode`, `hub.challenge`, `hub.verify_token`.
+- Events: `messages`, `messaging_postbacks` for the Page.
+- Setup: user creates Page + app, subscribes Page to webhook, configures verify token.
+- Risk: Requires app with Page Messaging permission in Live mode; personal tokens not allowed.
+- Outbound: disabled in v1.
+
+## WhatsApp (Cloud API only)
+- Auth: `phone_number_id`, access token, verify token (user supplies).
+- Verify: `hub.mode`, `hub.challenge`, `hub.verify_token`; support `X-Hub-Signature-256` when key available.
+- Events: `entry[].changes[].value.messages[]` → normalize to buffer.
+- Risk: Must follow Meta policy; avoid device bridges.
+- Outbound: disabled in v1 to avoid template review overhead.
+
+## WeChat (Official Account passive ingest)
+- Channel: OA server callbacks (Service/Subscription account).
+- Verify: SHA1 of `token|timestamp|nonce`, respond with `echostr` on GET.
+- Messages: XML POST (text/image/etc.); normalize text + basic media URLs.
+- Setup: user sets webhook URL + token in OA platform; no user OAuth needed for ingest-only.
+- Risk: Content rules strict; keep ingest-only, no replies.
+
+## Data Mapping
+- messageId, authorId, authorName, content, timestamp, attachments (URLs), raw (short-term optional).
+
+## Planned Webhook Endpoints
+- `/api/webhooks/messenger/:integrationId`
+- `/api/webhooks/whatsapp/:integrationId`
+- `/api/webhooks/wechat/:integrationId`
+
+## Next Steps
+1) Implement webhook verify + ingest-only providers for Messenger (Page), WhatsApp Cloud API, WeChat OA.
+2) Add end-user setup docs with screenshots/URL examples.
+3) UI: per-provider form with required fields and generated webhook URL.
+4) Provider unit tests: verify token/signature paths and normalization.

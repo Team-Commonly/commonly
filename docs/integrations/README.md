@@ -10,4 +10,5 @@ Contents:
 - `WHATSAPP_READONLY_PLAN.md` — WhatsApp Cloud API ingest-only plan.
 - `PERSONAL_ONEWAY_PLAN.md` — One-way personal sync plan for Messenger/WhatsApp/WeChat.
 - `TELEGRAM` (see `docs/telegram/README.md`) — webhook ingest with optional secret token.
+- `WECHAT_READONLY_PLAN.md` — WeChat Official Account ingest-only plan.
 - Code scaffold lives in `packages/integration-sdk/` for open-sourcing the contract and registry.
