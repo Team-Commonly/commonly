@@ -21,7 +21,7 @@
 - Bot is tied to a single group; one bot per group.
 - No slash commands; only text payloads.
 
-## TODO
-- Provider implementation (registry)
-- Webhook route for callbacks
+## TODO (now in progress)
+- ✅ Provider implementation registered (`groupmeProvider`)
+- ✅ Webhook route `/api/webhooks/groupme/:integrationId`
 - Config UI: bot id + group id + callback URL hint

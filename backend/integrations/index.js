@@ -23,9 +23,13 @@ try {
 }
 const createDiscordProvider = require('./providers/discordProvider');
 const createSlackProvider = require('./providers/slackProvider');
+const createGroupMeProvider = require('./providers/groupmeProvider');
+const createTelegramProvider = require('./providers/telegramProvider');
 
 // Register built-in providers here
 registry.register('discord', (integration) => createDiscordProvider(integration));
 registry.register('slack', (integration) => createSlackProvider(integration));
+registry.register('groupme', (integration) => createGroupMeProvider(integration));
+registry.register('telegram', (integration) => createTelegramProvider(integration));
 
 module.exports = registry;
