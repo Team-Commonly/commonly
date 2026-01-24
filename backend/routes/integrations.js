@@ -85,13 +85,20 @@ router.post('/', auth, async (req, res) => {
         });
         break;
       }
+      case 'slack': {
+        // No platform specific collection yet; just accept config
+        platformIntegration = null;
+        break;
+      }
       default:
         return res
           .status(400)
           .json({ message: 'Unsupported integration type' });
     }
 
-    await platformIntegration.save();
+    if (platformIntegration) {
+      await platformIntegration.save();
+    }
 
     // Initialize the integration service
     const service = new DiscordService(integration._id);
@@ -142,13 +149,16 @@ router.post('/:id/connect', auth, async (req, res) => {
       case 'discord':
         service = new DiscordService(id);
         break;
+      case 'slack':
+        service = null; // No remote connect step
+        break;
       default:
         return res
           .status(400)
           .json({ message: 'Unsupported integration type' });
     }
 
-    const connected = await service.connect();
+    const connected = service ? await service.connect() : true;
 
     if (connected) {
       res.json({ message: 'Integration connected successfully' });
@@ -224,13 +234,16 @@ router.get('/:id/stats', auth, async (req, res) => {
       case 'discord':
         service = new DiscordService(id);
         break;
+      case 'slack':
+        service = null;
+        break;
       default:
         return res
           .status(400)
           .json({ message: 'Unsupported integration type' });
     }
 
-    const stats = await service.getStats();
+    const stats = service ? await service.getStats() : { connected: true };
     res.json(stats);
   } catch (error) {
     console.error('Error getting integration stats:', error);
@@ -261,14 +274,20 @@ router.get('/:id/messages', auth, async (req, res) => {
       case 'discord':
         service = new DiscordService(id);
         break;
+      case 'slack':
+        service = null;
+        break;
       default:
         return res
           .status(400)
           .json({ message: 'Unsupported integration type' });
     }
 
-    const messages = await service.fetchMessages({ limit, before });
-    res.json(messages);
+    if (service) {
+      const messages = await service.fetchMessages({ limit, before });
+      return res.json(messages);
+    }
+    return res.json({ messages: [] });
   } catch (error) {
     console.error('Error fetching integration messages:', error);
     res.status(500).json({ message: 'Server error' });
@@ -298,14 +317,20 @@ router.post('/:id/send', auth, async (req, res) => {
       case 'discord':
         service = new DiscordService(id);
         break;
+      case 'slack':
+        service = null; // TODO: implement Slack send
+        break;
       default:
         return res
           .status(400)
           .json({ message: 'Unsupported integration type' });
     }
 
-    const result = await service.sendMessage(message);
-    res.json({ success: true, result });
+    if (service) {
+      const result = await service.sendMessage(message);
+      return res.json({ success: true, result });
+    }
+    return res.json({ success: true, result: 'not-implemented' });
   } catch (error) {
     console.error('Error sending message through integration:', error);
     res.status(500).json({ message: 'Server error' });
@@ -391,6 +416,9 @@ router.delete('/:id', auth, async (req, res) => {
       case 'discord':
         service = new DiscordService(id);
         break;
+      case 'slack':
+        service = null;
+        break;
       default:
         return res
           .status(400)
@@ -398,7 +426,7 @@ router.delete('/:id', auth, async (req, res) => {
     }
 
     try {
-      await service.disconnect();
+      if (service) await service.disconnect();
     } catch (error) {
       console.warn('Error disconnecting service during deletion:', error);
       // Continue with deletion even if disconnect fails

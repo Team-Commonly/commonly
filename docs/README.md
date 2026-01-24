@@ -12,6 +12,11 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 | Directory | Description | Files |
 |-----------|-------------|-------|
 | [discord/](./discord/) | Discord bot integration, commands, setup | 11 |
+| [whatsapp/](./whatsapp/) | WhatsApp Cloud API integration planning | 3 |
+| [integrations/](./integrations/) | Cross-platform integration contract & app platform | 3 |
+| [slack/](./slack/) | Slack integration notes | 1 |
+| [google-chat/](./google-chat/) | Google Chat integration notes | 1 |
+| [groupme/](./groupme/) | GroupMe integration notes | 1 |
 | [ai-features/](./ai-features/) | AI summarization, daily digests, analytics | 3 |
 | [database/](./database/) | MongoDB & PostgreSQL schemas, migrations | 2 |
 | [architecture/](./architecture/) | System architecture overview | 1 |
@@ -31,6 +36,23 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 - [Discord Setup](./discord/DISCORD_SETUP.md)
 - [Discord App Setup](./discord/DISCORD_APP_SETUP.md)
 - [Discord Commands](./discord/REGISTER_DISCORD_COMMANDS.md)
+
+### WhatsApp Integration (Planned)
+- [WhatsApp Integration Plan](./whatsapp/WHATSAPP_INTEGRATION_PLAN.md)
+- [WhatsApp API Notes](./whatsapp/WHATSAPP_API_NOTES.md)
+
+### Integration Contract
+- [External Integration Contract](./integrations/INTEGRATION_CONTRACT.md)
+- [Commonly App Platform (draft)](./integrations/COMMONLY_APP_PLATFORM.md)
+
+### Slack Integration (Planned)
+- [Slack Overview](./slack/README.md)
+
+### Google Chat Integration (Planned)
+- [Google Chat Overview](./google-chat/README.md)
+
+### GroupMe Integration (Planned)
+- [GroupMe Overview](./groupme/README.md)
 
 ### AI Features
 - [AI Features Overview](./ai-features/AI_FEATURES.md)
@@ -58,4 +80,4 @@ See [.claude/skills/](../.claude/skills/) for documentation organized by experti
 | Real-time Systems | Socket.io, WebSockets |
 | Testing & Quality | Jest, ESLint |
 
-## Total Documentation Files: 23
+## Total Documentation Files: 32

@@ -36,6 +36,10 @@ and development conventions:
 - `DATABASE.md`
 - `DEPLOYMENT.md`
 - `LINTING.md`
+- `whatsapp/WHATSAPP_INTEGRATION_PLAN.md` (for WhatsApp work)
+- `integrations/INTEGRATION_CONTRACT.md` (for any new external integration)
+- `integrations/COMMONLY_APP_PLATFORM.md` (for app/installation flow like GitHub Apps)
+- `slack/README.md`, `google-chat/README.md`, `groupme/README.md` (integration notes)
 
 Design documents in `docs/design/` provide additional details for upcoming
 features. Review them and add new design docs when planning major
