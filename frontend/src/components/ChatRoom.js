@@ -123,6 +123,12 @@ const ChatRoom = () => {
     const fileInputRef = useRef(null);
     const emojiPickerRef = useRef(null);
     const sidebarRef = useRef(null);
+    const messagesContainerRef = useRef(null);
+    const skipNextAutoScrollRef = useRef(false);
+    const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+    const [hasMoreMessages, setHasMoreMessages] = useState(true);
+    const [usePostgresMessages, setUsePostgresMessages] = useState(false);
+    const messagesPageSize = 50;
     
     // State for real data from API
     const [announcements, setAnnouncements] = useState([]);
@@ -219,8 +225,13 @@ const ChatRoom = () => {
                     : `/api/messages/${roomId}`;
                 
                 console.log(`Fetching messages from: ${messagesEndpoint}, PG available: ${usePostgres}`);
-                const messagesResponse = await axios.get(messagesEndpoint, authHeaders);
-                setMessages(messagesResponse.data); // Backend already returns messages in oldest-first order
+                const messagesResponse = await axios.get(
+                    `${messagesEndpoint}?limit=${messagesPageSize}`,
+                    authHeaders
+                );
+                setUsePostgresMessages(usePostgres);
+                setMessages(messagesResponse.data); // Backend returns messages in oldest-first order
+                setHasMoreMessages((messagesResponse.data || []).length >= messagesPageSize);
                 setError(null);
             } catch (err) {
                 console.error('Error fetching pod data:', err);
@@ -241,6 +252,73 @@ const ChatRoom = () => {
             setLoading(false);
         }
     }, [roomId, podType, pgAvailable]);
+
+    const fetchOlderMessages = async () => {
+        if (!roomId || !hasMoreMessages || isLoadingOlder) {
+            return;
+        }
+
+        const oldestMessage = messages[0];
+        const oldestTimestamp = oldestMessage?.createdAt || oldestMessage?.created_at;
+        if (!oldestTimestamp) {
+            setHasMoreMessages(false);
+            return;
+        }
+
+        const container = messagesContainerRef.current;
+        const previousScrollHeight = container?.scrollHeight || 0;
+        const previousScrollTop = container?.scrollTop || 0;
+
+        setIsLoadingOlder(true);
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setError('Authentication required. Please log in again.');
+                setIsLoadingOlder(false);
+                return;
+            }
+
+            const authHeaders = {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            };
+
+            const messagesEndpoint = usePostgresMessages
+                ? `/api/pg/messages/${roomId}`
+                : `/api/messages/${roomId}`;
+            const beforeParam = encodeURIComponent(new Date(oldestTimestamp).toISOString());
+            const olderResponse = await axios.get(
+                `${messagesEndpoint}?limit=${messagesPageSize}&before=${beforeParam}`,
+                authHeaders
+            );
+            const olderMessages = olderResponse.data || [];
+
+            skipNextAutoScrollRef.current = true;
+            setMessages((prevMessages) => {
+                const existingKeys = new Set(
+                    prevMessages.map((msg) => msg.id || msg._id || msg.created_at || msg.createdAt)
+                );
+                const filteredOlder = olderMessages.filter((msg) => {
+                    const key = msg.id || msg._id || msg.created_at || msg.createdAt;
+                    return !existingKeys.has(key);
+                });
+                return [...filteredOlder, ...prevMessages];
+            });
+            setHasMoreMessages(olderMessages.length >= messagesPageSize);
+        } catch (err) {
+            console.error('Error fetching older messages:', err);
+            setHasMoreMessages(false);
+        } finally {
+            setIsLoadingOlder(false);
+            if (messagesContainerRef.current) {
+                requestAnimationFrame(() => {
+                    const newScrollHeight = messagesContainerRef.current.scrollHeight;
+                    messagesContainerRef.current.scrollTop = newScrollHeight - previousScrollHeight + previousScrollTop;
+                });
+            }
+        }
+    };
 
 
     // Join pod room when socket connects
@@ -297,6 +375,10 @@ const ChatRoom = () => {
     
     // Scroll to bottom when messages change
     useEffect(() => {
+        if (skipNextAutoScrollRef.current) {
+            skipNextAutoScrollRef.current = false;
+            return;
+        }
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
     
@@ -1256,6 +1338,7 @@ const ChatRoom = () => {
                         <Paper 
                             elevation={0} 
                             className="messages-container"
+                            ref={messagesContainerRef}
                         >
                             {messages.length === 0 ? (
                                 <Box className="empty-chat-message">
@@ -1269,6 +1352,23 @@ const ChatRoom = () => {
                                 </Box>
                             ) : (
                                 <List>
+                                    {(hasMoreMessages || isLoadingOlder) && (
+                                        <div className="load-older-wrapper">
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                onClick={fetchOlderMessages}
+                                                disabled={isLoadingOlder}
+                                                className="load-older-button"
+                                            >
+                                                {isLoadingOlder ? (
+                                                    <CircularProgress size={18} />
+                                                ) : (
+                                                    'Load older messages'
+                                                )}
+                                            </Button>
+                                        </div>
+                                    )}
                                     {messages.map((msg) => {
                                         // Check if msg or msg.userId is undefined or null
                                         if (!msg) {

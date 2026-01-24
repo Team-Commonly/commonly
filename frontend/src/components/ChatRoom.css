@@ -144,6 +144,17 @@
   transition: width 0.3s ease, margin-right 0.3s ease;
 }
 
+.load-older-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 16px;
+}
+
+.load-older-button {
+  text-transform: none;
+  border-radius: 16px;
+}
+
 /* Adjust messages container when sidebar is visible */
 .chat-room-container.sidebar-visible .messages-container {
   margin-right: 0; /* Sidebar space is handled by container */
