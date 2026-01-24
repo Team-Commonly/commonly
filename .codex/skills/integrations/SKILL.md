@@ -1,11 +1,11 @@
 ---
 name: integrations
-description: Third-party integration context for Discord API, OAuth2, webhooks, and external services. Use when working on Discord bot, API integrations, or webhook handling.
+description: Third-party integration context for Discord, Slack, GroupMe, Telegram, OAuth2, webhooks, and external services. Use when working on chat app integrations or webhook handling.
 ---
 
 # Third-party Integrations
 
-**Technologies**: Discord API, OAuth2, Webhooks, SendGrid
+**Technologies**: Discord API, Slack API, GroupMe Bot API, Telegram Bot API, OAuth2, Webhooks, SendGrid
 
 ## Required Knowledge
 - Discord Bot development and slash commands
@@ -18,10 +18,15 @@ description: Third-party integration context for Discord API, OAuth2, webhooks, 
 
 | Document | Topics Covered |
 |----------|----------------|
-| [DISCORD.md](../../../docs/discord/DISCORD.md) | Main integration overview, commands |
+| [DISCORD.md](../../../docs/discord/DISCORD.md) | Discord integration overview |
 | [DISCORD_APP_SETUP.md](../../../docs/discord/DISCORD_APP_SETUP.md) | Bot creation, credentials |
 | [DISCORD_INTEGRATION_ARCHITECTURE.md](../../../docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md) | API polling, sync architecture |
 | [REGISTER_DISCORD_COMMANDS.md](../../../docs/discord/REGISTER_DISCORD_COMMANDS.md) | Command registration |
+| [slack/README.md](../../../docs/slack/README.md) | Slack webhook + signing secret notes |
+| [groupme/README.md](../../../docs/groupme/README.md) | GroupMe bot ingest-only plan |
+| [telegram/README.md](../../../docs/telegram/README.md) | Telegram webhook ingest with secret token |
+| [integrations/INTEGRATION_CONTRACT.md](../../../docs/integrations/INTEGRATION_CONTRACT.md) | Provider contract and schema |
+| [integrations/COMMONLY_APP_PLATFORM.md](../../../docs/integrations/COMMONLY_APP_PLATFORM.md) | App platform design |
 
 ## Discord Slash Commands
 
@@ -42,20 +47,11 @@ backend/services/
 └── integrationService.js      # Integration management
 ```
 
-## Integration Flow
+## Integration Flows (high level)
 
-```
-Discord Channel ──► Discord API ──► discordService.js
-                                          │
-                                          ▼
-                                   syncRecentMessages()
-                                          │
-                                          ▼
-                                    Gemini AI ──► Summary
-                                          │
-                                          ▼
-                                   commonlyBotService.js
-                                          │
-                                          ▼
-                                    Commonly Pod
-```
+- **Discord**: webhook interactions + REST -> `discordService` -> summarize -> post to pod.
+- **Slack**: Events API webhook (raw body + signing secret) -> normalize -> buffer/summarize.
+- **GroupMe**: Bot callback webhook -> normalize -> buffer/summarize (ingest-only v1).
+- **Telegram**: Webhook with optional `x-telegram-bot-api-secret-token` -> normalize -> buffer/summarize (ingest-only v1).
+
+All providers implement the shared contract in `packages/integration-sdk` and are registered in `backend/integrations/index.js`.
