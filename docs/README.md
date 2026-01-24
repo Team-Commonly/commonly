@@ -13,7 +13,7 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 |-----------|-------------|-------|
 | [discord/](./discord/) | Discord bot integration, commands, setup | 11 |
 | [whatsapp/](./whatsapp/) | WhatsApp Cloud API integration planning | 3 |
-| [integrations/](./integrations/) | Cross-platform integration contract & app platform | 3 |
+| [integrations/](./integrations/) | Cross-platform integration contract & app platform | 6 |
 | [slack/](./slack/) | Slack integration notes | 1 |
 | [google-chat/](./google-chat/) | Google Chat integration notes | 1 |
 | [groupme/](./groupme/) | GroupMe integration notes | 1 |
@@ -44,6 +44,9 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 ### Integration Contract
 - [External Integration Contract](./integrations/INTEGRATION_CONTRACT.md)
 - [Commonly App Platform (draft)](./integrations/COMMONLY_APP_PLATFORM.md)
+- [GroupMe Plan](./integrations/GROUPME_PLAN.md)
+- [Messenger Notes (deferred)](./integrations/MESSENGER_PLAN.md)
+- [WhatsApp Read-only Plan](./integrations/WHATSAPP_READONLY_PLAN.md)
 
 ### Slack Integration (Planned)
 - [Slack Overview](./slack/README.md)
