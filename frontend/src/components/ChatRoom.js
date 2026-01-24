@@ -20,7 +20,8 @@ import {
     ChevronRight as ChevronRightIcon,
     KeyboardArrowRight as ArrowRightIcon,
     KeyboardArrowLeft as ArrowLeftIcon,
-    Apps as AppsIcon
+    Apps as AppsIcon,
+    Hub as HubIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -1300,6 +1301,24 @@ const ChatRoom = () => {
                         </div>
                         <div className="sidebar-section-content">
                             <DiscordIntegration podId={roomId} viewOnly={true} />
+                            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                {[
+                                  { id: 'slack', label: 'Slack', color: '#4A154B', url: 'https://github.com/Team-Commonly/commonly/tree/main/docs/slack' },
+                                  { id: 'groupme', label: 'GroupMe', color: '#00A2FF', url: 'https://github.com/Team-Commonly/commonly/tree/main/docs/groupme' },
+                                  { id: 'telegram', label: 'Telegram', color: '#229ED9', url: 'https://github.com/Team-Commonly/commonly/tree/main/docs/telegram' }
+                                ].map((item) => (
+                                  <Button
+                                    key={item.id}
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<HubIcon sx={{ color: item.color }} />}
+                                    onClick={() => window.open(item.url, '_blank', 'noopener,noreferrer')}
+                                    sx={{ textTransform: 'none', borderColor: item.color, color: item.color }}
+                                  >
+                                    {item.label}
+                                  </Button>
+                                ))}
+                            </Box>
                         </div>
                     </div>
                 )}
