@@ -20,6 +20,8 @@ const integrationRoutes = require('./routes/integrations');
 const appPlatformRoutes = require('./routes/apps');
 const discordWebhookRoutes = require('./routes/webhooks/discord');
 const slackWebhookRoutes = require('./routes/webhooks/slack');
+const groupMeWebhookRoutes = require('./routes/webhooks/groupme');
+const telegramWebhookRoutes = require('./routes/webhooks/telegram');
 const discordRoutes = require('./routes/discord');
 const analyticsRoutes = require('./routes/analytics');
 // Conditionally load PostgreSQL routes and models
@@ -87,6 +89,10 @@ app.use(
   }),
 );
 
+// Standard JSON for GroupMe and Telegram webhooks
+app.use('/api/webhooks/groupme', express.json());
+app.use('/api/webhooks/telegram', express.json());
+
 // JSON parsing for all other routes
 app.use(express.json());
 
@@ -103,6 +109,8 @@ app.use('/api/integrations', integrationRoutes);
 app.use('/api/apps', appPlatformRoutes);
 app.use('/api/webhooks/discord', discordWebhookRoutes);
 app.use('/api/webhooks/slack', slackWebhookRoutes);
+app.use('/api/webhooks/groupme', groupMeWebhookRoutes);
+app.use('/api/webhooks/telegram', telegramWebhookRoutes);
 app.use('/api/discord', discordRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
