@@ -283,13 +283,13 @@ describe('Summaries Routes Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('title');
       expect(response.body.title).toContain('Community Overview');
-      expect(response.body.title).toContain('3 posts'); // We created 3 test posts
+      expect(response.body.title).toContain('3 recent posts'); // We created 3 test posts
       expect(response.body).toHaveProperty('content');
       expect(response.body.metadata.totalItems).toBe(3);
       // Since Gemini API is not available in tests, the fallback won't have tags
       expect(response.body.metadata).toHaveProperty('topTags');
       expect(response.body.metadata).toHaveProperty('topUsers');
-      expect(response.body.metadata.timeRange).toBe('All time');
+      expect(response.body.metadata.timeRange).toBe('Recent posts');
     });
   });
 
