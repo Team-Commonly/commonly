@@ -130,6 +130,11 @@ const ChatRoom = () => {
     const [hasMoreMessages, setHasMoreMessages] = useState(true);
     const [usePostgresMessages, setUsePostgresMessages] = useState(false);
     const messagesPageSize = 50;
+    const [slackForm, setSlackForm] = useState({ botToken: '', signingSecret: '', channelId: '', channelName: '' });
+    const [groupmeForm, setGroupmeForm] = useState({ botId: '', groupId: '' });
+    const [telegramForm, setTelegramForm] = useState({ botToken: '', secretToken: '' });
+    const [creatingIntegration, setCreatingIntegration] = useState(false);
+    const [integrationMessage, setIntegrationMessage] = useState(null);
     
     // State for real data from API
     const [announcements, setAnnouncements] = useState([]);
@@ -318,6 +323,29 @@ const ChatRoom = () => {
                     messagesContainerRef.current.scrollTop = newScrollHeight - previousScrollHeight + previousScrollTop;
                 });
             }
+        }
+    };
+
+    const createIntegration = async (type, config) => {
+        if (!roomId) return;
+        setCreatingIntegration(true);
+        setIntegrationMessage(null);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.post('/api/integrations', { podId: roomId, type, config }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const integrationId = res.data?.integration?._id;
+            const hookUrl = integrationId ? `${window.location.origin}/api/webhooks/${type}/${integrationId}` : '';
+            setIntegrationMessage({
+                type: 'success',
+                text: `${type} integration saved.${hookUrl ? ` Webhook URL: ${hookUrl}` : ''}`
+            });
+        } catch (err) {
+            const msg = err.response?.data?.message || 'Failed to save integration';
+            setIntegrationMessage({ type: 'error', text: msg });
+        } finally {
+            setCreatingIntegration(false);
         }
     };
 
@@ -1301,23 +1329,57 @@ const ChatRoom = () => {
                         </div>
                         <div className="sidebar-section-content">
                             <DiscordIntegration podId={roomId} viewOnly={true} />
-                            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                <Typography variant="caption" color="text.secondary">
+                                    Quick-add integrations
+                                </Typography>
                                 {[
-                                  { id: 'slack', label: 'Slack', color: '#4A154B', url: 'https://github.com/Team-Commonly/commonly/tree/main/docs/slack' },
-                                  { id: 'groupme', label: 'GroupMe', color: '#00A2FF', url: 'https://github.com/Team-Commonly/commonly/tree/main/docs/groupme' },
-                                  { id: 'telegram', label: 'Telegram', color: '#229ED9', url: 'https://github.com/Team-Commonly/commonly/tree/main/docs/telegram' }
+                                  { id: 'slack', label: 'Slack', color: '#4A154B', config: slackForm, setter: setSlackForm },
+                                  { id: 'groupme', label: 'GroupMe', color: '#00A2FF', config: groupmeForm, setter: setGroupmeForm },
+                                  { id: 'telegram', label: 'Telegram', color: '#229ED9', config: telegramForm, setter: setTelegramForm }
                                 ].map((item) => (
-                                  <Button
-                                    key={item.id}
-                                    size="small"
-                                    variant="outlined"
-                                    startIcon={<HubIcon sx={{ color: item.color }} />}
-                                    onClick={() => window.open(item.url, '_blank', 'noopener,noreferrer')}
-                                    sx={{ textTransform: 'none', borderColor: item.color, color: item.color }}
-                                  >
-                                    {item.label}
-                                  </Button>
+                                  <Box key={item.id} sx={{ border: '1px solid', borderColor: `${item.color}33`, borderRadius: 1, p: 1 }}>
+                                    <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                      <HubIcon sx={{ color: item.color }} /> {item.label}
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
+                                      {item.id === 'slack' && (
+                                        <>
+                                          <TextField size="small" label="Bot Token (xoxb)" value={item.config.botToken || ''} onChange={(e) => item.setter({ ...item.config, botToken: e.target.value })} />
+                                          <TextField size="small" label="Signing Secret" value={item.config.signingSecret || ''} onChange={(e) => item.setter({ ...item.config, signingSecret: e.target.value })} />
+                                          <TextField size="small" label="Channel ID" value={item.config.channelId || ''} onChange={(e) => item.setter({ ...item.config, channelId: e.target.value })} />
+                                          <TextField size="small" label="Channel Name" value={item.config.channelName || ''} onChange={(e) => item.setter({ ...item.config, channelName: e.target.value })} />
+                                        </>
+                                      )}
+                                      {item.id === 'groupme' && (
+                                        <>
+                                          <TextField size="small" label="Bot ID" value={item.config.botId || ''} onChange={(e) => item.setter({ ...item.config, botId: e.target.value })} />
+                                          <TextField size="small" label="Group ID" value={item.config.groupId || ''} onChange={(e) => item.setter({ ...item.config, groupId: e.target.value })} />
+                                        </>
+                                      )}
+                                      {item.id === 'telegram' && (
+                                        <>
+                                          <TextField size="small" label="Bot Token" value={item.config.botToken || ''} onChange={(e) => item.setter({ ...item.config, botToken: e.target.value })} />
+                                          <TextField size="small" label="Secret Token (optional)" value={item.config.secretToken || ''} onChange={(e) => item.setter({ ...item.config, secretToken: e.target.value })} />
+                                        </>
+                                      )}
+                                      <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => createIntegration(item.id, item.config)}
+                                        disabled={creatingIntegration}
+                                        sx={{ textTransform: 'none', bgcolor: item.color, '&:hover': { bgcolor: item.color } }}
+                                      >
+                                        {creatingIntegration ? 'Saving...' : `Add ${item.label}`}
+                                      </Button>
+                                    </Box>
+                                  </Box>
                                 ))}
+                                {integrationMessage && (
+                                  <Typography variant="caption" color={integrationMessage.type === 'error' ? 'error' : 'success.main'}>
+                                    {integrationMessage.text}
+                                  </Typography>
+                                )}
                             </Box>
                         </div>
                     </div>
