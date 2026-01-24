@@ -1,29 +1,31 @@
-# Slack Integration Overview (Draft)
+# Slack Integration (Ingest-only v1)
 
-## Why Slack
-- Bots can join channels, read events (Events API), and post messages (Web API).
-- Good fit for pod-style summaries and two-way sync.
+## Status
+- ✅ Provider implemented (`backend/integrations/providers/slackProvider.js`)
+- ✅ Webhook: `POST /api/webhooks/slack/:integrationId`
+- Ingest-only: receives channel message events via Events API; no outbound send wired yet.
 
-## Credentials Needed
-- Client ID/Secret (Slack App)
-- Bot token (xoxb-*) with scopes: `channels:history`, `channels:read`, `chat:write`, `chat:write.public`, `users:read`
-- Signing secret (for request verification)
-- Events Request URL
-
-## Key Endpoints
-- Events API: receives channel message events (configure event `message.channels`)
-- Web API: `chat.postMessage`, `conversations.history`, `conversations.list`
+## Required App Setup
+1) Create a Slack App (workspace-level is fine for v1).
+2) Add bot scopes: `channels:history`, `channels:read`, `users:read` (omit write scopes until we enable outbound).
+3) Enable Events API:
+   - Request URL: `https://<your-host>/api/webhooks/slack/<integrationId>`
+   - Subscribe to events: `message.channels` (add more if needed later).
+4) Install the app to the workspace; invite the bot to target channels.
+5) Capture the Bot Token (`xoxb-...`) and Signing Secret; paste both into the integration config UI (to be added).
 
 ## Verification
-- Verify Slack signatures using `X-Slack-Signature` and `X-Slack-Request-Timestamp`
+- Commonly computes `v0:{timestamp}:{rawBody}` HMAC-SHA256 with the signing secret and compares to `X-Slack-Signature`.
+- Request must include `X-Slack-Request-Timestamp`; stale timestamps should be rejected by Slack itself.
 
 ## Data Flow
-1) Configure Slack App → enable Events API → set Request URL to Commonly webhook.
-2) App invited to channel; messages delivered via Events API.
-3) Commonly provider ingests events → normalize → summarize → post back via `chat.postMessage`.
+1) Slack sends an event -> webhook validates signature -> normalizes message -> buffers for summarizer.
+2) Summaries are posted inside Commonly (not back to Slack in v1).
 
-## TODO
-- Provider implementation (registry)
-- Webhook route with signature verification
-- Config UI fields: bot token, signing secret, events URL hint
-- App distribution: workspace-level (no user-level OAuth for first version)
+## Limitations (v1)
+- No outbound `chat.postMessage` yet.
+- No history polling (helper exists but unused).
+- Attachments are passed through as text/links only.
+
+## Notes for parallel providers
+- Slack webhook is independent per `integrationId` and can run alongside GroupMe/Telegram without conflict.
