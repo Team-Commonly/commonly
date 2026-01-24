@@ -13,7 +13,7 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 |-----------|-------------|-------|
 | [discord/](./discord/) | Discord bot integration, commands, setup | 11 |
 | [whatsapp/](./whatsapp/) | WhatsApp Cloud API integration planning | 3 |
-| [integrations/](./integrations/) | Cross-platform integration contract & app platform | 7 |
+| [integrations/](./integrations/) | Cross-platform integration contract & app platform | 8 |
 | [slack/](./slack/) | Slack integration notes | 1 |
 | [google-chat/](./google-chat/) | Google Chat integration notes | 1 |
 | [groupme/](./groupme/) | GroupMe integration notes | 1 |
@@ -87,4 +87,4 @@ See [.claude/skills/](../.claude/skills/) for documentation organized by experti
 | Real-time Systems | Socket.io, WebSockets |
 | Testing & Quality | Jest, ESLint |
 
-## Total Documentation Files: 36
+## Total Documentation Files: 37
