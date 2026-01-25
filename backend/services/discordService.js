@@ -68,12 +68,19 @@ class DiscordService {
       const guildId =
         integration.platformIntegration?.serverId ||
         integration.config?.serverId;
+      const channelId =
+        integration.platformIntegration?.channelId ||
+        integration.config?.channelId;
       if (!guildId) {
         throw new Error("Guild ID not found in integration");
       }
 
       // Initialize command service with guild ID as installation ID
-      this.commandService = new DiscordCommandService(guildId);
+      this.commandService = new DiscordCommandService({
+        guildId,
+        channelId,
+        integrationId: this.integrationId,
+      });
       await this.commandService.initialize();
 
       return true;

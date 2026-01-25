@@ -7,6 +7,9 @@ const router = express.Router();
 const Integration = require('../models/Integration');
 const DiscordIntegration = require('../models/DiscordIntegration');
 const DiscordService = require('../services/discordService');
+const {
+  runDiscordCommandForIntegrations,
+} = require('../services/discordMultiCommandService');
 // const DiscordController = require('../controllers/discordController');
 
 // Discord public key for signature verification
@@ -195,47 +198,105 @@ router.post('/interactions', async (req, res) => {
   // Handle application commands (slash commands)
   if (type === 2 && data?.type === 1) {
     // APPLICATION_COMMAND with CHAT_INPUT
-    console.log('Processing slash command:', data.name, 'in guild:', guildId);
+    const channelId = interaction.channel_id;
+    console.log(
+      'Processing slash command:',
+      data.name,
+      'in guild:',
+      guildId,
+      'channel:',
+      channelId,
+    );
 
     try {
-      // Find the integration for this guild
-      const integration = await Integration.findOne({
-        'config.serverId': guildId,
-        type: 'discord',
-        isActive: true,
-      });
+      let integrations = [];
 
-      if (!integration) {
+      if (channelId) {
+        integrations = await Integration.find({
+          'config.serverId': guildId,
+          'config.channelId': channelId,
+          type: 'discord',
+          isActive: true,
+        }).populate('podId', 'name type');
+      }
+
+      if (!integrations.length && !channelId) {
+        const fallback = await Integration.findOne({
+          'config.serverId': guildId,
+          type: 'discord',
+          isActive: true,
+        }).populate('podId', 'name type');
+        if (fallback) {
+          integrations = [fallback];
+        }
+      }
+
+      if (!integrations.length) {
         return res.json({
           type: 4,
           data: {
             content:
-              '❌ Discord integration not found for this server. Please install the bot first.',
+              '❌ Discord integration not found for this channel. Please connect it in Commonly first.',
             flags: 64, // EPHEMERAL
           },
         });
       }
 
-      // Create Discord service instance and handle the command
-      const discordService = new DiscordService(integration._id);
-      await discordService.initialize();
+      if (integrations.length === 1) {
+        // Create Discord service instance and handle the command
+        const discordService = new DiscordService(integrations[0]._id);
+        await discordService.initialize();
 
-      const result = await discordService.handleInteraction(interaction);
+        const result = await discordService.handleInteraction(interaction);
 
-      if (result) {
-        // Store interaction token for potential followup messages
-        result.interactionToken = interactionToken;
-        result.interactionId = interactionId;
+        if (result) {
+          // Store interaction token for potential followup messages
+          result.interactionToken = interactionToken;
+          result.interactionId = interactionId;
 
-        return res.json(result);
+          return res.json(result);
+        }
+        return res.json({
+          type: 4,
+          data: {
+            content: '❌ Command not recognized.',
+            flags: 64, // EPHEMERAL
+          },
+        });
       }
-      return res.json({
+
+      const commandResults = await runDiscordCommandForIntegrations({
+        commandName: data.name,
+        integrations,
+        guildId,
+        channelId,
+      });
+
+      const header = `🔗 ${integrations.length} pods linked to this Discord channel`;
+      const blocks = commandResults.map(({ integration, result }) => {
+        const podName =
+          integration.podId?.name
+          || integration.config?.channelName
+          || `Pod ${integration.podId || integration._id}`;
+        return `**${podName}**\n${result.content}`;
+      });
+      const content = [header, ...blocks].join('\n\n');
+      const allSuccessful = commandResults.every(
+        ({ result }) => result.success,
+      );
+
+      const response = {
         type: 4,
         data: {
-          content: '❌ Command not recognized.',
-          flags: 64, // EPHEMERAL
+          content,
+          flags: allSuccessful ? 0 : 64,
         },
-      });
+      };
+
+      response.interactionToken = interactionToken;
+      response.interactionId = interactionId;
+
+      return res.json(response);
     } catch (error) {
       console.error('Error handling slash command:', error);
       return res.json({
