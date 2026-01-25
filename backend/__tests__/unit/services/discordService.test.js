@@ -110,7 +110,13 @@ describe('DiscordService', () => {
       const result = await discordService.initialize();
       expect(result).toBe(true);
       expect(Integration.findById).toHaveBeenCalledWith('integration123');
-      expect(DiscordCommandService).toHaveBeenCalledWith('guild123');
+      expect(DiscordCommandService).toHaveBeenCalledWith(
+        expect.objectContaining({
+          guildId: 'guild123',
+          channelId: 'channel123',
+          integrationId: 'integration123',
+        }),
+      );
     });
 
     it('should fail initialization with invalid integration', async () => {
