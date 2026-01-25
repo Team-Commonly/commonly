@@ -29,13 +29,13 @@
 /* Auto-scale chat area based on sidebar state - works for all screen sizes */
 .chat-room-container.sidebar-visible {
   width: auto !important; /* Use available space */
-  margin-right: 280px !important; /* Exactly sidebar width - no gap */
+  margin-right: 380px !important; /* Exactly sidebar width - no gap */
   margin-left: 0 !important; /* Keep dashboard space */
 }
 
 .chat-room-container.sidebar-visible.dashboard-collapsed {
   width: auto !important; /* Use available space */
-  margin-right: 280px !important; /* Exactly sidebar width - no gap */
+  margin-right: 380px !important; /* Exactly sidebar width - no gap */
   margin-left: 0 !important; /* Extend to full left edge */
 }
 
@@ -165,7 +165,7 @@
   position: fixed !important;
   top: 0 !important;
   right: 0 !important;
-  width: 280px !important;
+  width: 380px !important;
   height: 100vh !important;
   background-color: #ffffff !important; /* Changed to white */
   color: #333333 !important; /* Changed text color to dark */
@@ -419,7 +419,7 @@
 
 /* Position the toggle button on the left when sidebar is visible */
 .sidebar-toggle-button.visible {
-  right: 280px !important;
+  right: 380px !important;
 }
 
 .sidebar-toggle-button .MuiSvgIcon-root {
@@ -688,7 +688,7 @@ body {
 /* Input box aligns with chat area boundaries */
 .message-input-container.sidebar-visible {
   left: 350px !important; /* Align with chat area left edge (240px + 20px padding) */
-  right: 350px !important; /* Exactly sidebar width - no extra margin */
+  right: 450px !important; /* Exactly sidebar width - no extra margin */
   width: auto !important; /* Use available space between left and right */
   transform: none !important; /* Remove centering transform */
   max-width: none !important; /* Remove max-width constraint */
@@ -705,7 +705,7 @@ body {
 /* Input adjustments for collapsed dashboard - align with full chat area */
 .chat-room-container.dashboard-collapsed .message-input-container.sidebar-visible {
   left: 140px !important; /* Align with full left edge + padding */
-  right: 350px !important; /* Exactly sidebar width - no extra margin */
+  right: 450px !important; /* Exactly sidebar width - no extra margin */
 }
 
 .chat-room-container.dashboard-collapsed .message-input-container.sidebar-hidden {
@@ -726,20 +726,20 @@ body {
   /* Content extends properly with sidebar spacing on tablet */
   .chat-room-container.sidebar-visible {
     width: auto !important;
-    margin-right: 280px !important; /* Leave space for sidebar */
+    margin-right: 380px !important; /* Leave space for sidebar */
     margin-left: 0 !important;
   }
 
   .chat-room-container.sidebar-visible.dashboard-collapsed {
     width: auto !important;
-    margin-right: 280px !important; /* Leave space for sidebar */
+    margin-right: 380px !important; /* Leave space for sidebar */
     margin-left: 0 !important;
   }
 
   /* Input container aligns with chat area on tablet */
   .message-input-container.sidebar-visible {
     left: 300px !important;
-    right: 300px !important; /* Space for sidebar (280px + 20px margin) */
+    right: 400px !important; /* Space for sidebar (380px + 20px margin) */
     width: auto !important;
     transform: none !important;
   }
@@ -754,7 +754,7 @@ body {
   /* Dashboard collapsed adjustments for tablet */
   .chat-room-container.dashboard-collapsed .message-input-container.sidebar-visible {
     left: 60px !important; /* Full left edge */
-    right: 300px !important; /* Space for sidebar (280px + 20px margin) */
+    right: 400px !important; /* Space for sidebar (380px + 20px margin) */
   }
 
   .chat-room-container.dashboard-collapsed .message-input-container.sidebar-hidden {
@@ -979,10 +979,10 @@ body {
 .emoji-picker-wrapper {
   position: fixed !important;
   bottom: 96px !important; /* Position above the message input */
-  left: 280px !important; /* Align with input left edge */
+  left: 380px !important; /* Align with input left edge */
   z-index: 1100 !important; /* Higher than message input */
   width: auto !important;
-  max-width: 280px !important;
+  max-width: 380px !important;
 }
 
 .emoji-picker-container {
@@ -996,7 +996,7 @@ body {
 
 /* Style the emoji picker component itself */
 .emoji-picker-container .EmojiPickerReact {
-  width: 280px !important;
+  width: 380px !important;
   height: 320px !important;
   border: none !important;
   box-shadow: none !important;
