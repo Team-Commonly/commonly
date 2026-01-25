@@ -44,6 +44,13 @@ const filteredMessages = messages.filter(msg => {
 - `/discord-disable` - Disables automatic hourly sync  
 - `/discord-push` - Manual sync trigger (uses `syncRecentMessages(1)`)
 
+#### 2b. DiscordMultiCommandService (`backend/services/discordMultiCommandService.js`)
+**Fan-out handler for multi-pod channels**
+
+- When multiple Commonly pods are linked to the same Discord channel, slash commands are executed per integration.
+- Aggregates results into a single Discord response with one block per pod.
+- Uses `DiscordService.initialize()` for `/discord-push` to ensure channel-specific state is loaded.
+
 #### 3. SchedulerService (`backend/services/schedulerService.js`)
 **Manages periodic tasks**
 
@@ -94,6 +101,21 @@ const filteredMessages = messages.filter(msg => {
 [Return formatted response to Discord]
 ```
 
+### Slash Commands with Multi-Pod Channels
+```
+[Discord Slash Command]
+    ↓
+[Route: /api/discord/interactions]
+    ↓
+[Find integrations by serverId + channelId]
+    ↓
+if 1 match:
+  → [DiscordService.handleInteraction]
+else if >1 match:
+  → [DiscordMultiCommandService fan-out per integration]
+    → [Aggregate response blocks]
+```
+
 ## Configuration
 
 ### Integration Settings
@@ -113,6 +135,8 @@ const filteredMessages = messages.filter(msg => {
   podId: 'ObjectId of linked Commonly pod'
 }
 ```
+
+**Multi-pod channels**: multiple integrations can share the same `serverId` + `channelId` pair, each with a different `podId`. Slash command responses include one section per pod.
 
 ### Environment Variables
 ```bash
