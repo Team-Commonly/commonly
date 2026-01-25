@@ -47,12 +47,13 @@ description: Third-party integration context for Discord, Slack, GroupMe, Telegr
 backend/services/
 ├── discordService.js          # Core Discord API integration
 ├── discordCommandService.js   # Slash command handlers
+├── discordMultiCommandService.js # Fan-out for multi-pod channel commands
 └── integrationService.js      # Integration management
 ```
 
 ## Integration Flows (high level)
 
-- **Discord**: webhook interactions + REST -> `discordService` -> summarize -> post to pod.
+- **Discord**: webhook interactions + REST -> `discordService` -> summarize -> post to pod. Slash commands resolve by `serverId + channelId`; multi-pod channels fan out via `discordMultiCommandService`.
 - **Slack**: Events API webhook (raw body + signing secret) -> normalize -> buffer/summarize.
 - **GroupMe**: Bot callback webhook -> normalize -> buffer/summarize (ingest-only v1).
 - **Telegram**: Webhook with optional `x-telegram-bot-api-secret-token` -> normalize -> buffer/summarize (ingest-only v1).
