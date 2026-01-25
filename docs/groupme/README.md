@@ -25,7 +25,7 @@
 ## Status / TODO
 - ✅ Provider registered (`groupmeProvider`)
 - ✅ Webhook route `/api/webhooks/groupme/:integrationId`
-- UI: add fields for Bot ID, Group ID, and copyable callback URL (pending)
+- UI: Sidebar Apps quick-add uses a redirect flow (no inline config fields); callback supplies Bot ID/Group ID.
 
 ## Notes
 - Ingest-only: we do not send messages back in v1 (avoids loops and keeps scope narrow).
