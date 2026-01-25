@@ -22,6 +22,10 @@
 1) Slack sends an event -> webhook validates signature -> normalizes message -> buffers for summarizer.
 2) Summaries are posted inside Commonly (not back to Slack in v1).
 
+## UI
+- Sidebar Apps quick-add uses a simple "Add Slack" redirect flow (no inline config fields).
+- The redirect/callback flow is responsible for returning the bot token + signing secret + channel details.
+
 ## Limitations (v1)
 - No outbound `chat.postMessage` yet.
 - No history polling (helper exists but unused).

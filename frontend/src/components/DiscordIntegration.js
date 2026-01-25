@@ -3,7 +3,6 @@ import {
   Box,
   Button,
   Typography,
-  Paper,
   Alert,
   CircularProgress,
   Card,
@@ -205,47 +204,72 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
 
       {/* Apps List */}
       {integrations.length === 0 ? (
-        <Paper 
+        <Card 
           sx={{ 
-            p: 3, 
-            textAlign: 'center', 
             borderRadius: 3,
-            background: 'linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%)',
-            border: '1px solid rgba(88, 101, 242, 0.1)'
+            border: '1px solid rgba(88, 101, 242, 0.1)',
+            background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: '0 8px 25px rgba(88, 101, 242, 0.15)',
+              borderColor: 'rgba(88, 101, 242, 0.2)'
+            },
+            transition: 'all 0.3s ease'
           }}
         >
-          <DiscordIcon />
-          <Typography variant="body1" sx={{ mt: 1, mb: 1, fontWeight: 500 }}>
-            No apps connected
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Connect Discord to sync messages with your server
-          </Typography>
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={<AddIcon />}
-            href={getDiscordOAuthUrl(podId)}
-            target="_blank"
-            rel="noopener noreferrer"
-            disabled={loading}
-            sx={{
-              mt: 2,
-              borderRadius: 2,
-              textTransform: 'none',
-              fontWeight: 600,
-              background: 'linear-gradient(45deg, #5865F2 30%, #7289DA 90%)',
-              '&:hover': {
-                background: 'linear-gradient(45deg, #4752C4 30%, #5B6DA8 90%)',
-                transform: 'translateY(-1px)',
-                boxShadow: '0 4px 12px rgba(88, 101, 242, 0.3)'
-              },
-              transition: 'all 0.2s ease'
-            }}
-          >
-            Add Discord
-          </Button>
-        </Paper>
+          <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box 
+                  sx={{ 
+                    color: '#5865F2',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 32,
+                    height: 32,
+                    backgroundColor: 'rgba(88, 101, 242, 0.1)',
+                    borderRadius: 2
+                  }}
+                >
+                  <DiscordIcon />
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                    Discord
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Connect Discord to sync messages with your server.
+                  </Typography>
+                </Box>
+              </Box>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<AddIcon fontSize="small" />}
+                href={getDiscordOAuthUrl(podId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                disabled={loading}
+                sx={{
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  backgroundColor: '#5865F2',
+                  boxShadow: 'none',
+                  '&:hover': {
+                    backgroundColor: '#4752C4',
+                    transform: 'translateY(-1px)',
+                    boxShadow: '0 4px 12px rgba(88, 101, 242, 0.3)'
+                  },
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                Add Discord
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {/* Add Discord button for existing integrations */}

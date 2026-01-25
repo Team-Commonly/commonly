@@ -22,6 +22,10 @@
 - To avoid loops we ignore messages sent via bots (`via_bot`).
 - Each integrationId has its own webhook path; can run in parallel with Slack/GroupMe.
 
+## UI
+- Sidebar Apps quick-add uses a simple "Add Telegram" redirect flow (no inline config fields).
+- The redirect/callback flow returns the bot token and optional secret token.
+
 ## Next Steps
 - Add outbound send support (manual summary push).
 - Parse common attachment types (photo/document/audio) for richer summaries.

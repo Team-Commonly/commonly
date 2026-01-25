@@ -10,8 +10,17 @@ const summarizerService = require("./summarizerService");
  * Handles Discord bot commands and interactions
  */
 class DiscordCommandService {
-  constructor(guildId) {
-    this.guildId = guildId; // Use guild ID as installation identifier
+  constructor(options = {}) {
+    if (typeof options === "string") {
+      this.guildId = options;
+      this.channelId = null;
+      this.integrationId = null;
+    } else {
+      const { guildId, channelId, integrationId } = options;
+      this.guildId = guildId || null;
+      this.channelId = channelId || null;
+      this.integrationId = integrationId || null;
+    }
     this.integration = null;
   }
 
@@ -20,18 +29,41 @@ class DiscordCommandService {
    */
   async initialize() {
     try {
-      // Find integration by guild ID (server ID)
-      this.integration = await Integration.findOne({
-        $or: [
-          { "platformIntegration.serverId": this.guildId },
-          { "config.serverId": this.guildId },
-        ],
-        type: "discord",
-        isActive: true,
-      });
+      if (this.integrationId) {
+        this.integration = await Integration.findOne({
+          _id: this.integrationId,
+          type: "discord",
+          isActive: true,
+        });
+      }
+
+      if (!this.integration && this.channelId) {
+        const channelQuery = {
+          type: "discord",
+          isActive: true,
+          "config.channelId": this.channelId,
+        };
+        if (this.guildId) {
+          channelQuery["config.serverId"] = this.guildId;
+        }
+        this.integration = await Integration.findOne(channelQuery);
+      }
+
+      if (!this.integration && this.guildId) {
+        // Fallback: match by server ID if no channel match exists
+        this.integration = await Integration.findOne({
+          type: "discord",
+          isActive: true,
+          "config.serverId": this.guildId,
+        });
+      }
 
       if (!this.integration) {
-        throw new Error(`Integration not found for guild ID: ${this.guildId}`);
+        throw new Error(
+          `Integration not found for ${this.channelId ? "channel" : "guild"} ${
+            this.channelId || this.guildId || "unknown"
+          }`,
+        );
       }
       return true;
     } catch (error) {

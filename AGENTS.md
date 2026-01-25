@@ -87,6 +87,7 @@ The dev backend container installs dependencies on first boot if `/app/node_modu
 ## Frontend UI note
 
 Chat and thread composers share a consistent layout (tool cluster + multiline input + labeled send button). Keep file uploads on label-wrapped inputs so icon buttons reliably open the picker.
+Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only; no inline config inputs. Sidebar also shows connected integration status cards for these providers.
 
 ## Developer utilities
 
