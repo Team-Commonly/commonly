@@ -27,6 +27,8 @@ Commonly's Discord integration creates a seamless bridge between Discord servers
 
 ### **Available Commands**
 
+**Multi-pod channels**: If multiple Commonly pods are linked to the same Discord channel, slash commands fan out and return a combined response with one section per pod.
+
 #### **`/commonly-summary`**
 Get the latest summary from your linked Commonly pod.
 

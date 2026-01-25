@@ -44,7 +44,7 @@ The Discord integration provides multiple capabilities:
 3. Backend retrieves the most recent hourly summary from the existing summary system
 4. Bot posts formatted summary to Discord channel
 
-**Key Design Principle**: Each Discord server installation is **automatically bound** to exactly one Commonly chat pod. The binding is established during the OAuth2 installation process and stored in the database.
+**Key Design Principle**: Discord bindings are **channel-scoped**. Multiple Commonly pods can be linked to the same Discord channel, and slash commands fan out to each linked pod.
 
 **Integration with Existing System**:
 - Uses the existing hourly summary generation that's already running for each pod
@@ -88,7 +88,7 @@ The Discord integration provides multiple capabilities:
 
 ### 4. Server/Channel Linking
 
-**Purpose**: Establish one-to-one binding between Discord servers and Commonly chat pods.
+**Purpose**: Establish channel-level bindings between Discord channels and Commonly chat pods.
 
 **Implementation**:
 - Handle Discord installation events when bot is added to a server
@@ -117,7 +117,7 @@ The Discord integration provides multiple capabilities:
 {
   _id: ObjectId,
   installationId: String,              // Discord installation ID (unique identifier)
-  podId: ObjectId,                     // Reference to Commonly chat pod (one-to-one binding)
+  podId: ObjectId,                     // Reference to Commonly chat pod (channel-scoped binding)
   type: String,                        // 'discord', 'telegram', 'slack'
   status: String,                      // 'connected', 'disconnected', 'error'
   config: {
@@ -141,8 +141,8 @@ The Discord integration provides multiple capabilities:
 
 **Key Design Points**:
 - `installationId` is the primary identifier for each Discord server installation
-- `podId` creates the one-to-one binding with a specific chat pod
-- Each Discord server can only be linked to one chat pod
+- `podId` binds a specific chat pod to a Discord channel
+- Multiple pods can share the same Discord channel (slash commands fan out per pod)
 - The binding is established during OAuth2 installation and cannot be changed without re-installation
 
 ### Discord Message Buffer Model
@@ -205,7 +205,7 @@ The Discord integration provides multiple capabilities:
 - `POST /api/bot/commands/discord-enable` - Handle enable requests
 - `POST /api/bot/commands/discord-disable` - Handle disable requests
 
-**Key Design Principle**: All endpoints automatically identify the correct chat pod through the `installationId`, eliminating the need for manual pod specification in API calls.
+**Key Design Principle**: Slash commands resolve the correct pod(s) via Discord `serverId` + `channelId`. If multiple pods share the same channel, commands fan out and return a combined response with one block per pod.
 
 ## UI/UX Design
 

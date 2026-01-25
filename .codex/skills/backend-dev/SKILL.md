@@ -28,6 +28,7 @@ description: Backend development context for Node.js/Express APIs, services, con
 backend/services/
 ├── discordService.js          # Discord API integration
 ├── discordCommandService.js   # Slash command handlers
+├── discordMultiCommandService.js # Multi-pod command fan-out
 ├── summarizerService.js       # AI summarization
 ├── chatSummarizerService.js   # Chat analysis
 ├── dailyDigestService.js      # Newsletter generation
