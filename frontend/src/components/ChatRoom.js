@@ -4,9 +4,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, TextField, IconButton,
     Avatar, List, ListItem, ListItemAvatar,
-    Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme
+    Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Card, CardContent, Collapse
 } from '@mui/material';
 import { 
+    Add as AddIcon,
     Send as SendIcon, 
     ArrowBack as ArrowBackIcon,
     EmojiEmotions as EmojiIcon,
@@ -21,8 +22,7 @@ import {
     KeyboardArrowRight as ArrowRightIcon,
     KeyboardArrowLeft as ArrowLeftIcon,
     Apps as AppsIcon,
-    Hub as HubIcon,
-    OpenInNew as OpenInNewIcon
+    CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -31,7 +31,6 @@ import { useLayout } from '../context/LayoutContext';
 import { getAvatarColor } from '../utils/avatarUtils';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
-import DiscordIntegration from './DiscordIntegration';
 import './ChatRoom.css';
 
 /**
@@ -131,12 +130,12 @@ const ChatRoom = () => {
     const [hasMoreMessages, setHasMoreMessages] = useState(true);
     const [usePostgresMessages, setUsePostgresMessages] = useState(false);
     const messagesPageSize = 50;
-    const [slackForm, setSlackForm] = useState({ botToken: '', signingSecret: '', channelId: '', channelName: '' });
-    const [groupmeForm, setGroupmeForm] = useState({ botId: '', groupId: '' });
-    const [telegramForm, setTelegramForm] = useState({ botToken: '', secretToken: '' });
-    const [creatingIntegration, setCreatingIntegration] = useState(false);
-    const [integrationMessage, setIntegrationMessage] = useState(null);
     const [podIntegrations, setPodIntegrations] = useState([]);
+    const [integrationsLoading, setIntegrationsLoading] = useState(false);
+    const [expandedIntegrations, setExpandedIntegrations] = useState({});
+    const integrationRedirectBase = (process.env.REACT_APP_INTEGRATION_REDIRECT_BASE_URL
+        || process.env.REACT_APP_API_URL
+        || '').replace(/\/$/, '');
     
     // State for real data from API
     const [announcements, setAnnouncements] = useState([]);
@@ -244,10 +243,13 @@ const ChatRoom = () => {
 
                 // Fetch integrations for this pod
                 try {
+                    setIntegrationsLoading(true);
                     const integrationsRes = await axios.get(`/api/integrations/${roomId}`, authHeaders);
                     setPodIntegrations(integrationsRes.data || []);
                 } catch (err) {
                     console.warn('Failed to fetch integrations for pod:', err.response?.status);
+                } finally {
+                    setIntegrationsLoading(false);
                 }
             } catch (err) {
                 console.error('Error fetching pod data:', err);
@@ -336,27 +338,142 @@ const ChatRoom = () => {
         }
     };
 
-    const createIntegration = async (type, config) => {
-        if (!roomId) return;
-        setCreatingIntegration(true);
-        setIntegrationMessage(null);
-        try {
-            const token = localStorage.getItem('token');
-            const res = await axios.post('/api/integrations', { podId: roomId, type, config }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            const integrationId = res.data?.integration?._id;
-            const hookUrl = integrationId ? `${window.location.origin}/api/webhooks/${type}/${integrationId}` : '';
-            setIntegrationMessage({
-                type: 'success',
-                text: `${type} integration saved.${hookUrl ? ` Webhook URL: ${hookUrl}` : ''}`
-            });
-            await fetchPodIntegrations();
-        } catch (err) {
-            const msg = err.response?.data?.message || 'Failed to save integration';
-            setIntegrationMessage({ type: 'error', text: msg });
-        } finally {
-            setCreatingIntegration(false);
+    const getDiscordOAuthUrl = (podId) => {
+        const clientId = process.env.REACT_APP_DISCORD_CLIENT_ID;
+        const redirectUri = encodeURIComponent(`${process.env.REACT_APP_API_URL}/api/discord/callback`);
+        const scopes = encodeURIComponent('bot applications.commands');
+        const permissions = '536873984';
+        const state = `pod_${podId}`;
+        const timestamp = Date.now();
+        return `https://discord.com/api/oauth2/authorize?client_id=${clientId}&scope=${scopes}&permissions=${permissions}`
+            + `&redirect_uri=${redirectUri}&response_type=code&state=${state}&t=${timestamp}`;
+    };
+
+    const getIntegrationRedirectUrl = (type) => {
+        if (!roomId) return '#';
+        if (type === 'discord') {
+            return getDiscordOAuthUrl(roomId);
+        }
+        const externalSetupLinks = {
+            slack: 'https://api.slack.com/apps',
+            groupme: 'https://dev.groupme.com/bots/new',
+            telegram: 'https://t.me/BotFather',
+        };
+        return externalSetupLinks[type] || '#';
+    };
+
+    const integrationOptions = [
+        {
+            id: 'discord',
+            label: 'Discord',
+            color: '#5865F2',
+            hoverColor: '#4752C4',
+            description: 'Connect Discord to sync messages with your server.',
+            logo: 'https://cdn.simpleicons.org/discord/5865F2',
+        },
+        {
+            id: 'slack',
+            label: 'Slack',
+            color: '#4A154B',
+            hoverColor: '#3B1140',
+            description: 'Install the Commonly app and choose channels.',
+            logo: 'https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png',
+        },
+        {
+            id: 'groupme',
+            label: 'GroupMe',
+            color: '#00A2FF',
+            hoverColor: '#0089D9',
+            description: 'Connect your GroupMe bot to start syncing.',
+            logo: 'https://cdn.simpleicons.org/groupme/00A2FF',
+        },
+        {
+            id: 'telegram',
+            label: 'Telegram',
+            color: '#229ED9',
+            hoverColor: '#1B86BC',
+            description: 'Authorize your bot and set a webhook.',
+            logo: 'https://telegram.org/img/t_logo.png',
+        }
+    ];
+
+    const getIntegrationOption = (type) => integrationOptions.find((option) => option.id === type);
+
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'connected':
+                return 'success';
+            case 'pending':
+                return 'warning';
+            case 'error':
+                return 'error';
+            default:
+                return 'default';
+        }
+    };
+
+    const getStatusText = (status) => {
+        switch (status) {
+            case 'connected':
+                return 'Connected';
+            case 'pending':
+                return 'Connecting...';
+            case 'error':
+                return 'Error';
+            default:
+                return 'Unknown';
+        }
+    };
+
+    const getIntegrationDetails = (integration) => {
+        const config = integration?.config || {};
+        switch (integration?.type) {
+            case 'discord': {
+                const server = config.serverName || 'Discord Server';
+                const channel = config.channelName ? `#${config.channelName}` : null;
+                return channel ? `${server} · ${channel}` : server;
+            }
+            case 'slack': {
+                if (config.channelName) return `#${config.channelName}`;
+                if (config.channelId) return `Channel ${config.channelId}`;
+                return 'Slack workspace';
+            }
+            case 'groupme':
+                return config.groupId ? `Group ${config.groupId}` : 'GroupMe bot connected';
+            case 'telegram':
+                return config.botUsername ? `@${config.botUsername}` : 'Telegram bot connected';
+            default:
+                return 'Integration connected';
+        }
+    };
+
+    const visibleIntegrations = podIntegrations.filter((integration) => getIntegrationOption(integration.type));
+    const integrationsByType = integrationOptions.reduce((acc, option) => {
+        acc[option.id] = visibleIntegrations.filter((integration) => integration.type === option.id);
+        return acc;
+    }, {});
+
+    const getAggregateStatus = (integrations = []) => {
+        if (integrations.some((item) => item.status === 'error')) return 'error';
+        if (integrations.some((item) => item.status === 'pending')) return 'pending';
+        if (integrations.some((item) => item.status === 'connected')) return 'connected';
+        return integrations[0]?.status || 'unknown';
+    };
+
+    const toggleIntegrationGroup = (type) => {
+        setExpandedIntegrations((prev) => ({ ...prev, [type]: !prev[type] }));
+    };
+
+    const getStatusTone = (status) => {
+        switch (status) {
+            case 'connected':
+                return 'success.main';
+            case 'pending':
+                return 'warning.main';
+            case 'error':
+                return 'error.main';
+            default:
+                return 'text.secondary';
         }
     };
 
@@ -1334,74 +1451,236 @@ const ChatRoom = () => {
                     <div className="sidebar-section">
                         <div className="sidebar-section-title">
                             <span><AppsIcon style={{ marginRight: '8px', fontSize: '16px', color: '#5865F2' }} /> Apps</span>
-                            <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto', fontWeight: 500 }}>
                                 Manage in Profile
                             </Typography>
                         </div>
                         <div className="sidebar-section-content">
-                            <DiscordIntegration podId={roomId} viewOnly={true} />
-                            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                <Typography variant="caption" color="text.secondary">
-                                    Quick-add integrations
-                                </Typography>
-                                {[
-                                  { id: 'slack', label: 'Slack', color: '#4A154B', config: slackForm, setter: setSlackForm },
-                                  { id: 'groupme', label: 'GroupMe', color: '#00A2FF', config: groupmeForm, setter: setGroupmeForm },
-                                  { id: 'telegram', label: 'Telegram', color: '#229ED9', config: telegramForm, setter: setTelegramForm }
-                                ].map((item) => (
-                                  <Box key={item.id} sx={{ border: '1px solid', borderColor: `${item.color}33`, borderRadius: 1, p: 1 }}>
-                                    <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                      <HubIcon sx={{ color: item.color }} /> {item.label}
-                                    </Typography>
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
-                                      {item.id === 'slack' && (
-                                        <>
-                                          <TextField size="small" label="Bot Token (xoxb)" value={item.config.botToken || ''} onChange={(e) => item.setter({ ...item.config, botToken: e.target.value })} />
-                                          <TextField size="small" label="Signing Secret" value={item.config.signingSecret || ''} onChange={(e) => item.setter({ ...item.config, signingSecret: e.target.value })} />
-                                          <TextField size="small" label="Channel ID" value={item.config.channelId || ''} onChange={(e) => item.setter({ ...item.config, channelId: e.target.value })} />
-                                          <TextField size="small" label="Channel Name" value={item.config.channelName || ''} onChange={(e) => item.setter({ ...item.config, channelName: e.target.value })} />
-                                        </>
-                                      )}
-                                      {item.id === 'groupme' && (
-                                        <>
-                                          <TextField size="small" label="Bot ID" value={item.config.botId || ''} onChange={(e) => item.setter({ ...item.config, botId: e.target.value })} />
-                                          <TextField size="small" label="Group ID" value={item.config.groupId || ''} onChange={(e) => item.setter({ ...item.config, groupId: e.target.value })} />
-                                          <Button
-                                            size="small"
-                                            variant="text"
-                                            startIcon={<OpenInNewIcon fontSize="small" />}
-                                            onClick={() => window.open('https://dev.groupme.com/bots/new', '_blank', 'noopener,noreferrer')}
-                                            sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
-                                          >
-                                            Open GroupMe bot creator
-                                          </Button>
-                                          <Typography variant="caption" color="text.secondary">
-                                            Use the callback after saving: /api/webhooks/groupme/&lt;integrationId&gt;
-                                          </Typography>
-                                        </>
-                                      )}
-                                      {item.id === 'telegram' && (
-                                        <>
-                                          <TextField size="small" label="Bot Token" value={item.config.botToken || ''} onChange={(e) => item.setter({ ...item.config, botToken: e.target.value })} />
-                                          <TextField size="small" label="Secret Token (optional)" value={item.config.secretToken || ''} onChange={(e) => item.setter({ ...item.config, secretToken: e.target.value })} />
-                                        </>
-                                      )}
-                                      <Button
-                                        size="small"
-                                        variant="contained"
-                                        onClick={() => createIntegration(item.id, item.config)}
-                                        disabled={creatingIntegration}
-                                        sx={{ textTransform: 'none', bgcolor: item.color, '&:hover': { bgcolor: item.color } }}
-                                      >
-                                        {creatingIntegration ? 'Saving...' : `Add ${item.label}`}
-                                      </Button>
+                            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}>
+                                    <Box>
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0F172A' }}>
+                                            Integrations
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Sync messages and summarize activity in this pod.
+                                        </Typography>
                                     </Box>
-                                  </Box>
-                                ))}
-                                {integrationMessage && (
-                                  <Typography variant="caption" color={integrationMessage.type === 'error' ? 'error' : 'success.main'}>
-                                    {integrationMessage.text}
-                                  </Typography>
+                                    <Chip
+                                        label={`${visibleIntegrations.length} connected`}
+                                        size="small"
+                                        variant="outlined"
+                                        sx={{ fontWeight: 600, borderRadius: 2 }}
+                                    />
+                                </Box>
+
+                                {integrationsLoading ? (
+                                    <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                                        <CircularProgress size={20} />
+                                    </Box>
+                                ) : (
+                                    integrationOptions.map((item) => {
+                                        const linked = integrationsByType[item.id] || [];
+                                        const hasIntegration = linked.length > 0;
+                                        const hasMultiple = linked.length > 1;
+                                        const isExpanded = !!expandedIntegrations[item.id];
+                                        const status = hasIntegration ? getAggregateStatus(linked) : null;
+                                        const detailText = hasIntegration ? getIntegrationDetails(linked[0]) : item.description;
+
+                                        return (
+                                            <Card
+                                                key={item.id}
+                                                sx={{
+                                                    position: 'relative',
+                                                    overflow: 'hidden',
+                                                    borderRadius: 2.5,
+                                                    border: '1px solid',
+                                                    borderColor: hasIntegration ? `${item.color}4D` : 'rgba(15, 23, 42, 0.08)',
+                                                    backgroundColor: '#FFFFFF',
+                                                    boxShadow: 'none',
+                                                    '&::before': {
+                                                        content: '""',
+                                                        position: 'absolute',
+                                                        left: 0,
+                                                        top: 0,
+                                                        bottom: 0,
+                                                        width: 3,
+                                                        backgroundColor: item.color,
+                                                        opacity: hasIntegration ? 0.65 : 0.25
+                                                    },
+                                                    '&:hover': {
+                                                        transform: 'translateY(-2px)',
+                                                        boxShadow: '0 10px 22px rgba(15, 23, 42, 0.08)',
+                                                        borderColor: `${item.color}66`
+                                                    },
+                                                    transition: 'all 0.3s ease'
+                                                }}
+                                            >
+                                                <CardContent sx={{ p: 2, pl: 2.5, '&:last-child': { pb: 2 } }}>
+                                                    <Box
+                                                        sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            gap: 2,
+                                                            flexWrap: 'wrap'
+                                                        }}
+                                                    >
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: '1 1 auto' }}>
+                                                            <Box
+                                                                sx={{
+                                                                    color: item.color,
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    width: 32,
+                                                                    height: 32,
+                                                                    backgroundColor: `${item.color}1A`,
+                                                                    borderRadius: 2
+                                                                }}
+                                                            >
+                                                                <Box
+                                                                    component="img"
+                                                                    src={item.logo}
+                                                                    alt={`${item.label} logo`}
+                                                                    sx={{ width: 18, height: 18 }}
+                                                                />
+                                                            </Box>
+                                                            <Box>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                                                                        {item.label}
+                                                                    </Typography>
+                                                                    {hasIntegration && (
+                                                                        <Chip
+                                                                            label={`${linked.length} connected`}
+                                                                            size="small"
+                                                                            variant="outlined"
+                                                                            icon={hasMultiple ? (
+                                                                                <ChevronRightIcon
+                                                                                    sx={{
+                                                                                        fontSize: 18,
+                                                                                        transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                                                                        transition: 'transform 0.2s ease'
+                                                                                    }}
+                                                                                />
+                                                                            ) : undefined}
+                                                                            onClick={hasMultiple ? () => toggleIntegrationGroup(item.id) : undefined}
+                                                                            sx={{
+                                                                                height: 20,
+                                                                                fontWeight: 600,
+                                                                                borderColor: `${item.color}66`,
+                                                                                color: item.color,
+                                                                                cursor: hasMultiple ? 'pointer' : 'default'
+                                                                            }}
+                                                                        />
+                                                                    )}
+                                                                </Box>
+                                                                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+                                                                    {detailText}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Box>
+                                                    </Box>
+                                                    <Box
+                                                        sx={{
+                                                            mt: 1.5,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            gap: 1,
+                                                            flexWrap: 'nowrap'
+                                                        }}
+                                                    >
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'nowrap' }}>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                                                <Box
+                                                                    sx={{
+                                                                        width: 7,
+                                                                        height: 7,
+                                                                        borderRadius: '50%',
+                                                                        backgroundColor: status ? getStatusTone(status) : 'text.secondary'
+                                                                    }}
+                                                                />
+                                                                <Typography
+                                                                    variant="caption"
+                                                                    color="text.secondary"
+                                                                    sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}
+                                                                >
+                                                                    {status ? getStatusText(status) : 'Not connected'}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Box>
+                                                        <Button
+                                                            size="small"
+                                                            variant={hasIntegration ? 'outlined' : 'contained'}
+                                                            startIcon={<AddIcon fontSize="small" />}
+                                                            href={getIntegrationRedirectUrl(item.id)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            sx={{
+                                                                borderRadius: 2,
+                                                                textTransform: 'none',
+                                                                fontWeight: 600,
+                                                                borderColor: hasIntegration ? `${item.color}66` : 'transparent',
+                                                                color: hasIntegration ? item.color : '#FFFFFF',
+                                                                backgroundColor: hasIntegration ? 'transparent' : item.color,
+                                                                whiteSpace: 'nowrap',
+                                                                '&:hover': {
+                                                                    backgroundColor: hasIntegration ? `${item.color}0F` : item.hoverColor,
+                                                                    borderColor: hasIntegration ? `${item.color}99` : 'transparent',
+                                                                    transform: 'translateY(-1px)',
+                                                                    boxShadow: hasIntegration ? 'none' : `0 4px 12px ${item.color}33`
+                                                                },
+                                                                transition: 'all 0.2s ease'
+                                                            }}
+                                                        >
+                                                            {hasIntegration ? 'Add another' : `Add ${item.label}`}
+                                                        </Button>
+                                                    </Box>
+                                                    {hasMultiple && (
+                                                        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                                                            <Box sx={{ mt: 1.5, pt: 1.5, borderTop: '1px solid rgba(15, 23, 42, 0.08)' }}>
+                                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                                    {linked.map((integration) => (
+                                                                        <Box
+                                                                            key={integration._id}
+                                                                            sx={{
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'space-between',
+                                                                                gap: 1.5,
+                                                                                p: 1,
+                                                                                borderRadius: 2,
+                                                                                backgroundColor: 'rgba(148, 163, 184, 0.12)'
+                                                                            }}
+                                                                        >
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                                <Box
+                                                                                    sx={{
+                                                                                        width: 6,
+                                                                                        height: 6,
+                                                                                        borderRadius: '50%',
+                                                                                        backgroundColor: getStatusTone(integration.status)
+                                                                                    }}
+                                                                                />
+                                                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                                                    {getIntegrationDetails(integration)}
+                                                                                </Typography>
+                                                                            </Box>
+                                                                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                                                                                {getStatusText(integration.status)}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    ))}
+                                                                </Box>
+                                                            </Box>
+                                                        </Collapse>
+                                                    )}
+                                                </CardContent>
+                                            </Card>
+                                        );
+                                    })
                                 )}
                             </Box>
                         </div>
