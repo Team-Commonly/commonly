@@ -21,7 +21,8 @@ import {
     KeyboardArrowRight as ArrowRightIcon,
     KeyboardArrowLeft as ArrowLeftIcon,
     Apps as AppsIcon,
-    Hub as HubIcon
+    Hub as HubIcon,
+    OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -135,6 +136,7 @@ const ChatRoom = () => {
     const [telegramForm, setTelegramForm] = useState({ botToken: '', secretToken: '' });
     const [creatingIntegration, setCreatingIntegration] = useState(false);
     const [integrationMessage, setIntegrationMessage] = useState(null);
+    const [podIntegrations, setPodIntegrations] = useState([]);
     
     // State for real data from API
     const [announcements, setAnnouncements] = useState([]);
@@ -166,11 +168,11 @@ const ChatRoom = () => {
             { id: 4, name: 'GroupMe', url: '#', icon: 'groupme' },
         ];
         
-        const fetchPodAndMessages = async () => {
-            setLoading(true);
-            setMessages([]); // Clear existing messages while loading
-            try {
-                // Get the authentication token
+    const fetchPodAndMessages = async () => {
+        setLoading(true);
+        setMessages([]); // Clear existing messages while loading
+        try {
+            // Get the authentication token
                 const token = localStorage.getItem('token');
                 if (!token) {
                     setError('Authentication required. Please log in again.');
@@ -239,6 +241,14 @@ const ChatRoom = () => {
                 setMessages(messagesResponse.data); // Backend returns messages in oldest-first order
                 setHasMoreMessages((messagesResponse.data || []).length >= messagesPageSize);
                 setError(null);
+
+                // Fetch integrations for this pod
+                try {
+                    const integrationsRes = await axios.get(`/api/integrations/${roomId}`, authHeaders);
+                    setPodIntegrations(integrationsRes.data || []);
+                } catch (err) {
+                    console.warn('Failed to fetch integrations for pod:', err.response?.status);
+                }
             } catch (err) {
                 console.error('Error fetching pod data:', err);
                 if (err.response && err.response.status === 401) {
@@ -341,6 +351,7 @@ const ChatRoom = () => {
                 type: 'success',
                 text: `${type} integration saved.${hookUrl ? ` Webhook URL: ${hookUrl}` : ''}`
             });
+            await fetchPodIntegrations();
         } catch (err) {
             const msg = err.response?.data?.message || 'Failed to save integration';
             setIntegrationMessage({ type: 'error', text: msg });
@@ -1355,6 +1366,18 @@ const ChatRoom = () => {
                                         <>
                                           <TextField size="small" label="Bot ID" value={item.config.botId || ''} onChange={(e) => item.setter({ ...item.config, botId: e.target.value })} />
                                           <TextField size="small" label="Group ID" value={item.config.groupId || ''} onChange={(e) => item.setter({ ...item.config, groupId: e.target.value })} />
+                                          <Button
+                                            size="small"
+                                            variant="text"
+                                            startIcon={<OpenInNewIcon fontSize="small" />}
+                                            onClick={() => window.open('https://dev.groupme.com/bots/new', '_blank', 'noopener,noreferrer')}
+                                            sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+                                          >
+                                            Open GroupMe bot creator
+                                          </Button>
+                                          <Typography variant="caption" color="text.secondary">
+                                            Use the callback after saving: /api/webhooks/groupme/&lt;integrationId&gt;
+                                          </Typography>
                                         </>
                                       )}
                                       {item.id === 'telegram' && (
