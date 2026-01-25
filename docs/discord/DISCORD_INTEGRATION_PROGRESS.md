@@ -55,6 +55,13 @@ This document tracks the Discord integration development progress, including com
   - Added Discord-specific prompts for engaging, descriptive summaries
   - Now generates contextual summaries instead of "Topics discussed: word1, word2"
 
+### 8. Multi-Pod Channel Command Routing
+- **Issue**: Slash commands only targeted the first integration when multiple pods shared a Discord channel.
+- **Fix**:
+  - Route interactions by `serverId + channelId` and fan out commands per integration.
+  - Added `DiscordMultiCommandService` to aggregate responses for multi-pod channels.
+  - Ensured `/discord-push` runs through initialized `DiscordService` per integration.
+
 ## 🔧 Technical Fixes Applied
 
 ### Backend Changes
