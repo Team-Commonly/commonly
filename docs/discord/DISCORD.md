@@ -19,7 +19,7 @@ Commonly's Discord integration creates a seamless bridge between Discord servers
 ### **Key Features**
 - **🤖 Slash Commands**: Native Discord commands for Commonly integration
 - **📊 Automated Summaries**: AI-powered activity summaries posted to pods
-- **🔄 Real-time Sync**: Bidirectional message and activity synchronization
+- **🔄 Real-time Sync**: Gateway-buffered message capture + hourly summary posting
 - **📧 Smart Notifications**: Intelligent alerts based on activity patterns
 - **⚙️ Flexible Configuration**: Per-server and per-channel customization
 
@@ -284,6 +284,20 @@ router.post('/interactions', async (req, res) => {
   }
 });
 ```
+
+### **Interactions Endpoint Verification**
+
+Discord verifies the interactions endpoint by sending a signed POST to:
+
+```
+https://<host>/api/discord/interactions
+```
+
+If verification fails (`interactions_endpoint_url could not be verified`), check:
+- The hostname routes to your backend (no Cloudflare 404s).
+- If using Cloudflare Tunnel, add the hostname to the tunnel ingress and restart the tunnel.
+- Cloudflare Access / firewall rules aren’t blocking Discord.
+- `DISCORD_PUBLIC_KEY` matches the app in the Discord Developer Portal.
 
 ### **Command Service Architecture**
 ```javascript

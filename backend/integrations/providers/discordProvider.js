@@ -6,13 +6,38 @@ try {
   ValidationError = class extends Error {};
 }
 
+function buildEffectiveConfig(integration) {
+  const platformConfig = integration?.platformIntegration?.toObject
+    ? integration.platformIntegration.toObject()
+    : integration?.platformIntegration || {};
+
+  return {
+    ...integration?.config,
+    ...platformConfig,
+    botToken:
+      integration?.config?.botToken
+      || platformConfig.botToken
+      || process.env.DISCORD_BOT_TOKEN,
+  };
+}
+
 function createDiscordProvider(integration) {
-  const config = integration?.config || {};
+  const config = buildEffectiveConfig(integration);
 
   return {
     async validateConfig() {
       try {
-        await DiscordService.validateConfig(config);
+        if (!config.serverId || !config.channelId) {
+          throw new ValidationError('Missing required fields: serverId, channelId');
+        }
+
+        if (!config.botToken) {
+          throw new ValidationError('Missing required field: botToken');
+        }
+
+        if (config.webhookUrl) {
+          await DiscordService.validateConfig(config);
+        }
       } catch (err) {
         throw new ValidationError(err.message);
       }

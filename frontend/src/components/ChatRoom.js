@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-    Container, Typography, Box, Paper, TextField, IconButton,
+    Container, Typography, Box, Paper, TextField, IconButton, Alert,
     Avatar, List, ListItem, ListItemAvatar,
     Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Card, CardContent, Collapse
 } from '@mui/material';
@@ -22,7 +22,9 @@ import {
     KeyboardArrowRight as ArrowRightIcon,
     KeyboardArrowLeft as ArrowLeftIcon,
     Apps as AppsIcon,
-    CheckCircle as CheckCircleIcon
+    CheckCircle as CheckCircleIcon,
+    Settings as SettingsIcon,
+    ContentCopy as ContentCopyIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -76,6 +78,24 @@ const parseBotMessage = (content) => {
     }
 
     return { isBotMessage: false };
+};
+
+const getIntegrationDisplay = (botData) => {
+    const source = (botData.source || '').toLowerCase();
+    const sourceLabel = botData.sourceLabel || botData.source || 'External';
+    const emojiMap = {
+        discord: '🎮',
+        slack: '🟣',
+        telegram: '📨',
+        groupme: '💬',
+        whatsapp: '🟢',
+        messenger: '💠'
+    };
+
+    return {
+        emoji: emojiMap[source] || '🔗',
+        label: sourceLabel
+    };
 };
 
 /**
@@ -152,6 +172,16 @@ const ChatRoom = () => {
     const [qrCodeImage, setQrCodeImage] = useState(null);
     const qrCodeInputRef = useRef(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [groupmeSetupOpen, setGroupmeSetupOpen] = useState(false);
+    const [groupmeIntegration, setGroupmeIntegration] = useState(null);
+    const [groupmeDraftIntegrationId, setGroupmeDraftIntegrationId] = useState(null);
+    const [groupmeBotId, setGroupmeBotId] = useState('');
+    const [groupmeGroupId, setGroupmeGroupId] = useState('');
+    const [groupmeError, setGroupmeError] = useState('');
+    const [groupmeSaving, setGroupmeSaving] = useState(false);
+    const [groupmeGroupName, setGroupmeGroupName] = useState('');
+    const [groupmeGroupUrl, setGroupmeGroupUrl] = useState('');
+    const groupmeDiscardOnCreateRef = useRef(false);
     
     // Fetch pod details and messages
     useEffect(() => {
@@ -338,7 +368,7 @@ const ChatRoom = () => {
         }
     };
 
-    const getDiscordOAuthUrl = (podId) => {
+    const getDiscordOAuthUrl = (podId, guildId = null) => {
         const clientId = process.env.REACT_APP_DISCORD_CLIENT_ID;
         const redirectUri = encodeURIComponent(`${process.env.REACT_APP_API_URL}/api/discord/callback`);
         const scopes = encodeURIComponent('bot applications.commands');
@@ -346,7 +376,9 @@ const ChatRoom = () => {
         const state = `pod_${podId}`;
         const timestamp = Date.now();
         return `https://discord.com/api/oauth2/authorize?client_id=${clientId}&scope=${scopes}&permissions=${permissions}`
-            + `&redirect_uri=${redirectUri}&response_type=code&state=${state}&t=${timestamp}`;
+            + `&redirect_uri=${redirectUri}&response_type=code&state=${state}`
+            + (guildId ? `&guild_id=${guildId}` : '')
+            + `&t=${timestamp}`;
     };
 
     const getIntegrationRedirectUrl = (type) => {
@@ -360,6 +392,197 @@ const ChatRoom = () => {
             telegram: 'https://t.me/BotFather',
         };
         return externalSetupLinks[type] || '#';
+    };
+
+    const getGroupmeCallbackUrl = (integrationId) => {
+        if (!integrationId) return '';
+        const base = integrationRedirectBase || window.location.origin;
+        return `${base}/api/webhooks/groupme/${integrationId}`;
+    };
+
+    const refreshPodIntegrations = async () => {
+        if (!roomId) return;
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            const integrationsRes = await axios.get(`/api/integrations/${roomId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setPodIntegrations(integrationsRes.data || []);
+        } catch (err) {
+            console.warn('Failed to refresh integrations for pod:', err.response?.status);
+        }
+    };
+
+    const cleanupGroupmeDraft = async (integrationId) => {
+        if (!integrationId) return;
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setGroupmeDraftIntegrationId(null);
+            setGroupmeIntegration(null);
+            return;
+        }
+
+        try {
+            await axios.delete(`/api/integrations/${integrationId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+        } catch (err) {
+            console.warn('Failed to discard GroupMe integration draft:', err.response?.status);
+        } finally {
+            setGroupmeDraftIntegrationId(null);
+            setGroupmeIntegration(null);
+            await refreshPodIntegrations();
+        }
+    };
+
+    const handleGroupmeSetupOpen = async (existingIntegration = null) => {
+        groupmeDiscardOnCreateRef.current = false;
+        setGroupmeError('');
+        setGroupmeBotId('');
+        setGroupmeGroupId('');
+        setGroupmeGroupName('');
+        setGroupmeGroupUrl('');
+        setGroupmeIntegration(null);
+        setGroupmeDraftIntegrationId(null);
+        setGroupmeSetupOpen(true);
+        if (existingIntegration) {
+            setGroupmeIntegration(existingIntegration);
+            setGroupmeBotId(existingIntegration.config?.botId || '');
+            setGroupmeGroupId(existingIntegration.config?.groupId || '');
+            setGroupmeGroupName(existingIntegration.config?.groupName || '');
+            setGroupmeGroupUrl(existingIntegration.config?.groupUrl || '');
+            setGroupmeSaving(false);
+            return;
+        }
+
+        setGroupmeSaving(true);
+
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post('/api/integrations', {
+                podId: roomId,
+                type: 'groupme',
+                config: { webhookListenerEnabled: true }
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            const createdIntegration = response.data.integration || response.data;
+            if (groupmeDiscardOnCreateRef.current) {
+                await cleanupGroupmeDraft(createdIntegration?._id);
+                return;
+            }
+            setGroupmeIntegration(createdIntegration);
+            setGroupmeDraftIntegrationId(createdIntegration?._id || null);
+        } catch (err) {
+            console.error('Error creating GroupMe integration:', err);
+            setGroupmeError('Failed to create GroupMe integration.');
+        } finally {
+            setGroupmeSaving(false);
+        }
+    };
+
+    const handleGroupmeSetupClose = async () => {
+        setGroupmeSetupOpen(false);
+        setGroupmeError('');
+
+        if (groupmeSaving && !groupmeIntegration) {
+            groupmeDiscardOnCreateRef.current = true;
+            return;
+        }
+
+        if (groupmeDraftIntegrationId) {
+            await cleanupGroupmeDraft(groupmeDraftIntegrationId);
+            return;
+        }
+
+        setGroupmeIntegration(null);
+        setGroupmeDraftIntegrationId(null);
+    };
+
+    const handleGroupmeSave = async () => {
+        if (!groupmeIntegration?._id) {
+            setGroupmeError('Integration not ready yet.');
+            return;
+        }
+        if (!groupmeBotId.trim() || !groupmeGroupId.trim()) {
+            setGroupmeError('Please provide both Bot ID and Group ID.');
+            return;
+        }
+
+        setGroupmeSaving(true);
+        setGroupmeError('');
+
+        try {
+            const token = localStorage.getItem('token');
+            await axios.patch(`/api/integrations/${groupmeIntegration._id}`, {
+                config: {
+                    botId: groupmeBotId.trim(),
+                    groupId: groupmeGroupId.trim(),
+                    groupName: groupmeGroupName.trim() || undefined,
+                    groupUrl: groupmeGroupUrl.trim() || undefined
+                },
+                status: 'connected'
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            setGroupmeSetupOpen(false);
+            setGroupmeIntegration(null);
+            setGroupmeDraftIntegrationId(null);
+            groupmeDiscardOnCreateRef.current = false;
+            await refreshPodIntegrations();
+        } catch (err) {
+            console.error('Error saving GroupMe integration:', err);
+            setGroupmeError('Failed to save GroupMe integration.');
+        } finally {
+            setGroupmeSaving(false);
+        }
+    };
+
+    const handleGroupmeCopy = async () => {
+        try {
+            const url = getGroupmeCallbackUrl(groupmeIntegration?._id);
+            if (!url) return;
+            await navigator.clipboard.writeText(url);
+        } catch (err) {
+            console.warn('Failed to copy GroupMe callback URL', err);
+        }
+    };
+
+    const getIntegrationManageUrl = (type, integration) => {
+        const config = integration?.config || {};
+        switch (type) {
+            case 'discord':
+                if (config.channelUrl) {
+                    return config.channelUrl;
+                }
+                if (config.serverId && config.channelId) {
+                    return `https://discord.com/channels/${config.serverId}/${config.channelId}`;
+                }
+                return getDiscordOAuthUrl(roomId, config.serverId);
+            case 'slack':
+                return 'https://api.slack.com/apps';
+            case 'telegram':
+                return 'https://t.me/BotFather';
+            case 'groupme':
+                return 'https://dev.groupme.com/bots';
+            default:
+                return null;
+        }
+    };
+
+    const handleManageIntegration = (type, integration) => {
+        if (!integration) return;
+        if (type === 'groupme') {
+            handleGroupmeSetupOpen(integration);
+            return;
+        }
+        const url = getIntegrationManageUrl(type, integration);
+        if (url) {
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
     };
 
     const integrationOptions = [
@@ -439,6 +662,7 @@ const ChatRoom = () => {
                 return 'Slack workspace';
             }
             case 'groupme':
+                if (config.groupName) return config.groupName;
                 return config.groupId ? `Group ${config.groupId}` : 'GroupMe bot connected';
             case 'telegram':
                 return config.botUsername ? `@${config.botUsername}` : 'Telegram bot connected';
@@ -1486,6 +1710,7 @@ const ChatRoom = () => {
                                         const isExpanded = !!expandedIntegrations[item.id];
                                         const status = hasIntegration ? getAggregateStatus(linked) : null;
                                         const detailText = hasIntegration ? getIntegrationDetails(linked[0]) : item.description;
+                                        const showCardManage = hasIntegration && !hasMultiple;
 
                                         return (
                                             <Card
@@ -1517,6 +1742,29 @@ const ChatRoom = () => {
                                                 }}
                                             >
                                                 <CardContent sx={{ p: 2, pl: 2.5, '&:last-child': { pb: 2 } }}>
+                                                    {showCardManage && (
+                                                        <Tooltip title="Manage integration">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={(event) => {
+                                                                    event.preventDefault();
+                                                                    handleManageIntegration(item.id, linked[0]);
+                                                                }}
+                                                                sx={{
+                                                                    position: 'absolute',
+                                                                    top: 10,
+                                                                    right: 10,
+                                                                    backgroundColor: 'rgba(255,255,255,0.9)',
+                                                                    boxShadow: '0 2px 6px rgba(15, 23, 42, 0.08)',
+                                                                    '&:hover': {
+                                                                        backgroundColor: 'rgba(255,255,255,1)'
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <SettingsIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    )}
                                                     <Box
                                                         sx={{
                                                             display: 'flex',
@@ -1615,9 +1863,15 @@ const ChatRoom = () => {
                                                             size="small"
                                                             variant={hasIntegration ? 'outlined' : 'contained'}
                                                             startIcon={<AddIcon fontSize="small" />}
-                                                            href={getIntegrationRedirectUrl(item.id)}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
+                                                            href={item.id === 'groupme' ? undefined : getIntegrationRedirectUrl(item.id)}
+                                                            target={item.id === 'groupme' ? undefined : '_blank'}
+                                                            rel={item.id === 'groupme' ? undefined : 'noopener noreferrer'}
+                                                            onClick={(event) => {
+                                                                if (item.id === 'groupme') {
+                                                                    event.preventDefault();
+                                                                    handleGroupmeSetupOpen();
+                                                                }
+                                                            }}
                                                             sx={{
                                                                 borderRadius: 2,
                                                                 textTransform: 'none',
@@ -1668,9 +1922,26 @@ const ChatRoom = () => {
                                                                                     {getIntegrationDetails(integration)}
                                                                                 </Typography>
                                                                             </Box>
-                                                                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                                                                {getStatusText(integration.status)}
-                                                                            </Typography>
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                                                                                    {getStatusText(integration.status)}
+                                                                                </Typography>
+                                                                                <Tooltip title="Manage connection">
+                                                                                    <IconButton
+                                                                                        size="small"
+                                                                                        onClick={(event) => {
+                                                                                            event.preventDefault();
+                                                                                            handleManageIntegration(item.id, integration);
+                                                                                        }}
+                                                                                        sx={{
+                                                                                            ml: 0.5,
+                                                                                            color: 'text.secondary'
+                                                                                        }}
+                                                                                    >
+                                                                                        <SettingsIcon fontSize="inherit" />
+                                                                                    </IconButton>
+                                                                                </Tooltip>
+                                                                            </Box>
                                                                         </Box>
                                                                     ))}
                                                                 </Box>
@@ -1683,6 +1954,90 @@ const ChatRoom = () => {
                                     })
                                 )}
                             </Box>
+                            <Dialog
+                                open={groupmeSetupOpen}
+                                onClose={handleGroupmeSetupClose}
+                                maxWidth="sm"
+                                fullWidth
+                            >
+                                <DialogTitle>Connect GroupMe</DialogTitle>
+                                <DialogContent sx={{ pt: 1 }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        Create a GroupMe bot and paste this callback URL during setup.
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 2 }}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            value={groupmeIntegration ? getGroupmeCallbackUrl(groupmeIntegration._id) : 'Generating callback URL...'}
+                                            InputProps={{ readOnly: true }}
+                                        />
+                                        <IconButton
+                                            size="small"
+                                            onClick={handleGroupmeCopy}
+                                            disabled={!groupmeIntegration}
+                                        >
+                                            <ContentCopyIcon fontSize="small" />
+                                        </IconButton>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            href="https://dev.groupme.com/bots/new"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            sx={{ whiteSpace: 'nowrap' }}
+                                        >
+                                            Open GroupMe
+                                        </Button>
+                                    </Box>
+                                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                                        Enter bot details after creation
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                        <TextField
+                                            label="Bot ID"
+                                            size="small"
+                                            value={groupmeBotId}
+                                            onChange={(event) => setGroupmeBotId(event.target.value)}
+                                        />
+                                        <TextField
+                                            label="Group ID"
+                                            size="small"
+                                            value={groupmeGroupId}
+                                            onChange={(event) => setGroupmeGroupId(event.target.value)}
+                                        />
+                                        <TextField
+                                            label="Group Name (optional)"
+                                            size="small"
+                                            value={groupmeGroupName}
+                                            onChange={(event) => setGroupmeGroupName(event.target.value)}
+                                        />
+                                        <TextField
+                                            label="Group Link URL (optional)"
+                                            size="small"
+                                            value={groupmeGroupUrl}
+                                            onChange={(event) => setGroupmeGroupUrl(event.target.value)}
+                                        />
+                                    </Box>
+                                    {groupmeError && (
+                                        <Alert severity="error" sx={{ mt: 2 }}>
+                                            {groupmeError}
+                                        </Alert>
+                                    )}
+                                </DialogContent>
+                                <DialogActions sx={{ px: 3, pb: 2 }}>
+                                    <Button onClick={handleGroupmeSetupClose} disabled={groupmeSaving}>
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        onClick={handleGroupmeSave}
+                                        disabled={groupmeSaving || !groupmeIntegration}
+                                    >
+                                        Save
+                                    </Button>
+                                </DialogActions>
+                            </Dialog>
                         </div>
                     </div>
                 )}
@@ -1795,6 +2150,10 @@ const ChatRoom = () => {
                                         // Render bot messages with formatted content inside regular bubble
                                         if (botParsed.isBotMessage && botParsed.data) {
                                             const botData = botParsed.data;
+                                            const isDiscordSummary = botData.type === 'discord-summary';
+                                            const display = getIntegrationDisplay(botData);
+                                            const titleLabel = isDiscordSummary ? 'Discord' : display.label;
+                                            const channelLabel = botData.channel ? `#${botData.channel}` : 'this channel';
                                             return (
                                                 <ListItem
                                                     key={msg._id || msg.id || Date.now() + Math.random()}
@@ -1812,7 +2171,7 @@ const ChatRoom = () => {
                                                         <div className="message-bubble received bot-bubble">
                                                             <div className="bot-content">
                                                                 <div className="bot-title">
-                                                                    <span>🎮</span> Discord Update from{' '}
+                                                                    <span>{isDiscordSummary ? '🎮' : display.emoji}</span> {titleLabel} Update from{' '}
                                                                     {botData.channelUrl ? (
                                                                         <a
                                                                             href={botData.channelUrl}
@@ -1820,10 +2179,10 @@ const ChatRoom = () => {
                                                                             rel="noopener noreferrer"
                                                                             className="channel-link"
                                                                         >
-                                                                            #{botData.channel}
+                                                                            {channelLabel}
                                                                         </a>
                                                                     ) : (
-                                                                        <strong>#{botData.channel}</strong>
+                                                                        <strong>{channelLabel}</strong>
                                                                     )}
                                                                 </div>
                                                                 <div className="bot-meta">

@@ -21,6 +21,7 @@
 - Attachments are not yet parsed; we keep text/caption content.
 - To avoid loops we ignore messages sent via bots (`via_bot`).
 - Each integrationId has its own webhook path; can run in parallel with Slack/GroupMe.
+ - The hourly scheduler consumes buffered messages and posts a bot summary to the pod.
 
 ## UI
 - Sidebar Apps quick-add uses a simple "Add Telegram" redirect flow (no inline config fields).

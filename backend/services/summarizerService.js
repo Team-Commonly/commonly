@@ -70,6 +70,21 @@ Please create a descriptive, engaging 2-3 sentence summary that:
 
 Write as if you're telling someone what they missed in the Discord channel. Be specific about the actual conversations and topics rather than just listing keywords.`;
     }
+    if (type === 'integration') {
+      return `You are a community manager creating an engaging summary of recent external chat activity.
+
+Here are the recent messages from an external chat channel:
+${content}
+
+Please create a descriptive, engaging 2-3 sentence summary that:
+- Captures what people were actually discussing and doing
+- Highlights interesting conversations, decisions, or topics
+- Uses a natural, conversational tone
+- Focuses on the content and context, not just participant counts
+- Makes the activity sound meaningful and engaging
+
+Write as if you're telling someone what they missed in this channel. Be specific about the actual conversations and topics rather than just listing keywords.`;
+    }
     return `You are a community manager summarizing chat activity across multiple chat rooms.
 
 Here are summaries from various chat rooms:
@@ -88,7 +103,9 @@ Focus on what people are actually talking about rather than just activity levels
     const itemCount = content.split('\n').filter((line) => line.trim()).length;
     return type === 'posts'
       ? `${itemCount} posts were shared in the last hour, covering various topics and discussions in the community.`
-      : `Activity in ${itemCount} chat rooms with various conversations and community interactions.`;
+      : type === 'integration'
+        ? `${itemCount} messages were shared recently across the linked external channel.`
+        : `Activity in ${itemCount} chat rooms with various conversations and community interactions.`;
   }
 
   async summarizePosts() {
