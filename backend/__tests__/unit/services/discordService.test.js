@@ -69,6 +69,7 @@ describe('DiscordService', () => {
     // Mock Integration model
     Integration.findById = jest.fn().mockReturnValue({
       populate: jest.fn().mockResolvedValue(mockIntegration),
+      lean: jest.fn().mockResolvedValue(mockIntegration),
     });
     Integration.findByIdAndUpdate = jest
       .fn()
@@ -77,10 +78,13 @@ describe('DiscordService', () => {
     // Mock DiscordCommandService
     mockCommandService = {
       initialize: jest.fn().mockResolvedValue(true),
-      createDiscordSummary: jest.fn().mockResolvedValue({
-        content: 'Test summary',
-        messageCount: 2,
-      }),
+      createDiscordSummary: jest.fn().mockImplementation((messages, start, end) => (
+        Promise.resolve({
+          content: 'Test summary',
+          messageCount: messages.length,
+          timeRange: { start, end },
+        })
+      )),
     };
     DiscordCommandService.mockImplementation(() => mockCommandService);
 
@@ -206,18 +210,26 @@ describe('DiscordService', () => {
         {
           messageId: 'msg1',
           content: 'Hello world',
-          author: 'user1',
+          authorName: 'user1',
           timestamp: new Date(),
         },
         {
           messageId: 'msg2',
           content: 'How are you?',
-          author: 'user2',
+          authorName: 'user2',
           timestamp: new Date(),
         },
       ];
 
-      discordService.fetchMessages.mockResolvedValue(mockMessages);
+      Integration.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ...mockIntegration,
+          config: {
+            ...mockIntegration.config,
+            messageBuffer: mockMessages,
+          },
+        }),
+      });
 
       const result = await discordService.syncRecentMessages(1);
 
@@ -244,7 +256,15 @@ describe('DiscordService', () => {
     });
 
     it('should return early if no messages found', async () => {
-      discordService.fetchMessages.mockResolvedValue([]);
+      Integration.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ...mockIntegration,
+          config: {
+            ...mockIntegration.config,
+            messageBuffer: [],
+          },
+        }),
+      });
 
       const result = await discordService.syncRecentMessages(1);
 
@@ -260,12 +280,19 @@ describe('DiscordService', () => {
         {
           messageId: 'msg1',
           content: 'Test message',
-          author: 'user1',
+          authorName: 'user1',
           timestamp: new Date(),
         },
       ];
-
-      discordService.fetchMessages.mockResolvedValue(mockMessages);
+      Integration.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ...mockIntegration,
+          config: {
+            ...mockIntegration.config,
+            messageBuffer: mockMessages,
+          },
+        }),
+      });
       mockCommonlyBotService.postDiscordSummaryToPod.mockResolvedValue({
         success: false,
         error: 'Failed to post',
@@ -277,34 +304,50 @@ describe('DiscordService', () => {
       expect(result.content).toContain('Failed to post Discord summary');
     });
 
-    it('should filter messages by time range', async () => {
+    it('should set time range from buffered messages', async () => {
       const now = new Date();
       const oldMessage = {
         messageId: 'msg1',
         content: 'Old message',
-        author: 'user1',
+        authorName: 'user1',
         timestamp: new Date(now.getTime() - 2 * 60 * 60 * 1000), // 2 hours ago
       };
       const recentMessage = {
         messageId: 'msg2',
         content: 'Recent message',
-        author: 'user2',
+        authorName: 'user2',
         timestamp: now,
       };
-
-      discordService.fetchMessages.mockResolvedValue([
-        oldMessage,
-        recentMessage,
-      ]);
+      Integration.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ...mockIntegration,
+          config: {
+            ...mockIntegration.config,
+            messageBuffer: [oldMessage, recentMessage],
+          },
+        }),
+      });
 
       const result = await discordService.syncRecentMessages(1); // 1 hour range
 
       expect(result.success).toBe(true);
-      expect(result.messageCount).toBe(1); // Only recent message
+      expect(result.messageCount).toBe(2);
+      expect(mockCommonlyBotService.postDiscordSummaryToPod).toHaveBeenCalledWith(
+        'pod123',
+        expect.objectContaining({
+          timeRange: expect.objectContaining({
+            start: oldMessage.timestamp,
+            end: recentMessage.timestamp,
+          }),
+        }),
+        'integration123',
+      );
     });
 
     it('should handle fetch errors gracefully', async () => {
-      discordService.fetchMessages.mockRejectedValue(new Error('API error'));
+      Integration.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockRejectedValue(new Error('DB error')),
+      });
 
       const result = await discordService.syncRecentMessages(1);
 

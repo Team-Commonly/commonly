@@ -22,6 +22,7 @@ Before deploying the application, ensure you have the following:
 4. **Discord Integration (Optional)**:
    - Discord application credentials (see [Discord App Setup](./DISCORD_APP_SETUP.md))
    - Bot token with proper permissions
+   - Public interactions endpoint URL (for slash commands) reachable from Discord
 
 ## Local Development Deployment
 
@@ -160,6 +161,14 @@ Note: In development, the backend container will install dependencies on first b
    ```
 
 **Discord Integration:** Commands are automatically registered during startup if Discord credentials are provided.
+
+### Discord Interactions Endpoint (Public URL)
+
+If you configure a public Discord interactions endpoint (for slash commands), ensure the hostname routes to your backend:
+
+- The endpoint must be reachable at `https://<host>/api/discord/interactions`.
+- If you use Cloudflare Tunnel, **DNS alone is not enough** — add the hostname to the tunnel ingress and restart the tunnel.
+- Discord verifies this URL by sending a signed request; if it cannot reach your backend, verification fails.
 
 ### Step 5: Verify the Deployment
 

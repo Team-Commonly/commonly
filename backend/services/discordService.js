@@ -534,63 +534,50 @@ class DiscordService {
    * Sync Discord messages from last hour to Commonly pod
    * Used by both manual /discord-push command and automatic hourly sync
    */
-  async syncRecentMessages(timeRangeHours = 1) {
+  async syncRecentMessages(timeRangeHours = 1, options = {}) {
     try {
       if (!this.integration?.config?.webhookListenerEnabled) {
         throw new Error("Discord sync not enabled for this integration");
       }
 
-      // Fetch recent messages from Discord
-      const messages = await this.fetchMessages({ limit: 50 });
+      const integration = await Integration.findById(this.integrationId).lean();
+      const buffer = integration?.config?.messageBuffer || [];
+      const summaryType =
+        options.summaryType || (timeRangeHours === 1 ? "hourly" : "manual");
 
-      if (!messages || messages.length === 0) {
+      if (!buffer.length) {
         return {
           success: true,
           messageCount: 0,
-          content: "No recent Discord activity found to sync.",
+          content: "No Discord activity found to sync.",
         };
       }
 
-      // Filter messages from the specified time range (default: last hour)
-      const timeAgo = new Date(Date.now() - timeRangeHours * 60 * 60 * 1000);
-
-      console.log(
-        `🔍 Discord message debugging - Total messages fetched: ${messages.length}`,
-      );
-      if (messages.length > 0) {
-        console.log("📝 Sample Discord message structure:", {
-          author: messages[0].author,
-          content: messages[0].content,
-          timestamp: messages[0].timestamp,
-          id: messages[0].id,
-        });
-      }
-
-      const recentMessages = messages.filter((msg) => {
-        const msgTime = new Date(msg.timestamp);
-        const isInTimeRange = msgTime >= timeAgo;
-        // For now, assume all messages are human since author is a string
-        // TODO: Need to check if bot detection needs different logic
-        const isHuman = true;
-        const hasContent = msg.content && msg.content.trim().length > 0;
-
-        console.log(
-          `📊 Message filter debug - Time: ${isInTimeRange}, Human: ${isHuman}, Content: ${hasContent}, User: ${msg.author || "NO_USERNAME"}`,
-        );
-
-        return isInTimeRange && isHuman && hasContent;
-      });
+      const recentMessages = buffer
+        .map((msg) => ({
+          author: msg.authorName,
+          content: msg.content,
+          timestamp: msg.timestamp,
+        }))
+        .filter((msg) => msg.author && msg.content);
 
       if (recentMessages.length === 0) {
         return {
           success: true,
           messageCount: 0,
-          content: `No Discord activity found in the last ${timeRangeHours} hour(s).`,
+          content: "No Discord activity found to sync.",
         };
       }
 
       // Create Discord summary from recent messages
-      const timeRange = { start: timeAgo, end: new Date() };
+      const timestamps = recentMessages
+        .map((msg) => new Date(msg.timestamp).getTime())
+        .filter((value) => !Number.isNaN(value))
+        .sort((a, b) => a - b);
+      const timeRange = {
+        start: timestamps.length ? new Date(timestamps[0]) : new Date(),
+        end: timestamps.length ? new Date(timestamps[timestamps.length - 1]) : new Date(),
+      };
       const discordSummary = await this.commandService.createDiscordSummary(
         recentMessages,
         timeRange.start,
@@ -611,7 +598,7 @@ class DiscordService {
         const DiscordSummaryHistory = require("../models/DiscordSummaryHistory");
         const summaryRecord = new DiscordSummaryHistory({
           integrationId: this.integration._id,
-          summaryType: timeRangeHours === 1 ? "hourly" : "manual",
+          summaryType,
           content: discordSummary.content,
           messageCount: recentMessages.length,
           timeRange,
@@ -619,6 +606,11 @@ class DiscordService {
           postedToDiscord: false,
         });
         await summaryRecord.save();
+
+        await Integration.findByIdAndUpdate(this.integrationId, {
+          'config.messageBuffer': [],
+          'config.lastSummaryAt': new Date(),
+        });
 
         return {
           success: true,
