@@ -270,6 +270,170 @@ class CommonlyBotService {
   }
 
   /**
+   * Format external integration summary for posting in Commonly pod
+   */
+  static formatIntegrationSummaryForPod(summary) {
+    const messageCount = summary.messageCount || 0;
+    const source = summary.source || 'external';
+    const sourceLabel = summary.sourceLabel || 'External';
+    const channelName = summary.channelName || 'channel';
+    const channelUrl = summary.channelUrl || null;
+
+    const startTime = summary.timeRange?.start
+      ? new Date(summary.timeRange.start).toISOString()
+      : null;
+    const endTime = summary.timeRange?.end
+      ? new Date(summary.timeRange.end).toISOString()
+      : null;
+
+    const botMessage = {
+      type: 'integration-summary',
+      source,
+      sourceLabel,
+      channel: channelName,
+      channelUrl,
+      messageCount,
+      timeRange: { start: startTime, end: endTime },
+      summary: summary.content,
+    };
+
+    return `[BOT_MESSAGE]${JSON.stringify(botMessage)}`;
+  }
+
+  /**
+   * Post an external integration summary to a Commonly pod
+   */
+  async postIntegrationSummaryToPod(podId, summary, integrationId) {
+    try {
+      const bot = await this.getBotUser();
+
+      const pod = await Pod.findById(podId);
+      if (!pod) {
+        throw new Error(`Pod ${podId} not found`);
+      }
+
+      if (!pod.members.includes(bot._id)) {
+        pod.members.push(bot._id);
+        await pod.save();
+      }
+
+      const messageContent = CommonlyBotService.formatIntegrationSummaryForPod(
+        summary,
+      );
+
+      let message;
+
+      if (PGMessage && process.env.PG_HOST) {
+        try {
+          await CommonlyBotService.syncBotUserToPostgreSQL(bot);
+
+          const newMessage = await PGMessage.create(
+            podId.toString(),
+            bot._id.toString(),
+            messageContent,
+            'text',
+          );
+
+          message = {
+            _id: newMessage.id,
+            id: newMessage.id,
+            content: newMessage.content,
+            messageType: newMessage.message_type || 'text',
+            userId: {
+              _id: bot._id,
+              username: bot.username,
+              profilePicture: bot.profilePicture,
+            },
+            username: bot.username,
+            profile_picture: bot.profilePicture,
+            createdAt: newMessage.created_at,
+            metadata: {
+              source: `${summary.source || 'external'}-integration`,
+              integrationId,
+              summaryType: `${summary.source || 'external'}-hourly`,
+              originalMessageCount: summary.messageCount || 0,
+            },
+          };
+        } catch (pgError) {
+          console.error(
+            'PostgreSQL message creation failed, falling back to MongoDB:',
+            pgError,
+          );
+
+          const mongoMessage = new Message({
+            content: messageContent,
+            userId: bot._id,
+            podId,
+            messageType: 'text',
+            metadata: {
+              source: `${summary.source || 'external'}-integration`,
+              integrationId,
+              summaryType: `${summary.source || 'external'}-hourly`,
+              originalMessageCount: summary.messageCount || 0,
+            },
+          });
+
+          await mongoMessage.save();
+          await mongoMessage.populate('userId', 'username profilePicture');
+          message = mongoMessage;
+        }
+      } else {
+        const mongoMessage = new Message({
+          content: messageContent,
+          userId: bot._id,
+          podId,
+          messageType: 'text',
+          metadata: {
+            source: `${summary.source || 'external'}-integration`,
+            integrationId,
+            summaryType: `${summary.source || 'external'}-hourly`,
+            originalMessageCount: summary.messageCount || 0,
+          },
+        });
+
+        await mongoMessage.save();
+        await mongoMessage.populate('userId', 'username profilePicture');
+        message = mongoMessage;
+      }
+
+      try {
+        const io = socketConfig.getIO();
+        const formattedMessage = {
+          _id: message._id || message.id,
+          id: message._id || message.id,
+          content: message.content,
+          messageType: message.messageType || 'text',
+          userId: message.userId || {
+            _id: bot._id,
+            username: bot.username,
+            profilePicture: bot.profilePicture,
+          },
+          username: message.username || bot.username,
+          profile_picture: message.profile_picture || bot.profilePicture,
+          createdAt: message.createdAt,
+          metadata: message.metadata,
+        };
+
+        io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
+      } catch (socketError) {
+        console.error('Failed to emit socket message:', socketError);
+      }
+
+      return {
+        success: true,
+        message,
+        pod,
+      };
+    } catch (error) {
+      console.error('Error posting integration summary to pod:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
    * Post a general external integration update
    */
   async postIntegrationUpdate(

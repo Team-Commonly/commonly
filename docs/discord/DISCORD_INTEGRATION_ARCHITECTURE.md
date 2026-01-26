@@ -2,24 +2,24 @@
 
 ## Overview
 
-Commonly's Discord integration provides bidirectional synchronization between Discord servers and Commonly pods. The system uses API-based polling for Discord message retrieval and webhook-based posting for sending messages to Discord.
+Commonly's Discord integration provides bidirectional synchronization between Discord servers and Commonly pods. The system uses a Discord Gateway connection to buffer inbound messages and hourly summarization to post updates to Commonly pods.
 
 ## Architecture Design
 
 ### Core Philosophy
-- **API Polling**: Fetch Discord messages via Discord API (no webhook listeners)
-- **Unified Internal API**: Both manual and automatic sync use the same underlying methods
+- **Gateway Buffering**: Listen for Discord messages via Gateway and store a rolling buffer
+- **Unified Internal API**: Both manual and automatic sync summarize the same buffered messages
 - **Quality Filtering**: Only meaningful human messages are processed
-- **Scheduled Automation**: Hourly synchronization with predictable resource usage
+- **Scheduled Automation**: Hourly summarization with predictable resource usage
 
 ### Key Components
 
 #### 1. DiscordService (`backend/services/discordService.js`)
-**Primary service handling Discord API interactions**
+**Primary service handling Discord API interactions and summary posting**
 
 **Key Methods:**
-- `syncRecentMessages(timeRangeHours = 1)` - **Unified sync method** used by both manual commands and automatic scheduler
-- `fetchMessages(options)` - Direct Discord API message fetching with bot filtering
+- `syncRecentMessages(timeRangeHours = 1)` - **Unified summary method** used by both manual commands and automatic scheduler (reads buffered messages)
+- `fetchMessages(options)` - Direct Discord API message fetching (reserved for backfill/debug)
 - `createDiscordSummary()` - AI-powered message summarization using Gemini
 - `sendMessage()` - Send messages TO Discord via webhook
 
@@ -51,14 +51,21 @@ const filteredMessages = messages.filter(msg => {
 - Aggregates results into a single Discord response with one block per pod.
 - Uses `DiscordService.initialize()` for `/discord-push` to ensure channel-specific state is loaded.
 
-#### 3. SchedulerService (`backend/services/schedulerService.js`)
+#### 3. DiscordGatewayService (`backend/services/discordGatewayService.js`)
+**Maintains a single Discord Gateway connection and buffers messages**
+
+- Listens for `messageCreate` events
+- Buffers messages into `Integration.config.messageBuffer`
+- Respects `config.webhookListenerEnabled` (auto-sync toggle)
+
+#### 4. SchedulerService (`backend/services/schedulerService.js`)
 **Manages periodic tasks**
 
 **Discord Integration:**
-- **Step 1**: `syncAllDiscordIntegrations()` - Process all active Discord integrations
+- **Step 1**: `summarizeIntegrationBuffers()` - Process buffered messages
 - Runs hourly via cron: `0 * * * *` (every hour at minute 0)
 - Finds all integrations where `config.webhookListenerEnabled: true`
-- Calls `syncRecentMessages(1)` for each integration
+- Summarizes buffered messages and posts to pods
 
 #### 4. CommonlyBotService (`backend/services/commonlyBotService.js`)
 **Posts Discord summaries to Commonly pods**
@@ -71,15 +78,15 @@ const filteredMessages = messages.filter(msg => {
 
 ### Automatic Hourly Sync
 ```
-[Cron Schedule] 
+[Discord Gateway] 
     ↓
-[SchedulerService.syncAllDiscordIntegrations()]
+[Buffer messages in Integration.config.messageBuffer]
     ↓
-[Find active Discord integrations]
+[Cron Schedule]
     ↓
-[For each integration: DiscordService.syncRecentMessages(1)]
+[SchedulerService.summarizeIntegrationBuffers()]
     ↓
-[Discord API: fetchMessages() with filtering]
+[DiscordService.syncRecentMessages(1)]
     ↓
 [AI Summarization via Gemini]
     ↓
@@ -96,7 +103,7 @@ const filteredMessages = messages.filter(msg => {
     ↓
 [DiscordService.syncRecentMessages(1)]
     ↓
-[Same flow as automatic sync]
+[Summarize buffered messages]
     ↓
 [Return formatted response to Discord]
 ```
@@ -173,15 +180,14 @@ async handlePushCommand(discordServiceInstance = null) {
 - Easier maintenance and testing
 - Same message quality for both manual and automatic sync
 
-### 3. API Polling vs Webhook Listeners
-**Before**: Complex webhook listener system with message buffering
-**After**: Simple hourly API polling
+### 3. Gateway Buffering vs API Polling
+**Before**: Hourly API polling
+**After**: Gateway buffering + hourly summarization
 
 **Benefits**:
-- Reduced server load (predictable hourly requests vs unpredictable webhook traffic)
-- Simpler architecture (no webhook endpoints to maintain)
-- Better rate limit management
-- No message loss due to webhook failures
+- Reduced API calls (push instead of pull)
+- Better real-time capture (no missed messages between polls)
+- Predictable hourly summary posting
 
 ### 4. Enhanced Message Quality
 **Filtering Applied**:
@@ -201,10 +207,10 @@ async handlePushCommand(discordServiceInstance = null) {
    - User needs to run `/discord-enable` command first
    - Check `config.webhookListenerEnabled` is true
 
-3. **"Failed to fetch Discord messages"**
+3. **"No messages buffered"**
    - Verify Discord bot token is valid
+   - Ensure Message Content Intent is enabled in Discord developer portal
    - Check bot has proper permissions in channel
-   - Ensure Discord API is accessible
 
 ## Future Enhancements
 
@@ -217,7 +223,7 @@ async handlePushCommand(discordServiceInstance = null) {
 
 ### Monitoring & Analytics
 - Track sync success rates per integration
-- Monitor API rate limit usage
+- Monitor gateway connectivity and buffer health
 - Measure summary quality and user engagement
 - Performance metrics for large Discord servers
 

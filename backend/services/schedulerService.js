@@ -1,6 +1,8 @@
 const cron = require('node-cron');
 const summarizerService = require('./summarizerService');
 const Integration = require('../models/Integration');
+const IntegrationSummaryService = require('./integrationSummaryService');
+const CommonlyBotService = require('./commonlyBotService');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('./chatSummarizerService');
@@ -113,9 +115,9 @@ class SchedulerService {
       console.log('Step 0: Garbage collecting old summaries...');
       await SummarizerService.garbageCollectForDigest();
 
-      // Step 1: Sync Discord integrations (fetch recent messages and post to pods)
-      console.log('Step 1: Syncing Discord integrations...');
-      await SchedulerService.syncAllDiscordIntegrations();
+      // Step 1: Summarize external integration buffers
+      console.log('Step 1: Summarizing external integration buffers...');
+      await SchedulerService.summarizeIntegrationBuffers();
 
       // Step 2: Summarize individual chat rooms
       console.log('Step 2: Summarizing individual chat rooms...');
@@ -179,7 +181,7 @@ class SchedulerService {
         type: 'discord',
         isActive: true,
         'config.webhookListenerEnabled': true,
-      });
+      }).populate('platformIntegration');
 
       console.log(
         `Found ${discordIntegrations.length} active Discord integration(s)`,
@@ -223,6 +225,102 @@ class SchedulerService {
       return results;
     } catch (error) {
       console.error('Error in Discord integration sync:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Summarize buffered messages for external integrations
+   */
+  static async summarizeIntegrationBuffers() {
+    try {
+      const integrations = await Integration.find({
+        type: { $in: ['discord', 'slack', 'telegram', 'groupme'] },
+        isActive: true,
+        'config.messageBuffer.0': { $exists: true },
+      }).lean();
+
+      if (!integrations.length) {
+        return [];
+      }
+
+      const botService = new CommonlyBotService();
+      const results = await Promise.allSettled(
+        integrations.map(async (integration) => {
+          if (
+            integration.type === 'discord'
+            && !integration?.config?.webhookListenerEnabled
+          ) {
+            return {
+              integrationId: integration._id,
+              success: false,
+              skipped: true,
+              reason: 'Auto sync disabled',
+            };
+          }
+
+          const buffer = integration?.config?.messageBuffer || [];
+          if (!buffer.length) {
+            return {
+              integrationId: integration._id,
+              success: true,
+              messageCount: 0,
+              content: 'No buffered messages',
+            };
+          }
+
+          const summary = await IntegrationSummaryService.createSummary(
+            integration,
+            buffer,
+          );
+
+          const postResult = integration.type === 'discord'
+            ? await botService.postDiscordSummaryToPod(
+              integration.podId,
+              summary,
+              integration._id,
+            )
+            : await botService.postIntegrationSummaryToPod(
+              integration.podId,
+              summary,
+              integration._id,
+            );
+
+          if (postResult.success) {
+            if (integration.type === 'discord') {
+              const DiscordSummaryHistory = require('../models/DiscordSummaryHistory');
+              const history = new DiscordSummaryHistory({
+                integrationId: integration._id,
+                summaryType: 'hourly',
+                content: summary.content,
+                messageCount: summary.messageCount,
+                timeRange: summary.timeRange,
+                postedToCommonly: true,
+                postedToDiscord: false,
+              });
+              await history.save();
+            }
+
+            await Integration.findByIdAndUpdate(integration._id, {
+              'config.messageBuffer': [],
+              'config.lastSummaryAt': new Date(),
+            });
+          }
+
+          return {
+            integrationId: integration._id,
+            success: postResult.success,
+            messageCount: summary.messageCount,
+            content: summary.content,
+          };
+        }),
+      ).then((settled) => settled.map((result) => (
+        result.status === 'fulfilled' ? result.value : result.reason
+      )));
+
+      return results;
+    } catch (error) {
+      console.error('Error summarizing integration buffers:', error);
       return [];
     }
   }

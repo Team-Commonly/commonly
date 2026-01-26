@@ -17,6 +17,11 @@
 1) Create a bot in GroupMe Dev portal; set the callback URL to `https://<your-host>/api/webhooks/groupme/<integrationId>`.
 2) Invite the bot to the target group (one bot per group).
 3) Group messages hit the callback → provider normalizes → buffer → summarizer posts inside Commonly.
+4) The hourly scheduler consumes buffered messages and posts a bot summary to the pod.
+
+## Commands
+- `!summary` — summarize recent GroupMe activity and post to the Commonly pod.
+- `!pod-summary` (or `!pod`) — send the latest Commonly pod summary back to the GroupMe group.
 
 ## Limitations
 - Bot is tied to a single group; one bot per group.

@@ -3,6 +3,8 @@
 ## Task Overview
 **Objective**: Refactor Discord integration to use a unified internal API for both manual (`/discord-push`) and automatic (hourly) synchronization, eliminating code duplication and improving architecture.
 
+> **Update**: The integration now uses Gateway buffering with hourly summarization. API polling is reserved for backfill/debug, but the unified `syncRecentMessages()` path remains the shared entry point.
+
 **Status**: ✅ **COMPLETED**
 
 ## Problem Statement

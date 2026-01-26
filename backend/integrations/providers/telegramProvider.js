@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { normalizeBufferMessage } = require('../normalizeBufferMessage');
 let ValidationError;
 try {
   ({ ValidationError } = require('../../../packages/integration-sdk/src/errors'));
@@ -48,7 +49,8 @@ function createTelegramProvider(integration) {
           }
 
           const normalized = normalizeTelegram(req.body);
-          if (!normalized) return res.sendStatus(200);
+          const bufferMessage = normalizeBufferMessage(normalized);
+          if (!bufferMessage) return res.sendStatus(200);
 
           // Buffer best-effort
           try {
@@ -56,7 +58,7 @@ function createTelegramProvider(integration) {
             await Integration.findByIdAndUpdate(integration._id, {
               $push: {
                 'config.messageBuffer': {
-                  $each: [normalized],
+                  $each: [bufferMessage],
                   $slice: -1 * (config.maxBufferSize || 1000),
                 },
               },
