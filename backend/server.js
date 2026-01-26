@@ -71,7 +71,7 @@ const PORT = process.env.PORT || 5000;
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
   }),
 );
@@ -125,10 +125,15 @@ connectDB();
 
 // Start the summarizer scheduler
 const schedulerService = require('./services/schedulerService');
+const discordGatewayService = require('./services/discordGatewayService');
 
 if (process.env.NODE_ENV !== 'test') {
   console.log('Starting summarizer scheduler...');
   schedulerService.start();
+
+  if (process.env.DISCORD_BOT_TOKEN) {
+    discordGatewayService.start();
+  }
 }
 
 // Connect to PostgreSQL if configured (for chat functionality)

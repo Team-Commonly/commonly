@@ -312,7 +312,9 @@ class DiscordCommandService {
       }
 
       // Use the unified Discord sync method
-      const syncResult = await discordServiceInstance.syncRecentMessages(1); // 1 hour
+      const syncResult = await discordServiceInstance.syncRecentMessages(1, {
+        summaryType: 'manual',
+      });
 
       // Format the response for Discord command
       if (syncResult.success && syncResult.messageCount > 0) {

@@ -186,6 +186,39 @@ describe('CommonlyBotService', () => {
     });
   });
 
+  describe('formatIntegrationSummaryForPod', () => {
+    it('includes channel URL and ISO time range', () => {
+      const payload = CommonlyBotService.formatIntegrationSummaryForPod({
+        source: 'groupme',
+        sourceLabel: 'GroupMe',
+        channelName: 'Commonly Group',
+        channelUrl: 'https://groupme.com/join/12345',
+        messageCount: 4,
+        timeRange: {
+          start: '2025-01-01T00:00:00Z',
+          end: '2025-01-01T01:00:00Z',
+        },
+        content: 'Summary text',
+      });
+
+      expect(payload).toContain('[BOT_MESSAGE]');
+      const parsed = JSON.parse(payload.replace(/^\[BOT_MESSAGE\]/, ''));
+      expect(parsed).toMatchObject({
+        type: 'integration-summary',
+        source: 'groupme',
+        sourceLabel: 'GroupMe',
+        channel: 'Commonly Group',
+        channelUrl: 'https://groupme.com/join/12345',
+        messageCount: 4,
+        summary: 'Summary text',
+      });
+      expect(parsed.timeRange).toEqual({
+        start: new Date('2025-01-01T00:00:00Z').toISOString(),
+        end: new Date('2025-01-01T01:00:00Z').toISOString(),
+      });
+    });
+  });
+
   describe('syncBotUserToPostgreSQL', () => {
     beforeEach(() => {
       const mockPool = {

@@ -84,8 +84,18 @@ router.post('/', auth, async (req, res) => {
       });
       await platformIntegration.save();
     } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp'].includes(type)) {
-      // No platform-specific record required; mark as connected immediately
-      integration.status = 'connected';
+      // No platform-specific record required; mark as connected only when config is present
+      if (type === 'groupme') {
+        integration.status = config.botId && config.groupId ? 'connected' : 'pending';
+      } else if (type === 'telegram') {
+        integration.status = config.botToken ? 'connected' : 'pending';
+      } else if (type === 'slack') {
+        integration.status = config.botToken && config.signingSecret && config.channelId
+          ? 'connected'
+          : 'pending';
+      } else {
+        integration.status = 'connected';
+      }
       await integration.save();
     } else {
       return res.status(400).json({ message: 'Unsupported integration type' });
@@ -387,6 +397,57 @@ const canDeleteIntegration = async (integration, userId) => {
   return false;
 };
 
+// Update integration config/status
+router.patch('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { config, status, isActive } = req.body || {};
+
+    const integration = await Integration.findById(id);
+    if (!integration) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    const canUpdate = await canDeleteIntegration(integration, req.user.id);
+    if (!canUpdate) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const currentConfig = integration.config?.toObject
+      ? integration.config.toObject()
+      : integration.config || {};
+    const nextConfig = config ? { ...currentConfig, ...config } : currentConfig;
+
+    const update = {};
+    if (config) {
+      update.config = nextConfig;
+    }
+    if (typeof status === 'string') {
+      update.status = status;
+    }
+    if (typeof isActive === 'boolean') {
+      update.isActive = isActive;
+    }
+
+    if (integration.type === 'groupme' && config) {
+      if (nextConfig.botId && nextConfig.groupId) {
+        update.status = update.status || 'connected';
+      } else {
+        update.status = update.status || 'pending';
+      }
+    }
+
+    const updated = await Integration.findByIdAndUpdate(id, update, {
+      new: true,
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Error updating integration:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Delete an integration
 router.delete('/:id', auth, async (req, res) => {
   try {
@@ -403,20 +464,8 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Disconnect first
-    let service;
-    switch (integration.type) {
-      case 'discord':
-        service = new DiscordService(id);
-        break;
-      case 'slack':
-        service = null;
-        break;
-      default:
-        return res
-          .status(400)
-          .json({ message: 'Unsupported integration type' });
-    }
+    // Disconnect first (only Discord has a disconnect step)
+    const service = integration.type === 'discord' ? new DiscordService(id) : null;
 
     try {
       if (service) await service.disconnect();
