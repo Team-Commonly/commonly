@@ -21,6 +21,7 @@
 ## Data Flow
 1) Slack sends an event -> webhook validates signature -> normalizes message -> buffers for summarizer.
 2) Summaries are posted inside Commonly (not back to Slack in v1).
+3) The hourly scheduler consumes buffered messages and posts a bot summary to the pod.
 
 ## UI
 - Sidebar Apps quick-add uses a simple "Add Slack" redirect flow (no inline config fields).

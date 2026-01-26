@@ -45,9 +45,12 @@ Create one provider per platform implementing these methods:
 1) **Configure**: `validateConfig` on save; store in `Integration.config`.
 2) **Webhook verify**: provider `verify` responds to challenge/verify-token.
 3) **Inbound events**: `events` → `ingestEvent` → enqueue messages into buffer.
-4) **Sync job**: scheduler calls `syncRecent` (e.g., past hour) to backfill gaps.
+4) **Sync job**: scheduler summarizes buffered messages; `syncRecent` is reserved for backfill or manual runs.
 5) **Summarize**: feed normalized messages to summarizer; post to pod via existing `CommonlyBotService`.
 6) **Health**: `/api/<provider>/health` delegates to `health()`.
+
+## Operational note (public endpoints)
+- Webhook and interactions endpoints must be publicly reachable. If you front them with Cloudflare Tunnel, ensure the hostname is added to tunnel **ingress** (DNS-only changes can still return Cloudflare 404s and fail provider verification).
 
 ## Registry & factory (backend)
 - `integrationRegistry.register(type, providerFactory)`

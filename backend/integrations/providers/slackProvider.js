@@ -8,6 +8,7 @@ try {
 }
 const SlackApi = require('../../services/slackApi');
 const { normalizeSlackMessage } = require('./slackNormalizer');
+const { normalizeBufferMessage } = require('../normalizeBufferMessage');
 
 function verifySlackSignature(signingSecret, timestamp, body, signature) {
   const basestring = `v0:${timestamp}:${body}`;
@@ -47,7 +48,39 @@ function createSlackProvider(integration) {
           if (!verifySlackSignature(config.signingSecret, ts, raw, sig)) {
             return res.status(401).send('invalid signature');
           }
-          // TODO: normalize and enqueue messages
+          const normalized = normalizeSlackMessage(req.body?.event);
+          if (normalized && config.channelId && normalized.metadata?.channelId !== config.channelId) {
+            return res.sendStatus(200);
+          }
+
+          if (normalized) {
+            const bufferMessage = normalizeBufferMessage({
+              messageId: normalized.externalId,
+              authorId: normalized.authorId,
+              authorName: normalized.authorName,
+              content: normalized.content,
+              timestamp: normalized.timestamp,
+              attachments: normalized.attachments,
+            });
+
+            if (!bufferMessage) {
+              return res.sendStatus(200);
+            }
+
+            try {
+              await Integration.findByIdAndUpdate(integration._id, {
+                $push: {
+                  'config.messageBuffer': {
+                    $each: [bufferMessage],
+                    $slice: -1 * (config.maxBufferSize || 1000),
+                  },
+                },
+              });
+            } catch (err) {
+              console.warn('slack buffer update failed', err.message);
+            }
+          }
+
           res.sendStatus(200);
         },
       };
