@@ -59,3 +59,7 @@ backend/services/
 - **Telegram**: Webhook with optional `x-telegram-bot-api-secret-token` -> normalize -> buffer/summarize (ingest-only v1).
 
 All providers implement the shared contract in `packages/integration-sdk` and are registered in `backend/integrations/index.js`.
+
+## Operational Notes
+
+- **Discord interactions endpoint** must be publicly reachable at `/api/discord/interactions`. If using Cloudflare Tunnel, the hostname must be added to the tunnel ingress (DNS-only changes will return Cloudflare 404s and Discord verification will fail).

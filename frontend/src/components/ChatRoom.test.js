@@ -77,3 +77,36 @@ test('shows spinner while loading', () => {
   const svg = container.querySelector('svg');
   expect(svg).toBeTruthy();
 });
+
+test('renders integration summary bot messages', async () => {
+  const botMessage = {
+    type: 'integration-summary',
+    source: 'slack',
+    sourceLabel: 'Slack',
+    channel: 'general',
+    messageCount: 2,
+    timeRange: { start: '2025-01-01T00:00:00Z', end: '2025-01-01T01:00:00Z' },
+    summary: 'AI summary text'
+  };
+
+  axios.get
+    .mockResolvedValueOnce({ data: { _id: '1', name: 'Room', members: [{ _id: 'u' }], createdBy: { _id: 'u', username: 'me', profilePicture: null } } })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({
+      data: [{
+        _id: 'm2',
+        content: `[BOT_MESSAGE]${JSON.stringify(botMessage)}`,
+        messageType: 'text',
+        userId: { _id: 'bot', username: 'commonly-bot' },
+        createdAt: '2025-01-01'
+      }]
+    });
+
+  await TestUtils.act(async () => { root.render(<ChatRoom />); });
+  await TestUtils.act(async () => Promise.resolve());
+
+  expect(container.textContent).toContain('Slack Update');
+  expect(container.textContent).toContain('#general');
+  expect(container.textContent).toContain('AI summary text');
+});

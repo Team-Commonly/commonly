@@ -97,3 +97,4 @@ Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only;
   - `/api/webhooks/slack/:integrationId` (raw-body signature verify)
   - `/api/webhooks/groupme/:integrationId`
   - `/api/webhooks/telegram/:integrationId` (optional secret token header)
+- Integration summaries are generated from buffered webhook/gateway messages. Discord uses a Gateway listener with Message Content intent enabled and stores messages in `Integration.config.messageBuffer` before hourly summarization.

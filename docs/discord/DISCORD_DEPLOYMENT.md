@@ -211,6 +211,18 @@ npm run discord:list
 - Wait a few minutes and try again
 - Check Discord API status
 
+#### **5. Interactions Endpoint Verification Failed**
+
+**Error:** `interactions_endpoint_url: The specified interactions endpoint url could not be verified.`
+
+**Checklist:**
+1. The URL is exact: `https://<host>/api/discord/interactions`.
+2. The endpoint is publicly reachable (Discord sends a signed POST).
+3. If using Cloudflare Tunnel, the hostname must be in the tunnel **ingress** (DNS-only changes will still return Cloudflare 404s).
+4. Cloudflare Access / firewall rules are not blocking Discord.
+5. `DISCORD_PUBLIC_KEY` matches the app in the Discord Developer Portal.
+6. Backend is running and reachable (no 404s from Cloudflare).
+
 ### **Debug Commands**
 
 ```bash
