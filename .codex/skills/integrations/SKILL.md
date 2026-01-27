@@ -25,10 +25,12 @@ description: Third-party integration context for Discord, Slack, GroupMe, Telegr
 | [slack/README.md](../../../docs/slack/README.md) | Slack webhook + signing secret notes |
 | [groupme/README.md](../../../docs/groupme/README.md) | GroupMe bot ingest-only plan |
 | [telegram/README.md](../../../docs/telegram/README.md) | Telegram webhook ingest with secret token |
+| [design/POD_SKILLS_INDEX.md](../../../docs/design/POD_SKILLS_INDEX.md) | Pod memory, context, and LLM skill synthesis |
 | [integrations/WHATSAPP_READONLY_PLAN.md](../../../docs/integrations/WHATSAPP_READONLY_PLAN.md) | WhatsApp Cloud API ingest-only |
 | [integrations/MESSENGER_PLAN.md](../../../docs/integrations/MESSENGER_PLAN.md) | Messenger Page ingest-only plan |
 | [integrations/WECHAT_READONLY_PLAN.md](../../../docs/integrations/WECHAT_READONLY_PLAN.md) | WeChat Official Account ingest-only plan |
 | [integrations/INTEGRATION_CONTRACT.md](../../../docs/integrations/INTEGRATION_CONTRACT.md) | Provider contract and schema |
+| [integrations/README.md](../../../docs/integrations/README.md) | Catalog + manifest notes |
 | [integrations/COMMONLY_APP_PLATFORM.md](../../../docs/integrations/COMMONLY_APP_PLATFORM.md) | App platform design |
 
 ## Discord Slash Commands
@@ -48,6 +50,11 @@ backend/services/
 ├── discordService.js          # Core Discord API integration
 ├── discordCommandService.js   # Slash command handlers
 ├── discordMultiCommandService.js # Fan-out for multi-pod channel commands
+├── integrationSummaryService.js # Buffer summarization + pod posting
+├── telegramService.js         # Telegram helpers (universal bot)
+├── podAssetService.js         # Indexed pod memory (PodAsset)
+├── podContextService.js       # Agent-friendly pod context assembly
+├── podSkillService.js         # LLM markdown skill synthesis
 └── integrationService.js      # Integration management
 ```
 
@@ -60,6 +67,15 @@ backend/services/
 - **Telegram (universal bot)**: Single webhook `/api/webhooks/telegram` routes by `chat_id`; `/commonly-enable <code>` links a chat to a pod.
 
 All providers implement the shared contract in `packages/integration-sdk` and are registered in `backend/integrations/index.js`.
+
+## Catalogs, manifests, and pod memory
+
+- Integration metadata is manifest-driven.
+- Manifests live in `backend/integrations/manifests.js` and are re-exported from `packages/integration-sdk`.
+- `GET /api/integrations/catalog` returns manifest metadata plus per-user stats for the UI.
+- Integration create/update routes enforce manifest-required fields when status is set to `connected`.
+- Summaries are persisted as indexed pod memory via `PodAsset` (for example `type='integration-summary'`).
+- `GET /api/pods/:id/context` reads PodAssets and can synthesize LLM markdown skills into `PodAsset(type='skill')`.
 
 ## Operational Notes
 
