@@ -28,6 +28,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeveloperModeIcon from '@mui/icons-material/DeveloperMode';
 import AppsIcon from '@mui/icons-material/Apps';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 import KeyIcon from '@mui/icons-material/Key';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -300,13 +301,20 @@ const UserProfile = () => {
                     </Box>
                     
                     {user.role === 'admin' && (
-                        <Box sx={{ textAlign: 'center', mt: 2 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>
                             <Button
                                 variant="outlined"
                                 startIcon={<DeveloperModeIcon />}
                                 onClick={() => navigate('/dev/api')}
                             >
                                 API Development Tools
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                startIcon={<PsychologyIcon />}
+                                onClick={() => navigate('/dev/pod-context')}
+                            >
+                                Pod Context Inspector
                             </Button>
                         </Box>
                     )}

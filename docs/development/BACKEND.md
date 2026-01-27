@@ -82,6 +82,7 @@ backend/
 |--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
 | GET    | /api/pods              | Get all pods                | -                                    | Array of pods                   |
 | GET    | /api/pods/:id          | Get pod by ID               | -                                    | Pod object                      |
+| GET    | /api/pods/:id/context  | Get pod context (LLM markdown skills + tags + assets) | Query: `{task?, summaryLimit?, assetLimit?, tagLimit?, skillLimit?, skillMode?, skillRefreshHours?}` | Pod context object              |
 | POST   | /api/pods              | Create a new pod            | `{name, description, type}`          | Created pod object              |
 | PUT    | /api/pods/:id          | Update a pod                | `{name, description, type}`          | Updated pod object              |
 | DELETE | /api/pods/:id          | Delete a pod                | -                                    | Success message                 |
@@ -89,6 +90,38 @@ backend/
 | POST   | /api/pods/:id/leave    | Leave a pod                 | -                                    | Updated pod object              |
 | GET    | /api/pods/:id/messages | Get pod messages            | -                                    | Array of messages               |
 | POST   | /api/pods/:id/messages | Send a message              | `{content, attachments}`             | Created message object          |
+
+#### Pod Context Endpoint
+
+`GET /api/pods/:id/context` assembles structured, agent-friendly context from
+pod summaries and pod assets.
+
+Key query parameters:
+- `task`: Optional task hint used to rank tags, summaries, and assets.
+- `summaryLimit`: How many summaries to include (default `6`).
+- `assetLimit`: How many non-skill assets to include (default `12`).
+- `tagLimit`: How many tags to include (default `16`).
+- `skillLimit`: How many skills to include (default `6`).
+- `skillMode`: Skill synthesis mode: `llm`, `heuristic`, or `none` (default `llm`).
+- `skillRefreshHours`: LLM skill refresh window in hours (clamped to `1-72`, default `6`).
+
+Important response fields:
+- `pod`: Minimal pod descriptor (`id`, `name`, `description`, `type`).
+- `summaries`: Ranked summaries with derived `tags` and full `content`.
+- `assets`: Ranked pod assets, excluding `type='skill'`.
+- `skills`: Skill documents returned by the selected synthesis mode.
+- `skills` in `llm` mode: `PodAsset(type='skill')` records with markdown in `content`.
+- `skills` in `heuristic` mode: computed skill candidates with `metadata.heuristic=true`.
+- `skillModeUsed`: The effective mode after availability checks.
+- `skillWarnings`: Warnings such as missing `GEMINI_API_KEY`.
+- `stats`: Counts for summaries, assets, tags, and skills.
+
+Operational notes:
+- Summarization jobs persist `PodAsset` records so pod context can be retrieved
+  as indexed memory instead of raw messages.
+- In `llm` mode, the context endpoint may synthesize skills and upsert them as
+  `PodAsset(type='skill')` records, then reuse them until the refresh window
+  expires or a task hint is provided.
 
 ### Users
 

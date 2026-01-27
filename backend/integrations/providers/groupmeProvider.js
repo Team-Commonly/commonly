@@ -4,11 +4,22 @@ const IntegrationSummaryService = require('../../services/integrationSummaryServ
 const CommonlyBotService = require('../../services/commonlyBotService');
 const groupmeService = require('../../services/groupmeService');
 const Summary = require('../../models/Summary');
+const { manifests } = require('../manifests');
+
 let ValidationError;
+let validateRequiredConfig;
 try {
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
   ({ ValidationError } = require('../../../packages/integration-sdk/src/errors'));
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+  ({ validateRequiredConfig } = require('../../../packages/integration-sdk/src/manifest'));
 } catch (err) {
   ValidationError = class extends Error {};
+  validateRequiredConfig = (config, manifest) => {
+    const required = manifest?.requiredConfig || [];
+    const missing = required.filter((f) => !config?.[f]);
+    if (missing.length) throw new ValidationError(`Missing fields: ${missing.join(', ')}`);
+  };
 }
 
 function normalizeGroupMe(payload) {
@@ -17,14 +28,21 @@ function normalizeGroupMe(payload) {
 
   const attachments = (payload.attachments || []).map((a) => a.url || a.text).filter(Boolean);
   const content = payload.text || (attachments.length ? 'Shared an attachment' : '');
+  const timestamp = payload.created_at
+    ? new Date(payload.created_at * 1000).toISOString()
+    : new Date().toISOString();
 
   return {
-    messageId: payload.id,
-    authorId: payload.user_id || payload.sender_id,
+    source: 'groupme',
+    externalId: payload.id ? String(payload.id) : undefined,
+    authorId: payload.user_id ? String(payload.user_id) : String(payload.sender_id || ''),
     authorName: payload.name,
     content,
-    timestamp: payload.created_at ? new Date(payload.created_at * 1000) : new Date(),
-    attachments,
+    timestamp,
+    attachments: attachments.map((url) => ({ type: 'link', url })),
+    metadata: {
+      groupId: payload.group_id ? String(payload.group_id) : undefined,
+    },
     raw: payload,
   };
 }
@@ -49,9 +67,7 @@ function createGroupMeProvider(integration) {
 
   return {
     async validateConfig() {
-      const required = ['botId', 'groupId'];
-      const missing = required.filter((f) => !config[f]);
-      if (missing.length) throw new ValidationError(`Missing fields: ${missing.join(', ')}`);
+      validateRequiredConfig(config, manifests.groupme);
     },
 
     getWebhookHandlers() {
@@ -71,7 +87,7 @@ function createGroupMeProvider(integration) {
           const command = lowerText.split(/\s+/)[0];
           const isSummaryCommand = /^!summary\b/i.test(text);
           const isPodCommand = /^!pod(-summary|summary)?\b/i.test(text);
-          const botId = effectiveConfig.botId;
+          const { botId } = effectiveConfig;
 
           if (botId && text.startsWith('!')) {
             console.log('GroupMe command received', {
@@ -181,6 +197,15 @@ function createGroupMeProvider(integration) {
     async ingestEvent(payload) {
       const normalized = normalizeGroupMe(payload);
       return normalized ? [normalized] : [];
+    },
+
+    async syncRecent() {
+      return {
+        success: false,
+        messageCount: 0,
+        messages: [],
+        content: 'syncRecent not implemented for groupme',
+      };
     },
 
     async health() {
