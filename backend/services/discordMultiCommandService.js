@@ -85,14 +85,12 @@ async function runDiscordCommandForIntegrations({
   channelId,
 }) {
   const results = await Promise.all(
-    integrations.map((integration) =>
-      runCommandForIntegration({
-        commandName,
-        integration,
-        guildId,
-        channelId,
-      }),
-    ),
+    integrations.map((integration) => runCommandForIntegration({
+      commandName,
+      integration,
+      guildId,
+      channelId,
+    })),
   );
 
   return results;
