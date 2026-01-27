@@ -45,6 +45,15 @@ Commonly follows a modern microservices-inspired architecture with the following
   - Notification Service: Handles user notifications
   - File Upload Service: Manages user profile pictures and post attachments
 
+### Pod Memory & Context
+
+Pods are treated as scoped memory boundaries with indexed assets:
+- Summaries and integration buffers are persisted as `PodAsset` records.
+- `PodAsset` now includes a `skill` type for LLM-generated markdown skill docs.
+- Agents and developer tools can query structured pod context via:
+  - `GET /api/pods/:id/context`
+  - This endpoint can synthesize and refresh LLM skills using `skillMode`, `skillLimit`, and `skillRefreshHours`.
+
 ### Databases
 
 The application employs a **dual database architecture** with specific data separation:

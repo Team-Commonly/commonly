@@ -62,14 +62,16 @@ class IntegrationSummaryService {
       channelName:
         integration.config?.channelName
         || integration.config?.groupName
+        || integration.config?.chatTitle
         || integration.config?.channelId
         || integration.config?.groupId
+        || integration.config?.chatId
         || 'channel',
       channelUrl: integration.config?.channelUrl
         || integration.config?.groupUrl
         || null,
       serverId: integration.config?.serverId || null,
-      channelId: integration.config?.channelId || null,
+      channelId: integration.config?.channelId || integration.config?.chatId || null,
       summaryType,
     };
   }

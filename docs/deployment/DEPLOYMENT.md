@@ -66,6 +66,10 @@ FRONTEND_URL=http://localhost:3000
 DISCORD_CLIENT_ID=your_discord_client_id
 DISCORD_BOT_TOKEN=your_discord_bot_token
 DISCORD_PUBLIC_KEY=your_discord_public_key
+
+# Telegram Integration (optional)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_SECRET_TOKEN=your_telegram_webhook_secret
 ```
 
 2. Download the CA certificate (if using external PostgreSQL):

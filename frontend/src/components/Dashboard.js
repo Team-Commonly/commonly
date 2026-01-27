@@ -10,7 +10,8 @@ import {
     ExitToApp as LogoutIcon,
     Chat as ChatIcon,
     ChevronLeft as ChevronLeftIcon,
-    Email as EmailIcon
+    Email as EmailIcon,
+    Extension as ExtensionIcon,
 } from '@mui/icons-material';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
@@ -126,6 +127,17 @@ const Dashboard = () => {
                         <ChatIcon />
                     </ListItemIcon>
                     <ListItemText primary="Pods" />
+                </ListItem>
+
+                <ListItem
+                    button
+                    onClick={() => handleNavigation('/integrations')}
+                    selected={location.pathname === '/integrations'}
+                >
+                    <ListItemIcon>
+                        <ExtensionIcon />
+                    </ListItemIcon>
+                    <ListItemText primary="Integrations" />
                 </ListItem>
                 
                 <Divider sx={{ my: 2 }} />

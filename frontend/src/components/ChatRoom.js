@@ -1,5 +1,5 @@
 /* eslint-disable max-len */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, TextField, IconButton, Alert,
@@ -98,6 +98,45 @@ const getIntegrationDisplay = (botData) => {
     };
 };
 
+const BASE_INTEGRATION_OPTIONS = [
+    {
+        id: 'discord',
+        label: 'Discord',
+        color: '#5865F2',
+        hoverColor: '#4752C4',
+        description: 'Connect Discord to sync messages with your server.',
+        logo: 'https://cdn.simpleicons.org/discord/5865F2',
+        capabilities: ['gateway', 'summary', 'commands'],
+    },
+    {
+        id: 'slack',
+        label: 'Slack',
+        color: '#4A154B',
+        hoverColor: '#3B1140',
+        description: 'Install the Commonly app and choose channels.',
+        logo: 'https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png',
+        capabilities: ['webhook', 'summary', 'commands'],
+    },
+    {
+        id: 'groupme',
+        label: 'GroupMe',
+        color: '#00A2FF',
+        hoverColor: '#0089D9',
+        description: 'Connect your GroupMe bot to start syncing.',
+        logo: 'https://cdn.simpleicons.org/groupme/00A2FF',
+        capabilities: ['webhook', 'commands', 'summary'],
+    },
+    {
+        id: 'telegram',
+        label: 'Telegram',
+        color: '#229ED9',
+        hoverColor: '#1B86BC',
+        description: 'Add the bot to a chat and run /commonly-enable.',
+        logo: 'https://telegram.org/img/t_logo.png',
+        capabilities: ['webhook', 'summary', 'commands'],
+    },
+];
+
 /**
  * Format time range for display in user's local timezone
  */
@@ -153,6 +192,7 @@ const ChatRoom = () => {
     const [podIntegrations, setPodIntegrations] = useState([]);
     const [integrationsLoading, setIntegrationsLoading] = useState(false);
     const [expandedIntegrations, setExpandedIntegrations] = useState({});
+    const [integrationCatalogEntries, setIntegrationCatalogEntries] = useState([]);
     const integrationRedirectBase = (process.env.REACT_APP_INTEGRATION_REDIRECT_BASE_URL
         || process.env.REACT_APP_API_URL
         || '').replace(/\/$/, '');
@@ -182,6 +222,13 @@ const ChatRoom = () => {
     const [groupmeGroupName, setGroupmeGroupName] = useState('');
     const [groupmeGroupUrl, setGroupmeGroupUrl] = useState('');
     const groupmeDiscardOnCreateRef = useRef(false);
+    const [telegramSetupOpen, setTelegramSetupOpen] = useState(false);
+    const [telegramIntegration, setTelegramIntegration] = useState(null);
+    const [telegramDraftIntegrationId, setTelegramDraftIntegrationId] = useState(null);
+    const [telegramConnectCode, setTelegramConnectCode] = useState('');
+    const [telegramError, setTelegramError] = useState('');
+    const [telegramSaving, setTelegramSaving] = useState(false);
+    const telegramDiscardOnCreateRef = useRef(false);
     
     // Fetch pod details and messages
     useEffect(() => {
@@ -280,6 +327,14 @@ const ChatRoom = () => {
                     console.warn('Failed to fetch integrations for pod:', err.response?.status);
                 } finally {
                     setIntegrationsLoading(false);
+                }
+
+                // Fetch integration catalog metadata (best effort)
+                try {
+                    const catalogRes = await axios.get('/api/integrations/catalog', authHeaders);
+                    setIntegrationCatalogEntries(catalogRes.data?.entries || []);
+                } catch (err) {
+                    console.warn('Failed to fetch integrations catalog:', err.response?.status);
                 }
             } catch (err) {
                 console.error('Error fetching pod data:', err);
@@ -541,6 +596,97 @@ const ChatRoom = () => {
         }
     };
 
+    const cleanupTelegramDraft = async (integrationId) => {
+        if (!integrationId) return;
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setTelegramDraftIntegrationId(null);
+            setTelegramIntegration(null);
+            return;
+        }
+
+        try {
+            await axios.delete(`/api/integrations/${integrationId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+        } catch (err) {
+            console.warn('Failed to discard Telegram integration draft:', err.response?.status);
+        } finally {
+            setTelegramDraftIntegrationId(null);
+            setTelegramIntegration(null);
+            await refreshPodIntegrations();
+        }
+    };
+
+    const handleTelegramSetupOpen = async (existingIntegration = null) => {
+        telegramDiscardOnCreateRef.current = false;
+        setTelegramError('');
+        setTelegramConnectCode('');
+        setTelegramIntegration(null);
+        setTelegramDraftIntegrationId(null);
+        setTelegramSetupOpen(true);
+
+        if (existingIntegration) {
+            setTelegramIntegration(existingIntegration);
+            setTelegramConnectCode(existingIntegration.config?.connectCode || '');
+            setTelegramSaving(false);
+            return;
+        }
+
+        setTelegramSaving(true);
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post('/api/integrations', {
+                podId: roomId,
+                type: 'telegram',
+                config: { webhookListenerEnabled: true }
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            const createdIntegration = response.data.integration || response.data;
+            if (telegramDiscardOnCreateRef.current) {
+                await cleanupTelegramDraft(createdIntegration?._id);
+                return;
+            }
+            setTelegramIntegration(createdIntegration);
+            setTelegramDraftIntegrationId(createdIntegration?._id || null);
+            setTelegramConnectCode(createdIntegration?.config?.connectCode || '');
+        } catch (err) {
+            console.error('Error creating Telegram integration:', err);
+            setTelegramError('Failed to create Telegram integration.');
+        } finally {
+            setTelegramSaving(false);
+        }
+    };
+
+    const handleTelegramSetupClose = async () => {
+        setTelegramSetupOpen(false);
+        setTelegramError('');
+
+        if (telegramSaving && !telegramIntegration) {
+            telegramDiscardOnCreateRef.current = true;
+            return;
+        }
+
+        if (telegramDraftIntegrationId) {
+            await cleanupTelegramDraft(telegramDraftIntegrationId);
+            return;
+        }
+
+        setTelegramIntegration(null);
+        setTelegramDraftIntegrationId(null);
+    };
+
+    const handleTelegramCopy = async () => {
+        try {
+            if (!telegramConnectCode) return;
+            await navigator.clipboard.writeText(`/commonly-enable ${telegramConnectCode}`);
+        } catch (err) {
+            console.warn('Failed to copy Telegram command', err);
+        }
+    };
+
     const handleGroupmeCopy = async () => {
         try {
             const url = getGroupmeCallbackUrl(groupmeIntegration?._id);
@@ -564,8 +710,6 @@ const ChatRoom = () => {
                 return getDiscordOAuthUrl(roomId, config.serverId);
             case 'slack':
                 return 'https://api.slack.com/apps';
-            case 'telegram':
-                return 'https://t.me/BotFather';
             case 'groupme':
                 return 'https://dev.groupme.com/bots';
             default:
@@ -579,46 +723,33 @@ const ChatRoom = () => {
             handleGroupmeSetupOpen(integration);
             return;
         }
+        if (type === 'telegram') {
+            handleTelegramSetupOpen(integration);
+            return;
+        }
         const url = getIntegrationManageUrl(type, integration);
         if (url) {
             window.open(url, '_blank', 'noopener,noreferrer');
         }
     };
 
-    const integrationOptions = [
-        {
-            id: 'discord',
-            label: 'Discord',
-            color: '#5865F2',
-            hoverColor: '#4752C4',
-            description: 'Connect Discord to sync messages with your server.',
-            logo: 'https://cdn.simpleicons.org/discord/5865F2',
-        },
-        {
-            id: 'slack',
-            label: 'Slack',
-            color: '#4A154B',
-            hoverColor: '#3B1140',
-            description: 'Install the Commonly app and choose channels.',
-            logo: 'https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png',
-        },
-        {
-            id: 'groupme',
-            label: 'GroupMe',
-            color: '#00A2FF',
-            hoverColor: '#0089D9',
-            description: 'Connect your GroupMe bot to start syncing.',
-            logo: 'https://cdn.simpleicons.org/groupme/00A2FF',
-        },
-        {
-            id: 'telegram',
-            label: 'Telegram',
-            color: '#229ED9',
-            hoverColor: '#1B86BC',
-            description: 'Authorize your bot and set a webhook.',
-            logo: 'https://telegram.org/img/t_logo.png',
+    const integrationCatalogById = useMemo(() => integrationCatalogEntries.reduce((acc, entry) => ({
+        ...acc,
+        [entry.id]: entry,
+    }), {}), [integrationCatalogEntries]);
+
+    const integrationOptions = useMemo(() => BASE_INTEGRATION_OPTIONS.map((option) => {
+        const catalogEntry = integrationCatalogById[option.id];
+        if (!catalogEntry?.catalog) {
+            return option;
         }
-    ];
+        return {
+            ...option,
+            label: catalogEntry.catalog.label || option.label,
+            description: catalogEntry.catalog.description || option.description,
+            capabilities: catalogEntry.catalog.capabilities || option.capabilities || [],
+        };
+    }), [integrationCatalogById]);
 
     const getIntegrationOption = (type) => integrationOptions.find((option) => option.id === type);
 
@@ -665,7 +796,8 @@ const ChatRoom = () => {
                 if (config.groupName) return config.groupName;
                 return config.groupId ? `Group ${config.groupId}` : 'GroupMe bot connected';
             case 'telegram':
-                return config.botUsername ? `@${config.botUsername}` : 'Telegram bot connected';
+                if (config.chatTitle) return config.chatTitle;
+                return config.chatId ? `Chat ${config.chatId}` : 'Telegram bot connected';
             default:
                 return 'Integration connected';
         }
@@ -1863,13 +1995,16 @@ const ChatRoom = () => {
                                                             size="small"
                                                             variant={hasIntegration ? 'outlined' : 'contained'}
                                                             startIcon={<AddIcon fontSize="small" />}
-                                                            href={item.id === 'groupme' ? undefined : getIntegrationRedirectUrl(item.id)}
-                                                            target={item.id === 'groupme' ? undefined : '_blank'}
-                                                            rel={item.id === 'groupme' ? undefined : 'noopener noreferrer'}
+                                                            href={item.id === 'groupme' || item.id === 'telegram' ? undefined : getIntegrationRedirectUrl(item.id)}
+                                                            target={item.id === 'groupme' || item.id === 'telegram' ? undefined : '_blank'}
+                                                            rel={item.id === 'groupme' || item.id === 'telegram' ? undefined : 'noopener noreferrer'}
                                                             onClick={(event) => {
                                                                 if (item.id === 'groupme') {
                                                                     event.preventDefault();
                                                                     handleGroupmeSetupOpen();
+                                                                } else if (item.id === 'telegram') {
+                                                                    event.preventDefault();
+                                                                    handleTelegramSetupOpen();
                                                                 }
                                                             }}
                                                             sx={{
@@ -2035,6 +2170,64 @@ const ChatRoom = () => {
                                         disabled={groupmeSaving || !groupmeIntegration}
                                     >
                                         Save
+                                    </Button>
+                                </DialogActions>
+                            </Dialog>
+                            <Dialog
+                                open={telegramSetupOpen}
+                                onClose={handleTelegramSetupClose}
+                                maxWidth="sm"
+                                fullWidth
+                            >
+                                <DialogTitle>Connect Telegram</DialogTitle>
+                                <DialogContent sx={{ pt: 1 }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        Add the Commonly bot to your Telegram group or channel, then run the command below in that chat to link it to this pod.
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 2 }}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            value={telegramConnectCode
+                                                ? `/commonly-enable ${telegramConnectCode}`
+                                                : (telegramIntegration?.config?.chatId ? 'Chat already connected' : 'Generating command...')}
+                                            InputProps={{ readOnly: true }}
+                                        />
+                                        <IconButton
+                                            size="small"
+                                            onClick={handleTelegramCopy}
+                                            disabled={!telegramConnectCode}
+                                        >
+                                            <ContentCopyIcon fontSize="small" />
+                                        </IconButton>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            href="https://t.me/BotFather"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            sx={{ whiteSpace: 'nowrap' }}
+                                        >
+                                            Open BotFather
+                                        </Button>
+                                    </Box>
+                                    {telegramIntegration?.config?.chatId && (
+                                        <Alert severity="success" sx={{ mb: 2 }}>
+                                            Connected to {telegramIntegration.config.chatTitle || `chat ${telegramIntegration.config.chatId}`}.
+                                        </Alert>
+                                    )}
+                                    <Typography variant="caption" color="text.secondary">
+                                        Tip: Disable privacy mode in BotFather if you want the bot to read all messages (not just commands).
+                                    </Typography>
+                                    {telegramError && (
+                                        <Alert severity="error" sx={{ mt: 2 }}>
+                                            {telegramError}
+                                        </Alert>
+                                    )}
+                                </DialogContent>
+                                <DialogActions sx={{ px: 3, pb: 2 }}>
+                                    <Button onClick={handleTelegramSetupClose} disabled={telegramSaving}>
+                                        Close
                                     </Button>
                                 </DialogActions>
                             </Dialog>

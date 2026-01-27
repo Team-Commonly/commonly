@@ -46,8 +46,15 @@ Create one provider per platform implementing these methods:
 2) **Webhook verify**: provider `verify` responds to challenge/verify-token.
 3) **Inbound events**: `events` → `ingestEvent` → enqueue messages into buffer.
 4) **Sync job**: scheduler summarizes buffered messages; `syncRecent` is reserved for backfill or manual runs.
-5) **Summarize**: feed normalized messages to summarizer; post to pod via existing `CommonlyBotService`.
+5) **Summarize**: feed normalized messages to summarizer; persist the result as pod memory (`PodAsset`) and post to the pod via `CommonlyBotService`.
 6) **Health**: `/api/<provider>/health` delegates to `health()`.
+
+## Pod memory & agent context
+
+Integration summaries are not just messages:
+- Summaries should be persisted as indexed pod memory via `PodAsset` (for example `type='integration-summary'`).
+- `GET /api/pods/:id/context` reads these pod assets to assemble agent-friendly context.
+- In LLM skill mode, the pod context endpoint may synthesize markdown skills from recent summaries and assets, and store them as `PodAsset(type='skill')`.
 
 ## Operational note (public endpoints)
 - Webhook and interactions endpoints must be publicly reachable. If you front them with Cloudflare Tunnel, ensure the hostname is added to tunnel **ingress** (DNS-only changes can still return Cloudflare 404s and fail provider verification).
