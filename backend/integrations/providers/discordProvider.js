@@ -1,9 +1,20 @@
 const DiscordService = require('../../services/discordService');
+const { manifests } = require('../manifests');
+
 let ValidationError;
+let validateRequiredConfig;
 try {
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
   ({ ValidationError } = require('../../../packages/integration-sdk/src/errors'));
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+  ({ validateRequiredConfig } = require('../../../packages/integration-sdk/src/manifest'));
 } catch (err) {
   ValidationError = class extends Error {};
+  validateRequiredConfig = (config, manifest) => {
+    const required = manifest?.requiredConfig || [];
+    const missing = required.filter((f) => !config?.[f]);
+    if (missing.length) throw new ValidationError(`Missing fields: ${missing.join(', ')}`);
+  };
 }
 
 function buildEffectiveConfig(integration) {
@@ -27,13 +38,7 @@ function createDiscordProvider(integration) {
   return {
     async validateConfig() {
       try {
-        if (!config.serverId || !config.channelId) {
-          throw new ValidationError('Missing required fields: serverId, channelId');
-        }
-
-        if (!config.botToken) {
-          throw new ValidationError('Missing required field: botToken');
-        }
+        validateRequiredConfig(config, manifests.discord);
 
         if (config.webhookUrl) {
           await DiscordService.validateConfig(config);

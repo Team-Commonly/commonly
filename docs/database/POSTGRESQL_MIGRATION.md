@@ -182,7 +182,7 @@ CREATE TABLE pods (
 
 ### Models
 - `backend/models/pg/Message.js` - PostgreSQL message model
-- `backend/models/pg/Pod.js` - PostgreSQL pod reference model
+- `backend/models/pg/Pod.js` - PostgreSQL pod reference model (reference-only; MongoDB `Pod` is authoritative)
 - `backend/models/Message.js` - MongoDB message model (fallback)
 
 ### Services

@@ -3,6 +3,7 @@
 let registry;
 try {
   // Prefer shared SDK if available (monorepo)
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
   ({ registry } = require('../../packages/integration-sdk/src'));
 } catch (err) {
   // Fallback lightweight registry for docker/test contexts where packages/ isn't present
@@ -10,9 +11,11 @@ try {
     constructor() {
       this.providers = new Map();
     }
+
     register(type, factory) {
       this.providers.set(type, factory);
     }
+
     get(type, config) {
       const factory = this.providers.get(type);
       if (!factory) throw new Error(`No provider registered for ${type}`);
@@ -21,6 +24,7 @@ try {
   }
   registry = new IntegrationRegistry();
 }
+
 const createDiscordProvider = require('./providers/discordProvider');
 const createSlackProvider = require('./providers/slackProvider');
 const createGroupMeProvider = require('./providers/groupmeProvider');

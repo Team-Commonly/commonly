@@ -3,6 +3,7 @@ const summarizerService = require('./summarizerService');
 const Integration = require('../models/Integration');
 const IntegrationSummaryService = require('./integrationSummaryService');
 const CommonlyBotService = require('./commonlyBotService');
+const PodAssetService = require('./podAssetService');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('./chatSummarizerService');
@@ -190,6 +191,7 @@ class SchedulerService {
       const results = await Promise.allSettled(
         discordIntegrations.map(async (integration) => {
           try {
+            // eslint-disable-next-line global-require
             const registry = require('../integrations');
             const provider = registry.get('discord', integration);
             await provider.validateConfig();
@@ -274,6 +276,18 @@ class SchedulerService {
             buffer,
           );
 
+          try {
+            await PodAssetService.createIntegrationSummaryAsset({
+              integration,
+              summary,
+            });
+          } catch (assetError) {
+            console.error(
+              `Failed to persist pod asset for integration ${integration._id}:`,
+              assetError,
+            );
+          }
+
           const postResult = integration.type === 'discord'
             ? await botService.postDiscordSummaryToPod(
               integration.podId,
@@ -288,6 +302,7 @@ class SchedulerService {
 
           if (postResult.success) {
             if (integration.type === 'discord') {
+              // eslint-disable-next-line global-require
               const DiscordSummaryHistory = require('../models/DiscordSummaryHistory');
               const history = new DiscordSummaryHistory({
                 integrationId: integration._id,

@@ -2,6 +2,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { pool } = require('../config/db-pg');
 const Summary = require('../models/Summary');
 const Pod = require('../models/Pod');
+const PodAssetService = require('./podAssetService');
 
 class ChatSummarizerService {
   constructor() {
@@ -325,7 +326,7 @@ Be analytical but concise.`;
       }
 
       // Store summary in MongoDB
-      return Summary.create({
+      const summary = await Summary.create({
         type: 'chats',
         podId,
         title,
@@ -338,6 +339,14 @@ Be analytical but concise.`;
           podName: pod.name,
         },
       });
+
+      try {
+        await PodAssetService.createChatSummaryAsset({ podId, summary });
+      } catch (assetError) {
+        console.error('Failed to persist pod asset for chat summary:', assetError);
+      }
+
+      return summary;
     } catch (error) {
       console.error(`Error summarizing pod ${podId}:`, error);
       throw error;
@@ -348,7 +357,7 @@ Be analytical but concise.`;
     const title = 'Quiet Hour';
     const content = `No new messages were exchanged in ${podName} during the last hour. The chat is peaceful at the moment.`;
 
-    return Summary.create({
+    const summary = await Summary.create({
       type: 'chats',
       podId,
       title,
@@ -361,6 +370,14 @@ Be analytical but concise.`;
         podName,
       },
     });
+
+    try {
+      await PodAssetService.createChatSummaryAsset({ podId, summary });
+    } catch (assetError) {
+      console.error('Failed to persist pod asset for empty summary:', assetError);
+    }
+
+    return summary;
   }
 
   static getTopItems(items, limit) {

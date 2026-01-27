@@ -14,8 +14,10 @@ import Pod from './components/Pod';
 import PodRedirect from './components/PodRedirect';
 import ChatRoom from './components/ChatRoom';
 import ApiDevPage from './components/ApiDevPage';
+import PodContextDevPage from './components/PodContextDevPage';
 import DiscordCallback from './components/DiscordCallback';
 import DailyDigest from './components/DailyDigest';
+import IntegrationsCatalog from './components/IntegrationsCatalog';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
@@ -202,12 +204,18 @@ function App() {
                       <Route path="/profile" element={<UserProfile />} />
                       <Route path="/dashboard" element={<Dashboard />} />
                       <Route path="/digest" element={<DailyDigest />} />
+                      <Route path="/integrations" element={<IntegrationsCatalog />} />
                       <Route path="/pods" element={<PodRedirect />} />
                       <Route path="/pods/:podType" element={<Pod />} />
                       <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />
                       <Route path="/dev/api" element={
                         <ProtectedRoute requireAdmin={true}>
                           <ApiDevPage />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/dev/pod-context" element={
+                        <ProtectedRoute requireAdmin={true}>
+                          <PodContextDevPage />
                         </ProtectedRoute>
                       } />
                     </Route>

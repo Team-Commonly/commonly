@@ -38,6 +38,10 @@ const IntegrationSchema = new mongoose.Schema(
       groupId: String,
       groupName: String,
       groupUrl: String,
+      chatId: String,
+      chatTitle: String,
+      chatType: String,
+      connectCode: String,
       permissions: [String],
       webhookListenerEnabled: {
         type: Boolean,

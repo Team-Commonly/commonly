@@ -57,6 +57,7 @@ backend/services/
 - **Slack**: Events API webhook (raw body + signing secret) -> normalize -> buffer/summarize.
 - **GroupMe**: Bot callback webhook -> normalize -> buffer/summarize (ingest-only v1).
 - **Telegram**: Webhook with optional `x-telegram-bot-api-secret-token` -> normalize -> buffer/summarize (ingest-only v1).
+- **Telegram (universal bot)**: Single webhook `/api/webhooks/telegram` routes by `chat_id`; `/commonly-enable <code>` links a chat to a pod.
 
 All providers implement the shared contract in `packages/integration-sdk` and are registered in `backend/integrations/index.js`.
 
