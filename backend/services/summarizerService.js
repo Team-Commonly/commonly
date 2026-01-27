@@ -15,12 +15,6 @@ class SummarizerService {
     this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   }
 
-  static allPostsCache = {
-    summary: null,
-    createdAt: 0,
-    cooldownUntil: 0,
-  };
-
   async generateSummary(content, type) {
     try {
       console.log(`Generating ${type} summary with Gemini API...`);
@@ -101,11 +95,13 @@ Focus on what people are actually talking about rather than just activity levels
 
   static generateFallbackSummary(content, type) {
     const itemCount = content.split('\n').filter((line) => line.trim()).length;
-    return type === 'posts'
-      ? `${itemCount} posts were shared in the last hour, covering various topics and discussions in the community.`
-      : type === 'integration'
-        ? `${itemCount} messages were shared recently across the linked external channel.`
-        : `Activity in ${itemCount} chat rooms with various conversations and community interactions.`;
+    if (type === 'posts') {
+      return `${itemCount} posts were shared in the last hour, covering various topics and discussions in the community.`;
+    }
+    if (type === 'integration') {
+      return `${itemCount} messages were shared recently across the linked external channel.`;
+    }
+    return `Activity in ${itemCount} chat rooms with various conversations and community interactions.`;
   }
 
   async summarizePosts() {
@@ -483,5 +479,11 @@ This is for new visitors to understand what the community is all about. Focus on
     }
   }
 }
+
+SummarizerService.allPostsCache = {
+  summary: null,
+  createdAt: 0,
+  cooldownUntil: 0,
+};
 
 module.exports = new SummarizerService();
