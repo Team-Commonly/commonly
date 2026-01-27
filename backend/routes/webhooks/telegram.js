@@ -216,7 +216,7 @@ router.post('/', async (req, res) => {
     if (!message) return res.sendStatus(200);
     if (message.via_bot || message.from?.is_bot) return res.sendStatus(200);
 
-    const chat = message.chat;
+    const { chat } = message;
     const chatId = chat?.id?.toString();
     if (!chatId) return res.sendStatus(200);
 
