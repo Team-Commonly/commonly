@@ -1,10 +1,20 @@
-const crypto = require('crypto');
 const { normalizeBufferMessage } = require('../normalizeBufferMessage');
+const { manifests } = require('../manifests');
+
 let ValidationError;
+let validateRequiredConfig;
 try {
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
   ({ ValidationError } = require('../../../packages/integration-sdk/src/errors'));
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+  ({ validateRequiredConfig } = require('../../../packages/integration-sdk/src/manifest'));
 } catch (err) {
   ValidationError = class extends Error {};
+  validateRequiredConfig = (config, manifest) => {
+    const required = manifest?.requiredConfig || [];
+    const missing = required.filter((f) => !config?.[f]);
+    if (missing.length) throw new ValidationError(`Missing fields: ${missing.join(', ')}`);
+  };
 }
 
 function verifyTelegramSecret(headerToken, expectedToken) {
@@ -12,17 +22,32 @@ function verifyTelegramSecret(headerToken, expectedToken) {
 }
 
 function normalizeTelegram(update) {
-  if (!update || !update.message) return null;
-  const msg = update.message;
-  if (msg.via_bot) return null; // avoid bot loops
+  if (!update) return null;
+  const msg = update.message || update.channel_post;
+  if (!msg) return null;
+  if (msg.via_bot || msg.from?.is_bot) return null; // avoid bot loops
+
+  const senderName = msg.from
+    ? [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ').trim()
+    : msg.sender_chat?.title
+      || msg.chat?.title
+      || 'Unknown';
+
+  const timestamp = msg.date
+    ? new Date(msg.date * 1000).toISOString()
+    : new Date().toISOString();
 
   return {
-    messageId: msg.message_id?.toString(),
+    source: 'telegram',
+    externalId: msg.message_id ? String(msg.message_id) : undefined,
     authorId: msg.from?.id?.toString(),
-    authorName: [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ').trim() || 'Unknown',
+    authorName: senderName || 'Unknown',
     content: msg.text || msg.caption || '',
-    timestamp: msg.date ? new Date(msg.date * 1000) : new Date(),
+    timestamp,
     attachments: [],
+    metadata: {
+      chatId: msg.chat?.id ? String(msg.chat.id) : undefined,
+    },
     raw: update,
   };
 }
@@ -32,9 +57,7 @@ function createTelegramProvider(integration) {
 
   return {
     async validateConfig() {
-      const required = ['botToken'];
-      const missing = required.filter((f) => !config[f]);
-      if (missing.length) throw new ValidationError(`Missing fields: ${missing.join(', ')}`);
+      validateRequiredConfig(config, manifests.telegram);
     },
 
     getWebhookHandlers() {
@@ -54,6 +77,7 @@ function createTelegramProvider(integration) {
 
           // Buffer best-effort
           try {
+            // eslint-disable-next-line global-require
             const Integration = require('../../models/Integration');
             await Integration.findByIdAndUpdate(integration._id, {
               $push: {
@@ -75,6 +99,15 @@ function createTelegramProvider(integration) {
     async ingestEvent(payload) {
       const normalized = normalizeTelegram(payload);
       return normalized ? [normalized] : [];
+    },
+
+    async syncRecent() {
+      return {
+        success: false,
+        messageCount: 0,
+        messages: [],
+        content: 'syncRecent not implemented for telegram',
+      };
     },
 
     async health() {

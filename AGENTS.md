@@ -42,6 +42,9 @@ and development conventions:
 - `integrations/INTEGRATION_CONTRACT.md` (for any new external integration)
 - `integrations/COMMONLY_APP_PLATFORM.md` (for app/installation flow like GitHub Apps)
 - `slack/README.md`, `google-chat/README.md`, `groupme/README.md` (integration notes)
+- `design/MULTI_AGENT_POSITIONING.md` (competitive framing: context hub + pods)
+- `design/MULTI_AGENT_ROADMAP.md` (priorities that reinforce the positioning)
+- `design/POD_SKILLS_INDEX.md` (pods as indexed skill packs and team memory)
 
 Design documents in `docs/design/` provide additional details for upcoming
 features. Review them and add new design docs when planning major
@@ -93,8 +96,17 @@ Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only;
 
 - The backend exposes documentation at `/api/docs/backend`.
 - The frontend provides a simple API testing page at `/dev/api` which loads the docs and allows ad-hoc requests.
+- The frontend provides a pod context inspector at `/dev/pod-context` to view structured pod context (including LLM markdown skills) from `/api/pods/:id/context`.
+- Integration catalog metadata is available at `/api/integrations/catalog` (manifest-driven entries + per-user stats).
+- Pod context metadata is available at `/api/pods/:id/context` and can synthesize LLM markdown skills into `PodAsset` records of type `skill` (params: `skillMode`, `skillLimit`, `skillRefreshHours`).
+- `/dev/pod-context` includes a “Show Summary Content” toggle that renders summary markdown content for quick inspection.
+- `/api/pods/:id/context` returns `skillModeUsed` and `skillWarnings` to explain the effective skill synthesis mode.
+- ChatRoom’s Apps/Integrations cards consume `/api/integrations/catalog` to render provider descriptions in the sidebar; capability chips are shown on the `/integrations` page.
+- Integration create/update routes enforce manifest-required fields when an integration is marked `connected`; draft integrations can still be created but remain `pending` until required config is provided.
+- Chat summarization and integration buffer summarization now persist `PodAsset` records so pod context can be retrieved as indexed assets, not only raw text summaries.
 - Webhook endpoints now include Slack, GroupMe, and Telegram:
   - `/api/webhooks/slack/:integrationId` (raw-body signature verify)
   - `/api/webhooks/groupme/:integrationId`
-  - `/api/webhooks/telegram/:integrationId` (optional secret token header)
+  - `/api/webhooks/telegram` (universal bot webhook with optional secret token header)
 - Integration summaries are generated from buffered webhook/gateway messages. Discord uses a Gateway listener with Message Content intent enabled and stores messages in `Integration.config.messageBuffer` before hourly summarization.
+ - Telegram universal bot uses `/commonly-enable <code>` to link a chat to a pod; per-integration `chatId` is stored in config.
