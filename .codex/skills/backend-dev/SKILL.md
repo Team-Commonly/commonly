@@ -31,11 +31,24 @@ backend/services/
 ├── discordMultiCommandService.js # Multi-pod command fan-out
 ├── summarizerService.js       # AI summarization
 ├── chatSummarizerService.js   # Chat analysis
+├── integrationSummaryService.js # Integration buffer summarization
+├── podAssetService.js         # Indexed pod memory (PodAsset)
+├── podContextService.js       # Agent-friendly pod context assembly
+├── podSkillService.js         # LLM markdown skill synthesis
 ├── dailyDigestService.js      # Newsletter generation
 ├── schedulerService.js        # Cron jobs, periodic tasks
 ├── commonlyBotService.js      # Bot user management
+├── telegramService.js         # Telegram helpers
 └── integrationService.js      # Third-party integrations
 ```
+
+## Pod Context and Integration Catalog
+
+- `GET /api/pods/:id/context` returns structured pod context with tags, summaries, assets, and skills.
+- Pod context supports `skillMode=llm|heuristic|none` plus `skillLimit` and `skillRefreshHours`.
+- LLM mode can upsert markdown skills as `PodAsset(type='skill')`.
+- Integration metadata is manifest-driven and exposed via `GET /api/integrations/catalog`.
+- Integration create/update routes enforce manifest-required fields before an integration can be marked `connected`.
 
 ## Key Patterns
 
