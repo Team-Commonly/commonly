@@ -20,6 +20,7 @@ description: Frontend development context for React.js, Material-UI, Context API
 |----------|----------------|
 | [FRONTEND.md](../../../docs/development/FRONTEND.md) | Component structure, routing, state management |
 | [ARCHITECTURE.md](../../../docs/architecture/ARCHITECTURE.md) | Frontend-backend communication |
+| [POD_SKILLS_INDEX.md](../../../docs/design/POD_SKILLS_INDEX.md) | Pod context + skills design |
 
 ## Key Components
 
@@ -35,6 +36,15 @@ frontend/src/
 ├── hooks/             # useAuth, useSocket, usePods
 └── services/          # API service functions
 ```
+
+## Developer Utilities and Context UI
+
+- `/dev/api` is the ad-hoc API testing surface.
+- `/dev/pod-context` inspects `GET /api/pods/:id/context` output.
+- Skill Mode selection (`llm|heuristic|none`).
+- Skill Refresh Hours for LLM regeneration windows.
+- Markdown rendering for skill documents and (optionally) summary content.
+- Integration catalog UI lives in `frontend/src/components/IntegrationsCatalog.js` and consumes `GET /api/integrations/catalog`.
 
 ## Key Patterns
 
