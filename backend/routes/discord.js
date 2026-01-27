@@ -274,8 +274,7 @@ router.post('/interactions', async (req, res) => {
 
       const header = `🔗 ${integrations.length} pods linked to this Discord channel`;
       const blocks = commandResults.map(({ integration, result }) => {
-        const podName =
-          integration.podId?.name
+        const podName = integration.podId?.name
           || integration.config?.channelName
           || `Pod ${integration.podId || integration._id}`;
         return `**${podName}**\n${result.content}`;

@@ -1,8 +1,9 @@
 const express = require('express');
+const crypto = require('crypto');
 const auth = require('../middleware/auth');
 const App = require('../models/App');
 const AppInstallation = require('../models/AppInstallation');
-const { hash, randomSecret, safeEqual } = require('../utils/secret');
+const { hash, randomSecret } = require('../utils/secret');
 
 const router = express.Router();
 
@@ -22,7 +23,16 @@ router.get('/', auth, async (req, res) => {
 // Create an app (developer-owned)
 router.post('/', auth, async (req, res) => {
   try {
-    const { name, description, homepage, callbackUrl, webhookUrl, allowedRedirects = [], defaultScopes = [], allowedEvents = [] } = req.body;
+    const {
+      name,
+      description,
+      homepage,
+      callbackUrl,
+      webhookUrl,
+      allowedRedirects = [],
+      defaultScopes = [],
+      allowedEvents = [],
+    } = req.body;
     if (!name || !webhookUrl) {
       return res.status(400).json({ error: 'name and webhookUrl are required' });
     }
@@ -96,7 +106,14 @@ router.post('/:id/rotate-secret', auth, async (req, res) => {
 // Create installation (consent assumed handled upstream)
 router.post('/installations', auth, async (req, res) => {
   try {
-    const { appId, targetType, targetId, scopes = [], events = [], expiresIn } = req.body;
+    const {
+      appId,
+      targetType,
+      targetId,
+      scopes = [],
+      events = [],
+      expiresIn,
+    } = req.body;
     if (!appId || !targetType || !targetId) {
       return res.status(400).json({ error: 'appId, targetType, targetId required' });
     }
@@ -158,7 +175,7 @@ router.post('/:id/webhook-test', auth, async (req, res) => {
     if (!secretToUse) {
       return res.status(400).json({ error: 'Provide webhookSecretOverride to sign payload' });
     }
-    const signature = require('crypto')
+    const signature = crypto
       .createHmac('sha256', signingSecret)
       .update(JSON.stringify(sample))
       .digest('hex');
