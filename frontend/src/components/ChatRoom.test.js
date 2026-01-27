@@ -61,7 +61,9 @@ test('loads room and messages then displays them', async () => {
     .mockResolvedValueOnce({ data: { _id: '1', name: 'Room', members: [{ _id: 'u' }], createdBy: { _id: 'u', username: 'me', profilePicture: null } } })
     .mockResolvedValueOnce({ data: [] })
     .mockResolvedValueOnce({ data: [] })
-    .mockResolvedValueOnce({ data: [{ _id: 'm1', content: 'hello', messageType: 'text', userId: { _id: 'u' }, createdAt: '2020-01-01' }] });
+    .mockResolvedValueOnce({ data: [{ _id: 'm1', content: 'hello', messageType: 'text', userId: { _id: 'u' }, createdAt: '2020-01-01' }] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: { entries: [] } });
 
   await TestUtils.act(async () => { root.render(<ChatRoom />); });
   await TestUtils.act(async () => Promise.resolve());
@@ -101,7 +103,9 @@ test('renders integration summary bot messages', async () => {
         userId: { _id: 'bot', username: 'commonly-bot' },
         createdAt: '2025-01-01'
       }]
-    });
+    })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: { entries: [] } });
 
   await TestUtils.act(async () => { root.render(<ChatRoom />); });
   await TestUtils.act(async () => Promise.resolve());

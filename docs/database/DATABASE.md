@@ -154,41 +154,86 @@ const PostSchema = new mongoose.Schema({
 });
 ```
 
-### Pod Reference Schema (MongoDB)
+### Pod Schema (MongoDB, Authoritative)
 
-While pods are primarily stored in PostgreSQL, we maintain a reference in MongoDB for easy access:
+Pods and membership checks are authoritative in MongoDB. PostgreSQL stores references for chat joins.
 
 ```javascript
-const PodReferenceSchema = new mongoose.Schema({
-  postgresId: {
-    type: Number,
-    required: true,
-    unique: true
+const PodSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    type: {
+      type: String,
+      enum: ['chat', 'study', 'games'],
+      default: 'chat',
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    members: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
   },
-  name: {
-    type: String,
-    required: true
-  },
-  type: {
-    type: String,
-    required: true,
-    enum: ['chat', 'study', 'game']
-  },
-  members: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-});
+  { timestamps: true },
+);
 ```
+
+### PodAsset Schema (MongoDB, Pod Memory Index)
+
+PodAssets provide indexed pod memory for agents and context assembly. They include summaries, integration windows, and LLM-generated skills.
+
+```javascript
+const PodAssetSchema = new mongoose.Schema(
+  {
+    podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true, index: true },
+    type: {
+      type: String,
+      enum: [
+        'summary',
+        'integration-summary',
+        'skill',
+        'message',
+        'thread',
+        'file',
+        'doc',
+        'link',
+      ],
+      required: true,
+      index: true,
+    },
+    title: { type: String, required: true, trim: true },
+    content: { type: String, default: '' },
+    tags: { type: [String], default: [], index: true },
+    sourceType: { type: String, default: null },
+    sourceRef: {
+      summaryId: { type: Schema.Types.ObjectId, ref: 'Summary', default: null },
+      integrationId: { type: Schema.Types.ObjectId, ref: 'Integration', default: null },
+      messageId: { type: String, default: null },
+    },
+    metadata: { type: Schema.Types.Mixed, default: {} },
+    createdByType: {
+      type: String,
+      enum: ['system', 'user', 'agent'],
+      default: 'system',
+      index: true,
+    },
+    status: { type: String, enum: ['active', 'archived'], default: 'active', index: true },
+  },
+  { timestamps: true },
+);
+```
+
+Operational notes:
+- Chat summarization and integration buffer summarization persist PodAssets.
+- `GET /api/pods/:id/context` can synthesize LLM skill docs and upsert them as `PodAsset(type='skill')`.
 
 ## PostgreSQL Schema
 
@@ -268,8 +313,9 @@ Since the application uses two separate databases, we maintain references betwee
    - This allows us to link chat messages and pod memberships to user accounts
 
 2. **Pod References**:
-   - MongoDB maintains a `PodReference` collection that mirrors essential pod data from PostgreSQL
-   - This allows for quick access to pod information without querying PostgreSQL
+   - MongoDB is authoritative for pods and membership via the `Pod` collection
+   - PostgreSQL stores pod and membership references for chat joins and integrity
+   - Pod memory and agent-facing context are indexed in MongoDB via `PodAsset`
 
 ### MongoDB Relationships
 
@@ -301,10 +347,14 @@ PostSchema.index({ user: 1 });
 PostSchema.index({ createdAt: -1 });
 PostSchema.index({ tags: 1 });
 
-// Pod Reference indexes
-PodReferenceSchema.index({ postgresId: 1 });
-PodReferenceSchema.index({ type: 1 });
-PodReferenceSchema.index({ members: 1 });
+// Pod indexes
+PodSchema.index({ createdBy: 1 });
+PodSchema.index({ members: 1 });
+PodSchema.index({ updatedAt: -1 });
+
+// PodAsset indexes
+PodAssetSchema.index({ podId: 1, createdAt: -1 });
+PodAssetSchema.index({ podId: 1, tags: 1, createdAt: -1 });
 ```
 
 ### PostgreSQL Indexes

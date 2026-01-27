@@ -52,6 +52,11 @@ test('renders posts section', async () => {
   expect(container.textContent).toContain('Posts');
 });
 
+test('renders integrations section', async () => {
+  await renderApiDevPage();
+  expect(container.textContent).toContain('Integrations');
+});
+
 test('renders warning when not logged in', async () => {
   await renderApiDevPage();
   expect(container.textContent).toContain('You are not logged in');

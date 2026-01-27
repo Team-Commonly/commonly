@@ -138,6 +138,12 @@ The application uses Material-UI with a custom theme:
 - **Responsive Design**: Mobile-first approach with responsive breakpoints
 - **Dark/Light Mode**: Support for user-selectable theme
 
+## Developer Utilities
+
+- `/dev/api`: API Development Tools for ad-hoc backend requests.
+- `/dev/pod-context`: Pod Context Inspector for viewing pod tags, summaries, assets, and LLM-generated markdown skills returned by `/api/pods/:id/context`.
+- `/dev/pod-context` includes options for Skill Mode (`llm|heuristic|none`), Skill Refresh Hours (LLM regeneration window), and Show Summary Content (markdown rendering for summaries).
+
 ## Testing
 
 - **Unit Tests**: Testing individual components and functions

@@ -274,6 +274,35 @@ const ApiDevPage = () => {
             ]
         },
         {
+            category: "Integrations",
+            endpoints: [
+                {
+                    id: "integrations-catalog",
+                    method: "GET",
+                    path: "/api/integrations/catalog",
+                    description: "Get manifest-driven integration catalog entries",
+                    requiresAuth: true,
+                    exampleInput: null,
+                    exampleOutput: {
+                        entries: [
+                            {
+                                id: "slack",
+                                requiredConfig: ["botToken", "signingSecret", "channelId"],
+                                catalog: {
+                                    label: "Slack",
+                                    category: "chat",
+                                    capabilities: ["webhook", "summary"]
+                                },
+                                stats: {
+                                    activeIntegrations: 2
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
             category: "Documentation",
             endpoints: [
                 {
