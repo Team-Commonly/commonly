@@ -29,7 +29,14 @@ description: Database management context for MongoDB, PostgreSQL, dual-database 
 | Users | Primary | Sync |
 | Pods | Primary | Sync |
 | Messages | Fallback | Primary |
+| PodAssets (memory) | Primary | Not used |
 | Posts | Primary | Not used |
+
+## Pod Memory Model
+
+- Indexed pod memory is stored in MongoDB via `PodAsset`.
+- `PodAsset` includes summaries, integration summaries, and LLM-generated skills (`type='skill'`).
+- Pod context assembly (`GET /api/pods/:id/context`) reads PodAssets and can upsert skills.
 
 ## Key Models
 
