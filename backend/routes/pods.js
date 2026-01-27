@@ -17,6 +17,7 @@ const {
 const Pod = require('../models/Pod');
 const Announcement = require('../models/Announcement');
 const ExternalLink = require('../models/ExternalLink');
+const PodContextService = require('../services/podContextService');
 
 // Configure storage for file uploads
 const storage = multer.diskStorage({
@@ -279,6 +280,41 @@ router.get('/external-link/:linkId/qrcode', auth, async (req, res) => {
 });
 
 // Pod-specific operations
+// Pod context (structured memory + tags)
+router.get('/:id/context', auth, async (req, res) => {
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+  const parseLimit = (raw, fallback, max) => {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isNaN(parsed)) return fallback;
+    return clamp(parsed, 1, max);
+  };
+
+  const userId = req.user?.id || req.userId;
+  const podId = req.params.id;
+
+  try {
+    const context = await PodContextService.getPodContext({
+      podId,
+      userId,
+      task: req.query.task || '',
+      summaryLimit: parseLimit(req.query.summaryLimit, 6, 20),
+      assetLimit: parseLimit(req.query.assetLimit, 12, 40),
+      tagLimit: parseLimit(req.query.tagLimit, 16, 40),
+      skillLimit: parseLimit(req.query.skillLimit, 6, 12),
+      skillMode: typeof req.query.skillMode === 'string' ? req.query.skillMode.toLowerCase() : 'llm',
+      skillRefreshHours: parseLimit(req.query.skillRefreshHours, 6, 72),
+    });
+
+    return res.status(200).json(context);
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ message: error.message, code: error.code });
+    }
+    console.error('Error building pod context:', error);
+    return res.status(500).json({ message: 'Failed to build pod context' });
+  }
+});
+
 // Join a pod
 router.post('/:id/join', auth, joinPod);
 

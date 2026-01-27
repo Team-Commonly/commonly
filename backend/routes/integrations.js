@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const crypto = require('crypto');
 
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -9,6 +10,68 @@ const DiscordIntegration = require('../models/DiscordIntegration');
 const DiscordService = require('../services/discordService');
 const Pod = require('../models/Pod');
 const User = require('../models/User');
+const { buildCatalogEntries } = require('../integrations/catalog');
+const { manifests } = require('../integrations/manifests');
+
+let validateRequiredConfig;
+try {
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+  ({ validateRequiredConfig } = require('../../packages/integration-sdk/src/manifest'));
+} catch (err) {
+  validateRequiredConfig = (config, manifest) => {
+    const required = manifest?.requiredConfig || [];
+    const missing = required.filter((field) => {
+      const value = config?.[field];
+      return value === undefined || value === null || value === '';
+    });
+    if (missing.length) {
+      const error = new Error(`Missing fields: ${missing.join(', ')}`);
+      error.missing = missing;
+      throw error;
+    }
+  };
+}
+
+const resolveEffectiveConfig = (type, config = {}) => {
+  if (type !== 'discord') {
+    return config;
+  }
+  return {
+    ...config,
+    botToken: config.botToken || process.env.DISCORD_BOT_TOKEN,
+  };
+};
+
+const getMissingRequiredFields = (type, config) => {
+  const manifest = manifests[type];
+  if (!manifest?.requiredConfig?.length) return [];
+  const effectiveConfig = resolveEffectiveConfig(type, config);
+  return manifest.requiredConfig.filter((field) => {
+    const value = effectiveConfig?.[field];
+    return value === undefined || value === null || value === '';
+  });
+};
+
+const isManifestComplete = (type, config) => getMissingRequiredFields(type, config).length === 0;
+
+const validateManifestIfComplete = (type, config) => {
+  const manifest = manifests[type];
+  if (!manifest) return;
+  if (!isManifestComplete(type, config)) return;
+  const effectiveConfig = resolveEffectiveConfig(type, config);
+  validateRequiredConfig(effectiveConfig, manifest);
+};
+
+// Integration catalog metadata (manifest-driven)
+router.get('/catalog', auth, async (req, res) => {
+  try {
+    const entries = await buildCatalogEntries({ userId: req.user?.id });
+    res.json({ entries });
+  } catch (error) {
+    console.error('Error fetching integration catalog:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // Get all integrations for a pod
 router.get('/:podId', auth, async (req, res) => {
@@ -39,11 +102,37 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
+    const manifest = manifests[type];
+    if (!manifest) {
+      return res.status(400).json({ message: 'Unsupported integration type' });
+    }
+
     // Create base integration
+    const nextConfig = { ...config };
+
+    if (type === 'telegram' && !nextConfig.connectCode) {
+      nextConfig.connectCode = crypto.randomBytes(3).toString('hex');
+    }
+
+    const missingRequired = getMissingRequiredFields(type, nextConfig);
+    if (type === 'discord' && missingRequired.length) {
+      return res.status(400).json({
+        message: `Missing required fields: ${missingRequired.join(', ')}`,
+        missing: missingRequired,
+      });
+    }
+    if (missingRequired.length && req.body.status === 'connected') {
+      return res.status(400).json({
+        message: `Missing required fields: ${missingRequired.join(', ')}`,
+        missing: missingRequired,
+      });
+    }
+    validateManifestIfComplete(type, nextConfig);
+
     const integration = new Integration({
       podId,
       type,
-      config,
+      config: nextConfig,
       createdBy: req.user.id,
       status: 'pending',
     });
@@ -84,18 +173,8 @@ router.post('/', auth, async (req, res) => {
       });
       await platformIntegration.save();
     } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp'].includes(type)) {
-      // No platform-specific record required; mark as connected only when config is present
-      if (type === 'groupme') {
-        integration.status = config.botId && config.groupId ? 'connected' : 'pending';
-      } else if (type === 'telegram') {
-        integration.status = config.botToken ? 'connected' : 'pending';
-      } else if (type === 'slack') {
-        integration.status = config.botToken && config.signingSecret && config.channelId
-          ? 'connected'
-          : 'pending';
-      } else {
-        integration.status = 'connected';
-      }
+      // No platform-specific record required; mark as connected only when manifest is complete
+      integration.status = isManifestComplete(type, nextConfig) ? 'connected' : 'pending';
       await integration.save();
     } else {
       return res.status(400).json({ message: 'Unsupported integration type' });
@@ -418,6 +497,15 @@ router.patch('/:id', auth, async (req, res) => {
       : integration.config || {};
     const nextConfig = config ? { ...currentConfig, ...config } : currentConfig;
 
+    const missingRequired = getMissingRequiredFields(integration.type, nextConfig);
+    if (missingRequired.length && status === 'connected') {
+      return res.status(400).json({
+        message: `Missing required fields: ${missingRequired.join(', ')}`,
+        missing: missingRequired,
+      });
+    }
+    validateManifestIfComplete(integration.type, nextConfig);
+
     const update = {};
     if (config) {
       update.config = nextConfig;
@@ -430,11 +518,15 @@ router.patch('/:id', auth, async (req, res) => {
     }
 
     if (integration.type === 'groupme' && config) {
-      if (nextConfig.botId && nextConfig.groupId) {
-        update.status = update.status || 'connected';
-      } else {
-        update.status = update.status || 'pending';
-      }
+      update.status = update.status || (isManifestComplete(integration.type, nextConfig) ? 'connected' : 'pending');
+    }
+
+    if (integration.type === 'telegram' && config) {
+      update.status = update.status || (isManifestComplete(integration.type, nextConfig) ? 'connected' : 'pending');
+    }
+
+    if (integration.type === 'slack' && config) {
+      update.status = update.status || (isManifestComplete(integration.type, nextConfig) ? 'connected' : 'pending');
     }
 
     const updated = await Integration.findByIdAndUpdate(id, update, {

@@ -1,10 +1,21 @@
 const crypto = require('crypto');
 const Integration = require('../../models/Integration');
+const { manifests } = require('../manifests');
+
 let ValidationError;
+let validateRequiredConfig;
 try {
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
   ({ ValidationError } = require('../../../packages/integration-sdk/src/errors'));
+  // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+  ({ validateRequiredConfig } = require('../../../packages/integration-sdk/src/manifest'));
 } catch (err) {
   ValidationError = class extends Error {};
+  validateRequiredConfig = (config, manifest) => {
+    const required = manifest?.requiredConfig || [];
+    const missing = required.filter((f) => !config?.[f]);
+    if (missing.length) throw new ValidationError(`Missing fields: ${missing.join(', ')}`);
+  };
 }
 const SlackApi = require('../../services/slackApi');
 const { normalizeSlackMessage } = require('./slackNormalizer');
@@ -12,7 +23,7 @@ const { normalizeBufferMessage } = require('../normalizeBufferMessage');
 
 function verifySlackSignature(signingSecret, timestamp, body, signature) {
   const basestring = `v0:${timestamp}:${body}`;
-  const mySig = `v0=` + crypto.createHmac('sha256', signingSecret).update(basestring).digest('hex');
+  const mySig = `v0=${crypto.createHmac('sha256', signingSecret).update(basestring).digest('hex')}`;
   if (!signature) return false;
   try {
     return crypto.timingSafeEqual(Buffer.from(mySig, 'utf8'), Buffer.from(signature, 'utf8'));
@@ -26,9 +37,7 @@ function createSlackProvider(integration) {
 
   return {
     async validateConfig() {
-      const required = ['botToken', 'signingSecret', 'channelId'];
-      const missing = required.filter((f) => !config[f]);
-      if (missing.length) throw new ValidationError(`Missing fields: ${missing.join(', ')}`);
+      validateRequiredConfig(config, manifests.slack);
     },
 
     getWebhookHandlers() {
