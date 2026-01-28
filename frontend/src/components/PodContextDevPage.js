@@ -9,8 +9,10 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Checkbox,
   Container,
   FormControlLabel,
+  FormGroup,
   Grid,
   MenuItem,
   Stack,
@@ -47,7 +49,8 @@ const PodContextDevPage = () => {
   const [memoryQuery, setMemoryQuery] = useState('');
   const [memoryLimit, setMemoryLimit] = useState('8');
   const [memoryIncludeSkills, setMemoryIncludeSkills] = useState(false);
-  const [memoryTypes, setMemoryTypes] = useState('');
+  const [memoryTypes, setMemoryTypes] = useState([]);
+  const [autoLoadExcerpt, setAutoLoadExcerpt] = useState(true);
   const [memoryResults, setMemoryResults] = useState([]);
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [memoryError, setMemoryError] = useState(null);
@@ -62,6 +65,17 @@ const PodContextDevPage = () => {
   const authHeaders = useMemo(() => (
     token ? { Authorization: `Bearer ${token}` } : {}
   ), [token]);
+
+  const memoryTypeOptions = useMemo(() => ([
+    { value: 'summary', label: 'Summaries' },
+    { value: 'integration-summary', label: 'Integration' },
+    { value: 'skill', label: 'Skills' },
+    { value: 'message', label: 'Messages' },
+    { value: 'thread', label: 'Threads' },
+    { value: 'file', label: 'Files' },
+    { value: 'doc', label: 'Docs' },
+    { value: 'link', label: 'Links' },
+  ]), []);
 
   useEffect(() => {
     const fetchPods = async () => {
@@ -128,7 +142,7 @@ const PodContextDevPage = () => {
           query: memoryQuery,
           limit: memoryLimit || undefined,
           includeSkills: memoryIncludeSkills ? 'true' : undefined,
-          types: memoryTypes || undefined,
+          types: memoryTypes.length ? memoryTypes.join(',') : undefined,
         },
       });
       setMemoryResults(res.data?.results || []);
@@ -162,6 +176,21 @@ const PodContextDevPage = () => {
     } finally {
       setExcerptLoading(false);
     }
+  };
+
+  const handleSelectResult = (assetId) => {
+    setExcerptAssetId(assetId);
+    if (autoLoadExcerpt) {
+      handleFetchExcerpt(assetId);
+    }
+  };
+
+  const toggleMemoryType = (value) => {
+    setMemoryTypes((prev) => (
+      prev.includes(value)
+        ? prev.filter((entry) => entry !== value)
+        : [...prev, value]
+    ));
   };
 
   const hasContext = Boolean(context?.pod);
@@ -530,13 +559,25 @@ const PodContextDevPage = () => {
                 </Typography>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
-                    <TextField
-                      fullWidth
-                      label="Memory Query"
-                      value={memoryQuery}
-                      onChange={(event) => setMemoryQuery(event.target.value)}
-                      placeholder="Search pod memory..."
-                    />
+                    <Stack spacing={1}>
+                      <TextField
+                        fullWidth
+                        label="Memory Query"
+                        value={memoryQuery}
+                        onChange={(event) => setMemoryQuery(event.target.value)}
+                        placeholder="Search pod memory..."
+                      />
+                      {task && (
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => setMemoryQuery(task)}
+                          sx={{ alignSelf: 'flex-start' }}
+                        >
+                          Use task as query
+                        </Button>
+                      )}
+                    </Stack>
                   </Grid>
                   <Grid item xs={12} sm={6} md={3}>
                     <TextField
@@ -549,25 +590,49 @@ const PodContextDevPage = () => {
                     />
                   </Grid>
                   <Grid item xs={12} sm={6} md={3}>
-                    <TextField
-                      fullWidth
-                      label="Types (comma)"
-                      value={memoryTypes}
-                      onChange={(event) => setMemoryTypes(event.target.value)}
-                      placeholder="summary, integration-summary"
-                    />
+                    <FormGroup>
+                      <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
+                        Filter types
+                      </Typography>
+                      <Stack direction="row" flexWrap="wrap" gap={1}>
+                        {memoryTypeOptions.map((option) => (
+                          <FormControlLabel
+                            key={option.value}
+                            control={(
+                              <Checkbox
+                                size="small"
+                                checked={memoryTypes.includes(option.value)}
+                                onChange={() => toggleMemoryType(option.value)}
+                              />
+                            )}
+                            label={option.label}
+                          />
+                        ))}
+                      </Stack>
+                    </FormGroup>
                   </Grid>
                 </Grid>
-                <FormControlLabel
-                  control={(
-                    <Switch
-                      checked={memoryIncludeSkills}
-                      onChange={(event) => setMemoryIncludeSkills(event.target.checked)}
-                    />
-                  )}
-                  label="Include skills in search"
-                />
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+                  <FormControlLabel
+                    control={(
+                      <Switch
+                        checked={memoryIncludeSkills}
+                        onChange={(event) => setMemoryIncludeSkills(event.target.checked)}
+                      />
+                    )}
+                    label="Include skills in search"
+                  />
+                  <FormControlLabel
+                    control={(
+                      <Switch
+                        checked={autoLoadExcerpt}
+                        onChange={(event) => setAutoLoadExcerpt(event.target.checked)}
+                      />
+                    )}
+                    label="Auto-load excerpt on select"
+                  />
+                </Stack>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Button
                     variant="contained"
                     onClick={handleSearchMemory}
@@ -575,6 +640,17 @@ const PodContextDevPage = () => {
                     startIcon={memoryLoading ? <CircularProgress size={16} /> : <RefreshIcon />}
                   >
                     Search Memory
+                  </Button>
+                  <Button
+                    variant="text"
+                    onClick={() => {
+                      setMemoryQuery('');
+                      setMemoryTypes([]);
+                      setMemoryResults([]);
+                      setMemoryError(null);
+                    }}
+                  >
+                    Clear
                   </Button>
                 </Box>
                 {memoryError && (
@@ -613,9 +689,9 @@ const PodContextDevPage = () => {
                           <Button
                             size="small"
                             variant="outlined"
-                            onClick={() => handleFetchExcerpt(result.assetId)}
+                            onClick={() => handleSelectResult(result.assetId)}
                           >
-                            Read Excerpt
+                            {autoLoadExcerpt ? 'Open Excerpt' : 'Select for Excerpt'}
                           </Button>
                         </Box>
                       </Stack>
@@ -654,10 +730,19 @@ const PodContextDevPage = () => {
                             inputProps={{ min: 1, max: 100 }}
                           />
                         </Grid>
-                        <Grid item xs={12} sm={6} sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Grid item xs={12} sm={6} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Typography variant="caption" color="text.secondary">
                             {excerptAssetId ? `Selected asset: ${excerptAssetId}` : 'Select a search result to load an excerpt.'}
                           </Typography>
+                          {excerptAssetId && !excerptLoading && (
+                            <Button
+                              size="small"
+                              variant="text"
+                              onClick={() => handleFetchExcerpt(excerptAssetId)}
+                            >
+                              Load excerpt
+                            </Button>
+                          )}
                         </Grid>
                       </Grid>
                       {excerptLoading && (
@@ -670,20 +755,42 @@ const PodContextDevPage = () => {
                       )}
                       {excerptError && <Alert severity="error">{excerptError}</Alert>}
                       {excerptData && !excerptLoading && (
-                        <Box
-                          sx={{
-                            mt: 1,
-                            p: 1.25,
-                            borderRadius: 1.5,
-                            border: (theme) => `1px solid ${theme.palette.divider}`,
-                            backgroundColor: (theme) => theme.palette.background.paper,
-                            whiteSpace: 'pre-wrap',
-                            fontFamily: 'Monaco, Consolas, "Liberation Mono", monospace',
-                            fontSize: '0.85rem',
-                          }}
-                        >
-                          {excerptData.text || 'No content available.'}
-                        </Box>
+                        <Stack spacing={1}>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              {excerptData.title || 'Excerpt'}
+                            </Typography>
+                            {excerptData.type && (
+                              <Chip label={excerptData.type} size="small" variant="outlined" />
+                            )}
+                            {excerptData.startLine && (
+                              <Typography variant="caption" color="text.secondary">
+                                lines {excerptData.startLine}-{excerptData.endLine}
+                              </Typography>
+                            )}
+                          </Stack>
+                          {!!excerptData.tags?.length && (
+                            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                              {excerptData.tags.map((tag) => (
+                                <Chip key={`${excerptData.assetId}-${tag}`} label={tag} size="small" />
+                              ))}
+                            </Stack>
+                          )}
+                          <Box
+                            sx={{
+                              mt: 1,
+                              p: 1.25,
+                              borderRadius: 1.5,
+                              border: (theme) => `1px solid ${theme.palette.divider}`,
+                              backgroundColor: (theme) => theme.palette.background.paper,
+                              whiteSpace: 'pre-wrap',
+                              fontFamily: 'Monaco, Consolas, "Liberation Mono", monospace',
+                              fontSize: '0.85rem',
+                            }}
+                          >
+                            {excerptData.text || 'No content available.'}
+                          </Box>
+                        </Stack>
                       )}
                     </Stack>
                   </CardContent>
