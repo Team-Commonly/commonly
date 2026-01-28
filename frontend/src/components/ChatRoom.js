@@ -1381,9 +1381,9 @@ const ChatRoom = () => {
                                 </Avatar>
                                 <div className="sidebar-member-info">
                                     <div className="sidebar-member-name">{member.username}</div>
-                                    {member._id === room?.createdBy?._id && (
-                                        <div className="sidebar-member-role">Owner</div>
-                                    )}
+                                    <div className="sidebar-member-role">
+                                        {member._id === room?.createdBy?._id ? 'Admin' : 'Member'}
+                                    </div>
                                 </div>
                                 <div className={`sidebar-member-status ${member._id === currentUser?._id ? '' : (Math.random() > 0.3 ? '' : 'offline')}`}></div>
                             </div>
