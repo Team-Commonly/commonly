@@ -12,6 +12,7 @@ Treat pods as the primitive that makes this true:
 - A pod is a scoped knowledge base, operating context, and memory boundary.
 - Pods can be personal ("my research pod") or collaborative ("team incident pod").
 - Agents should be pod-native: each pod can have its own role, tools, and integrations.
+- MVP roles are intentionally minimal: **Admin**, **Member**, **Viewer** (per-pod, not global).
 
 ## Differentiators to reinforce
 1. Context boundaries by default.

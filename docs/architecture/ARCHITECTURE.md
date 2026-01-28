@@ -54,6 +54,13 @@ Pods are treated as scoped memory boundaries with indexed assets:
   - `GET /api/pods/:id/context`
   - This endpoint can synthesize and refresh LLM skills using `skillMode`, `skillLimit`, and `skillRefreshHours`.
 
+### Pod Roles (MVP)
+
+Roles are scoped per pod (not global) and intentionally minimal for MVP:
+- **Admin**: the pod creator. Can manage members, integrations, and approvals.
+- **Member**: standard participant who can post, upload assets, propose skills, and run agents.
+- **Viewer**: read-only access. Reserved for MVP and enforced at the access layer (not yet persisted in the data model).
+
 ### Databases
 
 The application employs a **dual database architecture** with specific data separation:
