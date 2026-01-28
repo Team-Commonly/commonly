@@ -79,6 +79,7 @@ frontend/
 - **Chat composer**: grouped emoji/attach tools, multiline input (Enter to send, Shift+Enter for newline), and labeled Send button for clarity.
 - **Thread comments**: avatar + content alignment matches chat layout; comment composer mirrors chat styling.
 - **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
+- **Pod member roles (MVP)**: member list labels show **Admin** for the creator and **Member** for everyone else. Viewers are read-only and not rendered in the member list yet.
 
 ## Context Providers
 
