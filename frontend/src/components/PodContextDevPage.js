@@ -44,6 +44,19 @@ const PodContextDevPage = () => {
   const [context, setContext] = useState(null);
   const [loadingPods, setLoadingPods] = useState(true);
   const [loadingContext, setLoadingContext] = useState(false);
+  const [memoryQuery, setMemoryQuery] = useState('');
+  const [memoryLimit, setMemoryLimit] = useState('8');
+  const [memoryIncludeSkills, setMemoryIncludeSkills] = useState(false);
+  const [memoryTypes, setMemoryTypes] = useState('');
+  const [memoryResults, setMemoryResults] = useState([]);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryError, setMemoryError] = useState(null);
+  const [excerptAssetId, setExcerptAssetId] = useState('');
+  const [excerptFrom, setExcerptFrom] = useState('1');
+  const [excerptLines, setExcerptLines] = useState('12');
+  const [excerptData, setExcerptData] = useState(null);
+  const [excerptLoading, setExcerptLoading] = useState(false);
+  const [excerptError, setExcerptError] = useState(null);
   const [error, setError] = useState(null);
 
   const authHeaders = useMemo(() => (
@@ -101,6 +114,53 @@ const PodContextDevPage = () => {
       setError(err.response?.data?.message || 'Failed to fetch pod context.');
     } finally {
       setLoadingContext(false);
+    }
+  };
+
+  const handleSearchMemory = async () => {
+    if (!podId || !token || !memoryQuery.trim()) return;
+
+    try {
+      setMemoryLoading(true);
+      const res = await axios.get(`/api/pods/${podId}/context/search`, {
+        headers: authHeaders,
+        params: {
+          query: memoryQuery,
+          limit: memoryLimit || undefined,
+          includeSkills: memoryIncludeSkills ? 'true' : undefined,
+          types: memoryTypes || undefined,
+        },
+      });
+      setMemoryResults(res.data?.results || []);
+      setMemoryError(null);
+    } catch (err) {
+      console.error('Failed to search pod memory:', err);
+      setMemoryError(err.response?.data?.message || 'Failed to search pod memory.');
+    } finally {
+      setMemoryLoading(false);
+    }
+  };
+
+  const handleFetchExcerpt = async (assetId) => {
+    if (!podId || !token || !assetId) return;
+
+    try {
+      setExcerptLoading(true);
+      setExcerptAssetId(assetId);
+      const res = await axios.get(`/api/pods/${podId}/context/assets/${assetId}`, {
+        headers: authHeaders,
+        params: {
+          from: excerptFrom || undefined,
+          lines: excerptLines || undefined,
+        },
+      });
+      setExcerptData(res.data);
+      setExcerptError(null);
+    } catch (err) {
+      console.error('Failed to fetch pod memory excerpt:', err);
+      setExcerptError(err.response?.data?.message || 'Failed to fetch asset excerpt.');
+    } finally {
+      setExcerptLoading(false);
     }
   };
 
@@ -461,6 +521,176 @@ const PodContextDevPage = () => {
               </Card>
             </Grid>
           </Grid>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Stack spacing={2}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Pod Memory Search
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Memory Query"
+                      value={memoryQuery}
+                      onChange={(event) => setMemoryQuery(event.target.value)}
+                      placeholder="Search pod memory..."
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Result Limit"
+                      value={memoryLimit}
+                      onChange={(event) => setMemoryLimit(event.target.value)}
+                      type="number"
+                      inputProps={{ min: 1, max: 40 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Types (comma)"
+                      value={memoryTypes}
+                      onChange={(event) => setMemoryTypes(event.target.value)}
+                      placeholder="summary, integration-summary"
+                    />
+                  </Grid>
+                </Grid>
+                <FormControlLabel
+                  control={(
+                    <Switch
+                      checked={memoryIncludeSkills}
+                      onChange={(event) => setMemoryIncludeSkills(event.target.checked)}
+                    />
+                  )}
+                  label="Include skills in search"
+                />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Button
+                    variant="contained"
+                    onClick={handleSearchMemory}
+                    disabled={!memoryQuery.trim() || memoryLoading}
+                    startIcon={memoryLoading ? <CircularProgress size={16} /> : <RefreshIcon />}
+                  >
+                    Search Memory
+                  </Button>
+                </Box>
+                {memoryError && (
+                  <Alert severity="error">{memoryError}</Alert>
+                )}
+                <Stack spacing={1.5}>
+                  {(memoryResults || []).map((result) => (
+                    <Box key={result.assetId} sx={{ p: 1.25, borderRadius: 1.5, border: (theme) => `1px solid ${theme.palette.divider}` }}>
+                      <Stack spacing={0.5}>
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            {result.title}
+                          </Typography>
+                          {result.type && (
+                            <Chip label={result.type} size="small" variant="outlined" />
+                          )}
+                          {typeof result.score === 'number' && (
+                            <Typography variant="caption" color="text.secondary">
+                              score {result.score.toFixed(2)}
+                            </Typography>
+                          )}
+                        </Stack>
+                        {!!result.tags?.length && (
+                          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                            {result.tags.map((tag) => (
+                              <Chip key={`${result.assetId}-${tag}`} label={tag} size="small" />
+                            ))}
+                          </Stack>
+                        )}
+                        {result.snippet && (
+                          <Typography variant="body2" color="text.secondary">
+                            {result.snippet}
+                          </Typography>
+                        )}
+                        <Box>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleFetchExcerpt(result.assetId)}
+                          >
+                            Read Excerpt
+                          </Button>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  ))}
+                  {memoryQuery.trim() && !memoryResults.length && !memoryLoading && (
+                    <Typography variant="body2" color="text.secondary">
+                      No matches yet. Try widening the query or types.
+                    </Typography>
+                  )}
+                </Stack>
+                <Card variant="outlined" sx={{ backgroundColor: 'background.default' }}>
+                  <CardContent>
+                    <Stack spacing={1}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                        Asset Excerpt
+                      </Typography>
+                      <Grid container spacing={2}>
+                        <Grid item xs={6} sm={3}>
+                          <TextField
+                            fullWidth
+                            label="From Line"
+                            value={excerptFrom}
+                            onChange={(event) => setExcerptFrom(event.target.value)}
+                            type="number"
+                            inputProps={{ min: 1, max: 10000 }}
+                          />
+                        </Grid>
+                        <Grid item xs={6} sm={3}>
+                          <TextField
+                            fullWidth
+                            label="Lines"
+                            value={excerptLines}
+                            onChange={(event) => setExcerptLines(event.target.value)}
+                            type="number"
+                            inputProps={{ min: 1, max: 100 }}
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={6} sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Typography variant="caption" color="text.secondary">
+                            {excerptAssetId ? `Selected asset: ${excerptAssetId}` : 'Select a search result to load an excerpt.'}
+                          </Typography>
+                        </Grid>
+                      </Grid>
+                      {excerptLoading && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <CircularProgress size={18} />
+                          <Typography variant="body2" color="text.secondary">
+                            Loading excerpt...
+                          </Typography>
+                        </Box>
+                      )}
+                      {excerptError && <Alert severity="error">{excerptError}</Alert>}
+                      {excerptData && !excerptLoading && (
+                        <Box
+                          sx={{
+                            mt: 1,
+                            p: 1.25,
+                            borderRadius: 1.5,
+                            border: (theme) => `1px solid ${theme.palette.divider}`,
+                            backgroundColor: (theme) => theme.palette.background.paper,
+                            whiteSpace: 'pre-wrap',
+                            fontFamily: 'Monaco, Consolas, "Liberation Mono", monospace',
+                            fontSize: '0.85rem',
+                          }}
+                        >
+                          {excerptData.text || 'No content available.'}
+                        </Box>
+                      )}
+                    </Stack>
+                  </CardContent>
+                </Card>
+              </Stack>
+            </CardContent>
+          </Card>
         </Stack>
       )}
     </Container>
