@@ -142,3 +142,125 @@ test('loads pods and fetches pod context with LLM skill params', async () => {
   expect(container.textContent).toContain('Summary Content');
   expect(container.textContent).toContain('Important incident detail.');
 });
+
+test('searches pod memory and fetches an excerpt', async () => {
+  axios.get
+    .mockResolvedValueOnce({
+      data: [
+        { _id: 'pod-1', name: 'Incident Pod' },
+      ],
+    })
+    .mockResolvedValueOnce({
+      data: {
+        pod: {
+          id: 'pod-1',
+          name: 'Incident Pod',
+          description: 'Handles incidents',
+          type: 'chat',
+        },
+        task: null,
+        skillModeUsed: 'llm',
+        skillWarnings: [],
+        stats: {
+          summaries: 0,
+          assets: 0,
+          tags: 0,
+          skills: 0,
+        },
+        skills: [],
+        tags: [],
+        summaries: [],
+        assets: [],
+      },
+    })
+    .mockResolvedValueOnce({
+      data: {
+        query: 'incident',
+        usedTextSearch: true,
+        results: [
+          {
+            assetId: 'asset-9',
+            title: 'Incident Notes',
+            type: 'summary',
+            tags: ['incident'],
+            score: 4.2,
+            snippet: 'Incident summary snippet...',
+          },
+        ],
+      },
+    })
+    .mockResolvedValueOnce({
+      data: {
+        assetId: 'asset-9',
+        title: 'Incident Notes',
+        type: 'summary',
+        text: 'Line 1\nLine 2',
+        startLine: 1,
+        endLine: 2,
+        totalLines: 2,
+      },
+    });
+
+  await TestUtils.act(async () => {
+    root.render(
+      <MemoryRouter>
+        <PodContextDevPage />
+      </MemoryRouter>,
+    );
+  });
+
+  const fetchButton = Array.from(container.querySelectorAll('button')).find(
+    (btn) => btn.textContent?.includes('Fetch Context'),
+  );
+
+  await TestUtils.act(async () => {
+    TestUtils.Simulate.click(fetchButton);
+  });
+
+  const queryInput = Array.from(container.querySelectorAll('input')).find(
+    (input) => input.getAttribute('placeholder') === 'Search pod memory...',
+  );
+  expect(queryInput).toBeTruthy();
+
+  await TestUtils.act(async () => {
+    TestUtils.Simulate.change(queryInput, { target: { value: 'incident' } });
+  });
+
+  const searchButton = Array.from(container.querySelectorAll('button')).find(
+    (btn) => btn.textContent?.includes('Search Memory'),
+  );
+
+  await TestUtils.act(async () => {
+    TestUtils.Simulate.click(searchButton);
+  });
+
+  expect(axios.get).toHaveBeenCalledWith('/api/pods/pod-1/context/search', {
+    headers: { Authorization: 'Bearer token-1' },
+    params: {
+      query: 'incident',
+      limit: '8',
+      includeSkills: undefined,
+      types: undefined,
+    },
+  });
+
+  const excerptButton = Array.from(container.querySelectorAll('button')).find(
+    (btn) => btn.textContent?.includes('Read Excerpt'),
+  );
+
+  await TestUtils.act(async () => {
+    TestUtils.Simulate.click(excerptButton);
+  });
+
+  expect(axios.get).toHaveBeenLastCalledWith('/api/pods/pod-1/context/assets/asset-9', {
+    headers: { Authorization: 'Bearer token-1' },
+    params: {
+      from: '1',
+      lines: '12',
+    },
+  });
+
+  expect(container.textContent).toContain('Incident Notes');
+  expect(container.textContent).toContain('Incident summary snippet...');
+  expect(container.textContent).toContain('Line 1');
+});
