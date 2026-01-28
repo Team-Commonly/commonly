@@ -82,6 +82,8 @@ backend/
 |--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
 | GET    | /api/pods              | Get all pods                | -                                    | Array of pods                   |
 | GET    | /api/pods/:id          | Get pod by ID               | -                                    | Pod object                      |
+| GET    | /api/pods/:id/context/search | Search pod memory (PodAssets) | Query: `{query, limit?, includeSkills?, types?}` | Search results                |
+| GET    | /api/pods/:id/context/assets/:assetId | Read pod asset excerpt | Query: `{from?, lines?}` | Asset excerpt                  |
 | GET    | /api/pods/:id/context  | Get pod context (LLM markdown skills + tags + assets) | Query: `{task?, summaryLimit?, assetLimit?, tagLimit?, skillLimit?, skillMode?, skillRefreshHours?}` | Pod context object              |
 | POST   | /api/pods              | Create a new pod            | `{name, description, type}`          | Created pod object              |
 | PUT    | /api/pods/:id          | Update a pod                | `{name, description, type}`          | Updated pod object              |
@@ -122,6 +124,10 @@ Operational notes:
 - In `llm` mode, the context endpoint may synthesize skills and upsert them as
   `PodAsset(type='skill')` records, then reuse them until the refresh window
   expires or a task hint is provided.
+
+Related endpoints:
+- `GET /api/pods/:id/context/search` performs keyword-based search over PodAssets.
+- `GET /api/pods/:id/context/assets/:assetId` returns a line-based excerpt for a specific asset.
 
 ### Users
 

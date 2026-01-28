@@ -101,6 +101,9 @@ Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only;
 - Pod context metadata is available at `/api/pods/:id/context` and can synthesize LLM markdown skills into `PodAsset` records of type `skill` (params: `skillMode`, `skillLimit`, `skillRefreshHours`).
 - `/dev/pod-context` includes a “Show Summary Content” toggle that renders summary markdown content for quick inspection.
 - `/api/pods/:id/context` returns `skillModeUsed` and `skillWarnings` to explain the effective skill synthesis mode.
+- Pod memory search endpoints:
+  - `GET /api/pods/:id/context/search` (keyword search over PodAssets)
+  - `GET /api/pods/:id/context/assets/:assetId` (excerpt read)
 - ChatRoom’s Apps/Integrations cards consume `/api/integrations/catalog` to render provider descriptions in the sidebar; capability chips are shown on the `/integrations` page.
 - Integration create/update routes enforce manifest-required fields when an integration is marked `connected`; draft integrations can still be created but remain `pending` until required config is provided.
 - Chat summarization and integration buffer summarization now persist `PodAsset` records so pod context can be retrieved as indexed assets, not only raw text summaries.
