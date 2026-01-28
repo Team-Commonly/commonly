@@ -86,5 +86,9 @@ const PodAssetSchema = new Schema(
 
 PodAssetSchema.index({ podId: 1, createdAt: -1 });
 PodAssetSchema.index({ podId: 1, tags: 1, createdAt: -1 });
+PodAssetSchema.index(
+  { title: 'text', content: 'text', tags: 'text' },
+  { weights: { title: 5, tags: 4, content: 1 } },
+);
 
 module.exports = mongoose.model('PodAsset', PodAssetSchema);
