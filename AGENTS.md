@@ -104,6 +104,7 @@ Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only;
 - Pod memory search endpoints:
   - `GET /api/pods/:id/context/search` (keyword search over PodAssets)
   - `GET /api/pods/:id/context/assets/:assetId` (excerpt read)
+- The pod context inspector includes type filters and an auto-load excerpt toggle for faster memory review.
 - ChatRoom’s Apps/Integrations cards consume `/api/integrations/catalog` to render provider descriptions in the sidebar; capability chips are shown on the `/integrations` page.
 - Integration create/update routes enforce manifest-required fields when an integration is marked `connected`; draft integrations can still be created but remain `pending` until required config is provided.
 - Chat summarization and integration buffer summarization now persist `PodAsset` records so pod context can be retrieved as indexed assets, not only raw text summaries.
