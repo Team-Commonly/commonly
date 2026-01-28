@@ -44,6 +44,7 @@ frontend/src/
 - Skill Mode selection (`llm|heuristic|none`).
 - Skill Refresh Hours for LLM regeneration windows.
 - Markdown rendering for skill documents and (optionally) summary content.
+- Pod memory search + excerpt panel (`/api/pods/:id/context/search` and `/api/pods/:id/context/assets/:assetId`).
 - Integration catalog UI lives in `frontend/src/components/IntegrationsCatalog.js` and consumes `GET /api/integrations/catalog`.
 
 ## Key Patterns
