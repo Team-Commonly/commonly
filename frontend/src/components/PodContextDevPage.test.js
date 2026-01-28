@@ -245,7 +245,7 @@ test('searches pod memory and fetches an excerpt', async () => {
   });
 
   const excerptButton = Array.from(container.querySelectorAll('button')).find(
-    (btn) => btn.textContent?.includes('Read Excerpt'),
+    (btn) => btn.textContent?.includes('Open Excerpt'),
   );
 
   await TestUtils.act(async () => {
