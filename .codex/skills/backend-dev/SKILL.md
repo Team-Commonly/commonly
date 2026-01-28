@@ -50,6 +50,7 @@ backend/services/
 - Pod memory search endpoints: `GET /api/pods/:id/context/search` (keyword search) and `GET /api/pods/:id/context/assets/:assetId` (excerpt read).
 - Integration metadata is manifest-driven and exposed via `GET /api/integrations/catalog`.
 - Integration create/update routes enforce manifest-required fields before an integration can be marked `connected`.
+- MVP pod roles are derived, not stored: **Admin** is the pod creator, **Member** is any listed member, **Viewer** is read-only at the access layer.
 
 ## Key Patterns
 

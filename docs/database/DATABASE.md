@@ -260,7 +260,6 @@ CREATE TABLE pod_members (
   id SERIAL PRIMARY KEY,
   pod_id INTEGER REFERENCES pods(id) ON DELETE CASCADE,
   user_id VARCHAR(100) NOT NULL,  -- MongoDB ObjectId as string
-  role VARCHAR(50) DEFAULT 'member' CHECK (role IN ('admin', 'moderator', 'member')),
   joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(pod_id, user_id)
 );
@@ -268,6 +267,11 @@ CREATE TABLE pod_members (
 CREATE INDEX idx_pod_members_pod_id ON pod_members(pod_id);
 CREATE INDEX idx_pod_members_user_id ON pod_members(user_id);
 ```
+
+MVP roles are derived instead of stored:
+- **Admin** is the pod creator (`created_by` in Postgres, `createdBy` in Mongo).
+- **Member** is any user present in `pod_members`.
+- **Viewer** is read-only access and is enforced at the application layer (not persisted yet).
 
 ### Messages Table
 

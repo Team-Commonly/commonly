@@ -46,6 +46,7 @@ frontend/src/
 - Markdown rendering for skill documents and (optionally) summary content.
 - Pod memory search + excerpt panel (`/api/pods/:id/context/search` and `/api/pods/:id/context/assets/:assetId`) with type filters and auto-load excerpts.
 - Integration catalog UI lives in `frontend/src/components/IntegrationsCatalog.js` and consumes `GET /api/integrations/catalog`.
+- Pod member labels are MVP roles: **Admin** for the creator and **Member** for everyone else (viewers are read-only and not rendered yet).
 
 ## Key Patterns
 

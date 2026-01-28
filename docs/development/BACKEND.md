@@ -129,6 +129,13 @@ Related endpoints:
 - `GET /api/pods/:id/context/search` performs keyword-based search over PodAssets.
 - `GET /api/pods/:id/context/assets/:assetId` returns a line-based excerpt for a specific asset.
 
+#### Pod Roles (MVP)
+
+Role handling is intentionally minimal and scoped per pod:
+- **Admin**: the pod creator (`createdBy`). Can manage members, integrations, and approvals.
+- **Member**: any user listed in `Pod.members`. Can post, upload assets, and run agents.
+- **Viewer**: read-only access reserved for MVP; enforced at the access layer and not persisted in the pod schema yet.
+
 ### Users
 
 | Method | Endpoint               | Description                 | Request Body                          | Response                        |
