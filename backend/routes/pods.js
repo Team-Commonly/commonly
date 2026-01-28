@@ -18,6 +18,7 @@ const Pod = require('../models/Pod');
 const Announcement = require('../models/Announcement');
 const ExternalLink = require('../models/ExternalLink');
 const PodContextService = require('../services/podContextService');
+const PodMemorySearchService = require('../services/podMemorySearchService');
 
 // Configure storage for file uploads
 const storage = multer.diskStorage({
@@ -281,6 +282,77 @@ router.get('/external-link/:linkId/qrcode', auth, async (req, res) => {
 
 // Pod-specific operations
 // Pod context (structured memory + tags)
+router.get('/:id/context/search', auth, async (req, res) => {
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+  const parseLimit = (raw, fallback, max) => {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isNaN(parsed)) return fallback;
+    return clamp(parsed, 1, max);
+  };
+  const parseBool = (value) => String(value).toLowerCase() === 'true';
+
+  const userId = req.user?.id || req.userId;
+  const podId = req.params.id;
+  const query = req.query.query || req.query.q || '';
+
+  const types = typeof req.query.types === 'string'
+    ? req.query.types.split(',').map((type) => type.trim()).filter(Boolean)
+    : [];
+
+  if (!String(query).trim()) {
+    return res.status(400).json({ message: 'query is required' });
+  }
+
+  try {
+    const results = await PodMemorySearchService.searchPodMemory({
+      podId,
+      userId,
+      query,
+      limit: parseLimit(req.query.limit, 8, 40),
+      includeSkills: parseBool(req.query.includeSkills),
+      types,
+    });
+
+    return res.status(200).json(results);
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ message: error.message, code: error.code });
+    }
+    console.error('Error searching pod memory:', error);
+    return res.status(500).json({ message: 'Failed to search pod memory' });
+  }
+});
+
+router.get('/:id/context/assets/:assetId', auth, async (req, res) => {
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+  const parseLimit = (raw, fallback, max) => {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isNaN(parsed)) return fallback;
+    return clamp(parsed, 1, max);
+  };
+
+  const userId = req.user?.id || req.userId;
+  const { id: podId, assetId } = req.params;
+
+  try {
+    const excerpt = await PodMemorySearchService.getAssetExcerpt({
+      podId,
+      userId,
+      assetId,
+      from: parseLimit(req.query.from, 1, 10000),
+      lines: parseLimit(req.query.lines, 12, 100),
+    });
+
+    return res.status(200).json(excerpt);
+  } catch (error) {
+    if (error?.status) {
+      return res.status(error.status).json({ message: error.message, code: error.code });
+    }
+    console.error('Error reading pod asset excerpt:', error);
+    return res.status(500).json({ message: 'Failed to read pod asset' });
+  }
+});
+
 router.get('/:id/context', auth, async (req, res) => {
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
   const parseLimit = (raw, fallback, max) => {

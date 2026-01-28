@@ -355,6 +355,10 @@ PodSchema.index({ updatedAt: -1 });
 // PodAsset indexes
 PodAssetSchema.index({ podId: 1, createdAt: -1 });
 PodAssetSchema.index({ podId: 1, tags: 1, createdAt: -1 });
+PodAssetSchema.index(
+  { title: 'text', content: 'text', tags: 'text' },
+  { weights: { title: 5, tags: 4, content: 1 } },
+);
 ```
 
 ### PostgreSQL Indexes
