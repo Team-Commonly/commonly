@@ -28,6 +28,7 @@ frontend/
 │   │   ├── layout/       # Layout-related components
 │   │   ├── posts/        # Post-related components
 │   │   ├── auth/         # Authentication components
+│   │   ├── apps/         # Apps Marketplace components
 │   │   └── pods/         # Chat pod components
 │   ├── contexts/         # React Context providers
 │   ├── hooks/            # Custom React hooks
@@ -73,6 +74,11 @@ frontend/
 - **ChatRoom**: Real-time chat interface for a pod
 - **MessageList**: Displays chat messages
 - **MessageInput**: Input for sending new messages
+
+### Apps Marketplace Components
+
+- **AppsMarketplacePage**: Browse Commonly Apps and official listings (from `/api/marketplace/official`) plus built-in integration stats (`/api/integrations/catalog`)
+- **AppCard**: Marketplace card for app listings
 
 ## UI Conventions
 
@@ -130,6 +136,9 @@ The application uses React Router with the following main routes:
 - `/pods`: List of available pods
 - `/pods/:podId`: Specific pod chat room
 - `/settings`: User settings
+- `/apps`: Apps Marketplace (webhook apps + built-in integrations catalog)
+- `/agents`: Agent Hub (agent registry)
+- Agent Hub includes per-agent model preferences (Gemini default) and runtime token issuance for external agents.
 
 ## Styling Approach
 

@@ -2,7 +2,7 @@ const cron = require('node-cron');
 const summarizerService = require('./summarizerService');
 const Integration = require('../models/Integration');
 const IntegrationSummaryService = require('./integrationSummaryService');
-const CommonlyBotService = require('./commonlyBotService');
+const AgentEventService = require('./agentEventService');
 const PodAssetService = require('./podAssetService');
 
 const SummarizerService = summarizerService.constructor;
@@ -246,7 +246,6 @@ class SchedulerService {
         return [];
       }
 
-      const botService = new CommonlyBotService();
       const results = await Promise.allSettled(
         integrations.map(async (integration) => {
           if (
@@ -288,43 +287,40 @@ class SchedulerService {
             );
           }
 
-          const postResult = integration.type === 'discord'
-            ? await botService.postDiscordSummaryToPod(
-              integration.podId,
+          await AgentEventService.enqueue({
+            agentName: 'commonly-bot',
+            podId: integration.podId,
+            type: integration.type === 'discord' ? 'discord.summary' : 'integration.summary',
+            payload: {
               summary,
-              integration._id,
-            )
-            : await botService.postIntegrationSummaryToPod(
-              integration.podId,
-              summary,
-              integration._id,
-            );
+              integrationId: integration._id.toString(),
+              source: integration.type,
+            },
+          });
 
-          if (postResult.success) {
-            if (integration.type === 'discord') {
-              // eslint-disable-next-line global-require
-              const DiscordSummaryHistory = require('../models/DiscordSummaryHistory');
-              const history = new DiscordSummaryHistory({
-                integrationId: integration._id,
-                summaryType: 'hourly',
-                content: summary.content,
-                messageCount: summary.messageCount,
-                timeRange: summary.timeRange,
-                postedToCommonly: true,
-                postedToDiscord: false,
-              });
-              await history.save();
-            }
-
-            await Integration.findByIdAndUpdate(integration._id, {
-              'config.messageBuffer': [],
-              'config.lastSummaryAt': new Date(),
+          if (integration.type === 'discord') {
+            // eslint-disable-next-line global-require
+            const DiscordSummaryHistory = require('../models/DiscordSummaryHistory');
+            const history = new DiscordSummaryHistory({
+              integrationId: integration._id,
+              summaryType: 'hourly',
+              content: summary.content,
+              messageCount: summary.messageCount,
+              timeRange: summary.timeRange,
+              postedToCommonly: false,
+              postedToDiscord: false,
             });
+            await history.save();
           }
+
+          await Integration.findByIdAndUpdate(integration._id, {
+            'config.messageBuffer': [],
+            'config.lastSummaryAt': new Date(),
+          });
 
           return {
             integrationId: integration._id,
-            success: postResult.success,
+            success: true,
             messageCount: summary.messageCount,
             content: summary.content,
           };

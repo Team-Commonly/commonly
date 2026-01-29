@@ -3,9 +3,194 @@ const crypto = require('crypto');
 const auth = require('../middleware/auth');
 const App = require('../models/App');
 const AppInstallation = require('../models/AppInstallation');
+const Pod = require('../models/Pod');
+const AppService = require('../services/appService');
 const { hash, randomSecret } = require('../utils/secret');
 
 const router = express.Router();
+
+const getUserId = (req) => req.user?.id || req.user?._id || req.userId;
+
+const ensurePodAccess = async (podId, userId) => {
+  const pod = await Pod.findById(podId).lean();
+  if (!pod) {
+    const error = new Error('Pod not found');
+    error.code = 'POD_NOT_FOUND';
+    throw error;
+  }
+
+  const userIdStr = userId?.toString();
+  const isCreator = pod.createdBy?.toString() === userIdStr;
+  const isMember = pod.members?.some(
+    (m) => (m.userId?.toString() || m.toString()) === userIdStr,
+  );
+
+  if (!isCreator && !isMember) {
+    const error = new Error('Access denied');
+    error.code = 'POD_ACCESS_DENIED';
+    throw error;
+  }
+
+  return pod;
+};
+
+// ==========================================
+// Marketplace Endpoints (Public)
+// ==========================================
+
+// List marketplace apps
+router.get('/marketplace', async (req, res) => {
+  try {
+    const {
+      category,
+      type,
+      search,
+      sort,
+      limit,
+      skip,
+    } = req.query;
+    const apps = await AppService.getMarketplaceApps({
+      category,
+      type,
+      search,
+      sort,
+      limit: parseInt(limit, 10) || 50,
+      skip: parseInt(skip, 10) || 0,
+    });
+    return res.json({ apps });
+  } catch (error) {
+    console.error('Error listing marketplace apps:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get featured apps
+router.get('/marketplace/featured', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit, 10) || 6;
+    const apps = await AppService.getFeaturedApps(limit);
+    return res.json({ apps });
+  } catch (error) {
+    console.error('Error listing featured apps:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get app details (public view)
+router.get('/marketplace/:id', async (req, res) => {
+  try {
+    const app = await App.findOne({
+      _id: req.params.id,
+      'marketplace.published': true,
+      status: 'active',
+    }).select('-clientSecretHash -webhookSecretHash');
+
+    if (!app) {
+      return res.status(404).json({ error: 'App not found' });
+    }
+
+    return res.json(AppService.formatForMarketplace(app));
+  } catch (error) {
+    console.error('Error getting marketplace app:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==========================================
+// Pod Installation Endpoints
+// ==========================================
+
+// Get installed apps for a pod
+router.get('/pods/:podId/apps', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    await ensurePodAccess(req.params.podId, userId);
+    const apps = await AppService.getInstalledApps(req.params.podId);
+    return res.json({ apps });
+  } catch (error) {
+    console.error('Error listing installed apps:', error);
+    if (error.code === 'POD_NOT_FOUND') {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error.code === 'POD_ACCESS_DENIED') {
+      return res.status(403).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Install an app to a pod
+router.post('/pods/:podId/apps', auth, async (req, res) => {
+  try {
+    const {
+      appId,
+      scopes,
+      events,
+      expiresIn,
+    } = req.body;
+    if (!appId) {
+      return res.status(400).json({ error: 'appId is required' });
+    }
+
+    const userId = getUserId(req);
+    await ensurePodAccess(req.params.podId, userId);
+
+    const result = await AppService.installApp(appId, req.params.podId, userId, {
+      scopes,
+      events,
+      expiresIn,
+    });
+
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error('Error installing app:', error);
+    if (error.message === 'App not found' || error.message === 'App is not active') {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error.message === 'App already installed') {
+      return res.status(409).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Uninstall an app from a pod
+router.delete('/pods/:podId/apps/:installationId', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    await ensurePodAccess(req.params.podId, userId);
+
+    const installation = await AppInstallation.findById(req.params.installationId).lean();
+    if (!installation) {
+      return res.status(404).json({ error: 'Installation not found' });
+    }
+    if (
+      installation.targetType !== 'pod'
+      || installation.targetId?.toString() !== req.params.podId
+    ) {
+      return res.status(404).json({ error: 'Installation not found' });
+    }
+
+    await AppService.uninstallApp(req.params.installationId, userId);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error uninstalling app:', error);
+    if (error.code === 'POD_NOT_FOUND') {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error.code === 'POD_ACCESS_DENIED') {
+      return res.status(403).json({ error: error.message });
+    }
+    if (error.message === 'Installation not found') {
+      return res.status(404).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==========================================
+// Developer Endpoints
+// ==========================================
 
 // List apps for current user
 router.get('/', auth, async (req, res) => {

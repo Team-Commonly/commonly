@@ -61,6 +61,9 @@ services:
       
       # Frontend URL
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+
+      # Marketplace manifest
+      - MARKETPLACE_MANIFEST_PATH=/app/packages/commonly-marketplace/marketplace.json
       
       # AI Integration
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -77,6 +80,8 @@ services:
     volumes:
       # Mount source code for live reloading
       - ./backend:/app
+      # Mount marketplace manifest from repo root
+      - ./packages/commonly-marketplace:/app/packages/commonly-marketplace:ro
       # Prevent overwriting node_modules
       - /app/node_modules
       # Mount CA certificate

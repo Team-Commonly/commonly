@@ -31,6 +31,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useLayout } from '../context/LayoutContext';
 import { getAvatarColor } from '../utils/avatarUtils';
+import { AgentAvatar, AgentBadge, isAgentUsername } from './common/AgentIndicator';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
 import './ChatRoom.css';
@@ -1371,23 +1372,38 @@ const ChatRoom = () => {
                     </div>
                     
                     <div className="sidebar-section-content">
-                        {room?.members?.map(member => (
-                            <div key={member._id} className="sidebar-member">
-                                <Avatar 
-                                    className="sidebar-member-avatar"
-                                    sx={{ bgcolor: getAvatarColor(member.profilePicture || 'default'), width: 32, height: 32 }}
-                                >
-                                    {member.username?.charAt(0).toUpperCase()}
-                                </Avatar>
-                                <div className="sidebar-member-info">
-                                    <div className="sidebar-member-name">{member.username}</div>
-                                    <div className="sidebar-member-role">
-                                        {member._id === room?.createdBy?._id ? 'Admin' : 'Member'}
+                        {room?.members?.map(member => {
+                            const memberIsAgent = isAgentUsername(member.username);
+                            return (
+                                <div key={member._id} className="sidebar-member">
+                                    {memberIsAgent ? (
+                                        <AgentAvatar
+                                            username={member.username}
+                                            src={member.profilePicture}
+                                            size={32}
+                                            showBadge={true}
+                                        />
+                                    ) : (
+                                        <Avatar
+                                            className="sidebar-member-avatar"
+                                            sx={{ bgcolor: getAvatarColor(member.profilePicture || 'default'), width: 32, height: 32 }}
+                                        >
+                                            {member.username?.charAt(0).toUpperCase()}
+                                        </Avatar>
+                                    )}
+                                    <div className="sidebar-member-info">
+                                        <div className="sidebar-member-name">
+                                            {member.username}
+                                            {memberIsAgent && <AgentBadge username={member.username} size="small" showLabel={false} />}
+                                        </div>
+                                        <div className="sidebar-member-role">
+                                            {memberIsAgent ? 'Agent' : (member._id === room?.createdBy?._id ? 'Admin' : 'Member')}
+                                        </div>
                                     </div>
+                                    <div className={`sidebar-member-status ${member._id === currentUser?._id ? '' : (Math.random() > 0.3 ? '' : 'offline')}`}></div>
                                 </div>
-                                <div className={`sidebar-member-status ${member._id === currentUser?._id ? '' : (Math.random() > 0.3 ? '' : 'offline')}`}></div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
                 
@@ -2399,15 +2415,27 @@ const ChatRoom = () => {
                                                 className={`message-item ${isCurrentUser ? 'sent' : 'received'}`}
                                             >
                                                 <ListItemAvatar className="message-avatar">
-                                                    <Avatar
-                                                        sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
-                                                    >
-                                                        {username.charAt(0).toUpperCase()}
-                                                    </Avatar>
+                                                    {isAgentUsername(username) ? (
+                                                        <AgentAvatar
+                                                            username={username}
+                                                            src={profilePicture}
+                                                            size={40}
+                                                            showBadge={true}
+                                                        />
+                                                    ) : (
+                                                        <Avatar
+                                                            sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
+                                                        >
+                                                            {username.charAt(0).toUpperCase()}
+                                                        </Avatar>
+                                                    )}
                                                 </ListItemAvatar>
 
                                                 <div className="message-content-wrapper">
-                                                    <div className="message-user">{username}</div>
+                                                    <div className="message-user">
+                                                        {username}
+                                                        {isAgentUsername(username) && <AgentBadge username={username} size="small" />}
+                                                    </div>
                                                     {/* Text message */}
                                                     {messageType === 'text' && (
                                                         <div className={`message-bubble ${isCurrentUser ? 'sent' : 'received'}`}>

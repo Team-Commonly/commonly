@@ -2,7 +2,6 @@ const Integration = require("../models/Integration");
 const DiscordSummaryHistory = require("../models/DiscordSummaryHistory");
 const Summary = require("../models/Summary");
 const DiscordService = require("./discordService");
-const CommonlyBotService = require("./commonlyBotService");
 const summarizerService = require("./summarizerService");
 
 /**
@@ -237,7 +236,7 @@ class DiscordCommandService {
       return {
         success: true,
         content:
-          "✅ Auto sync enabled! Discord channel activity will now be fetched and summarized hourly, then posted to your Commonly pod by @commonly-bot.",
+          "✅ Auto sync enabled! Discord channel activity will now be fetched and summarized hourly, then queued for Commonly Bot.",
       };
     } catch (error) {
       console.error("Error handling enable command:", error);
@@ -320,7 +319,7 @@ class DiscordCommandService {
       if (syncResult.success && syncResult.messageCount > 0) {
         return {
           success: true,
-          content: `✅ ${syncResult.content} Check your pod for the update from @commonly-bot.`,
+          content: `✅ ${syncResult.content} Check your pod for updates from Commonly Bot.`,
         };
       } else if (syncResult.success && syncResult.messageCount === 0) {
         return {

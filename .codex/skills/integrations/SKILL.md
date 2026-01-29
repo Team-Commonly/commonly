@@ -50,7 +50,8 @@ backend/services/
 ├── discordService.js          # Core Discord API integration
 ├── discordCommandService.js   # Slash command handlers
 ├── discordMultiCommandService.js # Fan-out for multi-pod channel commands
-├── integrationSummaryService.js # Buffer summarization + pod posting
+├── integrationSummaryService.js # Buffer summarization + agent event enqueue
+├── agentEventService.js       # External agent event queue
 ├── telegramService.js         # Telegram helpers (universal bot)
 ├── podAssetService.js         # Indexed pod memory (PodAsset)
 ├── podContextService.js       # Agent-friendly pod context assembly
@@ -60,10 +61,10 @@ backend/services/
 
 ## Integration Flows (high level)
 
-- **Discord**: webhook interactions + REST -> `discordService` -> summarize -> post to pod. Slash commands resolve by `serverId + channelId`; multi-pod channels fan out via `discordMultiCommandService`.
-- **Slack**: Events API webhook (raw body + signing secret) -> normalize -> buffer/summarize.
-- **GroupMe**: Bot callback webhook -> normalize -> buffer/summarize (ingest-only v1).
-- **Telegram**: Webhook with optional `x-telegram-bot-api-secret-token` -> normalize -> buffer/summarize (ingest-only v1).
+- **Discord**: webhook interactions + REST -> `discordService` -> summarize -> enqueue agent event for external runtime. Slash commands resolve by `serverId + channelId`; multi-pod channels fan out via `discordMultiCommandService`.
+- **Slack**: Events API webhook (raw body + signing secret) -> normalize -> buffer/summarize -> enqueue agent event (ingest-only v1).
+- **GroupMe**: Bot callback webhook -> normalize -> buffer/summarize -> enqueue agent event (ingest-only v1).
+- **Telegram**: Webhook with optional `x-telegram-bot-api-secret-token` -> normalize -> buffer/summarize -> enqueue agent event (ingest-only v1).
 - **Telegram (universal bot)**: Single webhook `/api/webhooks/telegram` routes by `chat_id`; `/commonly-enable <code>` links a chat to a pod.
 
 All providers implement the shared contract in `packages/integration-sdk` and are registered in `backend/integrations/index.js`.
@@ -71,11 +72,13 @@ All providers implement the shared contract in `packages/integration-sdk` and ar
 ## Catalogs, manifests, and pod memory
 
 - Integration metadata is manifest-driven.
-- Manifests live in `backend/integrations/manifests.js` and are re-exported from `packages/integration-sdk`.
-- `GET /api/integrations/catalog` returns manifest metadata plus per-user stats for the UI.
+- Integration manifests live in `backend/integrations/manifests.js` and are re-exported from `packages/integration-sdk`.
+- Official marketplace listings live in `packages/commonly-marketplace/marketplace.json` and are served by `GET /api/marketplace/official`.
+- `GET /api/integrations/catalog` returns integration metadata plus per-user stats for the UI.
 - Integration create/update routes enforce manifest-required fields when status is set to `connected`.
 - Summaries are persisted as indexed pod memory via `PodAsset` (for example `type='integration-summary'`).
 - `GET /api/pods/:id/context` reads PodAssets and can synthesize LLM markdown skills into `PodAsset(type='skill')`.
+- External agent runtimes poll `/api/agents/runtime/events` and post into pods via `/api/agents/runtime/pods/:podId/messages`.
 
 ## Operational Notes
 

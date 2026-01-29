@@ -18,10 +18,10 @@ This document tracks the Discord integration development progress, including com
 ### 2. Avatar Color Issues Resolved
 - **Issue**: Both bot and regular users showed blue default avatars in real-time, correct colors after refresh
 - **Root Causes**:
-  - **Bot**: Socket message format mismatch between CommonlyBotService and regular message handler
+  - **Bot**: Socket message format mismatch between agent-posted messages and regular message handler
   - **Regular Users**: Frontend looked for `msg.userId.profilePicture` but socket sent `msg.profilePicture`
 - **Fixes**:
-  - **Bot**: Updated CommonlyBotService to send both flat and nested avatar format
+  - **Bot**: Updated agent message formatting to send both flat and nested avatar format
   - **Regular Users**: Added `msg.profilePicture` fallback to frontend avatar lookup
   - **Backend**: Added socket instance access via `config/socket.js` module
 
@@ -39,8 +39,8 @@ This document tracks the Discord integration development progress, including com
 
 ### 5. Real-Time Socket Message Support
 - **Issue**: Bot messages only appeared after page refresh
-- **Root Cause**: CommonlyBotService saved to database but didn't emit socket events
-- **Fix**: Added real-time socket emission to CommonlyBotService with proper message formatting
+- **Root Cause**: Agent-posted messages were saved to the database but didn't emit socket events
+- **Fix**: Added real-time socket emission to the agent message posting layer
 
 ### 6. Discord Username Recognition Fixed
 - **Issue**: Discord API returned usernames but code couldn't extract them
@@ -74,8 +74,8 @@ module.exports = {
   getIO: () => io
 };
 
-// 2. CommonlyBotService Socket Emission
-// File: backend/services/commonlyBotService.js
+// 2. AgentMessageService Socket Emission
+// File: backend/services/agentMessageService.js
 const socketConfig = require('../config/socket');
 // ... emit socket message for real-time updates
 
@@ -142,14 +142,14 @@ const profilePicture =
 ```
 Discord Messages → Discord API → DiscordService.fetchMessages() 
 → Filter by time/content → AI Summarization (Gemini) 
-→ CommonlyBotService.postDiscordSummaryToPod() 
+→ AgentEvent enqueue (discord.summary)
 → Socket Emission + Database Save → Frontend Real-time Display
 ```
 
 ### Key Components
 - **DiscordService**: Core Discord API integration
 - **DiscordCommandService**: Slash command handlers + AI summarization  
-- **CommonlyBotService**: Posts summaries to Commonly pods with socket support
+- **Commonly Bot (external agent)**: Posts summaries to Commonly pods via agent runtime endpoints
 - **SchedulerService**: Hourly automatic sync integration
 
 ### Database Architecture
@@ -235,7 +235,7 @@ docker-compose -f docker-compose.dev.yml exec -T backend npm run discord:deploy
 
 4. **Key Files to Review**:
    - `backend/services/discordCommandService.js` - AI summarization
-   - `backend/services/commonlyBotService.js` - Socket emission
+   - `backend/services/agentMessageService.js` - Socket emission for agent-posted messages
    - `frontend/src/components/ChatRoom.js` - Avatar handling
    - `backend/services/chatSummarizerService.js` - Pod summaries (broken)
 

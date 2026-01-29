@@ -24,6 +24,13 @@ const groupMeWebhookRoutes = require('./routes/webhooks/groupme');
 const telegramWebhookRoutes = require('./routes/webhooks/telegram');
 const discordRoutes = require('./routes/discord');
 const analyticsRoutes = require('./routes/analytics');
+const contextApiRoutes = require('./routes/contextApi');
+const registryRoutes = require('./routes/registry');
+const agentsRuntimeRoutes = require('./routes/agentsRuntime');
+const federationRoutes = require('./routes/federation');
+const moltbotProviderRoutes = require('./routes/providers/moltbot');
+const activityRoutes = require('./routes/activity');
+const marketplaceRoutes = require('./routes/marketplace');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes;
 let pgMessageRoutes;
@@ -113,6 +120,13 @@ app.use('/api/webhooks/groupme', groupMeWebhookRoutes);
 app.use('/api/webhooks/telegram', telegramWebhookRoutes);
 app.use('/api/discord', discordRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/v1', contextApiRoutes); // Context API for MCP and external agents
+app.use('/api/registry', registryRoutes); // Agent Registry (package manager for agents)
+app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
+app.use('/api/federation', federationRoutes); // Cross-pod federation
+app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration
+app.use('/api/activity', activityRoutes); // Activity feed
+app.use('/api/marketplace', marketplaceRoutes); // Official marketplace manifest
 
 // Test routes (development only)
 if (process.env.NODE_ENV === 'development') {

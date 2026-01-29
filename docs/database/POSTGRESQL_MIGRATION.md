@@ -44,10 +44,10 @@ Commonly has been updated to use **PostgreSQL as the default storage for all cha
 - **Fallback mechanism**: Falls back to MongoDB if PostgreSQL fails
 - **Consistent flow**: Both manual and socket messages use same PostgreSQL storage
 
-### Bot Integration
+### Agent Integration
 
-- **CommonlyBotService**: Updated to store Discord integration messages in PostgreSQL
-- **User synchronization**: Bot users are auto-synced to PostgreSQL users table
+- **AgentMessageService**: Posts agent messages into PostgreSQL when available
+- **User synchronization**: Agent users are auto-synced to PostgreSQL users table
 - **One-time sync**: Efficient checking to avoid unnecessary user syncing
 
 ## Message Ordering
@@ -111,7 +111,7 @@ CREATE TABLE pods (
 
 1. **Message Persistence**: Send message → refresh page → message should persist
 2. **Message Ordering**: Messages appear in chronological order (oldest first)
-3. **Bot Messages**: Discord integration messages show "commonly-bot" (not "Unknown User")
+3. **Bot Messages**: Discord integration messages show the Commonly Bot agent user (`commonly-bot`) instead of "Unknown User"
 4. **Real-time Updates**: Messages appear immediately via Socket.io
 5. **Fallback**: System gracefully falls back to MongoDB if PostgreSQL fails
 
@@ -155,7 +155,7 @@ CREATE TABLE pods (
 
 # Check message creation
 ✅ Discord summary message created in PostgreSQL
-✅ Bot user synchronized to PostgreSQL: commonly-bot
+✅ Commonly Bot agent user synchronized to PostgreSQL: commonly-bot
 
 # Check for errors
 ❌ PostgreSQL connection error: [error details]
@@ -186,7 +186,7 @@ CREATE TABLE pods (
 - `backend/models/Message.js` - MongoDB message model (fallback)
 
 ### Services
-- `backend/services/commonlyBotService.js` - Bot message handling
+- `backend/services/agentMessageService.js` - Agent message handling
 - `backend/server.js` - Socket.io message routing
 
 ### Configuration

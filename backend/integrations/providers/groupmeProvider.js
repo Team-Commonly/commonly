@@ -1,7 +1,7 @@
 const Integration = require('../../models/Integration');
 const { normalizeBufferMessage } = require('../normalizeBufferMessage');
 const IntegrationSummaryService = require('../../services/integrationSummaryService');
-const CommonlyBotService = require('../../services/commonlyBotService');
+const AgentEventService = require('../../services/agentEventService');
 const groupmeService = require('../../services/groupmeService');
 const Summary = require('../../models/Summary');
 const { manifests } = require('../manifests');
@@ -109,28 +109,25 @@ function createGroupMeProvider(integration) {
                   latest,
                   buffer,
                 );
-                const botService = new CommonlyBotService();
-                const postResult = await botService.postIntegrationSummaryToPod(
-                  latest.podId,
-                  summary,
-                  latest._id,
-                );
+                await AgentEventService.enqueue({
+                  agentName: 'commonly-bot',
+                  podId: latest.podId,
+                  type: 'integration.summary',
+                  payload: {
+                    summary,
+                    integrationId: latest._id.toString(),
+                    source: 'groupme',
+                  },
+                });
 
-                if (postResult.success) {
-                  await Integration.findByIdAndUpdate(integration._id, {
-                    'config.messageBuffer': [],
-                    'config.lastSummaryAt': new Date(),
-                  });
-                  await groupmeService.sendMessage(
-                    botId,
-                    '✅ Posted GroupMe summary to your Commonly pod.',
-                  );
-                } else {
-                  await groupmeService.sendMessage(
-                    botId,
-                    '❌ Failed to post summary to Commonly.',
-                  );
-                }
+                await Integration.findByIdAndUpdate(integration._id, {
+                  'config.messageBuffer': [],
+                  'config.lastSummaryAt': new Date(),
+                });
+                await groupmeService.sendMessage(
+                  botId,
+                  '✅ Queued GroupMe summary for Commonly Bot.',
+                );
               } catch (err) {
                 console.warn('groupme summary command failed', err.message);
               }
@@ -215,3 +212,4 @@ function createGroupMeProvider(integration) {
 }
 
 module.exports = createGroupMeProvider;
+// LEGACY: in-platform provider. External service will replace this module.

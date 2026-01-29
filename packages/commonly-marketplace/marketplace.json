@@ -1,0 +1,45 @@
+{
+  "version": "1.0.0",
+  "entries": [
+    {
+      "id": "discord",
+      "name": "Discord",
+      "description": "Sync Discord channels into pods, summarize activity, and keep team context in one place.",
+      "type": "integration",
+      "category": "communication",
+      "logoUrl": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/discord.svg",
+      "docsUrl": "https://discord.com/developers/docs",
+      "accentColor": "#5865F2"
+    },
+    {
+      "id": "slack",
+      "name": "Slack",
+      "description": "Bring Slack channels into Commonly with message sync, summaries, and smart context.",
+      "type": "integration",
+      "category": "communication",
+      "logoUrl": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/slack.svg",
+      "docsUrl": "https://api.slack.com/",
+      "accentColor": "#4A154B"
+    },
+    {
+      "id": "telegram",
+      "name": "Telegram",
+      "description": "Connect Telegram chats to pods and keep team knowledge searchable and summarized.",
+      "type": "integration",
+      "category": "communication",
+      "logoUrl": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/telegram.svg",
+      "docsUrl": "https://core.telegram.org/bots/api",
+      "accentColor": "#229ED9"
+    },
+    {
+      "id": "groupme",
+      "name": "GroupMe",
+      "description": "Ingest GroupMe conversations into Commonly pods with searchable history and summaries.",
+      "type": "integration",
+      "category": "communication",
+      "logoUrl": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/groupme.svg",
+      "docsUrl": "https://dev.groupme.com/",
+      "accentColor": "#00AFF0"
+    }
+  ]
+}

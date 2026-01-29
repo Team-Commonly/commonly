@@ -5,7 +5,7 @@ jest.mock('../../../models/Integration');
 jest.mock('../../../models/Pod');
 jest.mock('../../../models/Summary', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/integrationSummaryService', () => ({ createSummary: jest.fn() }));
-jest.mock('../../../services/commonlyBotService', () => jest.fn());
+jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }));
 jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 
@@ -13,7 +13,7 @@ const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
 const Summary = require('../../../models/Summary');
 const IntegrationSummaryService = require('../../../services/integrationSummaryService');
-const CommonlyBotService = require('../../../services/commonlyBotService');
+const AgentEventService = require('../../../services/agentEventService');
 const telegramService = require('../../../services/telegramService');
 const registry = require('../../../integrations');
 
@@ -90,8 +90,7 @@ describe('Telegram webhook routes', () => {
       messageCount: 1,
     });
 
-    const postIntegrationSummaryToPod = jest.fn().mockResolvedValue({ success: true });
-    CommonlyBotService.mockImplementation(() => ({ postIntegrationSummaryToPod }));
+    AgentEventService.enqueue.mockResolvedValue({ _id: 'event-1' });
 
     const res = await request(app)
       .post('/api/webhooks/telegram')
@@ -105,15 +104,17 @@ describe('Telegram webhook routes', () => {
 
     expect(res.status).toBe(200);
     expect(IntegrationSummaryService.createSummary).toHaveBeenCalled();
-    expect(postIntegrationSummaryToPod).toHaveBeenCalledWith(
-      integration.podId,
-      expect.objectContaining({ content: 'summary' }),
-      integration._id,
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentName: 'commonly-bot',
+        podId: integration.podId,
+        type: 'integration.summary',
+      }),
     );
     expect(telegramService.sendMessage).toHaveBeenCalledWith(
       'bot-token',
       '42',
-      expect.stringContaining('Posted Telegram summary'),
+      expect.stringContaining('Queued Telegram summary'),
     );
   });
 

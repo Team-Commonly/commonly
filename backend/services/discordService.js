@@ -584,16 +584,19 @@ class DiscordService {
         timeRange.end,
       );
 
-      // Post summary to Commonly pod via bot
-      const CommonlyBotService = require("./commonlyBotService");
-      const botService = new CommonlyBotService();
-      const result = await botService.postDiscordSummaryToPod(
-        this.integration.podId,
-        discordSummary,
-        this.integration._id,
-      );
+      const AgentEventService = require('./agentEventService');
+      await AgentEventService.enqueue({
+        agentName: 'commonly-bot',
+        podId: this.integration.podId,
+        type: 'discord.summary',
+        payload: {
+          summary: discordSummary,
+          integrationId: this.integration._id.toString(),
+          source: 'discord',
+        },
+      });
 
-      if (result.success) {
+      {
         // Save to Discord summary history
         const DiscordSummaryHistory = require("../models/DiscordSummaryHistory");
         const summaryRecord = new DiscordSummaryHistory({
@@ -602,7 +605,7 @@ class DiscordService {
           content: discordSummary.content,
           messageCount: recentMessages.length,
           timeRange,
-          postedToCommonly: true,
+          postedToCommonly: false,
           postedToDiscord: false,
         });
         await summaryRecord.save();
@@ -615,10 +618,8 @@ class DiscordService {
         return {
           success: true,
           messageCount: recentMessages.length,
-          content: `Synced ${recentMessages.length} Discord message(s) to Commonly pod.`,
+          content: `Queued ${recentMessages.length} Discord message(s) for Commonly Bot.`,
         };
-      } else {
-        throw new Error("Failed to post Discord summary to Commonly pod");
       }
     } catch (error) {
       console.error("Error syncing Discord messages:", error);

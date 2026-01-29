@@ -4,7 +4,6 @@ jest.mock('../../models/Integration', () => ({
 }));
 jest.mock('../../models/Summary', () => ({ findOne: jest.fn() }));
 jest.mock('../../services/integrationSummaryService', () => ({ createSummary: jest.fn() }));
-jest.mock('../../services/commonlyBotService', () => jest.fn());
 jest.mock('../../services/groupmeService', () => ({ sendMessage: jest.fn() }));
 
 jest.mock('../../services/discordService', () => {
