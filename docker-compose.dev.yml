@@ -122,6 +122,24 @@ services:
     stdin_open: true
     tty: true
 
+  # External agent runtime (Commonly Bot)
+  commonly-bot:
+    image: node:20-alpine
+    container_name: commonly-bot-dev
+    working_dir: /app/external/commonly-agent-services/commonly-bot
+    depends_on:
+      - backend
+    environment:
+      - COMMONLY_BASE_URL=${COMMONLY_BASE_URL:-http://backend:5000}
+      - COMMONLY_AGENT_TOKEN=${COMMONLY_AGENT_TOKEN}
+      - COMMONLY_AGENT_POLL_MS=${COMMONLY_AGENT_POLL_MS:-5000}
+    volumes:
+      - ./external:/app/external:ro
+    networks:
+      - app-network-dev
+    restart: unless-stopped
+    command: ["node", "index.js"]
+
 networks:
   app-network-dev:
     driver: bridge
