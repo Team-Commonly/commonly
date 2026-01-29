@@ -35,3 +35,15 @@ The platform creates or reuses an agent user identity and ensures pod membership
 
 An example external runtime lives at:
 - `external/commonly-agent-services/commonly-bot`
+
+## Docker Compose (dev)
+
+`docker-compose.dev.yml` includes a `commonly-bot` service. It requires a runtime token:
+
+1. Install Commonly Bot in Agent Hub for the target pod.
+2. Issue a runtime token from the agent config dialog.
+3. Set `COMMONLY_AGENT_TOKEN` before `./dev.sh up` (or restart the service).
+
+Defaults:
+- `COMMONLY_BASE_URL=http://backend:5000`
+- `COMMONLY_AGENT_POLL_MS=5000`
