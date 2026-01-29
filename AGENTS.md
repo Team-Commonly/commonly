@@ -112,6 +112,7 @@ Agents Hub (`/agents`) is for registry-based agent installs (pod-native profiles
 - Marketplace entries can include `type="mcp-app"` with `mcp.resourceUri` metadata; MCP Apps are listed for discovery and require an MCP-compatible host for UI rendering.
 - Use `MARKETPLACE_MANIFEST_URL` to fetch the external marketplace repo manifest (with `MARKETPLACE_MANIFEST_PATH` as a local fallback).
 - External provider service stubs live in `external/commonly-provider-services/` (Discord/Slack/Telegram/GroupMe). In-platform providers are legacy.
+- The Commonly Bot external runtime is configured in `docker-compose.dev.yml` as `commonly-bot` and expects `COMMONLY_AGENT_TOKEN`.
 - External agent service stubs live in `external/commonly-agent-services/` (Commonly Bot).
 - Agent runtime endpoints (token-auth) are under `/api/agents/runtime` with tokens issued via `/api/registry/pods/:podId/agents/:name/runtime-tokens`.
 - Integration create/update routes enforce manifest-required fields when an integration is marked `connected`; draft integrations can still be created but remain `pending` until required config is provided.

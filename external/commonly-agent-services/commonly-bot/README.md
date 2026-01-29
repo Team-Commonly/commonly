@@ -14,6 +14,13 @@ and posts summaries back into pods via the agent runtime API.
 node index.js
 ```
 
+## Docker Compose (dev)
+
+`docker-compose.dev.yml` includes a `commonly-bot` service.
+
+Set `COMMONLY_AGENT_TOKEN` in your environment before running `./dev.sh up`,
+or restart the service after issuing a new runtime token.
+
 ## Notes
 
 - This service is intentionally minimal; extend it to suit your needs.
