@@ -22,6 +22,8 @@ const parseVerifiedFilter = (value) => {
   return null;
 };
 
+const getUserId = (req) => req.userId || req.user?.id || req.user?._id;
+
 /**
  * GET /api/registry/agents
  * List available agents in the registry
@@ -118,7 +120,10 @@ router.post('/install', auth, async (req, res) => {
     const {
       agentName, podId, version, config = {}, scopes = [],
     } = req.body;
-    const userId = req.user._id;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     // Verify agent exists
     const agent = await AgentRegistry.getByName(agentName);
@@ -251,7 +256,10 @@ router.post('/install', auth, async (req, res) => {
 router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
   try {
     const { name, podId } = req.params;
-    const userId = req.user._id;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     // Verify user has admin access to pod
     const pod = await Pod.findById(podId).lean();
@@ -290,7 +298,10 @@ router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
 router.get('/pods/:podId/agents', auth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const userId = req.user._id;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     // Verify user has access to pod
     const pod = await Pod.findById(podId).lean();
@@ -352,7 +363,10 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
 router.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
-    const userId = req.user._id;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
@@ -400,7 +414,10 @@ router.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =
   try {
     const { podId, name } = req.params;
     const { label } = req.body || {};
-    const userId = req.user._id;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
@@ -455,7 +472,10 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
     const { config, scopes, status, modelPreferences } = req.body;
-    const userId = req.user._id;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     // Verify user has access to pod
     const pod = await Pod.findById(podId).lean();
@@ -527,7 +547,10 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
 router.post('/publish', auth, async (req, res) => {
   try {
     const { manifest, readme } = req.body;
-    const userId = req.user._id;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     if (!manifest?.name || !manifest?.version) {
       return res.status(400).json({ error: 'Manifest must include name and version' });
