@@ -12,13 +12,13 @@ Commonly's Discord integration creates a seamless bridge between Discord servers
 │                 │    │                 │    │                 │
 │ • Slash Commands│    │ • Real-time     │    │ • Timeline      │
 │ • Bot Messages  │    │   Messages      │    │ • Insights      │
-│ • Webhooks      │    │ • @commonly-bot │    │ • Quotes        │
+│ • Webhooks      │    │ • Commonly Bot  │    │ • Quotes        │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
 ### **Key Features**
 - **🤖 Slash Commands**: Native Discord commands for Commonly integration
-- **📊 Automated Summaries**: AI-powered activity summaries posted to pods
+- **📊 Automated Summaries**: AI-powered activity summaries queued for the Commonly Bot agent and posted to pods
 - **🔄 Real-time Sync**: Gateway-buffered message capture + hourly summary posting
 - **📧 Smart Notifications**: Intelligent alerts based on activity patterns
 - **⚙️ Flexible Configuration**: Per-server and per-channel customization
@@ -78,7 +78,7 @@ Enable Discord webhook listener for activity aggregation.
 
 **Response:**
 ```
-✅ Webhook listener enabled! Discord channel activity will now be summarized and posted to your Commonly pod by @commonly-bot every hour.
+✅ Webhook listener enabled! Discord channel activity will now be summarized and posted to your Commonly pod by the Commonly Bot agent (external runtime) every hour.
 ```
 
 #### **`/discord-disable`**
@@ -102,12 +102,13 @@ Immediately push Discord activity from the last hour to your Commonly pod.
 
 **Response:**
 ```
-✅ Pushed 12 Discord messages from the last hour to your Commonly pod! Check your pod for the update from @commonly-bot.
+✅ Pushed 12 Discord messages from the last hour to your Commonly pod! Check your pod for the update from the Commonly Bot agent.
+```
 
 ## 💾 **Database Storage Architecture**
 
 ### Message Storage Strategy
-- **commonly-bot messages**: Stored in **PostgreSQL** (primary) for consistency and persistence
+- **Commonly Bot agent messages**: Stored in **PostgreSQL** (primary) for consistency and persistence
 - **User synchronization**: Bot user automatically synced to PostgreSQL users table  
 - **Message persistence**: Discord integration messages persist after browser refresh
 - **Graceful fallback**: Falls back to MongoDB if PostgreSQL connection fails
@@ -116,16 +117,17 @@ Immediately push Discord activity from the last hour to your Commonly pod.
 ```javascript
 // Bot message flow
 1. Discord integration triggered
-2. commonly-bot user synced to PostgreSQL (one-time)
-3. Message stored in PostgreSQL with proper user join
-4. Real-time broadcast via Socket.io
-5. Message persists across page refreshes
-```
+2. AgentEvent enqueued for Commonly Bot runtime
+3. Commonly Bot agent user synced to PostgreSQL (one-time)
+4. External agent posts message via `/api/agents/runtime/pods/:podId/messages`
+5. Message stored in PostgreSQL with proper user join
+6. Real-time broadcast via Socket.io
+7. Message persists across page refreshes
 ```
 
 ## 🧾 **Bot Message Display**
 
-Bot messages from `@commonly-bot` render with structured formatting in the Commonly chat UI:
+Bot messages from the Commonly Bot agent user (`commonly-bot`) render with structured formatting in the Commonly chat UI:
 - **Structured JSON Format**: Bot messages use a `[BOT_MESSAGE]` prefix with JSON payload for rich display.
 - **Local Timezone**: Time ranges are stored as ISO timestamps so the UI can render in the viewer’s local timezone.
 - **Visual Styling**: BOT badge, Discord-themed colors, organized layout with title/meta/summary sections.
@@ -328,15 +330,19 @@ class DiscordCommandService {
     // Create summary
     const summary = await this.createDiscordSummary(messages);
     
-    // Post to Commonly pod via bot
-    const botService = new CommonlyBotService();
-    const result = await botService.postDiscordSummaryToPod(
-      this.integration.podId,
-      summary,
-      this.integration._id
-    );
+    // Queue for external Commonly Bot runtime
+    await AgentEventService.enqueue({
+      agentName: 'commonly-bot',
+      podId: this.integration.podId,
+      type: 'discord.summary',
+      payload: {
+        summary,
+        integrationId: this.integration._id.toString(),
+        source: 'discord'
+      }
+    });
     
-    return result;
+    return { success: true };
   }
 }
 ```
@@ -363,8 +369,17 @@ class DiscordActivityAggregator {
           // Create AI summary
           const summary = await this.createActivitySummary(messages);
           
-          // Post to Commonly pod
-          await this.postSummaryToPod(integration.podId, summary);
+          // Enqueue for external Commonly Bot runtime
+          await AgentEventService.enqueue({
+            agentName: 'commonly-bot',
+            podId: integration.podId,
+            type: 'discord.summary',
+            payload: {
+              summary,
+              integrationId: integration._id.toString(),
+              source: 'discord'
+            }
+          });
         }
       } catch (error) {
         console.error(`Failed to aggregate activity for ${integration._id}:`, error);
@@ -395,30 +410,18 @@ const processDiscordMessages = (messages) => {
 
 ### **Discord → Commonly Flow**
 ```javascript
-// Automated posting to Commonly pods
-class CommonlyBotService {
-  async postDiscordSummaryToPod(podId, summary, integrationId) {
-    // Get or create bot user
-    const botUser = await this.getOrCreateBotUser();
-    
-    // Format message for Commonly
-    const message = this.formatDiscordSummary(summary);
-    
-    // Post to pod via Socket.io
-    const io = getSocketInstance();
-    io.to(`pod_${podId}`).emit('message', {
-      user: botUser,
-      content: message,
-      timestamp: new Date(),
-      type: 'discord_summary'
-    });
-    
-    // Save to database
-    await this.saveMessageToDatabase(podId, botUser._id, message);
-    
-    return { success: true };
-  }
-}
+// External Commonly Bot agent posts to Commonly pods
+const postDiscordSummaryToPod = async (podId, summary) => {
+  const message = formatDiscordSummary(summary);
+  await fetch(`/api/agents/runtime/pods/${podId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.COMMONLY_AGENT_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ content: message })
+  });
+};
 ```
 
 ### **Commonly → Discord Flow**

@@ -53,6 +53,7 @@ Pods are treated as scoped memory boundaries with indexed assets:
 - Agents and developer tools can query structured pod context via:
   - `GET /api/pods/:id/context`
   - This endpoint can synthesize and refresh LLM skills using `skillMode`, `skillLimit`, and `skillRefreshHours`.
+- External agents connect via runtime tokens and `/api/agents/runtime` endpoints to fetch context and post messages.
 
 ### Pod Roles (MVP)
 

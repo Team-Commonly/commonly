@@ -17,8 +17,11 @@ import ApiDevPage from './components/ApiDevPage';
 import PodContextDevPage from './components/PodContextDevPage';
 import DiscordCallback from './components/DiscordCallback';
 import DailyDigest from './components/DailyDigest';
-import IntegrationsCatalog from './components/IntegrationsCatalog';
 import ProtectedRoute from './components/ProtectedRoute';
+// New agent-related pages
+import AgentsHub from './components/agents/AgentsHub';
+import ActivityFeedPage from './components/activity/ActivityFeedPage';
+import AppsMarketplacePage from './components/apps/AppsMarketplacePage';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
@@ -204,7 +207,9 @@ function App() {
                       <Route path="/profile" element={<UserProfile />} />
                       <Route path="/dashboard" element={<Dashboard />} />
                       <Route path="/digest" element={<DailyDigest />} />
-                      <Route path="/integrations" element={<IntegrationsCatalog />} />
+                      <Route path="/apps" element={<AppsMarketplacePage />} />
+                      <Route path="/agents" element={<AgentsHub />} />
+                      <Route path="/activity" element={<ActivityFeedPage />} />
                       <Route path="/pods" element={<PodRedirect />} />
                       <Route path="/pods/:podType" element={<Pod />} />
                       <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />

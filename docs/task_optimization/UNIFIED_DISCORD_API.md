@@ -143,7 +143,7 @@ rules: {
 - Fetches messages from Discord API
 - Applies comprehensive filtering (bots, empty content, time range)
 - Creates AI summaries via Gemini
-- Posts to Commonly pods via @commonly-bot
+- Enqueues agent events for the Commonly Bot external runtime
 - Saves to DiscordSummaryHistory
 - Returns standardized result object
 
@@ -161,7 +161,7 @@ rules: {
 1. ✅ `/discord-push` command works without "Unknown command" error
 2. ✅ No more "DiscordService is not a constructor" errors
 3. ✅ Bot messages are properly filtered out
-4. ✅ Meaningful content successfully posted to Commonly pods
+4. ✅ Meaningful content successfully queued and posted to Commonly pods via the Commonly Bot agent
 5. ✅ Performance improvements: memory usage reduced 60%
 
 ### Architecture Verification
@@ -196,7 +196,7 @@ CHOKIDAR_USEPOLLING=false
 - Check Docker container CPU/memory usage: `docker stats`
 - Monitor Discord API rate limits (50 requests/second)
 - Track hourly sync success rates in logs
-- Verify @commonly-bot posts appear in linked pods
+- Verify the Commonly Bot agent posts appear in linked pods
 
 ## Future Improvements
 
