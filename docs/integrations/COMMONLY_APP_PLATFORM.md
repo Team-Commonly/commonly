@@ -15,6 +15,7 @@ Goal: let third parties register “Commonly Apps” (similar to GitHub Apps) th
   - `MARKETPLACE_MANIFEST_PATH` can be used for local dev fallback.
   - `MARKETPLACE_MANIFEST_TTL_MS` controls cache TTL.
   - `REACT_APP_MARKETPLACE_CONTRIB_URL` controls the “Submit App” CTA in `/apps`.
+  - MCP Apps can be listed with `type="mcp-app"` and optional `mcp.resourceUri` metadata for MCP-compatible hosts.
 
 ## Data model (proposed)
 - `App` (Mongo): name, description, homepage, callback URL, webhook URL, webhook secret, public key (optional), clientId, clientSecret, ownerId, allowedRedirects, defaultScopes, allowedEvents, status.
