@@ -40,6 +40,19 @@
       "logoUrl": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/groupme.svg",
       "docsUrl": "https://dev.groupme.com/",
       "accentColor": "#00AFF0"
+    },
+    {
+      "id": "mcp-analytics-canvas",
+      "name": "MCP Analytics Canvas",
+      "description": "Interactive analytics UI rendered inside MCP-compatible hosts.",
+      "type": "mcp-app",
+      "category": "analytics",
+      "docsUrl": "https://modelcontextprotocol.io/docs/extensions/apps",
+      "accentColor": "#0EA5E9",
+      "mcp": {
+        "resourceUri": "ui://analytics/canvas",
+        "hostSupportRequired": true
+      }
     }
   ]
 }
