@@ -20,12 +20,20 @@ import {
 } from '@mui/material';
 import { Link as LinkIcon } from '@mui/icons-material';
 
-const OfficialIntegrationCard = ({ entry, onConnect }) => {
+const OfficialIntegrationCard = ({
+  entry,
+  onConnect,
+  actionLabel,
+  actionDisabled = false,
+}) => {
   const theme = useTheme();
   const accent = entry.accentColor || theme.palette.primary.main;
   const isMonochromeLogo = Boolean(entry.logoUrl && entry.logoUrl.includes('simple-icons'));
   const avatarBackground = isMonochromeLogo ? accent : alpha(accent, 0.12);
   const avatarForeground = theme.palette.getContrastText(avatarBackground);
+  const isMcpApp = entry.type === 'mcp-app';
+  const typeLabel = isMcpApp ? 'MCP App' : entry.type || 'integration';
+  const primaryLabel = actionLabel || (isMcpApp ? 'MCP Host Required' : 'Connect in Pod');
 
   return (
     <Card
@@ -76,8 +84,11 @@ const OfficialIntegrationCard = ({ entry, onConnect }) => {
           </Box>
 
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-            <Chip label={entry.type || 'integration'} size="small" />
+            <Chip label={typeLabel} size="small" />
             {entry.category && <Chip label={entry.category} size="small" variant="outlined" />}
+            {isMcpApp && (
+              <Chip label="Host required" size="small" variant="outlined" />
+            )}
             {typeof entry.activeCount === 'number' && (
               <Chip label={`${entry.activeCount} active`} size="small" variant="outlined" />
             )}
@@ -93,8 +104,12 @@ const OfficialIntegrationCard = ({ entry, onConnect }) => {
         </Stack>
       </CardContent>
       <CardActions sx={{ px: 2, pb: 2, gap: 1 }}>
-        <Button variant="contained" onClick={() => onConnect?.(entry)}>
-          Connect in Pod
+        <Button
+          variant="contained"
+          onClick={() => onConnect?.(entry)}
+          disabled={actionDisabled}
+        >
+          {primaryLabel}
         </Button>
         {entry.docsUrl && (
           <Button
