@@ -12,6 +12,9 @@ const Pod = require('../models/Pod');
 const User = require('../models/User');
 const { buildCatalogEntries } = require('../integrations/catalog');
 const { manifests } = require('../integrations/manifests');
+const registry = require('../integrations');
+const { normalizeBufferMessage } = require('../integrations/normalizeBufferMessage');
+const { hash, randomSecret } = require('../utils/secret');
 
 let validateRequiredConfig;
 try {
@@ -62,6 +65,65 @@ const validateManifestIfComplete = (type, config) => {
   validateRequiredConfig(effectiveConfig, manifest);
 };
 
+async function canDeleteIntegration(integration, userId) {
+  const user = await User.findById(userId);
+
+  // Admin can delete any integration
+  if (user.role === 'admin') {
+    return true;
+  }
+
+  // Pod owner can delete integrations in their pod
+  const pod = await Pod.findById(integration.podId);
+  if (pod && pod.createdBy.toString() === userId) {
+    return true;
+  }
+
+  // Integration creator can delete their own integration
+  if (integration.createdBy.toString() === userId) {
+    return true;
+  }
+
+  return false;
+}
+
+const extractToken = (req) => {
+  const authHeader = req.header('Authorization');
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.replace('Bearer ', '').trim();
+  }
+  return req.header('x-commonly-integration-token');
+};
+
+const ingestAuth = async (req, res, next) => {
+  const token = extractToken(req);
+  if (token && token.startsWith('cm_int_')) {
+    const tokenHash = hash(token);
+    const integration = await Integration.findOne({
+      'ingestTokens.tokenHash': tokenHash,
+    });
+
+    if (!integration) {
+      return res.status(401).json({ message: 'Invalid integration token' });
+    }
+
+    try {
+      await Integration.updateOne(
+        { _id: integration._id, 'ingestTokens.tokenHash': tokenHash },
+        { $set: { 'ingestTokens.$.lastUsedAt': new Date() } },
+      );
+    } catch (err) {
+      console.warn('Failed to update integration token usage:', err.message);
+    }
+
+    req.integrationAuth = true;
+    req.integration = integration;
+    return next();
+  }
+
+  return auth(req, res, next);
+};
+
 // Integration catalog metadata (manifest-driven)
 router.get('/catalog', auth, async (req, res) => {
   try {
@@ -69,6 +131,175 @@ router.get('/catalog', auth, async (req, res) => {
     res.json({ entries });
   } catch (error) {
     console.error('Error fetching integration catalog:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Ingest events from external provider services
+router.post('/ingest', ingestAuth, async (req, res) => {
+  try {
+    const {
+      provider,
+      integrationId,
+      event,
+      messages,
+    } = req.body || {};
+
+    const { integration: tokenIntegration } = req;
+    let integration = tokenIntegration;
+    if (!integrationId && !integration) {
+      return res.status(400).json({ message: 'integrationId is required' });
+    }
+
+    if (!integration) {
+      integration = await Integration.findById(integrationId).lean();
+    }
+
+    if (!integration) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    if (integrationId && integration._id.toString() !== integrationId.toString()) {
+      return res.status(400).json({ message: 'integrationId does not match token' });
+    }
+
+    const providerName = provider || integration.type;
+    if (providerName !== integration.type) {
+      return res.status(400).json({ message: 'Provider does not match integration type' });
+    }
+
+    let normalizedMessages = [];
+    if (Array.isArray(messages) && messages.length > 0) {
+      normalizedMessages = messages;
+    } else if (event) {
+      let providerInstance;
+      try {
+        providerInstance = registry.get(providerName, integration);
+      } catch (err) {
+        return res.status(400).json({ message: 'Provider not registered' });
+      }
+      normalizedMessages = await providerInstance.ingestEvent(event);
+    } else {
+      return res.status(400).json({ message: 'event or messages is required' });
+    }
+
+    const bufferMessages = (normalizedMessages || [])
+      .map(normalizeBufferMessage)
+      .filter(Boolean);
+
+    if (bufferMessages.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    const maxBufferSize = integration.config?.maxBufferSize || 1000;
+
+    await Integration.findByIdAndUpdate(integration._id, {
+      $push: {
+        'config.messageBuffer': {
+          $each: bufferMessages,
+          $slice: -1 * maxBufferSize,
+        },
+      },
+    });
+
+    res.json({ success: true, count: bufferMessages.length });
+  } catch (error) {
+    console.error('Error ingesting integration event:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Issue a new ingest token for external services
+router.post('/:id/ingest-tokens', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { label } = req.body || {};
+    const integration = await Integration.findById(id);
+    if (!integration) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    const canUpdate = await canDeleteIntegration(integration, req.user.id);
+    if (!canUpdate) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const token = `cm_int_${randomSecret(16)}`;
+    const tokenHash = hash(token);
+
+    integration.ingestTokens = integration.ingestTokens || [];
+    integration.ingestTokens.push({
+      tokenHash,
+      label: label || '',
+      createdBy: req.user.id,
+      createdAt: new Date(),
+    });
+
+    await integration.save();
+
+    res.json({ token });
+  } catch (error) {
+    console.error('Error issuing ingest token:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// List ingest tokens (metadata only)
+router.get('/:id/ingest-tokens', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const integration = await Integration.findById(id);
+    if (!integration) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    const canUpdate = await canDeleteIntegration(integration, req.user.id);
+    if (!canUpdate) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const tokens = (integration.ingestTokens || []).map((token) => ({
+      id: token._id.toString(),
+      label: token.label,
+      createdAt: token.createdAt,
+      lastUsedAt: token.lastUsedAt,
+      createdBy: token.createdBy,
+    }));
+
+    res.json({ tokens });
+  } catch (error) {
+    console.error('Error listing ingest tokens:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Revoke ingest token
+router.delete('/:id/ingest-tokens/:tokenId', auth, async (req, res) => {
+  try {
+    const { id, tokenId } = req.params;
+    const integration = await Integration.findById(id);
+    if (!integration) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    const canUpdate = await canDeleteIntegration(integration, req.user.id);
+    if (!canUpdate) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const before = integration.ingestTokens?.length || 0;
+    integration.ingestTokens = (integration.ingestTokens || []).filter(
+      (token) => token._id.toString() !== tokenId,
+    );
+
+    if ((integration.ingestTokens || []).length === before) {
+      return res.status(404).json({ message: 'Token not found' });
+    }
+
+    await integration.save();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error revoking ingest token:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -452,29 +683,6 @@ router.get('/user/all', auth, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-
-// Check if user can delete integration
-const canDeleteIntegration = async (integration, userId) => {
-  const user = await User.findById(userId);
-
-  // Admin can delete any integration
-  if (user.role === 'admin') {
-    return true;
-  }
-
-  // Pod owner can delete integrations in their pod
-  const pod = await Pod.findById(integration.podId);
-  if (pod && pod.createdBy.toString() === userId) {
-    return true;
-  }
-
-  // Integration creator can delete their own integration
-  if (integration.createdBy.toString() === userId) {
-    return true;
-  }
-
-  return false;
-};
 
 // Update integration config/status
 router.patch('/:id', auth, async (req, res) => {

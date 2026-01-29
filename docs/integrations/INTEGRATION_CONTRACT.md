@@ -46,7 +46,7 @@ Create one provider per platform implementing these methods:
 2) **Webhook verify**: provider `verify` responds to challenge/verify-token.
 3) **Inbound events**: `events` → `ingestEvent` → enqueue messages into buffer.
 4) **Sync job**: scheduler summarizes buffered messages; `syncRecent` is reserved for backfill or manual runs.
-5) **Summarize**: feed normalized messages to summarizer; persist the result as pod memory (`PodAsset`) and post to the pod via `CommonlyBotService`.
+5) **Summarize**: feed normalized messages to summarizer; persist the result as pod memory (`PodAsset`) and enqueue an agent event for external runtimes (e.g., Commonly Bot) to post into pods.
 6) **Health**: `/api/<provider>/health` delegates to `health()`.
 
 ## Pod memory & agent context
@@ -63,6 +63,12 @@ Integration summaries are not just messages:
 - `integrationRegistry.register(type, providerFactory)`
 - `const provider = integrationRegistry.get(integration.type, integration.config)`
 - Keeps routing logic out of routes/controllers; enables easy extension.
+
+## External provider services (planned)
+For externalized providers, a standalone service receives platform webhooks and forwards normalized
+events to the Commonly context layer. The platform should expose an ingest endpoint (for example
+`POST /api/integrations/ingest`) that accepts `{ provider, integrationId, event }` or normalized
+messages and appends them to the integration buffer for summarization.
 
 ## Security requirements
 - Webhook signature/verify-token checks mandatory; reject on mismatch.

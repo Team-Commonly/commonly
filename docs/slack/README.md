@@ -1,9 +1,12 @@
 # Slack Integration (Ingest-only v1)
 
 ## Status
+- ⚠️ Legacy in-platform provider (will move to external service).
 - ✅ Provider implemented (`backend/integrations/providers/slackProvider.js`)
 - ✅ Webhook: `POST /api/webhooks/slack/:integrationId`
 - Ingest-only: receives channel message events via Events API; no outbound send wired yet.
+
+External service stub lives at `external/commonly-provider-services/slack-service/`.
 
 ## Required App Setup
 1) Create a Slack App (workspace-level is fine for v1).

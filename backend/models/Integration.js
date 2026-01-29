@@ -64,6 +64,15 @@ const IntegrationSchema = new mongoose.Schema(
         default: 1000,
       },
     },
+    ingestTokens: [
+      {
+        tokenHash: { type: String, required: true },
+        label: { type: String, default: '' },
+        createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        createdAt: { type: Date, default: Date.now },
+        lastUsedAt: { type: Date },
+      },
+    ],
     lastSync: {
       type: Date,
       default: null,
@@ -93,6 +102,7 @@ IntegrationSchema.index({ podId: 1, type: 1 });
 IntegrationSchema.index({ status: 1 });
 IntegrationSchema.index({ createdBy: 1 });
 IntegrationSchema.index({ installationId: 1 }, { unique: true, sparse: true });
+IntegrationSchema.index({ 'ingestTokens.tokenHash': 1 });
 
 // Virtual for platform-specific integration
 IntegrationSchema.virtual('platformIntegration', {

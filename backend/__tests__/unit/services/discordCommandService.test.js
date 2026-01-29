@@ -2,7 +2,6 @@ jest.mock('../../../models/Integration');
 jest.mock('../../../models/DiscordSummaryHistory', () => jest.fn());
 jest.mock('../../../models/Summary', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/discordService');
-jest.mock('../../../services/commonlyBotService');
 jest.mock('../../../services/summarizerService');
 
 const Integration = require('../../../models/Integration');

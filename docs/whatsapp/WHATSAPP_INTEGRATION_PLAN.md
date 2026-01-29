@@ -55,7 +55,7 @@
 1. WhatsApp webhook receives new messages.
 2. Persist minimal message buffer to integration record.
 3. On schedule or manual trigger, summarize recent messages with Gemini.
-4. Post summary to pod via `CommonlyBotService` (similar to Discord).
+4. Enqueue an agent event for the external Commonly Bot to post into the pod.
 
 ## Security & Compliance
 - Store access tokens encrypted (use existing secrets pattern).

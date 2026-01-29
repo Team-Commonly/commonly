@@ -11,7 +11,6 @@ const {
 
 // Mock Discord services
 jest.mock('../../services/discordService');
-jest.mock('../../services/commonlyBotService');
 
 const discordRoutes = require('../../routes/discord');
 const User = require('../../models/User');

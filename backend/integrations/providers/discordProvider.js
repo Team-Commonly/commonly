@@ -87,3 +87,4 @@ function createDiscordProvider(integration) {
 }
 
 module.exports = createDiscordProvider;
+// LEGACY: in-platform provider. External service will replace this module.

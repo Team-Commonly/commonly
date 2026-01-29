@@ -1,0 +1,53 @@
+{
+  "name": "@commonly/mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for Commonly context hub - connect any AI agent to team knowledge",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "commonly-mcp": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "test": "vitest",
+    "lint": "eslint src/"
+  },
+  "keywords": [
+    "mcp",
+    "commonly",
+    "context",
+    "ai-agent",
+    "moltbot",
+    "claude",
+    "team-memory"
+  ],
+  "author": "Commonly Team",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "axios": "^1.6.0",
+    "ws": "^8.16.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0",
+    "eslint": "^8.55.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Team-Commonly/commonly.git",
+    "directory": "packages/commonly-mcp"
+  }
+}
