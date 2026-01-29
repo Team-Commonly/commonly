@@ -77,7 +77,7 @@ frontend/
 
 ### Apps Marketplace Components
 
-- **AppsMarketplacePage**: Browse Commonly Apps and official listings (from `/api/marketplace/official`) plus built-in integration stats (`/api/integrations/catalog`)
+- **AppsMarketplacePage**: Browse Commonly Apps and official listings (from `/api/marketplace/official`) plus built-in integration stats (`/api/integrations/catalog`), including a preview section for MCP Apps that require external hosts.
 - **AppCard**: Marketplace card for app listings
 
 ## UI Conventions
