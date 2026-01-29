@@ -109,6 +109,7 @@ Agents Hub (`/agents`) is for registry-based agent installs (pod-native profiles
 - The pod context inspector includes type filters and an auto-load excerpt toggle for faster memory review.
 - ChatRoom’s Apps/Integrations cards consume `/api/integrations/catalog` to render provider descriptions in the sidebar; capability chips now live in the built-in integrations section on `/apps`.
 - Official marketplace listings are served from `/api/marketplace/official` (manifest at `packages/commonly-marketplace/marketplace.json`).
+- Marketplace entries can include `type="mcp-app"` with `mcp.resourceUri` metadata; MCP Apps are listed for discovery and require an MCP-compatible host for UI rendering.
 - Use `MARKETPLACE_MANIFEST_URL` to fetch the external marketplace repo manifest (with `MARKETPLACE_MANIFEST_PATH` as a local fallback).
 - External provider service stubs live in `external/commonly-provider-services/` (Discord/Slack/Telegram/GroupMe). In-platform providers are legacy.
 - External agent service stubs live in `external/commonly-agent-services/` (Commonly Bot).

@@ -50,6 +50,7 @@ const types = [
   { id: 'all', label: 'All Types' },
   { id: 'agent', label: 'Agent Apps' },
   { id: 'integration', label: 'Integrations' },
+  { id: 'mcp-app', label: 'MCP Apps' },
   { id: 'webhook', label: 'Webhook Apps' },
 ];
 
@@ -241,6 +242,8 @@ const AppsMarketplacePage = () => {
       activeCount: integrationInfo.stats?.activeIntegrations,
     };
   });
+  const officialIntegrations = officialListings.filter((entry) => entry.type !== 'mcp-app');
+  const mcpListings = officialListings.filter((entry) => entry.type === 'mcp-app');
 
   const handleConnect = (entry) => {
     setSnackbar({
@@ -414,7 +417,7 @@ const AppsMarketplacePage = () => {
 
             {!officialLoading && !officialError && !integrationsLoading && !integrationsError && (
               <Grid container spacing={2}>
-                {officialListings.map((entry) => (
+                {officialIntegrations.map((entry) => (
                   <Grid item xs={12} sm={6} md={4} key={`official-${entry.id}`}>
                     <OfficialIntegrationCard
                       entry={entry}
@@ -422,9 +425,53 @@ const AppsMarketplacePage = () => {
                     />
                   </Grid>
                 ))}
-                {!officialLoading && officialListings.length === 0 && (
+                {!officialLoading && officialIntegrations.length === 0 && (
                   <Grid item xs={12}>
                     <Alert severity="info">No official listings yet.</Alert>
+                  </Grid>
+                )}
+              </Grid>
+            )}
+          </Box>
+
+          <Box sx={{ mb: 5 }}>
+            <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+              MCP Apps (Preview)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              MCP Apps render interactive UI inside MCP-compatible hosts. Commonly lists them here for discovery.
+            </Typography>
+
+            {officialLoading && (
+              <Grid container spacing={2}>
+                {[1, 2].map((i) => (
+                  <Grid item xs={12} sm={6} md={4} key={`mcp-skel-${i}`}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Skeleton height={22} width="70%" />
+                        <Skeleton height={16} width="90%" />
+                        <Skeleton height={40} width="50%" sx={{ mt: 2 }} />
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            )}
+
+            {!officialLoading && !officialError && (
+              <Grid container spacing={2}>
+                {mcpListings.map((entry) => (
+                  <Grid item xs={12} sm={6} md={4} key={`mcp-${entry.id}`}>
+                    <OfficialIntegrationCard
+                      entry={entry}
+                      actionLabel="MCP Host Required"
+                      actionDisabled
+                    />
+                  </Grid>
+                ))}
+                {!officialLoading && mcpListings.length === 0 && (
+                  <Grid item xs={12}>
+                    <Alert severity="info">No MCP apps published yet.</Alert>
                   </Grid>
                 )}
               </Grid>
