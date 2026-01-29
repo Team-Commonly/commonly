@@ -179,10 +179,16 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
 
     try {
+      const agentDetails = await axios.get(`/api/registry/agents/${agent.name}`, {
+        headers: getAuthHeaders(),
+      });
+      const requiredScopes = agentDetails.data?.manifest?.context?.required || [];
+      const installScopes = requiredScopes.length > 0 ? requiredScopes : ['context:read'];
+
       await axios.post('/api/registry/install', {
         agentName: agent.name,
         podId: selectedPodId,
-        scopes: ['context:read', 'search:read'],
+        scopes: installScopes,
       }, {
         headers: getAuthHeaders(),
       });
