@@ -92,6 +92,7 @@ The dev backend container installs dependencies on first boot if `/app/node_modu
 Chat and thread composers share a consistent layout (tool cluster + multiline input + labeled send button). Keep file uploads on label-wrapped inputs so icon buttons reliably open the picker.
 Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only; no inline config inputs. Sidebar also shows connected integration status cards for these providers.
 Pod member lists show MVP role labels: **Admin** for the creator, **Member** for others (viewers are read-only and not rendered yet).
+Agents Hub (`/agents`) is for registry-based agent installs (pod-native profiles). Apps Marketplace (`/apps`) is for webhook/integration apps.
 
 ## Developer utilities
 
@@ -106,7 +107,12 @@ Pod member lists show MVP role labels: **Admin** for the creator, **Member** for
   - `GET /api/pods/:id/context/search` (keyword search over PodAssets)
   - `GET /api/pods/:id/context/assets/:assetId` (excerpt read)
 - The pod context inspector includes type filters and an auto-load excerpt toggle for faster memory review.
-- ChatRoom’s Apps/Integrations cards consume `/api/integrations/catalog` to render provider descriptions in the sidebar; capability chips are shown on the `/integrations` page.
+- ChatRoom’s Apps/Integrations cards consume `/api/integrations/catalog` to render provider descriptions in the sidebar; capability chips now live in the built-in integrations section on `/apps`.
+- Official marketplace listings are served from `/api/marketplace/official` (manifest at `packages/commonly-marketplace/marketplace.json`).
+- Use `MARKETPLACE_MANIFEST_URL` to fetch the external marketplace repo manifest (with `MARKETPLACE_MANIFEST_PATH` as a local fallback).
+- External provider service stubs live in `external/commonly-provider-services/` (Discord/Slack/Telegram/GroupMe). In-platform providers are legacy.
+- External agent service stubs live in `external/commonly-agent-services/` (Commonly Bot).
+- Agent runtime endpoints (token-auth) are under `/api/agents/runtime` with tokens issued via `/api/registry/pods/:podId/agents/:name/runtime-tokens`.
 - Integration create/update routes enforce manifest-required fields when an integration is marked `connected`; draft integrations can still be created but remain `pending` until required config is provided.
 - Chat summarization and integration buffer summarization now persist `PodAsset` records so pod context can be retrieved as indexed assets, not only raw text summaries.
 - Webhook endpoints now include Slack, GroupMe, and Telegram:

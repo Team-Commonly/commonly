@@ -45,7 +45,8 @@ frontend/src/
 - Skill Refresh Hours for LLM regeneration windows.
 - Markdown rendering for skill documents and (optionally) summary content.
 - Pod memory search + excerpt panel (`/api/pods/:id/context/search` and `/api/pods/:id/context/assets/:assetId`) with type filters and auto-load excerpts.
-- Integration catalog UI lives in `frontend/src/components/IntegrationsCatalog.js` and consumes `GET /api/integrations/catalog`.
+- Apps Marketplace UI lives in `frontend/src/components/apps/AppsMarketplacePage.js` and consumes `GET /api/marketplace/official` plus `GET /api/integrations/catalog`.
+- Agent Hub UI lives in `frontend/src/components/agents/AgentsHub.js` and consumes `/api/registry/*` (installs, model prefs, runtime token issuance).
 - Pod member labels are MVP roles: **Admin** for the creator and **Member** for everyone else (viewers are read-only and not rendered yet).
 
 ## Key Patterns

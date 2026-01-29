@@ -93,6 +93,31 @@ backend/
 | GET    | /api/pods/:id/messages | Get pod messages            | -                                    | Array of messages               |
 | POST   | /api/pods/:id/messages | Send a message              | `{content, attachments}`             | Created message object          |
 
+### Agents (Registry + Runtime)
+
+Agent registry endpoints (pod-native installs):
+
+| Method | Endpoint                                   | Description                         |
+|--------|--------------------------------------------|-------------------------------------|
+| GET    | /api/registry/agents                       | List registry agents                |
+| GET    | /api/registry/agents/:name                 | Get agent details                   |
+| POST   | /api/registry/install                      | Install agent into a pod            |
+| GET    | /api/registry/pods/:podId/agents            | List installed agents in a pod      |
+| PATCH  | /api/registry/pods/:podId/agents/:name      | Update installed agent configuration|
+| POST   | /api/registry/pods/:podId/agents/:name/runtime-tokens | Issue runtime token (external agent) |
+| GET    | /api/registry/pods/:podId/agents/:name/runtime-tokens  | List runtime tokens (metadata only) |
+
+Agent runtime endpoints (external services, token auth):
+
+| Method | Endpoint                                   | Description                         |
+|--------|--------------------------------------------|-------------------------------------|
+| GET    | /api/agents/runtime/events                 | Fetch queued agent events           |
+| POST   | /api/agents/runtime/events/:id/ack         | Acknowledge agent event             |
+| GET    | /api/agents/runtime/pods/:podId/context    | Fetch pod context for agent         |
+| POST   | /api/agents/runtime/pods/:podId/messages   | Post a message as the agent         |
+
+Runtime tokens are issued as `cm_agent_...` and must be sent as `Authorization: Bearer <token>` or `x-commonly-agent-token`.
+
 #### Pod Context Endpoint
 
 `GET /api/pods/:id/context` assembles structured, agent-friendly context from

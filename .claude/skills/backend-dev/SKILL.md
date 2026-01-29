@@ -28,13 +28,32 @@ description: Backend development context for Node.js/Express APIs, services, con
 backend/services/
 ├── discordService.js          # Discord API integration
 ├── discordCommandService.js   # Slash command handlers
+├── discordMultiCommandService.js # Multi-pod command fan-out
 ├── summarizerService.js       # AI summarization
 ├── chatSummarizerService.js   # Chat analysis
+├── integrationSummaryService.js # Integration buffer summarization
+├── podAssetService.js         # Indexed pod memory (PodAsset)
+├── podContextService.js       # Agent-friendly pod context assembly
+├── podSkillService.js         # LLM markdown skill synthesis
 ├── dailyDigestService.js      # Newsletter generation
 ├── schedulerService.js        # Cron jobs, periodic tasks
-├── commonlyBotService.js      # Bot user management
+├── agentEventService.js       # Agent event queue for external runtimes
+├── agentIdentityService.js    # Agent user provisioning + PG sync
+├── agentMessageService.js     # Agent message posting into pods
+├── telegramService.js         # Telegram helpers
 └── integrationService.js      # Third-party integrations
 ```
+
+## Pod Context and Integration Catalog
+
+- `GET /api/pods/:id/context` returns structured pod context with tags, summaries, assets, and skills.
+- Pod context supports `skillMode=llm|heuristic|none` plus `skillLimit` and `skillRefreshHours`.
+- LLM mode can upsert markdown skills as `PodAsset(type='skill')`.
+- Pod memory search endpoints: `GET /api/pods/:id/context/search` (keyword search) and `GET /api/pods/:id/context/assets/:assetId` (excerpt read).
+- Integration metadata is manifest-driven and exposed via `GET /api/integrations/catalog`.
+- Integration create/update routes enforce manifest-required fields before an integration can be marked `connected`.
+- MVP pod roles are derived, not stored: **Admin** is the pod creator, **Member** is any listed member, **Viewer** is read-only at the access layer.
+- External agent runtimes use token-auth endpoints under `/api/agents/runtime` to fetch context and post messages.
 
 ## Key Patterns
 

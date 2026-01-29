@@ -4,7 +4,7 @@ const Pod = require('../../models/Pod');
 const Summary = require('../../models/Summary');
 const registry = require('../../integrations');
 const IntegrationSummaryService = require('../../services/integrationSummaryService');
-const CommonlyBotService = require('../../services/commonlyBotService');
+const AgentEventService = require('../../services/agentEventService');
 const telegramService = require('../../services/telegramService');
 
 const router = express.Router({ mergeParams: true });
@@ -141,30 +141,26 @@ const handleSummaryCommand = async (chat, integration) => {
     buffer,
   );
 
-  const botService = new CommonlyBotService();
-  const postResult = await botService.postIntegrationSummaryToPod(
-    latest.podId,
-    summary,
-    latest._id,
-  );
+  await AgentEventService.enqueue({
+    agentName: 'commonly-bot',
+    podId: latest.podId,
+    type: 'integration.summary',
+    payload: {
+      summary,
+      integrationId: latest._id.toString(),
+      source: 'telegram',
+    },
+  });
 
-  if (postResult.success) {
-    await Integration.findByIdAndUpdate(integration._id, {
-      'config.messageBuffer': [],
-      'config.lastSummaryAt': new Date(),
-    });
-    await telegramService.sendMessage(
-      botToken,
-      chatId,
-      '✅ Posted Telegram summary to your Commonly pod.',
-    );
-  } else {
-    await telegramService.sendMessage(
-      botToken,
-      chatId,
-      '❌ Failed to post summary to Commonly.',
-    );
-  }
+  await Integration.findByIdAndUpdate(integration._id, {
+    'config.messageBuffer': [],
+    'config.lastSummaryAt': new Date(),
+  });
+  await telegramService.sendMessage(
+    botToken,
+    chatId,
+    '✅ Queued Telegram summary for Commonly Bot.',
+  );
 };
 
 const handlePodSummaryCommand = async (chat, integration) => {
@@ -257,3 +253,4 @@ router.post('/', async (req, res) => {
 });
 
 module.exports = router;
+// LEGACY: in-platform webhook. External provider service will replace this route.

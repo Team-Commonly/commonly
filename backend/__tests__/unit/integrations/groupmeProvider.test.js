@@ -4,13 +4,15 @@ jest.mock('../../../models/Integration', () => ({
 }));
 jest.mock('../../../models/Summary', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/integrationSummaryService', () => ({ createSummary: jest.fn() }));
-jest.mock('../../../services/commonlyBotService', () => jest.fn());
+jest.mock('../../../services/agentEventService', () => ({
+  enqueue: jest.fn(),
+}));
 jest.mock('../../../services/groupmeService', () => ({ sendMessage: jest.fn() }));
 
 const Integration = require('../../../models/Integration');
 const Summary = require('../../../models/Summary');
 const IntegrationSummaryService = require('../../../services/integrationSummaryService');
-const CommonlyBotService = require('../../../services/commonlyBotService');
+const AgentEventService = require('../../../services/agentEventService');
 const groupmeService = require('../../../services/groupmeService');
 const createGroupMeProvider = require('../../../integrations/providers/groupmeProvider');
 
@@ -84,10 +86,7 @@ describe('GroupMe provider commands', () => {
       summaryType: 'groupme-hourly',
     });
 
-    const postIntegrationSummaryToPod = jest.fn().mockResolvedValue({ success: true });
-    CommonlyBotService.mockImplementation(() => ({
-      postIntegrationSummaryToPod,
-    }));
+    AgentEventService.enqueue.mockResolvedValue({ _id: 'event-1' });
     groupmeService.sendMessage.mockResolvedValue({ success: true });
 
     const provider = createGroupMeProvider(integration);
@@ -105,10 +104,12 @@ describe('GroupMe provider commands', () => {
     await provider.getWebhookHandlers().events(req, res);
 
     expect(IntegrationSummaryService.createSummary).toHaveBeenCalled();
-    expect(postIntegrationSummaryToPod).toHaveBeenCalledWith(
-      integration.podId,
-      expect.objectContaining({ content: 'summary' }),
-      integration._id,
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentName: 'commonly-bot',
+        podId: integration.podId,
+        type: 'integration.summary',
+      }),
     );
     expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
       integration._id,
@@ -118,7 +119,7 @@ describe('GroupMe provider commands', () => {
     );
     expect(groupmeService.sendMessage).toHaveBeenCalledWith(
       'bot-1',
-      '✅ Posted GroupMe summary to your Commonly pod.',
+      '✅ Queued GroupMe summary for Commonly Bot.',
     );
     expect(res.sendStatus).toHaveBeenCalledWith(200);
   });

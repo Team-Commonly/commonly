@@ -56,6 +56,13 @@ const AppsManagement = () => {
     events: 'message.created',
   });
   const [installToken, setInstallToken] = useState(null);
+  const [ingestDialogOpen, setIngestDialogOpen] = useState(false);
+  const [ingestTokens, setIngestTokens] = useState([]);
+  const [ingestLoading, setIngestLoading] = useState(false);
+  const [ingestError, setIngestError] = useState('');
+  const [ingestLabel, setIngestLabel] = useState('');
+  const [newIngestToken, setNewIngestToken] = useState(null);
+  const [selectedIntegrationForTokens, setSelectedIntegrationForTokens] = useState(null);
 
   const fetchIntegrations = async () => {
     try {
@@ -168,6 +175,73 @@ const AppsManagement = () => {
       setError(err.response?.data?.error || 'Failed to create installation');
     } finally {
       setInstalling(false);
+    }
+  };
+
+  const fetchIngestTokens = async (integrationId) => {
+    if (!integrationId) return;
+    setIngestLoading(true);
+    setIngestError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`/api/integrations/${integrationId}/ingest-tokens`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setIngestTokens(res.data.tokens || []);
+    } catch (err) {
+      console.error('Error fetching ingest tokens:', err);
+      setIngestError(err.response?.data?.message || 'Failed to load ingest tokens');
+    } finally {
+      setIngestLoading(false);
+    }
+  };
+
+  const handleOpenIngestTokens = async (integration) => {
+    setSelectedIntegrationForTokens(integration);
+    setIngestDialogOpen(true);
+    setNewIngestToken(null);
+    setIngestLabel('');
+    await fetchIngestTokens(integration._id);
+  };
+
+  const handleCreateIngestToken = async () => {
+    if (!selectedIntegrationForTokens) return;
+    setIngestLoading(true);
+    setIngestError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(
+        `/api/integrations/${selectedIntegrationForTokens._id}/ingest-tokens`,
+        { label: ingestLabel },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setNewIngestToken(res.data.token);
+      setIngestLabel('');
+      await fetchIngestTokens(selectedIntegrationForTokens._id);
+    } catch (err) {
+      console.error('Error creating ingest token:', err);
+      setIngestError(err.response?.data?.message || 'Failed to create ingest token');
+    } finally {
+      setIngestLoading(false);
+    }
+  };
+
+  const handleRevokeIngestToken = async (tokenId) => {
+    if (!selectedIntegrationForTokens || !tokenId) return;
+    setIngestLoading(true);
+    setIngestError('');
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(
+        `/api/integrations/${selectedIntegrationForTokens._id}/ingest-tokens/${tokenId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      await fetchIngestTokens(selectedIntegrationForTokens._id);
+    } catch (err) {
+      console.error('Error revoking ingest token:', err);
+      setIngestError(err.response?.data?.message || 'Failed to revoke ingest token');
+    } finally {
+      setIngestLoading(false);
     }
   };
 
@@ -446,17 +520,26 @@ const AppsManagement = () => {
                           </Typography>
                         </CardContent>
                         <CardActions sx={{ justifyContent: 'space-between' }}>
-                          <Button
-                            size="small"
-                            startIcon={<SettingsIcon />}
-                            onClick={() => {
-                              const podType = integration.podId?.type || 'chat';
-                              const roomId = integration.podId?._id;
-                              if (roomId) navigate(`/pods/${podType}/${roomId}`);
-                            }}
-                          >
-                            View Pod
-                          </Button>
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button
+                              size="small"
+                              startIcon={<SettingsIcon />}
+                              onClick={() => {
+                                const podType = integration.podId?.type || 'chat';
+                                const roomId = integration.podId?._id;
+                                if (roomId) navigate(`/pods/${podType}/${roomId}`);
+                              }}
+                            >
+                              View Pod
+                            </Button>
+                            <Button
+                              size="small"
+                              startIcon={<SecurityIcon />}
+                              onClick={() => handleOpenIngestTokens(integration)}
+                            >
+                              Ingest Tokens
+                            </Button>
+                          </Box>
                           <Button
                             size="small"
                             color="error"
@@ -484,6 +567,7 @@ const AppsManagement = () => {
               <Typography variant="body2" color="text.secondary">
                 - Webhook secret: HMAC SHA-256 of request body.<br />
                 - Installation token: send as `Authorization: Bearer &lt;token&gt;`.<br />
+                - Ingest tokens: issue per-integration keys for external providers.<br />
                 - Scopes: comma separated (e.g., messages:read, pods:read).<br />
                 - Events: comma separated (e.g., message.created).<br />
               </Typography>
@@ -510,6 +594,110 @@ const AppsManagement = () => {
           >
             {deleting ? 'Deleting...' : 'Delete'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={ingestDialogOpen}
+        onClose={() => setIngestDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Ingest Tokens{selectedIntegrationForTokens ? ` · ${selectedIntegrationForTokens.type}` : ''}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Use ingest tokens with external provider services to push events into Commonly.
+            Tokens start with <strong>cm_int_</strong> and are shown once on creation.
+          </Typography>
+
+          {ingestError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {ingestError}
+            </Alert>
+          )}
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={2}>
+            <TextField
+              label="Token label (optional)"
+              value={ingestLabel}
+              onChange={(e) => setIngestLabel(e.target.value)}
+              fullWidth
+            />
+            <Button
+              variant="contained"
+              onClick={handleCreateIngestToken}
+              disabled={ingestLoading || !selectedIntegrationForTokens}
+            >
+              Create Token
+            </Button>
+          </Stack>
+
+          {newIngestToken && (
+            <Paper sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
+              <Typography variant="subtitle2" gutterBottom>
+                New Ingest Token (copy now)
+              </Typography>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <TextField
+                  value={newIngestToken}
+                  fullWidth
+                  InputProps={{ readOnly: true, sx: { fontFamily: 'monospace' } }}
+                />
+                <Tooltip title="Copy token">
+                  <IconButton onClick={() => navigator.clipboard?.writeText(newIngestToken)}>
+                    <ContentCopyIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            </Paper>
+          )}
+
+          {ingestLoading && (
+            <Box display="flex" justifyContent="center" py={2}>
+              <CircularProgress size={24} />
+            </Box>
+          )}
+
+          {!ingestLoading && ingestTokens.length === 0 && (
+            <Alert severity="info">No ingest tokens yet.</Alert>
+          )}
+
+          {!ingestLoading && ingestTokens.length > 0 && (
+            <Stack spacing={1.5}>
+              {ingestTokens.map((token) => (
+                <Paper key={token.id} sx={{ p: 2 }}>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>
+                    <Box>
+                      <Typography variant="subtitle2">
+                        {token.label || 'Untitled token'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Created: {new Date(token.createdAt).toLocaleString()}
+                      </Typography>
+                      {token.lastUsedAt && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Last used: {new Date(token.lastUsedAt).toLocaleString()}
+                        </Typography>
+                      )}
+                    </Box>
+                    <Button
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      onClick={() => handleRevokeIngestToken(token.id)}
+                    >
+                      Revoke
+                    </Button>
+                  </Box>
+                </Paper>
+              ))}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIngestDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

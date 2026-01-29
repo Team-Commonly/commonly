@@ -28,9 +28,12 @@
 - No slash commands; only text payloads.
 
 ## Status / TODO
+- ⚠️ Legacy in-platform provider (will move to external service).
 - ✅ Provider registered (`groupmeProvider`)
 - ✅ Webhook route `/api/webhooks/groupme/:integrationId`
 - UI: Sidebar Apps quick-add uses a redirect flow (no inline config fields); callback supplies Bot ID/Group ID.
+
+External service stub lives at `external/commonly-provider-services/groupme-service/`.
 
 ## Notes
 - Ingest-only: we do not send messages back in v1 (avoids loops and keeps scope narrow).
