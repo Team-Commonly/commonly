@@ -124,8 +124,11 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       });
       const fetchedAgents = response.data.agents || [];
 
-      if (fetchedAgents.length === 0) {
-        // Auto-seed if no agents exist
+      const hasCommonlyBot = fetchedAgents.some((agent) => agent.name === 'commonly-bot');
+      const shouldSeedDefaults = !searchQuery && category === 'all' && !hasCommonlyBot;
+
+      if (fetchedAgents.length === 0 || shouldSeedDefaults) {
+        // Auto-seed if registry is empty or missing Commonly Bot (default view only)
         await seedAgents();
       } else {
         setAgents(fetchedAgents);
