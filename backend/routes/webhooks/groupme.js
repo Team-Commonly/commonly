@@ -23,3 +23,4 @@ router.post('/:integrationId', async (req, res) => {
 });
 
 module.exports = router;
+// LEGACY: in-platform webhook. External provider service will replace this route.

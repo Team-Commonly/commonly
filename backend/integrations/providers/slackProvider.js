@@ -124,3 +124,4 @@ function createSlackProvider(integration) {
 }
 
 module.exports = createSlackProvider;
+// LEGACY: in-platform provider. External service will replace this module.

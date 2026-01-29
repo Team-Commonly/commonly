@@ -65,14 +65,14 @@ const filteredMessages = messages.filter(msg => {
 - **Step 1**: `summarizeIntegrationBuffers()` - Process buffered messages
 - Runs hourly via cron: `0 * * * *` (every hour at minute 0)
 - Finds all integrations where `config.webhookListenerEnabled: true`
-- Summarizes buffered messages and posts to pods
+- Summarizes buffered messages and enqueues agent events for external runtimes
 
-#### 4. CommonlyBotService (`backend/services/commonlyBotService.js`)
-**Posts Discord summaries to Commonly pods**
+#### 5. Commonly Bot (external agent runtime)
+**Consumes queued events and posts summaries into pods**
 
-- Creates @commonly-bot user posts in Commonly pods
-- Formats Discord activity summaries with metadata
-- Tracks posting history via DiscordSummaryHistory model
+- External service (agent) polls `/api/agents/runtime/events`
+- Posts messages via `/api/agents/runtime/pods/:podId/messages`
+- Tracks posting history via DiscordSummaryHistory model (set when summaries are queued)
 
 ## Data Flow
 
@@ -90,7 +90,7 @@ const filteredMessages = messages.filter(msg => {
     ↓
 [AI Summarization via Gemini]
     ↓
-[CommonlyBotService.postDiscordSummaryToPod()]
+[AgentEvent enqueue: discord.summary]
     ↓
 [Save to DiscordSummaryHistory]
 ```

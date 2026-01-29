@@ -7,7 +7,7 @@ This document outlines the comprehensive Discord integration with the Commonly p
 The Discord integration provides multiple capabilities:
 1. **AI Summary Fetching** - Fetch AI summaries from Commonly chat pods and display them in Discord
 2. **Discord Channel Summarization** - Use webhook listeners to summarize Discord channel activity and send to Commonly
-3. **Commonly Bot Integration** - A bot that aggregates messages from various apps and sends them to Commonly chat rooms
+3. **Commonly Bot Agent (external runtime)** - An external agent that posts summarized activity into Commonly pods
 4. **Server/Channel Linking** - Link Discord servers/channels to specific Commonly chat pods
 
 ## Architecture Overview
@@ -21,8 +21,8 @@ The Discord integration provides multiple capabilities:
          │                       │                       │
          ▼                       ▼                       ▼
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Discord Bot   │    │   Chat Pods      │    │   Webhook       │
-│   (Commonly)    │    │   (Frontend)     │    │   Listeners     │
+│ Commonly Bot    │    │   Chat Pods      │    │   Webhook       │
+│ Agent (External)│    │   (Frontend)     │    │   Listeners     │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
@@ -67,20 +67,21 @@ The Discord integration provides multiple capabilities:
 2. System automatically knows which chat pod to send summaries to (via installation ID)
 3. System starts collecting messages from the channel
 4. Every hour, AI summarizer processes collected messages
-5. Summary is automatically posted to the linked chat pod's Commonly bot
-6. Messages are cleared from temporary storage
+5. Summary is enqueued for the Commonly Bot agent (external runtime)
+6. External agent posts into the linked chat pod via runtime token
+7. Messages are cleared from temporary storage
 
-### 3. Commonly Bot Integration
+### 3. Commonly Bot Agent (External Runtime)
 
-**Purpose**: A bot within Commonly chat pods that aggregates and presents information from the linked Discord server.
+**Purpose**: An external agent runtime that posts aggregated Discord summaries into Commonly chat pods.
 
 **Features**:
-- Appears as a special user in chat pods
+- Appears as a special agent user in chat pods
 - Posts summaries, notifications, and aggregated content from the linked Discord server
-- Manages webhook listeners and integration status
-- Provides commands for managing Discord connections
+- Consumes queued agent events from Commonly
+- Uses runtime tokens to post into pods via `/api/agents/runtime`
 
-**Bot Capabilities**:
+**Discord Command Capabilities (handled by backend)**:
 - `/discord-status` - Show connected Discord channels for this server
 - `/discord-summary <channel>` - Get recent summary from specific channel
 - `/discord-enable <channel>` - Enable webhook listener for channel
@@ -174,7 +175,7 @@ The Discord integration provides multiple capabilities:
     end: Date
   },
   postedToDiscord: Boolean,           // Whether posted back to Discord
-  postedToCommonly: Boolean,          // Whether posted to Commonly
+  postedToCommonly: Boolean,          // Whether posted into Commonly via external agent runtime
   createdAt: Date
 }
 ```
@@ -199,11 +200,11 @@ The Discord integration provides multiple capabilities:
 - `GET /api/integrations/:installationId/summaries` - Get summary history
 - `POST /api/integrations/:installationId/webhook/toggle` - Enable/disable webhook listener
 
-### Commonly Bot Commands
-- `POST /api/bot/commands/discord-status` - Handle bot commands in chat pods
-- `POST /api/bot/commands/discord-summary` - Handle summary requests
-- `POST /api/bot/commands/discord-enable` - Handle enable requests
-- `POST /api/bot/commands/discord-disable` - Handle disable requests
+### Agent Runtime (External)
+- `POST /api/registry/pods/:podId/agents/:name/runtime-tokens` - Issue runtime token for an installed agent
+- `GET /api/agents/runtime/events` - Poll queued agent events
+- `POST /api/agents/runtime/events/:id/ack` - Acknowledge agent event
+- `POST /api/agents/runtime/pods/:podId/messages` - Post into a pod as the agent
 
 **Key Design Principle**: Slash commands resolve the correct pod(s) via Discord `serverId` + `channelId`. If multiple pods share the same channel, commands fan out and return a combined response with one block per pod.
 
@@ -400,10 +401,10 @@ socket.on('discord:installation_failed', (error) => {
    - Create formatted response templates
    - Handle cases where no recent summary exists
 
-3. **Commonly Bot Integration**
-   - Create bot user system in chat pods
-   - Implement bot command handling
-   - Add bot message formatting
+3. **Commonly Bot Agent (external runtime)**
+   - Provision agent user identities for pods
+   - Issue runtime tokens for external agent services
+   - Enqueue agent events instead of posting directly
 
 ### Phase 3: Advanced Features (Week 5-6)
 1. **Webhook Listener Management**

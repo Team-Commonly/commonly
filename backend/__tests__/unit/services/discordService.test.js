@@ -26,7 +26,7 @@ jest.mock('../../../models/DiscordSummaryHistory', () => jest.fn().mockImplement
   save: jest.fn(),
 })));
 jest.mock('../../../services/discordCommandService');
-jest.mock('../../../services/commonlyBotService');
+jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }));
 jest.mock('../../../config/discord');
 jest.mock('axios');
 
@@ -34,7 +34,7 @@ const axios = require('axios');
 const DiscordService = require('../../../services/discordService');
 const Integration = require('../../../models/Integration');
 const DiscordCommandService = require('../../../services/discordCommandService');
-const CommonlyBotService = require('../../../services/commonlyBotService');
+const AgentEventService = require('../../../services/agentEventService');
 
 // Mock the Discord config
 jest.mock('../../../config/discord', () => ({
@@ -47,7 +47,6 @@ describe('DiscordService', () => {
   let discordService;
   let mockIntegration;
   let mockCommandService;
-  let mockCommonlyBotService;
 
   beforeEach(() => {
     // Mock integration data
@@ -88,14 +87,8 @@ describe('DiscordService', () => {
     };
     DiscordCommandService.mockImplementation(() => mockCommandService);
 
-    // Mock CommonlyBotService
-    mockCommonlyBotService = {
-      postDiscordSummaryToPod: jest.fn().mockResolvedValue({
-        success: true,
-        message: { id: 'msg123' },
-      }),
-    };
-    CommonlyBotService.mockImplementation(() => mockCommonlyBotService);
+    // Mock AgentEventService
+    AgentEventService.enqueue.mockResolvedValue({ _id: 'event-1' });
 
     // Mock axios
     axios.get = jest.fn();
@@ -235,14 +228,12 @@ describe('DiscordService', () => {
 
       expect(result.success).toBe(true);
       expect(result.messageCount).toBe(2);
-      expect(
-        mockCommonlyBotService.postDiscordSummaryToPod,
-      ).toHaveBeenCalledWith(
-        'pod123',
+      expect(AgentEventService.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: 'Test summary',
+          agentName: 'commonly-bot',
+          podId: 'pod123',
+          type: 'discord.summary',
         }),
-        'integration123',
       );
     });
 
@@ -270,12 +261,10 @@ describe('DiscordService', () => {
 
       expect(result.success).toBe(true);
       expect(result.messageCount).toBe(0);
-      expect(
-        mockCommonlyBotService.postDiscordSummaryToPod,
-      ).not.toHaveBeenCalled();
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     });
 
-    it('should handle bot service errors gracefully', async () => {
+    it('should handle agent event errors gracefully', async () => {
       const mockMessages = [
         {
           messageId: 'msg1',
@@ -293,15 +282,12 @@ describe('DiscordService', () => {
           },
         }),
       });
-      mockCommonlyBotService.postDiscordSummaryToPod.mockResolvedValue({
-        success: false,
-        error: 'Failed to post',
-      });
+      AgentEventService.enqueue.mockRejectedValue(new Error('Failed to enqueue'));
 
       const result = await discordService.syncRecentMessages(1);
 
       expect(result.success).toBe(false);
-      expect(result.content).toContain('Failed to post Discord summary');
+      expect(result.content).toContain('Failed to sync Discord messages');
     });
 
     it('should set time range from buffered messages', async () => {
@@ -332,15 +318,20 @@ describe('DiscordService', () => {
 
       expect(result.success).toBe(true);
       expect(result.messageCount).toBe(2);
-      expect(mockCommonlyBotService.postDiscordSummaryToPod).toHaveBeenCalledWith(
-        'pod123',
+      expect(AgentEventService.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({
-          timeRange: expect.objectContaining({
-            start: oldMessage.timestamp,
-            end: recentMessage.timestamp,
+          agentName: 'commonly-bot',
+          podId: 'pod123',
+          type: 'discord.summary',
+          payload: expect.objectContaining({
+            summary: expect.objectContaining({
+              timeRange: expect.objectContaining({
+                start: oldMessage.timestamp,
+                end: recentMessage.timestamp,
+              }),
+            }),
           }),
         }),
-        'integration123',
       );
     });
 

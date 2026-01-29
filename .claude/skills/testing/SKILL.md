@@ -37,7 +37,24 @@ cd frontend && npm run test:coverage
 # Linting
 npm run lint
 npm run lint:fix
+
+# Containerized workflow (recommended in this repo)
+docker compose exec backend npm run lint
+docker compose exec backend npm test
+docker compose exec frontend npm run lint
+docker compose exec frontend npm test -- --watch=false
 ```
+
+## High-value Current Test Areas
+
+- Integration provider contract tests: `backend/__tests__/contracts/integrationProvider.contract.test.js`.
+- Integration catalog + manifest validation routes.
+- `backend/__tests__/unit/routes/integrations.catalog.test.js`.
+- `backend/__tests__/unit/routes/integrations.validation.test.js`.
+- Pod context and skill synthesis.
+- `backend/__tests__/unit/routes/pods.context.test.js`.
+- `backend/__tests__/unit/services/podContextService.test.js`.
+- `backend/__tests__/unit/services/podSkillService.test.js`.
 
 ## Backend Testing Patterns
 

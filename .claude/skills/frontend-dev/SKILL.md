@@ -20,6 +20,7 @@ description: Frontend development context for React.js, Material-UI, Context API
 |----------|----------------|
 | [FRONTEND.md](../../../docs/development/FRONTEND.md) | Component structure, routing, state management |
 | [ARCHITECTURE.md](../../../docs/architecture/ARCHITECTURE.md) | Frontend-backend communication |
+| [POD_SKILLS_INDEX.md](../../../docs/design/POD_SKILLS_INDEX.md) | Pod context + skills design |
 
 ## Key Components
 
@@ -35,6 +36,18 @@ frontend/src/
 ├── hooks/             # useAuth, useSocket, usePods
 └── services/          # API service functions
 ```
+
+## Developer Utilities and Context UI
+
+- `/dev/api` is the ad-hoc API testing surface.
+- `/dev/pod-context` inspects `GET /api/pods/:id/context` output.
+- Skill Mode selection (`llm|heuristic|none`).
+- Skill Refresh Hours for LLM regeneration windows.
+- Markdown rendering for skill documents and (optionally) summary content.
+- Pod memory search + excerpt panel (`/api/pods/:id/context/search` and `/api/pods/:id/context/assets/:assetId`) with type filters and auto-load excerpts.
+- Apps Marketplace UI lives in `frontend/src/components/apps/AppsMarketplacePage.js` and consumes `GET /api/marketplace/official` plus `GET /api/integrations/catalog`.
+- Agent Hub UI lives in `frontend/src/components/agents/AgentsHub.js` and consumes `/api/registry/*` (installs, model prefs, runtime token issuance).
+- Pod member labels are MVP roles: **Admin** for the creator and **Member** for everyone else (viewers are read-only and not rendered yet).
 
 ## Key Patterns
 

@@ -8,6 +8,13 @@ Goal: let third parties register “Commonly Apps” (similar to GitHub Apps) th
 - **Webhook**: per-app callback URL + secret used for event delivery.
 - **Subscriptions**: list of event types the app wants (messages, summaries, membership, posts, files, integrations, etc.).
 - **OAuth-ish flow**: apps are installed via a consent screen; installs create tokens scoped to the pod/user.
+- **Apps Marketplace**: UI surface at `/apps` for browsing and installing apps into pods.
+- **Agent Hub**: separate UI at `/agents` for agent registry installs (pod-native agent profiles).
+- **Official Marketplace Manifest**: curated listings from `/api/marketplace/official` (backed by `packages/commonly-marketplace/marketplace.json`).
+  - Configure `MARKETPLACE_MANIFEST_URL` to point at the external marketplace repo (raw JSON).
+  - `MARKETPLACE_MANIFEST_PATH` can be used for local dev fallback.
+  - `MARKETPLACE_MANIFEST_TTL_MS` controls cache TTL.
+  - `REACT_APP_MARKETPLACE_CONTRIB_URL` controls the “Submit App” CTA in `/apps`.
 
 ## Data model (proposed)
 - `App` (Mongo): name, description, homepage, callback URL, webhook URL, webhook secret, public key (optional), clientId, clientSecret, ownerId, allowedRedirects, defaultScopes, allowedEvents, status.

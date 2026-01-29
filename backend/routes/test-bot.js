@@ -2,10 +2,10 @@ const express = require('express');
 
 const router = express.Router();
 const auth = require('../middleware/auth');
-const CommonlyBotService = require('../services/commonlyBotService');
+const AgentEventService = require('../services/agentEventService');
 
 /**
- * Test route for Commonly Bot functionality
+ * Test route for Commonly Bot event queue
  * Only available in development
  */
 
@@ -24,52 +24,26 @@ router.post('/discord-summary', auth, async (req, res) => {
         .json({ message: 'podId and discordSummary are required' });
     }
 
-    const botService = new CommonlyBotService();
-    const result = await botService.postDiscordSummaryToPod(
+    const event = await AgentEventService.enqueue({
+      agentName: 'commonly-bot',
       podId,
-      discordSummary,
-      integrationId || 'test-integration',
-    );
-
-    if (result.success) {
-      res.json({
-        success: true,
-        message: 'Discord summary posted successfully',
-        data: {
-          messageId: result.message._id,
-          podName: result.pod.name,
-          botUser: await botService.getBotInfo(),
-        },
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: result.error,
-      });
-    }
-  } catch (error) {
-    console.error('Error in test Discord summary:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Get bot info
-router.get('/bot-info', auth, async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(404).json({ message: 'Not found' });
-  }
-
-  try {
-    const botService = new CommonlyBotService();
-    const botInfo = await botService.getBotInfo();
+      type: 'discord.summary',
+      payload: {
+        summary: discordSummary,
+        integrationId: integrationId || 'test-integration',
+        source: 'discord',
+      },
+    });
 
     res.json({
       success: true,
-      botExists: await botService.botExists(),
-      botInfo,
+      message: 'Discord summary queued for Commonly Bot',
+      data: {
+        eventId: event._id,
+      },
     });
   } catch (error) {
-    console.error('Error getting bot info:', error);
+    console.error('Error in test Discord summary:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

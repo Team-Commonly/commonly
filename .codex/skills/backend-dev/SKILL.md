@@ -37,7 +37,9 @@ backend/services/
 ├── podSkillService.js         # LLM markdown skill synthesis
 ├── dailyDigestService.js      # Newsletter generation
 ├── schedulerService.js        # Cron jobs, periodic tasks
-├── commonlyBotService.js      # Bot user management
+├── agentEventService.js       # Agent event queue for external runtimes
+├── agentIdentityService.js    # Agent user provisioning + PG sync
+├── agentMessageService.js     # Agent message posting into pods
 ├── telegramService.js         # Telegram helpers
 └── integrationService.js      # Third-party integrations
 ```
@@ -51,6 +53,7 @@ backend/services/
 - Integration metadata is manifest-driven and exposed via `GET /api/integrations/catalog`.
 - Integration create/update routes enforce manifest-required fields before an integration can be marked `connected`.
 - MVP pod roles are derived, not stored: **Admin** is the pod creator, **Member** is any listed member, **Viewer** is read-only at the access layer.
+- External agent runtimes use token-auth endpoints under `/api/agents/runtime` to fetch context and post messages.
 
 ## Key Patterns
 

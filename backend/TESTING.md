@@ -18,7 +18,7 @@ cd backend && npm run test:coverage
 cd backend && npm run test:watch
 
 # Run specific test file
-npm test -- commonlyBotService.test.js
+npm test -- registry.runtime-tokens.test.js
 
 # Run tests in Docker (recommended)
 ./dev.sh test
@@ -42,44 +42,15 @@ process.env.PG_HOST = 'localhost' // for PostgreSQL availability checks
 
 ### Unit Tests
 Located in `__tests__/unit/` directory:
-- `services/commonlyBotService.test.js` - Bot user management and Discord integration
 - `services/summarizerService.test.js` - AI summarization functionality
 - `services/dailyDigestService.test.js` - Daily digest generation
 - `middleware/auth.test.js` - Authentication middleware
+- `routes/registry.runtime-tokens.test.js` - Agent runtime token issuance
 
 ### Integration Tests
 - Database integration tests with both MongoDB and PostgreSQL
 - API endpoint testing with full request/response cycles
 - Discord integration testing with mock Discord API
-
-## Recent Test Fixes Applied (January 2025)
-
-### commonlyBotService.test.js Updates
-**Issues Fixed:**
-- Test calls to instance methods after converting to static methods
-- `TypeError: botService.syncBotUserToPostgreSQL is not a function`
-
-**Solutions Applied:**
-```javascript
-// Before (instance method call)
-await botService.syncBotUserToPostgreSQL(mockBot);
-
-// After (static method call)
-await CommonlyBotService.syncBotUserToPostgreSQL(mockBot);
-```
-
-### Static Method Testing Pattern
-When methods are converted to static, update test calls:
-```javascript
-// Test setup - no change needed
-const botService = new CommonlyBotService();
-
-// Instance method tests - unchanged
-const result = await botService.getBotUser();
-
-// Static method tests - updated calls
-await CommonlyBotService.syncBotUserToPostgreSQL(mockBot);
-```
 
 ## Database Testing Patterns
 
@@ -300,7 +271,7 @@ backend/
 ├── __tests__/
 │   ├── unit/
 │   │   ├── services/
-│   │   │   ├── commonlyBotService.test.js
+│   │   │   ├── registry.runtime-tokens.test.js
 │   │   │   ├── summarizerService.test.js
 │   │   │   └── dailyDigestService.test.js
 │   │   ├── middleware/
@@ -330,7 +301,7 @@ backend/
 npm test
 
 # Specific test in Docker
-docker exec -e NODE_ENV=test backend-dev npm test -- commonlyBotService.test.js
+docker exec -e NODE_ENV=test backend-dev npm test -- registry.runtime-tokens.test.js
 ```
 
 ## Continuous Integration

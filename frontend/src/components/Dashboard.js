@@ -4,14 +4,16 @@ import {
     List, ListItem, ListItemIcon, ListItemText, Typography, 
     Avatar, Divider, Box, Skeleton, IconButton
 } from '@mui/material';
-import { 
-    Home as HomeIcon, 
-    Person as PersonIcon, 
+import {
+    Home as HomeIcon,
+    Person as PersonIcon,
     ExitToApp as LogoutIcon,
     Chat as ChatIcon,
     ChevronLeft as ChevronLeftIcon,
     Email as EmailIcon,
-    Extension as ExtensionIcon,
+    SmartToy as AgentsIcon,
+    Timeline as ActivityIcon,
+    Apps as AppsIcon,
 } from '@mui/icons-material';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
@@ -118,8 +120,8 @@ const Dashboard = () => {
                     <ListItemText primary="Daily Digest" />
                 </ListItem>
                 
-                <ListItem 
-                    button 
+                <ListItem
+                    button
                     onClick={() => handleNavigation('/pods')}
                     selected={location.pathname.startsWith('/pods')}
                 >
@@ -131,15 +133,37 @@ const Dashboard = () => {
 
                 <ListItem
                     button
-                    onClick={() => handleNavigation('/integrations')}
-                    selected={location.pathname === '/integrations'}
+                    onClick={() => handleNavigation('/agents')}
+                    selected={location.pathname === '/agents'}
                 >
                     <ListItemIcon>
-                        <ExtensionIcon />
+                        <AgentsIcon />
                     </ListItemIcon>
-                    <ListItemText primary="Integrations" />
+                    <ListItemText primary="Agents" />
                 </ListItem>
-                
+
+                <ListItem
+                    button
+                    onClick={() => handleNavigation('/apps')}
+                    selected={location.pathname === '/apps'}
+                >
+                    <ListItemIcon>
+                        <AppsIcon />
+                    </ListItemIcon>
+                    <ListItemText primary="Apps" />
+                </ListItem>
+
+                <ListItem
+                    button
+                    onClick={() => handleNavigation('/activity')}
+                    selected={location.pathname === '/activity'}
+                >
+                    <ListItemIcon>
+                        <ActivityIcon />
+                    </ListItemIcon>
+                    <ListItemText primary="Activity" />
+                </ListItem>
+
                 <Divider sx={{ my: 2 }} />
                 
                 <ListItem 

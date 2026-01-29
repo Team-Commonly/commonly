@@ -125,7 +125,6 @@ gh pr checks 36                               # Should show all ✅ passing
 **Backend ESLint Fixes:**
 1. **Global-require patterns** - Added `eslint-disable-next-line global-require` comments for dynamic requires
 2. **Static method conversion** - Converted utility methods to static in:
-   - `services/commonlyBotService.js` - `syncBotUserToPostgreSQL()`, `formatDiscordSummaryForPod()`
    - `services/dailyDigestService.js` - Various utility methods
 3. **Nested ternary expressions** - Replaced with proper if/else logic for readability
 4. **Async loop patterns** - Replaced `for-await` loops with `Promise.allSettled()` for better performance
@@ -133,10 +132,8 @@ gh pr checks 36                               # Should show all ✅ passing
 6. **Prettier formatting** - Applied consistent code formatting across all files
 
 #### Files with Major Changes
-- `backend/services/commonlyBotService.js` - Static methods, global-require fixes
 - `backend/services/dailyDigestService.js` - Nested ternary fixes, static methods
 - `backend/cleanup-test-data.js` - Promise.all() patterns instead of for-await loops
-- `backend/__tests__/unit/services/commonlyBotService.test.js` - Updated for static method calls
 
 #### Pattern Examples
 ```javascript
@@ -202,7 +199,8 @@ static async syncBotUserToPostgreSQL(bot) {
 - `services/dailyDigestService.js` - Intelligent daily newsletter generation
 - `services/schedulerService.js` - Background tasks and periodic jobs
 - `services/integrationService.js` - Third-party service management
-- `services/commonlyBotService.js` - Bot user management for automated posting
+- `services/agentEventService.js` - Queues agent events for external runtimes
+- `services/agentMessageService.js` - Posts agent messages into pods
 
 ### Database Models
 - **MongoDB models**: `models/User.js`, `models/Post.js`, `models/Pod.js` (primary)
@@ -215,7 +213,8 @@ static async syncBotUserToPostgreSQL(bot) {
 - `/api/auth` - User authentication (MongoDB)
 - `/api/pods` - Chat pod management (dual DB: MongoDB primary, PostgreSQL sync)
 - `/api/messages` - Message handling (PostgreSQL default, MongoDB fallback)
-- `/api/discord` - Discord integration endpoints (commonly-bot uses PostgreSQL)
+- `/api/discord` - Discord integration endpoints
+- `/api/agents/runtime` - External agent runtime endpoints
 - `/api/integrations` - Third-party service management
 
 ### Environment Variables
@@ -482,7 +481,8 @@ const recentMessages = messages.filter(msg => {
 #### Key Services
 - `services/discordService.js` - Core Discord API integration with unified `syncRecentMessages()` method
 - `services/discordCommandService.js` - Discord slash command handlers (uses unified API)
-- `services/commonlyBotService.js` - Bot user management and pod posting
+- `services/agentEventService.js` - Queues agent events for external runtimes
+- `services/agentMessageService.js` - Posts agent messages into pods
 - `services/schedulerService.js` - Hourly Discord sync integration (`syncAllDiscordIntegrations()`)
 
 #### Bot Message Display
@@ -501,12 +501,12 @@ For detailed technical documentation, see `docs/DISCORD_INTEGRATION_ARCHITECTURE
 ### Current State (Updated)
 - **All chat messages** now default to PostgreSQL storage
 - **Message persistence** across page refreshes guaranteed
-- **commonly-bot messages** stored in PostgreSQL (not MongoDB)
+- **Agent messages** stored in PostgreSQL when available
 - **Real-time Socket.io** and API endpoints use PostgreSQL consistently
 
 ### Key Implementation Files
 - `backend/controllers/messageController.js` - Uses PostgreSQL for all message operations
-- `backend/services/commonlyBotService.js` - Bot messages stored in PostgreSQL
+- `backend/services/agentMessageService.js` - Agent messages stored in PostgreSQL
 - `backend/server.js` - Socket.io uses PostgreSQL for message storage
 - `backend/models/pg/Message.js` - PostgreSQL message model (ORDER BY created_at ASC)
 
