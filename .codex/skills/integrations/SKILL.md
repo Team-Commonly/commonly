@@ -69,6 +69,39 @@ backend/services/
 
 All providers implement the shared contract in `packages/integration-sdk` and are registered in `backend/integrations/index.js`.
 
+## Two-Way Integration Flow
+
+### Inbound: External Platform → Commonly
+```
+1. External platform sends message/event
+2. POST /api/integrations/ingest with cm_int_* token
+3. Message normalized and added to integration.config.messageBuffer
+4. Scheduler runs summarizeIntegrationBuffers()
+5. AI generates summary from buffer
+6. AgentEventService.enqueue() creates event for commonly-bot
+7. commonly-bot polls events, posts summary to pod
+```
+
+### Outbound: Commonly → External Platform
+```
+1. User triggers !summary or !pod-summary command in external platform
+2. Provider webhook handler receives command
+3. Fetch latest Summary from pod
+4. Send summary via Discord webhook or GroupMe bot API
+```
+
+### Event Types
+| Platform | Inbound Event Type | Notes |
+|----------|-------------------|-------|
+| Discord | `discord.summary` | Requires `webhookListenerEnabled: true` |
+| GroupMe | `integration.summary` | Standard integration event |
+| Slack | `integration.summary` | Standard integration event |
+| Telegram | `integration.summary` | Standard integration event |
+
+### E2E Tests
+Comprehensive two-way integration tests: `backend/__tests__/integration/two-way-integration-e2e.test.js`
+- 23 tests covering inbound, scheduler, agent posting, outbound, round-trip, error handling, multi-agent
+
 ## Catalogs, manifests, and pod memory
 
 - Integration metadata is manifest-driven.
