@@ -998,4 +998,513 @@ describe('Two-Way Integration E2E Tests', () => {
       await expect(discordService.sendMessage('Test')).rejects.toThrow('HTTP error');
     });
   });
+
+  describe('7. Multi-Agent Integration (Clawdbot, Custom Agents)', () => {
+    let clawdbotAgent;
+    let customAgent;
+
+    beforeEach(async () => {
+      // Register Clawdbot agent
+      clawdbotAgent = await AgentRegistry.create({
+        agentName: 'clawdbot',
+        displayName: 'Clawdbot',
+        description: 'AI-powered chat assistant using Claude',
+        registry: 'commonly-official',
+        categories: ['ai', 'assistant', 'chat'],
+        tags: ['claude', 'ai', 'conversational'],
+        verified: true,
+        manifest: {
+          name: 'clawdbot',
+          version: '1.0.0',
+          capabilities: [
+            { name: 'chat', description: 'Respond to messages in pods' },
+            { name: 'summarize', description: 'Summarize conversations' },
+            { name: 'integration-events', description: 'Process integration summaries' },
+          ],
+          context: { required: ['context:read', 'messages:read', 'messages:write'] },
+          runtime: {
+            type: 'standalone',
+            connection: 'rest',
+          },
+        },
+        latestVersion: '1.0.0',
+        versions: [{ version: '1.0.0', publishedAt: new Date() }],
+        stats: { installs: 0, rating: 0, ratingCount: 0 },
+      });
+
+      // Register a custom/third-party agent
+      customAgent = await AgentRegistry.create({
+        agentName: 'code-reviewer',
+        displayName: 'Code Reviewer Bot',
+        description: 'Reviews code snippets shared in chat',
+        registry: 'commonly-community', // Valid values: commonly-official, commonly-community, private
+        categories: ['development', 'code-review'],
+        tags: ['code', 'review', 'development'],
+        verified: false,
+        manifest: {
+          name: 'code-reviewer',
+          version: '0.1.0',
+          capabilities: [
+            { name: 'code-review', description: 'Review code snippets' },
+          ],
+          context: { required: ['context:read', 'messages:read', 'messages:write'] },
+          runtime: {
+            type: 'standalone',
+            connection: 'rest',
+          },
+        },
+        latestVersion: '0.1.0',
+        versions: [{ version: '0.1.0', publishedAt: new Date() }],
+        stats: { installs: 0, rating: 0, ratingCount: 0 },
+      });
+    });
+
+    describe('Clawdbot Processing Integration Events', () => {
+      test('should install clawdbot and receive integration.summary events', async () => {
+        // Install Clawdbot on the pod
+        const installRes = await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'clawdbot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'messages:read', 'messages:write'],
+          });
+
+        expect([200, 201]).toContain(installRes.status); // May return 200 if already installed
+
+        // Create integration with messages
+        const integration = await Integration.create({
+          podId: testPod._id,
+          type: 'groupme',
+          status: 'connected',
+          config: {
+            groupId: 'clawdbot-test-group',
+            groupName: 'Clawdbot Test Group',
+            botId: 'clawdbot-bot',
+            messageBuffer: [
+              {
+                messageId: 'cb-1',
+                authorId: 'user-1',
+                authorName: 'Developer',
+                content: 'Can someone review my PR for the auth feature?',
+                timestamp: new Date(Date.now() - 3600000),
+              },
+              {
+                messageId: 'cb-2',
+                authorId: 'user-2',
+                authorName: 'TeamLead',
+                content: 'Sure, I will take a look after standup',
+                timestamp: new Date(Date.now() - 1800000),
+              },
+            ],
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        // Enqueue event for Clawdbot (simulating scheduler targeting specific agent)
+        await AgentEventService.enqueue({
+          agentName: 'clawdbot',
+          podId: testPod._id,
+          type: 'integration.summary',
+          payload: {
+            summary: {
+              content: 'PR review discussion in the team',
+              messageCount: 2,
+              source: 'groupme',
+            },
+            integrationId: integration._id.toString(),
+            source: 'groupme',
+          },
+        });
+
+        // Get runtime token for Clawdbot
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/clawdbot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Clawdbot Token' });
+
+        expect(tokenRes.status).toBe(200);
+        const clawdbotToken = tokenRes.body.token;
+
+        // Poll events as Clawdbot
+        const pollRes = await request(app)
+          .get('/api/agents/runtime/events')
+          .set('Authorization', `Bearer ${clawdbotToken}`);
+
+        expect(pollRes.status).toBe(200);
+        expect(pollRes.body.events.length).toBe(1);
+        expect(pollRes.body.events[0].type).toBe('integration.summary');
+        expect(pollRes.body.events[0].payload.source).toBe('groupme');
+      });
+
+      test('should allow clawdbot to post AI-generated response to pod', async () => {
+        // Install Clawdbot
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'clawdbot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'messages:read', 'messages:write'],
+          });
+
+        // Get runtime token
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/clawdbot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Clawdbot Token' });
+
+        const clawdbotToken = tokenRes.body.token;
+
+        // Clawdbot posts an AI-generated response
+        const aiResponse = `🤖 **Clawdbot Summary**
+
+Based on the GroupMe activity, the team is discussing a PR review for the auth feature. The developer requested a review, and the team lead agreed to look at it after standup.
+
+**Key Action Items:**
+- PR review pending for auth feature
+- Team lead will review after standup`;
+
+        const postRes = await request(app)
+          .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
+          .set('Authorization', `Bearer ${clawdbotToken}`)
+          .send({
+            content: aiResponse,
+            messageType: 'text',
+            metadata: {
+              generatedBy: 'clawdbot',
+              model: 'claude-3-sonnet',
+              source: 'integration.summary',
+            },
+          });
+
+        expect(postRes.status).toBe(200);
+        expect(postRes.body.success).toBe(true);
+        expect(postRes.body.message.content).toContain('Clawdbot Summary');
+      });
+    });
+
+    describe('Multiple Agents on Same Pod', () => {
+      test('should support multiple agents receiving events for same pod', async () => {
+        // Install both commonly-bot and clawdbot on the same pod
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read'],
+          });
+
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'clawdbot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'messages:read', 'messages:write'],
+          });
+
+        // Create integration with buffer
+        await Integration.create({
+          podId: testPod._id,
+          type: 'discord',
+          status: 'connected',
+          config: {
+            serverId: 'multi-agent-server',
+            channelId: 'multi-agent-channel',
+            webhookListenerEnabled: true,
+            messageBuffer: [
+              {
+                messageId: 'ma-1',
+                authorId: 'user-1',
+                authorName: 'Alice',
+                content: 'The deployment pipeline is failing',
+                timestamp: new Date(),
+              },
+            ],
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        // Enqueue events for BOTH agents
+        await AgentEventService.enqueue({
+          agentName: 'commonly-bot',
+          podId: testPod._id,
+          type: 'discord.summary',
+          payload: {
+            summary: { content: 'Deployment issue discussion', messageCount: 1 },
+            source: 'discord',
+          },
+        });
+
+        await AgentEventService.enqueue({
+          agentName: 'clawdbot',
+          podId: testPod._id,
+          type: 'integration.summary',
+          payload: {
+            summary: { content: 'Deployment issue discussion', messageCount: 1 },
+            source: 'discord',
+            requiresAIResponse: true,
+          },
+        });
+
+        // Get tokens for both agents
+        const commonlyTokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Commonly Bot Token' });
+
+        const clawdbotTokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/clawdbot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Clawdbot Token' });
+
+        // Each agent polls their own events
+        const commonlyPoll = await request(app)
+          .get('/api/agents/runtime/events')
+          .set('Authorization', `Bearer ${commonlyTokenRes.body.token}`);
+
+        const clawdbotPoll = await request(app)
+          .get('/api/agents/runtime/events')
+          .set('Authorization', `Bearer ${clawdbotTokenRes.body.token}`);
+
+        expect(commonlyPoll.body.events.length).toBe(1);
+        expect(commonlyPoll.body.events[0].type).toBe('discord.summary');
+
+        expect(clawdbotPoll.body.events.length).toBe(1);
+        expect(clawdbotPoll.body.events[0].type).toBe('integration.summary');
+        expect(clawdbotPoll.body.events[0].payload.requiresAIResponse).toBe(true);
+      });
+
+      test('should allow agents to post different types of responses', async () => {
+        // Install both agents
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read', 'messages:write'],
+          });
+
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'clawdbot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'messages:read', 'messages:write'],
+          });
+
+        // Get tokens
+        const commonlyToken = (await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Token' })).body.token;
+
+        const clawdbotToken = (await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/clawdbot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Token' })).body.token;
+
+        // Commonly-bot posts a simple summary
+        const commonlyPost = await request(app)
+          .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
+          .set('Authorization', `Bearer ${commonlyToken}`)
+          .send({
+            content: '📊 **Discord Summary**: Deployment pipeline issue reported.',
+            messageType: 'text',
+          });
+
+        // Clawdbot posts an AI-enhanced response
+        const clawdbotPost = await request(app)
+          .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
+          .set('Authorization', `Bearer ${clawdbotToken}`)
+          .send({
+            content: `🤖 **Clawdbot Analysis**
+
+I noticed the deployment pipeline is failing. Based on similar issues I've seen:
+
+1. Check the CI/CD logs for specific error messages
+2. Verify environment variables are correctly set
+3. Ensure all dependencies are up to date
+
+Would you like me to help debug this further?`,
+            messageType: 'text',
+            metadata: {
+              aiGenerated: true,
+              model: 'claude-3-sonnet',
+            },
+          });
+
+        expect(commonlyPost.status).toBe(200);
+        expect(clawdbotPost.status).toBe(200);
+
+        // Both messages should be from different agent users
+        expect(commonlyPost.body.message.content).toContain('Discord Summary');
+        expect(clawdbotPost.body.message.content).toContain('Clawdbot Analysis');
+      });
+    });
+
+    describe('Custom/Third-Party Agent Integration', () => {
+      test('should allow custom agent to be installed and receive events', async () => {
+        // Install custom code-reviewer agent
+        const installRes = await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'code-reviewer',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'messages:read', 'messages:write'],
+          });
+
+        expect([200, 201]).toContain(installRes.status); // May return 200 if already installed
+
+        // Enqueue a custom event type for the code reviewer
+        await AgentEventService.enqueue({
+          agentName: 'code-reviewer',
+          podId: testPod._id,
+          type: 'code.shared',
+          payload: {
+            language: 'javascript',
+            snippet: 'const foo = () => { return bar; }',
+            requestedBy: 'developer-123',
+          },
+        });
+
+        // Get token and poll
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/code-reviewer/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Code Reviewer Token' });
+
+        const pollRes = await request(app)
+          .get('/api/agents/runtime/events')
+          .set('Authorization', `Bearer ${tokenRes.body.token}`);
+
+        expect(pollRes.body.events.length).toBe(1);
+        expect(pollRes.body.events[0].type).toBe('code.shared');
+        expect(pollRes.body.events[0].payload.language).toBe('javascript');
+      });
+
+      test('should allow custom agent to post review feedback to pod', async () => {
+        // Install code-reviewer
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'code-reviewer',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'messages:read', 'messages:write'],
+          });
+
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/code-reviewer/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Token' });
+
+        // Custom agent posts a code review
+        const reviewPost = await request(app)
+          .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
+          .set('Authorization', `Bearer ${tokenRes.body.token}`)
+          .send({
+            content: `🔍 **Code Review**
+
+\`\`\`javascript
+const foo = () => { return bar; }
+\`\`\`
+
+**Issues Found:**
+- ⚠️ \`bar\` is undefined - this will throw a ReferenceError
+- 💡 Consider adding a default value or null check
+
+**Suggestion:**
+\`\`\`javascript
+const foo = (bar = 'default') => { return bar; }
+\`\`\``,
+            messageType: 'text',
+            metadata: {
+              reviewType: 'automated',
+              issuesFound: 1,
+              suggestions: 1,
+            },
+          });
+
+        expect(reviewPost.status).toBe(200);
+        expect(reviewPost.body.message.content).toContain('Code Review');
+      });
+    });
+
+    describe('Agent Chaining (Agent → Agent)', () => {
+      test('should support one agent triggering event for another agent', async () => {
+        // Install both commonly-bot and clawdbot
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read'],
+          });
+
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'clawdbot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'messages:read', 'messages:write'],
+          });
+
+        // Scenario: commonly-bot processes integration summary,
+        // then triggers clawdbot for AI analysis
+
+        // Step 1: Integration summary event for commonly-bot
+        await AgentEventService.enqueue({
+          agentName: 'commonly-bot',
+          podId: testPod._id,
+          type: 'integration.summary',
+          payload: {
+            summary: {
+              content: 'Complex technical discussion about microservices',
+              messageCount: 15,
+            },
+            source: 'slack',
+          },
+        });
+
+        // Step 2: commonly-bot processes and creates follow-up event for clawdbot
+        // (This simulates what commonly-bot would do after processing)
+        await AgentEventService.enqueue({
+          agentName: 'clawdbot',
+          podId: testPod._id,
+          type: 'ai.analysis.request',
+          payload: {
+            originalSummary: 'Complex technical discussion about microservices',
+            messageCount: 15,
+            requestType: 'detailed-analysis',
+            triggeredBy: 'commonly-bot',
+          },
+        });
+
+        // Verify clawdbot receives the chained event
+        const clawdbotToken = (await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/clawdbot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Token' })).body.token;
+
+        const clawdbotPoll = await request(app)
+          .get('/api/agents/runtime/events')
+          .set('Authorization', `Bearer ${clawdbotToken}`);
+
+        expect(clawdbotPoll.body.events.length).toBe(1);
+        expect(clawdbotPoll.body.events[0].type).toBe('ai.analysis.request');
+        expect(clawdbotPoll.body.events[0].payload.triggeredBy).toBe('commonly-bot');
+      });
+    });
+  });
 });
