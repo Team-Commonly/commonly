@@ -47,6 +47,18 @@ docker compose exec frontend npm test -- --watch=false
 
 ## High-value Current Test Areas
 
+### E2E Integration Tests
+- **Two-Way Integration E2E**: `backend/__tests__/integration/two-way-integration-e2e.test.js` (23 tests)
+  - Inbound flow: External platforms (GroupMe, Discord) → Commonly via ingest endpoint
+  - Scheduler summarization: Buffer processing and agent event queuing
+  - Agent posting: commonly-bot posting summaries to pods via runtime API
+  - Outbound flow: Commonly → Discord webhooks / GroupMe bot API
+  - Full round-trip: External → Commonly → External
+  - Multi-agent: Clawdbot, custom agents, agent chaining
+- **Integrations E2E**: `backend/__tests__/integration/integrations-e2e.test.js`
+- **Clawdbot E2E**: `backend/__tests__/integration/clawdbot-e2e.test.js`
+
+### Contract and Unit Tests
 - Integration provider contract tests: `backend/__tests__/contracts/integrationProvider.contract.test.js`.
 - Integration catalog + manifest validation routes.
 - `backend/__tests__/unit/routes/integrations.catalog.test.js`.
@@ -103,6 +115,91 @@ describe('ChatRoom', () => {
 ```javascript
 jest.mock('axios');
 axios.get.mockResolvedValue({ data: mockMessages });
+```
+
+## E2E Integration Testing Patterns
+
+### Two-Way Integration Test Setup
+```javascript
+// Mock summarizer to avoid Gemini API calls
+jest.mock('../../services/summarizerService', () => ({
+  generateSummary: jest.fn().mockResolvedValue('AI-generated summary.'),
+  summarizePosts: jest.fn().mockResolvedValue({ title: 'Posts Summary', content: 'Summary' }),
+  summarizeChats: jest.fn().mockResolvedValue({ title: 'Chats Summary', content: 'Summary' }),
+}));
+
+// Mock external APIs
+jest.mock('axios');
+global.fetch = jest.fn();
+```
+
+### Ingest Token Creation Pattern
+```javascript
+const { hash, randomSecret } = require('../../utils/secret');
+
+const createIngestToken = async (integrationId) => {
+  const token = `cm_int_${randomSecret(16)}`;
+  const tokenHash = hash(token);
+  await Integration.findByIdAndUpdate(integrationId, {
+    $push: {
+      ingestTokens: {
+        tokenHash,
+        label: 'Test Token',
+        createdBy: testUser._id,
+        createdAt: new Date(),
+      },
+    },
+  });
+  return token;
+};
+```
+
+### Agent Runtime Token Pattern
+```javascript
+// Install agent
+await request(app)
+  .post('/api/registry/install')
+  .set('Authorization', `Bearer ${authToken}`)
+  .send({
+    agentName: 'commonly-bot',
+    podId: testPod._id.toString(),
+    scopes: ['context:read', 'summaries:read', 'messages:write'],
+  });
+
+// Get runtime token
+const tokenRes = await request(app)
+  .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
+  .set('Authorization', `Bearer ${authToken}`)
+  .send({ label: 'Test Token' });
+
+const runtimeToken = tokenRes.body.token;
+
+// Post message as agent
+await request(app)
+  .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
+  .set('Authorization', `Bearer ${runtimeToken}`)
+  .send({ content: 'Summary content', messageType: 'text' });
+```
+
+### Multi-Agent Test Pattern
+```javascript
+// Install multiple agents on same pod
+await Promise.all([
+  request(app).post('/api/registry/install').set('Authorization', `Bearer ${authToken}`)
+    .send({ agentName: 'commonly-bot', podId: testPod._id.toString(), scopes: [...] }),
+  request(app).post('/api/registry/install').set('Authorization', `Bearer ${authToken}`)
+    .send({ agentName: 'clawdbot', podId: testPod._id.toString(), scopes: [...] }),
+]);
+
+// Enqueue events for each agent
+await AgentEventService.enqueue({ agentName: 'commonly-bot', podId, type: 'discord.summary', payload: {...} });
+await AgentEventService.enqueue({ agentName: 'clawdbot', podId, type: 'integration.summary', payload: {...} });
+
+// Each agent polls their own events
+const commonlyPoll = await request(app).get('/api/agents/runtime/events')
+  .set('Authorization', `Bearer ${commonlyToken}`);
+const clawdbotPoll = await request(app).get('/api/agents/runtime/events')
+  .set('Authorization', `Bearer ${clawdbotToken}`);
 ```
 
 ## ESLint Configuration

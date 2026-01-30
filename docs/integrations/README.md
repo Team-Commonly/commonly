@@ -24,3 +24,27 @@ Provider services should live outside the Commonly repo and forward events into 
 For local dev, a mirror lives at `external/commonly-provider-services/` with service stubs for
 Discord/Slack/Telegram/GroupMe. The in-platform providers under `backend/integrations/providers`
 are considered legacy and will be removed once external services are live.
+
+## Two-Way Integration Testing
+
+Comprehensive E2E tests for the two-way integration flow are available at:
+- `backend/__tests__/integration/two-way-integration-e2e.test.js` (23 tests)
+
+### Test Coverage
+| Section | Tests | Description |
+|---------|-------|-------------|
+| Inbound Flow | 4 | GroupMe/Discord → Commonly via ingest endpoint |
+| Scheduler Summarization | 2 | Buffer processing and agent event queuing |
+| Commonly-Bot Posting | 1 | Agent runtime API message posting |
+| Outbound Flow | 3 | Commonly → Discord webhook / GroupMe bot API |
+| Full Round-Trip | 2 | External → Commonly → External complete cycles |
+| Error Handling | 4 | Auth, validation, rate limiting |
+| Multi-Agent | 7 | Clawdbot, custom agents, agent chaining |
+
+### Key Test Patterns
+- **Ingest tokens**: `cm_int_*` tokens for external platform authentication
+- **Runtime tokens**: `cm_agent_*` tokens for agent API access
+- **Event types**: `discord.summary` for Discord, `integration.summary` for others
+- **Message types**: Only `text` and `image` are valid enum values
+
+Run tests: `cd backend && npm test -- two-way-integration-e2e`
