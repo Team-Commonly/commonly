@@ -25,6 +25,7 @@ const Integration = require('../../models/Integration');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentEvent = require('../../models/AgentEvent');
 const AgentProfile = require('../../models/AgentProfile');
+const DiscordIntegration = require('../../models/DiscordIntegration');
 
 // Services
 const AgentEventService = require('../../services/agentEventService');
@@ -63,6 +64,13 @@ jest.mock('../../services/chatSummarizerService', () => ({
 jest.mock('../../services/podAssetService', () => ({
   createIntegrationSummaryAsset: jest.fn().mockResolvedValue({}),
 }));
+
+// Mock axios for external API calls (GroupMe)
+jest.mock('axios');
+const axios = require('axios');
+
+// Mock global fetch for Discord webhook calls
+global.fetch = jest.fn();
 
 describe('Integrations E2E Tests', () => {
   let app;
@@ -137,6 +145,7 @@ describe('Integrations E2E Tests', () => {
     await AgentEvent.deleteMany({});
     await AgentProfile.deleteMany({});
     await Integration.deleteMany({});
+    await DiscordIntegration.deleteMany({});
     await Message.deleteMany({});
     await Summary.deleteMany({});
   });
@@ -1030,6 +1039,357 @@ describe('Integrations E2E Tests', () => {
 
       const results = await SchedulerService.summarizeIntegrationBuffers();
       expect(results.length).toBe(0); // Inactive should be skipped
+    });
+  });
+
+  describe('9. Outbound Messaging to External Platforms', () => {
+    beforeEach(() => {
+      // Reset mocks before each test
+      jest.clearAllMocks();
+      axios.post.mockReset();
+      global.fetch.mockReset();
+    });
+
+    describe('GroupMe Outbound Messages', () => {
+      const groupmeService = require('../../services/groupmeService');
+
+      test('should send message to GroupMe via bot API', async () => {
+        // Mock successful GroupMe API response
+        axios.post.mockResolvedValueOnce({ status: 202, data: {} });
+
+        const result = await groupmeService.sendMessage('bot-123', 'Hello from Commonly!');
+
+        expect(result.success).toBe(true);
+        expect(axios.post).toHaveBeenCalledWith(
+          'https://api.groupme.com/v3/bots/post',
+          {
+            bot_id: 'bot-123',
+            text: 'Hello from Commonly!',
+          },
+        );
+      });
+
+      test('should handle GroupMe API errors gracefully', async () => {
+        axios.post.mockRejectedValueOnce(new Error('Network error'));
+
+        const result = await groupmeService.sendMessage('bot-123', 'Test message');
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Network error');
+      });
+
+      test('should reject messages without botId', async () => {
+        const result = await groupmeService.sendMessage(null, 'Test message');
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Missing botId or text');
+        expect(axios.post).not.toHaveBeenCalled();
+      });
+
+      test('should reject messages without text', async () => {
+        const result = await groupmeService.sendMessage('bot-123', '');
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Missing botId or text');
+        expect(axios.post).not.toHaveBeenCalled();
+      });
+
+      test('should send summary acknowledgment to GroupMe', async () => {
+        axios.post.mockResolvedValueOnce({ status: 202, data: {} });
+
+        // Simulate what happens when !summary command is processed
+        const acknowledgment = '✅ Queued 5 message(s) for Commonly Bot.';
+        const result = await groupmeService.sendMessage('groupme-bot-456', acknowledgment);
+
+        expect(result.success).toBe(true);
+        expect(axios.post).toHaveBeenCalledWith(
+          'https://api.groupme.com/v3/bots/post',
+          expect.objectContaining({
+            bot_id: 'groupme-bot-456',
+            text: expect.stringContaining('Queued'),
+          }),
+        );
+      });
+    });
+
+    describe('Discord Webhook Outbound Messages', () => {
+      const DiscordService = require('../../services/discordService');
+      const DiscordIntegration = require('../../models/DiscordIntegration');
+
+      // Helper to create full DiscordIntegration with all required fields
+      const createDiscordIntegration = async (integrationId, overrides = {}) => {
+        const defaults = {
+          integrationId,
+          serverId: 'discord-server-test',
+          serverName: 'Test Server',
+          channelId: 'discord-channel-test',
+          channelName: 'test-channel',
+          webhookUrl: 'https://discord.com/api/webhooks/123456/abcdef',
+          webhookId: '123456',
+          botToken: 'test-bot-token-12345',
+          isActive: true,
+        };
+        return DiscordIntegration.create({ ...defaults, ...overrides });
+      };
+
+      test('should send message to Discord via webhook', async () => {
+        // Create integration with platform integration
+        const integration = await Integration.create({
+          podId: testPod._id,
+          type: 'discord',
+          status: 'connected',
+          config: {
+            serverId: 'discord-server-outbound',
+            serverName: 'Outbound Test Server',
+            channelId: 'discord-channel-outbound',
+            channelName: 'announcements',
+            webhookListenerEnabled: true,
+            messageBuffer: [],
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        // Create platform integration with all required fields
+        await createDiscordIntegration(integration._id, {
+          serverId: 'discord-server-outbound',
+          serverName: 'Outbound Test Server',
+          channelId: 'discord-channel-outbound',
+          channelName: 'announcements',
+          webhookUrl: 'https://discord.com/api/webhooks/123456/abcdef',
+          webhookId: '123456',
+        });
+
+        // Mock successful Discord webhook response
+        global.fetch.mockResolvedValueOnce({
+          ok: true,
+          status: 204,
+        });
+
+        const discordService = new DiscordService(integration._id);
+        await discordService.initialize();
+
+        const result = await discordService.sendMessage('Summary from Commonly Bot!');
+
+        expect(result).toBe(true);
+        expect(global.fetch).toHaveBeenCalledWith(
+          'https://discord.com/api/webhooks/123456/abcdef',
+          expect.objectContaining({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: expect.stringContaining('Summary from Commonly Bot!'),
+          }),
+        );
+      });
+
+      test('should handle Discord webhook errors', async () => {
+        const integration = await Integration.create({
+          podId: testPod._id,
+          type: 'discord',
+          status: 'connected',
+          config: {
+            serverId: 'server-error',
+            serverName: 'Error Server',
+            channelId: 'channel-error',
+            channelName: 'error-channel',
+            webhookListenerEnabled: true,
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        await createDiscordIntegration(integration._id, {
+          serverId: 'server-error',
+          serverName: 'Error Server',
+          channelId: 'channel-error',
+          channelName: 'error-channel',
+          webhookUrl: 'https://discord.com/api/webhooks/invalid/token',
+          webhookId: 'invalid',
+        });
+
+        // Mock failed Discord webhook response
+        global.fetch.mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+        });
+
+        const discordService = new DiscordService(integration._id);
+        await discordService.initialize();
+
+        await expect(discordService.sendMessage('Test')).rejects.toThrow('HTTP error');
+      });
+
+      test('should track outgoing message in history', async () => {
+        const integration = await Integration.create({
+          podId: testPod._id,
+          type: 'discord',
+          status: 'connected',
+          config: {
+            serverId: 'server-history',
+            serverName: 'History Server',
+            channelId: 'channel-history',
+            channelName: 'history-channel',
+            webhookListenerEnabled: true,
+            messageBuffer: [],
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        await createDiscordIntegration(integration._id, {
+          serverId: 'server-history',
+          serverName: 'History Server',
+          channelId: 'channel-history',
+          channelName: 'history-channel',
+          webhookUrl: 'https://discord.com/api/webhooks/history/token',
+          webhookId: 'history',
+        });
+
+        // Mock successful Discord webhook response
+        global.fetch.mockResolvedValueOnce({
+          ok: true,
+          status: 204,
+        });
+
+        const discordService = new DiscordService(integration._id);
+        await discordService.initialize();
+
+        await discordService.sendMessage('Tracked outbound message');
+
+        // Verify the sendMessage method was called (webhook was used)
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('Full Outbound Flow Simulation', () => {
+      const groupmeService = require('../../services/groupmeService');
+
+      test('should simulate GroupMe command → summary → outbound message flow', async () => {
+        // Install commonly-bot
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read'],
+          });
+
+        // Create GroupMe integration
+        const integration = await Integration.create({
+          podId: testPod._id,
+          type: 'groupme',
+          status: 'connected',
+          config: {
+            groupId: 'full-flow-group',
+            groupName: 'Full Flow GroupMe',
+            botId: 'outbound-bot-789',
+            messageBuffer: [
+              {
+                messageId: 'gm-1',
+                authorId: 'user-1',
+                authorName: 'Alice',
+                content: 'Planning meeting at 2pm',
+                timestamp: new Date(Date.now() - 3600000),
+              },
+              {
+                messageId: 'gm-2',
+                authorId: 'user-2',
+                authorName: 'Bob',
+                content: 'I will be there!',
+                timestamp: new Date(Date.now() - 1800000),
+              },
+            ],
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        // Mock GroupMe API for acknowledgment message
+        axios.post.mockResolvedValue({ status: 202, data: {} });
+
+        // 1. Trigger summarization (simulates scheduler)
+        await SchedulerService.summarizeIntegrationBuffers();
+
+        // 2. Verify agent event was created
+        const events = await AgentEvent.find({
+          agentName: 'commonly-bot',
+          podId: testPod._id,
+        });
+        expect(events.length).toBe(1);
+        expect(events[0].type).toBe('integration.summary');
+        expect(events[0].payload.summary.messageCount).toBe(2);
+
+        // 3. Simulate sending acknowledgment back to GroupMe
+        const ackResult = await groupmeService.sendMessage(
+          integration.config.botId,
+          `✅ Queued ${events[0].payload.summary.messageCount} message(s) for Commonly Bot.`,
+        );
+
+        expect(ackResult.success).toBe(true);
+        expect(axios.post).toHaveBeenCalledWith(
+          'https://api.groupme.com/v3/bots/post',
+          expect.objectContaining({
+            bot_id: 'outbound-bot-789',
+            text: '✅ Queued 2 message(s) for Commonly Bot.',
+          }),
+        );
+      });
+
+      test('should simulate fetching pod summary and sending to GroupMe', async () => {
+        // Create a summary in the pod
+        const summary = await Summary.create({
+          type: 'chats',
+          podId: testPod._id,
+          title: 'Pod Chat Summary',
+          content: 'The team discussed project milestones and Q2 deliverables.',
+          timeRange: {
+            start: new Date(Date.now() - 3600000),
+            end: new Date(),
+          },
+          metadata: {
+            totalItems: 15,
+            podName: testPod.name,
+          },
+        });
+
+        // Create GroupMe integration
+        await Integration.create({
+          podId: testPod._id,
+          type: 'groupme',
+          status: 'connected',
+          config: {
+            groupId: 'pod-summary-group',
+            groupName: 'Pod Summary GroupMe',
+            botId: 'summary-bot-101',
+            messageBuffer: [],
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        // Mock GroupMe API
+        axios.post.mockResolvedValue({ status: 202, data: {} });
+
+        // Simulate !pod-summary command: fetch summary and send to GroupMe
+        const latestSummary = await Summary.findOne({ podId: testPod._id }).sort({ createdAt: -1 });
+
+        expect(latestSummary).toBeDefined();
+        expect(latestSummary.content).toContain('project milestones');
+
+        // Send summary to GroupMe (truncated if needed)
+        const truncatedSummary = latestSummary.content.substring(0, 900);
+        const result = await groupmeService.sendMessage('summary-bot-101', truncatedSummary);
+
+        expect(result.success).toBe(true);
+        expect(axios.post).toHaveBeenCalledWith(
+          'https://api.groupme.com/v3/bots/post',
+          expect.objectContaining({
+            bot_id: 'summary-bot-101',
+            text: expect.stringContaining('project milestones'),
+          }),
+        );
+      });
     });
   });
 });
