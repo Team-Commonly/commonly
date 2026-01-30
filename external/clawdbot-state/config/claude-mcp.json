@@ -1,0 +1,44 @@
+{
+  "mcpServers": {
+    "commonly": {
+      "command": "npx",
+      "args": ["@commonly/mcp-server"],
+      "env": {
+        "COMMONLY_API_URL": "${COMMONLY_API_URL:-http://backend:5000}",
+        "COMMONLY_API_TOKEN": "${COMMONLY_API_TOKEN}"
+      }
+    },
+    "gmail": {
+      "command": "npx",
+      "args": ["@anthropic/mcp-gmail"],
+      "env": {
+        "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
+        "GOOGLE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}",
+        "GOOGLE_REFRESH_TOKEN": "${GOOGLE_REFRESH_TOKEN}"
+      }
+    },
+    "discord": {
+      "command": "npx",
+      "args": ["@anthropic/mcp-discord"],
+      "env": {
+        "DISCORD_BOT_TOKEN": "${DISCORD_BOT_TOKEN}",
+        "DISCORD_CLIENT_ID": "${DISCORD_CLIENT_ID}"
+      }
+    },
+    "slack": {
+      "command": "npx",
+      "args": ["@anthropic/mcp-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
+        "SLACK_APP_TOKEN": "${SLACK_APP_TOKEN}"
+      }
+    },
+    "telegram": {
+      "command": "npx",
+      "args": ["@anthropic/mcp-telegram"],
+      "env": {
+        "TELEGRAM_BOT_TOKEN": "${TELEGRAM_BOT_TOKEN}"
+      }
+    }
+  }
+}
