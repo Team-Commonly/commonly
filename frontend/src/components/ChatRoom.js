@@ -22,9 +22,11 @@ import {
     KeyboardArrowRight as ArrowRightIcon,
     KeyboardArrowLeft as ArrowLeftIcon,
     Apps as AppsIcon,
+    SmartToy as AgentIcon,
     CheckCircle as CheckCircleIcon,
     Settings as SettingsIcon,
-    ContentCopy as ContentCopyIcon
+    ContentCopy as ContentCopyIcon,
+    PersonRemove as PersonRemoveIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -176,15 +178,17 @@ const ChatRoom = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [showMembers, setShowMembers] = useState(true); // Start with sidebar visible
+    const [showMembers, setShowMembers] = useState(false); // Default to collapsed sidebar
     const messagesEndRef = useRef(null);
     const [selectedFile, setSelectedFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState('');
     const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef(null);
+    const messageInputRef = useRef(null);
     const emojiPickerRef = useRef(null);
     const sidebarRef = useRef(null);
     const messagesContainerRef = useRef(null);
+    const mentionDropdownRef = useRef(null);
     const skipNextAutoScrollRef = useRef(false);
     const [isLoadingOlder, setIsLoadingOlder] = useState(false);
     const [hasMoreMessages, setHasMoreMessages] = useState(true);
@@ -193,7 +197,13 @@ const ChatRoom = () => {
     const [podIntegrations, setPodIntegrations] = useState([]);
     const [integrationsLoading, setIntegrationsLoading] = useState(false);
     const [expandedIntegrations, setExpandedIntegrations] = useState({});
+    const [podAgents, setPodAgents] = useState([]);
+    const [podAgentsLoading, setPodAgentsLoading] = useState(false);
+    const [podAgentsError, setPodAgentsError] = useState('');
+    const [onlineMemberIds, setOnlineMemberIds] = useState([]);
     const [integrationCatalogEntries, setIntegrationCatalogEntries] = useState([]);
+    const [memberActionError, setMemberActionError] = useState('');
+    const [removingMemberIds, setRemovingMemberIds] = useState({});
     const integrationRedirectBase = (process.env.REACT_APP_INTEGRATION_REDIRECT_BASE_URL
         || process.env.REACT_APP_API_URL
         || '').replace(/\/$/, '');
@@ -210,6 +220,11 @@ const ChatRoom = () => {
     const [newLinkName, setNewLinkName] = useState('');
     const [newLinkUrl, setNewLinkUrl] = useState('');
     const [newLinkType, setNewLinkType] = useState('discord');
+
+    const [mentionOpen, setMentionOpen] = useState(false);
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionStart, setMentionStart] = useState(-1);
+    const [mentionIndex, setMentionIndex] = useState(0);
     const [qrCodeImage, setQrCodeImage] = useState(null);
     const qrCodeInputRef = useRef(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -230,6 +245,56 @@ const ChatRoom = () => {
     const [telegramError, setTelegramError] = useState('');
     const [telegramSaving, setTelegramSaving] = useState(false);
     const telegramDiscardOnCreateRef = useRef(false);
+
+    const isPodAdmin = room?.createdBy?._id && currentUser?._id
+        ? room.createdBy._id === currentUser._id
+        : false;
+
+    const mentionableItems = useMemo(() => {
+        const items = [];
+        const seen = new Set();
+
+        (room?.members || []).forEach((member) => {
+            if (!member?.username) return;
+            const key = member.username.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            const memberIsAgent = isAgentUsername(member.username);
+            items.push({
+                id: member._id || key,
+                label: member.username,
+                labelLower: key,
+                subtitle: memberIsAgent ? 'Agent' : (member._id === room?.createdBy?._id ? 'Admin' : 'Member'),
+                avatar: member.profilePicture,
+                isAgent: memberIsAgent,
+            });
+        });
+
+        (podAgents || []).forEach((agent) => {
+            const agentName = agent?.name;
+            if (!agentName) return;
+            const key = agentName.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            items.push({
+                id: agentName,
+                label: agentName,
+                labelLower: key,
+                subtitle: 'Agent',
+                avatar: agent?.profile?.iconUrl || agent?.profile?.avatarUrl || '',
+                isAgent: true,
+            });
+        });
+
+        return items;
+    }, [room?.members, room?.createdBy?._id, podAgents]);
+
+    const filteredMentions = useMemo(() => {
+        if (!mentionOpen) return [];
+        const query = mentionQuery.trim().toLowerCase();
+        const result = mentionableItems.filter((item) => item.labelLower.includes(query));
+        return result.slice(0, 8);
+    }, [mentionOpen, mentionQuery, mentionableItems]);
     
     // Fetch pod details and messages
     useEffect(() => {
@@ -328,6 +393,19 @@ const ChatRoom = () => {
                     console.warn('Failed to fetch integrations for pod:', err.response?.status);
                 } finally {
                     setIntegrationsLoading(false);
+                }
+
+                // Fetch installed agents for this pod
+                try {
+                    setPodAgentsLoading(true);
+                    const agentsRes = await axios.get(`/api/registry/pods/${roomId}/agents`, authHeaders);
+                    setPodAgents(agentsRes.data?.agents || []);
+                    setPodAgentsError('');
+                } catch (err) {
+                    console.warn('Failed to fetch agents for pod:', err.response?.status);
+                    setPodAgentsError('Unable to load agents.');
+                } finally {
+                    setPodAgentsLoading(false);
                 }
 
                 // Fetch integration catalog metadata (best effort)
@@ -467,6 +545,39 @@ const ChatRoom = () => {
             setPodIntegrations(integrationsRes.data || []);
         } catch (err) {
             console.warn('Failed to refresh integrations for pod:', err.response?.status);
+        }
+    };
+
+    const refreshPodAgents = async () => {
+        if (!roomId) return;
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            setPodAgentsLoading(true);
+            const agentsRes = await axios.get(`/api/registry/pods/${roomId}/agents`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setPodAgents(agentsRes.data?.agents || []);
+            setPodAgentsError('');
+        } catch (err) {
+            console.warn('Failed to fetch agents for pod:', err.response?.status);
+            setPodAgentsError('Unable to load agents.');
+        } finally {
+            setPodAgentsLoading(false);
+        }
+    };
+
+    const handleRemovePodAgent = async (agentName) => {
+        const token = localStorage.getItem('token');
+        if (!token || !agentName || !roomId) return;
+        try {
+            await axios.delete(`/api/registry/agents/${agentName}/pods/${roomId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            await refreshPodAgents();
+        } catch (err) {
+            console.error('Failed to remove agent from pod:', err);
+            setPodAgentsError(err.response?.data?.error || 'Failed to remove agent.');
         }
     };
 
@@ -874,6 +985,22 @@ const ChatRoom = () => {
             };
         }
     }, [connected, roomId, socket, joinPod, leavePod, error]);
+
+    // Track online members for the current pod
+    useEffect(() => {
+        if (!connected || !roomId || !socket) return undefined;
+
+        const handlePresence = (payload) => {
+            if (!payload || payload.podId !== roomId) return;
+            setOnlineMemberIds(payload.userIds || []);
+        };
+
+        socket.on('podPresence', handlePresence);
+
+        return () => {
+            socket.off('podPresence', handlePresence);
+        };
+    }, [connected, roomId, socket]);
     
     // Add debugging for messages
     useEffect(() => {
@@ -1013,6 +1140,31 @@ const ChatRoom = () => {
     };
 
     const handleMessageKeyDown = (event) => {
+        if (mentionOpen && filteredMentions.length > 0) {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setMentionIndex((prev) => (prev + 1) % filteredMentions.length);
+                return;
+            }
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setMentionIndex((prev) => (prev - 1 + filteredMentions.length) % filteredMentions.length);
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                setMentionOpen(false);
+                return;
+            }
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                const selected = filteredMentions[mentionIndex];
+                if (selected) {
+                    handleMentionSelect(selected);
+                }
+                return;
+            }
+        }
         if (event.key !== 'Enter') {
             return;
         }
@@ -1022,6 +1174,50 @@ const ChatRoom = () => {
         }
         event.preventDefault();
         handleSendMessage(event);
+    };
+
+    const getMentionContext = (text, cursor) => {
+        if (!text || cursor === null || cursor === undefined) return null;
+        const atIndex = text.lastIndexOf('@', cursor - 1);
+        if (atIndex < 0) return null;
+        const beforeChar = text[atIndex - 1];
+        if (beforeChar && !/\s|[([{"'`]/.test(beforeChar)) return null;
+        const between = text.slice(atIndex + 1, cursor);
+        if (/\s/.test(between)) return null;
+        return { start: atIndex, query: between };
+    };
+
+    const updateMentionState = (nextValue, cursorPosition) => {
+        const context = getMentionContext(nextValue, cursorPosition);
+        if (!context) {
+            setMentionOpen(false);
+            setMentionQuery('');
+            setMentionStart(-1);
+            return;
+        }
+        setMentionOpen(true);
+        setMentionQuery(context.query);
+        setMentionStart(context.start);
+        setMentionIndex(0);
+    };
+
+    const handleMentionSelect = (item) => {
+        const input = messageInputRef.current;
+        if (!input) return;
+        const cursor = input.selectionStart ?? message.length;
+        const start = mentionStart >= 0 ? mentionStart : message.lastIndexOf('@', cursor);
+        if (start < 0) return;
+        const insert = `@${item.label}`;
+        const nextValue = `${message.slice(0, start)}${insert} ${message.slice(cursor)}`;
+        setMessage(nextValue);
+        setMentionOpen(false);
+        setMentionQuery('');
+        setMentionStart(-1);
+        requestAnimationFrame(() => {
+            const nextCursor = start + insert.length + 1;
+            input.focus();
+            input.setSelectionRange(nextCursor, nextCursor);
+        });
     };
     
     const onEmojiClick = (emojiObj) => {
@@ -1057,6 +1253,20 @@ const ChatRoom = () => {
         };
     }, []);
 
+    useEffect(() => {
+        const handleMentionClickOutside = (event) => {
+            if (!mentionOpen) return;
+            if (mentionDropdownRef.current && mentionDropdownRef.current.contains(event.target)) return;
+            if (messageInputRef.current && messageInputRef.current.contains(event.target)) return;
+            setMentionOpen(false);
+        };
+
+        document.addEventListener('mousedown', handleMentionClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleMentionClickOutside);
+        };
+    }, [mentionOpen]);
+
     // Close sidebar when clicking outside on mobile and tablet
     useEffect(() => {
         const handleSidebarClickOutside = (event) => {
@@ -1073,6 +1283,18 @@ const ChatRoom = () => {
             document.removeEventListener('mousedown', handleSidebarClickOutside);
         };
     }, [isMobile, isTablet, showMembers]);
+
+    useEffect(() => {
+        if ((isMobile || isTablet) && showMembers) {
+            setShowMembers(false);
+        }
+    }, [isMobile, isTablet]);
+
+    useEffect(() => {
+        if (isMobile && !isDashboardCollapsed && showMembers) {
+            setShowMembers(false);
+        }
+    }, [isMobile, isDashboardCollapsed, showMembers]);
 
     // Log when emoji picker visibility changes
     useEffect(() => {
@@ -1112,6 +1334,13 @@ const ChatRoom = () => {
             document.body.classList.remove('sidebar-visible');
         }
     }, [showMembers]);
+
+    useEffect(() => {
+        if (!mentionOpen) return;
+        if (mentionIndex >= filteredMentions.length) {
+            setMentionIndex(0);
+        }
+    }, [mentionOpen, mentionIndex, filteredMentions.length]);
     
     // Handle adding new announcement with backend integration
     const handleAddAnnouncement = async () => {
@@ -1318,6 +1547,40 @@ const ChatRoom = () => {
             setError('Failed to delete external link. Please try again.');
         }
     };
+
+    const handleRemoveMember = async (memberId, memberName) => {
+        if (!roomId || !memberId) return;
+        const confirmed = window.confirm(`Remove ${memberName || 'this member'} from the pod?`);
+        if (!confirmed) return;
+
+        setRemovingMemberIds(prev => ({ ...prev, [memberId]: true }));
+        setMemberActionError('');
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setMemberActionError('Authentication required. Please log in again.');
+                return;
+            }
+
+            const response = await axios.delete(`/api/pods/${roomId}/members/${memberId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            setRoom(response.data);
+            setOnlineMemberIds(prev => prev.filter(id => id !== memberId));
+        } catch (error) {
+            console.error('Failed to remove member:', error);
+            setMemberActionError(error.response?.data?.msg || 'Failed to remove member. Please try again.');
+        } finally {
+            setRemovingMemberIds(prev => {
+                const next = { ...prev };
+                delete next[memberId];
+                return next;
+            });
+        }
+    };
     
     // Early exit for loading or error states
     if (loading) {
@@ -1372,8 +1635,17 @@ const ChatRoom = () => {
                     </div>
                     
                     <div className="sidebar-section-content">
+                        {memberActionError && (
+                            <Alert severity="error" sx={{ mb: 1 }}>
+                                {memberActionError}
+                            </Alert>
+                        )}
                         {room?.members?.map(member => {
                             const memberIsAgent = isAgentUsername(member.username);
+                            const isOnline = onlineMemberIds.includes(member._id)
+                                || member._id === currentUser?._id;
+                            const isCreator = member._id === room?.createdBy?._id;
+                            const canRemove = isPodAdmin && !memberIsAgent && !isCreator && member._id !== currentUser?._id;
                             return (
                                 <div key={member._id} className="sidebar-member">
                                     {memberIsAgent ? (
@@ -1400,13 +1672,101 @@ const ChatRoom = () => {
                                             {memberIsAgent ? 'Agent' : (member._id === room?.createdBy?._id ? 'Admin' : 'Member')}
                                         </div>
                                     </div>
-                                    <div className={`sidebar-member-status ${member._id === currentUser?._id ? '' : (Math.random() > 0.3 ? '' : 'offline')}`}></div>
+                                    <div className="sidebar-member-actions">
+                                        <div className={`sidebar-member-status ${isOnline ? '' : 'offline'}`}></div>
+                                        {canRemove && (
+                                            <Tooltip title="Remove member" arrow>
+                                                <span>
+                                                    <IconButton
+                                                        className="sidebar-member-remove"
+                                                        size="small"
+                                                        aria-label="Remove member"
+                                                        disabled={Boolean(removingMemberIds[member._id])}
+                                                        onClick={() => handleRemoveMember(member._id, member.username)}
+                                                    >
+                                                        <PersonRemoveIcon fontSize="small" />
+                                                    </IconButton>
+                                                </span>
+                                            </Tooltip>
+                                        )}
+                                    </div>
                                 </div>
                             );
                         })}
                     </div>
                 </div>
                 
+                {/* Agents section */}
+                <div className="sidebar-section">
+                    <div className="sidebar-section-title">
+                        <span><AgentIcon style={{ marginRight: '8px', fontSize: '16px', color: '#6366f1' }} /> Agents</span>
+                        <Button
+                            size="small"
+                            variant="text"
+                            onClick={() => navigate(`/agents?podId=${roomId}`)}
+                            sx={{ ml: 'auto', fontWeight: 600 }}
+                        >
+                            Manage
+                        </Button>
+                    </div>
+                    <div className="sidebar-section-content">
+                        {podAgentsError && (
+                            <Alert severity="warning" sx={{ mb: 1 }}>
+                                {podAgentsError}
+                            </Alert>
+                        )}
+                        {podAgentsLoading ? (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                                <CircularProgress size={20} />
+                            </Box>
+                        ) : podAgents.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">
+                                No agents installed yet.
+                            </Typography>
+                        ) : (
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                {podAgents.map((agent) => {
+                                    const canRemoveAgent = room?.createdBy?._id === currentUser?._id
+                                        || (agent.installedBy && agent.installedBy === currentUser?._id);
+                                    return (
+                                        <Box
+                                            key={agent.name}
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                gap: 1,
+                                                p: 1,
+                                                borderRadius: 1.5,
+                                                border: '1px solid rgba(148, 163, 184, 0.2)',
+                                                backgroundColor: 'rgba(30, 41, 59, 0.7)'
+                                            }}
+                                        >
+                                            <Box sx={{ minWidth: 0 }}>
+                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#e2e8f0' }}>
+                                                    {agent.profile?.displayName || agent.name}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {agent.version ? `v${agent.version}` : 'Version unknown'}
+                                                </Typography>
+                                            </Box>
+                                            {canRemoveAgent && (
+                                                <Button
+                                                    size="small"
+                                                    color="error"
+                                                    onClick={() => handleRemovePodAgent(agent.name)}
+                                                >
+                                                    Remove
+                                                </Button>
+                                            )}
+                                        </Box>
+                                    );
+                                })}
+                            </Box>
+                        )}
+                    </div>
+                </div>
+
                 {/* Announcements section */}
                 <div className="sidebar-section">
                     <div className="sidebar-section-title">
@@ -2522,20 +2882,61 @@ const ChatRoom = () => {
                             </Tooltip>
                         </div>
                         
-                        <TextField
-                            fullWidth
-                            placeholder={selectedFile ? 'Add a caption...' : `Message #${room?.name || 'chat'}`}
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            onKeyDown={handleMessageKeyDown}
-                            variant="standard"
-                            multiline
-                            maxRows={5}
-                            InputProps={{
-                                disableUnderline: true,
-                            }}
-                            className="message-input"
-                        />
+                        <div className="message-input-wrapper">
+                            <TextField
+                                fullWidth
+                                placeholder={selectedFile ? 'Add a caption...' : `Message #${room?.name || 'chat'}`}
+                                value={message}
+                                inputRef={messageInputRef}
+                                onChange={(e) => {
+                                    const nextValue = e.target.value;
+                                    setMessage(nextValue);
+                                    updateMentionState(nextValue, e.target.selectionStart);
+                                }}
+                                onKeyDown={handleMessageKeyDown}
+                                onClick={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
+                                onKeyUp={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
+                                variant="standard"
+                                multiline
+                                maxRows={5}
+                                InputProps={{
+                                    disableUnderline: true,
+                                }}
+                                className="message-input"
+                            />
+                            {mentionOpen && filteredMentions.length > 0 && (
+                                <div className="mention-dropdown" ref={mentionDropdownRef}>
+                                    {filteredMentions.map((item, index) => (
+                                        <button
+                                            type="button"
+                                            key={item.id}
+                                            className={`mention-item ${index === mentionIndex ? 'active' : ''}`}
+                                            onMouseDown={(event) => event.preventDefault()}
+                                            onClick={() => handleMentionSelect(item)}
+                                        >
+                                            {item.isAgent ? (
+                                                <AgentAvatar
+                                                    username={item.label}
+                                                    src={item.avatar}
+                                                    size={28}
+                                                    showBadge={true}
+                                                />
+                                            ) : (
+                                                <Avatar
+                                                    sx={{ bgcolor: getAvatarColor(item.avatar || 'default'), width: 28, height: 28 }}
+                                                >
+                                                    {item.label.charAt(0).toUpperCase()}
+                                                </Avatar>
+                                            )}
+                                            <div className="mention-item-text">
+                                                <span className="mention-item-label">@{item.label}</span>
+                                                <span className="mention-item-subtitle">{item.subtitle}</span>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                         
                         <Button 
                             color="primary"

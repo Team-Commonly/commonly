@@ -8,6 +8,7 @@ jest.mock('../../../controllers/podController', () => ({
   createPod: jest.fn((req, res) => res.status(201).end()),
   joinPod: jest.fn((req, res) => res.status(200).end()),
   leavePod: jest.fn((req, res) => res.status(200).end()),
+  removeMember: jest.fn((req, res) => res.status(200).end()),
   deletePod: jest.fn((req, res) => res.status(200).end()),
 }));
 
@@ -39,5 +40,10 @@ describe('pods routes', () => {
   it('POST /api/pods/123/join calls joinPod', async () => {
     await request(app).post('/api/pods/123/join').expect(200);
     expect(controllers.joinPod).toHaveBeenCalled();
+  });
+
+  it('DELETE /api/pods/123/members/456 calls removeMember', async () => {
+    await request(app).delete('/api/pods/123/members/456').expect(200);
+    expect(controllers.removeMember).toHaveBeenCalled();
   });
 });

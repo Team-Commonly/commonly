@@ -55,9 +55,11 @@ services:
       # Authentication
       - JWT_SECRET=${JWT_SECRET:-development-jwt-secret}
       
-      # Email settings
-      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
-      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      # Email settings (SMTP2GO)
+      - SMTP2GO_API_KEY=${SMTP2GO_API_KEY}
+      - SMTP2GO_FROM_EMAIL=${SMTP2GO_FROM_EMAIL}
+      - SMTP2GO_FROM_NAME=${SMTP2GO_FROM_NAME}
+      - SMTP2GO_BASE_URL=${SMTP2GO_BASE_URL}
       
       # Frontend URL
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
@@ -67,6 +69,12 @@ services:
       
       # AI Integration
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - LITELLM_BASE_URL=${LITELLM_BASE_URL}
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
+      - LITELLM_CHAT_MODEL=${LITELLM_CHAT_MODEL}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS}
       
       # Discord Integration
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
@@ -82,6 +90,8 @@ services:
       - ./backend:/app
       # Mount marketplace manifest from repo root
       - ./packages/commonly-marketplace:/app/packages/commonly-marketplace:ro
+      # Mount agent service manifests for auto-registration
+      - ./external/commonly-agent-services:/app/external/commonly-agent-services:ro
       # Prevent overwriting node_modules
       - /app/node_modules
       # Mount CA certificate
@@ -122,6 +132,135 @@ services:
     stdin_open: true
     tty: true
 
+  # LiteLLM model gateway (optional)
+  litellm:
+    profiles: ["litellm"]
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: litellm-dev
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-dev-litellm-key}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./external/litellm/config.yaml:/app/config.yaml:ro
+    ports:
+      - "4000:4000"
+    networks:
+      - app-network-dev
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml"]
+
+  # External agent runtime (Clawdbot / Moltbot Gateway)
+  # Uses Claude Code OAuth when ~/.claude is mounted (uses your Claude Code subscription)
+  clawdbot-gateway:
+    profiles: ["clawdbot"]
+    build:
+      context: ./_external/clawdbot
+      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile}
+    container_name: clawdbot-gateway-dev
+    depends_on:
+      - backend
+    environment:
+      # Required for Claude Code OAuth authentication
+      - HOME=/home/node
+      - CLAWDBOT_GATEWAY_PORT=${CLAWDBOT_GATEWAY_PORT:-18789}
+      - CLAWDBOT_BRIDGE_PORT=${CLAWDBOT_BRIDGE_PORT:-18790}
+      - CLAWDBOT_GATEWAY_BIND=${CLAWDBOT_GATEWAY_BIND:-lan}
+      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
+      - CLAWDBOT_CONFIG_DIR=/home/node/.clawdbot
+      - CLAWDBOT_WORKSPACE_DIR=/home/node/clawd
+      - CLAWDBOT_SKIP_BROWSER_CONTROL_SERVER=${CLAWDBOT_SKIP_BROWSER_CONTROL_SERVER:-1}
+      - CLAWDBOT_SKIP_CANVAS_HOST=${CLAWDBOT_SKIP_CANVAS_HOST:-1}
+      - CLAWDBOT_SKIP_CHANNELS=${CLAWDBOT_SKIP_CHANNELS:-0}
+      - COMMONLY_API_URL=${COMMONLY_API_URL:-http://backend:5000}
+      - COMMONLY_API_TOKEN=${COMMONLY_API_TOKEN}
+      # Clawdbot uses separate Discord bot to avoid conflicts with Commonly backend
+      - DISCORD_CLIENT_ID=${CLAWDBOT_DISCORD_CLIENT_ID}
+      - DISCORD_BOT_TOKEN=${CLAWDBOT_DISCORD_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
+      # LLM API keys (optional if using Claude Code OAuth)
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - ./external/clawdbot-state/config:/home/node/.clawdbot
+      - ./external/clawdbot-state/workspace:/home/node/clawd
+      # Mount Claude Code credentials for OAuth authentication
+      # The credentials are in ~/.claude/.credentials.json
+      - ${CLAUDE_CREDENTIALS_PATH:-~/.claude}:/home/node/.claude:ro
+      # Mount Commonly MCP server for pod context access
+      - ./packages/commonly-mcp:/app/commonly-mcp:ro
+    ports:
+      - "${CLAWDBOT_GATEWAY_PORT:-18789}:18789"
+      - "${CLAWDBOT_BRIDGE_PORT:-18790}:18790"
+    networks:
+      - app-network-dev
+    restart: unless-stopped
+    command:
+      [
+        "node",
+        "dist/index.js",
+        "gateway",
+        "--bind",
+        "${CLAWDBOT_GATEWAY_BIND:-lan}",
+        "--port",
+        "${CLAWDBOT_GATEWAY_PORT:-18789}",
+        "--allow-unconfigured"
+      ]
+
+  clawdbot-cli:
+    profiles: ["clawdbot"]
+    build:
+      context: ./_external/clawdbot
+      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile}
+    container_name: clawdbot-cli-dev
+    depends_on:
+      - clawdbot-gateway
+    environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
+      - CLAWDBOT_GATEWAY_PORT=${CLAWDBOT_GATEWAY_PORT:-18789}
+      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
+    volumes:
+      - ./external/clawdbot-state/config:/home/node/.clawdbot
+      - ./external/clawdbot-state/workspace:/home/node/clawd
+      # Mount Claude Code credentials for OAuth authentication
+      # The credentials are in ~/.claude/.credentials.json
+      - ${CLAUDE_CREDENTIALS_PATH:-~/.claude}:/home/node/.claude:ro
+    networks:
+      - app-network-dev
+    entrypoint: ["node", "dist/index.js"]
+    stdin_open: true
+    tty: true
+
+  # External agent runtime (Clawdbot Bridge)
+  clawdbot-bridge:
+    profiles: ["clawdbot"]
+    image: node:20-alpine
+    container_name: clawdbot-bridge-dev
+    working_dir: /app/external/commonly-agent-services/clawdbot-bridge
+    depends_on:
+      - backend
+      - clawdbot-gateway
+    environment:
+      - COMMONLY_BASE_URL=${COMMONLY_BASE_URL:-http://backend:5000}
+      - COMMONLY_AGENT_TOKEN=${CLAWDBOT_BRIDGE_TOKEN}
+      - COMMONLY_AGENT_POLL_MS=${COMMONLY_AGENT_POLL_MS:-5000}
+      - CLAWDBOT_GATEWAY_URL=${CLAWDBOT_GATEWAY_URL:-http://clawdbot-gateway:18789}
+      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
+      - CLAWDBOT_AGENT_ID=${CLAWDBOT_AGENT_ID:-main}
+      - CLAWDBOT_MODEL=${CLAWDBOT_MODEL:-moltbot:main}
+    volumes:
+      - ./external:/app/external:ro
+    networks:
+      - app-network-dev
+    restart: unless-stopped
+    command: ["node", "index.js"]
+
   # External agent runtime (Commonly Bot)
   commonly-bot:
     image: node:20-alpine
@@ -131,7 +270,7 @@ services:
       - backend
     environment:
       - COMMONLY_BASE_URL=${COMMONLY_BASE_URL:-http://backend:5000}
-      - COMMONLY_AGENT_TOKEN=${COMMONLY_AGENT_TOKEN}
+      - COMMONLY_AGENT_TOKEN=${COMMONLY_BOT_TOKEN}
       - COMMONLY_AGENT_POLL_MS=${COMMONLY_AGENT_POLL_MS:-5000}
     volumes:
       - ./external:/app/external:ro

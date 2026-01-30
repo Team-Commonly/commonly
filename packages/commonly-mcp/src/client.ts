@@ -93,6 +93,14 @@ export interface WriteResponse {
   message?: string;
 }
 
+export interface MessageResponse {
+  id?: string;
+  content?: string;
+  messageType?: string;
+  createdAt?: string;
+  [key: string]: unknown;
+}
+
 export class CommonlyClient {
   private http: AxiosInstance;
 
@@ -225,6 +233,28 @@ export class CommonlyClient {
     const response = await this.http.post<WriteResponse>(
       `/api/v1/memory/${podId}`,
       options
+    );
+    return response.data;
+  }
+
+  /**
+   * Post a chat message into a pod
+   */
+  async postMessage(
+    podId: string,
+    options: {
+      content: string;
+      messageType?: string;
+      attachments?: unknown[];
+    }
+  ): Promise<MessageResponse> {
+    const response = await this.http.post<MessageResponse>(
+      `/api/messages/${podId}`,
+      {
+        content: options.content,
+        messageType: options.messageType,
+        attachments: options.attachments,
+      }
     );
     return response.data;
   }

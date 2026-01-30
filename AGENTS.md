@@ -36,6 +36,7 @@ and development conventions:
 - `DATABASE.md`
 - `DEPLOYMENT.md`
 - `LINTING.md`
+- `development/LITELLM.md` (optional LiteLLM model gateway for local dev)
 - Integration providers live in `backend/integrations/providers/` (discord, slack, groupme, telegram).
 - Webhook routes for integrations are under `/api/webhooks/<provider>/<integrationId>`.
 - `whatsapp/WHATSAPP_INTEGRATION_PLAN.md` (for WhatsApp work)
@@ -45,6 +46,7 @@ and development conventions:
 - `design/MULTI_AGENT_POSITIONING.md` (competitive framing: context hub + pods)
 - `design/MULTI_AGENT_ROADMAP.md` (priorities that reinforce the positioning)
 - `design/POD_SKILLS_INDEX.md` (pods as indexed skill packs and team memory)
+- `agents/CLAWDBOT.md` (Clawdbot/Moltbot integration and dev setup)
 
 Design documents in `docs/design/` provide additional details for upcoming
 features. Review them and add new design docs when planning major
@@ -92,7 +94,16 @@ The dev backend container installs dependencies on first boot if `/app/node_modu
 Chat and thread composers share a consistent layout (tool cluster + multiline input + labeled send button). Keep file uploads on label-wrapped inputs so icon buttons reliably open the picker.
 Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only; no inline config inputs. Sidebar also shows connected integration status cards for these providers.
 Pod member lists show MVP role labels: **Admin** for the creator, **Member** for others (viewers are read-only and not rendered yet).
+Pod admins can remove non-admin human members from the member list.
+Agents Hub uses a single filter bar (search, category, install-to pod) and skips “Trending” for now; agent cards are 3-up on desktop.
+Daily Digest analytics uses a single view selector to avoid chart crowding.
+Mobile layout keeps sidebars off-canvas: the main dashboard slides over content with a backdrop, and the chat members panel overlays full screen on small devices.
+Chat members panel defaults to collapsed on pod entry.
+Mobile breakpoint guard: keep pod chat layout full-width at <=768px (avoid `left: 50%` positioning).
 Agents Hub (`/agents`) is for registry-based agent installs (pod-native profiles). Apps Marketplace (`/apps`) is for webhook/integration apps.
+Agent installs support selecting target pods; pod admins (and installers) can remove agents from pods.
+Pod sidebar lists installed agents with a Manage link to Agent Hub and admin/installer removal.
+Pod member online indicators are driven by Socket.io `podPresence` events.
 
 ## Developer utilities
 
@@ -112,9 +123,14 @@ Agents Hub (`/agents`) is for registry-based agent installs (pod-native profiles
 - Marketplace entries can include `type="mcp-app"` with `mcp.resourceUri` metadata; MCP Apps are listed for discovery and require an MCP-compatible host for UI rendering.
 - Use `MARKETPLACE_MANIFEST_URL` to fetch the external marketplace repo manifest (with `MARKETPLACE_MANIFEST_PATH` as a local fallback).
 - External provider service stubs live in `external/commonly-provider-services/` (Discord/Slack/Telegram/GroupMe). In-platform providers are legacy.
-- The Commonly Bot external runtime is configured in `docker-compose.dev.yml` as `commonly-bot` and expects `COMMONLY_AGENT_TOKEN`.
-- External agent service stubs live in `external/commonly-agent-services/` (Commonly Bot).
+- The Commonly Bot external runtime is configured in `docker-compose.dev.yml` as `commonly-bot` and expects `COMMONLY_BOT_TOKEN`.
+- External agent service stubs live in `external/commonly-agent-services/` (Commonly Bot, Clawdbot Bridge).
+- Clawdbot dev gateway runs via the `clawdbot` docker-compose profile and stores state under `external/clawdbot-state/`.
+- Clawdbot Bridge runs in the same `clawdbot` profile and requires `CLAWDBOT_GATEWAY_TOKEN` plus `CLAWDBOT_BRIDGE_TOKEN`.
+- LiteLLM model gateway runs via the `litellm` docker-compose profile with config at `external/litellm/config.yaml`.
 - Agent runtime endpoints (token-auth) are under `/api/agents/runtime` with tokens issued via `/api/registry/pods/:podId/agents/:name/runtime-tokens`.
+- Runtime tokens can be revoked via `DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId` (Agents Hub uses `registry=commonly-official` when listing agents).
+- Pod chat supports agent mentions: `@commonly-bot` and `@clawdbot-bridge` (aliases `@commonlybot`, `@clawdbot`) enqueue `chat.mention` events when those agents are installed in the pod.
 - Integration create/update routes enforce manifest-required fields when an integration is marked `connected`; draft integrations can still be created but remain `pending` until required config is provided.
 - Chat summarization and integration buffer summarization now persist `PodAsset` records so pod context can be retrieved as indexed assets, not only raw text summaries.
 - Webhook endpoints now include Slack, GroupMe, and Telegram:

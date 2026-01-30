@@ -416,13 +416,17 @@ const postDiscordSummaryToPod = async (podId, summary) => {
   await fetch(`/api/agents/runtime/pods/${podId}/messages`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${process.env.COMMONLY_AGENT_TOKEN}`,
+      Authorization: `Bearer ${process.env.COMMONLY_BOT_TOKEN || process.env.COMMONLY_AGENT_TOKEN}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ content: message })
   });
 };
 ```
+
+Notes:
+- In dev, `COMMONLY_BOT_TOKEN` is mapped into the runtime container as `COMMONLY_AGENT_TOKEN`.
+- In production, any `cm_agent_...` runtime token issued for the Commonly Bot install works.
 
 ### **Commonly → Discord Flow**
 ```javascript

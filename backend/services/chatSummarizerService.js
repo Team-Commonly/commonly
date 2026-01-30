@@ -1,23 +1,18 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { pool } = require('../config/db-pg');
 const Summary = require('../models/Summary');
 const Pod = require('../models/Pod');
 const PodAssetService = require('./podAssetService');
+const { generateText } = require('./llmService');
 
 class ChatSummarizerService {
-  constructor() {
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-  }
+  constructor() {}
 
   async generateSummary(content, podName) {
     try {
       const prompt = ChatSummarizerService.createPrompt(content, podName);
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
+      return await generateText(prompt, { temperature: 0.4 });
     } catch (error) {
-      console.error('Error generating chat summary with Gemini:', error);
+      console.error('Error generating chat summary with LLM:', error);
       return ChatSummarizerService.generateFallbackSummary(content, podName);
     }
   }
@@ -28,13 +23,12 @@ class ChatSummarizerService {
         content,
         podName,
       );
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
+      const responseText = await generateText(prompt, { temperature: 0.2 });
 
       // Parse the JSON response
       let analyticsData;
       try {
-        analyticsData = JSON.parse(response.text());
+        analyticsData = JSON.parse(responseText);
       } catch (parseError) {
         console.warn(
           'Failed to parse enhanced summary JSON, falling back to basic summary:',

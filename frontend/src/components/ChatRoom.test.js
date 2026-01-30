@@ -10,7 +10,7 @@ const axios = require('axios').default;
 
 jest.mock('axios', () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn() }
+  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() }
 }));
 jest.mock('../context/AuthContext', () => ({
   useAuth: jest.fn(),
@@ -113,4 +113,30 @@ test('renders integration summary bot messages', async () => {
   expect(container.textContent).toContain('Slack Update');
   expect(container.textContent).toContain('#general');
   expect(container.textContent).toContain('AI summary text');
+});
+
+test('shows remove member button for pod admin', async () => {
+  axios.get
+    .mockResolvedValueOnce({
+      data: {
+        _id: '1',
+        name: 'Room',
+        members: [
+          { _id: 'u', username: 'me', profilePicture: null },
+          { _id: 'u2', username: 'other', profilePicture: null }
+        ],
+        createdBy: { _id: 'u', username: 'me', profilePicture: null }
+      }
+    })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: { entries: [] } });
+
+  await TestUtils.act(async () => { root.render(<ChatRoom />); });
+  await TestUtils.act(async () => Promise.resolve());
+
+  const removeButtons = container.querySelectorAll('button[aria-label="Remove member"]');
+  expect(removeButtons.length).toBe(1);
 });

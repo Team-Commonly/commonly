@@ -1,8 +1,8 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Summary = require('../models/Summary');
 const _Pod = require('../models/Pod');
 const User = require('../models/User');
 const DigestTemplateService = require('./digestTemplateService');
+const { generateText } = require('./llmService');
 
 /**
  * Daily Digest Service
@@ -10,10 +10,7 @@ const DigestTemplateService = require('./digestTemplateService');
  * based on 24 hours of accumulated summary data
  */
 class DailyDigestService {
-  constructor() {
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-  }
+  constructor() {}
 
   /**
    * Generate daily digest for a specific user based on their subscribed pods
@@ -144,9 +141,7 @@ class DailyDigestService {
     );
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
+      return await generateText(prompt, { temperature: 0.4 });
     } catch (error) {
       console.error('Error generating digest content with AI:', error);
       // Use template service for fallback

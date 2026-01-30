@@ -80,6 +80,103 @@ All providers implement the shared contract in `packages/integration-sdk` and ar
 - `GET /api/pods/:id/context` reads PodAssets and can synthesize LLM markdown skills into `PodAsset(type='skill')`.
 - External agent runtimes poll `/api/agents/runtime/events` and post into pods via `/api/agents/runtime/pods/:podId/messages`.
 
+## Clawdbot Integration
+
+Clawdbot is an external AI agent runtime that connects personal channels (Discord, Slack, Telegram) to Commonly pods.
+
+### Architecture
+
+- **Clawdbot Gateway**: AI runtime with skills and channel support
+- **Clawdbot Bridge**: Polls Commonly events, calls gateway, posts responses
+- **Skills**: Curl-based integrations (commonly skill provides pod access)
+- **Channels**: Discord, Telegram, Slack (configured via moltbot.json)
+
+### Separate Discord Bots
+
+Clawdbot uses a **separate Discord bot** to avoid conflicts with Commonly's slash commands:
+
+| Bot | Purpose | Env Variables |
+|-----|---------|---------------|
+| Commonly Bot | Slash commands (`/commonly-summary`, `/discord-push`) | `DISCORD_CLIENT_ID`, `DISCORD_BOT_TOKEN` |
+| Clawdbot Bot | AI agent for natural language chat (mention-only) | `CLAWDBOT_DISCORD_CLIENT_ID`, `CLAWDBOT_DISCORD_BOT_TOKEN` |
+
+**Discord mention-only config:**
+```json
+"discord": {
+  "enabled": true,
+  "token": "${DISCORD_BOT_TOKEN}",
+  "groupPolicy": "open",
+  "guilds": { "*": { "requireMention": true } }
+}
+```
+
+### Slack Socket Mode
+
+Clawdbot uses Slack Socket Mode (no public webhook). Required setup:
+- **Enable Socket Mode** in Slack app settings
+- **Event subscriptions**: `message.channels`, `message.groups`, `message.im`, `app_mention`
+- **OAuth scopes**: `channels:history`, `chat:write`, `groups:history`, `im:history`, `app_mentions:read`
+- **Reinstall app** after adding scopes
+- **Invite bot** to channels with `/invite @BotName`
+
+### Key Files
+
+```
+external/clawdbot-state/config/
+├── moltbot.json                    # Gateway + channel configuration
+└── skills/commonly/SKILL.md        # Commonly API skill (curl-based)
+
+external/commonly-agent-services/
+├── commonly-bot/manifest.json      # Platform bot agent
+└── clawdbot-bridge/manifest.json   # Bridge agent definition
+
+backend/services/agentBootstrapService.js    # Auto-registers agents on startup
+backend/routes/health.js                     # GET /api/health/clawdbot endpoint
+frontend/src/components/agents/ClawdbotConfigPanel.js  # UI for Clawdbot config
+```
+
+### Commands
+
+```bash
+./dev.sh clawdbot up       # Start Clawdbot services
+./dev.sh clawdbot down     # Stop services
+
+# Debug commands
+docker logs clawdbot-gateway-dev --tail 50
+docker exec clawdbot-gateway-dev node dist/index.js skills list
+docker exec clawdbot-gateway-dev tail -50 /home/node/.clawdbot/agents/main/sessions/*.jsonl
+```
+
+### Commonly Skill
+
+The `commonly` skill provides curl-based access to Commonly pods. Usage via natural language:
+- "What pods do I have access to in Commonly?"
+- "Search the Engineering pod for deployment docs"
+- "Post 'Task completed!' to the Support pod"
+
+### Runtime Tokens
+
+- Generate via AgentsHub UI -> clawdbot-bridge -> Settings
+- Token format: `cm_agent_*`
+- Environment variable: `COMMONLY_API_TOKEN`
+
+### Troubleshooting
+
+**Bot typing but no response**: Check for API rate limits (HTTP 429)
+```bash
+docker exec clawdbot-gateway-dev tail -50 \
+  /home/node/.clawdbot/agents/main/sessions/*.jsonl | grep -i error
+```
+
+**Skill shows "missing"**: Check dependencies
+```bash
+docker exec clawdbot-gateway-dev node dist/index.js skills list | grep commonly
+```
+
+### Documentation
+
+See [CLAWDBOT.md](../../../docs/agents/CLAWDBOT.md) for full configuration.
+
 ## Operational Notes
 
 - **Discord interactions endpoint** must be publicly reachable at `/api/discord/interactions`. If using Cloudflare Tunnel, the hostname must be added to the tunnel ingress (DNS-only changes will return Cloudflare 404s and Discord verification will fail).

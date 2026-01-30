@@ -1,5 +1,5 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const PodAssetService = require('./podAssetService');
+const { generateText } = require('./llmService');
 
 const MODEL_NAME = 'gemini-2.0-flash';
 const MAX_REFERENCES = 14;
@@ -197,18 +197,11 @@ function buildSkillMarkdown(skill, references) {
 
 class PodSkillService {
   constructor() {
-    this.available = Boolean(process.env.GEMINI_API_KEY);
-    if (this.available) {
-      this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      this.model = this.genAI.getGenerativeModel({ model: MODEL_NAME });
-    } else {
-      this.genAI = null;
-      this.model = null;
-    }
+    this.available = Boolean(process.env.LITELLM_BASE_URL || process.env.GEMINI_API_KEY);
   }
 
   isAvailable() {
-    return this.available && Boolean(this.model);
+    return this.available;
   }
 
   async generateSkillsWithLLM({
@@ -218,7 +211,7 @@ class PodSkillService {
     skillLimit,
   }) {
     if (!this.isAvailable()) {
-      return { skills: [], warnings: ['GEMINI_API_KEY is not configured.'] };
+      return { skills: [], warnings: ['LLM is not configured (set LITELLM_BASE_URL or GEMINI_API_KEY).'] };
     }
 
     const prompt = buildSkillPrompt({
@@ -229,9 +222,7 @@ class PodSkillService {
     });
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      const text = await generateText(prompt, { model: MODEL_NAME, temperature: 0.2 });
       const parsed = extractJson(text);
       if (!parsed || !Array.isArray(parsed.skills)) {
         return { skills: [], warnings: ['LLM response was not valid JSON.'] };
