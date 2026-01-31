@@ -7,11 +7,11 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    background-color: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background-color: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.18);
     border-radius: 12px;
     padding: 10px 12px;
-    box-shadow: 0 -2px 8px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 -2px 12px rgba(8, 12, 24, 0.35);
 }
 
 .comment-composer-row {
@@ -36,10 +36,10 @@
 
 .emoji-picker-portal .emoji-picker-container {
     position: relative;
-    background-color: #fff;
+    background-color: rgba(15, 23, 42, 0.98);
     border-radius: 12px;
-    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
-    border: 1px solid #e2e8f0;
+    box-shadow: 0 12px 32px rgba(8, 12, 24, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.2);
     overflow: hidden;
     transform-origin: top left;
     transform: scale(1) !important;
@@ -54,15 +54,15 @@
     height: 0;
     border-left: 10px solid transparent;
     border-right: 10px solid transparent;
-    border-bottom: 10px solid white;
+    border-bottom: 10px solid rgba(15, 23, 42, 0.98);
     z-index: 1;
 }
 
 .emoji-picker-portal .emoji-picker-container .EmojiPickerReact {
-    --epr-bg-color: #fff;
-    --epr-category-label-bg-color: #f8fafc;
-    --epr-hover-bg-color: #eff6ff;
-    --epr-search-input-bg-color: #f8fafc;
+    --epr-bg-color: #0f172a;
+    --epr-category-label-bg-color: #111827;
+    --epr-hover-bg-color: rgba(59, 130, 246, 0.2);
+    --epr-search-input-bg-color: #111827;
     width: 100% !important;
     height: 100% !important;
     transform: none !important;
@@ -104,7 +104,7 @@
     overflow-y: auto;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     border-radius: 10px;
-    background-color: #fff;
+    background-color: rgba(15, 23, 42, 0.98);
     transform: scale(1) !important;
 }
 
@@ -117,14 +117,14 @@
     height: 0;
     border-left: 10px solid transparent;
     border-right: 10px solid transparent;
-    border-bottom: 10px solid white;
+    border-bottom: 10px solid rgba(15, 23, 42, 0.98);
 }
 
 .emoji-picker-container .EmojiPickerReact {
-    --epr-bg-color: #fff;
-    --epr-category-label-bg-color: #f8f9fa;
-    --epr-hover-bg-color: #f1f3f5;
-    --epr-search-input-bg-color: #f8f9fa;
+    --epr-bg-color: #0f172a;
+    --epr-category-label-bg-color: #111827;
+    --epr-hover-bg-color: rgba(59, 130, 246, 0.2);
+    --epr-search-input-bg-color: #111827;
     width: 100% !important;
     height: 100% !important;
     transform: none !important;
@@ -157,19 +157,20 @@
     flex: 1;
     min-height: 88px;
     padding: 10px 12px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.25);
     border-radius: 10px;
     resize: vertical;
     font-family: inherit;
     font-size: 14px;
     line-height: 1.5;
-    background-color: #ffffff;
+    background-color: rgba(15, 23, 42, 0.8);
+    color: #e2e8f0;
 }
 
 .comment-textarea:focus {
     outline: none;
     border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
 }
 
 .emoji-button {
@@ -178,13 +179,13 @@
     height: 36px;
     border-radius: 50%;
     position: relative;
-    background-color: #eff6ff !important;
-    color: #475569 !important;
+    background-color: rgba(59, 130, 246, 0.15) !important;
+    color: #93c5fd !important;
 }
 
 .emoji-button.active {
-    background-color: #bfdbfe !important;
-    color: #1d4ed8 !important;
+    background-color: rgba(59, 130, 246, 0.35) !important;
+    color: #e2e8f0 !important;
 }
 
 .comment-send-button {
@@ -196,7 +197,7 @@
 
 .comment-hint {
     font-size: 12px;
-    color: #64748b;
+    color: #94a3b8;
     text-align: right;
 }
 
@@ -233,6 +234,8 @@
 .comment-item {
     padding: 16px;
     margin-bottom: 16px;
+    background-color: rgba(15, 23, 42, 0.92) !important;
+    border: 1px solid rgba(148, 163, 184, 0.18) !important;
 }
 
 .comment-row {
@@ -271,6 +274,7 @@
 .comment-body {
     text-align: left;
     word-break: break-word;
+    color: #e2e8f0;
 }
 
 /* Mobile responsiveness */

@@ -31,6 +31,8 @@ const federationRoutes = require('./routes/federation');
 const moltbotProviderRoutes = require('./routes/providers/moltbot');
 const activityRoutes = require('./routes/activity');
 const marketplaceRoutes = require('./routes/marketplace');
+const devRoutes = require('./routes/dev');
+const healthRoutes = require('./routes/health');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes;
 let pgMessageRoutes;
@@ -40,6 +42,7 @@ let _PGPod;
 const Message = require('./models/Message');
 const Pod = require('./models/Pod');
 const User = require('./models/User');
+const AgentMentionService = require('./services/agentMentionService');
 
 // Global flag to track PostgreSQL availability
 let pgAvailable = false;
@@ -57,10 +60,21 @@ dotenv.config();
 
 // Initialize express app
 const app = express();
+const buildAllowedOrigins = () => {
+  const raw = process.env.FRONTEND_URL || 'http://localhost:3000';
+  return raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+};
+
+const allowedOrigins = buildAllowedOrigins();
+const isAllowedOrigin = (origin) => !origin || allowedOrigins.includes(origin);
+
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || '*',
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
     allowedHeaders: ['Authorization', 'Content-Type'],
@@ -77,7 +91,13 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
   }),
@@ -127,6 +147,8 @@ app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration
 app.use('/api/activity', activityRoutes); // Activity feed
 app.use('/api/marketplace', marketplaceRoutes); // Official marketplace manifest
+app.use('/api/dev', devRoutes); // Dev tooling (LLM status, etc.)
+app.use('/api/health', healthRoutes); // Health check endpoints
 
 // Test routes (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -136,6 +158,18 @@ if (process.env.NODE_ENV === 'development') {
 
 // Connect to MongoDB (for posts and user data)
 connectDB();
+
+// Bootstrap agent registry after MongoDB connects
+const mongoose = require('mongoose');
+const AgentBootstrapService = require('./services/agentBootstrapService');
+
+mongoose.connection.once('open', () => {
+  if (process.env.NODE_ENV !== 'test') {
+    AgentBootstrapService.bootstrap().catch((err) => {
+      console.error('[agent-bootstrap] Error:', err.message);
+    });
+  }
+});
 
 // Start the summarizer scheduler
 const schedulerService = require('./services/schedulerService');
@@ -245,30 +279,52 @@ io.use((socket, next) => {
   }
 });
 
+const emitPresence = async (podId) => {
+  if (!podId) return;
+  try {
+    const sockets = await io.in(`pod_${podId}`).fetchSockets();
+    const userIds = Array.from(
+      new Set(
+        sockets
+          .map((s) => s.userId)
+          .filter((userId) => userId),
+      ),
+    );
+    io.to(`pod_${podId}`).emit('podPresence', { podId, userIds });
+  } catch (error) {
+    console.warn('Failed to emit pod presence:', error.message);
+  }
+};
+
 // Socket.io event handlers
 io.on('connection', (socket) => {
   console.log(
     `New client connected (id: ${socket.id}, user: ${socket.userId})`,
   );
+  socket.data.joinedPods = new Set();
 
   // Join a pod room
-  socket.on('joinPod', (podId) => {
+  socket.on('joinPod', async (podId) => {
     if (!podId) {
       console.warn('Socket tried to join pod without podId');
       return;
     }
     socket.join(`pod_${podId}`);
+    socket.data.joinedPods.add(podId);
     console.log(`User ${socket.userId} joined pod room: pod_${podId}`);
+    await emitPresence(podId);
   });
 
   // Leave a pod room
-  socket.on('leavePod', (podId) => {
+  socket.on('leavePod', async (podId) => {
     if (!podId) {
       console.warn('Socket tried to leave pod without podId');
       return;
     }
     socket.leave(`pod_${podId}`);
+    socket.data.joinedPods.delete(podId);
     console.log(`User ${socket.userId} left pod room: pod_${podId}`);
+    await emitPresence(podId);
   });
 
   // Send a message to a pod
@@ -422,6 +478,18 @@ io.on('connection', (socket) => {
           ...message,
         };
 
+        try {
+          const mentionUsername = message.username || message.userId?.username;
+          await AgentMentionService.enqueueMentions({
+            podId,
+            message: formattedMessage,
+            userId,
+            username: mentionUsername,
+          });
+        } catch (mentionError) {
+          console.warn('Failed to enqueue agent mentions:', mentionError.message);
+        }
+
         // If we have user data, standardize the userId field
         if (typeof message.userId !== 'object' && message.username) {
           // User data is separate, not an object
@@ -460,6 +528,10 @@ io.on('connection', (socket) => {
     console.log(
       `Client disconnected (id: ${socket.id}, user: ${socket.userId}). Reason: ${reason}`,
     );
+    const pods = Array.from(socket.data.joinedPods || []);
+    pods.forEach((podId) => {
+      emitPresence(podId);
+    });
   });
 
   // Send a welcome message to confirm connection

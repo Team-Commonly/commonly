@@ -221,7 +221,12 @@ const Pod = () => {
     };
     
     return (
-        <Container maxWidth="lg" className="pod-container">
+        <Container
+            maxWidth="lg"
+            disableGutters
+            sx={{ px: { xs: 2, sm: 3, md: 4 } }}
+            className="pod-container"
+        >
             <AppBar position="static" color="default" className="pod-app-bar">
                 <Toolbar>
                     <Typography variant="h6" className="pod-title">

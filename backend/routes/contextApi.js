@@ -13,6 +13,15 @@ const ContextAssemblerService = require('../services/contextAssemblerService');
 const PodAsset = require('../models/PodAsset');
 const Summary = require('../models/Summary');
 const Pod = require('../models/Pod');
+const VectorSearchService = require('../services/vectorSearchService');
+
+const isMember = (pod, userId) => (
+  pod.members?.some((member) => {
+    if (!member) return false;
+    if (member.userId) return member.userId.toString() === userId.toString();
+    return member.toString() === userId.toString();
+  })
+);
 
 /**
  * GET /api/v1/pods
@@ -20,21 +29,25 @@ const Pod = require('../models/Pod');
  */
 router.get('/pods', auth, async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.userId || req.user?._id || req.user?.id;
 
     // Find pods where user is a member
     const pods = await Pod.find({
-      'members.userId': userId,
+      members: userId,
     }).lean();
 
     const result = pods.map((pod) => {
-      const membership = pod.members?.find((m) => m.userId?.toString() === userId.toString());
+      const membership = pod.members?.find((m) => {
+        if (!m) return false;
+        if (m.userId) return m.userId.toString() === userId.toString();
+        return m.toString() === userId.toString();
+      });
       return {
         id: pod._id.toString(),
         name: pod.name,
         description: pod.description,
         type: pod.type,
-        role: membership?.role || 'viewer',
+        role: membership?.role || (pod.createdBy?.toString() === userId.toString() ? 'admin' : 'member'),
       };
     });
 
@@ -52,7 +65,7 @@ router.get('/pods', auth, async (req, res) => {
 router.get('/pods/:podId', auth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?._id || req.user?.id;
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
@@ -60,7 +73,11 @@ router.get('/pods/:podId', auth, async (req, res) => {
     }
 
     // Check membership
-    const membership = pod.members?.find((m) => m.userId?.toString() === userId.toString());
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      if (m.userId) return m.userId.toString() === userId.toString();
+      return m.toString() === userId.toString();
+    });
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -70,7 +87,7 @@ router.get('/pods/:podId', auth, async (req, res) => {
       name: pod.name,
       description: pod.description,
       type: pod.type,
-      role: membership.role,
+      role: membership.role || (pod.createdBy?.toString() === userId.toString() ? 'admin' : 'member'),
     });
   } catch (error) {
     console.error('Error getting pod:', error);
@@ -88,7 +105,7 @@ router.get('/context/:podId', auth, async (req, res) => {
     const {
       task, includeSkills, includeMemory, maxTokens,
     } = req.query;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?._id || req.user?.id;
 
     // Verify access
     const pod = await Pod.findById(podId).lean();
@@ -96,7 +113,11 @@ router.get('/context/:podId', auth, async (req, res) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
-    const membership = pod.members?.find((m) => m.userId?.toString() === userId.toString());
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      if (m.userId) return m.userId.toString() === userId.toString();
+      return m.toString() === userId.toString();
+    });
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -126,7 +147,7 @@ router.get('/search/:podId', auth, async (req, res) => {
     const {
       q, limit, types, since,
     } = req.query;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?._id || req.user?.id;
 
     if (!q) {
       return res.status(400).json({ error: 'Query (q) is required' });
@@ -138,7 +159,11 @@ router.get('/search/:podId', auth, async (req, res) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
-    const membership = pod.members?.find((m) => m.userId?.toString() === userId.toString());
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      if (m.userId) return m.userId.toString() === userId.toString();
+      return m.toString() === userId.toString();
+    });
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -184,13 +209,114 @@ router.get('/search/:podId', auth, async (req, res) => {
 });
 
 /**
+ * POST /api/v1/pods/:podId/index/rebuild
+ * Rebuild vector index for a pod (admin only)
+ */
+router.post('/pods/:podId/index/rebuild', auth, async (req, res) => {
+  try {
+    const { podId } = req.params;
+    const { reset } = req.body || {};
+    const userId = req.userId || req.user?._id || req.user?.id;
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    if (!isMember(pod, userId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (pod.createdBy?.toString() !== userId.toString()) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    if (reset) {
+      await VectorSearchService.resetIndex(podId);
+    }
+
+    const result = await VectorSearchService.rebuildIndex(podId);
+
+    return res.json({
+      podId,
+      reset: Boolean(reset),
+      ...result,
+    });
+  } catch (error) {
+    console.error('Error rebuilding vector index:', error);
+    return res.status(500).json({ error: 'Failed to rebuild vector index' });
+  }
+});
+
+/**
+ * POST /api/v1/index/rebuild-all
+ * Rebuild vector indices for pods owned by the current user
+ */
+router.post('/index/rebuild-all', auth, async (req, res) => {
+  try {
+    const userId = req.userId || req.user?._id || req.user?.id;
+    const { reset } = req.body || {};
+
+    const pods = await Pod.find({ createdBy: userId }).lean();
+    if (!pods.length) {
+      return res.json({ pods: 0, indexed: 0, errors: 0, total: 0, reset: Boolean(reset) });
+    }
+
+    let indexed = 0;
+    let errors = 0;
+    let total = 0;
+
+    for (const pod of pods) {
+      if (reset) {
+        await VectorSearchService.resetIndex(pod._id);
+      }
+      const result = await VectorSearchService.rebuildIndex(pod._id);
+      indexed += result.indexed || 0;
+      errors += result.errors || 0;
+      total += result.total || 0;
+    }
+
+    return res.json({ pods: pods.length, indexed, errors, total, reset: Boolean(reset) });
+  } catch (error) {
+    console.error('Error rebuilding vector indices:', error);
+    return res.status(500).json({ error: 'Failed to rebuild vector indices' });
+  }
+});
+
+/**
+ * GET /api/v1/pods/:podId/index/stats
+ * Get vector index stats for a pod
+ */
+router.get('/pods/:podId/index/stats', auth, async (req, res) => {
+  try {
+    const { podId } = req.params;
+    const userId = req.userId || req.user?._id || req.user?.id;
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    if (!isMember(pod, userId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const stats = await VectorSearchService.getStats(podId);
+    return res.json({ podId, stats });
+  } catch (error) {
+    console.error('Error fetching vector index stats:', error);
+    return res.status(500).json({ error: 'Failed to fetch vector index stats' });
+  }
+});
+
+/**
  * GET /api/v1/pods/:podId/assets/:assetId
  * Read a specific asset
  */
 router.get('/pods/:podId/assets/:assetId', auth, async (req, res) => {
   try {
     const { podId, assetId } = req.params;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?._id || req.user?.id;
 
     // Verify access
     const pod = await Pod.findById(podId).lean();
@@ -198,7 +324,11 @@ router.get('/pods/:podId/assets/:assetId', auth, async (req, res) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
-    const membership = pod.members?.find((m) => m.userId?.toString() === userId.toString());
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      if (m.userId) return m.userId.toString() === userId.toString();
+      return m.toString() === userId.toString();
+    });
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -231,7 +361,7 @@ router.get('/pods/:podId/assets/:assetId', auth, async (req, res) => {
 router.get('/pods/:podId/memory/:path(*)', auth, async (req, res) => {
   try {
     const { podId, path } = req.params;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?._id || req.user?.id;
 
     // Verify access
     const pod = await Pod.findById(podId).lean();
@@ -239,7 +369,11 @@ router.get('/pods/:podId/memory/:path(*)', auth, async (req, res) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
-    const membership = pod.members?.find((m) => m.userId?.toString() === userId.toString());
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      if (m.userId) return m.userId.toString() === userId.toString();
+      return m.toString() === userId.toString();
+    });
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -266,7 +400,7 @@ router.post('/memory/:podId', auth, async (req, res) => {
     const {
       target, content, tags, source,
     } = req.body;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?._id || req.user?.id;
 
     if (!target || !content) {
       return res.status(400).json({ error: 'target and content are required' });
@@ -282,7 +416,11 @@ router.post('/memory/:podId', auth, async (req, res) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
-    const membership = pod.members?.find((m) => m.userId?.toString() === userId.toString());
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      if (m.userId) return m.userId.toString() === userId.toString();
+      return m.toString() === userId.toString();
+    });
     if (!membership || membership.role === 'viewer') {
       return res.status(403).json({ error: 'Write access denied' });
     }
@@ -312,7 +450,7 @@ router.get('/pods/:podId/skills', auth, async (req, res) => {
   try {
     const { podId } = req.params;
     const { tags, limit } = req.query;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?._id || req.user?.id;
 
     // Verify access
     const pod = await Pod.findById(podId).lean();
@@ -320,7 +458,11 @@ router.get('/pods/:podId/skills', auth, async (req, res) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
-    const membership = pod.members?.find((m) => m.userId?.toString() === userId.toString());
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      if (m.userId) return m.userId.toString() === userId.toString();
+      return m.toString() === userId.toString();
+    });
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -363,7 +505,7 @@ router.get('/pods/:podId/summaries', auth, async (req, res) => {
   try {
     const { podId } = req.params;
     const { hours, types, limit } = req.query;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?._id || req.user?.id;
 
     // Verify access
     const pod = await Pod.findById(podId).lean();
@@ -371,7 +513,11 @@ router.get('/pods/:podId/summaries', auth, async (req, res) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
-    const membership = pod.members?.find((m) => m.userId?.toString() === userId.toString());
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      if (m.userId) return m.userId.toString() === userId.toString();
+      return m.toString() === userId.toString();
+    });
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
     }

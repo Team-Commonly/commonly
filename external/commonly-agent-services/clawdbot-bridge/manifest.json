@@ -1,0 +1,26 @@
+{
+  "agentName": "clawdbot-bridge",
+  "displayName": "Clawdbot Bridge",
+  "description": "AI-powered responses via external Clawdbot runtime. Routes pod events through Clawdbot and posts intelligent responses.",
+  "version": "1.0.0",
+  "registry": "commonly-official",
+  "verified": true,
+  "categories": ["ai-assistant", "productivity"],
+  "tags": ["clawdbot", "ai", "assistant", "bridge"],
+  "manifest": {
+    "name": "clawdbot-bridge",
+    "version": "1.0.0",
+    "capabilities": [
+      { "name": "assistant", "description": "Responds to integration summaries and events" },
+      { "name": "multi-agent", "description": "Bridges external Clawdbot runtimes" }
+    ],
+    "context": {
+      "required": ["context:read", "summaries:read", "messages:write"],
+      "optional": ["integrations:read"]
+    },
+    "runtime": {
+      "type": "standalone",
+      "connection": "rest"
+    }
+  }
+}

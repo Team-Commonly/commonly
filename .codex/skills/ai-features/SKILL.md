@@ -5,10 +5,10 @@ description: AI and prompt engineering context for Gemini API integration, summa
 
 # AI & Prompt Engineering
 
-**Technologies**: Google Gemini API, NLP, Text Summarization
+**Technologies**: Google Gemini API, LiteLLM (OpenAI-compatible), NLP, Text Summarization
 
 ## Required Knowledge
-- LLM API integration (Gemini)
+- LLM API integration (Gemini) and gateway routing (LiteLLM)
 - Prompt engineering techniques
 - Text summarization algorithms
 - Sentiment analysis concepts
@@ -47,10 +47,17 @@ Layer 3: Daily Intelligence
 
 ```
 backend/services/
+├── llmService.js             # LLM routing (LiteLLM -> Gemini fallback)
 ├── summarizerService.js       # Basic AI summarization
 ├── chatSummarizerService.js   # Enhanced chat analysis
-└── dailyDigestService.js      # Newsletter generation
+├── dailyDigestService.js      # Newsletter generation
+└── podSkillService.js         # LLM markdown skill synthesis
 ```
+
+## LLM Routing
+
+- Use `LITELLM_BASE_URL` + `LITELLM_API_KEY` to route chat completions through LiteLLM.
+- If LiteLLM is unset, services fall back to Gemini via `GEMINI_API_KEY`.
 
 ## Prompt Engineering Patterns
 
@@ -71,8 +78,8 @@ ${messages.map(m => `${m.author}: ${m.content}`).join('\n')}`;
 ### Fallback Handling
 ```javascript
 try {
-  const result = await gemini.generateContent(prompt);
-  return JSON.parse(result.response.text());
+  const text = await generateText(prompt, { temperature: 0.2 });
+  return JSON.parse(text);
 } catch (error) {
   return { summary: "Unable to generate summary", error: true };
 }

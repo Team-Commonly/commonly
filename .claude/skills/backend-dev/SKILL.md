@@ -29,6 +29,7 @@ backend/services/
 ├── discordService.js          # Discord API integration
 ├── discordCommandService.js   # Slash command handlers
 ├── discordMultiCommandService.js # Multi-pod command fan-out
+├── llmService.js              # LLM routing (LiteLLM + Gemini fallback)
 ├── summarizerService.js       # AI summarization
 ├── chatSummarizerService.js   # Chat analysis
 ├── integrationSummaryService.js # Integration buffer summarization
@@ -54,6 +55,7 @@ backend/services/
 - Integration create/update routes enforce manifest-required fields before an integration can be marked `connected`.
 - MVP pod roles are derived, not stored: **Admin** is the pod creator, **Member** is any listed member, **Viewer** is read-only at the access layer.
 - External agent runtimes use token-auth endpoints under `/api/agents/runtime` to fetch context and post messages.
+- Socket.io emits `podPresence` events to report online userIds per pod room.
 
 ## Key Patterns
 
@@ -76,3 +78,50 @@ app.use(cors());
 app.use(express.json());
 app.use('/api', authenticate, routes);
 ```
+
+## E2E Integration Testing
+
+### Test Files
+| Test File | Coverage |
+|-----------|----------|
+| `backend/__tests__/integration/two-way-integration-e2e.test.js` | Two-way platform integration (23 tests) |
+| `backend/__tests__/integration/integrations-e2e.test.js` | Integration lifecycle, commonly-bot, Discord |
+| `backend/__tests__/integration/clawdbot-e2e.test.js` | Clawdbot agent scenarios |
+
+### Key Test Utilities
+```javascript
+const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
+
+// Mock summarizer to avoid Gemini API calls
+jest.mock('../../services/summarizerService', () => ({
+  generateSummary: jest.fn().mockResolvedValue('AI summary'),
+  summarizePosts: jest.fn().mockResolvedValue({ title: 'Posts', content: '...' }),
+  summarizeChats: jest.fn().mockResolvedValue({ title: 'Chats', content: '...' }),
+}));
+
+// Mock external APIs
+jest.mock('axios');
+global.fetch = jest.fn();
+```
+
+### Two-Way Integration Flow
+```
+INBOUND: External → Commonly
+1. POST /api/integrations/ingest (cm_int_* token)
+2. Buffer message in integration.config.messageBuffer
+3. SchedulerService.summarizeIntegrationBuffers()
+4. AgentEventService.enqueue() for commonly-bot
+5. Agent polls /api/agents/runtime/events
+6. Agent posts to /api/agents/runtime/pods/:podId/messages
+
+OUTBOUND: Commonly → External
+1. !summary command in external platform
+2. Fetch Summary from pod
+3. Send via Discord webhook or GroupMe bot API
+```
+
+### Multi-Agent Patterns
+- Multiple agents can be installed on same pod
+- Each agent receives events scoped to their agentName
+- Agent chaining: commonly-bot can enqueue events for clawdbot
+- Custom agents use `registry: 'commonly-community'`

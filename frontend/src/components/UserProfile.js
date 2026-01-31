@@ -35,7 +35,6 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { avatarOptions, getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
-import { useLayout } from '../context/LayoutContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import { useNavigate } from 'react-router-dom';
 import AppsManagement from './AppsManagement';
@@ -208,116 +207,125 @@ const UserProfile = () => {
     );
 
     return (
-        <Box sx={{ maxWidth: 800, mx: 'auto', p: 3, mt: 8 }}>
-            <Card sx={{ mb: 4 }}>
-                <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <Box sx={{ position: 'relative' }}>
-                            <Avatar 
-                                sx={{ 
-                                    width: 100, 
-                                    height: 100, 
-                                    mr: 3,
-                                    bgcolor: getAvatarColor(user.profilePicture),
-                                    fontSize: '2.5rem'
-                                }}
-                            >
-                                {user.username.charAt(0).toUpperCase()}
-                            </Avatar>
-                            <IconButton 
-                                sx={{ 
-                                    position: 'absolute', 
-                                    bottom: 0, 
-                                    right: 12,
-                                    bgcolor: 'background.paper',
-                                    '&:hover': { bgcolor: 'background.default' }
-                                }}
-                                onClick={handleOpenAvatarDialog}
-                                size="small"
-                            >
-                                <EditIcon fontSize="small" />
-                            </IconButton>
-                        </Box>
-                        <Box>
-                            <Typography variant="h4" gutterBottom>
-                                {user.username}
-                            </Typography>
-                            <Typography variant="body1" color="text.secondary">
-                                {user.email}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Member since {formatDistanceToNow(new Date(user.createdAt))} ago
-                            </Typography>
-                        </Box>
-                    </Box>
-                    
-                    <Divider sx={{ my: 3 }} />
-                    
-                    <Grid container spacing={3}>
-                        <Grid item xs={12} sm={4}>
-                            <Paper sx={{ p: 2, textAlign: 'center' }}>
-                                <Typography variant="h6" color="primary">
-                                    Posts
-                                </Typography>
-                                <Typography variant="h4" sx={{ fontSize: '1.8rem' }}>
-                                    {userStats.postCount}
-                                </Typography>
-                            </Paper>
+        <Box sx={{ maxWidth: 1000, mx: 'auto', p: { xs: 2, md: 4 }, mt: { xs: 2, md: 6 } }}>
+            <Card sx={{ mb: 4, borderRadius: 3 }}>
+                <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+                    <Grid container spacing={3} alignItems="center">
+                        <Grid item xs={12} md={4}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <Box sx={{ position: 'relative' }}>
+                                    <Avatar 
+                                        sx={{ 
+                                            width: 96, 
+                                            height: 96, 
+                                            bgcolor: getAvatarColor(user.profilePicture),
+                                            fontSize: '2.2rem'
+                                        }}
+                                    >
+                                        {user.username.charAt(0).toUpperCase()}
+                                    </Avatar>
+                                    <IconButton 
+                                        sx={{ 
+                                            position: 'absolute', 
+                                            bottom: 0, 
+                                            right: -4,
+                                            bgcolor: 'background.paper',
+                                            border: '1px solid',
+                                            borderColor: 'divider',
+                                            '&:hover': { bgcolor: 'background.default' }
+                                        }}
+                                        onClick={handleOpenAvatarDialog}
+                                        size="small"
+                                    >
+                                        <EditIcon fontSize="small" />
+                                    </IconButton>
+                                </Box>
+                                <Box>
+                                    <Typography variant="h4" gutterBottom>
+                                        {user.username}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        {user.email}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Member since {formatDistanceToNow(new Date(user.createdAt))} ago
+                                    </Typography>
+                                </Box>
+                            </Box>
                         </Grid>
-                        <Grid item xs={12} sm={4}>
-                            <Paper sx={{ p: 2, textAlign: 'center' }}>
-                                <Typography variant="h6" color="primary">
-                                    Comments
-                                </Typography>
-                                <Typography variant="h4" sx={{ fontSize: '1.8rem' }}>
-                                    {userStats.commentCount}
-                                </Typography>
-                            </Paper>
-                        </Grid>
-                        <Grid item xs={12} sm={4}>
-                            <Paper sx={{ p: 2, textAlign: 'center' }}>
-                                <Typography variant="h6" color="primary">
-                                    Joined
-                                </Typography>
-                                <Typography variant="h4" sx={{ fontSize: '1.5rem' }}>
-                                    {new Date(user.createdAt).toLocaleDateString()}
-                                </Typography>
-                            </Paper>
+                        <Grid item xs={12} md={8}>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} sm={4}>
+                                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
+                                        <Typography variant="overline" color="text.secondary">
+                                            Posts
+                                        </Typography>
+                                        <Typography variant="h4" sx={{ fontSize: '1.7rem' }}>
+                                            {userStats.postCount}
+                                        </Typography>
+                                    </Paper>
+                                </Grid>
+                                <Grid item xs={12} sm={4}>
+                                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
+                                        <Typography variant="overline" color="text.secondary">
+                                            Comments
+                                        </Typography>
+                                        <Typography variant="h4" sx={{ fontSize: '1.7rem' }}>
+                                            {userStats.commentCount}
+                                        </Typography>
+                                    </Paper>
+                                </Grid>
+                                <Grid item xs={12} sm={4}>
+                                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
+                                        <Typography variant="overline" color="text.secondary">
+                                            Joined
+                                        </Typography>
+                                        <Typography variant="h4" sx={{ fontSize: '1.4rem' }}>
+                                            {new Date(user.createdAt).toLocaleDateString()}
+                                        </Typography>
+                                    </Paper>
+                                </Grid>
+                            </Grid>
                         </Grid>
                     </Grid>
-                    
+
                     <Divider sx={{ my: 3 }} />
                     
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Typography variant="h6" color="primary">
-                            Account Type
-                        </Typography>
-                        <Chip 
-                            icon={user.role === 'admin' ? <AdminPanelSettingsIcon /> : undefined}
-                            label={user.role === 'admin' ? 'Administrator' : 'User'}
-                            color={user.role === 'admin' ? 'primary' : 'default'}
-                            variant={user.role === 'admin' ? 'filled' : 'outlined'}
-                        />
-                    </Box>
-                    
-                    {user.role === 'admin' && (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>
-                            <Button
-                                variant="outlined"
-                                startIcon={<DeveloperModeIcon />}
-                                onClick={() => navigate('/dev/api')}
-                            >
-                                API Development Tools
-                            </Button>
-                            <Button
-                                variant="outlined"
-                                startIcon={<PsychologyIcon />}
-                                onClick={() => navigate('/dev/pod-context')}
-                            >
-                                Pod Context Inspector
-                            </Button>
-                        </Box>
-                    )}
+                    <Grid container spacing={2} alignItems="center">
+                        <Grid item xs={12} md={6}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <Typography variant="h6" color="primary">
+                                    Account Type
+                                </Typography>
+                                <Chip 
+                                    icon={user.role === 'admin' ? <AdminPanelSettingsIcon /> : undefined}
+                                    label={user.role === 'admin' ? 'Administrator' : 'User'}
+                                    color={user.role === 'admin' ? 'primary' : 'default'}
+                                    variant={user.role === 'admin' ? 'filled' : 'outlined'}
+                                />
+                            </Box>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            {user.role === 'admin' && (
+                                <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1, flexWrap: 'wrap' }}>
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<DeveloperModeIcon />}
+                                        onClick={() => navigate('/dev/api')}
+                                    >
+                                        API Dev Tools
+                                    </Button>
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={<PsychologyIcon />}
+                                        onClick={() => navigate('/dev/pod-context')}
+                                    >
+                                        Pod Context
+                                    </Button>
+                                </Box>
+                            )}
+                        </Grid>
+                    </Grid>
                 </CardContent>
             </Card>
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+import './PodContextDevPage.css';
 import {
   Alert,
   Box,
@@ -60,6 +61,15 @@ const PodContextDevPage = () => {
   const [excerptData, setExcerptData] = useState(null);
   const [excerptLoading, setExcerptLoading] = useState(false);
   const [excerptError, setExcerptError] = useState(null);
+  const [indexStats, setIndexStats] = useState(null);
+  const [indexStatsLoading, setIndexStatsLoading] = useState(false);
+  const [indexStatsError, setIndexStatsError] = useState(null);
+  const [indexRebuildLoading, setIndexRebuildLoading] = useState(false);
+  const [indexRebuildError, setIndexRebuildError] = useState(null);
+  const [indexRebuildSuccess, setIndexRebuildSuccess] = useState(null);
+  const [indexRebuildAllLoading, setIndexRebuildAllLoading] = useState(false);
+  const [indexRebuildAllError, setIndexRebuildAllError] = useState(null);
+  const [indexRebuildAllSuccess, setIndexRebuildAllSuccess] = useState(null);
   const [error, setError] = useState(null);
 
   const authHeaders = useMemo(() => (
@@ -131,6 +141,65 @@ const PodContextDevPage = () => {
     }
   };
 
+  const handleFetchIndexStats = async () => {
+    if (!podId || !token) return;
+    try {
+      setIndexStatsLoading(true);
+      const res = await axios.get(`/api/v1/pods/${podId}/index/stats`, { headers: authHeaders });
+      setIndexStats(res.data);
+      setIndexStatsError(null);
+    } catch (err) {
+      console.error('Failed to fetch index stats:', err);
+      setIndexStatsError(err.response?.data?.error || 'Failed to fetch index stats.');
+    } finally {
+      setIndexStatsLoading(false);
+    }
+  };
+
+  const handleRebuildIndex = async (reset = false) => {
+    if (!podId || !token) return;
+    try {
+      setIndexRebuildLoading(true);
+      setIndexRebuildSuccess(null);
+      const res = await axios.post(
+        `/api/v1/pods/${podId}/index/rebuild`,
+        { reset },
+        { headers: authHeaders },
+      );
+      setIndexRebuildSuccess(res.data);
+      setIndexRebuildError(null);
+      await handleFetchIndexStats();
+    } catch (err) {
+      console.error('Failed to rebuild index:', err);
+      setIndexRebuildError(err.response?.data?.error || 'Failed to rebuild index.');
+    } finally {
+      setIndexRebuildLoading(false);
+    }
+  };
+
+  const handleRebuildAllIndices = async (reset = false) => {
+    if (!token) return;
+    try {
+      setIndexRebuildAllLoading(true);
+      setIndexRebuildAllSuccess(null);
+      const res = await axios.post(
+        '/api/v1/index/rebuild-all',
+        { reset },
+        { headers: authHeaders },
+      );
+      setIndexRebuildAllSuccess(res.data);
+      setIndexRebuildAllError(null);
+      if (podId) {
+        await handleFetchIndexStats();
+      }
+    } catch (err) {
+      console.error('Failed to rebuild all indices:', err);
+      setIndexRebuildAllError(err.response?.data?.error || 'Failed to rebuild all indices.');
+    } finally {
+      setIndexRebuildAllLoading(false);
+    }
+  };
+
   const handleSearchMemory = async () => {
     if (!podId || !token || !memoryQuery.trim()) return;
 
@@ -196,55 +265,65 @@ const PodContextDevPage = () => {
   const hasContext = Boolean(context?.pod);
 
   return (
-    <Container maxWidth="lg" sx={{ py: 3 }}>
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
-        <PsychologyIcon color="primary" />
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>
-          Pod Context Inspector
-        </Typography>
-      </Stack>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Inspect the structured context that pods expose to agents, including LLM-generated markdown skills.
-      </Typography>
+    <Box className="pod-context-dev-root">
+      <Container maxWidth="lg" className="pod-context-dev-container">
+        <Box className="pod-context-hero">
+          <Box className="pod-context-hero-main">
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <PsychologyIcon className="pod-context-hero-icon" />
+              <Typography variant="h4" className="pod-context-hero-title">
+                Pod Context Inspector
+              </Typography>
+            </Stack>
+            <Typography variant="body1" className="pod-context-hero-subtitle">
+              Inspect the structured context that pods expose to agents, including LLM-generated markdown skills.
+            </Typography>
+          </Box>
+          <Box className="pod-context-hero-tags">
+            <Chip size="small" label="Memory Search" />
+            <Chip size="small" label="Vector Index" />
+            <Chip size="small" label="LLM Skills" />
+          </Box>
+        </Box>
 
-      {!token && (
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          You need to be logged in as an admin to use this tool.
-        </Alert>
-      )}
+        {!token && (
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            You need to be logged in as an admin to use this tool.
+          </Alert>
+        )}
 
-      {token && (
-        <Card variant="outlined" sx={{ mb: 3 }}>
-          <CardContent>
-            <Stack spacing={2}>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    select
-                    fullWidth
-                    label="Pod"
-                    value={podId}
-                    onChange={(event) => setPodId(event.target.value)}
-                    disabled={loadingPods || !pods.length}
-                    helperText={pods.length ? 'Select a pod to inspect.' : 'No pods available.'}
-                  >
-                    {pods.map((pod) => (
-                      <MenuItem key={pod._id} value={pod._id}>
-                        {pod.name}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+        {token && (
+          <Card variant="outlined" className="pod-context-card" sx={{ mb: 3 }}>
+            <CardContent>
+              <Stack spacing={2}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      select
+                      fullWidth
+                      label="Pod"
+                      value={podId}
+                      onChange={(event) => setPodId(event.target.value)}
+                      disabled={loadingPods || !pods.length}
+                      helperText={pods.length ? 'Select a pod to inspect.' : 'No pods available.'}
+                    >
+                      {pods.map((pod) => (
+                        <MenuItem key={pod._id} value={pod._id}>
+                          {pod.name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Task (optional)"
+                      value={task}
+                      onChange={(event) => setTask(event.target.value)}
+                      placeholder="e.g. incident runbook checklist"
+                    />
+                  </Grid>
                 </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="Task (optional)"
-                    value={task}
-                    onChange={(event) => setTask(event.target.value)}
-                    placeholder="e.g. incident runbook checklist"
-                  />
-                </Grid>
-              </Grid>
 
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6} md={3}>
@@ -354,8 +433,8 @@ const PodContextDevPage = () => {
       )}
 
       {hasContext && (
-        <Stack spacing={3}>
-          <Card variant="outlined">
+        <Stack spacing={3} className="pod-context-sections">
+          <Card variant="outlined" className="pod-context-card">
             <CardContent>
               <Stack spacing={1.5}>
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>
@@ -387,7 +466,7 @@ const PodContextDevPage = () => {
             </CardContent>
           </Card>
 
-          <Card variant="outlined">
+          <Card variant="outlined" className="pod-context-card">
             <CardContent>
               <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
                 Skills (LLM Markdown)
@@ -422,6 +501,7 @@ const PodContextDevPage = () => {
 
                     {(skill.content || skill.metadata?.markdown) ? (
                       <Box
+                        className="pod-context-markdown"
                         sx={{
                           mt: 1,
                           p: 1.25,
@@ -448,7 +528,7 @@ const PodContextDevPage = () => {
             </CardContent>
           </Card>
 
-          <Card variant="outlined">
+          <Card variant="outlined" className="pod-context-card">
             <CardContent>
               <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
                 Top Tags
@@ -466,9 +546,90 @@ const PodContextDevPage = () => {
             </CardContent>
           </Card>
 
+          <Card variant="outlined" className="pod-context-card">
+            <CardContent>
+              <Stack spacing={2}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Vector Index
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    variant="outlined"
+                    onClick={handleFetchIndexStats}
+                    disabled={indexStatsLoading || !podId}
+                    startIcon={indexStatsLoading ? <CircularProgress size={16} /> : <RefreshIcon />}
+                  >
+                    Fetch Stats
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    onClick={() => handleRebuildIndex(false)}
+                    disabled={indexRebuildLoading || !podId}
+                  >
+                    Rebuild Index
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="error"
+                    onClick={() => handleRebuildIndex(true)}
+                    disabled={indexRebuildLoading || !podId}
+                  >
+                    Reset + Rebuild
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    onClick={() => handleRebuildAllIndices(true)}
+                    disabled={indexRebuildAllLoading}
+                  >
+                    Reset + Rebuild All Pods
+                  </Button>
+                  {indexRebuildLoading && (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CircularProgress size={16} />
+                      <Typography variant="body2" color="text.secondary">
+                        Rebuilding...
+                      </Typography>
+                    </Stack>
+                  )}
+                  {indexRebuildAllLoading && (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CircularProgress size={16} />
+                      <Typography variant="body2" color="text.secondary">
+                        Rebuilding all pods...
+                      </Typography>
+                    </Stack>
+                  )}
+                </Stack>
+                {indexStatsError && <Alert severity="error">{indexStatsError}</Alert>}
+                {indexRebuildError && <Alert severity="error">{indexRebuildError}</Alert>}
+                {indexRebuildAllError && <Alert severity="error">{indexRebuildAllError}</Alert>}
+                {indexRebuildSuccess && (
+                  <Alert severity="success">
+                    Rebuilt index: {indexRebuildSuccess.indexed} indexed, {indexRebuildSuccess.errors} errors.
+                  </Alert>
+                )}
+                {indexRebuildAllSuccess && (
+                  <Alert severity="success">
+                    Rebuilt {indexRebuildAllSuccess.pods} pods: {indexRebuildAllSuccess.indexed} indexed, {indexRebuildAllSuccess.errors} errors.
+                  </Alert>
+                )}
+                {indexStats?.stats && (
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    <Chip label={`Available: ${indexStats.stats.available}`} />
+                    <Chip label={`Chunks: ${indexStats.stats.chunks ?? 0}`} />
+                    <Chip label={`Assets: ${indexStats.stats.assets ?? 0}`} />
+                    <Chip label={`Embeddings: ${indexStats.stats.embeddings ?? 0}`} />
+                  </Stack>
+                )}
+              </Stack>
+            </CardContent>
+          </Card>
+
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              <Card variant="outlined" sx={{ height: '100%' }}>
+              <Card variant="outlined" className="pod-context-card" sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
                     Summaries
@@ -492,6 +653,7 @@ const PodContextDevPage = () => {
                         )}
                         {showSummaryContent && summary.content && (
                           <Box
+                            className="pod-context-markdown"
                             sx={{
                               mt: 1,
                               p: 1.25,
@@ -516,7 +678,7 @@ const PodContextDevPage = () => {
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <Card variant="outlined" sx={{ height: '100%' }}>
+              <Card variant="outlined" className="pod-context-card" sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
                     Assets
@@ -551,7 +713,7 @@ const PodContextDevPage = () => {
             </Grid>
           </Grid>
 
-          <Card variant="outlined">
+          <Card variant="outlined" className="pod-context-card">
             <CardContent>
               <Stack spacing={2}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
@@ -658,7 +820,11 @@ const PodContextDevPage = () => {
                 )}
                 <Stack spacing={1.5}>
                   {(memoryResults || []).map((result) => (
-                    <Box key={result.assetId} sx={{ p: 1.25, borderRadius: 1.5, border: (theme) => `1px solid ${theme.palette.divider}` }}>
+                    <Box
+                      key={result.assetId}
+                      className="pod-context-result-card"
+                      sx={{ p: 1.25, borderRadius: 1.5, border: (theme) => `1px solid ${theme.palette.divider}` }}
+                    >
                       <Stack spacing={0.5}>
                         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                           <Typography variant="body1" sx={{ fontWeight: 600 }}>
@@ -703,7 +869,7 @@ const PodContextDevPage = () => {
                     </Typography>
                   )}
                 </Stack>
-                <Card variant="outlined" sx={{ backgroundColor: 'background.default' }}>
+                <Card variant="outlined" className="pod-context-card pod-context-card-compact" sx={{ backgroundColor: 'background.default' }}>
                   <CardContent>
                     <Stack spacing={1}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
@@ -777,6 +943,7 @@ const PodContextDevPage = () => {
                             </Stack>
                           )}
                           <Box
+                            className="pod-context-excerpt"
                             sx={{
                               mt: 1,
                               p: 1.25,
@@ -800,7 +967,8 @@ const PodContextDevPage = () => {
           </Card>
         </Stack>
       )}
-    </Container>
+      </Container>
+    </Box>
   );
 };
 

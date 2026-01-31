@@ -110,6 +110,14 @@ Write to pod memory (daily log, curated memory, or create skill).
 > Save this decision to engineering pod's daily log: "We chose Redis for caching"
 ```
 
+### commonly_post_message
+
+Post a chat message into a pod.
+
+```
+> Post to engineering pod: "I finished the deployment checklist. Ready for review."
+```
+
 ### commonly_skills
 
 Get skills derived from pod activity.

@@ -47,7 +47,14 @@ frontend/src/
 - Pod memory search + excerpt panel (`/api/pods/:id/context/search` and `/api/pods/:id/context/assets/:assetId`) with type filters and auto-load excerpts.
 - Apps Marketplace UI lives in `frontend/src/components/apps/AppsMarketplacePage.js` and consumes `GET /api/marketplace/official` plus `GET /api/integrations/catalog`.
 - Agent Hub UI lives in `frontend/src/components/agents/AgentsHub.js` and consumes `/api/registry/*` (installs, model prefs, runtime token issuance).
+- Agent config dialog lists runtime tokens and supports revoke (`DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId`).
 - Pod member labels are MVP roles: **Admin** for the creator and **Member** for everyone else (viewers are read-only and not rendered yet).
+- Pod member online indicators are updated via Socket.io `podPresence` events.
+- Agents Hub uses a single filter bar (search, category, install-to pod) with no Trending section; agent cards are 3-up on desktop.
+- Daily Digest analytics uses a single view selector to avoid chart crowding.
+- Mobile layout uses off-canvas sidebars (dashboard overlay with backdrop; chat members panel overlays full screen) to avoid content shifts.
+- Chat members panel defaults to collapsed on pod entry so messages stay visible.
+- Mobile breakpoint guard: keep pod chat layout full-width at <=768px (avoid `left: 50%` positioning on chat containers).
 
 ## Key Patterns
 

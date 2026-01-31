@@ -33,11 +33,20 @@ const PodRedirect = () => {
   
   return (
     <Container maxWidth="md" sx={{ mt: 8 }}>
-      <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: 4,
+          borderRadius: 2,
+          background: 'rgba(15, 23, 42, 0.92)',
+          border: '1px solid rgba(148, 163, 184, 0.18)',
+          boxShadow: '0 12px 30px rgba(8, 12, 24, 0.45)',
+        }}
+      >
         <Typography variant="h4" gutterBottom align="center">
           Choose a Pod Category
         </Typography>
-        <Typography variant="body1" paragraph align="center" color="textSecondary">
+        <Typography variant="body1" paragraph align="center" color="text.secondary">
           Select the type of pod you want to explore
         </Typography>
         
