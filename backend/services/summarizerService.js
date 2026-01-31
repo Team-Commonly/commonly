@@ -1,7 +1,7 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fetch = require('node-fetch');
 const Summary = require('../models/Summary');
 const Post = require('../models/Post');
+const { generateText } = require('./llmService');
 // const User = require('../models/User'); // Unused import, commented out
 
 // Add fetch polyfill for Node.js
@@ -10,24 +10,19 @@ if (!global.fetch) {
 }
 
 class SummarizerService {
-  constructor() {
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-  }
+  constructor() {}
 
   async generateSummary(content, type) {
     try {
-      console.log(`Generating ${type} summary with Gemini API...`);
+      console.log(`Generating ${type} summary with LLM...`);
       const prompt = SummarizerService.createPrompt(content, type);
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const summaryText = response.text();
+      const summaryText = await generateText(prompt, { temperature: 0.4 });
       console.log(
-        `✓ Gemini API returned summary for ${type}: "${summaryText.substring(0, 100)}..."`,
+        `✓ LLM returned summary for ${type}: "${summaryText.substring(0, 100)}..."`,
       );
       return summaryText;
     } catch (error) {
-      console.error('Error generating summary with Gemini:', error);
+      console.error('Error generating summary with LLM:', error);
       console.log(`Falling back to simple summary for ${type}`);
       return SummarizerService.generateFallbackSummary(content, type);
     }
@@ -409,14 +404,10 @@ This is for new visitors to understand what the community is all about. Focus on
       if (now < SummarizerService.allPostsCache.cooldownUntil) {
         summaryText = SummarizerService.generateFallbackSummary(content, 'posts');
       } else {
-        console.log('Generating all-posts summary with Gemini API...');
-        const result = await this.genAI
-          .getGenerativeModel({ model: 'gemini-2.0-flash' })
-          .generateContent(prompt);
-        const response = await result.response;
-        summaryText = response.text();
+        console.log('Generating all-posts summary with LLM...');
+        summaryText = await generateText(prompt, { temperature: 0.4 });
         console.log(
-          `✓ Gemini API returned all-posts summary: "${summaryText.substring(0, 100)}..."`,
+          `✓ LLM returned all-posts summary: "${summaryText.substring(0, 100)}..."`,
         );
       }
 
@@ -457,7 +448,7 @@ This is for new visitors to understand what the community is all about. Focus on
         SummarizerService.allPostsCache.cooldownUntil = Date.now() + 10 * 60 * 1000;
       }
 
-      // Fallback if Gemini fails
+      // Fallback if LLM fails
       const posts = await Post.find({}).countDocuments();
       const summary = {
         title: `Community Overview • ${Math.min(posts, 10)} recent posts`,

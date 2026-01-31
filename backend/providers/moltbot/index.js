@@ -13,7 +13,9 @@
 const WebSocket = require('ws');
 const { EventEmitter } = require('events');
 
-const DEFAULT_GATEWAY_URL = 'ws://127.0.0.1:18789';
+const DEFAULT_GATEWAY_URL = process.env.MOLTBOT_GATEWAY_URL
+  || process.env.CLAWDBOT_GATEWAY_URL
+  || 'ws://127.0.0.1:18789';
 
 /**
  * Moltbot Provider Configuration

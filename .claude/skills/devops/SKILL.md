@@ -46,7 +46,30 @@ docker-compose.dev.yml      # Development with hot reload
 # Production
 ./prod.sh deploy            # Build and deploy
 ./prod.sh logs              # View logs
+
+# Clawdbot (AI Agent Runtime)
+./dev.sh clawdbot up        # Start Clawdbot services (gateway, cli, bridge)
+./dev.sh clawdbot down      # Stop Clawdbot services
+./dev.sh clawdbot logs      # View Clawdbot bridge logs
+./dev.sh clawdbot restart   # Restart Clawdbot services
+./dev.sh clawdbot build     # Rebuild Clawdbot image
 ```
+
+## Clawdbot Configuration
+
+The Clawdbot gateway uses Claude Code OAuth by default (mounts `~/.claude` credentials).
+
+**Key files:**
+- `external/clawdbot-state/config/moltbot.json` - Gateway configuration
+- `_external/clawdbot/Dockerfile.claude` - Custom image with Claude Code CLI
+
+**To use API keys instead of OAuth:**
+```bash
+CLAWDBOT_DOCKERFILE=Dockerfile ./dev.sh clawdbot up
+```
+
+**Dashboard access:**
+Open `http://127.0.0.1:18789/?token=YOUR_GATEWAY_TOKEN`
 
 ## Docker Patterns
 

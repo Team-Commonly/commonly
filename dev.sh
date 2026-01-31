@@ -2,6 +2,7 @@
 
 # Development environment management script
 # Usage: ./dev.sh [up|down|restart|logs|build]
+#        ./dev.sh clawdbot [up|down|logs]
 
 set -e
 
@@ -18,6 +19,8 @@ case "$1" in
         echo "🔧 Backend: http://localhost:5000"
         echo "📊 MongoDB: localhost:27017"
         echo "🐘 PostgreSQL: localhost:5432"
+        echo ""
+        echo "💡 To start Clawdbot: ./dev.sh clawdbot up"
         ;;
     
     down)
@@ -74,7 +77,57 @@ case "$1" in
         echo "🧪 Running tests..."
         docker-compose -f $COMPOSE_FILE exec backend npm test
         ;;
-    
+
+    clawdbot)
+        case "$2" in
+            up)
+                echo "🤖 Starting Clawdbot services..."
+                docker-compose -f $COMPOSE_FILE --profile clawdbot up -d
+                echo "✅ Clawdbot services started!"
+                echo "🧠 Clawdbot Gateway: http://localhost:18789"
+                echo "🌉 Clawdbot Bridge: polling Commonly API"
+                echo ""
+                echo "📋 View logs: ./dev.sh clawdbot logs"
+                ;;
+            down)
+                echo "🛑 Stopping Clawdbot services..."
+                docker-compose -f $COMPOSE_FILE --profile clawdbot stop clawdbot-gateway clawdbot-cli clawdbot-bridge
+                echo "✅ Clawdbot services stopped!"
+                ;;
+            logs)
+                if [ -n "$3" ]; then
+                    echo "📋 Showing logs for: clawdbot-$3"
+                    docker-compose -f $COMPOSE_FILE logs -f "clawdbot-$3"
+                else
+                    echo "📋 Showing Clawdbot bridge logs..."
+                    docker-compose -f $COMPOSE_FILE logs -f clawdbot-bridge
+                fi
+                ;;
+            restart)
+                echo "🔄 Restarting Clawdbot services..."
+                docker-compose -f $COMPOSE_FILE --profile clawdbot restart clawdbot-gateway clawdbot-cli clawdbot-bridge
+                echo "✅ Clawdbot services restarted!"
+                ;;
+            build)
+                echo "🔨 Building Clawdbot containers..."
+                docker-compose -f $COMPOSE_FILE --profile clawdbot build clawdbot-gateway clawdbot-cli
+                echo "✅ Clawdbot containers built!"
+                ;;
+            *)
+                echo "🤖 Clawdbot Commands"
+                echo ""
+                echo "Usage: ./dev.sh clawdbot [command]"
+                echo ""
+                echo "Commands:"
+                echo "  up       - Start Clawdbot services (gateway, bridge, cli)"
+                echo "  down     - Stop Clawdbot services"
+                echo "  restart  - Restart Clawdbot services"
+                echo "  logs     - Show bridge logs (or: logs gateway, logs cli)"
+                echo "  build    - Build Clawdbot containers"
+                ;;
+        esac
+        ;;
+
     *)
         echo "🎯 Development Environment Manager"
         echo ""
@@ -90,10 +143,13 @@ case "$1" in
         echo "  clean     - Clean up containers and volumes"
         echo "  shell     - Open shell in service (shell [service])"
         echo "  test      - Run backend tests"
+        echo "  clawdbot  - Manage Clawdbot services (clawdbot up|down|logs|restart)"
         echo ""
         echo "Examples:"
         echo "  ./dev.sh up"
         echo "  ./dev.sh logs backend"
         echo "  ./dev.sh shell frontend"
+        echo "  ./dev.sh clawdbot up"
+        echo "  ./dev.sh clawdbot logs"
         ;;
 esac

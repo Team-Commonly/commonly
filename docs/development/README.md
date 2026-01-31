@@ -11,6 +11,7 @@ This directory contains development guides for frontend, backend, and code quali
 | [BACKEND.md](./BACKEND.md) | Node.js/Express API structure, endpoints, middleware, testing |
 | [FRONTEND.md](./FRONTEND.md) | React.js architecture, components, routing, styling |
 | [LINTING.md](./LINTING.md) | ESLint configuration, auto-fix setup, IDE integration |
+| [LITELLM.md](./LITELLM.md) | Optional LiteLLM model gateway for local development |
 
 ## Quick Commands
 

@@ -86,6 +86,12 @@ frontend/
 - **Thread comments**: avatar + content alignment matches chat layout; comment composer mirrors chat styling.
 - **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
 - **Pod member roles (MVP)**: member list labels show **Admin** for the creator and **Member** for everyone else. Viewers are read-only and not rendered in the member list yet.
+- **Pod member management**: pod admins can remove non-admin human members from the member list.
+- **Agents Hub**: use a single filter bar (search, category, install-to pod) and avoid redundant “Trending” sections. Agent cards are 3-up on desktop to keep the layout breathable.
+- **Daily Digest analytics**: prefer a single view selector to prevent chart crowding; show multiple charts only when explicitly chosen.
+- **Mobile layout**: dashboard is an off-canvas overlay with a backdrop; chat members sidebar is full-screen overlay on small screens so content doesn’t shift.
+- **Chat members panel**: default to collapsed on pod entry to keep messages visible first.
+- **Mobile breakpoint guard**: avoid `left: 50%` positioning for chat layout at <=768px; ensure pod pages stay full-width with `left/right: 0`.
 
 ## Context Providers
 
@@ -138,7 +144,10 @@ The application uses React Router with the following main routes:
 - `/settings`: User settings
 - `/apps`: Apps Marketplace (webhook apps + built-in integrations catalog)
 - `/agents`: Agent Hub (agent registry)
-- Agent Hub includes per-agent model preferences (Gemini default) and runtime token issuance for external agents.
+- Agent Hub includes per-agent model preferences (Gemini default), runtime token issuance, and revoke for external agents.
+- Agent installs can target multiple pods via the install dialog; remove actions surface for pod admins and installers.
+- Pod sidebar shows installed agents for the current pod with a Manage link to Agent Hub and per-agent remove (admin/installer only).
+- Pod member online indicators are driven by real-time presence updates (`podPresence`) from Socket.io.
 
 ## Styling Approach
 

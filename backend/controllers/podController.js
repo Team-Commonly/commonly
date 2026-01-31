@@ -248,6 +248,74 @@ exports.leavePod = async (req, res) => {
   }
 };
 
+// Remove a member from a pod (only creator can remove)
+exports.removeMember = async (req, res) => {
+  try {
+    const { id: podId, memberId } = req.params;
+    const userId = req.userId || req.user?.id;
+
+    if (!podId || !memberId) {
+      return res.status(400).json({ msg: 'Pod ID and member ID are required' });
+    }
+
+    if (!userId) {
+      return res.status(401).json({ msg: 'User authentication failed' });
+    }
+
+    const pod = await Pod.findById(podId);
+
+    if (!pod) {
+      return res.status(404).json({ msg: 'Pod not found' });
+    }
+
+    const creatorId = pod.createdBy?.toString?.() || pod.createdBy;
+    if (creatorId !== userId.toString()) {
+      return res.status(403).json({ msg: 'Only pod admin can remove members' });
+    }
+
+    if (memberId.toString() === creatorId.toString()) {
+      return res.status(400).json({ msg: 'Cannot remove pod creator' });
+    }
+
+    const isMember = pod.members.some(
+      (member) => member.toString() === memberId.toString(),
+    );
+    if (!isMember) {
+      return res.status(400).json({ msg: 'User is not a member of this pod' });
+    }
+
+    pod.members = pod.members.filter(
+      (member) => member.toString() !== memberId.toString(),
+    );
+    pod.updatedAt = Date.now();
+
+    await pod.save();
+
+    // Best-effort cleanup in PostgreSQL if available
+    if (process.env.PG_HOST && PGPod) {
+      try {
+        await PGPod.removeMember(podId, memberId.toString());
+      } catch (pgErr) {
+        console.warn(
+          'Failed to remove member from PostgreSQL pod members:',
+          pgErr.message,
+        );
+      }
+    }
+
+    await pod.populate('createdBy', 'username profilePicture');
+    await pod.populate('members', 'username profilePicture');
+
+    return res.json(pod);
+  } catch (err) {
+    console.error('Error removing pod member:', err.message);
+    if (err.kind === 'ObjectId') {
+      return res.status(404).json({ msg: 'Pod not found' });
+    }
+    return res.status(500).json({ msg: 'Server Error' });
+  }
+};
+
 // Delete a pod (only creator can delete)
 exports.deletePod = async (req, res) => {
   try {

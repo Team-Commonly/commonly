@@ -26,16 +26,16 @@
 .pod-container {
   padding-top: 0 !important;
   min-height: calc(100vh - 64px);
-  background-color: #f8fafe !important;
+  background-color: transparent !important;
   max-width: 100% !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
 
 .pod-app-bar {
-  background-color: #ffffff !important;
-  box-shadow: 0 1px 3px rgba(25, 118, 210, 0.1) !important;
-  border-bottom: 1px solid #e3f2fd;
+  background-color: rgba(15, 23, 42, 0.92) !important;
+  box-shadow: 0 1px 8px rgba(8, 12, 24, 0.35) !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   z-index: 1000;
   position: sticky !important;
   top: 0;
@@ -44,32 +44,41 @@
 .pod-title {
   font-weight: 700 !important;
   font-size: 1.5rem !important;
-  color: #1da1f2 !important;
+  color: #e2e8f0 !important;
   letter-spacing: -0.5px;
 }
 
 .pod-search .MuiOutlinedInput-root {
   border-radius: 20px;
-  background-color: #f5f5f5;
+  background-color: rgba(30, 41, 59, 0.7);
   transition: all 0.3s ease;
+  color: #e2e8f0;
+}
+
+.pod-search .MuiOutlinedInput-input {
+  color: #e2e8f0 !important;
+}
+
+.pod-search .MuiSvgIcon-root {
+  color: #94a3b8 !important;
 }
 
 .pod-search .MuiOutlinedInput-root:hover {
-  background-color: #eeeeee;
+  background-color: rgba(30, 41, 59, 0.9);
 }
 
 .pod-search .MuiOutlinedInput-root.Mui-focused {
-  background-color: #ffffff;
-  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+  background-color: rgba(30, 41, 59, 0.95);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
 }
 
 .pod-search .MuiOutlinedInput-notchedOutline {
-  border: none;
+  border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .pod-tabs {
-  background-color: #ffffff;
-  border-bottom: 1px solid #e3f2fd;
+  background-color: rgba(15, 23, 42, 0.96);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .pod-tab {
@@ -78,11 +87,15 @@
   min-width: 120px !important;
   font-size: 15px !important;
   transition: all 0.2s ease !important;
-  color: #666666 !important;
+  color: #94a3b8 !important;
 }
 
 .pod-tab.Mui-selected {
-  color: #1976d2 !important;
+  color: #60a5fa !important;
+}
+
+.pod-tab.Mui-selected .MuiSvgIcon-root {
+  color: #60a5fa !important;
 }
 
 .pod-grid {
@@ -98,29 +111,30 @@
   transition: transform 0.3s, box-shadow 0.3s;
   border-radius: 16px !important;
   overflow: hidden;
-  border: 1px solid #e3f2fd;
-  background-color: #ffffff;
-  box-shadow: 0 2px 8px rgba(25, 118, 210, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background-color: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 10px 30px rgba(8, 12, 24, 0.45);
+  padding-bottom: 4px;
 }
 
 .pod-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(25, 118, 210, 0.15) !important;
-  border-color: #bbdefb;
+  box-shadow: 0 16px 36px rgba(8, 12, 24, 0.6) !important;
+  border-color: rgba(96, 165, 250, 0.4);
 }
 
 .pod-card-title {
   margin-bottom: 12px !important;
   font-weight: 700 !important;
   font-size: 1.25rem !important;
-  color: #1da1f2 !important;
+  color: #e2e8f0 !important;
   line-height: 1.3 !important;
 }
 
 .pod-card-description {
   margin-bottom: 20px !important;
   min-height: 60px !important;
-  color: #666666 !important;
+  color: #cbd5f5 !important;
   font-size: 0.95rem !important;
   line-height: 1.5 !important;
 }
@@ -130,10 +144,10 @@
   justify-content: space-between;
   align-items: center;
   margin-top: 16px !important;
-  padding: 12px 16px;
-  background-color: #f8fafe;
+  padding: 10px 14px;
+  background-color: rgba(30, 41, 59, 0.7);
   border-radius: 12px;
-  border: 1px solid #e3f2fd;
+  border: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .pod-card-creator {
@@ -147,7 +161,7 @@
 }
 
 .creator-text {
-  color: #666666 !important;
+  color: #cbd5f5 !important;
   font-weight: 500 !important;
   font-size: 0.875rem !important;
 }
@@ -159,15 +173,15 @@
 }
 
 .pod-card-members svg {
-  color: #1da1f2 !important;
+  color: #60a5fa !important;
   font-size: 1.25rem !important;
 }
 
 .member-count {
-  color: #1da1f2 !important;
+  color: #60a5fa !important;
   font-weight: 600 !important;
   font-size: 0.875rem !important;
-  background-color: rgba(29, 161, 242, 0.1) !important;
+  background-color: rgba(96, 165, 250, 0.18) !important;
   padding: 2px 8px !important;
   border-radius: 12px !important;
   min-width: 20px !important;
@@ -176,19 +190,20 @@
 
 .pod-card-actions {
   margin-top: auto !important;
-  padding: 16px !important;
-  border-top: 1px solid #e3f2fd;
+  padding: 12px 16px !important;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .pod-card-actions .MuiButton-root {
   border-radius: 12px !important;
   text-transform: none !important;
   font-weight: 600 !important;
-  padding: 12px 24px !important;
+  padding: 10px 20px !important;
   font-size: 16px !important;
   background-color: #1da1f2 !important;
   box-shadow: 0 3px 12px rgba(29, 161, 242, 0.3) !important;
   transition: all 0.3s ease !important;
+  min-height: 40px;
 }
 
 .pod-card-actions .MuiButton-root:hover {
@@ -219,11 +234,11 @@
   align-items: center;
   height: 400px !important;
   text-align: center;
-  color: #666666 !important;
+  color: #cbd5f5 !important;
 }
 
 .pod-empty svg {
-  color: #1da1f2 !important;
+  color: #60a5fa !important;
   margin-bottom: 16px !important;
 }
 
@@ -282,6 +297,22 @@
   
   .pod-card-description {
     font-size: 0.9rem !important;
+  }
+
+  .pod-grid {
+    padding: 12px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+
+  .pod-card-actions {
+    padding: 10px 12px !important;
+  }
+
+  .pod-card-actions .MuiButton-root {
+    padding: 8px 16px !important;
+    font-size: 14px !important;
+    min-height: 36px;
   }
 }
 

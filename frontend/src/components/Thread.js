@@ -273,7 +273,7 @@ const Thread = () => {
                                         maxHeight: '500px',
                                         objectFit: 'contain',
                                         borderRadius: '8px',
-                                        backgroundColor: '#f8f9fa'
+                                        backgroundColor: 'rgba(15, 23, 42, 0.6)'
                                     }}
                                     className="post-image"
                                 />
@@ -366,10 +366,10 @@ const Thread = () => {
                     <Box 
                         className="emoji-picker-container"
                         sx={{
-                            backgroundColor: '#fff',
+                            backgroundColor: 'rgba(15, 23, 42, 0.98)',
                             borderRadius: '12px',
-                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
-                            border: '1px solid #e1e8ed',
+                            boxShadow: '0 12px 32px rgba(8, 12, 24, 0.45)',
+                            border: '1px solid rgba(148, 163, 184, 0.2)',
                             overflow: 'hidden'
                         }}
                     >

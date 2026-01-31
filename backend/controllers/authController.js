@@ -1,10 +1,10 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const sgMail = require('@sendgrid/mail');
+const axios = require('axios');
 const User = require('../models/User');
 
-// ✅ Configure SendGrid API Key
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const SMTP2GO_BASE_URL = process.env.SMTP2GO_BASE_URL || 'https://api.smtp2go.com/v3';
+const SMTP2GO_SEND_URL = `${SMTP2GO_BASE_URL.replace(/\/$/, '')}/email/send`;
 
 // 📌 Register User
 exports.register = async (req, res) => {
@@ -17,44 +17,63 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'User already exists' });
     }
 
+    const hasEmailConfig = Boolean(process.env.SMTP2GO_API_KEY)
+      && Boolean(process.env.SMTP2GO_FROM_EMAIL)
+      && Boolean(process.env.FRONTEND_URL);
+    const shouldAutoVerify = !hasEmailConfig && process.env.NODE_ENV !== 'production';
+
     // Create new user instance
     user = new User({
       username,
       email,
       password,
-      verified: false,
+      verified: shouldAutoVerify,
     });
-
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
 
     // Save user to database
     await user.save();
 
-    // Generate email verification token
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '1d',
-    });
+    if (hasEmailConfig) {
+      // Generate email verification token
+      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+        expiresIn: '1d',
+      });
 
-    // Create email message with verification link
-    const msg = {
-      to: email,
-      from: process.env.SENDGRID_FROM_EMAIL,
-      subject: 'Verify Your Email - Commonly',
-      text: `Click the link below to verify your email: ${process.env.FRONTEND_URL}/verify-email?token=${token}`,
-      html: `<p>Click the link below to verify your email:</p>
-             <a href="${process.env.FRONTEND_URL}/verify-email?token=${token}">Verify Email</a>`,
-    };
+      const verifyUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+      const html = `<p>Click the link below to verify your email:</p>
+               <a href="${verifyUrl}">Verify Email</a>`;
+      const text = `Click the link below to verify your email: ${verifyUrl}`;
 
-    // Send email
-    await sgMail.send(msg);
+      try {
+        console.log('SMTP2GO send attempt:', {
+          to: email,
+          sender: process.env.SMTP2GO_FROM_EMAIL,
+          fromName: process.env.SMTP2GO_FROM_NAME,
+        });
+        const smtpRes = await axios.post(SMTP2GO_SEND_URL, {
+          api_key: process.env.SMTP2GO_API_KEY,
+          to: [email],
+          sender: process.env.SMTP2GO_FROM_EMAIL,
+          from_name: process.env.SMTP2GO_FROM_NAME || 'Commonly',
+          subject: 'Verify Your Email - Commonly',
+          text_body: text,
+          html_body: html,
+        }, { timeout: 30000 });
+        console.log('SMTP2GO send response:', smtpRes?.data);
+      } catch (sendError) {
+        console.error('SMTP2GO error during registration:', sendError?.response?.data || sendError.message);
+        return res.status(502).json({
+          error: 'Email delivery failed. Please verify SMTP2GO configuration.',
+        });
+      }
+    }
 
     return res
       .status(201)
       .json({
-        message:
-          'User registered successfully. Check your email for verification.',
+        message: hasEmailConfig
+          ? 'User registered successfully. Check your email for verification.'
+          : 'User registered successfully. Email verification skipped in development.',
       });
   } catch (err) {
     console.error(err.message);
