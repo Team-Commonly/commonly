@@ -1,17 +1,28 @@
 const AgentEventService = require('./agentEventService');
 const { AgentInstallation } = require('../models/AgentRegistry');
 
+/**
+ * Mention Aliases
+ *
+ * Maps @mention aliases to agent types
+ * agentType = the runtime type (openclaw, commonly-summarizer, etc.)
+ */
 const MENTION_ALIASES = {
-  'commonly-bot': ['commonly-bot', 'commonlybot', 'commonly'],
-  'commonly-ai-agent': ['commonly-ai-agent', 'cuz', 'como'],
-  'clawd-bot': ['clawd-bot', 'clawdbot', 'clawd'],
+  // openclaw (official: Cuz 🦞) - Claude-powered AI
+  openclaw: ['openclaw', 'cuz', 'clawd', 'clawd-bot', 'clawdbot'],
+  // commonly-summarizer (official: Commonly Summarizer)
+  'commonly-summarizer': ['commonly-summarizer', 'commonly-bot', 'commonlybot', 'commonly', 'summarizer'],
+  // claude-code (future)
+  'claude-code': ['claude-code', 'claudecode'],
+  // codex (future)
+  codex: ['codex', 'openai-codex'],
 };
 
 const buildAliasMap = () => {
   const aliasMap = new Map();
-  Object.entries(MENTION_ALIASES).forEach(([agentName, aliases]) => {
+  Object.entries(MENTION_ALIASES).forEach(([agentType, aliases]) => {
     aliases.forEach((alias) => {
-      aliasMap.set(alias.toLowerCase(), agentName);
+      aliasMap.set(alias.toLowerCase(), agentType);
     });
   });
   return aliasMap;
@@ -27,9 +38,9 @@ const extractMentions = (content = '') => {
   while ((match = regex.exec(content)) !== null) {
     const raw = match[1]?.toLowerCase();
     if (!raw) continue;
-    const agentName = aliasMap.get(raw);
-    if (agentName) {
-      mentions.add(agentName);
+    const agentType = aliasMap.get(raw);
+    if (agentType) {
+      mentions.add(agentType);
     }
   }
   return Array.from(mentions);
@@ -42,8 +53,8 @@ const enqueueMentions = async ({
   username,
 }) => {
   const content = message?.content || message?.text || '';
-  const mentionAgents = extractMentions(content);
-  if (!podId || mentionAgents.length === 0) {
+  const mentionAgentTypes = extractMentions(content);
+  if (!podId || mentionAgentTypes.length === 0) {
     return { enqueued: [], skipped: [] };
   }
 
@@ -51,22 +62,23 @@ const enqueueMentions = async ({
   const skipped = [];
 
   await Promise.all(
-    mentionAgents.map(async (agentName) => {
+    mentionAgentTypes.map(async (agentType) => {
       let installed = false;
       try {
-        installed = await AgentInstallation.isInstalled(agentName, podId);
+        installed = await AgentInstallation.isInstalled(agentType, podId);
       } catch (error) {
         console.warn('Agent mention install check failed:', error.message);
       }
 
       if (!installed) {
-        skipped.push(agentName);
+        skipped.push(agentType);
         return;
       }
 
       try {
+        // Find the installation (prefer default instance, fall back to any)
         let installation = await AgentInstallation.findOne({
-          agentName: agentName.toLowerCase(),
+          agentName: agentType.toLowerCase(),
           podId,
           instanceId: 'default',
           status: 'active',
@@ -74,14 +86,14 @@ const enqueueMentions = async ({
 
         if (!installation) {
           installation = await AgentInstallation.findOne({
-            agentName: agentName.toLowerCase(),
+            agentName: agentType.toLowerCase(),
             podId,
             status: 'active',
           }).lean();
         }
 
         await AgentEventService.enqueue({
-          agentName,
+          agentName: agentType,
           instanceId: installation?.instanceId || 'default',
           podId,
           type: 'chat.mention',
@@ -90,13 +102,13 @@ const enqueueMentions = async ({
             content,
             userId,
             username,
-            mentions: mentionAgents,
+            mentions: mentionAgentTypes,
             source: 'chat',
             messageType: message?.messageType || message?.message_type || 'text',
             createdAt: message?.createdAt || message?.created_at || new Date(),
           },
         });
-        enqueued.push(agentName);
+        enqueued.push(agentType);
       } catch (error) {
         console.warn('Failed to enqueue agent mention:', error.message);
       }
