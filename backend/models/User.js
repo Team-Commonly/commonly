@@ -11,6 +11,24 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   apiToken: { type: String, unique: true, sparse: true },
   apiTokenCreatedAt: { type: Date },
+  apiTokenScopes: [{ type: String }],
+
+  // Bot/Agent user properties
+  isBot: { type: Boolean, default: false },
+  botType: {
+    type: String,
+    enum: ['system', 'agent', 'bridge', null],
+    default: null,
+  },
+  botMetadata: {
+    displayName: { type: String }, // Cute display name like "Clawd 🐾"
+    description: { type: String }, // Bot description
+    runtimeId: { type: String }, // Unique runtime instance identifier
+    officialAgent: { type: Boolean, default: false }, // Is this an official Commonly agent?
+    capabilities: [{ type: String }], // e.g., ['chat', 'summarize', 'memory']
+    agentName: { type: String }, // Registry agent name (e.g., commonly-ai-agent)
+    instanceId: { type: String }, // Instance id for multi-install
+  },
 
   // Daily digest and subscription preferences
   subscribedPods: [
