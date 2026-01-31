@@ -1,8 +1,8 @@
 /**
- * Clawd-bot Bridge - Commonly Channel Integration
+ * OpenClaw Bridge - Commonly Channel Integration
  *
- * This service bridges Commonly pods with Clawd-bot AI, enabling:
- * - Direct @clawd-bot mentions in pod chat
+ * This service bridges Commonly pods with the OpenClaw AI runtime (Cuz 🦞), enabling:
+ * - Direct @cuz or @clawd mentions in pod chat
  * - Full context assembly using Commonly's Bot API
  * - Context-aware responses with pod memory, skills, and summaries
  *
@@ -15,13 +15,16 @@ const baseUrl = process.env.COMMONLY_BASE_URL || 'http://backend:5000';
 const token = process.env.COMMONLY_USER_TOKEN || process.env.COMMONLY_AGENT_TOKEN;
 const gatewayUrl = process.env.CLAWDBOT_GATEWAY_URL || 'http://clawdbot-gateway:18789';
 const gatewayToken = process.env.CLAWDBOT_GATEWAY_TOKEN;
-const agentId = process.env.CLAWDBOT_AGENT_ID || 'main';
-const model = process.env.CLAWDBOT_MODEL || `moltbot:${agentId}`;
-const agentName = process.env.CLAWDBOT_AGENT_NAME || 'clawd-bot';
+const runtimeAgentId = process.env.CLAWDBOT_AGENT_ID || 'main';
+const model = process.env.CLAWDBOT_MODEL || `moltbot:${runtimeAgentId}`;
+// agentType = the agent runtime type (openclaw, commonly-summarizer, etc.)
+const agentType = process.env.CLAWDBOT_AGENT_TYPE || process.env.CLAWDBOT_AGENT_NAME || 'openclaw';
 const instanceId = process.env.CLAWDBOT_INSTANCE_ID || 'default';
+// displayName for this instance (defaults to official name based on type)
+const displayName = process.env.CLAWDBOT_DISPLAY_NAME || null;
 
 if (!token) {
-  console.error('COMMONLY_USER_TOKEN is required (API token for clawd-bot user).');
+  console.error('COMMONLY_USER_TOKEN is required (API token for openclaw user).');
   process.exit(1);
 }
 
@@ -38,7 +41,7 @@ const commonlyHeaders = {
 const clawdbotHeaders = {
   Authorization: `Bearer ${gatewayToken}`,
   'Content-Type': 'application/json',
-  'x-moltbot-agent-id': agentId,
+  'x-moltbot-agent-id': runtimeAgentId,
 };
 
 // ============================================================================
@@ -46,12 +49,12 @@ const clawdbotHeaders = {
 // ============================================================================
 
 /**
- * Fetch pending events for clawd-bot using bot user API
+ * Fetch pending events for this agent type using bot user API
  * Uses /api/agents/runtime/bot/events with scoped token
  */
 const fetchEvents = async () => {
   const url = new URL(`${baseUrl}/api/agents/runtime/bot/events`);
-  url.searchParams.append('agentName', agentName);
+  url.searchParams.append('agentName', agentType);
   url.searchParams.append('instanceId', instanceId);
 
   const res = await fetch(url, { headers: commonlyHeaders });
@@ -70,7 +73,7 @@ const postMessage = async (podId, content, metadata = {}) => {
     method: 'POST',
     headers: commonlyHeaders,
     body: JSON.stringify({
-      agentName,
+      agentName: agentType,
       instanceId,
       content,
       messageType: 'text',
@@ -90,7 +93,7 @@ const ackEvent = async (eventId) => {
   const res = await fetch(`${baseUrl}/api/agents/runtime/bot/events/${eventId}/ack`, {
     method: 'POST',
     headers: commonlyHeaders,
-    body: JSON.stringify({ agentName, instanceId }),
+    body: JSON.stringify({ agentName: agentType, instanceId }),
   });
   if (!res.ok) {
     throw new Error(`Failed to ack event: ${res.status}`);
@@ -103,7 +106,7 @@ const ackEvent = async (eventId) => {
  */
 const getAssembledContext = async (podId, task = null) => {
   const url = new URL(`${baseUrl}/api/agents/runtime/bot/pods/${podId}/context`);
-  url.searchParams.append('agentName', agentName);
+  url.searchParams.append('agentName', agentType);
   url.searchParams.append('instanceId', instanceId);
   if (task) {
     url.searchParams.append('task', task);
@@ -122,7 +125,7 @@ const getAssembledContext = async (podId, task = null) => {
  */
 const getRecentMessages = async (podId, limit = 10) => {
   const url = new URL(`${baseUrl}/api/agents/runtime/bot/pods/${podId}/messages`);
-  url.searchParams.append('agentName', agentName);
+  url.searchParams.append('agentName', agentType);
   url.searchParams.append('instanceId', instanceId);
   url.searchParams.append('limit', limit.toString());
 
@@ -161,7 +164,7 @@ const writeMemory = async (podId, { target, content, tags = [], source = {} }) =
       target,
       content,
       tags,
-      source: { ...source, agent: agentName, instanceId },
+      source: { ...source, agentType, instanceId },
     }),
   });
   if (!res.ok) {
@@ -238,14 +241,22 @@ const buildConversationHistory = (messages) => {
 };
 
 // ============================================================================
-// Clawd-bot AI Integration
+// OpenClaw AI Integration
 // ============================================================================
 
+// Get persona name based on agent type and display name
+const getPersonaName = () => {
+  if (displayName) return displayName;
+  if (agentType === 'openclaw') return 'Cuz 🦞';
+  return agentType;
+};
+
 /**
- * Call Clawd-bot AI with full context
+ * Call OpenClaw AI with full context
  */
 const callClawdbotWithContext = async (userMessage, contextPrompt, conversationHistory) => {
-  const systemPrompt = `You are Clawd 🐾, an AI assistant integrated into a Commonly pod.
+  const personaName = getPersonaName();
+  const systemPrompt = `You are ${personaName}, an AI assistant integrated into a Commonly pod.
 
 You have access to the pod's context, memory, skills, and recent activity.
 Use this information to provide helpful, contextual responses.
@@ -273,13 +284,13 @@ Guidelines:
   });
 
   if (!res.ok) {
-    throw new Error(`Clawd-bot request failed: ${res.status}`);
+    throw new Error(`OpenClaw request failed: ${res.status}`);
   }
 
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text;
   if (!content) {
-    throw new Error('Clawd-bot response missing content');
+    throw new Error('OpenClaw response missing content');
   }
   return String(content).trim();
 };
@@ -288,7 +299,8 @@ Guidelines:
  * Simple call for integration summaries
  */
 const callClawdbotSimple = async (summary) => {
-  const prompt = `You are Clawd 🐾, a helpful assistant posting into a Commonly pod.
+  const personaName = getPersonaName();
+  const prompt = `You are ${personaName}, a helpful assistant posting into a Commonly pod.
 
 Summarize and respond to this integration update in 2-3 sentences, optionally with 1 action item if relevant.
 
@@ -306,13 +318,13 @@ ${summary}`;
   });
 
   if (!res.ok) {
-    throw new Error(`Clawd-bot request failed: ${res.status}`);
+    throw new Error(`OpenClaw request failed: ${res.status}`);
   }
 
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text;
   if (!content) {
-    throw new Error('Clawd-bot response missing content');
+    throw new Error('OpenClaw response missing content');
   }
   return String(content).trim();
 };
@@ -345,7 +357,7 @@ const handleMentionEvent = async (event) => {
     const contextPrompt = buildContextPrompt(context);
     const conversationHistory = buildConversationHistory(messages);
 
-    // Call Clawd-bot with full context
+    // Call OpenClaw with full context
     const response = await callClawdbotWithContext(
       `@${username} asks: ${content}`,
       contextPrompt,
@@ -354,7 +366,7 @@ const handleMentionEvent = async (event) => {
 
     // Post response to pod
     await postMessage(event.podId, response, {
-      source: 'clawd-bot',
+      source: agentType,
       eventId: event._id,
       replyTo: messageId,
       mentionedBy: username,
@@ -375,7 +387,7 @@ const handleMentionEvent = async (event) => {
         `User @${username} mentioned you: "${content}"`,
       );
       await postMessage(event.podId, simpleResponse, {
-        source: 'clawd-bot',
+        source: agentType,
         eventId: event._id,
         fallback: true,
       });
@@ -401,7 +413,7 @@ const handleSummaryEvent = async (event) => {
   try {
     const response = await callClawdbotSimple(summaryContent);
     await postMessage(event.podId, response, {
-      source: 'clawd-bot',
+      source: agentType,
       eventId: event._id,
     });
   } catch (err) {
@@ -441,14 +453,16 @@ const poll = async () => {
       await handleEvent(event);
     }
   } catch (error) {
-    console.error('Clawd-bot bridge poll failed:', error.message);
+    console.error('OpenClaw bridge poll failed:', error.message);
   }
 };
 
 const intervalMs = parseInt(process.env.COMMONLY_AGENT_POLL_MS, 10) || 5000;
+const personaName = getPersonaName();
 
-console.log('Clawd 🐾 Bridge starting...');
-console.log(`  Agent: ${agentName} (instance: ${instanceId})`);
+console.log(`${personaName} Bridge starting...`);
+console.log(`  Agent Type: ${agentType} (instance: ${instanceId})`);
+console.log(`  Display Name: ${personaName}`);
 console.log(`  Commonly API: ${baseUrl}`);
 console.log(`  Gateway: ${gatewayUrl}`);
 console.log(`  Poll interval: ${intervalMs}ms`);
@@ -456,10 +470,10 @@ console.log(`  Poll interval: ${intervalMs}ms`);
 // Initial connection test
 fetchEvents()
   .then((events) => {
-    console.log(`Clawd 🐾 Bridge connected. ${events.length} pending events.`);
+    console.log(`${personaName} Bridge connected. ${events.length} pending events.`);
   })
   .catch((err) => {
-    console.error('Clawd 🐾 Bridge connection failed:', err.message);
+    console.error(`${personaName} Bridge connection failed:`, err.message);
   });
 
 setInterval(poll, intervalMs);
@@ -476,4 +490,5 @@ module.exports = {
   handleEvent,
   handleMentionEvent,
   handleSummaryEvent,
+  getPersonaName,
 };
