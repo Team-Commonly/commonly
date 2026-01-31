@@ -2,9 +2,13 @@
 .layout-container {
     display: flex;
     min-height: 100vh;
-    background-color: #f7f9f9;
-    color: #0f1419;
+    background: var(--app-bg);
+    color: #e2e8f0;
     transition: all 0.3s ease;
+}
+
+.layout-container.mobile-dashboard-open {
+    overflow: hidden;
 }
 
 /* Main content area */
@@ -18,6 +22,7 @@
     position: relative;
     z-index: 1000;
     transition: all 0.3s ease;
+    overflow-x: hidden;
 }
 
 /* Dashboard collapsed state */
@@ -28,7 +33,7 @@
 
 /* Pod layout specific styles */
 .pod-layout {
-    background-color: #f7f9f9;
+    background: var(--app-bg);
 }
 
 /* Search container */
@@ -36,8 +41,8 @@
     position: sticky;
     top: 0;
     z-index: 1000;
-    background-color: #ffffff;
-    border-bottom: 1px solid #eff3f4;
+    background-color: rgba(15, 23, 42, 0.92);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
     padding: 0;
     height: 60px;
     display: flex;
@@ -72,7 +77,7 @@
 .toggle-dashboard-button {
     margin-left: auto !important;
     margin-right: 15px !important;
-    color: #1da1f2 !important;
+    color: #93c5fd !important;
     z-index: 1500; /* Ensure button is clickable */
 }
 
@@ -85,6 +90,7 @@
 .content-container {
     padding: 20px;
     flex: 1;
+    overflow-x: hidden;
 }
 
 /* Pod content specific styles */
@@ -123,20 +129,24 @@
     overflow-y: auto;
 }
 
+.mobile-dashboard-backdrop {
+    display: none;
+}
+
 /* Trending section */
 .trending-section {
-    background-color: #f7f9f9;
+    background-color: rgba(15, 23, 42, 0.7);
     border-radius: 16px;
     padding: 16px;
     margin-bottom: 16px;
-    border: 1px solid #eff3f4;
+    border: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .trending-section h3 {
     font-size: 20px;
     font-weight: 800;
     margin-bottom: 16px;
-    color: #0f1419;
+    color: #e2e8f0;
 }
 
 /* Trending topics */
@@ -148,7 +158,7 @@
 
 .trending-topic {
     padding: 8px 0;
-    border-bottom: 1px solid #eff3f4;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .trending-topic:last-child {
@@ -157,7 +167,7 @@
 
 .topic-category {
     font-size: 13px;
-    color: #536471;
+    color: #94a3b8;
     display: block;
     margin-bottom: 4px;
 }
@@ -166,18 +176,18 @@
     font-size: 15px;
     font-weight: 700;
     margin: 0 0 4px 0;
-    color: #0f1419;
+    color: #e2e8f0;
 }
 
 .topic-posts {
     font-size: 13px;
-    color: #536471;
+    color: #94a3b8;
 }
 
 /* Post card styling */
 .post-card {
-    background: #ffffff;
-    border: 1px solid #eff3f4;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.16);
     border-radius: 16px;
     padding: 16px;
     margin-bottom: 12px;
@@ -185,9 +195,9 @@
 }
 
 .post-card:hover {
-    background-color: #f7f9f9;
+    background-color: rgba(30, 41, 59, 0.85);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 12px 24px rgba(8, 12, 24, 0.35);
 }
 
 /* Media queries for responsive design */
@@ -227,6 +237,10 @@
     .main-content {
         width: 100%;
         margin-left: 0;
+        left: 0;
+        right: 0;
+        max-width: 100vw;
+        width: 100vw;
     }
     
     .pod-layout .search-container {
@@ -239,18 +253,60 @@
     }
     
     .search-container {
-        padding: 0 8px;
+        padding: 0 12px;
+    }
+
+    .content-grid {
+        padding: 0 12px;
     }
     
     .dashboard-collapsed .pod-layout .search-container {
         left: 0;
         width: 100%;
     }
+
+    .pods-view .main-content {
+        min-height: 100vh;
+    }
+
+    .pod-layout .content-container {
+        padding: 0 !important;
+        width: 100%;
+        max-width: 100vw;
+    }
+
+    .pod-layout .pod-content {
+        padding: 12px 0 0 0;
+        width: 100%;
+        max-width: 100vw;
+    }
+
+    .mobile-dashboard-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.35);
+        z-index: 1250;
+    }
+}
+
+@media (max-width: 900px) {
+    .layout-container,
+    .layout-container.pods-view,
+    .main-content,
+    .pods-view .main-content,
+    .pod-layout {
+        width: 100% !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+    }
 }
 
 /* Pod detail page specific styling */
 .pod-detail .search-container {
-    border-bottom: 1px solid #eff3f4;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
     box-shadow: none;
 }
 

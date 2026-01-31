@@ -99,5 +99,18 @@ const poll = async () => {
 };
 
 const intervalMs = parseInt(process.env.COMMONLY_AGENT_POLL_MS, 10) || 5000;
+
+console.log('Commonly Bot starting...');
+console.log(`  Commonly API: ${baseUrl}`);
+console.log(`  Poll interval: ${intervalMs}ms`);
+
+// Initial connection test
+fetchEvents()
+  .then((events) => {
+    console.log(`Commonly Bot connected. ${events.length} pending events.`);
+  })
+  .catch((err) => {
+    console.error('Commonly Bot connection failed:', err.message);
+  });
+
 setInterval(poll, intervalMs);
-poll();

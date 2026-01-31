@@ -4,7 +4,7 @@
  * The "app store" for AI agents - discover, install, and manage agents.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Container,
@@ -17,9 +17,9 @@ import {
   Chip,
   Button,
   IconButton,
-  Skeleton,
   Alert,
   Divider,
+  Paper,
   alpha,
   useTheme,
   FormControl,
@@ -31,18 +31,19 @@ import {
   DialogContent,
   DialogActions,
   Tooltip,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  FilterList as FilterIcon,
-  TrendingUp as TrendingIcon,
-  Star as StarIcon,
-  Add as AddIcon,
-  Refresh as RefreshIcon,
   ContentCopy as CopyIcon,
 } from '@mui/icons-material';
 import AgentCard from './AgentCard';
+import ClawdbotConfigPanel from './ClawdbotConfigPanel';
 import axios from 'axios';
+import { useAuth } from '../../context/AuthContext';
+import { useLocation } from 'react-router-dom';
 
 const categories = [
   { id: 'all', label: 'All Agents' },
@@ -55,13 +56,19 @@ const categories = [
 
 const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const theme = useTheme();
+  const location = useLocation();
+  const { currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState(0);
   const [category, setCategory] = useState('all');
   const [agents, setAgents] = useState([]);
   const [installedAgents, setInstalledAgents] = useState([]);
   const [userPods, setUserPods] = useState([]);
-  const [selectedPodId, setSelectedPodId] = useState(propPodId);
+  const queryPodId = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('podId');
+  }, [location.search]);
+  const [selectedPodId, setSelectedPodId] = useState(propPodId || queryPodId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [seeding, setSeeding] = useState(false);
@@ -73,11 +80,49 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [runtimeTokenLabel, setRuntimeTokenLabel] = useState('Local dev');
   const [runtimeTokenValue, setRuntimeTokenValue] = useState('');
   const [runtimeTokenLoading, setRuntimeTokenLoading] = useState(false);
+  const [runtimeTokenRevokingId, setRuntimeTokenRevokingId] = useState(null);
+  const [installDialogOpen, setInstallDialogOpen] = useState(false);
+  const [installAgent, setInstallAgent] = useState(null);
+  const [installPodIds, setInstallPodIds] = useState([]);
+  const [installSaving, setInstallSaving] = useState(false);
+  const [clawdbotGatewayStatus, setClawdbotGatewayStatus] = useState(null);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
     return { 'x-auth-token': token };
   };
+
+  const currentUserId = currentUser?._id || currentUser?.id || null;
+
+  const normalizePodCreatorId = (pod) => (
+    pod?.createdBy?._id || pod?.createdBy || null
+  );
+
+  const isPodAdmin = (pod) => {
+    if (!currentUserId || !pod) return false;
+    const creatorId = normalizePodCreatorId(pod);
+    return creatorId?.toString?.() === currentUserId.toString();
+  };
+
+  const accessiblePods = useMemo(() => {
+    if (!currentUserId) return userPods;
+    return (userPods || []).filter((pod) => {
+      const creatorId = normalizePodCreatorId(pod);
+      if (creatorId?.toString?.() === currentUserId.toString()) return true;
+      const memberIds = (pod.members || []).map((m) => m?._id || m).filter(Boolean);
+      return memberIds.some((id) => id.toString?.() === currentUserId.toString());
+    });
+  }, [userPods, currentUserId]);
+
+  useEffect(() => {
+    if (propPodId) {
+      setSelectedPodId(propPodId);
+      return;
+    }
+    if (queryPodId) {
+      setSelectedPodId(queryPodId);
+    }
+  }, [propPodId, queryPodId]);
 
   // Fetch user's pods for pod selector
   useEffect(() => {
@@ -87,16 +132,18 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           headers: getAuthHeaders(),
         });
         setUserPods(response.data || []);
-        // Auto-select first pod if none selected
-        if (!selectedPodId && response.data?.length > 0) {
-          setSelectedPodId(response.data[0]._id);
-        }
       } catch (err) {
         console.error('Error fetching user pods:', err);
       }
     };
     fetchUserPods();
-  }, []);
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!selectedPodId && accessiblePods.length > 0) {
+      setSelectedPodId(accessiblePods[0]._id);
+    }
+  }, [selectedPodId, accessiblePods]);
 
   // Fetch agents from registry
   useEffect(() => {
@@ -118,8 +165,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       const params = new URLSearchParams();
       if (searchQuery) params.append('q', searchQuery);
       if (category !== 'all') params.append('category', category);
+      params.append('registry', 'commonly-official');
+      params.append('verified', 'true');
 
-      const response = await axios.get(`/api/registry/agents?${params}`, {
+      const response = await axios.get(`/api/registry/agents?${params.toString()}`, {
         headers: getAuthHeaders(),
       });
       const fetchedAgents = response.data.agents || [];
@@ -129,33 +178,33 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
       if (fetchedAgents.length === 0 || shouldSeedDefaults) {
         // Auto-seed if registry is empty or missing Commonly Bot (default view only)
-        await seedAgents();
+        await seedAgents(params);
       } else {
         setAgents(fetchedAgents);
       }
     } catch (err) {
       console.error('Error fetching agents:', err);
       setError('Failed to load agents');
-      setAgents(getMockAgents());
+      setAgents([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const seedAgents = async () => {
+  const seedAgents = async (params = new URLSearchParams()) => {
     setSeeding(true);
     try {
       await axios.post('/api/registry/seed', {}, {
         headers: getAuthHeaders(),
       });
       // Re-fetch after seeding
-      const response = await axios.get('/api/registry/agents', {
+      const response = await axios.get(`/api/registry/agents?${params.toString()}`, {
         headers: getAuthHeaders(),
       });
-      setAgents(response.data.agents || getMockAgents());
+      setAgents(response.data.agents || []);
     } catch (err) {
       console.error('Error seeding agents:', err);
-      setAgents(getMockAgents());
+      setAgents([]);
     } finally {
       setSeeding(false);
     }
@@ -172,30 +221,83 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
-  const handleInstall = async (agent) => {
-    if (!selectedPodId) {
-      alert('Please select a pod first');
+  const fetchClawdbotStatus = async () => {
+    try {
+      const response = await axios.get('/api/health/clawdbot', {
+        headers: getAuthHeaders(),
+      });
+      const data = response.data;
+      setClawdbotGatewayStatus({
+        connected: data.status === 'connected',
+        channels: data.channels || [],
+        gateway: data.gateway,
+        version: data.version,
+      });
+    } catch (err) {
+      console.error('Error fetching Clawdbot status:', err);
+      setClawdbotGatewayStatus({ connected: false, channels: [] });
+    }
+  };
+
+  const openInstallDialog = (agent) => {
+    const defaultPodId = selectedPodId
+      || accessiblePods[0]?._id
+      || userPods[0]?._id
+      || null;
+    setInstallAgent(agent);
+    setInstallPodIds(defaultPodId ? [defaultPodId] : []);
+    setInstallDialogOpen(true);
+  };
+
+  const closeInstallDialog = () => {
+    setInstallDialogOpen(false);
+    setInstallAgent(null);
+    setInstallPodIds([]);
+  };
+
+  const handleInstall = async () => {
+    if (!installAgent) return;
+    if (installPodIds.length === 0) {
+      alert('Select at least one pod to install this agent.');
       return;
     }
 
+    setInstallSaving(true);
     try {
-      const agentDetails = await axios.get(`/api/registry/agents/${agent.name}`, {
+      const agentName = installAgent.name || installAgent.agentName;
+      const agentDetails = await axios.get(`/api/registry/agents/${agentName}`, {
         headers: getAuthHeaders(),
       });
       const requiredScopes = agentDetails.data?.manifest?.context?.required || [];
       const installScopes = requiredScopes.length > 0 ? requiredScopes : ['context:read'];
 
-      await axios.post('/api/registry/install', {
-        agentName: agent.name,
-        podId: selectedPodId,
-        scopes: installScopes,
-      }, {
-        headers: getAuthHeaders(),
-      });
-      fetchInstalledAgents();
+      const results = await Promise.allSettled(
+        installPodIds.map((podId) => (
+          axios.post('/api/registry/install', {
+            agentName,
+            podId,
+            scopes: installScopes,
+          }, {
+            headers: getAuthHeaders(),
+          })
+        )),
+      );
+
+      const failures = results.filter((result) => result.status === 'rejected');
+      if (failures.length > 0) {
+        const firstError = failures[0].reason?.response?.data?.error;
+        alert(firstError || `Failed to install on ${failures.length} pod(s).`);
+      }
+
+      if (installPodIds.includes(selectedPodId)) {
+        fetchInstalledAgents();
+      }
+      closeInstallDialog();
     } catch (err) {
       console.error('Error installing agent:', err);
       alert(err.response?.data?.error || 'Failed to install agent');
+    } finally {
+      setInstallSaving(false);
     }
   };
 
@@ -224,7 +326,13 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     return installedAgents.some((a) => a.name === agentName);
   };
 
-  const trendingAgents = agents.slice(0, 3);
+  const getInstallation = (agentName) => {
+    return installedAgents.find((a) => a.name === agentName) || null;
+  };
+
+  const selectedPod = (accessiblePods.length > 0 ? accessiblePods : userPods)
+    .find((pod) => pod._id === selectedPodId) || null;
+  const canRemoveInSelectedPod = selectedPod ? isPodAdmin(selectedPod) : false;
   const allAgents = agents;
 
   const openConfigDialog = (agent) => {
@@ -233,6 +341,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setRuntimeTokenValue('');
     setRuntimeTokenLabel('Local dev');
     setConfigOpen(true);
+    // Fetch Clawdbot gateway status if opening clawdbot-bridge config
+    if (agent?.name === 'clawdbot-bridge') {
+      fetchClawdbotStatus();
+    }
   };
 
   const closeConfigDialog = () => {
@@ -285,6 +397,27 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
+  const handleRevokeRuntimeToken = async (tokenId) => {
+    if (!configAgent || !selectedPodId || !tokenId) return;
+    setRuntimeTokenRevokingId(tokenId);
+    try {
+      await axios.delete(
+        `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/runtime-tokens/${tokenId}`,
+        { headers: getAuthHeaders() },
+      );
+      const refresh = await axios.get(
+        `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/runtime-tokens`,
+        { headers: getAuthHeaders() },
+      );
+      setRuntimeTokens(refresh.data.tokens || []);
+    } catch (err) {
+      console.error('Error revoking runtime token:', err);
+      alert('Failed to revoke runtime token');
+    } finally {
+      setRuntimeTokenRevokingId(null);
+    }
+  };
+
   const handleCopyToken = async () => {
     if (!runtimeTokenValue) return;
     try {
@@ -316,71 +449,133 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      {/* Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <Container
+      maxWidth="xl"
+      disableGutters
+      sx={{ py: { xs: 3, md: 4 }, px: { xs: 2, sm: 3, md: 4 } }}
+    >
+      <Box
+        sx={{
+          mb: 3,
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'flex-start', md: 'center' },
+          gap: 2,
+        }}
+      >
         <Box>
           <Typography variant="h4" fontWeight={700} gutterBottom>
             Agent Hub
           </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Discover and install AI agents to supercharge your pods
+          <Typography variant="body2" color="text.secondary">
+            Discover, install, and manage pod-native agents.
           </Typography>
         </Box>
 
-        {/* Pod Selector */}
-        <FormControl sx={{ minWidth: 200 }} size="small">
-          <InputLabel>Install to Pod</InputLabel>
-          <Select
-            value={selectedPodId || ''}
-            label="Install to Pod"
-            onChange={(e) => setSelectedPodId(e.target.value)}
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Button href="/apps" variant="outlined" size="small">
+            Apps Marketplace
+          </Button>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => setActiveTab(1)}
+            disabled={!selectedPodId}
           >
-            {userPods.map((pod) => (
-              <MenuItem key={pod._id} value={pod._id}>
-                {pod.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            Manage Installed
+          </Button>
+        </Box>
       </Box>
 
-      {seeding && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Setting up agent registry...
-        </Alert>
-      )}
-
-      <Alert severity="info" sx={{ mb: 3 }}>
-        Looking for webhook apps or integrations? Browse the Apps Marketplace.
-        <Button href="/apps" size="small" sx={{ ml: 1 }}>
-          Open Apps
-        </Button>
-      </Alert>
-
-      {/* Search Bar */}
-      <Box sx={{ mb: 4 }}>
-        <TextField
-          fullWidth
-          placeholder="Search agents..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon color="action" />
-              </InputAdornment>
-            ),
-          }}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2, md: 2.5 },
+          mb: 3,
+          borderRadius: 3,
+          backgroundColor: alpha(theme.palette.primary.main, 0.02),
+        }}
+      >
+        <Box
           sx={{
-            maxWidth: 600,
-            '& .MuiOutlinedInput-root': {
-              borderRadius: 3,
-              backgroundColor: theme.palette.background.paper,
-            },
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: '2fr 1fr 1fr' },
+            gap: 2,
           }}
-        />
-      </Box>
+        >
+          <TextField
+            fullWidth
+            placeholder="Search agents by name or capability..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon color="action" />
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+                backgroundColor: theme.palette.background.paper,
+              },
+            }}
+          />
+          <FormControl size="small" fullWidth>
+            <InputLabel>Category</InputLabel>
+            <Select
+              value={category}
+              label="Category"
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              {categories.map((cat) => (
+                <MenuItem key={cat.id} value={cat.id}>
+                  {cat.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" fullWidth>
+            <InputLabel>Install to Pod</InputLabel>
+            <Select
+              value={selectedPodId || ''}
+              label="Install to Pod"
+              onChange={(e) => setSelectedPodId(e.target.value)}
+            >
+              {(accessiblePods.length > 0 ? accessiblePods : userPods).map((pod) => (
+                <MenuItem key={pod._id} value={pod._id}>
+                  {pod.name}
+                  {isPodAdmin(pod) ? ' (Admin)' : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+        <Box
+          sx={{
+            mt: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 1,
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            {allAgents.length} agents • {installedAgents.length} installed
+          </Typography>
+          {seeding && (
+            <Chip
+              size="small"
+              label="Setting up agent registry..."
+              color="info"
+              variant="outlined"
+            />
+          )}
+        </Box>
+      </Paper>
 
       {/* Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
@@ -399,71 +594,35 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       {/* Discover Tab */}
       {activeTab === 0 && (
         <>
-          {/* Categories */}
-          <Box sx={{ display: 'flex', gap: 1, mb: 4, flexWrap: 'wrap' }}>
-            {categories.map((cat) => (
-              <Chip
-                key={cat.id}
-                label={cat.label}
-                onClick={() => setCategory(cat.id)}
-                color={category === cat.id ? 'primary' : 'default'}
-                variant={category === cat.id ? 'filled' : 'outlined'}
-                sx={{ fontWeight: 500 }}
-              />
-            ))}
-          </Box>
-
-          {/* Trending Section */}
-          {!searchQuery && category === 'all' && (
-            <Box sx={{ mb: 5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                <TrendingIcon color="secondary" />
-                <Typography variant="h6" fontWeight={600}>
-                  Trending This Week
-                </Typography>
-              </Box>
-              <Grid container spacing={3}>
-                {loading
-                  ? [1, 2, 3].map((i) => (
-                      <Grid item xs={12} md={4} key={i}>
-                        <AgentCard loading />
-                      </Grid>
-                    ))
-                  : trendingAgents.map((agent) => (
-                      <Grid item xs={12} md={4} key={agent.name}>
-                        <AgentCard
-                          agent={agent}
-                          variant="featured"
-                          installed={isInstalled(agent.name)}
-                          onInstall={handleInstall}
-                          onRemove={handleRemove}
-                        />
-                      </Grid>
-                    ))}
-              </Grid>
-            </Box>
-          )}
-
-          {/* All Agents */}
           <Box>
-            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6" fontWeight={600}>
               {searchQuery ? `Results for "${searchQuery}"` : 'All Agents'}
-            </Typography>
-            <Grid container spacing={2}>
+              </Typography>
+              <Chip
+                size="small"
+                label={`${allAgents.length} agents`}
+                variant="outlined"
+                sx={{ fontWeight: 600 }}
+              />
+            </Box>
+            <Grid container spacing={3}>
               {loading
                 ? [1, 2, 3, 4, 5, 6].map((i) => (
-                    <Grid item xs={12} sm={6} md={4} lg={3} key={i}>
+                    <Grid item xs={12} sm={6} md={4} lg={4} key={i}>
                       <AgentCard loading />
                     </Grid>
                   ))
                 : allAgents.map((agent) => (
-                    <Grid item xs={12} sm={6} md={4} lg={3} key={agent.name}>
-                      <AgentCard
-                        agent={agent}
-                        installed={isInstalled(agent.name)}
-                        onInstall={handleInstall}
-                        onRemove={handleRemove}
-                      />
+                    <Grid item xs={12} sm={6} md={4} lg={4} key={agent.name}>
+                    <AgentCard
+                      agent={agent}
+                      installed={isInstalled(agent.name)}
+                      onInstall={openInstallDialog}
+                      onConfigure={openConfigDialog}
+                      onRemove={handleRemove}
+                      canRemove={canRemoveInSelectedPod || getInstallation(agent.name)?.installedBy === currentUserId}
+                    />
                     </Grid>
                   ))}
             </Grid>
@@ -494,9 +653,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               </Button>
             </Box>
           ) : (
-            <Grid container spacing={2}>
+            <Grid container spacing={3}>
               {installedAgents.map((agent) => (
-                <Grid item xs={12} sm={6} md={4} key={agent.name}>
+                <Grid item xs={12} sm={6} md={4} lg={4} key={agent.name}>
                   <AgentCard
                     agent={{
                       name: agent.name,
@@ -509,6 +668,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                     installed
                     onConfigure={openConfigDialog}
                     onRemove={handleRemove}
+                    canRemove={canRemoveInSelectedPod || agent.installedBy === currentUserId}
                   />
                 </Grid>
               ))}
@@ -517,7 +677,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         </Box>
       )}
 
-      <Dialog open={configOpen} onClose={closeConfigDialog} fullWidth maxWidth="xs">
+      <Dialog open={configOpen} onClose={closeConfigDialog} fullWidth maxWidth={configAgent?.name === 'clawdbot-bridge' ? 'sm' : 'xs'}>
         <DialogTitle>Agent Settings</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <FormControl fullWidth>
@@ -538,51 +698,103 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
           <Divider sx={{ my: 3 }} />
 
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Runtime Token
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Generate a token for external agent runtimes (shown once).
-          </Typography>
-          <TextField
-            fullWidth
-            label="Label"
-            value={runtimeTokenLabel}
-            onChange={(e) => setRuntimeTokenLabel(e.target.value)}
-            size="small"
-            sx={{ mb: 2 }}
-          />
-          <Button
-            variant="outlined"
-            onClick={handleGenerateRuntimeToken}
-            disabled={runtimeTokenLoading}
-            fullWidth
-            sx={{ mb: 2 }}
-          >
-            Generate Runtime Token
-          </Button>
-          {runtimeTokenValue && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          {/* Clawdbot-specific configuration panel */}
+          {configAgent?.name === 'clawdbot-bridge' ? (
+            <ClawdbotConfigPanel
+              runtimeTokens={runtimeTokens}
+              runtimeTokenValue={runtimeTokenValue}
+              onGenerateToken={handleGenerateRuntimeToken}
+              onRevokeToken={handleRevokeRuntimeToken}
+              tokenLoading={runtimeTokenLoading}
+              gatewayStatus={clawdbotGatewayStatus}
+              onRefreshStatus={fetchClawdbotStatus}
+            />
+          ) : (
+            <>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Runtime Token
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Generate a token for external agent runtimes (shown once).
+              </Typography>
               <TextField
                 fullWidth
-                label="Token"
-                value={runtimeTokenValue}
+                label="Label"
+                value={runtimeTokenLabel}
+                onChange={(e) => setRuntimeTokenLabel(e.target.value)}
                 size="small"
-                InputProps={{ readOnly: true }}
+                sx={{ mb: 2 }}
               />
-              <Tooltip title="Copy">
-                <IconButton onClick={handleCopyToken}>
-                  <CopyIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-          )}
-          {runtimeTokens.length > 0 && (
-            <Box sx={{ mb: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                Issued tokens: {runtimeTokens.length}
-              </Typography>
-            </Box>
+              <Button
+                variant="outlined"
+                onClick={handleGenerateRuntimeToken}
+                disabled={runtimeTokenLoading}
+                fullWidth
+                sx={{ mb: 2 }}
+              >
+                Generate Runtime Token
+              </Button>
+              {runtimeTokenValue && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                  <TextField
+                    fullWidth
+                    label="Token"
+                    value={runtimeTokenValue}
+                    size="small"
+                    InputProps={{ readOnly: true }}
+                  />
+                  <Tooltip title="Copy">
+                    <IconButton onClick={handleCopyToken}>
+                      <CopyIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
+              {runtimeTokens.length > 0 && (
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Issued tokens: {runtimeTokens.length}
+                  </Typography>
+                </Box>
+              )}
+              {runtimeTokens.length > 0 && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {runtimeTokens.map((token) => (
+                    <Box
+                      key={token.id || token.label}
+                      sx={{
+                        border: `1px solid ${alpha(theme.palette.primary.main, 0.12)}`,
+                        borderRadius: 1.5,
+                        p: 1.5,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 1.5,
+                      }}
+                    >
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                          {token.label || 'Runtime token'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Issued {token.createdAt ? new Date(token.createdAt).toLocaleString() : 'unknown'}
+                          {token.lastUsedAt ? ` • Last used ${new Date(token.lastUsedAt).toLocaleString()}` : ''}
+                        </Typography>
+                      </Box>
+                      <Button
+                        variant="text"
+                        color="error"
+                        size="small"
+                        onClick={() => handleRevokeRuntimeToken(token.id)}
+                        disabled={!token.id || runtimeTokenRevokingId === token.id}
+                      >
+                        {runtimeTokenRevokingId === token.id ? 'Revoking...' : 'Revoke'}
+                      </Button>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </>
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -592,84 +804,49 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={installDialogOpen} onClose={closeInstallDialog} fullWidth maxWidth="xs">
+        <DialogTitle>Select pods for install</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          {accessiblePods.length === 0 && userPods.length === 0 ? (
+            <Alert severity="info">Join or create a pod to install agents.</Alert>
+          ) : (
+            <FormGroup>
+              {(accessiblePods.length > 0 ? accessiblePods : userPods).map((pod) => (
+                <FormControlLabel
+                  key={pod._id}
+                  control={(
+                    <Checkbox
+                      checked={installPodIds.includes(pod._id)}
+                      onChange={(e) => {
+                        setInstallPodIds((prev) => {
+                          if (e.target.checked) {
+                            return Array.from(new Set([...prev, pod._id]));
+                          }
+                          return prev.filter((id) => id !== pod._id);
+                        });
+                      }}
+                    />
+                  )}
+                  label={`${pod.name}${isPodAdmin(pod) ? ' (Admin)' : ''}`}
+                />
+              ))}
+            </FormGroup>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeInstallDialog}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleInstall}
+            disabled={installSaving || installPodIds.length === 0}
+          >
+            Install
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };
-
-// Mock data for demo
-const getMockAgents = () => [
-  {
-    name: 'moltbot',
-    displayName: 'Moltbot',
-    description: 'Your personal AI assistant across all messaging platforms',
-    type: 'personal',
-    verified: true,
-    rating: 4.8,
-    ratingCount: 156,
-    installs: 2300,
-    capabilities: ['personal-assistant', 'multi-channel', 'voice', 'browser-control'],
-    stats: { podsJoined: 12, messagesProcessed: 4200 },
-  },
-  {
-    name: 'code-reviewer',
-    displayName: 'Code Reviewer',
-    description: 'Automated code review with security scanning and best practices',
-    type: 'utility',
-    verified: true,
-    rating: 4.9,
-    ratingCount: 89,
-    installs: 1800,
-    capabilities: ['code-review', 'security-scan', 'linting', 'suggestions'],
-    stats: { podsJoined: 8, messagesProcessed: 1500 },
-  },
-  {
-    name: 'meeting-notes',
-    displayName: 'Meeting Notes',
-    description: 'Automatically summarize meetings and extract action items',
-    type: 'productivity',
-    verified: true,
-    rating: 4.7,
-    ratingCount: 234,
-    installs: 3100,
-    capabilities: ['transcription', 'summarization', 'action-items', 'follow-ups'],
-    stats: { podsJoined: 25, messagesProcessed: 8900 },
-  },
-  {
-    name: 'analytics-bot',
-    displayName: 'Analytics Bot',
-    description: 'Track team metrics, generate reports, and visualize data',
-    type: 'analytics',
-    verified: false,
-    rating: 4.5,
-    ratingCount: 67,
-    installs: 890,
-    capabilities: ['metrics', 'reports', 'charts', 'trends'],
-    stats: { podsJoined: 6, messagesProcessed: 2100 },
-  },
-  {
-    name: 'support-bot',
-    displayName: 'Support Bot',
-    description: 'Handle customer inquiries with knowledge base integration',
-    type: 'support',
-    verified: true,
-    rating: 4.6,
-    ratingCount: 178,
-    installs: 1500,
-    capabilities: ['customer-support', 'knowledge-base', 'ticket-routing', 'escalation'],
-    stats: { podsJoined: 15, messagesProcessed: 12000 },
-  },
-  {
-    name: 'standup-bot',
-    displayName: 'Standup Bot',
-    description: 'Automate daily standups and track team progress',
-    type: 'productivity',
-    verified: false,
-    rating: 4.3,
-    ratingCount: 45,
-    installs: 650,
-    capabilities: ['standups', 'reminders', 'progress-tracking', 'blockers'],
-    stats: { podsJoined: 10, messagesProcessed: 3500 },
-  },
-];
 
 export default AgentsHub;

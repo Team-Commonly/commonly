@@ -1,0 +1,147 @@
+.pod-context-dev-root {
+    color: inherit;
+    padding: 24px 0 64px;
+}
+
+.pod-context-dev-container {
+    max-width: 1200px;
+    padding: 0 24px;
+}
+
+.pod-context-hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.pod-context-hero-main {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pod-context-hero-title {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.pod-context-hero-subtitle {
+    color: #475569;
+    max-width: 60ch;
+    line-height: 1.6;
+}
+
+.pod-context-hero-icon {
+    color: #2563eb;
+}
+
+.pod-context-hero-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pod-context-card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    color: inherit;
+    border-radius: 16px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.pod-context-card:hover {
+    transform: translateY(-1px);
+    border-color: #cbd5f5;
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.1);
+}
+
+.pod-context-card-compact {
+    background: #f8fafc !important;
+}
+
+.pod-context-dev-root .MuiChip-root {
+    background: #f1f5f9;
+    color: #334155;
+}
+
+.pod-context-dev-root .MuiButton-contained {
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+}
+
+.pod-context-dev-root .MuiAlert-root {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    color: inherit;
+}
+
+.pod-context-dev-root .MuiTypography-colorTextSecondary,
+.pod-context-dev-root .MuiFormHelperText-root,
+.pod-context-dev-root .MuiInputLabel-root {
+    color: #64748b;
+}
+
+.pod-context-dev-root .MuiOutlinedInput-notchedOutline {
+    border-color: #e2e8f0;
+}
+
+.pod-context-dev-root .MuiButton-root {
+    transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.pod-context-dev-root .MuiButton-root:hover {
+    transform: translateY(-1px);
+}
+
+.pod-context-dev-root .MuiButton-root:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.4);
+    outline-offset: 2px;
+}
+
+.pod-context-sections {
+    gap: 24px;
+}
+
+.pod-context-markdown,
+.pod-context-excerpt {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.12);
+}
+
+.pod-context-result-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    transition: transform 180ms ease, border-color 180ms ease;
+}
+
+.pod-context-result-card:hover {
+    transform: translateY(-1px);
+    border-color: #cbd5f5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pod-context-card,
+    .pod-context-dev-root .MuiButton-root,
+    .pod-context-result-card {
+        transition: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .pod-context-dev-root {
+        padding: 16px 0 48px;
+    }
+
+    .pod-context-hero {
+        padding: 18px;
+    }
+}

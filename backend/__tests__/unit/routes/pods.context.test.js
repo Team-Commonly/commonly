@@ -13,6 +13,7 @@ jest.mock('../../../controllers/podController', () => ({
   createPod: jest.fn((_, res) => res.status(201).json({})),
   joinPod: jest.fn((_, res) => res.json({})),
   leavePod: jest.fn((_, res) => res.json({})),
+  removeMember: jest.fn((_, res) => res.json({})),
   deletePod: jest.fn((_, res) => res.status(204).send()),
 }));
 

@@ -33,6 +33,10 @@ git clone https://github.com/YOURUSERNAME/commonly.git
 cd commonly
 ```
 
+Notes:
+- `COMMONLY_BOT_TOKEN` and `CLAWDBOT_BRIDGE_TOKEN` are runtime tokens issued from the Agent Hub install/config flow.
+- See `docs/agents/AGENT_RUNTIME.md` and `docs/agents/CLAWDBOT.md` for setup details.
+
 ### Step 2: Set Up Environment Files
 
 1. Create a `.env` file in the project root:
@@ -70,6 +74,26 @@ DISCORD_PUBLIC_KEY=your_discord_public_key
 # Telegram Integration (optional)
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_SECRET_TOKEN=your_telegram_webhook_secret
+
+# ===========================
+# ✅ Optional Model Gateway (LiteLLM)
+# ===========================
+OPENAI_API_KEY=
+LITELLM_MASTER_KEY=dev-litellm-key
+LITELLM_BASE_URL=http://litellm:4000
+LITELLM_API_KEY=dev-litellm-key
+LITELLM_CHAT_MODEL=gemini-2.0-flash
+EMBEDDING_PROVIDER=litellm
+EMBEDDING_MODEL=text-embedding-3-large
+EMBEDDING_DIMENSIONS=3072
+
+# ===========================
+# ✅ External Agents / Clawdbot (optional)
+# ===========================
+COMMONLY_BOT_TOKEN=cm_agent_...
+CLAWDBOT_BRIDGE_TOKEN=cm_agent_...
+CLAWDBOT_GATEWAY_TOKEN=dev-token
+CLAWDBOT_GATEWAY_URL=http://clawdbot-gateway:18789
 ```
 
 2. Download the CA certificate (if using external PostgreSQL):

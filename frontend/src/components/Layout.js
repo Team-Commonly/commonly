@@ -40,10 +40,14 @@ const Layout = () => {
     const isPodDetail = isPodPage && location.pathname.split('/').length > 3;
     
     // Use different layout for pod pages
+    const layoutClassName = `layout-container ${isPodDetail ? 'pod-detail' : ''} ${isDashboardCollapsed ? 'dashboard-collapsed' : ''} ${isMobile && !isDashboardCollapsed ? 'mobile-dashboard-open' : ''}`;
     if (isPodPage) {
         return (
-            <div className={`layout-container pods-view ${isPodDetail ? 'pod-detail' : ''} ${isDashboardCollapsed ? 'dashboard-collapsed' : ''}`}>
+            <div className={`pods-view ${layoutClassName}`}>
                 <Dashboard />
+                {isMobile && !isDashboardCollapsed && (
+                    <div className="mobile-dashboard-backdrop" onClick={toggleDashboard} aria-hidden="true" />
+                )}
                 <div className="main-content pod-layout">
                     <div className="search-container">
                         <SearchBar onSearchResults={setSearchResults} />
@@ -55,11 +59,11 @@ const Layout = () => {
                         >
                             {isDashboardCollapsed ? (
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="15 18 9 12 15 6"></polyline>
+                                    <polyline points="9 18 15 12 9 6"></polyline>
                                 </svg>
                             ) : (
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="9 18 15 12 9 6"></polyline>
+                                    <polyline points="15 18 9 12 15 6"></polyline>
                                 </svg>
                             )}
                         </IconButton>
@@ -73,8 +77,11 @@ const Layout = () => {
     }
 
     return (
-        <div className={`layout-container ${isDashboardCollapsed ? 'dashboard-collapsed' : ''}`}>
+        <div className={layoutClassName}>
             <Dashboard />
+            {isMobile && !isDashboardCollapsed && (
+                <div className="mobile-dashboard-backdrop" onClick={toggleDashboard} aria-hidden="true" />
+            )}
             <div className="main-content">
                 <div className="search-container">
                     <SearchBar onSearchResults={setSearchResults} />
@@ -86,11 +93,11 @@ const Layout = () => {
                     >
                         {isDashboardCollapsed ? (
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="15 18 9 12 15 6"></polyline>
+                                <polyline points="9 18 15 12 9 6"></polyline>
                             </svg>
                         ) : (
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="9 18 15 12 9 6"></polyline>
+                                <polyline points="15 18 9 12 15 6"></polyline>
                             </svg>
                         )}
                     </IconButton>

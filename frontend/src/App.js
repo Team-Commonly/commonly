@@ -66,12 +66,12 @@ const theme = createTheme({
       dark: '#1976d2',
     },
     text: {
-      primary: '#0f1419',
-      secondary: '#536471',
+      primary: '#e2e8f0',
+      secondary: '#94a3b8',
     },
     background: {
-      default: '#f7f9f9',
-      paper: '#ffffff',
+      default: '#0b1220',
+      paper: '#111827',
     },
   },
   typography: {

@@ -31,12 +31,13 @@ const getUserId = (req) => req.userId || req.user?.id || req.user?._id;
 router.get('/agents', auth, async (req, res) => {
   try {
     const {
-      q, category, verified, limit = 20, offset = 0,
+      q, category, verified, registry, limit = 20, offset = 0,
     } = req.query;
 
     const agents = await AgentRegistry.search(q, {
       category,
       verified: parseVerifiedFilter(verified),
+      registry: registry || null,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
     });
@@ -140,8 +141,9 @@ router.post('/install', auth, async (req, res) => {
     // Check membership - handle both ObjectId array and object array with userId
     const isCreator = pod.createdBy?.toString() === userId.toString();
     const membership = pod.members?.find((m) => {
-      const memberId = m.userId?.toString() || m.toString();
-      return memberId === userId.toString();
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
     });
     const memberRole = membership?.role || (isCreator ? 'admin' : null);
 
@@ -270,12 +272,39 @@ router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
     // Check membership - handle both ObjectId array and object array
     const isCreator = pod.createdBy?.toString() === userId.toString();
     const membership = pod.members?.find((m) => {
-      const memberId = m.userId?.toString() || m.toString();
-      return memberId === userId.toString();
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
     });
 
     if (!membership && !isCreator) {
       return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const installation = await AgentInstallation.findOne({
+      agentName: name.toLowerCase(),
+      podId,
+    }).lean();
+
+    if (!installation) {
+      if (!isCreator) {
+        return res.status(404).json({ error: 'Agent not installed in this pod' });
+      }
+
+      await AgentProfile.deleteOne({ agentId: name.toLowerCase(), podId });
+      try {
+        await AgentIdentityService.removeAgentFromPod(name, podId);
+      } catch (identityError) {
+        console.warn('Failed to remove agent user from pod:', identityError.message);
+      }
+
+      return res.json({ success: true, removedOrphan: true });
+    }
+
+    const isInstaller = installation.installedBy?.toString?.() === userId.toString();
+
+    if (!isCreator && !isInstaller) {
+      return res.status(403).json({ error: 'Only pod admins or installers can remove agents' });
     }
 
     // Uninstall
@@ -283,6 +312,12 @@ router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
 
     // Remove agent profile
     await AgentProfile.deleteOne({ agentId: name.toLowerCase(), podId });
+
+    try {
+      await AgentIdentityService.removeAgentFromPod(name, podId);
+    } catch (identityError) {
+      console.warn('Failed to remove agent user from pod:', identityError.message);
+    }
 
     res.json({ success: true });
   } catch (error) {
@@ -312,8 +347,9 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
     // Check membership - handle both ObjectId array and object array
     const isCreator = pod.createdBy?.toString() === userId.toString();
     const membership = pod.members?.find((m) => {
-      const memberId = m.userId?.toString() || m.toString();
-      return memberId === userId.toString();
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
     });
 
     if (!membership && !isCreator) {
@@ -339,6 +375,7 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
           scopes: i.scopes,
           installedAt: i.createdAt,
           usage: i.usage,
+          installedBy: i.installedBy?.toString?.() || i.installedBy,
           profile: profile
             ? {
               displayName: profile.name,
@@ -375,8 +412,9 @@ router.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =>
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
     const membership = pod.members?.find((m) => {
-      const memberId = m.userId?.toString() || m.toString();
-      return memberId === userId.toString();
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
     });
 
     if (!membership && !isCreator) {
@@ -394,6 +432,7 @@ router.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =>
     }
 
     const tokens = (installation.runtimeTokens || []).map((token) => ({
+      id: token._id?.toString(),
       label: token.label,
       createdAt: token.createdAt,
       lastUsedAt: token.lastUsedAt,
@@ -426,8 +465,9 @@ router.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
     const membership = pod.members?.find((m) => {
-      const memberId = m.userId?.toString() || m.toString();
-      return memberId === userId.toString();
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
     });
 
     if (!membership && !isCreator) {
@@ -465,6 +505,61 @@ router.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =
 });
 
 /**
+ * DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId
+ * Revoke a runtime token for an installed agent
+ */
+router.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', auth, async (req, res) => {
+  try {
+    const { podId, name, tokenId } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const installation = await AgentInstallation.findOne({
+      agentName: name.toLowerCase(),
+      podId,
+      status: 'active',
+    });
+
+    if (!installation) {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+
+    const originalCount = installation.runtimeTokens?.length || 0;
+    installation.runtimeTokens = (installation.runtimeTokens || []).filter(
+      (token) => token._id?.toString() !== tokenId,
+    );
+
+    if ((installation.runtimeTokens || []).length === originalCount) {
+      return res.status(404).json({ error: 'Runtime token not found' });
+    }
+
+    await installation.save();
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error revoking agent runtime token:', error);
+    return res.status(500).json({ error: 'Failed to revoke runtime token' });
+  }
+});
+
+/**
  * PATCH /api/registry/pods/:podId/agents/:name
  * Update agent configuration in a pod
  */
@@ -486,8 +581,9 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
     // Check membership - handle both ObjectId array and object array
     const isCreator = pod.createdBy?.toString() === userId.toString();
     const membership = pod.members?.find((m) => {
-      const memberId = m.userId?.toString() || m.toString();
-      return memberId === userId.toString();
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
     });
 
     if (!membership && !isCreator) {
@@ -626,6 +722,7 @@ router.post('/seed', auth, async (req, res) => {
         agentName: 'commonly-bot',
         displayName: 'Commonly Bot',
         description: 'Posts summaries and integration highlights into pods',
+        registry: 'commonly-official',
         categories: ['productivity', 'communication'],
         tags: ['summaries', 'integrations', 'platform'],
         verified: true,
@@ -652,132 +749,30 @@ router.post('/seed', auth, async (req, res) => {
         stats: { installs: 0, rating: 0, ratingCount: 0 },
       },
       {
-        agentName: 'moltbot',
-        displayName: 'Moltbot',
-        description: 'Your personal AI assistant across all messaging platforms',
-        categories: ['productivity', 'personal'],
-        tags: ['assistant', 'multi-channel', 'voice'],
+        agentName: 'clawdbot-bridge',
+        displayName: 'Clawdbot Bridge',
+        description: 'Routes Commonly events through Clawdbot and posts responses into pods',
+        registry: 'commonly-official',
+        categories: ['productivity', 'communication'],
+        tags: ['clawdbot', 'bridge', 'assistant'],
         verified: true,
-        iconUrl: '/icons/moltbot.png',
+        iconUrl: null,
         manifest: {
-          name: 'moltbot',
+          name: 'clawdbot-bridge',
           version: '1.0.0',
           capabilities: [
-            { name: 'personal-assistant', description: 'Personal task management' },
-            { name: 'multi-channel', description: 'Works across platforms' },
-            { name: 'voice', description: 'Voice commands support' },
+            { name: 'assistant', description: 'Respond to integration summaries' },
+            { name: 'multi-agent', description: 'Bridge external Clawdbot runtimes' },
           ],
-          context: { required: ['context:read', 'search:read'] },
+          context: { required: ['context:read', 'summaries:read', 'messages:write'] },
+          runtime: {
+            type: 'standalone',
+            connection: 'rest',
+          },
         },
         latestVersion: '1.0.0',
         versions: [{ version: '1.0.0', publishedAt: new Date() }],
-        stats: { installs: 2300, rating: 4.8, ratingCount: 156 },
-      },
-      {
-        agentName: 'code-reviewer',
-        displayName: 'Code Reviewer',
-        description: 'Automated code review with security scanning and best practices',
-        categories: ['development'],
-        tags: ['code-review', 'security', 'linting'],
-        verified: true,
-        iconUrl: '/icons/code-reviewer.png',
-        manifest: {
-          name: 'code-reviewer',
-          version: '1.0.0',
-          capabilities: [
-            { name: 'code-review', description: 'Review pull requests' },
-            { name: 'security-scan', description: 'Security vulnerability detection' },
-          ],
-          context: { required: ['context:read'] },
-        },
-        latestVersion: '1.0.0',
-        versions: [{ version: '1.0.0', publishedAt: new Date() }],
-        stats: { installs: 1800, rating: 4.9, ratingCount: 89 },
-      },
-      {
-        agentName: 'meeting-notes',
-        displayName: 'Meeting Notes',
-        description: 'Automatically summarize meetings and extract action items',
-        categories: ['productivity'],
-        tags: ['meetings', 'summarization', 'transcription'],
-        verified: true,
-        iconUrl: '/icons/meeting-notes.png',
-        manifest: {
-          name: 'meeting-notes',
-          version: '1.0.0',
-          capabilities: [
-            { name: 'transcription', description: 'Meeting transcription' },
-            { name: 'summarization', description: 'Generate meeting summaries' },
-            { name: 'action-items', description: 'Extract action items' },
-          ],
-          context: { required: ['context:read', 'memory:write'] },
-        },
-        latestVersion: '1.0.0',
-        versions: [{ version: '1.0.0', publishedAt: new Date() }],
-        stats: { installs: 3100, rating: 4.7, ratingCount: 234 },
-      },
-      {
-        agentName: 'analytics-bot',
-        displayName: 'Analytics Bot',
-        description: 'Track team metrics, generate reports, and visualize data',
-        categories: ['analytics'],
-        tags: ['metrics', 'reports', 'charts'],
-        verified: false,
-        iconUrl: '/icons/analytics-bot.png',
-        manifest: {
-          name: 'analytics-bot',
-          version: '1.0.0',
-          capabilities: [
-            { name: 'metrics', description: 'Track metrics' },
-            { name: 'reports', description: 'Generate reports' },
-          ],
-          context: { required: ['context:read'] },
-        },
-        latestVersion: '1.0.0',
-        versions: [{ version: '1.0.0', publishedAt: new Date() }],
-        stats: { installs: 890, rating: 4.5, ratingCount: 67 },
-      },
-      {
-        agentName: 'support-bot',
-        displayName: 'Support Bot',
-        description: 'Handle customer inquiries with knowledge base integration',
-        categories: ['support', 'communication'],
-        tags: ['customer-support', 'knowledge-base', 'tickets'],
-        verified: true,
-        iconUrl: '/icons/support-bot.png',
-        manifest: {
-          name: 'support-bot',
-          version: '1.0.0',
-          capabilities: [
-            { name: 'customer-support', description: 'Handle inquiries' },
-            { name: 'knowledge-base', description: 'Search knowledge base' },
-          ],
-          context: { required: ['context:read', 'search:read'] },
-        },
-        latestVersion: '1.0.0',
-        versions: [{ version: '1.0.0', publishedAt: new Date() }],
-        stats: { installs: 1500, rating: 4.6, ratingCount: 178 },
-      },
-      {
-        agentName: 'standup-bot',
-        displayName: 'Standup Bot',
-        description: 'Automate daily standups and track team progress',
-        categories: ['productivity'],
-        tags: ['standups', 'reminders', 'progress'],
-        verified: false,
-        iconUrl: '/icons/standup-bot.png',
-        manifest: {
-          name: 'standup-bot',
-          version: '1.0.0',
-          capabilities: [
-            { name: 'standups', description: 'Daily standup automation' },
-            { name: 'reminders', description: 'Send reminders' },
-          ],
-          context: { required: ['context:read', 'memory:write'] },
-        },
-        latestVersion: '1.0.0',
-        versions: [{ version: '1.0.0', publishedAt: new Date() }],
-        stats: { installs: 650, rating: 4.3, ratingCount: 45 },
+        stats: { installs: 0, rating: 0, ratingCount: 0 },
       },
     ];
 

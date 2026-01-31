@@ -12,6 +12,7 @@ const {
   createPod,
   joinPod,
   leavePod,
+  removeMember,
   deletePod,
 } = require('../controllers/podController');
 const Pod = require('../models/Pod');
@@ -392,6 +393,9 @@ router.post('/:id/join', auth, joinPod);
 
 // Leave a pod
 router.post('/:id/leave', auth, leavePod);
+
+// Remove a member from a pod (admin only)
+router.delete('/:id/members/:memberId', auth, removeMember);
 
 // Get announcements for a pod
 router.get('/:podId/announcements', auth, async (req, res) => {
