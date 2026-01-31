@@ -8,6 +8,10 @@ const AgentEventSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    instanceId: {
+      type: String,
+      default: 'default',
+    },
     podId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Pod',
@@ -36,6 +40,6 @@ const AgentEventSchema = new mongoose.Schema(
   },
 );
 
-AgentEventSchema.index({ agentName: 1, status: 1, createdAt: 1 });
+AgentEventSchema.index({ agentName: 1, instanceId: 1, status: 1, createdAt: 1 });
 
 module.exports = mongoose.model('AgentEvent', AgentEventSchema);
