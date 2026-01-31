@@ -9,7 +9,6 @@ import {
   Card,
   CardContent,
   IconButton,
-  Tooltip,
   Chip,
   Divider,
   Dialog,
@@ -139,11 +138,11 @@ const DailyDigest = () => {
 
   return (
     <Box>
-      <Paper elevation={0} sx={{ mb: 2 }}>
+      <Paper elevation={0} sx={{ mb: 3, borderRadius: 3, overflow: 'hidden' }}>
         {/* Header */}
-        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        <Box sx={{ p: { xs: 2, md: 3 }, borderBottom: 1, borderColor: 'divider' }}>
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { md: 'center' }, justifyContent: 'space-between', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
               <EmailIcon sx={{ mr: 1, color: 'primary.main' }} />
               <Typography variant="h6" component="h2" sx={{ fontWeight: 600 }}>
                 Daily Digest
@@ -159,32 +158,30 @@ const DailyDigest = () => {
               )}
             </Box>
             
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Tooltip title="View digest history">
-                <IconButton size="small" onClick={openHistory}>
-                  <HistoryIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-              </Tooltip>
-              
-              <Tooltip title={generating ? "Generating fresh digest..." : "Generate fresh digest"}>
-                <IconButton 
-                  size="small" 
-                  onClick={generateDigest}
-                  disabled={generating}
-                >
-                  {generating ? (
-                    <CircularProgress size={18} />
-                  ) : (
-                    <RefreshIcon sx={{ fontSize: 18 }} />
-                  )}
-                </IconButton>
-              </Tooltip>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<HistoryIcon />}
+                onClick={openHistory}
+              >
+                History
+              </Button>
+              <Button
+                size="small"
+                variant="contained"
+                startIcon={generating ? <CircularProgress size={14} /> : <RefreshIcon />}
+                onClick={generateDigest}
+                disabled={generating}
+              >
+                {generating ? 'Generating…' : 'Generate'}
+              </Button>
             </Box>
           </Box>
 
           {/* Quick Stats */}
           {digest && (
-            <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
               <Chip
                 size="small"
                 icon={<ScheduleIcon sx={{ fontSize: 14 }} />}
@@ -277,8 +274,9 @@ const DailyDigest = () => {
                     ml: 0,
                     mb: 2,
                     py: 1,
-                    backgroundColor: 'grey.50',
-                    fontStyle: 'italic'
+                    backgroundColor: 'rgba(30, 41, 59, 0.65)',
+                    fontStyle: 'italic',
+                    color: 'text.primary'
                   },
                   '& hr': {
                     border: 'none',

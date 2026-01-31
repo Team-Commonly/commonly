@@ -59,6 +59,7 @@ const AgentCard = ({
   onConfigure,
   onRemove,
   onViewProfile,
+  canRemove = false,
   loading = false,
 }) => {
   const theme = useTheme();
@@ -83,6 +84,12 @@ const AgentCard = ({
 
   const typeColor = agentTypeColors[type] || agentTypeColors.default;
   const typeIcon = agentTypeIcons[type] || agentTypeIcons.default;
+  const cardBaseSx = {
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    border: '1px solid rgba(148, 163, 184, 0.18)',
+    boxShadow: '0 10px 24px rgba(8, 12, 24, 0.4)',
+    color: '#e2e8f0',
+  };
 
   // Compact variant for sidebars and lists
   if (variant === 'compact') {
@@ -93,8 +100,9 @@ const AgentCard = ({
           alignItems: 'center',
           p: 1.5,
           cursor: 'pointer',
+          ...cardBaseSx,
           '&:hover': {
-            backgroundColor: alpha(theme.palette.primary.main, 0.04),
+            backgroundColor: 'rgba(30, 41, 59, 0.7)',
           },
         }}
         onClick={() => onViewProfile?.(agent)}
@@ -154,8 +162,9 @@ const AgentCard = ({
         sx={{
           position: 'relative',
           overflow: 'visible',
-          background: `linear-gradient(135deg, ${alpha(typeColor, 0.05)} 0%, ${alpha(typeColor, 0.02)} 100%)`,
-          border: `2px solid ${alpha(typeColor, 0.2)}`,
+          background: `linear-gradient(135deg, rgba(15, 23, 42, 0.96) 0%, ${alpha(typeColor, 0.18)} 100%)`,
+          border: `1px solid ${alpha(typeColor, 0.35)}`,
+          boxShadow: '0 14px 32px rgba(8, 12, 24, 0.45)',
           '&:hover': {
             borderColor: alpha(typeColor, 0.4),
             boxShadow: `0 0 30px ${alpha(typeColor, 0.15)}`,
@@ -174,7 +183,7 @@ const AgentCard = ({
             alignItems: 'center',
             gap: 0.5,
             backgroundColor: theme.palette.secondary.main,
-            color: '#000',
+            color: '#0f172a',
             px: 1.5,
             py: 0.5,
             borderRadius: 2,
@@ -214,9 +223,9 @@ const AgentCard = ({
                   </Tooltip>
                 )}
               </Box>
-              <Typography variant="body2" color="text.secondary">
-                @{agentName}
-              </Typography>
+          <Typography variant="body2" color="text.secondary">
+            @{agentName}
+          </Typography>
             </Box>
           </Box>
 
@@ -240,6 +249,7 @@ const AgentCard = ({
                   color: typeColor,
                   fontWeight: 500,
                   fontSize: '0.75rem',
+                  borderColor: alpha(typeColor, 0.3),
                 }}
               />
             ))}
@@ -270,25 +280,28 @@ const AgentCard = ({
           </Box>
         </CardContent>
 
-        <CardActions sx={{ px: 2, pb: 2, pt: 0 }}>
+        <CardActions sx={{ px: 2, pb: 2.5, pt: 1, alignItems: 'center' }}>
           {installed ? (
             <>
               <Button
                 variant="outlined"
                 size="small"
                 onClick={() => onConfigure?.(agent)}
-                sx={{ flex: 1 }}
+                sx={{ flex: 1, minHeight: 36 }}
               >
                 Configure
               </Button>
-              <Button
-                variant="text"
-                size="small"
-                color="error"
-                onClick={() => onRemove?.(agent)}
-              >
-                Remove
-              </Button>
+              {canRemove && (
+                <Button
+                  variant="text"
+                  size="small"
+                  color="error"
+                  onClick={() => onRemove?.(agent)}
+                  sx={{ minHeight: 36 }}
+                >
+                  Remove
+                </Button>
+              )}
             </>
           ) : (
             <Button
@@ -300,6 +313,7 @@ const AgentCard = ({
                 '&:hover': {
                   background: `linear-gradient(135deg, ${alpha(typeColor, 0.9)} 0%, ${typeColor} 100%)`,
                 },
+                minHeight: 38,
               }}
             >
               Install Agent
@@ -317,8 +331,10 @@ const AgentCard = ({
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        ...cardBaseSx,
         '&:hover': {
           transform: 'translateY(-2px)',
+          boxShadow: '0 16px 32px rgba(8, 12, 24, 0.55)',
         },
         transition: 'all 0.2s ease',
       }}
@@ -395,7 +411,11 @@ const AgentCard = ({
               label={cap}
               size="small"
               variant="outlined"
-              sx={{ fontSize: '0.6875rem' }}
+              sx={{
+                fontSize: '0.6875rem',
+                borderColor: 'rgba(148, 163, 184, 0.35)',
+                color: '#cbd5f5',
+              }}
             />
           ))}
           {capabilities.length > 3 && (
@@ -403,13 +423,25 @@ const AgentCard = ({
               label={`+${capabilities.length - 3}`}
               size="small"
               variant="outlined"
-              sx={{ fontSize: '0.6875rem' }}
+              sx={{
+                fontSize: '0.6875rem',
+                borderColor: 'rgba(148, 163, 184, 0.35)',
+                color: '#cbd5f5',
+              }}
             />
           )}
         </Box>
       </CardContent>
 
-      <CardActions sx={{ px: 2, pb: 2, pt: 0, borderTop: `1px solid ${theme.palette.divider}` }}>
+      <CardActions
+        sx={{
+          px: 2,
+          pb: 2.5,
+          pt: 1,
+          borderTop: '1px solid rgba(148, 163, 184, 0.18)',
+          alignItems: 'center',
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
           <Rating value={rating} precision={0.5} size="small" readOnly />
           <Typography variant="caption" color="text.secondary">
@@ -417,14 +449,22 @@ const AgentCard = ({
           </Typography>
         </Box>
         {installed ? (
-          <Button size="small" onClick={() => onConfigure?.(agent)}>
-            Configure
-          </Button>
+          <>
+            <Button size="small" onClick={() => onConfigure?.(agent)} sx={{ minHeight: 34 }}>
+              Configure
+            </Button>
+            {canRemove && (
+              <Button size="small" color="error" onClick={() => onRemove?.(agent)} sx={{ minHeight: 34 }}>
+                Remove
+              </Button>
+            )}
+          </>
         ) : (
           <Button
             size="small"
             variant="contained"
             onClick={() => onInstall?.(agent)}
+            sx={{ minHeight: 34 }}
           >
             Install
           </Button>
@@ -438,7 +478,15 @@ const AgentCard = ({
 const AgentCardSkeleton = ({ variant }) => {
   if (variant === 'compact') {
     return (
-      <Card sx={{ display: 'flex', alignItems: 'center', p: 1.5 }}>
+      <Card
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          p: 1.5,
+          backgroundColor: 'rgba(15, 23, 42, 0.92)',
+          border: '1px solid rgba(148, 163, 184, 0.18)',
+        }}
+      >
         <Skeleton variant="circular" width={40} height={40} sx={{ mr: 1.5 }} />
         <Box sx={{ flex: 1 }}>
           <Skeleton width={100} height={20} />
@@ -449,7 +497,13 @@ const AgentCardSkeleton = ({ variant }) => {
   }
 
   return (
-    <Card sx={{ height: '100%' }}>
+    <Card
+      sx={{
+        height: '100%',
+        backgroundColor: 'rgba(15, 23, 42, 0.92)',
+        border: '1px solid rgba(148, 163, 184, 0.18)',
+      }}
+    >
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, mb: 2 }}>
           <Skeleton variant="circular" width={48} height={48} />

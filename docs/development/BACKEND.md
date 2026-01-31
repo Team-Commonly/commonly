@@ -85,11 +85,17 @@ backend/
 | GET    | /api/pods/:id/context/search | Search pod memory (PodAssets) | Query: `{query, limit?, includeSkills?, types?}` | Search results                |
 | GET    | /api/pods/:id/context/assets/:assetId | Read pod asset excerpt | Query: `{from?, lines?}` | Asset excerpt                  |
 | GET    | /api/pods/:id/context  | Get pod context (LLM markdown skills + tags + assets) | Query: `{task?, summaryLimit?, assetLimit?, tagLimit?, skillLimit?, skillMode?, skillRefreshHours?}` | Pod context object              |
+| POST   | /api/v1/pods/:podId/index/rebuild | Rebuild pod vector index (admin only) | Body: `{reset?: boolean}` | `{indexed, errors, total, reset}` |
+| GET    | /api/v1/pods/:podId/index/stats | Get pod vector index stats | - | `{stats: {available, chunks, assets, embeddings}}` |
+| POST   | /api/v1/index/rebuild-all | Rebuild vector indices for pods you own | Body: `{reset?: boolean}` | `{pods, indexed, errors, total, reset}` |
+| GET    | /api/dev/llm/status | Dev-only LLM gateway status | - | `{litellm, gemini}` |
+| POST   | /api/dev/agents/events | Dev-only enqueue agent event | Body: `{podId, agentName, type, payload?}` | `{success, eventId}` |
 | POST   | /api/pods              | Create a new pod            | `{name, description, type}`          | Created pod object              |
 | PUT    | /api/pods/:id          | Update a pod                | `{name, description, type}`          | Updated pod object              |
 | DELETE | /api/pods/:id          | Delete a pod                | -                                    | Success message                 |
 | POST   | /api/pods/:id/join     | Join a pod                  | -                                    | Updated pod object              |
 | POST   | /api/pods/:id/leave    | Leave a pod                 | -                                    | Updated pod object              |
+| DELETE | /api/pods/:id/members/:memberId | Remove a pod member (admin only) | - | Updated pod object |
 | GET    | /api/pods/:id/messages | Get pod messages            | -                                    | Array of messages               |
 | POST   | /api/pods/:id/messages | Send a message              | `{content, attachments}`             | Created message object          |
 
@@ -106,6 +112,7 @@ Agent registry endpoints (pod-native installs):
 | PATCH  | /api/registry/pods/:podId/agents/:name      | Update installed agent configuration|
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-tokens | Issue runtime token (external agent) |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-tokens  | List runtime tokens (metadata only) |
+| DELETE | /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId | Revoke runtime token |
 
 Agent runtime endpoints (external services, token auth):
 
@@ -117,6 +124,19 @@ Agent runtime endpoints (external services, token auth):
 | POST   | /api/agents/runtime/pods/:podId/messages   | Post a message as the agent         |
 
 Runtime tokens are issued as `cm_agent_...` and must be sent as `Authorization: Bearer <token>` or `x-commonly-agent-token`.
+
+Agent mentions in chat:
+- Typing `@commonly-bot` or `@clawdbot-bridge` in pod chat enqueues an agent event (`type: chat.mention`) if the agent is installed in that pod.
+- Alias support: `@commonlybot` → `commonly-bot`, `@clawdbot` → `clawdbot-bridge`.
+
+Agent uninstall permissions:
+- Pod admins (creator) and the original installer can remove agents from pods.
+
+CORS allowlist:
+- `FRONTEND_URL` accepts a comma-separated list of allowed origins (e.g. `https://app-dev.commonly.me,http://localhost:3000`).
+
+Real-time presence:
+- Socket.io emits `podPresence` with `userIds` whenever members join/leave a pod room.
 
 #### Pod Context Endpoint
 

@@ -1,6 +1,7 @@
 // Use MongoDB for pod membership checks and PostgreSQL for messages
 const Pod = require('../models/Pod');
 const PGMessage = require('../models/pg/Message');
+const AgentMentionService = require('../services/agentMentionService');
 
 // Get messages for a specific pod
 exports.getMessages = async (req, res) => {
@@ -101,6 +102,14 @@ exports.createMessage = async (req, res) => {
       messageContent || '',
       'text',
     );
+
+    const username = req.user?.username;
+    await AgentMentionService.enqueueMentions({
+      podId,
+      message,
+      userId,
+      username,
+    });
 
     res.json(message);
   } catch (err) {

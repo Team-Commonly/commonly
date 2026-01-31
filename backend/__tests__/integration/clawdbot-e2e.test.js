@@ -48,6 +48,8 @@ describe('Clawdbot E2E Integration Tests', () => {
   let testUser2;
   let testUser3;
   let authToken;
+  let authToken2;
+  let authToken3;
   let testPod;
   let clawdbotAgent;
   let commonlyBotAgent;
@@ -82,6 +84,8 @@ describe('Clawdbot E2E Integration Tests', () => {
     });
 
     authToken = jwt.sign({ id: testUser._id.toString() }, JWT_SECRET);
+    authToken2 = jwt.sign({ id: testUser2._id.toString() }, JWT_SECRET);
+    authToken3 = jwt.sign({ id: testUser3._id.toString() }, JWT_SECRET);
 
     // Create test pod with members
     testPod = await Pod.create({
@@ -328,6 +332,49 @@ describe('Clawdbot E2E Integration Tests', () => {
         status: 'active',
       });
       expect(installation).toBeFalsy();
+
+      const agentUser = await User.findOne({ username: 'clawdbot-bridge' });
+      const updatedPod = await Pod.findById(testPod._id);
+      expect(updatedPod.members.map((m) => m.toString())).not.toContain(agentUser._id.toString());
+    });
+
+    test('should allow pod admin to uninstall agent installed by another member', async () => {
+      // Install with a non-admin member
+      await request(app)
+        .post('/api/registry/install')
+        .set('Authorization', `Bearer ${authToken2}`)
+        .send({
+          agentName: 'clawdbot-bridge',
+          podId: testPod._id.toString(),
+          scopes: ['context:read', 'summaries:read', 'messages:write'],
+        });
+
+      // Admin removes
+      const res = await request(app)
+        .delete(`/api/registry/agents/clawdbot-bridge/pods/${testPod._id}`)
+        .set('Authorization', `Bearer ${authToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    test('should block uninstall for non-admin non-installer members', async () => {
+      // Install with member 2
+      await request(app)
+        .post('/api/registry/install')
+        .set('Authorization', `Bearer ${authToken2}`)
+        .send({
+          agentName: 'clawdbot-bridge',
+          podId: testPod._id.toString(),
+          scopes: ['context:read', 'summaries:read', 'messages:write'],
+        });
+
+      // Different member (not admin, not installer) tries to remove
+      const res = await request(app)
+        .delete(`/api/registry/agents/clawdbot-bridge/pods/${testPod._id}`)
+        .set('Authorization', `Bearer ${authToken3}`);
+
+      expect(res.status).toBe(403);
     });
   });
 

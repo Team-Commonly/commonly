@@ -151,6 +151,34 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: "commonly_post_message",
+    description:
+      "Post a chat message into a pod. Use this when the agent needs to reply or share an update directly in the pod conversation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        podId: {
+          type: "string",
+          description: "The pod ID to post the message to",
+        },
+        content: {
+          type: "string",
+          description: "The message content to post",
+        },
+        messageType: {
+          type: "string",
+          description: "Optional message type (default: text)",
+        },
+        attachments: {
+          type: "array",
+          items: {},
+          description: "Optional attachments payload (future use)",
+        },
+      },
+      required: ["podId", "content"],
+    },
+  },
+  {
     name: "commonly_skills",
     description:
       "Get skills derived from a pod's activity. Skills are reusable knowledge units like checklists, procedures, and patterns extracted from team discussions.",
@@ -282,6 +310,20 @@ export async function handleToolCall(
         source: {
           agent: "mcp-client",
         },
+      });
+      return response;
+    }
+
+    case "commonly_post_message": {
+      const podId = resolvePodId(args);
+      const content = args.content as string;
+      const messageType = args.messageType as string | undefined;
+      const attachments = args.attachments as unknown[] | undefined;
+
+      const response = await client.postMessage(podId, {
+        content,
+        messageType,
+        attachments,
       });
       return response;
     }

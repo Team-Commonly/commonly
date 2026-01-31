@@ -8,28 +8,14 @@ import {
   Select,
   MenuItem,
   FormLabel,
-  ToggleButton,
-  ToggleButtonGroup,
   Divider
 } from '@mui/material';
-import {
-  Timeline as TimelineIcon,
-  Cloud as CloudIcon,
-  TrendingUp as TrendingIcon,
-  People as PeopleIcon
-} from '@mui/icons-material';
 import ActivityTimeline from './ActivityTimeline';
 import KeywordCloud from './KeywordCloud';
 
 const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
   const [timeRange, setTimeRange] = useState(defaultTimeRange);
-  const [activeViews, setActiveViews] = useState(['timeline', 'keywords']);
-
-  const handleViewChange = (event, newViews) => {
-    if (newViews.length > 0) {
-      setActiveViews(newViews);
-    }
-  };
+  const [viewMode, setViewMode] = useState('timeline');
 
   const QuickStats = () => {
     const [stats, setStats] = useState(null);
@@ -102,7 +88,7 @@ const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
   return (
     <Box sx={{ p: 2 }}>
       {/* Header Controls */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
         <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>
           📊 Community Analytics
         </Typography>
@@ -122,25 +108,16 @@ const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
           </FormControl>
           
           <FormControl size="small">
-            <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>Views</FormLabel>
-            <ToggleButtonGroup
-              value={activeViews}
-              onChange={handleViewChange}
-              size="small"
+            <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>View</FormLabel>
+            <Select
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+              sx={{ minWidth: 160 }}
             >
-              <ToggleButton value="timeline" aria-label="timeline">
-                <TimelineIcon fontSize="small" />
-              </ToggleButton>
-              <ToggleButton value="keywords" aria-label="keywords">
-                <CloudIcon fontSize="small" />
-              </ToggleButton>
-              <ToggleButton value="trending" aria-label="trending">
-                <TrendingIcon fontSize="small" />
-              </ToggleButton>
-              <ToggleButton value="users" aria-label="users">
-                <PeopleIcon fontSize="small" />
-              </ToggleButton>
-            </ToggleButtonGroup>
+              <MenuItem value="timeline">Activity Timeline</MenuItem>
+              <MenuItem value="keywords">Keyword Cloud</MenuItem>
+              <MenuItem value="both">Timeline + Keywords</MenuItem>
+            </Select>
           </FormControl>
         </Box>
       </Box>
@@ -152,53 +129,15 @@ const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
 
       {/* Visualization Grid */}
       <Grid container spacing={3}>
-        {activeViews.includes('timeline') && (
-          <Grid item xs={12} lg={6}>
+        {(viewMode === 'timeline' || viewMode === 'both') && (
+          <Grid item xs={12} lg={viewMode === 'both' ? 6 : 12}>
             <ActivityTimeline timeRange={timeRange} />
           </Grid>
         )}
         
-        {activeViews.includes('keywords') && (
-          <Grid item xs={12} lg={6}>
+        {(viewMode === 'keywords' || viewMode === 'both') && (
+          <Grid item xs={12} lg={viewMode === 'both' ? 6 : 12}>
             <KeywordCloud timeRange={timeRange} />
-          </Grid>
-        )}
-        
-        {activeViews.includes('trending') && (
-          <Grid item xs={12} md={6}>
-            <Paper elevation={2} sx={{ p: 3, height: 400 }}>
-              <Typography variant="h6" component="h3" sx={{ mb: 2 }}>
-                🔥 Trending Topics
-              </Typography>
-              <Box sx={{ 
-                display: 'flex', 
-                justifyContent: 'center', 
-                alignItems: 'center', 
-                height: 300,
-                color: 'text.secondary'
-              }}>
-                <Typography>Trending analysis coming soon...</Typography>
-              </Box>
-            </Paper>
-          </Grid>
-        )}
-        
-        {activeViews.includes('users') && (
-          <Grid item xs={12} md={6}>
-            <Paper elevation={2} sx={{ p: 3, height: 400 }}>
-              <Typography variant="h6" component="h3" sx={{ mb: 2 }}>
-                👥 User Networks
-              </Typography>
-              <Box sx={{ 
-                display: 'flex', 
-                justifyContent: 'center', 
-                alignItems: 'center', 
-                height: 300,
-                color: 'text.secondary'
-              }}>
-                <Typography>User relationship graphs coming soon...</Typography>
-              </Box>
-            </Paper>
           </Grid>
         )}
       </Grid>

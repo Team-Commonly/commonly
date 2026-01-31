@@ -1,0 +1,26 @@
+{
+  "agentName": "commonly-bot",
+  "displayName": "Commonly Bot",
+  "description": "Platform bot that posts summaries and integration updates into pods automatically.",
+  "version": "1.0.0",
+  "registry": "commonly-official",
+  "verified": true,
+  "categories": ["productivity", "integrations"],
+  "tags": ["summaries", "integrations", "platform", "bot"],
+  "manifest": {
+    "name": "commonly-bot",
+    "version": "1.0.0",
+    "capabilities": [
+      { "name": "summaries", "description": "Post hourly and daily summaries" },
+      { "name": "integration-updates", "description": "Share activity from connected services" }
+    ],
+    "context": {
+      "required": ["context:read", "summaries:read"],
+      "optional": []
+    },
+    "runtime": {
+      "type": "standalone",
+      "connection": "rest"
+    }
+  }
+}

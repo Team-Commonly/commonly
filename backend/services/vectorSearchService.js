@@ -15,6 +15,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 
 // Lazy-loaded dependencies (may not be installed yet)
 let Database = null;
@@ -24,7 +25,7 @@ let sqliteVec = null;
 const EMBEDDING_CONFIG = {
   provider: process.env.EMBEDDING_PROVIDER || 'gemini', // 'openai', 'gemini', 'local'
   model: process.env.EMBEDDING_MODEL || 'text-embedding-004',
-  dimensions: 768, // Gemini embedding dimensions
+  dimensions: parseInt(process.env.EMBEDDING_DIMENSIONS, 10) || 768, // Gemini embedding dimensions
   chunkSize: 400, // tokens per chunk
   chunkOverlap: 80, // overlap between chunks
 };
@@ -436,6 +437,8 @@ class VectorSearchService {
           return await this.embedWithGemini(text);
         case 'openai':
           return await this.embedWithOpenAI(text);
+        case 'litellm':
+          return await this.embedWithLiteLLM(text);
         default:
           console.warn(`Unknown embedding provider: ${EMBEDDING_CONFIG.provider}`);
           return null;
@@ -472,6 +475,37 @@ class VectorSearchService {
     });
 
     return response.data[0].embedding;
+  }
+
+  /**
+   * Embed with LiteLLM (OpenAI-compatible)
+   */
+  async embedWithLiteLLM(text) {
+    const baseUrl = process.env.LITELLM_BASE_URL;
+    const apiKey = process.env.LITELLM_API_KEY || process.env.LITELLM_MASTER_KEY;
+    if (!baseUrl || !apiKey) {
+      throw new Error('LiteLLM embedding requires LITELLM_BASE_URL + LITELLM_API_KEY');
+    }
+
+    const response = await axios.post(
+      `${baseUrl.replace(/\/$/, '')}/embeddings`,
+      {
+        model: EMBEDDING_CONFIG.model,
+        input: text,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    const embedding = response?.data?.data?.[0]?.embedding;
+    if (!embedding) {
+      throw new Error('LiteLLM embedding response missing embedding vector');
+    }
+    return embedding;
   }
 
   /**
@@ -555,6 +589,25 @@ const getStats = async (podId) => {
 };
 
 /**
+ * Reset vector index for a pod (delete sqlite db + cache)
+ */
+const resetIndex = async (podId) => {
+  const podIdStr = podId.toString();
+  const service = serviceCache.get(podIdStr);
+  if (service) {
+    service.close();
+    serviceCache.delete(podIdStr);
+  }
+
+  const dbPath = path.join(VECTORS_DIR, `${podIdStr}.sqlite`);
+  if (fs.existsSync(dbPath)) {
+    fs.unlinkSync(dbPath);
+  }
+
+  return { success: true };
+};
+
+/**
  * Rebuild entire index for a pod
  */
 const rebuildIndex = async (podId) => {
@@ -586,6 +639,7 @@ module.exports = {
   removeAsset,
   search,
   getStats,
+  resetIndex,
   rebuildIndex,
   EMBEDDING_CONFIG,
 };

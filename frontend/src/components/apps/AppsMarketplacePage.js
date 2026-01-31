@@ -255,8 +255,21 @@ const AppsMarketplacePage = () => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <Container
+      maxWidth="xl"
+      disableGutters
+      sx={{ py: { xs: 3, md: 4 }, px: { xs: 2, sm: 3, md: 4 } }}
+    >
+      <Box
+        sx={{
+          mb: 4,
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'flex-start', md: 'center' },
+          gap: 2,
+        }}
+      >
         <Box>
           <Typography variant="h4" fontWeight={700} gutterBottom>
             Apps Marketplace
@@ -266,7 +279,7 @@ const AppsMarketplacePage = () => {
           </Typography>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
           <Button
             variant="outlined"
             href={contribUrl}
@@ -305,7 +318,8 @@ const AppsMarketplacePage = () => {
             ),
           }}
           sx={{
-            minWidth: 320,
+            minWidth: { xs: '100%', sm: 320 },
+            flex: '1 1 240px',
             '& .MuiOutlinedInput-root': {
               borderRadius: 3,
               backgroundColor: theme.palette.background.paper,
@@ -313,7 +327,7 @@ const AppsMarketplacePage = () => {
           }}
         />
 
-        <FormControl sx={{ minWidth: 180 }} size="small">
+        <FormControl sx={{ minWidth: { xs: '100%', sm: 180 }, flex: '1 1 180px' }} size="small">
           <InputLabel>Type</InputLabel>
           <Select
             value={typeFilter}
