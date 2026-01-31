@@ -2,7 +2,7 @@ const AgentEvent = require('../models/AgentEvent');
 
 class AgentEventService {
   static async enqueue({
-    agentName, podId, type, payload = {},
+    agentName, podId, type, payload = {}, instanceId = 'default',
   }) {
     if (!agentName || !podId || !type) {
       throw new Error('agentName, podId, and type are required');
@@ -10,6 +10,7 @@ class AgentEventService {
 
     return AgentEvent.create({
       agentName: agentName.toLowerCase(),
+      instanceId,
       podId,
       type,
       payload,
@@ -17,28 +18,37 @@ class AgentEventService {
   }
 
   static async list({
-    agentName, podId, limit = 20,
+    agentName, podId, podIds, limit = 20, instanceId = 'default',
   }) {
-    return AgentEvent.find({
+    const query = {
       agentName: agentName.toLowerCase(),
-      podId,
+      instanceId,
       status: 'pending',
-    })
+    };
+
+    // Support single podId or array of podIds
+    if (podIds && Array.isArray(podIds) && podIds.length > 0) {
+      query.podId = { $in: podIds };
+    } else if (podId) {
+      query.podId = podId;
+    }
+
+    return AgentEvent.find(query)
       .sort({ createdAt: 1 })
       .limit(limit)
       .lean();
   }
 
-  static async acknowledge(eventId, agentName) {
+  static async acknowledge(eventId, agentName, instanceId = 'default') {
     return AgentEvent.updateOne(
-      { _id: eventId, agentName: agentName.toLowerCase() },
+      { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
       { $set: { status: 'delivered', deliveredAt: new Date() }, $inc: { attempts: 1 } },
     );
   }
 
-  static async recordFailure(eventId, agentName, errorMessage) {
+  static async recordFailure(eventId, agentName, instanceId, errorMessage) {
     return AgentEvent.updateOne(
-      { _id: eventId, agentName: agentName.toLowerCase() },
+      { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
       { $set: { status: 'failed', error: errorMessage }, $inc: { attempts: 1 } },
     );
   }

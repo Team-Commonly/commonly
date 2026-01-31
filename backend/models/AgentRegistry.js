@@ -255,6 +255,17 @@ const AgentInstallationSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Optional instance identifier to allow multiple installs per pod
+    instanceId: {
+      type: String,
+      default: 'default',
+    },
+
+    // Human-friendly instance name (for UI display)
+    displayName: {
+      type: String,
+    },
+
     // Installed version
     version: {
       type: String,
@@ -310,7 +321,7 @@ const AgentInstallationSchema = new mongoose.Schema(
 );
 
 // Compound index for unique installation per pod
-AgentInstallationSchema.index({ agentName: 1, podId: 1 }, { unique: true });
+AgentInstallationSchema.index({ agentName: 1, podId: 1, instanceId: 1 }, { unique: true });
 AgentInstallationSchema.index({ podId: 1, status: 1 });
 
 // Static methods
@@ -318,10 +329,11 @@ AgentInstallationSchema.statics.getInstalledAgents = function (podId) {
   return this.find({ podId, status: 'active' }).lean();
 };
 
-AgentInstallationSchema.statics.isInstalled = async function (agentName, podId) {
+AgentInstallationSchema.statics.isInstalled = async function (agentName, podId, instanceId = 'default') {
   const installation = await this.findOne({
     agentName: agentName.toLowerCase(),
     podId,
+    instanceId,
     status: 'active',
   });
   return !!installation;
@@ -329,13 +341,14 @@ AgentInstallationSchema.statics.isInstalled = async function (agentName, podId) 
 
 AgentInstallationSchema.statics.install = async function (agentName, podId, options) {
   const {
-    version, config, scopes, installedBy,
+    version, config, scopes, installedBy, instanceId = 'default', displayName,
   } = options;
 
   // Check if already installed
   const existing = await this.findOne({
     agentName: agentName.toLowerCase(),
     podId,
+    instanceId,
   });
 
   if (existing) {
@@ -353,6 +366,8 @@ AgentInstallationSchema.statics.install = async function (agentName, podId, opti
   return this.create({
     agentName: agentName.toLowerCase(),
     podId,
+    instanceId,
+    displayName,
     version,
     config,
     scopes,
@@ -360,11 +375,12 @@ AgentInstallationSchema.statics.install = async function (agentName, podId, opti
   });
 };
 
-AgentInstallationSchema.statics.uninstall = async function (agentName, podId) {
+AgentInstallationSchema.statics.uninstall = async function (agentName, podId, instanceId = 'default') {
   return this.updateOne(
     {
       agentName: agentName.toLowerCase(),
       podId,
+      instanceId,
     },
     {
       status: 'uninstalled',

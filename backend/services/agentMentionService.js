@@ -2,8 +2,9 @@ const AgentEventService = require('./agentEventService');
 const { AgentInstallation } = require('../models/AgentRegistry');
 
 const MENTION_ALIASES = {
-  'commonly-bot': ['commonly-bot', 'commonlybot'],
-  'clawdbot-bridge': ['clawdbot-bridge', 'clawdbot'],
+  'commonly-bot': ['commonly-bot', 'commonlybot', 'commonly'],
+  'commonly-ai-agent': ['commonly-ai-agent', 'cuz', 'como'],
+  'clawd-bot': ['clawd-bot', 'clawdbot', 'clawd'],
 };
 
 const buildAliasMap = () => {
@@ -64,8 +65,24 @@ const enqueueMentions = async ({
       }
 
       try {
+        let installation = await AgentInstallation.findOne({
+          agentName: agentName.toLowerCase(),
+          podId,
+          instanceId: 'default',
+          status: 'active',
+        }).lean();
+
+        if (!installation) {
+          installation = await AgentInstallation.findOne({
+            agentName: agentName.toLowerCase(),
+            podId,
+            status: 'active',
+          }).lean();
+        }
+
         await AgentEventService.enqueue({
           agentName,
+          instanceId: installation?.instanceId || 'default',
           podId,
           type: 'chat.mention',
           payload: {
