@@ -31,8 +31,8 @@ const normalizeSegment = (value) => (
   (value || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40)
 );
 
-const buildAgentUsername = (agentName, instanceId) => {
-  const normalized = normalizeSegment(agentName);
+const buildAgentUsername = (agentType, instanceId) => {
+  const normalized = normalizeSegment(agentType);
   const instance = normalizeSegment(instanceId);
   if (!instance || instance === 'default') {
     return normalized || 'agent';
@@ -40,76 +40,114 @@ const buildAgentUsername = (agentName, instanceId) => {
   return `${normalized}-${instance}`;
 };
 
-const buildAgentEmail = (agentName, instanceId) => {
-  const username = buildAgentUsername(agentName, instanceId);
+const buildAgentEmail = (agentType, instanceId) => {
+  const username = buildAgentUsername(agentType, instanceId);
   return `${username || 'agent'}@agents.commonly.local`;
 };
 
-// Official Commonly agents with cute display names
-const OFFICIAL_AGENTS = {
-  'commonly-ai-agent': {
-    displayName: 'Cuz 🤙',
-    description: 'Commonly central bot for integrations, notifications, and support',
-    botType: 'system',
-    capabilities: ['notify', 'summarize', 'integrate'],
-  },
-  'commonly-bot': {
-    displayName: 'Commonly Summarizer',
-    description: 'Lightweight summarizer bot for integrations and pod activity',
-    botType: 'system',
-    capabilities: ['notify', 'summarize', 'integrate'],
-  },
-  'clawd-bot': {
-    displayName: 'Clawd 🐾',
-    description: 'Your friendly AI assistant powered by Claude - ready to chat, help, and remember!',
+/**
+ * Agent Type Registry
+ *
+ * agentType = the runtime/engine type (what powers the agent)
+ * Each type can have an official "in-house" display name and custom user instances
+ *
+ * Types:
+ * - openclaw: Claude-powered conversational AI (official: "Cuz 🦞")
+ * - commonly-summarizer: Lightweight summarization bot (official: "Commonly Summarizer")
+ * - claude-code: Claude Code integration (future)
+ * - codex: OpenAI Codex integration (future)
+ */
+const AGENT_TYPES = {
+  openclaw: {
+    officialDisplayName: 'Cuz 🦞',
+    officialDescription: 'Your friendly AI assistant powered by Claude - ready to chat, help, and remember!',
+    icon: '🦞',
     botType: 'agent',
-    capabilities: ['chat', 'memory', 'context', 'summarize'],
+    capabilities: ['chat', 'memory', 'context', 'summarize', 'code'],
+    runtime: 'moltbot',
   },
+  'commonly-summarizer': {
+    officialDisplayName: 'Commonly Summarizer',
+    officialDescription: 'Lightweight summarizer bot for integrations and pod activity',
+    icon: '📋',
+    botType: 'system',
+    capabilities: ['notify', 'summarize', 'integrate'],
+    runtime: 'internal',
+  },
+  'claude-code': {
+    officialDisplayName: 'Claude Code',
+    officialDescription: 'Claude Code integration for development assistance',
+    icon: '💻',
+    botType: 'agent',
+    capabilities: ['code', 'chat', 'memory'],
+    runtime: 'claude-code',
+  },
+  codex: {
+    officialDisplayName: 'Codex',
+    officialDescription: 'OpenAI Codex integration for code generation',
+    icon: '🤖',
+    botType: 'agent',
+    capabilities: ['code', 'chat'],
+    runtime: 'openai',
+  },
+};
+
+// Backwards compatibility: map old agent names to new types
+const LEGACY_AGENT_MAP = {
+  'clawd-bot': 'openclaw',
+  'commonly-bot': 'commonly-summarizer',
+  'commonly-ai-agent': 'openclaw',
 };
 
 class AgentIdentityService {
   /**
    * Get or create an agent user with proper bot metadata
-   * @param {string} agentName - The agent's username (e.g., 'clawd-bot')
+   * @param {string} agentType - The agent type (e.g., 'openclaw', 'commonly-summarizer')
    * @param {object} options - Optional metadata overrides
-   * @param {string} options.displayName - Custom display name
+   * @param {string} options.displayName - Custom display name (defaults to official)
    * @param {string} options.description - Custom description
+   * @param {string} options.instanceId - Instance identifier for multi-install
    * @param {string} options.runtimeId - Unique runtime instance ID
    * @param {string[]} options.capabilities - Agent capabilities
    */
-  static async getOrCreateAgentUser(agentName, options = {}) {
-    if (!agentName) {
-      throw new Error('agentName is required');
+  static async getOrCreateAgentUser(agentType, options = {}) {
+    if (!agentType) {
+      throw new Error('agentType is required');
     }
 
+    // Handle legacy agent names
+    const resolvedType = LEGACY_AGENT_MAP[agentType.toLowerCase()] || agentType.toLowerCase();
+    const typeConfig = AGENT_TYPES[resolvedType];
+
     const instanceId = options.instanceId || 'default';
-    const username = buildAgentUsername(agentName, instanceId);
+    const username = buildAgentUsername(resolvedType, instanceId);
     let agentUser = await User.findOne({ username });
 
-    // Check if this is an official agent
-    const officialConfig = OFFICIAL_AGENTS[username];
-    const isOfficial = !!officialConfig;
+    // Determine if this is an official (default instance) agent
+    const isOfficial = instanceId === 'default' && !!typeConfig;
 
     if (!agentUser) {
       const botMetadata = {
-        displayName: options.displayName || officialConfig?.displayName || agentName,
-        description: options.description || officialConfig?.description || `${agentName} agent`,
+        displayName: options.displayName || typeConfig?.officialDisplayName || resolvedType,
+        description: options.description || typeConfig?.officialDescription || `${resolvedType} agent`,
+        icon: typeConfig?.icon || '🤖',
         runtimeId: options.runtimeId || null,
         officialAgent: isOfficial,
-        capabilities: options.capabilities || officialConfig?.capabilities || [],
-        agentName: agentName.toLowerCase(),
+        capabilities: options.capabilities || typeConfig?.capabilities || [],
+        agentType: resolvedType,
         instanceId,
+        runtime: typeConfig?.runtime || 'unknown',
       };
 
       agentUser = new User({
         username,
-        email: buildAgentEmail(agentName, instanceId),
+        email: buildAgentEmail(resolvedType, instanceId),
         password: `agent-password-${Date.now()}`,
         verified: true,
         profilePicture: 'default',
         role: 'user',
         isBot: true,
-        botType: officialConfig?.botType || options.botType || 'agent',
+        botType: typeConfig?.botType || options.botType || 'agent',
         botMetadata,
       });
 
@@ -118,15 +156,17 @@ class AgentIdentityService {
     } else if (!agentUser.isBot) {
       // Upgrade existing user to bot if not already marked
       agentUser.isBot = true;
-      agentUser.botType = officialConfig?.botType || options.botType || 'agent';
+      agentUser.botType = typeConfig?.botType || options.botType || 'agent';
       agentUser.botMetadata = {
-        displayName: options.displayName || officialConfig?.displayName || agentUser.username,
-        description: options.description || officialConfig?.description || `${agentName} agent`,
+        displayName: options.displayName || typeConfig?.officialDisplayName || agentUser.username,
+        description: options.description || typeConfig?.officialDescription || `${resolvedType} agent`,
+        icon: typeConfig?.icon || '🤖',
         runtimeId: options.runtimeId || agentUser.botMetadata?.runtimeId || null,
         officialAgent: isOfficial,
-        capabilities: options.capabilities || officialConfig?.capabilities || [],
-        agentName: agentName.toLowerCase(),
+        capabilities: options.capabilities || typeConfig?.capabilities || [],
+        agentType: resolvedType,
         instanceId,
+        runtime: typeConfig?.runtime || 'unknown',
       };
       await agentUser.save();
       console.log(`Upgraded user to bot: ${username}`);
@@ -136,21 +176,37 @@ class AgentIdentityService {
   }
 
   /**
-   * Get official agent configuration
+   * Get all registered agent types
    */
-  static getOfficialAgents() {
-    return { ...OFFICIAL_AGENTS };
+  static getAgentTypes() {
+    return { ...AGENT_TYPES };
   }
 
   /**
-   * Check if an agent name is an official Commonly agent
+   * Get configuration for a specific agent type
    */
-  static isOfficialAgent(agentName) {
-    return !!OFFICIAL_AGENTS[agentName?.toLowerCase()];
+  static getAgentTypeConfig(agentType) {
+    const resolvedType = LEGACY_AGENT_MAP[agentType?.toLowerCase()] || agentType?.toLowerCase();
+    return AGENT_TYPES[resolvedType] || null;
   }
 
-  static buildAgentUsername(agentName, instanceId) {
-    return buildAgentUsername(agentName, instanceId);
+  /**
+   * Check if an agent type is a known/official type
+   */
+  static isKnownAgentType(agentType) {
+    const resolvedType = LEGACY_AGENT_MAP[agentType?.toLowerCase()] || agentType?.toLowerCase();
+    return !!AGENT_TYPES[resolvedType];
+  }
+
+  /**
+   * Resolve legacy agent name to current agent type
+   */
+  static resolveAgentType(agentNameOrType) {
+    return LEGACY_AGENT_MAP[agentNameOrType?.toLowerCase()] || agentNameOrType?.toLowerCase();
+  }
+
+  static buildAgentUsername(agentType, instanceId) {
+    return buildAgentUsername(agentType, instanceId);
   }
 
   static async ensureAgentInPod(agentUser, podId) {
@@ -164,9 +220,9 @@ class AgentIdentityService {
     return pod;
   }
 
-  static async removeAgentFromPod(agentName, podId) {
-    if (!agentName || !podId) return null;
-    const username = agentName.toLowerCase();
+  static async removeAgentFromPod(agentType, podId, instanceId = 'default') {
+    if (!agentType || !podId) return null;
+    const username = buildAgentUsername(agentType, instanceId);
     const agentUser = await User.findOne({ username });
     if (!agentUser) return null;
 
