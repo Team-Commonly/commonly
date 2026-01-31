@@ -422,3 +422,203 @@ external/commonly-agent-services/
 3. Gateway processes with configured model + skills
 4. Bridge posts response via `POST /api/agents/runtime/pods/:id/messages`
 5. Bridge acknowledges event via `POST /api/agents/runtime/events/:id/ack`
+
+## Commonly as a Channel
+
+Commonly pods now work as a full **channel** for Clawdbot, similar to Discord/Slack/Telegram.
+Users can `@clawdbot-bridge` in any pod chat to directly interact with the AI agent.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Commonly Pod Chat                            │
+├─────────────────────────────────────────────────────────────────────┤
+│  User: @clawdbot-bridge what are the team's priorities?             │
+│                                                                      │
+│  [AgentMentionService detects @mention]                             │
+│                         ↓                                            │
+│  [Creates chat.mention event with payload]                          │
+│                         ↓                                            │
+│  [Clawdbot Bridge polls event]                                      │
+│                         ↓                                            │
+│  [Bridge fetches full context via Context API]                      │
+│    - Pod memory (MEMORY.md)                                         │
+│    - Relevant skills (task-matched)                                 │
+│    - Recent summaries                                               │
+│    - Relevant assets (hybrid vector search)                         │
+│    - Recent conversation history                                    │
+│                         ↓                                            │
+│  [Bridge calls Clawdbot Gateway with context]                       │
+│                         ↓                                            │
+│  [Posts context-aware response to pod]                              │
+│                                                                      │
+│  Clawdbot: Based on the recent team discussion, the priorities are: │
+│  1. API refactoring (mentioned 5 times this week)                   │
+│  2. Documentation updates (skill: "docs-update" detected)           │
+│  3. Performance testing (from yesterday's summary)                  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Context API Integration
+
+The bridge now uses Commonly's full Context API (`/api/v1/context/:podId`) which provides:
+
+| Feature | Description |
+|---------|-------------|
+| **Pod Memory** | MEMORY.md curated long-term memory |
+| **Skills** | Auto-synthesized skills from pod activity |
+| **Assets** | Relevant docs, links, threads via hybrid search |
+| **Summaries** | Recent hourly chat summaries |
+| **Conversation** | Last 10-15 messages for context |
+
+### Configuration
+
+Environment variables for context control:
+
+```env
+# Enable/disable context features
+CLAWDBOT_INCLUDE_MEMORY=true      # Include MEMORY.md
+CLAWDBOT_INCLUDE_SKILLS=true      # Include synthesized skills
+CLAWDBOT_INCLUDE_SUMMARIES=true   # Include recent summaries
+
+# Token budget for context
+CLAWDBOT_MAX_CONTEXT_TOKENS=4000  # Max tokens for context assembly
+```
+
+### Usage Examples
+
+**Ask about pod activity:**
+```
+@clawdbot-bridge what happened in this pod today?
+```
+*Uses recent summaries to provide activity overview*
+
+**Get skill-based help:**
+```
+@clawdbot-bridge how do we deploy to production?
+```
+*Uses task-matched skills and search to find deployment docs*
+
+**Reference pod memory:**
+```
+@clawdbot-bridge what are our team conventions?
+```
+*Uses MEMORY.md for long-term curated knowledge*
+
+**Context-aware conversation:**
+```
+User1: We need to update the API docs
+User2: @clawdbot-bridge can you help with that?
+```
+*Includes conversation history for context*
+
+## Commonly Memory Skill
+
+The `commonly-memory` skill enables Clawdbot to sync pod context to its own MEMORY.md.
+
+### Skill Location
+
+`external/clawdbot-state/config/skills/commonly-memory/SKILL.md`
+
+### Capabilities
+
+| Operation | Description |
+|-----------|-------------|
+| **Read Context** | Get assembled pod context with memory, skills, summaries |
+| **Read Memory File** | Access MEMORY.md, SKILLS.md, daily logs |
+| **Search Memory** | Hybrid vector + keyword search across pod assets |
+| **Write Memory** | Append to daily log, MEMORY.md, or create skills |
+
+### Example Workflow: Daily Memory Sync
+
+During heartbeat, Clawdbot can sync important pod context:
+
+```bash
+# 1. Fetch pod context
+CONTEXT=$(curl -s "${COMMONLY_API_URL}/api/v1/context/${POD_ID}" \
+  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}")
+
+# 2. Extract highlights
+HIGHLIGHTS=$(echo "$CONTEXT" | jq -r '.summaries[:3] | .[] | .content[:200]')
+
+# 3. Append to personal MEMORY.md
+echo "## Pod Sync: $(date +%Y-%m-%d)" >> ~/workspace/MEMORY.md
+echo "$HIGHLIGHTS" >> ~/workspace/MEMORY.md
+```
+
+### Writing to Pod Memory
+
+Clawdbot can also write insights back to the pod:
+
+```bash
+# Append to pod's daily log
+curl -X POST "${COMMONLY_API_URL}/api/v1/memory/${POD_ID}" \
+  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target": "daily",
+    "content": "Reviewed API design discussion. Key decision: REST + GraphQL hybrid.",
+    "tags": ["api", "architecture", "decision"]
+  }'
+```
+
+## Two-Way Integration
+
+The Commonly channel enables **bidirectional** memory flow:
+
+```
+┌─────────────────┐                    ┌─────────────────┐
+│   Clawdbot      │                    │   Commonly      │
+│   MEMORY.md     │◄───────────────────│   Pod Memory    │
+│   (personal)    │    sync insights   │   (team shared) │
+│                 │───────────────────►│                 │
+└─────────────────┘    share learnings └─────────────────┘
+```
+
+**Pod → Clawdbot:** During heartbeats, sync important team context
+**Clawdbot → Pod:** Write insights, decisions, and synthesized knowledge back
+
+This creates a knowledge loop where:
+1. Team discussions happen in Commonly pods
+2. Clawdbot observes and learns from summaries
+3. Agent syncs relevant context to personal memory
+4. Agent can contribute insights back to team
+
+## API Reference
+
+### Context API Endpoints Used
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/context/:podId` | Full context assembly |
+| `GET /api/v1/search/:podId` | Hybrid search |
+| `GET /api/v1/pods/:podId/summaries` | Recent summaries |
+| `GET /api/v1/pods/:podId/memory/:path` | Memory file access |
+| `POST /api/v1/memory/:podId` | Write to memory |
+
+### Event Types
+
+| Type | Description | Payload |
+|------|-------------|---------|
+| `chat.mention` | @mention in pod chat | `{content, username, userId, messageId}` |
+| `integration.summary` | Integration summary | `{summary: {content, source}}` |
+
+### Message Metadata
+
+When posting responses, the bridge includes context usage metadata:
+
+```json
+{
+  "source": "clawdbot-bridge",
+  "eventId": "event-id",
+  "replyTo": "original-message-id",
+  "mentionedBy": "username",
+  "contextUsed": {
+    "memory": true,
+    "skills": 3,
+    "summaries": 5,
+    "assets": 2
+  }
+}
+```
