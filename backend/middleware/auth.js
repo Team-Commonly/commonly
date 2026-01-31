@@ -19,7 +19,7 @@ module.exports = async function (req, res, next) {
   if (token.startsWith('cm_')) {
     try {
       const user = await User.findOne({ apiToken: token }).select(
-        '_id username email role',
+        '_id username email role apiTokenScopes apiTokenCreatedAt',
       );
 
       if (!user) {
@@ -34,6 +34,9 @@ module.exports = async function (req, res, next) {
         email: user.email,
         role: user.role,
       };
+      req.authType = 'apiToken';
+      req.apiTokenScopes = user.apiTokenScopes || [];
+      req.apiTokenCreatedAt = user.apiTokenCreatedAt || null;
 
       return next();
     } catch (err) {

@@ -15,7 +15,8 @@
     "discord:deploy": "node scripts/deploy-discord-commands.js deploy",
     "discord:verify": "node scripts/deploy-discord-commands.js verify",
     "discord:register": "node scripts/register-discord-commands.js",
-    "discord:list": "node scripts/register-discord-commands.js list"
+    "discord:list": "node scripts/register-discord-commands.js list",
+    "bootstrap:clawd-bot": "node scripts/bootstrap-clawd-bot.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.2.1",

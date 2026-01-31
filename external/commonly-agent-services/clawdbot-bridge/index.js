@@ -1,28 +1,27 @@
 /**
- * Clawdbot Bridge - Commonly Channel Integration
+ * Clawd-bot Bridge - Commonly Channel Integration
  *
- * This service bridges Commonly pods with Clawdbot, enabling:
- * - Direct @clawdbot-bridge mentions in pod chat
- * - Full context assembly using Commonly's Context API
- * - Memory file access (MEMORY.md, SKILLS.md, daily logs)
- * - Hybrid vector + keyword search for relevant context
+ * This service bridges Commonly pods with Clawd-bot AI, enabling:
+ * - Direct @clawd-bot mentions in pod chat
+ * - Full context assembly using Commonly's Bot API
+ * - Context-aware responses with pod memory, skills, and summaries
+ *
+ * Authentication: Uses a bot user API token (cm_*) with scoped permissions
+ * Required scopes: agent:events:read, agent:events:ack, agent:context:read,
+ *                  agent:messages:read, agent:messages:write
  */
 
 const baseUrl = process.env.COMMONLY_BASE_URL || 'http://backend:5000';
-const token = process.env.COMMONLY_AGENT_TOKEN;
+const token = process.env.COMMONLY_USER_TOKEN || process.env.COMMONLY_AGENT_TOKEN;
 const gatewayUrl = process.env.CLAWDBOT_GATEWAY_URL || 'http://clawdbot-gateway:18789';
 const gatewayToken = process.env.CLAWDBOT_GATEWAY_TOKEN;
 const agentId = process.env.CLAWDBOT_AGENT_ID || 'main';
 const model = process.env.CLAWDBOT_MODEL || `moltbot:${agentId}`;
-
-// Context configuration
-const MAX_CONTEXT_TOKENS = parseInt(process.env.CLAWDBOT_MAX_CONTEXT_TOKENS, 10) || 4000;
-const INCLUDE_MEMORY = process.env.CLAWDBOT_INCLUDE_MEMORY !== 'false';
-const INCLUDE_SKILLS = process.env.CLAWDBOT_INCLUDE_SKILLS !== 'false';
-const INCLUDE_SUMMARIES = process.env.CLAWDBOT_INCLUDE_SUMMARIES !== 'false';
+const agentName = process.env.CLAWDBOT_AGENT_NAME || 'clawd-bot';
+const instanceId = process.env.CLAWDBOT_INSTANCE_ID || 'default';
 
 if (!token) {
-  console.error('COMMONLY_AGENT_TOKEN is required.');
+  console.error('COMMONLY_USER_TOKEN is required (API token for clawd-bot user).');
   process.exit(1);
 }
 
@@ -43,11 +42,19 @@ const clawdbotHeaders = {
 };
 
 // ============================================================================
-// Commonly API Functions
+// Commonly Bot API Functions (/api/agents/runtime/bot/* endpoints)
 // ============================================================================
 
+/**
+ * Fetch pending events for clawd-bot using bot user API
+ * Uses /api/agents/runtime/bot/events with scoped token
+ */
 const fetchEvents = async () => {
-  const res = await fetch(`${baseUrl}/api/agents/runtime/events`, { headers: commonlyHeaders });
+  const url = new URL(`${baseUrl}/api/agents/runtime/bot/events`);
+  url.searchParams.append('agentName', agentName);
+  url.searchParams.append('instanceId', instanceId);
+
+  const res = await fetch(url, { headers: commonlyHeaders });
   if (!res.ok) {
     throw new Error(`Failed to fetch events: ${res.status}`);
   }
@@ -55,11 +62,20 @@ const fetchEvents = async () => {
   return data.events || [];
 };
 
+/**
+ * Post message to pod using bot message API
+ */
 const postMessage = async (podId, content, metadata = {}) => {
-  const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/messages`, {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/bot/pods/${podId}/messages`, {
     method: 'POST',
     headers: commonlyHeaders,
-    body: JSON.stringify({ content, metadata }),
+    body: JSON.stringify({
+      agentName,
+      instanceId,
+      content,
+      messageType: 'text',
+      metadata,
+    }),
   });
   if (!res.ok) {
     throw new Error(`Failed to post message: ${res.status}`);
@@ -67,10 +83,14 @@ const postMessage = async (podId, content, metadata = {}) => {
   return res.json();
 };
 
+/**
+ * Acknowledge event via bot API
+ */
 const ackEvent = async (eventId) => {
-  const res = await fetch(`${baseUrl}/api/agents/runtime/events/${eventId}/ack`, {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/bot/events/${eventId}/ack`, {
     method: 'POST',
     headers: commonlyHeaders,
+    body: JSON.stringify({ agentName, instanceId }),
   });
   if (!res.ok) {
     throw new Error(`Failed to ack event: ${res.status}`);
@@ -78,22 +98,16 @@ const ackEvent = async (eventId) => {
 };
 
 /**
- * Get full assembled context from Commonly's Context API
- * Uses /api/v1/context/:podId which provides:
- * - Pod metadata
- * - Memory (MEMORY.md)
- * - Relevant skills
- * - Relevant assets (via hybrid search)
- * - Recent summaries
+ * Get full assembled context from bot context API
+ * Uses /api/agents/runtime/bot/pods/:podId/context
  */
 const getAssembledContext = async (podId, task = null) => {
-  const url = new URL(`${baseUrl}/api/v1/context/${podId}`);
+  const url = new URL(`${baseUrl}/api/agents/runtime/bot/pods/${podId}/context`);
+  url.searchParams.append('agentName', agentName);
+  url.searchParams.append('instanceId', instanceId);
   if (task) {
     url.searchParams.append('task', task);
   }
-  url.searchParams.append('includeMemory', INCLUDE_MEMORY);
-  url.searchParams.append('includeSkills', INCLUDE_SKILLS);
-  url.searchParams.append('maxTokens', MAX_CONTEXT_TOKENS);
 
   const res = await fetch(url, { headers: commonlyHeaders });
   if (!res.ok) {
@@ -104,44 +118,15 @@ const getAssembledContext = async (podId, task = null) => {
 };
 
 /**
- * Search pod memory using hybrid vector + keyword search
- */
-const searchPodMemory = async (podId, query, limit = 5) => {
-  const url = new URL(`${baseUrl}/api/v1/search/${podId}`);
-  url.searchParams.append('q', query);
-  url.searchParams.append('limit', limit);
-
-  const res = await fetch(url, { headers: commonlyHeaders });
-  if (!res.ok) {
-    console.warn(`Failed to search pod memory: ${res.status}`);
-    return { results: [] };
-  }
-  return res.json();
-};
-
-/**
- * Get recent summaries for the pod
- */
-const getRecentSummaries = async (podId, hours = 24, limit = 5) => {
-  const url = new URL(`${baseUrl}/api/v1/pods/${podId}/summaries`);
-  url.searchParams.append('hours', hours);
-  url.searchParams.append('limit', limit);
-
-  const res = await fetch(url, { headers: commonlyHeaders });
-  if (!res.ok) {
-    console.warn(`Failed to get summaries: ${res.status}`);
-    return { summaries: [] };
-  }
-  return res.json();
-};
-
-/**
- * Get recent chat messages for conversation context
+ * Get recent chat messages using bot messages API
  */
 const getRecentMessages = async (podId, limit = 10) => {
-  const res = await fetch(`${baseUrl}/api/messages/${podId}?limit=${limit}`, {
-    headers: commonlyHeaders,
-  });
+  const url = new URL(`${baseUrl}/api/agents/runtime/bot/pods/${podId}/messages`);
+  url.searchParams.append('agentName', agentName);
+  url.searchParams.append('instanceId', instanceId);
+  url.searchParams.append('limit', limit.toString());
+
+  const res = await fetch(url, { headers: commonlyHeaders });
   if (!res.ok) {
     console.warn(`Failed to get recent messages: ${res.status}`);
     return [];
@@ -151,23 +136,24 @@ const getRecentMessages = async (podId, limit = 10) => {
 };
 
 /**
- * Read a specific memory file (MEMORY.md, SKILLS.md, daily logs)
+ * Get recent summaries for the pod (still uses v1 API)
  */
-const readMemoryFile = async (podId, path) => {
-  const res = await fetch(`${baseUrl}/api/v1/pods/${podId}/memory/${path}`, {
+const getRecentSummaries = async (podId, hours = 24) => {
+  const res = await fetch(`${baseUrl}/api/v1/pods/${podId}/summaries?hours=${hours}`, {
     headers: commonlyHeaders,
   });
   if (!res.ok) {
-    return null;
+    console.warn(`Failed to get summaries: ${res.status}`);
+    return [];
   }
   const data = await res.json();
-  return data.content;
+  return data.summaries || [];
 };
 
 /**
- * Write to pod memory (daily log, memory, or skill)
+ * Write to pod memory (MEMORY.md, daily log, or skill)
  */
-const writeToMemory = async (podId, target, content, tags = []) => {
+const writeMemory = async (podId, { target, content, tags = [], source = {} }) => {
   const res = await fetch(`${baseUrl}/api/v1/memory/${podId}`, {
     method: 'POST',
     headers: commonlyHeaders,
@@ -175,11 +161,11 @@ const writeToMemory = async (podId, target, content, tags = []) => {
       target,
       content,
       tags,
-      source: { agent: 'clawdbot-bridge' },
+      source: { ...source, agent: agentName, instanceId },
     }),
   });
   if (!res.ok) {
-    console.warn(`Failed to write to memory: ${res.status}`);
+    console.warn(`Failed to write memory: ${res.status}`);
     return null;
   }
   return res.json();
@@ -245,21 +231,21 @@ const buildConversationHistory = (messages) => {
 
   const formatted = messages
     .slice(-10)
-    .map((msg) => `${msg.userId?.username || 'Unknown'}: ${msg.content}`)
+    .map((msg) => `${msg.userId?.username || msg.username || 'Unknown'}: ${msg.content}`)
     .join('\n');
 
   return `\n## Recent Conversation\n${formatted}`;
 };
 
 // ============================================================================
-// Clawdbot Integration
+// Clawd-bot AI Integration
 // ============================================================================
 
 /**
- * Call Clawdbot with full context
+ * Call Clawd-bot AI with full context
  */
 const callClawdbotWithContext = async (userMessage, contextPrompt, conversationHistory) => {
-  const systemPrompt = `You are Clawdbot, an AI assistant integrated into a Commonly pod.
+  const systemPrompt = `You are Clawd 🐾, an AI assistant integrated into a Commonly pod.
 
 You have access to the pod's context, memory, skills, and recent activity.
 Use this information to provide helpful, contextual responses.
@@ -287,13 +273,13 @@ Guidelines:
   });
 
   if (!res.ok) {
-    throw new Error(`Clawdbot request failed: ${res.status}`);
+    throw new Error(`Clawd-bot request failed: ${res.status}`);
   }
 
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text;
   if (!content) {
-    throw new Error('Clawdbot response missing content');
+    throw new Error('Clawd-bot response missing content');
   }
   return String(content).trim();
 };
@@ -302,7 +288,7 @@ Guidelines:
  * Simple call for integration summaries
  */
 const callClawdbotSimple = async (summary) => {
-  const prompt = `You are a helpful assistant posting into a Commonly pod.
+  const prompt = `You are Clawd 🐾, a helpful assistant posting into a Commonly pod.
 
 Summarize and respond to this integration update in 2-3 sentences, optionally with 1 action item if relevant.
 
@@ -320,13 +306,13 @@ ${summary}`;
   });
 
   if (!res.ok) {
-    throw new Error(`Clawdbot request failed: ${res.status}`);
+    throw new Error(`Clawd-bot request failed: ${res.status}`);
   }
 
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text;
   if (!content) {
-    throw new Error('Clawdbot response missing content');
+    throw new Error('Clawd-bot response missing content');
   }
   return String(content).trim();
 };
@@ -348,7 +334,7 @@ const handleMentionEvent = async (event) => {
   console.log(`Processing mention from @${username}: "${content.substring(0, 50)}..."`);
 
   try {
-    // Fetch full context from Commonly's Context API
+    // Fetch full context from Commonly's Bot Context API
     // The task parameter triggers relevant skill/asset matching
     const [context, messages] = await Promise.all([
       getAssembledContext(event.podId, content),
@@ -359,7 +345,7 @@ const handleMentionEvent = async (event) => {
     const contextPrompt = buildContextPrompt(context);
     const conversationHistory = buildConversationHistory(messages);
 
-    // Call Clawdbot with full context
+    // Call Clawd-bot with full context
     const response = await callClawdbotWithContext(
       `@${username} asks: ${content}`,
       contextPrompt,
@@ -368,7 +354,7 @@ const handleMentionEvent = async (event) => {
 
     // Post response to pod
     await postMessage(event.podId, response, {
-      source: 'clawdbot-bridge',
+      source: 'clawd-bot',
       eventId: event._id,
       replyTo: messageId,
       mentionedBy: username,
@@ -389,7 +375,7 @@ const handleMentionEvent = async (event) => {
         `User @${username} mentioned you: "${content}"`,
       );
       await postMessage(event.podId, simpleResponse, {
-        source: 'clawdbot-bridge',
+        source: 'clawd-bot',
         eventId: event._id,
         fallback: true,
       });
@@ -415,7 +401,7 @@ const handleSummaryEvent = async (event) => {
   try {
     const response = await callClawdbotSimple(summaryContent);
     await postMessage(event.podId, response, {
-      source: 'clawdbot-bridge',
+      source: 'clawd-bot',
       eventId: event._id,
     });
   } catch (err) {
@@ -455,26 +441,25 @@ const poll = async () => {
       await handleEvent(event);
     }
   } catch (error) {
-    console.error('Clawdbot bridge poll failed:', error.message);
+    console.error('Clawd-bot bridge poll failed:', error.message);
   }
 };
 
 const intervalMs = parseInt(process.env.COMMONLY_AGENT_POLL_MS, 10) || 5000;
 
-console.log('Clawdbot Bridge starting...');
+console.log('Clawd 🐾 Bridge starting...');
+console.log(`  Agent: ${agentName} (instance: ${instanceId})`);
 console.log(`  Commonly API: ${baseUrl}`);
 console.log(`  Gateway: ${gatewayUrl}`);
 console.log(`  Poll interval: ${intervalMs}ms`);
-console.log(`  Context config: memory=${INCLUDE_MEMORY}, skills=${INCLUDE_SKILLS}, summaries=${INCLUDE_SUMMARIES}`);
-console.log(`  Max context tokens: ${MAX_CONTEXT_TOKENS}`);
 
 // Initial connection test
 fetchEvents()
   .then((events) => {
-    console.log(`Clawdbot Bridge connected. ${events.length} pending events.`);
+    console.log(`Clawd 🐾 Bridge connected. ${events.length} pending events.`);
   })
   .catch((err) => {
-    console.error('Clawdbot Bridge connection failed:', err.message);
+    console.error('Clawd 🐾 Bridge connection failed:', err.message);
   });
 
 setInterval(poll, intervalMs);
@@ -485,10 +470,9 @@ module.exports = {
   postMessage,
   ackEvent,
   getAssembledContext,
-  searchPodMemory,
+  getRecentMessages,
   getRecentSummaries,
-  readMemoryFile,
-  writeToMemory,
+  writeMemory,
   handleEvent,
   handleMentionEvent,
   handleSummaryEvent,
