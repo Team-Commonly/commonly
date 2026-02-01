@@ -1,15 +1,46 @@
+const fs = require('fs');
 const baseUrl = process.env.COMMONLY_BASE_URL || 'http://localhost:5000';
 const token = process.env.COMMONLY_AGENT_TOKEN;
+const userToken = process.env.COMMONLY_USER_TOKEN;
+const configPath = process.env.COMMONLY_AGENT_CONFIG_PATH;
 
-if (!token) {
-  console.error('COMMONLY_AGENT_TOKEN is required.');
-  process.exit(1);
-}
-
-const headers = {
-  Authorization: `Bearer ${token}`,
-  'Content-Type': 'application/json',
+const loadConfigAccounts = () => {
+  if (!configPath) return [];
+  try {
+    if (!fs.existsSync(configPath)) return [];
+    const raw = fs.readFileSync(configPath, 'utf8');
+    if (!raw.trim()) return [];
+    const data = JSON.parse(raw);
+    const accounts = data.accounts || {};
+    return Object.entries(accounts).map(([id, account]) => ({
+      id,
+      ...account,
+    }));
+  } catch (error) {
+    console.error('Failed to read COMMONLY_AGENT_CONFIG_PATH:', error.message);
+    return [];
+  }
 };
+
+const buildAccounts = () => {
+  const configAccounts = loadConfigAccounts();
+  if (configAccounts.length > 0) return configAccounts;
+  if (token) {
+    return [{
+      id: 'default',
+      runtimeToken: token,
+      userToken,
+      agentName: 'commonly-summarizer',
+      instanceId: 'default',
+    }];
+  }
+  return [];
+};
+
+const buildHeaders = (runtimeToken) => ({
+  Authorization: `Bearer ${runtimeToken}`,
+  'Content-Type': 'application/json',
+});
 
 const formatIntegrationSummary = (summary, sourceOverride) => {
   if (!summary) return '';
@@ -38,19 +69,22 @@ const formatIntegrationSummary = (summary, sourceOverride) => {
   })}`;
 };
 
-const fetchEvents = async () => {
-  const res = await fetch(`${baseUrl}/api/agents/runtime/events`, { headers });
+const fetchEvents = async (runtimeToken) => {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/events`, {
+    headers: buildHeaders(runtimeToken),
+  });
   if (!res.ok) {
-    throw new Error(`Failed to fetch events: ${res.status}`);
+    const text = await res.text();
+    throw new Error(`Failed to fetch events: ${res.status} ${text.slice(0, 200)}`);
   }
   const data = await res.json();
   return data.events || [];
 };
 
-const postMessage = async (podId, content, metadata = {}) => {
+const postMessage = async (runtimeToken, podId, content, metadata = {}) => {
   const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/messages`, {
     method: 'POST',
-    headers,
+    headers: buildHeaders(runtimeToken),
     body: JSON.stringify({ content, metadata }),
   });
   if (!res.ok) {
@@ -59,42 +93,45 @@ const postMessage = async (podId, content, metadata = {}) => {
   return res.json();
 };
 
-const ackEvent = async (eventId) => {
+const ackEvent = async (runtimeToken, eventId) => {
   const res = await fetch(`${baseUrl}/api/agents/runtime/events/${eventId}/ack`, {
     method: 'POST',
-    headers,
+    headers: buildHeaders(runtimeToken),
   });
   if (!res.ok) {
     throw new Error(`Failed to ack event: ${res.status}`);
   }
 };
 
-const handleEvent = async (event) => {
+const handleEvent = async (runtimeToken, event) => {
   if (!event?.payload?.summary) {
-    return ackEvent(event._id);
+    return ackEvent(runtimeToken, event._id);
   }
 
   const content = formatIntegrationSummary(event.payload.summary, event.payload.source);
   if (!content) {
-    return ackEvent(event._id);
+    return ackEvent(runtimeToken, event._id);
   }
 
-  await postMessage(event.podId, content, {
+  await postMessage(runtimeToken, event.podId, content, {
     source: 'commonly-bot',
     eventId: event._id,
   });
 
-  return ackEvent(event._id);
+  return ackEvent(runtimeToken, event._id);
 };
 
-const poll = async () => {
+const pollAccount = async (account) => {
   try {
-    const events = await fetchEvents();
+    if (!account.runtimeToken) {
+      return;
+    }
+    const events = await fetchEvents(account.runtimeToken);
     for (const event of events) {
-      await handleEvent(event);
+      await handleEvent(account.runtimeToken, event);
     }
   } catch (error) {
-    console.error('Commonly Bot poll failed:', error.message);
+    console.error(`Commonly Bot poll failed (${account.id}):`, error.message);
   }
 };
 
@@ -103,14 +140,42 @@ const intervalMs = parseInt(process.env.COMMONLY_AGENT_POLL_MS, 10) || 5000;
 console.log('Commonly Bot starting...');
 console.log(`  Commonly API: ${baseUrl}`);
 console.log(`  Poll interval: ${intervalMs}ms`);
+if (configPath) {
+  console.log(`  Config: ${configPath}`);
+}
 
-// Initial connection test
-fetchEvents()
-  .then((events) => {
-    console.log(`Commonly Bot connected. ${events.length} pending events.`);
-  })
-  .catch((err) => {
-    console.error('Commonly Bot connection failed:', err.message);
-  });
+if (userToken) {
+  console.log('  User token: configured (single account)');
+} else {
+  console.log('  User token: not set (runtime-only mode)');
+}
 
-setInterval(poll, intervalMs);
+const initialAccounts = buildAccounts();
+if (initialAccounts.length === 0) {
+  console.error('No agent tokens configured. Set COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
+  process.exit(1);
+}
+
+Promise.all(
+  initialAccounts.map((account) => (
+    fetchEvents(account.runtimeToken)
+      .then((events) => {
+        console.log(`Commonly Bot connected (${account.id}). ${events.length} pending events.`);
+      })
+      .catch((err) => {
+        console.error(`Commonly Bot connection failed (${account.id}):`, err.message);
+      })
+  )),
+).catch(() => {});
+
+let isPolling = false;
+setInterval(async () => {
+  if (isPolling) return;
+  isPolling = true;
+  const accounts = buildAccounts();
+  for (const account of accounts) {
+    // eslint-disable-next-line no-await-in-loop
+    await pollAccount(account);
+  }
+  isPolling = false;
+}, intervalMs);

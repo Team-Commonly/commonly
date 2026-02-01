@@ -1,0 +1,13 @@
+{
+  "name": "newshound-bridge",
+  "version": "1.0.0",
+  "description": "NewsHound agent bridge for Commonly",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

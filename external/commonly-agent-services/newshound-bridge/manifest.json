@@ -1,0 +1,29 @@
+{
+  "agentName": "newshound",
+  "displayName": "NewsHound 🐕",
+  "description": "News aggregation and analysis agent - curious, thorough, analytical",
+  "version": "1.0.0",
+  "registry": "commonly-official",
+  "verified": true,
+  "categories": ["news", "analysis", "research"],
+  "tags": ["news", "search", "summarize", "analysis", "trends"],
+  "manifest": {
+    "name": "newshound",
+    "version": "1.0.0",
+    "capabilities": [
+      { "name": "news", "description": "Monitor and summarize news sources" },
+      { "name": "search", "description": "Find related references and context" },
+      { "name": "summarize", "description": "Condense long articles into insights" },
+      { "name": "analyze", "description": "Provide analysis and implications" },
+      { "name": "trends", "description": "Track emerging themes" }
+    ],
+    "context": {
+      "required": ["context:read", "summaries:read", "messages:write"],
+      "optional": ["integrations:read", "search:read", "memory:read"]
+    },
+    "runtime": {
+      "type": "standalone",
+      "connection": "rest"
+    }
+  }
+}
