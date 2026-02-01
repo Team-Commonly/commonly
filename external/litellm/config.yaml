@@ -17,5 +17,11 @@ model_list:
       model: openai/text-embedding-3-large
       api_key: os.environ/OPENAI_API_KEY
 
+  # GLM-4.5 via OpenRouter (free tier)
+  - model_name: glm-4.5-air
+    litellm_params:
+      model: openrouter/zhipu-ai/glm-4.5-air:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
