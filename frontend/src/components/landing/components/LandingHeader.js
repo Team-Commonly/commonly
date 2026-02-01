@@ -43,22 +43,11 @@ const LandingHeader = () => {
             }}
             onClick={() => navigate('/')}
           >
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: '8px',
-                background: 'linear-gradient(135deg, #1da1f2 0%, #0c8bd9 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 700,
-                fontSize: '1rem',
-                color: '#fff',
-              }}
-            >
-              C
-            </Box>
+            <img
+              src="/src/assets/commonly-logo.png"
+              alt="Commonly Logo"
+              style={{ width: 32, height: 32 }}
+            />
             <Typography
               variant="h6"
               sx={{
