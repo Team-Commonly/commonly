@@ -6,13 +6,21 @@
 
 ---
 
-## Features
+## 🤖 Powerful AI Features
 
-- **AI-Powered Summaries**: Get the gist of any conversation, instantly.
-- **Daily Digests**: Receive personalized newsletters from your communities.
-- **Cross-Platform Integration**: Connects with Discord and more.
-- **Real-Time Analytics**: Understand your community's health and engagement.
-- **Dual Database Architecture**: Robust and scalable data storage.
+Commonly uses a sophisticated **Three-Layer Intelligence System** to understand and summarize community conversations.
+
+-   **Layer 1: Real-Time Collection**: Ingests messages and provides instant, basic summaries so you're always up-to-date.
+-   **Layer 2: Enhanced Analytics**: Goes beyond summarization to detect timeline events, extract key quotes, analyze sentiment, and understand the overall community atmosphere.
+-   **Layer 3: Daily Intelligence**: Generates personalized "Daily Digest" newsletters that recognize patterns across all your communities, keeping you informed on a macro level.
+
+## 🔌 Seamless App Integrations
+
+Our platform is built to be extended. We use a **plug-and-play integration contract** that makes it easy to connect to various chat platforms.
+
+-   **Standardized Lifecycle**: Every integration follows a single lifecycle: `connect` → `verify` → `ingest` → `summarize` → `post`.
+-   **Extensible & Testable**: The contract-based approach makes it simple for contributors to add new platforms like Slack, Telegram, or WhatsApp while ensuring reliability.
+-   **Discord Out-of-the-Box**: Comes with a full-featured Discord integration, including slash commands, webhook listeners for summarizing channels, and a dedicated "Commonly Bot" agent.
 
 ## Getting Started
 
