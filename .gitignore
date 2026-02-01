@@ -22,3 +22,6 @@ ca.pem
 .playwright-mcp/
 
 _external/
+
+# Ignore runtime-generated agent data
+external/clawdbot-state/config/agents/*
