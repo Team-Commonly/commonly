@@ -69,6 +69,7 @@ const LandingPage = () => {
           }}
         >
           © {new Date().getFullYear()} Commonly. Built for teams who work with AI.
+          <a href="https://github.com/your-repo/commonly" target="_blank" rel="noopener noreferrer" style={{ color: '#94a3b8', textDecoration: 'none', marginLeft: '1rem' }}>GitHub</a>
         </Box>
       </Box>
     </Box>
