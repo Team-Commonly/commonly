@@ -12,7 +12,8 @@
  */
 
 const baseUrl = process.env.COMMONLY_BASE_URL || 'http://backend:5000';
-const token = process.env.COMMONLY_USER_TOKEN || process.env.COMMONLY_AGENT_TOKEN;
+const userToken = process.env.COMMONLY_USER_TOKEN;
+const agentToken = process.env.COMMONLY_AGENT_TOKEN;
 const gatewayUrl = process.env.CLAWDBOT_GATEWAY_URL || 'http://clawdbot-gateway:18789';
 const gatewayToken = process.env.CLAWDBOT_GATEWAY_TOKEN;
 const runtimeAgentId = process.env.CLAWDBOT_AGENT_ID || 'main';
@@ -22,9 +23,16 @@ const agentType = process.env.CLAWDBOT_AGENT_TYPE || process.env.CLAWDBOT_AGENT_
 const instanceId = process.env.CLAWDBOT_INSTANCE_ID || 'default';
 // displayName for this instance (defaults to official name based on type)
 const displayName = process.env.CLAWDBOT_DISPLAY_NAME || null;
+const bridgeEnabled = process.env.CLAWDBOT_BRIDGE_ENABLED !== '0'
+  && process.env.CLAWDBOT_BRIDGE_ENABLED !== 'false';
 
-if (!token) {
-  console.error('COMMONLY_USER_TOKEN is required (API token for openclaw user).');
+if (!bridgeEnabled) {
+  console.log('Clawdbot bridge disabled (CLAWDBOT_BRIDGE_ENABLED=0).');
+  process.exit(0);
+}
+
+if (!agentToken && !userToken) {
+  console.error('COMMONLY_AGENT_TOKEN or COMMONLY_USER_TOKEN is required.');
   process.exit(1);
 }
 
@@ -33,15 +41,104 @@ if (!gatewayToken) {
   process.exit(1);
 }
 
-const commonlyHeaders = {
-  Authorization: `Bearer ${token}`,
+const botHeaders = userToken ? {
+  Authorization: `Bearer ${userToken}`,
   'Content-Type': 'application/json',
-};
+} : null;
+
+const runtimeHeaders = agentToken ? {
+  Authorization: `Bearer ${agentToken}`,
+  'Content-Type': 'application/json',
+} : null;
 
 const clawdbotHeaders = {
   Authorization: `Bearer ${gatewayToken}`,
   'Content-Type': 'application/json',
   'x-moltbot-agent-id': runtimeAgentId,
+};
+
+const processedEvents = new Set();
+
+// ============================================================================
+// Commonly Runtime API Functions (/api/agents/runtime/* endpoints)
+// ============================================================================
+
+const fetchRuntimeEvents = async () => {
+  const url = new URL(`${baseUrl}/api/agents/runtime/events`);
+  url.searchParams.append('agentName', agentType);
+  url.searchParams.append('instanceId', instanceId);
+
+  const res = await fetch(url, { headers: runtimeHeaders });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch events: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.events || [];
+};
+
+const ackRuntimeEvent = async (eventId) => {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/events/${eventId}/ack`, {
+    method: 'POST',
+    headers: runtimeHeaders,
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to ack event: ${res.status}`);
+  }
+};
+
+const postRuntimeMessage = async (podId, content, metadata = {}) => {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/messages`, {
+    method: 'POST',
+    headers: runtimeHeaders,
+    body: JSON.stringify({
+      content,
+      messageType: 'text',
+      metadata: { ...metadata, agentType, instanceId },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to post message: ${res.status}`);
+  }
+  return res.json();
+};
+
+const postRuntimeThreadComment = async (threadId, content) => {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/threads/${threadId}/comments`, {
+    method: 'POST',
+    headers: runtimeHeaders,
+    body: JSON.stringify({
+      content,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to post thread comment: ${res.status}`);
+  }
+  return res.json();
+};
+
+const getRuntimeContext = async (podId, task = null) => {
+  const url = new URL(`${baseUrl}/api/agents/runtime/pods/${podId}/context`);
+  if (task) {
+    url.searchParams.append('task', task);
+  }
+  const res = await fetch(url, { headers: runtimeHeaders });
+  if (!res.ok) {
+    console.warn(`Failed to get assembled context: ${res.status}`);
+    return null;
+  }
+  return res.json();
+};
+
+const getRuntimeMessages = async (podId, limit = 10) => {
+  const url = new URL(`${baseUrl}/api/agents/runtime/pods/${podId}/messages`);
+  url.searchParams.append('limit', limit.toString());
+  const res = await fetch(url, { headers: runtimeHeaders });
+  if (!res.ok) {
+    console.warn(`Failed to get recent messages: ${res.status}`);
+    return [];
+  }
+  const data = await res.json();
+  return data.messages || [];
 };
 
 // ============================================================================
@@ -53,11 +150,14 @@ const clawdbotHeaders = {
  * Uses /api/agents/runtime/bot/events with scoped token
  */
 const fetchEvents = async () => {
+  if (runtimeHeaders) {
+    return fetchRuntimeEvents();
+  }
   const url = new URL(`${baseUrl}/api/agents/runtime/bot/events`);
   url.searchParams.append('agentName', agentType);
   url.searchParams.append('instanceId', instanceId);
 
-  const res = await fetch(url, { headers: commonlyHeaders });
+  const res = await fetch(url, { headers: botHeaders });
   if (!res.ok) {
     throw new Error(`Failed to fetch events: ${res.status}`);
   }
@@ -69,9 +169,12 @@ const fetchEvents = async () => {
  * Post message to pod using bot message API
  */
 const postMessage = async (podId, content, metadata = {}) => {
+  if (runtimeHeaders) {
+    return postRuntimeMessage(podId, content, metadata);
+  }
   const res = await fetch(`${baseUrl}/api/agents/runtime/bot/pods/${podId}/messages`, {
     method: 'POST',
-    headers: commonlyHeaders,
+    headers: botHeaders,
     body: JSON.stringify({
       agentName: agentType,
       instanceId,
@@ -87,12 +190,38 @@ const postMessage = async (podId, content, metadata = {}) => {
 };
 
 /**
+ * Post thread comment using bot/runtime API
+ */
+const postThreadComment = async (threadId, content, podId = null) => {
+  if (runtimeHeaders) {
+    return postRuntimeThreadComment(threadId, content);
+  }
+  const res = await fetch(`${baseUrl}/api/agents/runtime/bot/threads/${threadId}/comments`, {
+    method: 'POST',
+    headers: botHeaders,
+    body: JSON.stringify({
+      agentName: agentType,
+      instanceId,
+      content,
+      podId,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to post thread comment: ${res.status}`);
+  }
+  return res.json();
+};
+
+/**
  * Acknowledge event via bot API
  */
 const ackEvent = async (eventId) => {
+  if (runtimeHeaders) {
+    return ackRuntimeEvent(eventId);
+  }
   const res = await fetch(`${baseUrl}/api/agents/runtime/bot/events/${eventId}/ack`, {
     method: 'POST',
-    headers: commonlyHeaders,
+    headers: botHeaders,
     body: JSON.stringify({ agentName: agentType, instanceId }),
   });
   if (!res.ok) {
@@ -105,6 +234,9 @@ const ackEvent = async (eventId) => {
  * Uses /api/agents/runtime/bot/pods/:podId/context
  */
 const getAssembledContext = async (podId, task = null) => {
+  if (runtimeHeaders) {
+    return getRuntimeContext(podId, task);
+  }
   const url = new URL(`${baseUrl}/api/agents/runtime/bot/pods/${podId}/context`);
   url.searchParams.append('agentName', agentType);
   url.searchParams.append('instanceId', instanceId);
@@ -112,7 +244,7 @@ const getAssembledContext = async (podId, task = null) => {
     url.searchParams.append('task', task);
   }
 
-  const res = await fetch(url, { headers: commonlyHeaders });
+  const res = await fetch(url, { headers: botHeaders });
   if (!res.ok) {
     console.warn(`Failed to get assembled context: ${res.status}`);
     return null;
@@ -124,12 +256,15 @@ const getAssembledContext = async (podId, task = null) => {
  * Get recent chat messages using bot messages API
  */
 const getRecentMessages = async (podId, limit = 10) => {
+  if (runtimeHeaders) {
+    return getRuntimeMessages(podId, limit);
+  }
   const url = new URL(`${baseUrl}/api/agents/runtime/bot/pods/${podId}/messages`);
   url.searchParams.append('agentName', agentType);
   url.searchParams.append('instanceId', instanceId);
   url.searchParams.append('limit', limit.toString());
 
-  const res = await fetch(url, { headers: commonlyHeaders });
+  const res = await fetch(url, { headers: botHeaders });
   if (!res.ok) {
     console.warn(`Failed to get recent messages: ${res.status}`);
     return [];
@@ -142,8 +277,11 @@ const getRecentMessages = async (podId, limit = 10) => {
  * Get recent summaries for the pod (still uses v1 API)
  */
 const getRecentSummaries = async (podId, hours = 24) => {
+  if (!botHeaders) {
+    return [];
+  }
   const res = await fetch(`${baseUrl}/api/v1/pods/${podId}/summaries?hours=${hours}`, {
-    headers: commonlyHeaders,
+    headers: botHeaders,
   });
   if (!res.ok) {
     console.warn(`Failed to get summaries: ${res.status}`);
@@ -157,9 +295,12 @@ const getRecentSummaries = async (podId, hours = 24) => {
  * Write to pod memory (MEMORY.md, daily log, or skill)
  */
 const writeMemory = async (podId, { target, content, tags = [], source = {} }) => {
+  if (!botHeaders) {
+    return null;
+  }
   const res = await fetch(`${baseUrl}/api/v1/memory/${podId}`, {
     method: 'POST',
-    headers: commonlyHeaders,
+    headers: botHeaders,
     body: JSON.stringify({
       target,
       content,
@@ -251,6 +392,26 @@ const getPersonaName = () => {
   return agentType;
 };
 
+const sanitizeReply = (raw) => {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  if (text.includes('NO_REPLY') || /no reply from agent\.?/i.test(text)) {
+    return '';
+  }
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  const filtered = lines.filter((line) => (
+    !/^i (will|am|seem|see|checked|cannot|can’t|do not|don't|will try|will now|will respond|will ask)/i.test(line)
+    && !/channel is required|unknown channel|unknown target|action send requires|missing_brave_api_key/i.test(line)
+    && !/telegram|discord|slack|webchat|tool/i.test(line)
+  ));
+  if (filtered.length === 0) {
+    return '';
+  }
+  const joined = filtered.join('\n');
+  const firstParagraph = joined.split('\n\n')[0] || joined;
+  return firstParagraph.trim();
+};
+
 /**
  * Call OpenClaw AI with full context
  */
@@ -268,6 +429,8 @@ Guidelines:
 - Be friendly and conversational
 - Reference pod context when relevant
 - Keep responses concise but helpful
+- Do not mention tools, channels, or internal errors
+- Reply with the final answer only
 - If asked about skills or memory, use the context provided`;
 
   const res = await fetch(`${gatewayUrl}/v1/chat/completions`, {
@@ -279,6 +442,8 @@ Guidelines:
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
       ],
+      tools: [],
+      tool_choice: 'none',
       temperature: 0.7,
     }),
   });
@@ -292,7 +457,7 @@ Guidelines:
   if (!content) {
     throw new Error('OpenClaw response missing content');
   }
-  return String(content).trim();
+  return sanitizeReply(content);
 };
 
 /**
@@ -313,6 +478,8 @@ ${summary}`;
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
+      tools: [],
+      tool_choice: 'none',
       temperature: 0.4,
     }),
   });
@@ -326,7 +493,7 @@ ${summary}`;
   if (!content) {
     throw new Error('OpenClaw response missing content');
   }
-  return String(content).trim();
+  return sanitizeReply(content);
 };
 
 // ============================================================================
@@ -342,6 +509,10 @@ const handleMentionEvent = async (event) => {
   if (!content) {
     return ackEvent(event._id);
   }
+  if (processedEvents.has(event._id)) {
+    return ackEvent(event._id);
+  }
+  processedEvents.add(event._id);
 
   console.log(`Processing mention from @${username}: "${content.substring(0, 50)}..."`);
 
@@ -363,6 +534,10 @@ const handleMentionEvent = async (event) => {
       contextPrompt,
       conversationHistory,
     );
+
+    if (!response) {
+      return ackEvent(event._id);
+    }
 
     // Post response to pod
     await postMessage(event.podId, response, {
@@ -386,14 +561,70 @@ const handleMentionEvent = async (event) => {
       const simpleResponse = await callClawdbotSimple(
         `User @${username} mentioned you: "${content}"`,
       );
-      await postMessage(event.podId, simpleResponse, {
-        source: agentType,
-        eventId: event._id,
-        fallback: true,
-      });
+      if (simpleResponse) {
+        await postMessage(event.podId, simpleResponse, {
+          source: agentType,
+          eventId: event._id,
+          fallback: true,
+        });
+      }
     } catch (fallbackErr) {
       console.error(`Fallback also failed: ${fallbackErr.message}`);
     }
+  }
+
+  return ackEvent(event._id);
+};
+
+/**
+ * Handle thread.mention events (mentions inside post comments)
+ */
+const handleThreadMentionEvent = async (event) => {
+  const payload = event.payload || {};
+  const { content, username } = payload;
+  const thread = payload.thread || {};
+  const threadId = thread.postId || payload.threadId;
+
+  if (!threadId || !content) {
+    return ackEvent(event._id);
+  }
+  if (processedEvents.has(event._id)) {
+    return ackEvent(event._id);
+  }
+  processedEvents.add(event._id);
+
+  console.log(`Processing thread mention from @${username}: "${content.substring(0, 50)}..."`);
+
+  try {
+    const [context, messages] = await Promise.all([
+      getAssembledContext(event.podId, content),
+      getRecentMessages(event.podId, 8),
+    ]);
+
+    const contextPrompt = buildContextPrompt(context);
+    const conversationHistory = buildConversationHistory(messages);
+    const postContent = thread?.postContent || '';
+    const commentText = thread?.commentText || content;
+
+    const response = await callClawdbotWithContext(
+      [
+        `Thread context:`,
+        `Post: ${postContent}`,
+        `Comment: ${commentText}`,
+        `User @${username} mentioned you in a thread. Reply directly to the comment with helpful, concise guidance.`,
+      ].join('\n'),
+      contextPrompt,
+      conversationHistory,
+    );
+
+    if (!response) {
+      return ackEvent(event._id);
+    }
+
+    await postThreadComment(threadId, response, event.podId);
+    console.log(`Responded to thread mention from @${username}`);
+  } catch (err) {
+    console.error(`Failed to handle thread mention: ${err.message}`);
   }
 
   return ackEvent(event._id);
@@ -407,15 +638,21 @@ const handleSummaryEvent = async (event) => {
   if (!summaryContent) {
     return ackEvent(event._id);
   }
+  if (processedEvents.has(event._id)) {
+    return ackEvent(event._id);
+  }
+  processedEvents.add(event._id);
 
   console.log(`Processing integration summary for pod ${event.podId}`);
 
   try {
     const response = await callClawdbotSimple(summaryContent);
-    await postMessage(event.podId, response, {
-      source: agentType,
-      eventId: event._id,
-    });
+    if (response) {
+      await postMessage(event.podId, response, {
+        source: agentType,
+        eventId: event._id,
+      });
+    }
   } catch (err) {
     console.error(`Failed to handle summary: ${err.message}`);
   }
@@ -427,6 +664,10 @@ const handleSummaryEvent = async (event) => {
  * Main event handler - routes to specific handlers
  */
 const handleEvent = async (event) => {
+  if (event.type === 'thread.mention') {
+    return handleThreadMentionEvent(event);
+  }
+
   // Handle chat.mention events (direct @mentions)
   if (event.type === 'chat.mention') {
     return handleMentionEvent(event);
