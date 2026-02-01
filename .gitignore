@@ -20,3 +20,5 @@ ca.pem
 /playwright/.cache/
 /playwright/.auth/
 .playwright-mcp/
+
+_external/
