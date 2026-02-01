@@ -108,49 +108,29 @@ const UserSchema = new mongoose.Schema({
 
 ```javascript
 const PostSchema = new mongoose.Schema({
-  content: {
-    type: String,
-    required: true,
-    trim: true,
-    maxlength: 500
+  podId: { type: mongoose.Schema.Types.ObjectId, ref: 'Pod', default: null },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  content: { type: String, required: true },
+  image: { type: String, default: '' },
+  category: { type: String, default: 'General' },
+  source: {
+    type: { type: String, default: 'user' }, // user | pod | external
+    provider: { type: String, default: 'internal' },
+    externalId: { type: String, default: null },
+    url: { type: String, default: null },
+    author: { type: String, default: null },
+    authorUrl: { type: String, default: null },
+    channel: { type: String, default: null }
   },
-  media: {
-    type: String
-  },
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  likes: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
+  likes: { type: Number, default: 0 },
+  likedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  tags: [{ type: String }],
   comments: [{
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    },
-    content: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 200
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now
-    }
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    text: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now }
   }],
-  tags: [{
-    type: String,
-    trim: true
-  }],
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  createdAt: { type: Date, default: Date.now }
 });
 ```
 
@@ -165,7 +145,7 @@ const PodSchema = new mongoose.Schema(
     description: { type: String, trim: true },
     type: {
       type: String,
-      enum: ['chat', 'study', 'games'],
+      enum: ['chat', 'study', 'games', 'agent-ensemble'],
       default: 'chat',
     },
     createdBy: {
@@ -186,6 +166,9 @@ const PodSchema = new mongoose.Schema(
 );
 ```
 
+Agent Ensemble Pods (`type: 'agent-ensemble'`) store additional configuration in `pod.agentEnsemble`
+for multi-agent orchestration (participants, stop conditions, schedules, and human participation).
+
 ### PodAsset Schema (MongoDB, Pod Memory Index)
 
 PodAssets provide indexed pod memory for agents and context assembly. They include summaries, integration windows, and LLM-generated skills.
@@ -200,6 +183,8 @@ const PodAssetSchema = new mongoose.Schema(
         'summary',
         'integration-summary',
         'skill',
+        'memory',
+        'daily-log',
         'message',
         'thread',
         'file',
@@ -234,6 +219,8 @@ const PodAssetSchema = new mongoose.Schema(
 Operational notes:
 - Chat summarization and integration buffer summarization persist PodAssets.
 - `GET /api/pods/:id/context` can synthesize LLM skill docs and upsert them as `PodAsset(type='skill')`.
+- Agent-scoped memory uses `metadata.scope = 'agent'` with `metadata.agentName` and `metadata.instanceId`.
+- Pod-shared memory uses `metadata.scope = 'pod'`. Assets without `metadata.scope` are treated as shared.
 
 ## PostgreSQL Schema
 
@@ -244,7 +231,7 @@ CREATE TABLE pods (
   id SERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   description TEXT,
-  type VARCHAR(50) NOT NULL CHECK (type IN ('chat', 'study', 'game')),
+  type VARCHAR(50) NOT NULL CHECK (type IN ('chat', 'study', 'games', 'agent-ensemble')),
   created_by VARCHAR(100) NOT NULL,  -- MongoDB ObjectId as string
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

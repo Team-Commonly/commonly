@@ -403,7 +403,7 @@ router.post('/', auth, async (req, res) => {
         permissions: config.permissions || ['read_messages', 'send_messages'],
       });
       await platformIntegration.save();
-    } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp'].includes(type)) {
+    } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp', 'x', 'instagram'].includes(type)) {
       // No platform-specific record required; mark as connected only when manifest is complete
       integration.status = isManifestComplete(type, nextConfig) ? 'connected' : 'pending';
       await integration.save();
@@ -734,6 +734,10 @@ router.patch('/:id', auth, async (req, res) => {
     }
 
     if (integration.type === 'slack' && config) {
+      update.status = update.status || (isManifestComplete(integration.type, nextConfig) ? 'connected' : 'pending');
+    }
+
+    if (['x', 'instagram'].includes(integration.type) && config) {
       update.status = update.status || (isManifestComplete(integration.type, nextConfig) ? 'connected' : 'pending');
     }
 

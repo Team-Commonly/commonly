@@ -44,6 +44,9 @@ const PodContextDevPage = () => {
   const [skillMode, setSkillMode] = useState('llm');
   const [skillRefreshHours, setSkillRefreshHours] = useState('6');
   const [showSummaryContent, setShowSummaryContent] = useState(false);
+  const [showSummaryAssets, setShowSummaryAssets] = useState(false);
+  const [assetScopeFilter, setAssetScopeFilter] = useState('shared');
+  const [groupAssetsByType, setGroupAssetsByType] = useState(true);
   const [context, setContext] = useState(null);
   const [loadingPods, setLoadingPods] = useState(true);
   const [loadingContext, setLoadingContext] = useState(false);
@@ -77,8 +80,10 @@ const PodContextDevPage = () => {
   ), [token]);
 
   const memoryTypeOptions = useMemo(() => ([
-    { value: 'summary', label: 'Summaries' },
-    { value: 'integration-summary', label: 'Integration' },
+    { value: 'summary', label: 'Summary Assets' },
+    { value: 'integration-summary', label: 'Integration Assets' },
+    { value: 'memory', label: 'Memory' },
+    { value: 'daily-log', label: 'Daily Logs' },
     { value: 'skill', label: 'Skills' },
     { value: 'message', label: 'Messages' },
     { value: 'thread', label: 'Threads' },
@@ -86,6 +91,77 @@ const PodContextDevPage = () => {
     { value: 'doc', label: 'Docs' },
     { value: 'link', label: 'Links' },
   ]), []);
+
+  const summaryAssetTypes = useMemo(() => new Set(['summary', 'integration-summary']), []);
+  const summaryAssets = useMemo(
+    () => (context?.assets || []).filter((asset) => summaryAssetTypes.has(asset.type)),
+    [context, summaryAssetTypes],
+  );
+  const nonSummaryAssets = useMemo(
+    () => (context?.assets || []).filter((asset) => !summaryAssetTypes.has(asset.type)),
+    [context, summaryAssetTypes],
+  );
+
+  const scopeFilterLabel = useMemo(() => ({
+    all: 'All scopes',
+    shared: 'Shared (pod)',
+    agent: 'Agent-only',
+  }), []);
+
+  const filterAssetsByScope = (assets) => {
+    if (!Array.isArray(assets)) return [];
+    if (assetScopeFilter === 'all') return assets;
+    if (assetScopeFilter === 'agent') {
+      return assets.filter((asset) => asset?.metadata?.scope === 'agent');
+    }
+    return assets.filter((asset) => asset?.metadata?.scope !== 'agent');
+  };
+
+  const filteredNonSummaryAssets = useMemo(
+    () => filterAssetsByScope(nonSummaryAssets),
+    [nonSummaryAssets, assetScopeFilter],
+  );
+
+  const filteredSummaryAssets = useMemo(
+    () => filterAssetsByScope(summaryAssets),
+    [summaryAssets, assetScopeFilter],
+  );
+
+  const typeLabels = useMemo(() => ({
+    summary: 'Summary',
+    'integration-summary': 'Integration Summary',
+    memory: 'Memory',
+    'daily-log': 'Daily Log',
+    message: 'Message',
+    thread: 'Thread',
+    file: 'File',
+    doc: 'Doc',
+    link: 'Link',
+    skill: 'Skill',
+  }), []);
+
+  const groupAssets = (assets) => {
+    if (!groupAssetsByType) return [{ type: 'all', items: assets }];
+    const groups = new Map();
+    assets.forEach((asset) => {
+      const type = asset?.type || 'unknown';
+      if (!groups.has(type)) groups.set(type, []);
+      groups.get(type).push(asset);
+    });
+    return Array.from(groups.entries())
+      .map(([type, items]) => ({ type, items }))
+      .sort((a, b) => b.items.length - a.items.length || a.type.localeCompare(b.type));
+  };
+
+  const groupedNonSummaryAssets = useMemo(
+    () => groupAssets(filteredNonSummaryAssets),
+    [filteredNonSummaryAssets, groupAssetsByType],
+  );
+
+  const groupedSummaryAssets = useMemo(
+    () => groupAssets(filteredSummaryAssets),
+    [filteredSummaryAssets, groupAssetsByType],
+  );
 
   useEffect(() => {
     const fetchPods = async () => {
@@ -383,7 +459,7 @@ const PodContextDevPage = () => {
                     <MenuItem value="none">Disabled</MenuItem>
                   </TextField>
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid item xs={12} md={3}>
                   <TextField
                     fullWidth
                     label="Skill Refresh Hours"
@@ -393,6 +469,20 @@ const PodContextDevPage = () => {
                     inputProps={{ min: 1, max: 72 }}
                     helperText="LLM skills refresh when stale or when a task is provided."
                   />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <TextField
+                    select
+                    fullWidth
+                    label="Asset Scope"
+                    value={assetScopeFilter}
+                    onChange={(event) => setAssetScopeFilter(event.target.value)}
+                    helperText={scopeFilterLabel[assetScopeFilter] || 'Scope filter'}
+                  >
+                    <MenuItem value="shared">Shared (pod)</MenuItem>
+                    <MenuItem value="agent">Agent-only</MenuItem>
+                    <MenuItem value="all">All scopes</MenuItem>
+                  </TextField>
                 </Grid>
               </Grid>
 
@@ -404,6 +494,24 @@ const PodContextDevPage = () => {
                   />
                 )}
                 label="Show Summary Content (Markdown)"
+              />
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={showSummaryAssets}
+                    onChange={(event) => setShowSummaryAssets(event.target.checked)}
+                  />
+                )}
+                label="Show Summary Assets (pod assets)"
+              />
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={groupAssetsByType}
+                    onChange={(event) => setGroupAssetsByType(event.target.checked)}
+                  />
+                )}
+                label="Group assets by type"
               />
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -446,6 +554,8 @@ const PodContextDevPage = () => {
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                   <Chip label={`Summaries: ${context.stats?.summaries ?? 0}`} />
                   <Chip label={`Assets: ${context.stats?.assets ?? 0}`} />
+                  <Chip label={`Assets (non-summary): ${filteredNonSummaryAssets.length}`} variant="outlined" />
+                  <Chip label={`Summary Assets: ${filteredSummaryAssets.length}`} variant="outlined" />
                   <Chip label={`Tags: ${context.stats?.tags ?? 0}`} />
                   <Chip label={`Skills: ${context.stats?.skills ?? 0}`} />
                   {context.skillModeUsed && (
@@ -632,7 +742,10 @@ const PodContextDevPage = () => {
               <Card variant="outlined" className="pod-context-card" sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
-                    Summaries
+                    Chat Summaries (Summary collection)
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                    These are the chat summary documents (separate from PodAsset memory).
                   </Typography>
                   <Stack spacing={1.5}>
                     {(context.summaries || []).map((summary) => (
@@ -681,28 +794,62 @@ const PodContextDevPage = () => {
               <Card variant="outlined" className="pod-context-card" sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
-                    Assets
+                    Assets (non-summary)
                   </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                    PodAssets excluding summary/integration-summary to avoid duplication with chat summaries.
+                  </Typography>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+                    {groupedNonSummaryAssets
+                      .filter((group) => group.type !== 'all')
+                      .map((group) => (
+                        <Chip
+                          key={`asset-type-${group.type}`}
+                          label={`${typeLabels[group.type] || group.type} (${group.items.length})`}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))}
+                  </Stack>
                   <Stack spacing={1.5}>
-                    {(context.assets || []).map((asset) => (
-                      <Box key={asset._id}>
-                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                          {asset.title}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {formatDate(asset.createdAt)}
-                          {typeof asset.relevanceScore === 'number' && ` · score ${asset.relevanceScore}`}
-                        </Typography>
-                        {!!asset.tags?.length && (
-                          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
-                            {asset.tags.map((tag) => (
-                              <Chip key={`${asset._id}-${tag}`} label={tag} size="small" />
-                            ))}
-                          </Stack>
+                    {groupedNonSummaryAssets.map((group) => (
+                      <Box key={`asset-group-${group.type}`}>
+                        {group.type !== 'all' && (
+                          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                            {typeLabels[group.type] || group.type} · {group.items.length}
+                          </Typography>
                         )}
+                        <Stack spacing={1.25}>
+                          {group.items.map((asset) => (
+                            <Box key={asset._id}>
+                              <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                                {asset.title}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {formatDate(asset.createdAt)}
+                                {typeof asset.relevanceScore === 'number' && ` · score ${asset.relevanceScore}`}
+                              </Typography>
+                              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                                {asset.type && (
+                                  <Chip label={asset.type} size="small" variant="outlined" />
+                                )}
+                                {asset.metadata?.scope && (
+                                  <Chip label={`scope: ${asset.metadata.scope}`} size="small" />
+                                )}
+                              </Stack>
+                              {!!asset.tags?.length && (
+                                <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                                  {asset.tags.map((tag) => (
+                                    <Chip key={`${asset._id}-${tag}`} label={tag} size="small" />
+                                  ))}
+                                </Stack>
+                              )}
+                            </Box>
+                          ))}
+                        </Stack>
                       </Box>
                     ))}
-                    {!(context.assets || []).length && (
+                    {!filteredNonSummaryAssets.length && (
                       <Typography variant="body2" color="text.secondary">
                         No assets found for this pod.
                       </Typography>
@@ -712,6 +859,75 @@ const PodContextDevPage = () => {
               </Card>
             </Grid>
           </Grid>
+
+          {showSummaryAssets && (
+            <Card variant="outlined" className="pod-context-card">
+              <CardContent>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
+                  Summary Assets (PodAsset)
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                  These are summary/integration-summary PodAssets (often derived from chat summaries).
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+                  {groupedSummaryAssets
+                    .filter((group) => group.type !== 'all')
+                    .map((group) => (
+                      <Chip
+                        key={`summary-type-${group.type}`}
+                        label={`${typeLabels[group.type] || group.type} (${group.items.length})`}
+                        size="small"
+                        variant="outlined"
+                      />
+                    ))}
+                </Stack>
+                <Stack spacing={1.5}>
+                  {groupedSummaryAssets.map((group) => (
+                    <Box key={`summary-group-${group.type}`}>
+                      {group.type !== 'all' && (
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                          {typeLabels[group.type] || group.type} · {group.items.length}
+                        </Typography>
+                      )}
+                      <Stack spacing={1.25}>
+                        {group.items.map((asset) => (
+                          <Box key={asset._id}>
+                            <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                              {asset.title}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {formatDate(asset.createdAt)}
+                              {typeof asset.relevanceScore === 'number' && ` · score ${asset.relevanceScore}`}
+                            </Typography>
+                            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                              {asset.type && (
+                                <Chip label={asset.type} size="small" variant="outlined" />
+                              )}
+                              {asset.metadata?.scope && (
+                                <Chip label={`scope: ${asset.metadata.scope}`} size="small" />
+                              )}
+                            </Stack>
+                            {!!asset.tags?.length && (
+                              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                                {asset.tags.map((tag) => (
+                                  <Chip key={`${asset._id}-${tag}`} label={tag} size="small" />
+                                ))}
+                              </Stack>
+                            )}
+                          </Box>
+                        ))}
+                      </Stack>
+                    </Box>
+                  ))}
+                  {!filteredSummaryAssets.length && (
+                    <Typography variant="body2" color="text.secondary">
+                      No summary assets found for this pod.
+                    </Typography>
+                  )}
+                </Stack>
+              </CardContent>
+            </Card>
+          )}
 
           <Card variant="outlined" className="pod-context-card">
             <CardContent>

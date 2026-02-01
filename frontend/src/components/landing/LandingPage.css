@@ -1,0 +1,160 @@
+/* LandingPage.css - Styles and animations for the landing page */
+
+/* Keyframe Animations */
+
+/* Gradient background shift */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Pulse animation for badges */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Bounce animation for scroll indicator */
+@keyframes bounce {
+  0%,
+  20%,
+  50%,
+  80%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-8px);
+  }
+  60% {
+    transform: translateY(-4px);
+  }
+}
+
+/* Fade in animation for sections */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Landing Page Base Styles */
+.landing-page {
+  /* Smooth scrolling */
+  scroll-behavior: smooth;
+}
+
+/* Hero section gradient animation */
+.hero-gradient {
+  background-size: 200% 200%;
+}
+
+/* Feature cards with staggered animation on scroll */
+.features-section .feature-card {
+  opacity: 0;
+  animation: fadeInUp 0.6s ease forwards;
+}
+
+/* Scroll-triggered animations using Intersection Observer would go here,
+   but for simplicity we'll use CSS animation delays */
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .landing-page {
+    /* Ensure proper touch scrolling on mobile */
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Integration badges hover state enhancement */
+.integration-badge:hover {
+  z-index: 1;
+}
+
+/* CTA section glass effect */
+.cta-section {
+  /* Additional glass morphism enhancement if needed */
+}
+
+/* Smooth transitions for all interactive elements */
+.landing-page button,
+.landing-page a {
+  transition: all 0.2s ease;
+}
+
+/* Focus states for accessibility */
+.landing-page button:focus-visible,
+.landing-page a:focus-visible {
+  outline: 2px solid #1da1f2;
+  outline-offset: 2px;
+}
+
+/* Remove default focus outlines when using mouse */
+.landing-page button:focus:not(:focus-visible),
+.landing-page a:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Typography enhancements */
+.landing-page h1,
+.landing-page h2,
+.landing-page h3 {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Gradient text fallback for older browsers */
+@supports not (background-clip: text) {
+  .landing-page [style*='background-clip: text'] {
+    color: #1da1f2;
+    background: none;
+  }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .landing-page * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .hero-gradient {
+    animation: none;
+  }
+
+  .features-section .feature-card {
+    opacity: 1;
+    animation: none;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .landing-page {
+    --border-color: rgba(255, 255, 255, 0.3);
+  }
+
+  .feature-card,
+  .integration-badge {
+    border-width: 2px;
+  }
+}

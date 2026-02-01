@@ -1,0 +1,10 @@
+{
+  "watch": ["."],
+  "ignore": [
+    "external/clawdbot-state/**",
+    "external/commonly-bot-state/**",
+    "external/commonly-agent-services/**",
+    "docs/**",
+    "node_modules/**"
+  ]
+}

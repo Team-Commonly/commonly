@@ -196,7 +196,7 @@ Add Commonly as an MCP server in moltbot's configuration:
           args: ["@commonly/mcp-server"],
           env: {
             COMMONLY_API_URL: "https://api.commonly.app",
-            COMMONLY_API_TOKEN: "..."
+            COMMONLY_USER_TOKEN: "..."
           }
         }
       }

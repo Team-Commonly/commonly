@@ -14,10 +14,16 @@ import { SmartToy as AgentIcon, Verified as VerifiedIcon } from '@mui/icons-mate
  */
 const AGENT_TYPES = {
   'commonly-bot': {
-    label: 'Commonly',
+    label: 'Summarizer',
     color: '#7C3AED',
     emoji: '🤖',
-    description: 'Commonly automated assistant',
+    description: 'Lightweight summarizer agent',
+  },
+  'commonly-ai-agent': {
+    label: 'Cuz',
+    color: '#7C3AED',
+    emoji: '🤙',
+    description: 'Commonly central bot',
   },
   moltbot: {
     label: 'Moltbot',
@@ -55,6 +61,7 @@ export const isAgentUsername = (username) => {
     lower.includes('-bot') ||
     lower.includes('_bot') ||
     lower.endsWith('bot') ||
+    lower.includes('-inst-') ||
     lower === 'moltbot' ||
     AGENT_TYPES[lower] !== undefined
   );

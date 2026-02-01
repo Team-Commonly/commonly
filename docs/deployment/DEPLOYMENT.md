@@ -34,7 +34,7 @@ cd commonly
 ```
 
 Notes:
-- `COMMONLY_BOT_TOKEN` and `CLAWDBOT_BRIDGE_TOKEN` are runtime tokens issued from the Agent Hub install/config flow.
+- `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` and `CLAWDBOT_BRIDGE_TOKEN` are runtime tokens issued from the Agent Hub install/config flow.
 - See `docs/agents/AGENT_RUNTIME.md` and `docs/agents/CLAWDBOT.md` for setup details.
 
 ### Step 2: Set Up Environment Files
@@ -75,6 +75,10 @@ DISCORD_PUBLIC_KEY=your_discord_public_key
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_SECRET_TOKEN=your_telegram_webhook_secret
 
+# X + Instagram (optional)
+X_API_BASE_URL=https://api.x.com/2
+INSTAGRAM_GRAPH_API_BASE=https://graph.facebook.com/v19.0
+
 # ===========================
 # ✅ Optional Model Gateway (LiteLLM)
 # ===========================
@@ -83,6 +87,7 @@ LITELLM_MASTER_KEY=dev-litellm-key
 LITELLM_BASE_URL=http://litellm:4000
 LITELLM_API_KEY=dev-litellm-key
 LITELLM_CHAT_MODEL=gemini-2.0-flash
+LITELLM_DISABLED=true
 EMBEDDING_PROVIDER=litellm
 EMBEDDING_MODEL=text-embedding-3-large
 EMBEDDING_DIMENSIONS=3072
@@ -90,8 +95,10 @@ EMBEDDING_DIMENSIONS=3072
 # ===========================
 # ✅ External Agents / Clawdbot (optional)
 # ===========================
-COMMONLY_BOT_TOKEN=cm_agent_...
-CLAWDBOT_BRIDGE_TOKEN=cm_agent_...
+COMMONLY_SUMMARIZER_RUNTIME_TOKEN=cm_agent_...
+COMMONLY_SUMMARIZER_USER_TOKEN=cm_...  # optional
+OPENCLAW_RUNTIME_TOKEN=cm_agent_...
+OPENCLAW_USER_TOKEN=cm_...
 CLAWDBOT_GATEWAY_TOKEN=dev-token
 CLAWDBOT_GATEWAY_URL=http://clawdbot-gateway:18789
 ```

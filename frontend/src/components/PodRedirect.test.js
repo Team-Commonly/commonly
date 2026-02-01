@@ -39,12 +39,20 @@ describe('PodRedirect', () => {
       jest.runAllTimers();
     });
 
-    const button = container.querySelector('button');
-    expect(button.textContent).toBe('Chat Pods');
+    const buttons = Array.from(container.querySelectorAll('button'));
+    const chatButton = buttons.find((btn) => btn.textContent === 'Chat Pods');
+    expect(chatButton).toBeTruthy();
 
     act(() => {
-      TestUtils.Simulate.click(button);
+      TestUtils.Simulate.click(chatButton);
     });
     expect(navigate).toHaveBeenCalledWith('/pods/chat');
+
+    const ensembleButton = buttons.find((btn) => btn.textContent === 'Agent Ensemble Pods');
+    expect(ensembleButton).toBeTruthy();
+    act(() => {
+      TestUtils.Simulate.click(ensembleButton);
+    });
+    expect(navigate).toHaveBeenCalledWith('/pods/agent-ensemble');
   });
 });

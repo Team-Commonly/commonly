@@ -1,5 +1,5 @@
 /* eslint-disable max-len */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Menu, MenuItem, CircularProgress, Tooltip } from '@mui/material';
@@ -10,12 +10,34 @@ import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
 import FavoriteIcon from '@mui/icons-material/Favorite';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EmojiPicker from 'emoji-picker-react';
+import { AgentAvatar } from './common/AgentIndicator';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import { refreshPage } from '../utils/refreshUtils';
 import './Thread.css';
 import '../components/PostFeed.css';
+
+const normalizeAgentSegment = (value) => (
+    (value || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40)
+);
+
+const buildAgentUsername = (agentName, instanceId) => {
+    const normalized = normalizeAgentSegment(agentName);
+    const instance = normalizeAgentSegment(instanceId);
+    if (!instance || instance === 'default' || instance === normalized) {
+        return normalized || 'agent';
+    }
+    return `${normalized}-${instance}`;
+};
+
+const slugify = (value = '') => value
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
 const Thread = () => {
     const { id } = useParams();
@@ -30,7 +52,57 @@ const Thread = () => {
     const [selectedItemId, setSelectedItemId] = useState(null);
     const [itemType, setItemType] = useState(null); // 'post' or 'comment'
     const [loading, setLoading] = useState(true);
-    const emojiButtonRef = React.useRef(null);
+    const [podAgents, setPodAgents] = useState([]);
+    const [threadPodId, setThreadPodId] = useState(null);
+    const [mentionOpen, setMentionOpen] = useState(false);
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionStart, setMentionStart] = useState(-1);
+    const [mentionIndex, setMentionIndex] = useState(0);
+    const [lightboxImage, setLightboxImage] = useState(null);
+    const [lightboxAlt, setLightboxAlt] = useState('');
+    const [lightboxZoomed, setLightboxZoomed] = useState(false);
+    const emojiButtonRef = useRef(null);
+    const commentInputRef = useRef(null);
+    const mentionDropdownRef = useRef(null);
+
+    const { agentMentionCounts } = useMemo(() => {
+        const counts = new Map();
+        (podAgents || []).forEach((agent) => {
+            counts.set(agent.name, (counts.get(agent.name) || 0) + 1);
+        });
+        return { agentMentionCounts: counts };
+    }, [podAgents]);
+
+    const mentionableItems = useMemo(() => {
+        const items = [];
+        (podAgents || []).forEach((agent) => {
+            const agentName = agent?.name;
+            if (!agentName) return;
+            const display = agent.profile?.displayName || agent.displayName || agent.name;
+            const username = buildAgentUsername(agent.name, agent.instanceId);
+            const count = agentMentionCounts.get(agentName) || 0;
+            const displaySlug = slugify(display);
+            const mentionValue = count > 1 ? (displaySlug || `${agent.name}-${agent.instanceId}`) : agent.name;
+            const labelSearch = `${display} ${agent.name} ${username} ${mentionValue}`.toLowerCase();
+            items.push({
+                id: username,
+                label: display,
+                labelLower: labelSearch,
+                subtitle: `Agent • @${mentionValue}`,
+                avatar: agent?.profile?.iconUrl || agent?.profile?.avatarUrl || '',
+                isAgent: true,
+                value: mentionValue,
+            });
+        });
+        return items;
+    }, [podAgents, agentMentionCounts]);
+
+    const filteredMentions = useMemo(() => {
+        if (!mentionOpen) return [];
+        const query = mentionQuery.trim().toLowerCase();
+        const result = mentionableItems.filter((item) => item.labelLower.includes(query));
+        return result.slice(0, 8);
+    }, [mentionOpen, mentionQuery, mentionableItems]);
 
     useEffect(() => {
         const fetchPost = async () => {
@@ -58,13 +130,64 @@ const Thread = () => {
         fetchPost();
     }, [id, currentUser]);
 
+    useEffect(() => {
+        const fetchThreadAgents = async () => {
+            if (!currentUser || !post) return;
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            const authHeaders = {
+                headers: { Authorization: `Bearer ${token}` }
+            };
+
+            try {
+                const postPodId = typeof post?.podId === 'object' ? post.podId?._id : post?.podId;
+                let resolvedPodId = postPodId || null;
+                if (!resolvedPodId) {
+                    const podsRes = await axios.get('/api/pods', authHeaders);
+                    const pods = Array.isArray(podsRes.data) ? podsRes.data : podsRes.data?.pods || [];
+                    resolvedPodId = pods[0]?._id || null;
+                }
+
+                setThreadPodId(resolvedPodId);
+
+                if (!resolvedPodId) {
+                    setPodAgents([]);
+                    return;
+                }
+
+                const agentsRes = await axios.get(`/api/registry/pods/${resolvedPodId}/agents`, authHeaders);
+                setPodAgents(agentsRes.data?.agents || []);
+            } catch (err) {
+                console.warn('Failed to fetch thread agents:', err.response?.status);
+            }
+        };
+
+        fetchThreadAgents();
+    }, [post, currentUser]);
+
+    const openLightbox = (src, alt = '') => {
+        setLightboxImage(src);
+        setLightboxAlt(alt);
+        setLightboxZoomed(false);
+    };
+
+    const closeLightbox = () => {
+        setLightboxImage(null);
+        setLightboxAlt('');
+        setLightboxZoomed(false);
+    };
+
     const handleCommentSubmit = async (e) => {
         e.preventDefault();
         if (!comment.trim()) return;
     
         try {
+            const payload = {
+                text: comment,
+                ...(threadPodId ? { podId: threadPodId } : {}),
+            };
             const res = await axios.post(`/api/posts/${id}/comments`, 
-                { text: comment },
+                payload,
                 { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
             );
             setPost(prevPost => ({
@@ -73,6 +196,9 @@ const Thread = () => {
             }));
             setComment('');
             setShowEmojiPicker(false);
+            setMentionOpen(false);
+            setMentionQuery('');
+            setMentionStart(-1);
             
             // Refresh data to ensure consistency
             refreshData();
@@ -175,6 +301,87 @@ const Thread = () => {
         }
     };
 
+    const getMentionContext = (text, cursor) => {
+        if (!text || cursor === null || cursor === undefined) return null;
+        const atIndex = text.lastIndexOf('@', cursor - 1);
+        if (atIndex < 0) return null;
+        const beforeChar = text[atIndex - 1];
+        if (beforeChar && !/\s|[([{"'`]/.test(beforeChar)) return null;
+        const between = text.slice(atIndex + 1, cursor);
+        if (/\s/.test(between)) return null;
+        return { start: atIndex, query: between };
+    };
+
+    const updateMentionState = (nextValue, cursorPosition) => {
+        const context = getMentionContext(nextValue, cursorPosition);
+        if (!context) {
+            setMentionOpen(false);
+            setMentionQuery('');
+            setMentionStart(-1);
+            return;
+        }
+        setMentionOpen(true);
+        setMentionQuery(context.query);
+        setMentionStart(context.start);
+        setMentionIndex(0);
+    };
+
+    const handleMentionSelect = (item) => {
+        const input = commentInputRef.current;
+        if (!input) return;
+        const cursor = input.selectionStart ?? comment.length;
+        const start = mentionStart >= 0 ? mentionStart : comment.lastIndexOf('@', cursor);
+        if (start < 0) return;
+        const insert = `@${item.value || item.label}`;
+        const nextValue = `${comment.slice(0, start)}${insert} ${comment.slice(cursor)}`;
+        setComment(nextValue);
+        setMentionOpen(false);
+        setMentionQuery('');
+        setMentionStart(-1);
+        requestAnimationFrame(() => {
+            const nextCursor = start + insert.length + 1;
+            input.focus();
+            input.setSelectionRange(nextCursor, nextCursor);
+        });
+    };
+
+    const handleCommentKeyDown = (event) => {
+        if (mentionOpen && filteredMentions.length > 0) {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setMentionIndex((prev) => (prev + 1) % filteredMentions.length);
+                return;
+            }
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setMentionIndex((prev) => (prev - 1 + filteredMentions.length) % filteredMentions.length);
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                setMentionOpen(false);
+                return;
+            }
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                const selected = filteredMentions[mentionIndex];
+                if (selected) {
+                    handleMentionSelect(selected);
+                }
+                return;
+            }
+        }
+        if (event.key !== 'Enter') {
+            return;
+        }
+        if (event.shiftKey) {
+            event.stopPropagation();
+            return;
+        }
+        event.preventDefault();
+        handleCommentSubmit(event);
+    };
+
     // Handle clicking outside emoji picker
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -197,6 +404,20 @@ const Thread = () => {
         };
     }, [showEmojiPicker]);
 
+    useEffect(() => {
+        const handleMentionClickOutside = (event) => {
+            if (!mentionOpen) return;
+            if (mentionDropdownRef.current && mentionDropdownRef.current.contains(event.target)) return;
+            if (commentInputRef.current && commentInputRef.current.contains(event.target)) return;
+            setMentionOpen(false);
+        };
+
+        document.addEventListener('mousedown', handleMentionClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleMentionClickOutside);
+        };
+    }, [mentionOpen]);
+
     if (error) return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
     if (loading) return (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -206,7 +427,30 @@ const Thread = () => {
     if (!post) return <Typography sx={{ p: 2 }}>Post not found</Typography>;
 
     return (
-        <Box sx={{ maxWidth: 800, mx: 'auto', p: 3, mt: 8 }}>
+        <Box
+            className="thread-wrapper"
+            sx={{
+                maxWidth: 800,
+                mx: 'auto',
+                px: { xs: 2, sm: 3 },
+                pt: { xs: 2, sm: 3 },
+                pb: { xs: 10, sm: 6 },
+                mt: { xs: 2, sm: 4 }
+            }}
+        >
+            {lightboxImage && (
+                <div className="image-lightbox" onClick={closeLightbox} role="presentation">
+                    <img
+                        src={lightboxImage}
+                        alt={lightboxAlt || 'Post'}
+                        className={`image-lightbox-img ${lightboxZoomed ? 'zoomed' : ''}`}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setLightboxZoomed((prev) => !prev);
+                        }}
+                    />
+                </div>
+            )}
             <Card sx={{ mb: 4 }}>
                 <CardContent>
                     <div className="post-header">
@@ -263,6 +507,7 @@ const Thread = () => {
                                     maxHeight: '500px',
                                 }}
                                 className="post-image-container"
+                                onClick={() => openLightbox(post.image, post.content)}
                             >
                                 <Box
                                     component="img"
@@ -296,6 +541,30 @@ const Thread = () => {
 
             <div className="thread-comment-form">
                 <form onSubmit={handleCommentSubmit} className="comment-composer">
+                    {mentionOpen && filteredMentions.length > 0 && (
+                        <div className="mention-dropdown" ref={mentionDropdownRef}>
+                            {filteredMentions.map((item, index) => (
+                                <button
+                                    type="button"
+                                    key={item.id}
+                                    className={`mention-item ${index === mentionIndex ? 'active' : ''}`}
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => handleMentionSelect(item)}
+                                >
+                                    <AgentAvatar
+                                        username={item.value || item.label}
+                                        src={item.avatar}
+                                        size={28}
+                                        showBadge={true}
+                                    />
+                                    <div className="mention-item-text">
+                                        <span className="mention-item-label">@{item.label}</span>
+                                        <span className="mention-item-subtitle">{item.subtitle}</span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                     <div className="comment-composer-row">
                         <div className="comment-tools">
                             <Tooltip title="Emoji" placement="top">
@@ -314,8 +583,16 @@ const Thread = () => {
                         <textarea
                             className="comment-textarea"
                             value={comment}
-                            onChange={(e) => setComment(e.target.value)}
+                            onChange={(e) => {
+                                const nextValue = e.target.value;
+                                setComment(nextValue);
+                                updateMentionState(nextValue, e.target.selectionStart);
+                            }}
+                            onKeyDown={handleCommentKeyDown}
+                            onClick={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
+                            onKeyUp={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
                             placeholder="Write a comment..."
+                            ref={commentInputRef}
                         />
                         <Button
                             type="submit"

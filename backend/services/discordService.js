@@ -585,16 +585,35 @@ class DiscordService {
       );
 
       const AgentEventService = require('./agentEventService');
-      await AgentEventService.enqueue({
-        agentName: 'commonly-bot',
-        podId: this.integration.podId,
-        type: 'discord.summary',
-        payload: {
-          summary: discordSummary,
-          integrationId: this.integration._id.toString(),
-          source: 'discord',
-        },
-      });
+      const { AgentInstallation } = require('../models/AgentRegistry');
+      let installations = [];
+      try {
+        installations = await AgentInstallation.find({
+          agentName: 'commonly-bot',
+          podId: this.integration.podId,
+          status: 'active',
+        }).lean();
+      } catch (err) {
+        console.warn('Discord sync agent lookup failed:', err.message);
+      }
+
+      const targets = installations.length > 0 ? installations : [{ instanceId: 'default' }];
+
+      await Promise.all(
+        targets.map((installation) => (
+          AgentEventService.enqueue({
+            agentName: 'commonly-bot',
+            instanceId: installation.instanceId || 'default',
+            podId: this.integration.podId,
+            type: 'discord.summary',
+            payload: {
+              summary: discordSummary,
+              integrationId: this.integration._id.toString(),
+              source: 'discord',
+            },
+          })
+        )),
+      );
 
       {
         // Save to Discord summary history

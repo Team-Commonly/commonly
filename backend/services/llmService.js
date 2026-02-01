@@ -77,8 +77,16 @@ const generateViaGemini = async (prompt, options = {}) => {
 };
 
 const generateText = async (prompt, options = {}) => {
-  if (process.env.LITELLM_BASE_URL) {
-    return generateViaLiteLLM(prompt, options);
+  const litellmDisabled = String(process.env.LITELLM_DISABLED || '').toLowerCase() === 'true';
+  if (!litellmDisabled && process.env.LITELLM_BASE_URL) {
+    try {
+      return await generateViaLiteLLM(prompt, options);
+    } catch (error) {
+      if (process.env.GEMINI_API_KEY) {
+        return generateViaGemini(prompt, options);
+      }
+      throw error;
+    }
   }
   return generateViaGemini(prompt, options);
 };

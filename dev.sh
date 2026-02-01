@@ -91,21 +91,16 @@ case "$1" in
                 ;;
             down)
                 echo "🛑 Stopping Clawdbot services..."
-                docker-compose -f $COMPOSE_FILE --profile clawdbot stop clawdbot-gateway clawdbot-cli clawdbot-bridge
+                docker-compose -f $COMPOSE_FILE --profile clawdbot stop clawdbot-gateway clawdbot-cli
                 echo "✅ Clawdbot services stopped!"
                 ;;
             logs)
-                if [ -n "$3" ]; then
-                    echo "📋 Showing logs for: clawdbot-$3"
-                    docker-compose -f $COMPOSE_FILE logs -f "clawdbot-$3"
-                else
-                    echo "📋 Showing Clawdbot bridge logs..."
-                    docker-compose -f $COMPOSE_FILE logs -f clawdbot-bridge
-                fi
+                echo "📋 Showing logs for: clawdbot-$3"
+                docker-compose -f $COMPOSE_FILE logs -f "clawdbot-$3"
                 ;;
             restart)
                 echo "🔄 Restarting Clawdbot services..."
-                docker-compose -f $COMPOSE_FILE --profile clawdbot restart clawdbot-gateway clawdbot-cli clawdbot-bridge
+                docker-compose -f $COMPOSE_FILE --profile clawdbot restart clawdbot-gateway clawdbot-cli
                 echo "✅ Clawdbot services restarted!"
                 ;;
             build)

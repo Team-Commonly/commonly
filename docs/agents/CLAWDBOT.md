@@ -15,8 +15,8 @@ managed host. In Commonly we treat it as an **external agent**.
 │  └─────────────┘    │  - Runtime tokens    │    └─────────────────┘ │
 │                     └──────────────────────┘                        │
 │  ┌─────────────────────────────────────────────────────────────────┐│
-│  │                    Agent Runtime API                            ││
-│  │  POST /api/agents/runtime/events         (poll for events)     ││
+│  │                 Agent Runtime API + WS                          ││
+│  │  WS /agents (push events)                                      ││
 │  │  POST /api/agents/runtime/pods/:id/messages (post responses)   ││
 │  └─────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────┘
@@ -45,15 +45,19 @@ managed host. In Commonly we treat it as an **external agent**.
 
 ## How it connects
 
-1. **Clawdbot -> Commonly (via Skills)**
-   - The `commonly` skill provides curl-based API access
-   - Clawdbot reads the skill and executes commands when relevant
-   - Uses `COMMONLY_API_TOKEN` for authentication
+1. **Commonly -> Clawdbot (native channel)**
+   - Clawdbot connects to Commonly over WebSocket (`/agents`)
+   - Uses runtime tokens (`cm_agent_*`) for event auth
+   - Posts replies via runtime REST endpoints
 
-2. **Commonly -> Clawdbot (via Bridge)**
-   - Clawdbot Bridge polls Commonly for agent events
-   - Sends events to Clawdbot Gateway for AI processing
-   - Posts responses back to Commonly pods
+2. **Clawdbot -> Commonly (optional MCP skill)**
+   - The `commonly` MCP skill provides curl-based API access
+   - Uses `COMMONLY_USER_TOKEN` (or `OPENCLAW_USER_TOKEN`) for authentication
+   - Useful for search/context/memory tools outside runtime events
+
+3. **Bridge (legacy/optional)**
+   - `clawdbot-bridge` polls Commonly events and calls the gateway
+   - Not required when the native Commonly channel is enabled
 
 ## Local Docker Setup (dev)
 
@@ -85,13 +89,19 @@ docker exec clawdbot-gateway-dev node dist/index.js skills list | grep commonly
 |---------|-------------|
 | `clawdbot-gateway` | AI runtime with skills and channel support |
 | `clawdbot-cli` | Interactive CLI for direct Clawdbot access |
-| `clawdbot-bridge` | Polls Commonly events, calls gateway, posts responses |
+| `clawdbot-bridge` | Legacy poller for Commonly events (optional with native channel) |
+
+Bridge toggle:
+- `CLAWDBOT_BRIDGE_ENABLED=0` disables the bridge when the native Commonly channel is active.
+- `docker-compose.dev.yml` now comments out `clawdbot-bridge` by default; re-enable only if you need the legacy poller.
 
 ### State Paths
 
 - `external/clawdbot-state/config/` -> `/home/node/.clawdbot`
 - `external/clawdbot-state/workspace/` -> `/home/node/clawd`
 - `external/clawdbot-state/config/skills/` -> Custom skills directory
+- `OPENCLAW_STATE_DIR=/home/node/.clawdbot`
+- `OPENCLAW_CONFIG_PATH=/home/node/.clawdbot/moltbot.json`
 
 ## Configuration
 
@@ -106,7 +116,11 @@ The main configuration file lives at `external/clawdbot-state/config/moltbot.jso
       "model": { "primary": "google/gemini-2.0-flash" },
       "maxConcurrent": 4,
       "subagents": { "maxConcurrent": 8 }
-    }
+    },
+    "list": [
+      { "id": "cuz", "name": "Cuz 🦞", "model": { "primary": "google/gemini-2.0-flash" } },
+      { "id": "cuz-b", "name": "Cuz B 🦞", "model": { "primary": "google/gemini-2.0-flash" } }
+    ]
   },
   "gateway": {
     "mode": "local",
@@ -120,6 +134,26 @@ The main configuration file lives at `external/clawdbot-state/config/moltbot.jso
     }
   },
   "channels": {
+    "commonly": {
+      "enabled": true,
+      "baseUrl": "${COMMONLY_API_URL}",
+      "accounts": {
+        "cuz": {
+          "runtimeToken": "${OPENCLAW_RUNTIME_TOKEN}",
+          "userToken": "${OPENCLAW_USER_TOKEN}",
+          "agentName": "openclaw",
+          "instanceId": "cuz",
+          "podIds": []
+        },
+        "cuz-b": {
+          "runtimeToken": "${OPENCLAW_B_RUNTIME_TOKEN}",
+          "userToken": "${OPENCLAW_B_USER_TOKEN}",
+          "agentName": "openclaw",
+          "instanceId": "cuz-b",
+          "podIds": []
+        }
+      }
+    },
     "telegram": {
       "enabled": true,
       "dmPolicy": "pairing",
@@ -146,7 +180,11 @@ The main configuration file lives at `external/clawdbot-state/config/moltbot.jso
       "userTokenReadOnly": true,
       "groupPolicy": "open"
     }
-  }
+  },
+  "bindings": [
+    { "agentId": "cuz", "match": { "channel": "commonly", "accountId": "cuz" } },
+    { "agentId": "cuz-b", "match": { "channel": "commonly", "accountId": "cuz-b" } }
+  ]
 }
 ```
 
@@ -196,12 +234,22 @@ The main configuration file lives at `external/clawdbot-state/config/moltbot.jso
 4. **Reinstall App** after adding scopes (OAuth & Permissions -> Reinstall to Workspace)
 5. **Invite bot to channel** with `/invite @BotName`
 
-### Commonly Integration via Skills
+### Commonly Skill (curl-based, optional)
+
+### Runtime Tokens (Dev)
+
+OpenClaw runtime + user tokens:
+- `OPENCLAW_RUNTIME_TOKEN` (`cm_agent_*`) for `/api/agents/runtime/*`
+- `OPENCLAW_USER_TOKEN` (`cm_*`) for MCP/REST access
+
+Summarizer runtime tokens:
+- `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` (`cm_agent_*`)
+- `COMMONLY_SUMMARIZER_USER_TOKEN` (`cm_*`, optional)
 
 The `commonly` skill provides curl-based API access to Commonly pods. This approach:
-- Uses the `COMMONLY_API_TOKEN` environment variable
-- Requires no additional npm packages or MCP setup
-- Works immediately with the existing Docker configuration
+- Uses `COMMONLY_USER_TOKEN` (or `OPENCLAW_USER_TOKEN`) for authentication
+- Requires no additional npm packages beyond the bundled skill
+- Works alongside the native Commonly channel for extra tooling
 
 **Skill location:** `external/clawdbot-state/config/skills/commonly/SKILL.md`
 
@@ -234,7 +282,7 @@ docker exec clawdbot-gateway-dev node dist/index.js skills list | grep commonly
 # Should show: ✓ ready │ 🫂 commonly
 
 # Check required env var
-docker exec clawdbot-gateway-dev printenv COMMONLY_API_TOKEN
+docker exec clawdbot-gateway-dev printenv COMMONLY_USER_TOKEN
 ```
 
 ### Environment Variables
@@ -244,11 +292,15 @@ Pass credentials via docker-compose or `.env`:
 | Variable | Description |
 |----------|-------------|
 | `CLAWDBOT_GATEWAY_TOKEN` | Gateway authentication token |
-| `CLAWDBOT_BRIDGE_TOKEN` | Runtime token for bridge (from UI) |
+| `CLAWDBOT_BRIDGE_TOKEN` | Runtime token for legacy bridge (only if re-enabled) |
 | `GEMINI_API_KEY` | LLM API key for Clawdbot responses |
 | `ANTHROPIC_API_KEY` | Alternative LLM provider |
 | `COMMONLY_API_URL` | Commonly backend URL (default: `http://backend:5000`) |
-| `COMMONLY_API_TOKEN` | Runtime token for Commonly skill |
+| `OPENCLAW_RUNTIME_TOKEN` | Runtime token (`cm_agent_*`) for Commonly channel |
+| `OPENCLAW_USER_TOKEN` | Bot user token (`cm_*`) for Commonly tools |
+| `OPENCLAW_B_RUNTIME_TOKEN` | Runtime token for second Commonly account/instance |
+| `OPENCLAW_B_USER_TOKEN` | Bot user token for second Commonly account/instance |
+| `COMMONLY_USER_TOKEN` | Alias for Commonly tools (defaults to `OPENCLAW_USER_TOKEN`) |
 | `CLAWDBOT_DISCORD_CLIENT_ID` | Clawdbot Discord application ID (separate from Commonly) |
 | `CLAWDBOT_DISCORD_BOT_TOKEN` | Clawdbot Discord bot token (separate from Commonly) |
 | `SLACK_BOT_TOKEN` | Slack bot OAuth token (`xoxb-*`) |
@@ -304,7 +356,7 @@ docker exec clawdbot-gateway-dev node dist/index.js skills list
 docker exec clawdbot-gateway-dev which curl
 
 # Check required env vars
-docker exec clawdbot-gateway-dev printenv COMMONLY_API_TOKEN
+docker exec clawdbot-gateway-dev printenv COMMONLY_USER_TOKEN
 ```
 
 ### Channel not connecting
@@ -415,7 +467,9 @@ external/commonly-agent-services/
     └── manifest.json     # Agent definition
 ```
 
-## Clawdbot Bridge Flow
+## Legacy Bridge Flow (optional)
+
+Use this only if you still run the `clawdbot-bridge` poller instead of the native Commonly channel.
 
 1. Bridge polls `GET /api/agents/runtime/events` for pending events
 2. For each event, bridge calls Clawdbot gateway `/v1/chat/completions`
@@ -423,10 +477,10 @@ external/commonly-agent-services/
 4. Bridge posts response via `POST /api/agents/runtime/pods/:id/messages`
 5. Bridge acknowledges event via `POST /api/agents/runtime/events/:id/ack`
 
-## Commonly as a Channel
+## Commonly as a Channel (native)
 
-Commonly pods now work as a full **channel** for Clawdbot, similar to Discord/Slack/Telegram.
-Users can `@clawdbot-bridge` in any pod chat to directly interact with the AI agent.
+Commonly pods work as a full **channel** for Clawdbot via WebSocket. Users can `@openclaw`
+(or the installed display name) in any pod chat to interact with the agent.
 
 ### How It Works
 
@@ -434,22 +488,15 @@ Users can `@clawdbot-bridge` in any pod chat to directly interact with the AI ag
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         Commonly Pod Chat                            │
 ├─────────────────────────────────────────────────────────────────────┤
-│  User: @clawdbot-bridge what are the team's priorities?             │
+│  User: @openclaw what are the team's priorities?                    │
 │                                                                      │
 │  [AgentMentionService detects @mention]                             │
 │                         ↓                                            │
 │  [Creates chat.mention event with payload]                          │
 │                         ↓                                            │
-│  [Clawdbot Bridge polls event]                                      │
+│  [Commonly channel WebSocket pushes event]                          │
 │                         ↓                                            │
-│  [Bridge fetches full context via Context API]                      │
-│    - Pod memory (MEMORY.md)                                         │
-│    - Relevant skills (task-matched)                                 │
-│    - Recent summaries                                               │
-│    - Relevant assets (hybrid vector search)                         │
-│    - Recent conversation history                                    │
-│                         ↓                                            │
-│  [Bridge calls Clawdbot Gateway with context]                       │
+│  [Clawdbot Gateway handles event + optional tools]                  │
 │                         ↓                                            │
 │  [Posts context-aware response to pod]                              │
 │                                                                      │
@@ -460,9 +507,10 @@ Users can `@clawdbot-bridge` in any pod chat to directly interact with the AI ag
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Context API Integration
+### Context + Tools
 
-The bridge now uses Commonly's full Context API (`/api/v1/context/:podId`) which provides:
+The native channel delivers the mention payload. If the agent needs more context,
+it can call Commonly tools (search, context, summaries, memory) on demand.
 
 | Feature | Description |
 |---------|-------------|
@@ -472,44 +520,30 @@ The bridge now uses Commonly's full Context API (`/api/v1/context/:podId`) which
 | **Summaries** | Recent hourly chat summaries |
 | **Conversation** | Last 10-15 messages for context |
 
-### Configuration
-
-Environment variables for context control:
-
-```env
-# Enable/disable context features
-CLAWDBOT_INCLUDE_MEMORY=true      # Include MEMORY.md
-CLAWDBOT_INCLUDE_SKILLS=true      # Include synthesized skills
-CLAWDBOT_INCLUDE_SUMMARIES=true   # Include recent summaries
-
-# Token budget for context
-CLAWDBOT_MAX_CONTEXT_TOKENS=4000  # Max tokens for context assembly
-```
-
 ### Usage Examples
 
 **Ask about pod activity:**
 ```
-@clawdbot-bridge what happened in this pod today?
+@openclaw what happened in this pod today?
 ```
 *Uses recent summaries to provide activity overview*
 
 **Get skill-based help:**
 ```
-@clawdbot-bridge how do we deploy to production?
+@openclaw how do we deploy to production?
 ```
 *Uses task-matched skills and search to find deployment docs*
 
 **Reference pod memory:**
 ```
-@clawdbot-bridge what are our team conventions?
+@openclaw what are our team conventions?
 ```
 *Uses MEMORY.md for long-term curated knowledge*
 
 **Context-aware conversation:**
 ```
 User1: We need to update the API docs
-User2: @clawdbot-bridge can you help with that?
+User2: @openclaw can you help with that?
 ```
 *Includes conversation history for context*
 
@@ -537,7 +571,7 @@ During heartbeat, Clawdbot can sync important pod context:
 ```bash
 # 1. Fetch pod context
 CONTEXT=$(curl -s "${COMMONLY_API_URL}/api/v1/context/${POD_ID}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}")
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}")
 
 # 2. Extract highlights
 HIGHLIGHTS=$(echo "$CONTEXT" | jq -r '.summaries[:3] | .[] | .content[:200]')
@@ -554,7 +588,7 @@ Clawdbot can also write insights back to the pod:
 ```bash
 # Append to pod's daily log
 curl -X POST "${COMMONLY_API_URL}/api/v1/memory/${POD_ID}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" \
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "target": "daily",
@@ -606,11 +640,11 @@ This creates a knowledge loop where:
 
 ### Message Metadata
 
-When posting responses, the bridge includes context usage metadata:
+When posting responses, the agent can include context usage metadata:
 
 ```json
 {
-  "source": "clawdbot-bridge",
+  "source": "openclaw",
   "eventId": "event-id",
   "replyTo": "original-message-id",
   "mentionedBy": "username",

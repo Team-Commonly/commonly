@@ -5,8 +5,10 @@ const auth = require('../middleware/auth');
 const AgentEventService = require('../services/agentEventService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
+const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
 const User = require('../models/User');
+const Post = require('../models/Post');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 
@@ -180,6 +182,7 @@ router.get(
       const context = await PodContextService.getPodContext({
         podId,
         userId: user._id,
+        agentContext: { agentName: resolvedAgentName, instanceId },
         task: req.query.task || '',
         summaryLimit: parseLimit(req.query.summaryLimit, 6, 20),
         assetLimit: parseLimit(req.query.assetLimit, 12, 40),
@@ -278,6 +281,64 @@ router.post(
   },
 );
 
+/**
+ * POST /bot/threads/:threadId/comments (user API token auth)
+ * Post a thread comment as the agent (bot user token).
+ */
+router.post(
+  '/bot/threads/:threadId/comments',
+  auth,
+  requireApiTokenScopes(['agent:messages:write']),
+  async (req, res) => {
+    try {
+      const { threadId } = req.params;
+      const { user, error } = await requireBotUser(req, res);
+      if (error) return error;
+
+      const agentName = req.body.agentName || user.botMetadata?.agentName || null;
+      const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
+      const resolvedAgentName = agentName || user.username;
+      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
+      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
+        return res.status(403).json({ message: 'Agent token does not match bot user' });
+      }
+
+      const { content, podId: requestPodId } = req.body || {};
+      if (!content) {
+        return res.status(400).json({ message: 'content is required' });
+      }
+
+      const post = await Post.findById(threadId).select('_id podId').lean();
+      if (!post) {
+        return res.status(404).json({ message: 'Thread not found' });
+      }
+
+      const targetPodId = post?.podId || requestPodId;
+      if (!targetPodId) {
+        return res.status(400).json({ message: 'podId is required for threads without a pod' });
+      }
+
+      const installation = await ensureBotInstallation(resolvedAgentName, targetPodId, instanceId);
+      if (!installation) {
+        return res.status(403).json({ message: 'Bot not installed in this pod' });
+      }
+
+      const result = await AgentThreadService.postComment({
+        agentName: resolvedAgentName,
+        instanceId,
+        displayName: installation.displayName,
+        threadId,
+        content,
+      });
+
+      return res.json(result);
+    } catch (error) {
+      console.error('Error posting bot thread comment:', error);
+      return res.status(500).json({ message: error.message || 'Failed to post comment' });
+    }
+  },
+);
+
 router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
   try {
     const { podId } = req.params;
@@ -303,6 +364,7 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
     const context = await PodContextService.getPodContext({
       podId,
       userId: agentUser._id,
+      agentContext: { agentName: installation.agentName, instanceId: installation.instanceId || 'default' },
       task: req.query.task || '',
       summaryLimit: parseLimit(req.query.summaryLimit, 6, 20),
       assetLimit: parseLimit(req.query.assetLimit, 12, 40),
@@ -362,6 +424,43 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
   } catch (error) {
     console.error('Error posting agent message:', error);
     return res.status(500).json({ message: error.message || 'Failed to post message' });
+  }
+});
+
+/**
+ * POST /threads/:threadId/comments (agent runtime token auth)
+ */
+router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) => {
+  try {
+    const { threadId } = req.params;
+    const installation = req.agentInstallation;
+
+    const { content } = req.body || {};
+    if (!content) {
+      return res.status(400).json({ message: 'content is required' });
+    }
+
+    const post = await Post.findById(threadId).select('_id podId').lean();
+    if (!post) {
+      return res.status(404).json({ message: 'Thread not found' });
+    }
+
+    if (post.podId && !ensurePodMatch(installation, post.podId)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+
+    const result = await AgentThreadService.postComment({
+      agentName: installation.agentName,
+      instanceId: installation.instanceId || 'default',
+      displayName: installation.displayName,
+      threadId,
+      content,
+    });
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error posting agent thread comment:', error);
+    return res.status(500).json({ message: error.message || 'Failed to post comment' });
   }
 });
 

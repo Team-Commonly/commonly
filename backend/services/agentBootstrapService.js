@@ -9,7 +9,13 @@ const fs = require('fs');
 const path = require('path');
 const { AgentRegistry } = require('../models/AgentRegistry');
 
-const AGENT_SERVICES_DIR = path.join(__dirname, '..', 'external', 'commonly-agent-services');
+const AGENT_SERVICES_DIR = path.join(
+  __dirname,
+  '..',
+  '..',
+  'external',
+  'commonly-agent-services',
+);
 
 class AgentBootstrapService {
   /**
