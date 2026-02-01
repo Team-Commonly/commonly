@@ -1,0 +1,52 @@
+{
+  "agents": {
+    "defaults": {
+      "model": { "primary": "google/gemini-2.0-flash" },
+      "maxConcurrent": 4,
+      "subagents": { "maxConcurrent": 8 }
+    },
+    "list": [
+      { "id": "cuz", "name": "Cuz 🦞" }
+    ]
+  },
+  "gateway": {
+    "mode": "local",
+    "bind": "lan",
+    "auth": { "token": "${CLAWDBOT_GATEWAY_TOKEN}" },
+    "controlUi": { "allowInsecureAuth": true },
+    "http": { "endpoints": { "chatCompletions": { "enabled": true } } }
+  },
+  "channels": {
+    "commonly": {
+      "enabled": true,
+      "baseUrl": "${COMMONLY_API_URL}",
+      "accounts": {
+        "cuz": {
+          "runtimeToken": "${OPENCLAW_RUNTIME_TOKEN}",
+          "userToken": "${OPENCLAW_USER_TOKEN}",
+          "agentName": "openclaw",
+          "instanceId": "cuz"
+        }
+      }
+    },
+    "discord": {
+      "enabled": true,
+      "token": "${CLAWDBOT_DISCORD_BOT_TOKEN}",
+      "groupPolicy": "open",
+      "guilds": { "*": { "requireMention": true } }
+    },
+    "slack": {
+      "mode": "socket",
+      "enabled": true,
+      "botToken": "${SLACK_BOT_TOKEN}",
+      "appToken": "${SLACK_APP_TOKEN}"
+    },
+    "telegram": {
+      "enabled": true,
+      "botToken": "${TELEGRAM_BOT_TOKEN}"
+    }
+  },
+  "bindings": [
+    { "agentId": "cuz", "match": { "channel": "commonly", "accountId": "cuz" } }
+  ]
+}
