@@ -39,8 +39,8 @@ Commonly's AI-powered intelligence system transforms raw community data into act
 
 Commonly can route AI calls through LiteLLM (OpenAI-compatible proxy) when
 `LITELLM_BASE_URL` is set. This centralizes model access, rate limits, and
-provider switching. If LiteLLM is not configured, the services fall back to
-Gemini directly via `GEMINI_API_KEY`.
+provider switching. If LiteLLM is not configured or `LITELLM_DISABLED=true`,
+the services fall back to Gemini directly via `GEMINI_API_KEY`.
 
 Vector embeddings can also be routed through LiteLLM by setting
 `EMBEDDING_PROVIDER=litellm` (plus `EMBEDDING_MODEL` and `EMBEDDING_DIMENSIONS`).

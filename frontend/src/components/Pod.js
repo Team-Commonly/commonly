@@ -44,6 +44,8 @@ const Pod = () => {
                 return 'study';
             case 2:
                 return 'games';
+            case 3:
+                return 'agent-ensemble';
             default:
                 return 'chat';
         }
@@ -61,6 +63,9 @@ const Pod = () => {
                     break;
                 case 'games':
                     setTabValue(2);
+                    break;
+                case 'agent-ensemble':
+                    setTabValue(3);
                     break;
                 default:
                     setTabValue(0);
@@ -123,7 +128,7 @@ const Pod = () => {
             }
             
             // Get the pod type based on the selected tab
-            const podTypes = ['chat', 'study', 'games'];
+            const podTypes = ['chat', 'study', 'games', 'agent-ensemble'];
             const podType = podTypes[tabValue] || 'chat';
             
             const response = await axios.post('/api/pods', {
@@ -216,7 +221,7 @@ const Pod = () => {
     // Handle tab change
     const handleTabChange = (event, newValue) => {
         setTabValue(newValue);
-        const podTypes = ['chat', 'study', 'games'];
+        const podTypes = ['chat', 'study', 'games', 'agent-ensemble'];
         navigate(`/pods/${podTypes[newValue]}`);
     };
     
@@ -228,16 +233,17 @@ const Pod = () => {
             className="pod-container"
         >
             <AppBar position="static" color="default" className="pod-app-bar">
-                <Toolbar>
+                <Toolbar sx={{ flexWrap: { xs: 'wrap', sm: 'nowrap' }, gap: 1.5 }}>
                     <Typography variant="h6" className="pod-title">
                         Pods
                     </Typography>
                     <Box sx={{ flexGrow: 1 }} />
-                    <Box className="pod-search">
+                    <Box className="pod-search" sx={{ width: { xs: '100%', sm: 260 } }}>
                         <TextField
                             placeholder="Search pods..."
                             variant="outlined"
                             size="small"
+                            fullWidth
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             InputProps={{
@@ -245,8 +251,9 @@ const Pod = () => {
                             }}
                         />
                     </Box>
-                    <Box sx={{ ml: 2 }}>
+                    <Box sx={{ ml: { xs: 0, sm: 2 }, width: { xs: '100%', sm: 'auto' } }}>
                         <Button
+                            fullWidth
                             variant="contained"
                             color="primary"
                             startIcon={<AddIcon />}
@@ -264,11 +271,14 @@ const Pod = () => {
                     indicatorColor="primary"
                     textColor="primary"
                     centered
+                    variant="scrollable"
+                    allowScrollButtonsMobile
                     className="pod-tabs"
                 >
                     <Tab label="Chat" className="pod-tab" />
                     <Tab label="Study" className="pod-tab" />
                     <Tab label="Games" className="pod-tab" />
+                    <Tab label="Ensemble" className="pod-tab" />
                 </Tabs>
             </AppBar>
             
@@ -281,7 +291,12 @@ const Pod = () => {
                     <Typography color="error">{error}</Typography>
                 </Box>
             ) : (
-                <Grid container spacing={3} className="pod-grid">
+                <Grid
+                    container
+                    spacing={{ xs: 2, sm: 3 }}
+                    className="pod-grid"
+                    sx={{ justifyContent: { xs: 'center', sm: 'flex-start' } }}
+                >
                     {filteredPods.length === 0 ? (
                         <Grid item xs={12}>
                             <Box className="pod-empty">
@@ -290,7 +305,9 @@ const Pod = () => {
                                     No pods found in this category
                                 </Typography>
                                 <Typography variant="body1" color="textSecondary" paragraph>
-                                    Create a new pod to start chatting with others!
+                                    {getPodType() === 'agent-ensemble'
+                                        ? 'Create a new agent ensemble pod to orchestrate multi-agent conversations.'
+                                        : 'Create a new pod to start chatting with others!'}
                                 </Typography>
                                 <Button
                                     variant="contained"
@@ -307,7 +324,7 @@ const Pod = () => {
                         filteredPods.map(pod => (
                             <Grid item xs={12} sm={6} md={4} key={pod._id}>
                                 <Card className="pod-card">
-                                    <CardContent>
+                                    <CardContent sx={{ p: 2, pb: 1.5 }}>
                                         <Typography variant="h5" component="div" className="pod-card-title">
                                             {pod.name}
                                         </Typography>
@@ -346,7 +363,7 @@ const Pod = () => {
                                             </Box>
                                         </Box>
                                     </CardContent>
-                                    <CardActions className="pod-card-actions">
+                                    <CardActions className="pod-card-actions" sx={{ px: 2, py: 1.5 }}>
                                         <Button 
                                             variant="contained" 
                                             color="primary"
@@ -407,6 +424,7 @@ const Pod = () => {
                             <MenuItem value={0}>Chat</MenuItem>
                             <MenuItem value={1}>Study</MenuItem>
                             <MenuItem value={2}>Games</MenuItem>
+                            <MenuItem value={3}>Agent Ensemble</MenuItem>
                         </Select>
                     </FormControl>
                 </DialogContent>

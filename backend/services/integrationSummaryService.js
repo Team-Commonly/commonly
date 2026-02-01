@@ -8,6 +8,8 @@ const SOURCE_LABELS = {
   groupme: 'GroupMe',
   whatsapp: 'WhatsApp',
   messenger: 'Messenger',
+  x: 'X',
+  instagram: 'Instagram',
 };
 
 class IntegrationSummaryService {
@@ -63,6 +65,8 @@ class IntegrationSummaryService {
         integration.config?.channelName
         || integration.config?.groupName
         || integration.config?.chatTitle
+        || integration.config?.username
+        || integration.config?.igUserId
         || integration.config?.channelId
         || integration.config?.groupId
         || integration.config?.chatId

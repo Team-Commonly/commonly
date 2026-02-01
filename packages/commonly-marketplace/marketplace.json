@@ -42,6 +42,26 @@
       "accentColor": "#00AFF0"
     },
     {
+      "id": "x",
+      "name": "X",
+      "description": "Pull X posts into Commonly pods to keep social updates searchable.",
+      "type": "integration",
+      "category": "social",
+      "logoUrl": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/x.svg",
+      "docsUrl": "https://developer.x.com/",
+      "accentColor": "#111827"
+    },
+    {
+      "id": "instagram",
+      "name": "Instagram",
+      "description": "Sync Instagram posts into pods for searchable context and summaries.",
+      "type": "integration",
+      "category": "social",
+      "logoUrl": "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/instagram.svg",
+      "docsUrl": "https://developers.facebook.com/docs/instagram-api/",
+      "accentColor": "#E4405F"
+    },
+    {
       "id": "mcp-analytics-canvas",
       "name": "MCP Analytics Canvas",
       "description": "Interactive analytics UI rendered inside MCP-compatible hosts.",

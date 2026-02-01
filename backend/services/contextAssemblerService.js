@@ -14,6 +14,7 @@
 const PodAsset = require('../models/PodAsset');
 const Summary = require('../models/Summary');
 const Pod = require('../models/Pod');
+const PodAssetService = require('./podAssetService');
 
 // Lazy load vector search (optional dependency)
 let vectorSearchService = null;
@@ -41,6 +42,7 @@ class ContextAssemblerService {
       includeSummaries = true,
       maxTokens = 8000,
       userId = null,
+      agentContext = null,
     } = options;
 
     const context = {
@@ -80,11 +82,26 @@ class ContextAssemblerService {
 
     // 2. Load pod memory (MEMORY.md equivalent)
     if (includeMemory) {
-      const memoryAsset = await PodAsset.findOne({
-        podId,
-        type: 'memory',
-        title: 'MEMORY.md',
-      }).lean();
+      const normalizedAgent = PodAssetService.normalizeAgentContext(agentContext);
+      let memoryAsset = null;
+      if (normalizedAgent) {
+        memoryAsset = await PodAsset.findOne({
+          podId,
+          type: 'memory',
+          title: 'MEMORY.md',
+          'metadata.scope': 'agent',
+          'metadata.agentName': normalizedAgent.agentName,
+          'metadata.instanceId': normalizedAgent.instanceId,
+        }).lean();
+      }
+      if (!memoryAsset) {
+        memoryAsset = await PodAsset.findOne({
+          podId,
+          type: 'memory',
+          title: 'MEMORY.md',
+          'metadata.scope': { $ne: 'agent' },
+        }).lean();
+      }
 
       if (memoryAsset?.content) {
         const memoryTokens = this.estimateTokens(memoryAsset.content);
@@ -102,6 +119,7 @@ class ContextAssemblerService {
       const skills = await this.getRelevantSkills(podId, task, {
         limit: 5,
         maxTokens: remainingTokens * 0.2, // 20% for skills
+        agentContext,
       });
 
       context.skills = skills.map((s) => ({
@@ -123,6 +141,7 @@ class ContextAssemblerService {
       const assets = await this.searchAssets(podId, task, {
         limit: 10,
         maxTokens: remainingTokens * 0.3,
+        agentContext,
       });
 
       context.assets = assets.map((a) => ({
@@ -173,11 +192,16 @@ class ContextAssemblerService {
    * Get skills relevant to a task using vector search when available
    */
   static async getRelevantSkills(podId, task, options = {}) {
-    const { limit = 5 } = options;
+    const { limit = 5, agentContext = null } = options;
+    const visibilityFilter = PodAssetService.buildAgentScopeFilter(agentContext);
 
     // If no task, return most recent skills
     if (!task) {
-      return PodAsset.find({ podId, type: 'skill' })
+      const query = PodAssetService.applyVisibilityFilter(
+        { podId, type: 'skill' },
+        visibilityFilter,
+      );
+      return PodAsset.find(query)
         .sort({ updatedAt: -1 })
         .limit(limit)
         .lean();
@@ -195,7 +219,11 @@ class ContextAssemblerService {
 
         if (results && results.length > 0) {
           const assetIds = results.map((r) => r.asset_id);
-          const skills = await PodAsset.find({ _id: { $in: assetIds } }).lean();
+          const baseQuery = PodAssetService.applyVisibilityFilter(
+            { _id: { $in: assetIds } },
+            visibilityFilter,
+          );
+          const skills = await PodAsset.find(baseQuery).lean();
 
           // Preserve search order and add relevance
           return assetIds
@@ -213,7 +241,10 @@ class ContextAssemblerService {
 
     // Fallback to keyword search
     const keywords = task.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-    const query = { podId, type: 'skill' };
+    const query = PodAssetService.applyVisibilityFilter(
+      { podId, type: 'skill' },
+      visibilityFilter,
+    );
 
     if (keywords.length > 0) {
       query.$or = [
@@ -229,7 +260,8 @@ class ContextAssemblerService {
    * Search assets by task/query using hybrid vector + keyword search
    */
   static async searchAssets(podId, query, options = {}) {
-    const { limit = 10, types = null, maxTokens = 4000 } = options;
+    const { limit = 10, types = null, maxTokens = 4000, agentContext = null } = options;
+    const visibilityFilter = PodAssetService.buildAgentScopeFilter(agentContext);
 
     // Try vector search first
     const vs = getVectorSearch();
@@ -245,7 +277,11 @@ class ContextAssemblerService {
         if (results && results.length > 0) {
           // Fetch full assets for matched IDs
           const assetIds = [...new Set(results.map((r) => r.asset_id))];
-          const assets = await PodAsset.find({ _id: { $in: assetIds } }).lean();
+          const assetsQuery = PodAssetService.applyVisibilityFilter(
+            { _id: { $in: assetIds } },
+            visibilityFilter,
+          );
+          const assets = await PodAsset.find(assetsQuery).lean();
 
           // Merge with relevance scores, respecting token budget
           let tokenCount = 0;
@@ -253,7 +289,10 @@ class ContextAssemblerService {
 
           for (let i = 0; i < results.length; i += 1) {
             const result = results[i];
-            const asset = assets.find((a) => a._id.toString() === result.asset_id);
+            const asset = assets.find((a) => (
+              a._id.toString() === result.asset_id
+              && PodAssetService.isAssetVisible(a, agentContext)
+            ));
             if (asset) {
               const assetTokens = this.estimateTokens(asset.content?.substring(0, 300) || '');
               if (tokenCount + assetTokens > maxTokens && merged.length > 0) break;
@@ -277,10 +316,13 @@ class ContextAssemblerService {
     }
 
     // Fallback to keyword search
-    const searchQuery = {
-      podId,
-      type: { $nin: ['skill', 'memory'] },
-    };
+    const searchQuery = PodAssetService.applyVisibilityFilter(
+      {
+        podId,
+        type: { $nin: ['skill', 'memory'] },
+      },
+      visibilityFilter,
+    );
 
     if (types) {
       searchQuery.type = { $in: types };
@@ -327,22 +369,42 @@ class ContextAssemblerService {
   /**
    * Read a memory file
    */
-  static async readMemoryFile(podId, path) {
+  static async readMemoryFile(podId, path, options = {}) {
+    const { agentContext = null } = options;
+    const normalizedAgent = PodAssetService.normalizeAgentContext(agentContext);
     // Handle special paths
     if (path === 'MEMORY.md') {
-      const asset = await PodAsset.findOne({
-        podId,
-        type: 'memory',
-        title: 'MEMORY.md',
-      }).lean();
+      let asset = null;
+      if (normalizedAgent) {
+        asset = await PodAsset.findOne({
+          podId,
+          type: 'memory',
+          title: 'MEMORY.md',
+          'metadata.scope': 'agent',
+          'metadata.agentName': normalizedAgent.agentName,
+          'metadata.instanceId': normalizedAgent.instanceId,
+        }).lean();
+      }
+      if (!asset) {
+        asset = await PodAsset.findOne({
+          podId,
+          type: 'memory',
+          title: 'MEMORY.md',
+          'metadata.scope': { $ne: 'agent' },
+        }).lean();
+      }
       return asset?.content || '# Pod Memory\n\nNo curated memory yet.';
     }
 
     if (path === 'SKILLS.md') {
-      const skills = await PodAsset.find({
-        podId,
-        type: 'skill',
-      })
+      const skillsQuery = PodAssetService.applyVisibilityFilter(
+        {
+          podId,
+          type: 'skill',
+        },
+        PodAssetService.buildAgentScopeFilter(agentContext),
+      );
+      const skills = await PodAsset.find(skillsQuery)
         .sort({ updatedAt: -1 })
         .lean();
 
@@ -358,19 +420,37 @@ class ContextAssemblerService {
     const dateMatch = path.match(/^memory\/(\d{4}-\d{2}-\d{2})\.md$/);
     if (dateMatch) {
       const date = dateMatch[1];
-      const asset = await PodAsset.findOne({
-        podId,
-        type: 'daily-log',
-        title: `${date}.md`,
-      }).lean();
+      let asset = null;
+      if (normalizedAgent) {
+        asset = await PodAsset.findOne({
+          podId,
+          type: 'daily-log',
+          title: `${date}.md`,
+          'metadata.scope': 'agent',
+          'metadata.agentName': normalizedAgent.agentName,
+          'metadata.instanceId': normalizedAgent.instanceId,
+        }).lean();
+      }
+      if (!asset) {
+        asset = await PodAsset.findOne({
+          podId,
+          type: 'daily-log',
+          title: `${date}.md`,
+          'metadata.scope': { $ne: 'agent' },
+        }).lean();
+      }
       return asset?.content || `# ${date}\n\nNo activity logged.`;
     }
 
     // Generic asset lookup by path
-    const asset = await PodAsset.findOne({
-      podId,
-      title: path,
-    }).lean();
+    const assetQuery = PodAssetService.applyVisibilityFilter(
+      {
+        podId,
+        title: path,
+      },
+      PodAssetService.buildAgentScopeFilter(agentContext),
+    );
+    const asset = await PodAsset.findOne(assetQuery).lean();
 
     if (!asset) {
       throw new Error(`Memory file not found: ${path}`);
@@ -386,6 +466,34 @@ class ContextAssemblerService {
     const {
       target, content, tags = [], source = {},
     } = options;
+    const agentContext = options.agentContext || null;
+    const scope = options.scope || (agentContext ? 'agent' : 'pod');
+    const normalizedAgent = PodAssetService.normalizeAgentContext(agentContext);
+    const metadata = {
+      ...(options.metadata || {}),
+      scope,
+      agentName: normalizedAgent?.agentName,
+      instanceId: normalizedAgent?.instanceId,
+    };
+    const scopeQuery = (() => {
+      if (scope === 'agent' && normalizedAgent) {
+        return {
+          'metadata.scope': 'agent',
+          'metadata.agentName': normalizedAgent.agentName,
+          'metadata.instanceId': normalizedAgent.instanceId,
+        };
+      }
+      if (scope === 'pod') {
+        return {
+          $or: [
+            { 'metadata.scope': 'pod' },
+            { 'metadata.scope': { $exists: false } },
+            { 'metadata.scope': null },
+          ],
+        };
+      }
+      return { 'metadata.scope': { $ne: 'agent' } };
+    })();
 
     // Helper to index asset in vector search
     const indexAsset = async (asset) => {
@@ -404,11 +512,15 @@ class ContextAssemblerService {
       const today = new Date().toISOString().split('T')[0];
       const timestamp = new Date().toISOString().split('T')[1].substring(0, 5);
 
-      let asset = await PodAsset.findOne({
-        podId,
-        type: 'daily-log',
-        title: `${today}.md`,
-      });
+      const dailyQuery = PodAssetService.applyVisibilityFilter(
+        {
+          podId,
+          type: 'daily-log',
+          title: `${today}.md`,
+        },
+        scopeQuery,
+      );
+      let asset = await PodAsset.findOne(dailyQuery);
 
       if (!asset) {
         asset = new PodAsset({
@@ -417,6 +529,8 @@ class ContextAssemblerService {
           title: `${today}.md`,
           content: `# ${today}\n\n`,
           tags: [],
+          metadata,
+          createdByType: normalizedAgent ? 'agent' : 'user',
         });
       }
 
@@ -424,6 +538,7 @@ class ContextAssemblerService {
       const entry = `**${timestamp}** ${source.agent ? `(${source.agent})` : ''}\n${content}\n\n`;
       asset.content += entry;
       asset.tags = [...new Set([...asset.tags, ...tags])];
+      asset.metadata = { ...(asset.metadata || {}), ...metadata };
       await asset.save();
 
       // Index in vector search
@@ -434,11 +549,15 @@ class ContextAssemblerService {
 
     if (target === 'memory') {
       // Update MEMORY.md
-      let asset = await PodAsset.findOne({
-        podId,
-        type: 'memory',
-        title: 'MEMORY.md',
-      });
+      const memoryQuery = PodAssetService.applyVisibilityFilter(
+        {
+          podId,
+          type: 'memory',
+          title: 'MEMORY.md',
+        },
+        scopeQuery,
+      );
+      let asset = await PodAsset.findOne(memoryQuery);
 
       if (!asset) {
         asset = new PodAsset({
@@ -447,12 +566,15 @@ class ContextAssemblerService {
           title: 'MEMORY.md',
           content: '# Pod Memory\n\n',
           tags: [],
+          metadata,
+          createdByType: normalizedAgent ? 'agent' : 'user',
         });
       }
 
       // Append to memory
       asset.content += `\n${content}\n`;
       asset.tags = [...new Set([...asset.tags, ...tags])];
+      asset.metadata = { ...(asset.metadata || {}), ...metadata };
       await asset.save();
 
       // Index in vector search

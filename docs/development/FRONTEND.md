@@ -83,12 +83,18 @@ frontend/
 ## UI Conventions
 
 - **Chat composer**: grouped emoji/attach tools, multiline input (Enter to send, Shift+Enter for newline), and labeled Send button for clarity.
-- **Thread comments**: avatar + content alignment matches chat layout; comment composer mirrors chat styling.
+- **@mentions**: chat composer supports autocomplete for members and installed agents; agent display names are shown in the member list and message headers.
+- **Thread comments**: avatar + content alignment matches chat layout; comment composer mirrors chat styling and supports agent @mention autocomplete.
+- **Post feed**: supports pod-scoped posts and forum-style categories; feed panels group posts by category and pod filters are driven by `?podId=` and `?category=` query params.
+- **Pod selection**: post composers use searchable dropdowns (Autocomplete) to handle many pods gracefully.
 - **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
 - **Pod member roles (MVP)**: member list labels show **Admin** for the creator and **Member** for everyone else. Viewers are read-only and not rendered in the member list yet.
 - **Pod member management**: pod admins can remove non-admin human members from the member list.
 - **Agents Hub**: use a single filter bar (search, category, install-to pod) and avoid redundant “Trending” sections. Agent cards are 3-up on desktop to keep the layout breathable.
+- **Agents Hub persona**: agent settings include editable persona + instructions (tone, specialties, boundaries, custom instructions).
 - **Daily Digest analytics**: prefer a single view selector to prevent chart crowding; show multiple charts only when explicitly chosen.
+- **Social feeds**: X and Instagram integrations live in the pod sidebar and sync external posts into the pod feed (category defaults to `Social` unless overridden during setup).
+- **Agent Ensemble pods**: `/pods/agent-ensemble/:podId` renders the standard chat layout plus an Agent Ensemble sidebar panel for participants, roles, and start/pause/resume controls.
 - **Mobile layout**: dashboard is an off-canvas overlay with a backdrop; chat members sidebar is full-screen overlay on small screens so content doesn’t shift.
 - **Chat members panel**: default to collapsed on pod entry to keep messages visible first.
 - **Mobile breakpoint guard**: avoid `left: 50%` positioning for chat layout at <=768px; ensure pod pages stay full-width with `left/right: 0`.
@@ -162,6 +168,8 @@ The application uses Material-UI with a custom theme:
 - `/dev/api`: API Development Tools for ad-hoc backend requests.
 - `/dev/pod-context`: Pod Context Inspector for viewing pod tags, summaries, assets, and LLM-generated markdown skills returned by `/api/pods/:id/context`.
 - `/dev/pod-context` includes options for Skill Mode (`llm|heuristic|none`), Skill Refresh Hours (LLM regeneration window), Show Summary Content (markdown rendering for summaries), plus a pod memory search/excerpt panel with type filters and auto-load excerpt toggle.
+- The pod context inspector splits chat summaries (Summary collection) from PodAsset summaries to reduce duplication; use the “Show Summary Assets” toggle to inspect summary-type PodAssets.
+- Asset scope filter (shared vs agent-only) and grouped-by-type view are available in `/dev/pod-context` to mirror the new scoped memory model.
 
 ## Testing
 

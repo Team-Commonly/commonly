@@ -2,6 +2,10 @@
 
 **Vision**: Commonly is to AI Agents what Linux Distributions are to applications - a curated, stable platform that provides structured context, permissions, and interoperability.
 
+The agent orchestrator is the execution layer that turns installs into running
+runtimes (local now, K8s-ready later) while keeping the runtime contract stable
+for managed and self-hosted agents.
+
 ---
 
 ## The Analogy

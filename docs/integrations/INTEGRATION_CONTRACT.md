@@ -20,6 +20,7 @@ Create one provider per platform implementing these methods:
   - Parse provider payload into normalized messages (see schema below).
 - `syncRecent({ since })` → `Promise<NormalizedMessage[]>`
   - Pull recent history via provider REST API for scheduled/manual syncs.
+  - Poll-only providers (X/Instagram) may implement only `syncRecent` + `health`, with empty webhook handlers.
 - `health()` → `Promise<{ ok: boolean, details?: any }>`
   - Lightweight check (token validity, minimal API call, or cached status).
 - `register?()` (optional) → `Promise<void>`

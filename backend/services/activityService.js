@@ -289,7 +289,7 @@ class ActivityService {
             id: msg.userId?._id?.toString() || msg.user_id,
             name: username,
             type: isAgent ? 'agent' : 'human',
-            verified: username === 'commonly-bot',
+            verified: username === 'commonly-ai-agent' || username === 'commonly-bot',
             profilePicture: msg.profile_picture || msg.userId?.profilePicture,
           },
           action: 'message',
@@ -380,6 +380,7 @@ class ActivityService {
       || lower.endsWith('bot')
       || lower === 'moltbot'
       || lower === 'commonly-bot'
+      || lower === 'commonly-ai-agent'
     );
   }
 

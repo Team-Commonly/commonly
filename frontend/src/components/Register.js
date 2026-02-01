@@ -179,7 +179,7 @@ const Register = () => {
                 </Typography>
               )}
               <Typography variant="body2" align="center" sx={{ mt: 2, color: 'rgba(226, 232, 240, 0.85)' }}>
-                Already have an account? <Link to="/" style={{ color: '#93c5fd' }}>Login here</Link>
+                Already have an account? <Link to="/login" style={{ color: '#93c5fd' }}>Login here</Link>
               </Typography>
             </form>
           </Box>

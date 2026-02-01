@@ -1,10 +1,10 @@
 /* eslint-disable max-len */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import axios from 'axios';
-import { useOutletContext, useNavigate } from 'react-router-dom';
-import { 
-    Typography, Avatar, Box, Button, Container, IconButton, Menu, MenuItem, 
-    Paper, TextField, Divider, CircularProgress, Skeleton
+import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
+import {
+    Typography, Avatar, Box, Button, Container, IconButton, Menu, MenuItem, Chip,
+    Paper, TextField, Divider, CircularProgress, Skeleton, Autocomplete
 } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import { 
@@ -38,6 +38,8 @@ const PostFeed = () => {
     const [selectedPostId, setSelectedPostId] = useState(null);
     const searchResults = useOutletContext();
     const navigate = useNavigate();
+    const location = useLocation();
+    const CATEGORY_OPTIONS = ['General', 'Announcements', 'Ideas', 'Help', 'Resources', 'Social'];
     
     // Create post state
     const [postContent, setPostContent] = useState('');
@@ -46,14 +48,57 @@ const PostFeed = () => {
     const [tags, setTags] = useState([]);
     const [selectedImage, setSelectedImage] = useState(null);
     const [imagePreview, setImagePreview] = useState(null);
+    const [userPods, setUserPods] = useState([]);
+    const [podsLoading, setPodsLoading] = useState(false);
+    const [selectedPodId, setSelectedPodId] = useState('global');
+    const [postCategory, setPostCategory] = useState('General');
+    const [lightboxImage, setLightboxImage] = useState(null);
+    const [lightboxAlt, setLightboxAlt] = useState('');
+    const [lightboxZoomed, setLightboxZoomed] = useState(false);
     const fileInputRef = React.useRef(null);
     const emojiButtonRef = React.useRef(null);
+
+    const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const activePodParam = searchParams.get('podId');
+    const activeCategoryParam = searchParams.get('category');
+
+    const podOptions = useMemo(() => (
+        [{ _id: 'global', name: 'Global feed' }, ...(userPods || [])]
+    ), [userPods]);
+
+    const selectedPodOption = useMemo(() => (
+        podOptions.find((pod) => pod._id === selectedPodId) || podOptions[0]
+    ), [podOptions, selectedPodId]);
     
     // Extract hashtags from content
     useEffect(() => {
         const extractedTags = postContent.match(/#[\w]+/g) || [];
         setTags(extractedTags.map(tag => tag.slice(1))); // Remove # from tags
     }, [postContent]);
+
+    useEffect(() => {
+        if (!currentUser) return;
+        const fetchPods = async () => {
+            try {
+                setPodsLoading(true);
+                const res = await axios.get('/api/pods', {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                });
+                setUserPods(res.data || []);
+            } catch (err) {
+                console.warn('Failed to load pods for post composer:', err.response?.status);
+                setUserPods([]);
+            } finally {
+                setPodsLoading(false);
+            }
+        };
+        fetchPods();
+    }, [currentUser]);
+
+    useEffect(() => {
+        setSelectedPodId(activePodParam || 'global');
+        setPostCategory(activeCategoryParam || 'General');
+    }, [activePodParam, activeCategoryParam]);
     
     // Handle clicking outside emoji picker
     useEffect(() => {
@@ -104,9 +149,12 @@ const PostFeed = () => {
             }
             
             // Create post with the uploaded image URL if available
+            const resolvedPodId = selectedPodId && selectedPodId !== 'global' ? selectedPodId : null;
             postData = {
                 content: postContent.trim() || "Posted an image", // Default content if only image
-                tags: tags
+                tags: tags,
+                category: postCategory || 'General',
+                ...(resolvedPodId ? { podId: resolvedPodId } : {})
             };
             
             if (imageUrl) {
@@ -159,6 +207,23 @@ const PostFeed = () => {
             fileInputRef.current.value = '';
         }
     };
+
+    const updateFeedQuery = (updates) => {
+        const params = new URLSearchParams(location.search);
+        Object.entries(updates).forEach(([key, value]) => {
+            if (!value) {
+                params.delete(key);
+            } else {
+                params.set(key, value);
+            }
+        });
+        const nextSearch = params.toString();
+        navigate(`/feed${nextSearch ? `?${nextSearch}` : ''}`);
+    };
+
+    const handleCategoryFilter = (category) => {
+        updateFeedQuery({ category });
+    };
     
     const handleLike = async (postId) => {
         // Get the current liked state for this post
@@ -199,6 +264,18 @@ const PostFeed = () => {
                 [postId]: isCurrentlyLiked
             });
         }
+    };
+
+    const openLightbox = (src, alt = '') => {
+        setLightboxImage(src);
+        setLightboxAlt(alt);
+        setLightboxZoomed(false);
+    };
+
+    const closeLightbox = () => {
+        setLightboxImage(null);
+        setLightboxAlt('');
+        setLightboxZoomed(false);
     };
 
     const handleMenuOpen = (event, postId) => {
@@ -250,8 +327,16 @@ const PostFeed = () => {
     // Define the fetch posts function
     const fetchPosts = useCallback(async () => {
         try {
+            const params = {};
+            if (activePodParam) {
+                params.podId = activePodParam;
+            }
+            if (activeCategoryParam) {
+                params.category = activeCategoryParam;
+            }
             const res = await axios.get('/api/posts', {
-                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+                params
             });
             setPosts(res.data);
             setContextPosts(res.data);
@@ -273,7 +358,7 @@ const PostFeed = () => {
             setError('Failed to fetch posts. Please try again later.');
             setPosts([]);
         }
-    }, [currentUser, setContextPosts]);
+    }, [currentUser, setContextPosts, activePodParam, activeCategoryParam]);
 
     // If we have search results, use them
     useEffect(() => {
@@ -300,10 +385,65 @@ const PostFeed = () => {
         }
     }, [searchResults, currentUser, setContextPosts, fetchPosts]);
 
+    const resolvePodId = (value) => {
+        if (!value) return null;
+        if (typeof value === 'string') return value;
+        return value._id || null;
+    };
+
+    const getPostPodName = (post) => {
+        if (!post?.podId) return null;
+        if (typeof post.podId === 'object') return post.podId.name || null;
+        const podMatch = (userPods || []).find((pod) => pod._id === post.podId);
+        return podMatch?.name || null;
+    };
+
+    const scopedPosts = useMemo(() => {
+        if (!activePodParam) return posts;
+        if (activePodParam === 'global' || activePodParam === 'none') {
+            return posts.filter((post) => !post.podId);
+        }
+        return posts.filter((post) => resolvePodId(post.podId) === activePodParam);
+    }, [posts, activePodParam]);
+
+    const filteredPosts = useMemo(() => {
+        if (!activeCategoryParam) return scopedPosts;
+        return scopedPosts.filter((post) => post.category === activeCategoryParam);
+    }, [scopedPosts, activeCategoryParam]);
+
+    const categoryGroups = useMemo(() => {
+        const groups = new Map();
+        scopedPosts.forEach((post) => {
+            const category = post.category || 'General';
+            const list = groups.get(category) || [];
+            list.push(post);
+            groups.set(category, list);
+        });
+        return Array.from(groups.entries()).sort((a, b) => b[1].length - a[1].length);
+    }, [scopedPosts]);
+
+    const activePod = useMemo(() => {
+        if (!activePodParam || activePodParam === 'global' || activePodParam === 'none') return null;
+        return (userPods || []).find((pod) => pod._id === activePodParam) || null;
+    }, [activePodParam, userPods]);
+
     if (error) return <Typography color="error" sx={{ p: 2, mt: 8 }}>{error}</Typography>;
 
     return (
         <Container maxWidth="md" sx={{ py: 2, mt: 8 }} className="post-feed-container">
+            {lightboxImage && (
+                <div className="image-lightbox" onClick={closeLightbox} role="presentation">
+                    <img
+                        src={lightboxImage}
+                        alt={lightboxAlt || 'Post'}
+                        className={`image-lightbox-img ${lightboxZoomed ? 'zoomed' : ''}`}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setLightboxZoomed((prev) => !prev);
+                        }}
+                    />
+                </div>
+            )}
             {/* Create Post Component */}
             <Paper 
                 elevation={1} 
@@ -360,6 +500,45 @@ const PostFeed = () => {
                                 ))}
                             </Box>
                         )}
+
+                        <Box className="composer-meta-row">
+                            <Autocomplete
+                                size="small"
+                                options={podOptions}
+                                value={selectedPodOption}
+                                loading={podsLoading}
+                                onChange={(_, value) => setSelectedPodId(value?._id || 'global')}
+                                getOptionLabel={(option) => option?.name || 'Global feed'}
+                                isOptionEqualToValue={(option, value) => option._id === value._id}
+                                disableClearable
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label="Post to"
+                                        className="composer-meta-select"
+                                    />
+                                )}
+                            />
+                            <TextField
+                                size="small"
+                                label="Category"
+                                value={postCategory}
+                                onChange={(e) => setPostCategory(e.target.value)}
+                                className="composer-meta-select"
+                            />
+                        </Box>
+                        <Box className="composer-category-chips">
+                            {CATEGORY_OPTIONS.map((option) => (
+                                <Chip
+                                    key={option}
+                                    label={option}
+                                    size="small"
+                                    variant={postCategory === option ? 'filled' : 'outlined'}
+                                    onClick={() => setPostCategory(option)}
+                                    className="category-chip"
+                                />
+                            ))}
+                        </Box>
                         
                         <Box sx={{ 
                             display: 'flex', 
@@ -422,6 +601,7 @@ const PostFeed = () => {
                                         maxHeight: '300px',
                                         objectFit: 'contain',
                                         borderRadius: '8px',
+                                        backgroundColor: 'rgba(15, 23, 42, 0.6)',
                                     }}
                                 />
                                 <IconButton
@@ -500,6 +680,98 @@ const PostFeed = () => {
                     </Box>
                 </Box>
             )}
+
+            {(activePod || activePodParam === 'global') && (
+                <Paper className="feed-scope-banner">
+                    <Box className="feed-scope-content">
+                        <Box>
+                            <Typography variant="subtitle2">
+                                {activePod ? `Pod feed: ${activePod.name}` : 'Global feed'}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                {activePod ? 'Posts shared inside this pod' : 'All community posts across pods'}
+                            </Typography>
+                        </Box>
+                        <Box className="feed-scope-actions">
+                            {activePod && (
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => navigate(`/pods/${activePod.type}/${activePod._id}`)}
+                                >
+                                    Open Pod Chat
+                                </Button>
+                            )}
+                            {activePodParam && (
+                                <Button
+                                    size="small"
+                                    variant="text"
+                                    onClick={() => updateFeedQuery({ podId: null })}
+                                >
+                                    Clear pod filter
+                                </Button>
+                            )}
+                        </Box>
+                    </Box>
+                </Paper>
+            )}
+
+            {activeCategoryParam && (
+                <Paper className="feed-scope-banner">
+                    <Box className="feed-scope-content">
+                        <Box>
+                            <Typography variant="subtitle2">
+                                Category: {activeCategoryParam}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                Filtering posts by category
+                            </Typography>
+                        </Box>
+                        <Box className="feed-scope-actions">
+                            <Button
+                                size="small"
+                                variant="text"
+                                onClick={() => handleCategoryFilter(null)}
+                            >
+                                Clear category
+                            </Button>
+                        </Box>
+                    </Box>
+                </Paper>
+            )}
+
+            {categoryGroups.length > 0 && !activeCategoryParam && (
+                <Box className="category-panel-grid">
+                    {categoryGroups.slice(0, 6).map(([categoryName, categoryPosts]) => (
+                        <Paper
+                            key={categoryName}
+                            className="category-panel"
+                            onClick={() => handleCategoryFilter(categoryName)}
+                        >
+                            <Box className="category-panel-header">
+                                <Typography variant="subtitle2">{categoryName}</Typography>
+                                <Chip
+                                    label={`${categoryPosts.length} posts`}
+                                    size="small"
+                                    className="category-count-chip"
+                                />
+                            </Box>
+                            <Box className="category-panel-body">
+                                {categoryPosts.slice(0, 2).map((post) => (
+                                    <div key={post._id} className="category-panel-item">
+                                        <Typography variant="body2" className="category-panel-title">
+                                            {post.content?.slice(0, 80)}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {post.userId?.username || 'Unknown'} · {formatDistanceToNow(new Date(post.createdAt))} ago
+                                        </Typography>
+                                    </div>
+                                ))}
+                            </Box>
+                        </Paper>
+                    ))}
+                </Box>
+            )}
             
             <Divider sx={{ mb: 3 }} />
             
@@ -532,12 +804,12 @@ const PostFeed = () => {
                         </Box>
                     </Paper>
                 ))
-            ) : posts.length === 0 ? (
+            ) : filteredPosts.length === 0 ? (
                 <Typography variant="body1" sx={{ textAlign: 'center', py: 4 }}>
                     No posts yet!
                 </Typography>
             ) : (
-                posts.map(post => (
+                filteredPosts.map(post => (
                     <Paper 
                         key={post._id} 
                         sx={{ 
@@ -579,6 +851,44 @@ const PostFeed = () => {
                                         >
                                             <MoreVert />
                                         </IconButton>
+                                    )}
+                                </Box>
+
+                                <Box className="post-meta-chips">
+                                    <Chip
+                                        label={post.category || 'General'}
+                                        size="small"
+                                        className="post-category-chip"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleCategoryFilter(post.category || 'General');
+                                        }}
+                                    />
+                                    {resolvePodId(post.podId) && (
+                                        <Chip
+                                            label={getPostPodName(post) ? `Pod: ${getPostPodName(post)}` : 'Pod post'}
+                                            size="small"
+                                            variant="outlined"
+                                            className="post-pod-chip"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                updateFeedQuery({ podId: resolvePodId(post.podId) });
+                                            }}
+                                        />
+                                    )}
+                                    {post.source?.provider && post.source.provider !== 'internal' && (
+                                        <Chip
+                                            label={post.source.provider}
+                                            size="small"
+                                            variant="outlined"
+                                            className="post-source-chip"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (post.source.url) {
+                                                    window.open(post.source.url, '_blank', 'noopener,noreferrer');
+                                                }
+                                            }}
+                                        />
                                     )}
                                 </Box>
                                 
@@ -624,6 +934,10 @@ const PostFeed = () => {
                                             maxHeight: '400px',
                                         }}
                                         className="post-image-container"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            openLightbox(post.image, post.content);
+                                        }}
                                     >
                                         <Box
                                             component="img"
@@ -634,7 +948,7 @@ const PostFeed = () => {
                                                 maxHeight: '400px',
                                                 objectFit: 'contain',
                                                 borderRadius: '8px',
-                                                backgroundColor: '#f8f9fa'
+                                                backgroundColor: 'rgba(15, 23, 42, 0.6)'
                                             }}
                                             className="post-image"
                                         />

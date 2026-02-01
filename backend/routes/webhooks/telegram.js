@@ -141,16 +141,35 @@ const handleSummaryCommand = async (chat, integration) => {
     buffer,
   );
 
-  await AgentEventService.enqueue({
-    agentName: 'commonly-bot',
-    podId: latest.podId,
-    type: 'integration.summary',
-    payload: {
-      summary,
-      integrationId: latest._id.toString(),
-      source: 'telegram',
-    },
-  });
+  const { AgentInstallation } = require('../../models/AgentRegistry');
+  let installations = [];
+  try {
+    installations = await AgentInstallation.find({
+      agentName: 'commonly-bot',
+      podId: latest.podId,
+      status: 'active',
+    }).lean();
+  } catch (err) {
+    console.warn('telegram agent lookup failed', err.message);
+  }
+
+  const targets = installations.length > 0 ? installations : [{ instanceId: 'default' }];
+
+  await Promise.all(
+    targets.map((installation) => (
+      AgentEventService.enqueue({
+        agentName: 'commonly-bot',
+        instanceId: installation.instanceId || 'default',
+        podId: latest.podId,
+        type: 'integration.summary',
+        payload: {
+          summary,
+          integrationId: latest._id.toString(),
+          source: 'telegram',
+        },
+      })
+    )),
+  );
 
   await Integration.findByIdAndUpdate(integration._id, {
     'config.messageBuffer': [],

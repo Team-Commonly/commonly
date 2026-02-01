@@ -30,6 +30,16 @@ const userSchema = new mongoose.Schema({
     instanceId: { type: String }, // Instance id for multi-install
   },
 
+  // Agent runtime tokens (shared across all pod installations)
+  agentRuntimeTokens: [
+    {
+      tokenHash: { type: String, required: true },
+      label: { type: String },
+      createdAt: { type: Date, default: Date.now },
+      lastUsedAt: { type: Date },
+    },
+  ],
+
   // Daily digest and subscription preferences
   subscribedPods: [
     {

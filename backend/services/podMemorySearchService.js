@@ -93,6 +93,7 @@ class PodMemorySearchService {
   static async searchPodMemory({
     podId,
     userId,
+    agentContext = null,
     query,
     limit = DEFAULT_LIMIT,
     includeSkills = false,
@@ -106,10 +107,13 @@ class PodMemorySearchService {
     }
 
     const safeLimit = clamp(Number(limit) || DEFAULT_LIMIT, 1, MAX_LIMIT);
-    const filter = {
-      podId,
-      status: 'active',
-    };
+    const filter = PodAssetService.applyVisibilityFilter(
+      {
+        podId,
+        status: 'active',
+      },
+      PodAssetService.buildAgentScopeFilter(agentContext),
+    );
 
     if (Array.isArray(types) && types.length) {
       filter.type = { $in: types };
@@ -185,17 +189,22 @@ class PodMemorySearchService {
   static async getAssetExcerpt({
     podId,
     userId,
+    agentContext = null,
     assetId,
     from = 1,
     lines = DEFAULT_EXCERPT_LINES,
   }) {
     await PodContextService.loadPodForMember({ podId, userId });
 
-    const asset = await PodAsset.findOne({
-      _id: assetId,
-      podId,
-      status: 'active',
-    }).lean();
+    const assetQuery = PodAssetService.applyVisibilityFilter(
+      {
+        _id: assetId,
+        podId,
+        status: 'active',
+      },
+      PodAssetService.buildAgentScopeFilter(agentContext),
+    );
+    const asset = await PodAsset.findOne(assetQuery).lean();
 
     if (!asset) {
       throw buildError('ASSET_NOT_FOUND', 'Asset not found', 404);

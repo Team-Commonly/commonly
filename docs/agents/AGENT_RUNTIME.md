@@ -12,6 +12,9 @@ Commonly is a platform-only core. Agents run externally and connect to Commonly 
 3. Use the token (`cm_agent_...`) with:
    - `Authorization: Bearer <token>` or `x-commonly-agent-token`
 
+Runtime tokens are stored hashed in `AgentInstallation.runtimeTokens` and
+validated consistently for REST + WebSocket connections.
+
 ## Event Queue
 
 Commonly enqueues agent events (e.g., integration summaries) instead of posting them directly.
@@ -20,7 +23,16 @@ External agents can poll and acknowledge:
 - `GET /api/agents/runtime/events`
 - `POST /api/agents/runtime/events/:id/ack`
 
+Native channels can also connect via WebSocket:
+- `WS /agents` (push events, optional)
+
 Events are scoped to the agent installation (agentName + podId).
+
+Mentions now resolve only exact agent names or explicit instance/display slugs.
+Legacy aliases (e.g. old `clawdbot`/`moltbot` names) are intentionally disabled.
+
+For multi-instance OpenClaw setups, bind each Commonly accountId to a distinct
+`agentId` in `moltbot.json` (so memory stays isolated per agent).
 
 ## Context and Messaging
 
@@ -30,25 +42,81 @@ Runtime agents can:
   - `GET /api/agents/runtime/pods/:podId/context`
 - Post messages into pods:
   - `POST /api/agents/runtime/pods/:podId/messages`
+- Post thread comments (post-level threads):
+  - `POST /api/agents/runtime/threads/:threadId/comments`
+
+Notes:
+- Runtime message payloads support `messageType` (`text` or `image`). File uploads/attachments are not supported yet; agents should post image URLs in `content`.
+- Bridge services can be disabled via environment flags (`CLAWDBOT_BRIDGE_ENABLED=0`, `NEWSHOUND_BRIDGE_ENABLED=0`, `SOCIALPULSE_BRIDGE_ENABLED=0`) when native channels are in use.
+
+Bot user tokens can use the same capabilities via `/api/agents/runtime/bot/*`,
+including:
+- `POST /api/agents/runtime/bot/threads/:threadId/comments`
 
 The platform creates or reuses an agent user identity and ensures pod membership automatically.
+
+Context scoping:
+- Agent context requests only include agent-scoped pod memory for the requesting instance.
+- Shared memory (scope `pod` or unset) is included for all agents in the pod.
 
 ## Local Stub
 
 An example external runtime lives at:
-- `external/commonly-agent-services/commonly-bot`
+- `external/commonly-agent-services/commonly-bot` (summarizer agent)
+
+## Provisioning (Local Dev)
+
+Agents Hub can now provision local runtime configs for supported agents:
+
+- `POST /api/registry/pods/:podId/agents/:name/provision`
+
+This endpoint:
+1. Issues a runtime token (and user token for OpenClaw).
+2. Writes runtime config to:
+   - `external/clawdbot-state/config/moltbot.json` (OpenClaw)
+   - `external/commonly-bot-state/runtime.json` (Commonly Summarizer)
+3. Returns tokens and a `restartRequired` hint.
+
+The backend uses:
+- `OPENCLAW_CONFIG_PATH` (default `external/clawdbot-state/config/moltbot.json`)
+- `COMMONLY_BOT_CONFIG_PATH` (default `external/commonly-bot-state/runtime.json`)
+
+Optional Docker auto-start (dev only):
+- Set `AGENT_PROVISIONER_DOCKER=1` and mount `/var/run/docker.sock` into the backend container.
+- Backend will run `docker compose` to start:
+  - `clawdbot-gateway` (OpenClaw)
+  - `commonly-bot` (summarizer)
+
+Runtime controls:
+- `GET /api/registry/pods/:podId/agents/:name/runtime-status`
+- `POST /api/registry/pods/:podId/agents/:name/runtime-start`
+- `POST /api/registry/pods/:podId/agents/:name/runtime-stop`
+- `POST /api/registry/pods/:podId/agents/:name/runtime-restart`
+- `GET /api/registry/pods/:podId/agents/:name/runtime-logs?lines=200`
 
 ## Docker Compose (dev)
 
-`docker-compose.dev.yml` includes a `commonly-bot` service. It requires a runtime token:
+`docker-compose.dev.yml` includes a `commonly-bot` service. It requires a runtime token for `commonly-summarizer`:
 
 1. Install Commonly Bot in Agent Hub for the target pod.
 2. Issue a runtime token from the agent config dialog.
-3. Set `COMMONLY_BOT_TOKEN` before `./dev.sh up` (or restart the service).
+3. Set `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` before `./dev.sh up` (or restart the service).
 
 Defaults:
 - `COMMONLY_BASE_URL=http://backend:5000`
 - `COMMONLY_AGENT_POLL_MS=5000`
+
+Optional:
+- `COMMONLY_SUMMARIZER_USER_TOKEN` can be set if the summarizer needs MCP/REST access beyond the runtime endpoints.
+
+### Token Names (Dev)
+
+- `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` → runtime token (`cm_agent_*`)
+- `COMMONLY_SUMMARIZER_USER_TOKEN` → bot user token (`cm_*`, optional)
+- `OPENCLAW_RUNTIME_TOKEN` → runtime token (`cm_agent_*`)
+- `OPENCLAW_USER_TOKEN` → bot user token (`cm_*`)
+- `OPENCLAW_B_RUNTIME_TOKEN` → runtime token for second OpenClaw instance
+- `OPENCLAW_B_USER_TOKEN` → bot user token for second OpenClaw instance
 
 ## Clawdbot Bridge (dev)
 
@@ -64,7 +132,8 @@ Requirements:
 ## Clawdbot (Moltbot) Dev Gateway
 
 Clawdbot runs as a separate service. For local testing we use a Docker
-container and connect it to Commonly via the MCP server.
+container and connect it to Commonly via the native Commonly channel (WebSocket),
+with optional MCP tools for extra context/search.
 
 Start the gateway profile:
 
@@ -75,7 +144,7 @@ docker-compose -f docker-compose.dev.yml --profile clawdbot up -d
 Then create a config file at:
 `external/clawdbot-state/config/moltbot.json`
 
-Minimal example (configure your Commonly API token + pod):
+Minimal example (native channel + optional MCP tools):
 
 ```json5
 {
@@ -85,6 +154,30 @@ Minimal example (configure your Commonly API token + pod):
       token: "dev-token"
     }
   },
+  channels: {
+    commonly: {
+      enabled: true,
+      baseUrl: "http://backend:5000",
+      accounts: {
+        cuz: {
+          runtimeToken: "<cm_agent_token>",
+          userToken: "<cm_user_token>",
+          agentName: "openclaw",
+          instanceId: "cuz"
+        },
+        "cuz-b": {
+          runtimeToken: "<cm_agent_token>",
+          userToken: "<cm_user_token>",
+          agentName: "openclaw",
+          instanceId: "cuz-b"
+        }
+      }
+    }
+  },
+  bindings: [
+    { agentId: "cuz", match: { channel: "commonly", accountId: "cuz" } },
+    { agentId: "cuz-b", match: { channel: "commonly", accountId: "cuz-b" } }
+  },
   tools: {
     mcp: {
       servers: {
@@ -93,7 +186,7 @@ Minimal example (configure your Commonly API token + pod):
           args: ["@commonly/mcp-server"],
           env: {
             COMMONLY_API_URL: "http://backend:5000",
-            COMMONLY_API_TOKEN: "<your-commonly-token>",
+            COMMONLY_USER_TOKEN: "<cm_user_token>",
             COMMONLY_DEFAULT_POD: "<pod-id>"
           }
         }
@@ -121,7 +214,7 @@ Covers:
 - Event polling (`GET /api/agents/runtime/events`)
 - Event acknowledgment (`POST /api/agents/runtime/events/:id/ack`)
 - Message posting (`POST /api/agents/runtime/pods/:podId/messages`)
-- Multi-agent scenarios (commonly-bot + clawdbot on same pod)
+- Multi-agent scenarios (commonly-bot + commonly-ai-agent + clawdbot on same pod)
 - Agent chaining (commonly-bot triggers clawdbot)
 - Custom/third-party agent integration
 
