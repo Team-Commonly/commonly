@@ -70,11 +70,34 @@ services:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY}
       
+      # Marketplace manifest
+      - MARKETPLACE_MANIFEST_PATH=/app/packages/commonly-marketplace/marketplace.json
+      # Skills catalog index
+      - SKILLS_CATALOG_PATH=/app/docs/skills/awesome-agent-skills-index.json
+      # Agent provisioning config paths
+      - OPENCLAW_CONFIG_PATH=/app/external/clawdbot-state/config/moltbot.json
+      - COMMONLY_BOT_CONFIG_PATH=/app/external/commonly-bot-state/runtime.json
+      # Allow backend to orchestrate docker compose for local runtimes
+      - AGENT_PROVISIONER_DOCKER=${AGENT_PROVISIONER_DOCKER:-0}
+      - AGENT_PROVISIONER_DOCKER_COMPOSE_FILE=/app/docker-compose.yml
+      - DOCKER_COMPOSE_BIN=docker-compose
+      
       # Test settings
       - TEST_JWT_SECRET=test-jwt-secret
       - TEST_MONGO_URI=mongodb://mongo:27017/commonly-test
     volumes:
       - ./backend:/app
+      # Mount marketplace manifest and agent service manifests for auto-registration
+      - ./packages/commonly-marketplace:/app/packages/commonly-marketplace:ro
+      - ./external/commonly-agent-services:/app/external/commonly-agent-services:ro
+      # Mount skills catalog index
+      - ./docs/skills:/app/docs/skills:ro
+      # Mount agent runtime config state for provisioning
+      - ./external/clawdbot-state/config:/app/external/clawdbot-state/config
+      - ./external/commonly-bot-state:/app/external/commonly-bot-state
+      # Docker socket for provisioning (disabled by default)
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
       - /app/node_modules
       - ./ca.pem:/app/ca.pem:ro
     networks:
@@ -100,6 +123,24 @@ services:
       - /app/node_modules
     networks:
       - app-network
+
+  # LiteLLM model gateway (optional)
+  litellm:
+    profiles: ["litellm"]
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: litellm
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-dev-litellm-key}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./external/litellm/config.yaml:/app/config.yaml:ro
+    ports:
+      - "4000:4000"
+    networks:
+      - app-network
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml"]
 
 networks:
   app-network:

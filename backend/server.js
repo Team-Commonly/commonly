@@ -31,8 +31,10 @@ const federationRoutes = require('./routes/federation');
 const moltbotProviderRoutes = require('./routes/providers/moltbot');
 const activityRoutes = require('./routes/activity');
 const marketplaceRoutes = require('./routes/marketplace');
+const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
 const healthRoutes = require('./routes/health');
+const agentEnsembleRoutes = require('./routes/agentEnsemble');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes;
 let pgMessageRoutes;
@@ -61,11 +63,14 @@ dotenv.config();
 // Initialize express app
 const app = express();
 const buildAllowedOrigins = () => {
-  const raw = process.env.FRONTEND_URL || 'http://localhost:3000';
-  return raw
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const raw = process.env.FRONTEND_URL;
+  if (raw && raw.trim()) {
+    return raw
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+  return ['http://localhost:3000', 'https://app-dev.commonly.me'];
 };
 
 const allowedOrigins = buildAllowedOrigins();
@@ -84,8 +89,10 @@ const io = socketIo(server, {
 
 // Initialize socket instance for other services
 const socketConfig = require('./config/socket');
+const agentWebSocketService = require('./services/agentWebSocketService');
 
 socketConfig.init(io);
+agentWebSocketService.init(io);
 const PORT = process.env.PORT || 5000;
 
 // Middleware
@@ -147,8 +154,10 @@ app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration
 app.use('/api/activity', activityRoutes); // Activity feed
 app.use('/api/marketplace', marketplaceRoutes); // Official marketplace manifest
+app.use('/api/skills', skillsRoutes); // Skill catalogs + imports
 app.use('/api/dev', devRoutes); // Dev tooling (LLM status, etc.)
 app.use('/api/health', healthRoutes); // Health check endpoints
+app.use('/api/pods', agentEnsembleRoutes); // Agent Ensemble Pod endpoints
 
 // Test routes (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -162,12 +171,29 @@ connectDB();
 // Bootstrap agent registry after MongoDB connects
 const mongoose = require('mongoose');
 const AgentBootstrapService = require('./services/agentBootstrapService');
+const { AgentInstallation } = require('./models/AgentRegistry');
 
 mongoose.connection.once('open', () => {
   if (process.env.NODE_ENV !== 'test') {
-    AgentBootstrapService.bootstrap().catch((err) => {
-      console.error('[agent-bootstrap] Error:', err.message);
-    });
+    (async () => {
+      try {
+        const indexes = await AgentInstallation.collection.indexes();
+        const legacyIndex = indexes.find(
+          (index) => JSON.stringify(index.key) === JSON.stringify({ agentName: 1, podId: 1 }),
+        );
+        if (legacyIndex) {
+          await AgentInstallation.collection.dropIndex(legacyIndex.name);
+          console.log('[agent-installations] Dropped legacy index:', legacyIndex.name);
+        }
+        await AgentInstallation.syncIndexes();
+      } catch (indexError) {
+        console.warn('[agent-installations] Index sync failed:', indexError.message);
+      }
+
+      AgentBootstrapService.bootstrap().catch((err) => {
+        console.error('[agent-bootstrap] Error:', err.message);
+      });
+    })();
   }
 });
 

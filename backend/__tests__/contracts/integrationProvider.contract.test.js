@@ -82,6 +82,14 @@ const minimalConfigByType = {
   telegram: {
     chatId: 'chat-1',
   },
+  x: {
+    accessToken: 'x-token',
+    username: 'openclaw',
+  },
+  instagram: {
+    accessToken: 'ig-token',
+    igUserId: 'ig-user-1',
+  },
 };
 
 const payloadByType = {
@@ -118,6 +126,30 @@ const payloadByType = {
       chat: { id: 999, type: 'group', title: 'Test Chat' },
       from: { id: 123, is_bot: false, first_name: 'Sam' },
     },
+  },
+  x: {
+    data: [
+      {
+        id: 'tweet-1',
+        text: 'hello from x',
+        author_id: 'user-1',
+        created_at: '2025-01-01T00:00:00.000Z',
+      },
+    ],
+    user: { id: 'user-1', username: 'openclaw', name: 'OpenClaw' },
+  },
+  instagram: {
+    data: [
+      {
+        id: 'ig-1',
+        caption: 'hello from instagram',
+        media_type: 'IMAGE',
+        media_url: 'https://example.com/image.jpg',
+        permalink: 'https://instagram.com/p/abc',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        username: 'openclaw',
+      },
+    ],
   },
 };
 

@@ -18,4 +18,4 @@ This directory contains documentation for AI-powered features including summariz
 - **Daily Digests**: Personalized newsletters aggregating activity across pods
 - **Enhanced Analytics**: Timeline events, quote extraction, sentiment analysis
 - **Future Visualizations**: Keyword clouds, relationship graphs, activity heatmaps
-- **Optional Model Gateway**: Route AI calls through LiteLLM when configured
+- **Optional Model Gateway**: Route AI calls through LiteLLM when configured (set `LITELLM_DISABLED=true` to bypass)

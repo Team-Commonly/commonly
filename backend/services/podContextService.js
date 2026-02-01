@@ -11,6 +11,7 @@ const GENERIC_TAGS = new Set([
   'channel',
   'chat',
   'commonly-bot',
+  'commonly-ai-agent',
   'discussion',
   'during',
   'everyone',
@@ -252,6 +253,7 @@ class PodContextService {
   static async getPodContext({
     podId,
     userId,
+    agentContext = null,
     task = '',
     summaryLimit = 6,
     assetLimit = 12,
@@ -269,12 +271,18 @@ class PodContextService {
       type: pod.type,
     };
 
+    const visibilityFilter = PodAssetService.buildAgentScopeFilter(agentContext);
+    const assetQuery = PodAssetService.applyVisibilityFilter(
+      { podId, status: 'active', type: { $ne: 'skill' } },
+      visibilityFilter,
+    );
+
     const [summaries, assets] = await Promise.all([
       Summary.find({ podId, type: 'chats' })
         .sort({ createdAt: -1 })
         .limit(summaryLimit)
         .lean(),
-      PodAsset.find({ podId, status: 'active', type: { $ne: 'skill' } })
+      PodAsset.find(assetQuery)
         .sort({ createdAt: -1 })
         .limit(assetLimit)
         .lean(),
@@ -309,11 +317,11 @@ class PodContextService {
     const skillWarnings = [];
 
     const refreshHours = clamp(Number(skillRefreshHours) || 6, 1, 72);
-    const latestSkillAsset = await PodAsset.findOne({
-      podId,
-      type: 'skill',
-      status: 'active',
-    })
+    const latestSkillQuery = PodAssetService.applyVisibilityFilter(
+      { podId, type: 'skill', status: 'active' },
+      visibilityFilter,
+    );
+    const latestSkillAsset = await PodAsset.findOne(latestSkillQuery)
       .sort({ updatedAt: -1 })
       .select('updatedAt')
       .lean();
@@ -340,9 +348,13 @@ class PodContextService {
       skillWarnings.push(...(synthesisResult.warnings || []));
     }
 
+    const skillAssetsQuery = PodAssetService.applyVisibilityFilter(
+      { podId, type: 'skill', status: 'active' },
+      visibilityFilter,
+    );
     const skillAssets = skillModeUsed === 'none'
       ? []
-      : await PodAsset.find({ podId, type: 'skill', status: 'active' })
+      : await PodAsset.find(skillAssetsQuery)
         .sort({ 'metadata.score': -1, updatedAt: -1 })
         .limit(skillLimit)
         .lean();

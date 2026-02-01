@@ -11,18 +11,21 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 
 | Directory | Description | Files |
 |-----------|-------------|-------|
-| [discord/](./discord/) | Discord bot integration, commands, setup | 11 |
+| [discord/](./discord/) | Discord bot integration, commands, setup | 12 |
 | [whatsapp/](./whatsapp/) | WhatsApp Cloud API integration planning | 3 |
 | [integrations/](./integrations/) | Cross-platform integration contract & app platform | 8 |
 | [slack/](./slack/) | Slack integration notes | 1 |
 | [google-chat/](./google-chat/) | Google Chat integration notes | 1 |
 | [groupme/](./groupme/) | GroupMe integration notes | 1 |
 | [telegram/](./telegram/) | Telegram ingest-only bot webhook notes | 1 |
-| [ai-features/](./ai-features/) | AI summarization, daily digests, analytics | 3 |
-| [database/](./database/) | MongoDB & PostgreSQL schemas, migrations | 2 |
-| [architecture/](./architecture/) | System architecture overview | 1 |
-| [deployment/](./deployment/) | Docker, CI/CD, production deployment | 1 |
-| [development/](./development/) | Backend, frontend, linting guides | 3 |
+| [x/](./x/) | X (Twitter) integration notes | 1 |
+| [instagram/](./instagram/) | Instagram Graph API integration notes | 1 |
+| [ai-features/](./ai-features/) | AI summarization, daily digests, analytics | 4 |
+| [database/](./database/) | MongoDB & PostgreSQL schemas, migrations | 3 |
+| [architecture/](./architecture/) | System architecture overview | 2 |
+| [deployment/](./deployment/) | Docker, CI/CD, production deployment | 2 |
+| [development/](./development/) | Backend, frontend, linting guides | 5 |
+| [skills/](./skills/) | Skill catalogs + import flow | 1 |
 | [task_optimization/](./task_optimization/) | Completed implementation tasks | 1 |
 
 ## Quick Links by Topic
@@ -61,9 +64,18 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 ### Telegram Integration (Planned)
 - [Telegram Overview](./telegram/README.md)
 
+### X Integration
+- [X Overview](./x/README.md)
+
+### Instagram Integration
+- [Instagram Overview](./instagram/README.md)
+
 ### AI Features
 - [AI Features Overview](./ai-features/AI_FEATURES.md)
 - [Daily Digests](./ai-features/DAILY_DIGESTS.md)
+
+### Skills
+- [Skills Catalog (import flow)](./skills/SKILLS_CATALOG.md)
 
 ### Database
 - [Database Schemas](./database/DATABASE.md)
@@ -87,4 +99,4 @@ See [.claude/skills/](../.claude/skills/) for documentation organized by experti
 | Real-time Systems | Socket.io, WebSockets |
 | Testing & Quality | Jest, ESLint |
 
-## Total Documentation Files: 37
+## Total Documentation Files: 61

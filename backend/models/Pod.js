@@ -13,8 +13,72 @@ const PodSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['chat', 'study', 'games'],
+      enum: ['chat', 'study', 'games', 'agent-ensemble'],
       default: 'chat',
+    },
+    // Agent Ensemble Pod (AEP) configuration - only used when type === 'agent-ensemble'
+    agentEnsemble: {
+      // Whether the ensemble is currently enabled
+      enabled: {
+        type: Boolean,
+        default: false,
+      },
+      // Discussion topic/prompt for the ensemble
+      topic: String,
+      // Participating agents
+      participants: [
+        {
+          agentType: {
+            type: String,
+            required: true,
+          },
+          instanceId: {
+            type: String,
+            default: 'default',
+          },
+          role: {
+            type: String,
+            enum: ['starter', 'responder', 'synthesizer', 'observer'],
+            default: 'responder',
+          },
+        },
+      ],
+      // Stop conditions for discussions
+      stopConditions: {
+        maxMessages: {
+          type: Number,
+          default: 20,
+        },
+        maxRounds: {
+          type: Number,
+          default: 5,
+        },
+        maxDurationMinutes: {
+          type: Number,
+          default: 60,
+        },
+      },
+      // Schedule for recurring discussions
+      schedule: {
+        enabled: {
+          type: Boolean,
+          default: false,
+        },
+        frequencyMinutes: {
+          type: Number,
+          default: 20,
+        },
+        timezone: {
+          type: String,
+          default: 'UTC',
+        },
+      },
+      // Whether humans can participate
+      humanParticipation: {
+        type: String,
+        enum: ['none', 'read-only', 'participate'],
+        default: 'participate',
+      },
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

@@ -9,7 +9,7 @@ const axios = require('axios').default;
 
 jest.mock('axios', () => ({
   __esModule: true,
-  default: { post: jest.fn() }
+  default: { post: jest.fn(), get: jest.fn() }
 }));
 jest.mock('react-router-dom', () => ({ useNavigate: jest.fn() }));
 jest.mock('../context/AppContext', () => ({ useAppContext: jest.fn() }));
@@ -38,6 +38,7 @@ test('submitting creates post and navigates', async () => {
   const refreshData = jest.fn();
   useNavigate.mockReturnValue(navigate);
   useAppContext.mockReturnValue({ refreshData });
+  axios.get.mockResolvedValue({ data: [] });
   axios.post.mockResolvedValue({});
   await TestUtils.act(async () => {
     root.render(<CreatePost />);
@@ -50,7 +51,11 @@ test('submitting creates post and navigates', async () => {
   await TestUtils.act(async () => {
     TestUtils.Simulate.submit(form);
   });
-  expect(axios.post).toHaveBeenCalledWith('/api/posts', { content: '#tag hello', tags: ['tag'] }, { headers: { Authorization: 'Bearer t' } });
+  expect(axios.post).toHaveBeenCalledWith(
+    '/api/posts',
+    { content: '#tag hello', tags: ['tag'], category: 'General' },
+    { headers: { Authorization: 'Bearer t' } },
+  );
   expect(refreshData).toHaveBeenCalled();
   expect(navigate).toHaveBeenCalledWith('/feed');
   expect(refreshPage).toHaveBeenCalledWith(500);

@@ -51,7 +51,7 @@ A complete MCP (Model Context Protocol) server that allows any compatible agent 
         "commonly": {
           command: "commonly-mcp",
           env: {
-            COMMONLY_API_TOKEN: "your-token"
+            COMMONLY_USER_TOKEN: "your-token"
           }
         }
       }
@@ -265,7 +265,7 @@ curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:5000/api/v1/context/$POD_ID?task=review+PR"
 
 # Use MCP server
-COMMONLY_API_TOKEN=... commonly-mcp --debug
+COMMONLY_USER_TOKEN=... commonly-mcp --debug
 ```
 
 ---

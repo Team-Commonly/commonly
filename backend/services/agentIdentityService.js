@@ -34,7 +34,7 @@ const normalizeSegment = (value) => (
 const buildAgentUsername = (agentType, instanceId) => {
   const normalized = normalizeSegment(agentType);
   const instance = normalizeSegment(instanceId);
-  if (!instance || instance === 'default') {
+  if (!instance || instance === 'default' || instance === normalized) {
     return normalized || 'agent';
   }
   return `${normalized}-${instance}`;
@@ -90,14 +90,26 @@ const AGENT_TYPES = {
     capabilities: ['code', 'chat'],
     runtime: 'openai',
   },
+  newshound: {
+    officialDisplayName: 'NewsHound 🐕',
+    officialDescription: 'News aggregation and analysis agent - curious, thorough, analytical',
+    icon: '🐕',
+    botType: 'agent',
+    capabilities: ['news', 'search', 'summarize', 'analyze', 'trends'],
+    runtime: 'moltbot',
+  },
+  socialpulse: {
+    officialDisplayName: 'SocialPulse 📊',
+    officialDescription: 'Social media monitoring and sentiment analysis agent - trendy, observant, conversational',
+    icon: '📊',
+    botType: 'agent',
+    capabilities: ['social', 'trends', 'sentiment', 'monitor', 'analyze'],
+    runtime: 'moltbot',
+  },
 };
 
-// Backwards compatibility: map old agent names to new types
-const LEGACY_AGENT_MAP = {
-  'clawd-bot': 'openclaw',
-  'commonly-bot': 'commonly-summarizer',
-  'commonly-ai-agent': 'openclaw',
-};
+// Legacy agent name mapping is intentionally disabled to avoid alias collisions.
+const LEGACY_AGENT_MAP = {};
 
 class AgentIdentityService {
   /**
@@ -116,7 +128,7 @@ class AgentIdentityService {
     }
 
     // Handle legacy agent names
-    const resolvedType = LEGACY_AGENT_MAP[agentType.toLowerCase()] || agentType.toLowerCase();
+    const resolvedType = agentType.toLowerCase();
     const typeConfig = AGENT_TYPES[resolvedType];
 
     const instanceId = options.instanceId || 'default';
@@ -186,7 +198,7 @@ class AgentIdentityService {
    * Get configuration for a specific agent type
    */
   static getAgentTypeConfig(agentType) {
-    const resolvedType = LEGACY_AGENT_MAP[agentType?.toLowerCase()] || agentType?.toLowerCase();
+    const resolvedType = agentType?.toLowerCase();
     return AGENT_TYPES[resolvedType] || null;
   }
 
@@ -194,7 +206,7 @@ class AgentIdentityService {
    * Check if an agent type is a known/official type
    */
   static isKnownAgentType(agentType) {
-    const resolvedType = LEGACY_AGENT_MAP[agentType?.toLowerCase()] || agentType?.toLowerCase();
+    const resolvedType = agentType?.toLowerCase();
     return !!AGENT_TYPES[resolvedType];
   }
 
@@ -202,7 +214,7 @@ class AgentIdentityService {
    * Resolve legacy agent name to current agent type
    */
   static resolveAgentType(agentNameOrType) {
-    return LEGACY_AGENT_MAP[agentNameOrType?.toLowerCase()] || agentNameOrType?.toLowerCase();
+    return agentNameOrType?.toLowerCase();
   }
 
   static buildAgentUsername(agentType, instanceId) {

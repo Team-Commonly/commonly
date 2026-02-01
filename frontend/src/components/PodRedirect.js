@@ -5,6 +5,7 @@ import { Box, Typography, Button, CircularProgress, Container, Paper } from '@mu
 import ChatIcon from '@mui/icons-material/Chat';
 import SchoolIcon from '@mui/icons-material/School';
 import SportsEsportsIcon from '@mui/icons-material/SportsEsports';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 
 const PodRedirect = () => {
   const navigate = useNavigate();
@@ -50,7 +51,7 @@ const PodRedirect = () => {
           Select the type of pod you want to explore
         </Typography>
         
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 3, mt: 4, justifyContent: 'center' }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 3, mt: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
           <Button
             variant="contained"
             color="primary"
@@ -82,6 +83,17 @@ const PodRedirect = () => {
             sx={{ py: 2, px: 4, borderRadius: 2, flex: 1 }}
           >
             Game Pods
+          </Button>
+
+          <Button
+            variant="contained"
+            color="info"
+            size="large"
+            startIcon={<PsychologyIcon />}
+            onClick={() => handleNavigate('agent-ensemble')}
+            sx={{ py: 2, px: 4, borderRadius: 2, flex: 1 }}
+          >
+            Agent Ensemble Pods
           </Button>
         </Box>
       </Paper>

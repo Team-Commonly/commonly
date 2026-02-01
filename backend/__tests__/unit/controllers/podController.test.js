@@ -16,6 +16,39 @@ describe('podController', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
+  it('getPodsByType allows agent-ensemble', async () => {
+    const req = { params: { type: 'agent-ensemble' } };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const sort = jest.fn().mockResolvedValue([]);
+    const populateSecond = jest.fn(() => ({ sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+
+    await podController.getPodsByType(req, res);
+
+    expect(Pod.find).toHaveBeenCalledWith({ type: 'agent-ensemble' });
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  it('createPod accepts agent-ensemble type', async () => {
+    const savedPod = { _id: 'p1', populate: jest.fn().mockResolvedValue() };
+    const save = jest.fn().mockResolvedValue(savedPod);
+    Pod.mockImplementation(() => ({ save }));
+
+    const req = {
+      body: { name: 'Ensemble Pod', description: 'AI pod', type: 'agent-ensemble' },
+      userId: 'creator',
+    };
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    await podController.createPod(req, res);
+
+    expect(save).toHaveBeenCalled();
+    expect(savedPod.populate).toHaveBeenCalledWith('createdBy', 'username profilePicture');
+    expect(savedPod.populate).toHaveBeenCalledWith('members', 'username profilePicture');
+    expect(res.json).toHaveBeenCalledWith(savedPod);
+  });
+
   it('deletePod denies delete if user is not creator', async () => {
     Pod.findById.mockResolvedValue({ createdBy: 'creator' });
     const req = { params: { id: 'p1' }, userId: 'other' };

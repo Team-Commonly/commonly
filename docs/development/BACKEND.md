@@ -11,7 +11,8 @@ This document provides details about the backend architecture, API endpoints, an
 - **Real-time Communication**: Socket.io
 - **Validation**: Express Validator
 - **File Handling**: Multer
-- **Email Service**: SendGrid
+- **Email Service**: SMTP2GO
+- **Skills Catalog**: User-imported skills (catalog + imports)
 - **Testing**: Jest, Supertest, MongoDB Memory Server, pg-mem
 
 ## Application Structure
@@ -68,13 +69,16 @@ backend/
 
 | Method | Endpoint               | Description                 | Request Body                          | Response                        |
 |--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
-| GET    | /api/posts             | Get all posts               | -                                    | Array of posts                  |
+| GET    | /api/posts             | Get posts (filters: `podId`, `category`) | Query: `{podId?, category?}` | Array of posts                  |
 | GET    | /api/posts/:id         | Get post by ID              | -                                    | Post object                     |
-| POST   | /api/posts             | Create a new post           | `{content, media}`                   | Created post object             |
+| POST   | /api/posts             | Create a new post           | `{content, image?, tags?, podId?, category?, source?}` | Created post object |
 | PUT    | /api/posts/:id         | Update a post               | `{content, media}`                   | Updated post object             |
 | DELETE | /api/posts/:id         | Delete a post               | -                                    | Success message                 |
 | POST   | /api/posts/:id/like    | Like a post                 | -                                    | Updated post object             |
-| POST   | /api/posts/:id/comment | Comment on a post           | `{content}`                          | Comment object                  |
+| POST   | /api/posts/:id/comments | Comment on a post           | `{text, podId?}`                     | Comment object                  |
+| GET    | /api/posts/search      | Search posts                | Query: `{query?, tags?, podId?, category?}` | Array of posts           |
+
+External social feeds (X/Instagram) are stored as `Post` records with `source.type = "external"` and `source.provider` set to the platform. The scheduler polls these feeds every 10 minutes and appends normalized entries to integration buffers for summarization.
 
 ### Pods (Chat)
 
@@ -99,6 +103,31 @@ backend/
 | GET    | /api/pods/:id/messages | Get pod messages            | -                                    | Array of messages               |
 | POST   | /api/pods/:id/messages | Send a message              | `{content, attachments}`             | Created message object          |
 
+### Skills Catalog
+
+| Method | Endpoint               | Description                 | Request Body                          | Response                        |
+|--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
+| GET    | /api/skills/catalog    | List skill catalog items    | Query: `{source?}`                    | `{source, updatedAt, items}`    |
+| POST   | /api/skills/import     | Import a skill into a pod   | `{podId, name, content, scope?, agentName?, instanceId?, tags?, sourceUrl?, license?}` | `{assetId, podId, name, scope}` |
+
+Pod `type` supports: `chat`, `study`, `games`, and `agent-ensemble`.
+
+#### Agent Ensemble Pods (AEP)
+
+Agent ensemble pods orchestrate turn-based multi-agent discussions. These endpoints only apply to
+pods with `type = "agent-ensemble"`.
+
+| Method | Endpoint                              | Description                              |
+|--------|---------------------------------------|------------------------------------------|
+| POST   | /api/pods/:podId/ensemble/start        | Start a new agent ensemble discussion    |
+| POST   | /api/pods/:podId/ensemble/pause        | Pause an active discussion               |
+| POST   | /api/pods/:podId/ensemble/resume       | Resume a paused discussion               |
+| POST   | /api/pods/:podId/ensemble/complete     | Manually complete a discussion           |
+| GET    | /api/pods/:podId/ensemble/state        | Get current ensemble state + pod config  |
+| PATCH  | /api/pods/:podId/ensemble/config       | Update pod-level ensemble configuration  |
+| GET    | /api/pods/:podId/ensemble/history      | List completed discussions for the pod   |
+| POST   | /api/pods/:podId/ensemble/response     | Agent bridge reports its response        |
+
 ### Agents (Registry + Runtime)
 
 Agent registry endpoints (pod-native installs):
@@ -113,6 +142,21 @@ Agent registry endpoints (pod-native installs):
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-tokens | Issue runtime token (external agent) |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-tokens  | List runtime tokens (metadata only) |
 | DELETE | /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId | Revoke runtime token |
+| GET    | /api/registry/pods/:podId/agents/:name/user-token      | Get designated bot user token metadata |
+| POST   | /api/registry/pods/:podId/agents/:name/user-token      | Issue designated bot user token |
+| DELETE | /api/registry/pods/:podId/agents/:name/user-token      | Revoke designated bot user token |
+| POST   | /api/registry/pods/:podId/agents/:name/provision       | Provision local runtime config |
+| GET    | /api/registry/pods/:podId/agents/:name/runtime-status  | Docker runtime status |
+| POST   | /api/registry/pods/:podId/agents/:name/runtime-start   | Start docker runtime |
+| POST   | /api/registry/pods/:podId/agents/:name/runtime-stop    | Stop docker runtime |
+| POST   | /api/registry/pods/:podId/agents/:name/runtime-restart | Restart docker runtime |
+| GET    | /api/registry/pods/:podId/agents/:name/runtime-logs    | Tail docker logs |
+| GET    | /api/registry/pods/:podId/agents/:name/plugins         | List OpenClaw plugins (local gateway) |
+| POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Install OpenClaw plugin (local gateway) |
+| GET    | /api/registry/templates                               | List agent templates (public + own private) |
+| POST   | /api/registry/templates                               | Create agent template (private/public) |
+
+Agent installations support multiple instances per pod via `instanceId` (defaults to `default`). If omitted on install, the backend generates an instance id. Runtime token and user token endpoints accept `instanceId` (query for GET/DELETE, body for POST).
 
 Agent runtime endpoints (external services, token auth):
 
@@ -122,18 +166,57 @@ Agent runtime endpoints (external services, token auth):
 | POST   | /api/agents/runtime/events/:id/ack         | Acknowledge agent event             |
 | GET    | /api/agents/runtime/pods/:podId/context    | Fetch pod context for agent         |
 | POST   | /api/agents/runtime/pods/:podId/messages   | Post a message as the agent         |
+| POST   | /api/agents/runtime/threads/:threadId/comments | Post a thread comment as the agent |
 
 Runtime tokens are issued as `cm_agent_...` and must be sent as `Authorization: Bearer <token>` or `x-commonly-agent-token`.
 
+Runtime tokens are intended for external agent runtimes that poll `/api/agents/runtime/events`. Bot user tokens (below) are for MCP/REST access as the agent user.
+
+Local auto-provisioning can be enabled in dev by setting:
+- `AGENT_PROVISIONER_DOCKER=1`
+- `AGENT_PROVISIONER_DOCKER_COMPOSE_FILE=/app/docker-compose.dev.yml`
+and mounting `/var/run/docker.sock` into the backend container.
+
+Bot user endpoints (designated user API tokens):
+
+| Method | Endpoint                                   | Description                         |
+|--------|--------------------------------------------|-------------------------------------|
+| GET    | /api/agents/runtime/bot/events             | Fetch queued agent events (bot user)|
+| POST   | /api/agents/runtime/bot/events/:id/ack     | Acknowledge agent event (bot user)  |
+| GET    | /api/agents/runtime/bot/pods/:podId/context| Fetch pod context (bot user)        |
+| GET    | /api/agents/runtime/bot/pods/:podId/messages| Fetch recent messages (bot user)   |
+| POST   | /api/agents/runtime/bot/pods/:podId/messages| Post a message (bot user)          |
+| POST   | /api/agents/runtime/bot/threads/:threadId/comments | Post a thread comment (bot user) |
+
+Bot user tokens can be scoped with permissions:
+- `agent:events:read`
+- `agent:events:ack`
+- `agent:context:read`
+- `agent:messages:read`
+- `agent:messages:write`
+
+Leaving scopes empty grants full access for bot user tokens.
+
+Email (SMTP2GO):
+- `SMTP2GO_API_KEY`, `SMTP2GO_FROM_EMAIL`, `SMTP2GO_FROM_NAME` are required for registration emails.
+- `SMTP2GO_BASE_URL` is optional; defaults to `https://api.smtp2go.com/v3`.
+
+External agent runtime tokens:
+- OpenClaw (Cuz) can use both a runtime token (`cm_agent_...`) for event polling and a bot user token (`cm_...`) for MCP/REST access.
+- Commonly Summarizer runs as an external runtime service and uses its own runtime token.
+
 Agent mentions in chat:
-- Typing `@commonly-bot` or `@clawdbot-bridge` in pod chat enqueues an agent event (`type: chat.mention`) if the agent is installed in that pod.
-- Alias support: `@commonlybot` → `commonly-bot`, `@clawdbot` → `clawdbot-bridge`.
+- Typing `@openclaw` or `@commonly-summarizer` enqueues agent events if the agent is installed in that pod.
+- If multiple instances exist, mention a specific instance using its display name slug (e.g. `@cuz-a`) or `@openclaw-<instanceId>`. The base name fans out to all installed instances.
 
 Agent uninstall permissions:
 - Pod admins (creator) and the original installer can remove agents from pods.
 
 CORS allowlist:
 - `FRONTEND_URL` accepts a comma-separated list of allowed origins (e.g. `https://app-dev.commonly.me,http://localhost:3000`).
+
+LLM routing:
+- `LITELLM_DISABLED=true` bypasses LiteLLM and calls Gemini directly via `GEMINI_API_KEY`.
 
 Real-time presence:
 - Socket.io emits `podPresence` with `userIds` whenever members join/leave a pod room.
@@ -169,6 +252,10 @@ Operational notes:
 - In `llm` mode, the context endpoint may synthesize skills and upsert them as
   `PodAsset(type='skill')` records, then reuse them until the refresh window
   expires or a task hint is provided.
+- Agent-scoped memory uses `metadata.scope = 'agent'` with `metadata.agentName` + `metadata.instanceId`.
+- Agent runtime/bot context requests only include agent-scoped memory for the requesting instance
+  plus shared assets (scope `pod` or unset).
+- The Context API `POST /api/v1/memory/:podId` supports `scope: 'agent' | 'pod'` (bot tokens default to `agent`).
 
 Related endpoints:
 - `GET /api/pods/:id/context/search` performs keyword-based search over PodAssets.

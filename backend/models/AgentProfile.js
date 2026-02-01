@@ -71,6 +71,18 @@ const AgentProfileSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Registry agent name (e.g., commonly-ai-agent)
+    agentName: {
+      type: String,
+      required: true,
+    },
+
+    // Optional instance id for multiple installs
+    instanceId: {
+      type: String,
+      default: 'default',
+    },
+
     // Pod this agent belongs to
     podId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -169,6 +181,7 @@ const AgentProfileSchema = new mongoose.Schema(
 
 // Compound index for unique agentId per pod
 AgentProfileSchema.index({ podId: 1, agentId: 1 }, { unique: true });
+AgentProfileSchema.index({ podId: 1, agentName: 1, instanceId: 1 }, { unique: true });
 AgentProfileSchema.index({ podId: 1, status: 1 });
 AgentProfileSchema.index({ podId: 1, isDefault: 1 });
 
@@ -191,6 +204,8 @@ AgentProfileSchema.statics.createDefaultAgent = async function (podId, createdBy
 
   return this.create({
     agentId: 'pod-assistant',
+    agentName: 'pod-assistant',
+    instanceId: 'default',
     podId,
     name: `${podName} Assistant`,
     purpose: `AI assistant for the ${podName} pod. Helps members with questions, searches pod knowledge, and facilitates discussions.`,

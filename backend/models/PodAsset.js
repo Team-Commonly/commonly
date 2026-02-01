@@ -16,6 +16,8 @@ const PodAssetSchema = new Schema(
         'summary',
         'integration-summary',
         'skill',
+        'memory',
+        'daily-log',
         'message',
         'thread',
         'file',

@@ -14,6 +14,7 @@ const PodAsset = require('../models/PodAsset');
 const Summary = require('../models/Summary');
 const Pod = require('../models/Pod');
 const VectorSearchService = require('../services/vectorSearchService');
+const User = require('../models/User');
 
 const isMember = (pod, userId) => (
   pod.members?.some((member) => {
@@ -122,12 +123,21 @@ router.get('/context/:podId', auth, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const user = userId ? await User.findById(userId).lean() : null;
+    const agentContext = user?.isBot
+      ? {
+        agentName: user?.botMetadata?.agentType || user?.botMetadata?.agentName || user?.username,
+        instanceId: user?.botMetadata?.instanceId || 'default',
+      }
+      : null;
+
     const context = await ContextAssemblerService.assembleContext(podId, {
       task,
       includeSkills: includeSkills !== 'false',
       includeMemory: includeMemory !== 'false',
       maxTokens: maxTokens ? parseInt(maxTokens, 10) : 8000,
       userId,
+      agentContext,
     });
 
     res.json(context);
@@ -170,9 +180,18 @@ router.get('/search/:podId', auth, async (req, res) => {
 
     const startTime = Date.now();
 
+    const user = userId ? await User.findById(userId).lean() : null;
+    const agentContext = user?.isBot
+      ? {
+        agentName: user?.botMetadata?.agentType || user?.botMetadata?.agentName || user?.username,
+        instanceId: user?.botMetadata?.instanceId || 'default',
+      }
+      : null;
+
     const assets = await ContextAssemblerService.searchAssets(podId, q, {
       limit: limit ? parseInt(limit, 10) : 10,
       types: types ? types.split(',') : null,
+      agentContext,
     });
 
     // Filter by since date if provided
@@ -362,6 +381,13 @@ router.get('/pods/:podId/memory/:path(*)', auth, async (req, res) => {
   try {
     const { podId, path } = req.params;
     const userId = req.userId || req.user?._id || req.user?.id;
+    const user = userId ? await User.findById(userId).lean() : null;
+    const agentContext = user?.isBot
+      ? {
+        agentName: user?.botMetadata?.agentType || user?.botMetadata?.agentName || user?.username,
+        instanceId: user?.botMetadata?.instanceId || 'default',
+      }
+      : null;
 
     // Verify access
     const pod = await Pod.findById(podId).lean();
@@ -378,7 +404,7 @@ router.get('/pods/:podId/memory/:path(*)', auth, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const content = await ContextAssemblerService.readMemoryFile(podId, path);
+    const content = await ContextAssemblerService.readMemoryFile(podId, path, { agentContext });
 
     res.json({ content });
   } catch (error) {
@@ -398,9 +424,16 @@ router.post('/memory/:podId', auth, async (req, res) => {
   try {
     const { podId } = req.params;
     const {
-      target, content, tags, source,
+      target, content, tags, source, scope,
     } = req.body;
     const userId = req.userId || req.user?._id || req.user?.id;
+    const user = userId ? await User.findById(userId).lean() : null;
+    const agentContext = user?.isBot
+      ? {
+        agentName: user?.botMetadata?.agentType || user?.botMetadata?.agentName || user?.username,
+        instanceId: user?.botMetadata?.instanceId || 'default',
+      }
+      : null;
 
     if (!target || !content) {
       return res.status(400).json({ error: 'target and content are required' });
@@ -433,6 +466,8 @@ router.post('/memory/:podId', auth, async (req, res) => {
         ...source,
         userId: userId.toString(),
       },
+      scope: scope || (agentContext ? 'agent' : 'pod'),
+      agentContext,
     });
 
     res.json(result);

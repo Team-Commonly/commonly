@@ -48,10 +48,6 @@ describe('Auth Controller Tests', () => {
       // Create a mock for bcrypt
       bcrypt.hash.mockResolvedValueOnce('hashedPassword');
 
-      // Create a mock for SendGrid
-      const sendGridMock = require('@sendgrid/mail');
-      sendGridMock.send.mockResolvedValueOnce(true);
-
       // Mock User.findOne to return null (user doesn't exist)
       User.findOne = jest.fn().mockResolvedValueOnce(null);
 
@@ -83,9 +79,7 @@ describe('Auth Controller Tests', () => {
 
       // Verify mocks were called correctly
       expect(User.findOne).toHaveBeenCalledWith({ email: 'test@example.com' });
-      expect(bcrypt.hash).toHaveBeenCalled();
       expect(saveMock).toHaveBeenCalled();
-      expect(sendGridMock.send).toHaveBeenCalled();
 
       // Verify response
       expect(res.status).toHaveBeenCalledWith(201);

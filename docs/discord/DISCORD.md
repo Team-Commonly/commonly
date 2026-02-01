@@ -127,7 +127,7 @@ Immediately push Discord activity from the last hour to your Commonly pod.
 
 ## 🧾 **Bot Message Display**
 
-Bot messages from the Commonly Bot agent user (`commonly-bot`) render with structured formatting in the Commonly chat UI:
+Bot messages from the Commonly Summarizer agent user (`commonly-bot`) render with structured formatting in the Commonly chat UI:
 - **Structured JSON Format**: Bot messages use a `[BOT_MESSAGE]` prefix with JSON payload for rich display.
 - **Local Timezone**: Time ranges are stored as ISO timestamps so the UI can render in the viewer’s local timezone.
 - **Visual Styling**: BOT badge, Discord-themed colors, organized layout with title/meta/summary sections.
@@ -416,7 +416,7 @@ const postDiscordSummaryToPod = async (podId, summary) => {
   await fetch(`/api/agents/runtime/pods/${podId}/messages`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${process.env.COMMONLY_BOT_TOKEN || process.env.COMMONLY_AGENT_TOKEN}`,
+      Authorization: `Bearer ${process.env.COMMONLY_SUMMARIZER_RUNTIME_TOKEN || process.env.COMMONLY_AGENT_TOKEN}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ content: message })
@@ -425,7 +425,7 @@ const postDiscordSummaryToPod = async (podId, summary) => {
 ```
 
 Notes:
-- In dev, `COMMONLY_BOT_TOKEN` is mapped into the runtime container as `COMMONLY_AGENT_TOKEN`.
+- In dev, `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` is mapped into the runtime container as `COMMONLY_AGENT_TOKEN`.
 - In production, any `cm_agent_...` runtime token issued for the Commonly Bot install works.
 
 ### **Commonly → Discord Flow**

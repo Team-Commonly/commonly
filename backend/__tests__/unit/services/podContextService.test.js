@@ -169,4 +169,46 @@ describe('PodContextService', () => {
       PodContextService.getPodContext({ podId: 'pod-1', userId: 'user-1' }),
     ).rejects.toMatchObject({ status: 403, code: 'NOT_A_MEMBER' });
   });
+
+  it('filters agent-scoped assets to the requesting agent instance', async () => {
+    mockPodFindById({
+      _id: 'pod-1',
+      name: 'Agent Pod',
+      description: '',
+      type: 'chat',
+      members: ['agent-user'],
+    });
+
+    mockSummaryFind([]);
+    mockLatestSkill(null);
+
+    const queries = [];
+    PodAsset.find.mockImplementation((query) => {
+      queries.push(query);
+      return buildFindChain([]);
+    });
+
+    await PodContextService.getPodContext({
+      podId: 'pod-1',
+      userId: 'agent-user',
+      agentContext: { agentName: 'openclaw', instanceId: 'inst-a' },
+      summaryLimit: 1,
+      assetLimit: 1,
+      tagLimit: 1,
+      skillLimit: 1,
+      skillMode: 'none',
+    });
+
+    const assetQuery = queries.find((query) => query?.type?.$ne === 'skill');
+    expect(assetQuery).toBeTruthy();
+    expect(assetQuery.$and).toBeDefined();
+    const visibilityFilter = assetQuery.$and.find((entry) => entry.$or);
+    expect(visibilityFilter).toBeDefined();
+    const agentClause = visibilityFilter.$or.find((entry) => entry['metadata.scope'] === 'agent');
+    expect(agentClause).toMatchObject({
+      'metadata.scope': 'agent',
+      'metadata.agentName': 'openclaw',
+      'metadata.instanceId': 'inst-a',
+    });
+  });
 });
