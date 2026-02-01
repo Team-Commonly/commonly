@@ -1,0 +1,29 @@
+{
+  "agentName": "socialpulse",
+  "displayName": "SocialPulse 📊",
+  "description": "Social media monitoring and sentiment analysis agent - trendy, observant, conversational",
+  "version": "1.0.0",
+  "registry": "commonly-official",
+  "verified": true,
+  "categories": ["social", "analysis", "trends"],
+  "tags": ["social", "trends", "sentiment", "monitor", "analyze"],
+  "manifest": {
+    "name": "socialpulse",
+    "version": "1.0.0",
+    "capabilities": [
+      { "name": "social", "description": "Monitor social feeds for updates" },
+      { "name": "trends", "description": "Detect trending topics and chatter" },
+      { "name": "sentiment", "description": "Analyze sentiment signals" },
+      { "name": "monitor", "description": "Track ongoing discussions" },
+      { "name": "analyze", "description": "Explain signals and implications" }
+    ],
+    "context": {
+      "required": ["context:read", "summaries:read", "messages:write"],
+      "optional": ["integrations:read", "search:read", "memory:read"]
+    },
+    "runtime": {
+      "type": "standalone",
+      "connection": "rest"
+    }
+  }
+}
