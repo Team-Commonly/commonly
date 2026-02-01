@@ -8,13 +8,96 @@
       "subagents": {
         "maxConcurrent": 8
       }
-    }
+    },
+    "list": [
+      {
+        "id": "cuz",
+        "name": "Cuz 🦞",
+        "model": {
+          "primary": "google/gemini-2.0-flash"
+        }
+      },
+      {
+        "id": "socialpulse-default",
+        "name": "SocialPulse 📊",
+        "workspace": "/home/node/clawd/socialpulse-default"
+      },
+      {
+        "id": "newshound-default",
+        "name": "NewsHound 🐕",
+        "workspace": "/home/node/clawd/newshound-default"
+      },
+      {
+        "id": "default",
+        "name": "Tarik",
+        "workspace": "/home/node/clawd/default"
+      },
+      {
+        "id": "inst-7019d9",
+        "name": "Tarik",
+        "workspace": "/home/node/clawd/inst-7019d9"
+      },
+      {
+        "id": "inst-f9da13",
+        "name": "Tarik",
+        "workspace": "/home/node/clawd/inst-f9da13"
+      }
+    ]
   },
   "commands": {
     "native": "auto",
     "nativeSkills": "auto"
   },
   "channels": {
+    "commonly": {
+      "enabled": true,
+      "baseUrl": "${COMMONLY_API_URL}",
+      "accounts": {
+        "cuz": {
+          "runtimeToken": "${OPENCLAW_RUNTIME_TOKEN}",
+          "userToken": "${OPENCLAW_USER_TOKEN}",
+          "agentName": "openclaw",
+          "instanceId": "cuz",
+          "podIds": []
+        },
+        "adasdsad": {
+          "runtimeToken": "cm_agent_6c855444a4f352f61ad128145cf93bbf470fb06ec646eece5fb2ab8099117bd1",
+          "userToken": "cm_b21506eb9c6c3c8fb0d1a080821960c329a88fd46d98afb91bac1add5e5fef70",
+          "agentName": "socialpulse",
+          "instanceId": "adasdsad"
+        },
+        "socialpulse-default": {
+          "runtimeToken": "cm_agent_42e978872ea34b4e9dc6d03ea3bfc896e890242788339caec309b633b1e33c3c",
+          "userToken": "cm_8913bd08808a5cd012ea1e51ce70a89bf35ce19fca7a5fdb0f0f654c5422221f",
+          "agentName": "socialpulse",
+          "instanceId": "default"
+        },
+        "newshound-default": {
+          "runtimeToken": "cm_agent_28986d9c438d69182179c10435ead765f3e0c2abe8be4fdcb42685300edfa313",
+          "userToken": "cm_940082881ff25691f85ca172dcf9f59b56d5e748aec22ee3951b801cc5454421",
+          "agentName": "newshound",
+          "instanceId": "default"
+        },
+        "default": {
+          "runtimeToken": "cm_agent_c6fcaab1bfe220f8dde9d21b64bf18965f097a7fe63be1c313ee66511cd22368",
+          "userToken": "cm_88ba52ed2557bf22169ceaea29fffbe485e0ba15d9baeb5bd980baf78e930a10",
+          "agentName": "openclaw",
+          "instanceId": "default"
+        },
+        "inst-7019d9": {
+          "runtimeToken": "cm_agent_d778f916d38f6cf11a15ab7ece3a47cd0bb7707854ef365b10cce37cb3acc806",
+          "userToken": "cm_1789b7679cef5d050d7eed29bf96e44e3e488d2eba2a706694142387713253fd",
+          "agentName": "openclaw",
+          "instanceId": "inst-7019d9"
+        },
+        "inst-f9da13": {
+          "runtimeToken": "cm_agent_e4dbf4883373018d0eb47747fd950b3bbee23769051fc0399130c64730409131",
+          "userToken": "cm_6afc761053d06a9e3ad4aabeba709af1bd423f1a653ec48c40012787a4d9e167",
+          "agentName": "openclaw",
+          "instanceId": "inst-f9da13"
+        }
+      }
+    },
     "telegram": {
       "enabled": true,
       "dmPolicy": "pairing",
@@ -62,8 +145,62 @@
   "messages": {
     "ackReactionScope": "group-mentions"
   },
+  "bindings": [
+    {
+      "agentId": "cuz",
+      "match": {
+        "channel": "commonly",
+        "accountId": "cuz"
+      }
+    },
+    {
+      "agentId": "adasdsad",
+      "match": {
+        "channel": "commonly",
+        "accountId": "adasdsad"
+      }
+    },
+    {
+      "agentId": "socialpulse-default",
+      "match": {
+        "channel": "commonly",
+        "accountId": "socialpulse-default"
+      }
+    },
+    {
+      "agentId": "newshound-default",
+      "match": {
+        "channel": "commonly",
+        "accountId": "newshound-default"
+      }
+    },
+    {
+      "agentId": "default",
+      "match": {
+        "channel": "commonly",
+        "accountId": "default"
+      }
+    },
+    {
+      "agentId": "inst-7019d9",
+      "match": {
+        "channel": "commonly",
+        "accountId": "inst-7019d9"
+      }
+    },
+    {
+      "agentId": "inst-f9da13",
+      "match": {
+        "channel": "commonly",
+        "accountId": "inst-f9da13"
+      }
+    }
+  ],
   "plugins": {
     "entries": {
+      "commonly": {
+        "enabled": true
+      },
       "telegram": {
         "enabled": true
       },

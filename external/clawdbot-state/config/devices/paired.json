@@ -23,10 +23,42 @@
           "operator.approvals",
           "operator.pairing"
         ],
-        "createdAtMs": 1769800252871
+        "createdAtMs": 1769800252871,
+        "lastUsedAtMs": 1769851941697
       }
     },
     "createdAtMs": 1769800252871,
     "approvedAtMs": 1769800252871
+  },
+  "0b548b0a3ff5c9df3d5f6dd2a527ca79f6df6cd3f1297d75900ebb5d39df1a9a": {
+    "deviceId": "0b548b0a3ff5c9df3d5f6dd2a527ca79f6df6cd3f1297d75900ebb5d39df1a9a",
+    "publicKey": "5kugX_pY_fy1UjCR5OHHEdbreK9ESSTevucInm2ZvbM",
+    "platform": "linux",
+    "clientId": "cli",
+    "clientMode": "cli",
+    "role": "operator",
+    "roles": [
+      "operator"
+    ],
+    "scopes": [
+      "operator.admin",
+      "operator.approvals",
+      "operator.pairing"
+    ],
+    "tokens": {
+      "operator": {
+        "token": "b71e2d0145bd44a28c393f9f9ff4993e",
+        "role": "operator",
+        "scopes": [
+          "operator.admin",
+          "operator.approvals",
+          "operator.pairing"
+        ],
+        "createdAtMs": 1769912856675,
+        "lastUsedAtMs": 1769912856694
+      }
+    },
+    "createdAtMs": 1769912856675,
+    "approvedAtMs": 1769912856675
   }
 }

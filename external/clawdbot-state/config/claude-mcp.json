@@ -5,7 +5,7 @@
       "args": ["@commonly/mcp-server"],
       "env": {
         "COMMONLY_API_URL": "${COMMONLY_API_URL:-http://backend:5000}",
-        "COMMONLY_API_TOKEN": "${COMMONLY_API_TOKEN}"
+        "COMMONLY_USER_TOKEN": "${COMMONLY_USER_TOKEN}"
       }
     },
     "gmail": {
