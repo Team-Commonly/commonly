@@ -29,6 +29,4 @@ ca.pem
 _external/
 
 # Ignore runtime-generated agent data
-external/clawdbot-state/config/agents/*
-external/clawdbot-state/config/moltbot.json
-external/clawdbot-state/workspace/
+external/clawdbot-state/
