@@ -112,6 +112,54 @@ function topTokens(counts, limit) {
 }
 
 class PodAssetService {
+  static normalizeAgentContext(agentContext = {}) {
+    if (!agentContext || typeof agentContext !== 'object') return null;
+    const rawName = agentContext.agentName || agentContext.name || agentContext.type;
+    if (!rawName) return null;
+    return {
+      agentName: String(rawName).trim().toLowerCase(),
+      instanceId: String(agentContext.instanceId || 'default').trim().toLowerCase(),
+    };
+  }
+
+  static buildAgentScopeFilter(agentContext = null) {
+    const normalized = PodAssetService.normalizeAgentContext(agentContext);
+    if (!normalized) {
+      return { 'metadata.scope': { $ne: 'agent' } };
+    }
+
+    return {
+      $or: [
+        { 'metadata.scope': { $ne: 'agent' } },
+        {
+          'metadata.scope': 'agent',
+          'metadata.agentName': normalized.agentName,
+          'metadata.instanceId': normalized.instanceId,
+        },
+      ],
+    };
+  }
+
+  static applyVisibilityFilter(query, visibilityFilter) {
+    if (!visibilityFilter) return query;
+    if (!query || typeof query !== 'object') return { $and: [visibilityFilter] };
+    if (Array.isArray(query.$and)) {
+      return { ...query, $and: [...query.$and, visibilityFilter] };
+    }
+    return { ...query, $and: [visibilityFilter] };
+  }
+
+  static isAssetVisible(asset, agentContext = null) {
+    if (!asset) return false;
+    const scope = asset?.metadata?.scope;
+    if (scope !== 'agent') return true;
+    const normalized = PodAssetService.normalizeAgentContext(agentContext);
+    if (!normalized) return false;
+    return (
+      String(asset?.metadata?.agentName || '').toLowerCase() === normalized.agentName
+      && String(asset?.metadata?.instanceId || '').toLowerCase() === normalized.instanceId
+    );
+  }
   static extractKeywords(text, { limit = 8 } = {}) {
     const tokens = tokenize(text);
     if (!tokens.length) return [];
@@ -131,6 +179,23 @@ class PodAssetService {
 
   static normalizeSkillKey(name) {
     return toSkillKey(name || 'skill');
+  }
+
+  static buildScopedSkillKey({
+    name,
+    scope,
+    agentName,
+    instanceId,
+  }) {
+    const base = PodAssetService.normalizeSkillKey(name);
+    if (scope === 'agent' && agentName) {
+      const suffix = [agentName, instanceId || 'default']
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean)
+        .join('-');
+      return PodAssetService.normalizeSkillKey(`${base}-${suffix}`);
+    }
+    return base;
   }
 
   static buildSummaryTags(summary) {
@@ -245,6 +310,61 @@ class PodAssetService {
           sourceType: 'llm-skill',
           metadata: nextMetadata,
           createdByType: 'system',
+          status: 'active',
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    return asset;
+  }
+
+  static async upsertImportedSkillAsset({
+    podId,
+    name,
+    markdown,
+    tags = [],
+    metadata = {},
+    createdBy,
+  }) {
+    const scope = metadata?.scope || 'pod';
+    const skillKey = PodAssetService.buildScopedSkillKey({
+      name,
+      scope,
+      agentName: metadata?.agentName,
+      instanceId: metadata?.instanceId,
+    });
+    const title = `Skill: ${name}`;
+    const normalizedTags = PodAssetService.normalizeTags(
+      tags,
+      metadata?.tags,
+      PodAssetService.extractKeywords(name, { limit: 4 }),
+    ).slice(0, 16);
+
+    const nextMetadata = {
+      ...metadata,
+      tags: normalizedTags,
+      skillKey,
+      skillName: name,
+    };
+
+    const asset = await PodAsset.findOneAndUpdate(
+      { podId, type: 'skill', 'metadata.skillKey': skillKey },
+      {
+        $set: {
+          podId,
+          type: 'skill',
+          title,
+          content: truncate(markdown || '', 8000),
+          tags: normalizedTags,
+          sourceType: 'imported-skill',
+          metadata: nextMetadata,
+          createdBy: createdBy || null,
+          createdByType: createdBy ? 'user' : 'system',
           status: 'active',
         },
       },

@@ -37,15 +37,18 @@ and development conventions:
 - `DEPLOYMENT.md`
 - `LINTING.md`
 - `development/LITELLM.md` (optional LiteLLM model gateway for local dev)
-- Integration providers live in `backend/integrations/providers/` (discord, slack, groupme, telegram).
+- Integration providers live in `backend/integrations/providers/` (discord, slack, groupme, telegram, x, instagram).
 - Webhook routes for integrations are under `/api/webhooks/<provider>/<integrationId>`.
 - `whatsapp/WHATSAPP_INTEGRATION_PLAN.md` (for WhatsApp work)
 - `integrations/INTEGRATION_CONTRACT.md` (for any new external integration)
 - `integrations/COMMONLY_APP_PLATFORM.md` (for app/installation flow like GitHub Apps)
-- `slack/README.md`, `google-chat/README.md`, `groupme/README.md` (integration notes)
+- `slack/README.md`, `google-chat/README.md`, `groupme/README.md`, `x/README.md`, `instagram/README.md` (integration notes)
 - `design/MULTI_AGENT_POSITIONING.md` (competitive framing: context hub + pods)
 - `design/MULTI_AGENT_ROADMAP.md` (priorities that reinforce the positioning)
+- `design/AGENT_ORCHESTRATOR.md` (runtime contract + local orchestrator + K8s-ready path)
 - `design/POD_SKILLS_INDEX.md` (pods as indexed skill packs and team memory)
+- `skills/SKILLS_CATALOG.md` (skill catalog + user-friendly import flow)
+- `scripts/generate-awesome-skills-index.js` (catalog index generator)
 - `agents/CLAWDBOT.md` (Clawdbot/Moltbot integration and dev setup)
 
 Design documents in `docs/design/` provide additional details for upcoming
@@ -96,7 +99,10 @@ Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only;
 Pod member lists show MVP role labels: **Admin** for the creator, **Member** for others (viewers are read-only and not rendered yet).
 Pod admins can remove non-admin human members from the member list.
 Agents Hub uses a single filter bar (search, category, install-to pod) and skips “Trending” for now; agent cards are 3-up on desktop.
+Agents Hub supports user-created agent templates (private/public) that appear as cards and install as additional instances of the same agent type.
+Agents Hub settings include persona + instructions editing (tone, specialties, boundaries, custom instructions).
 Daily Digest analytics uses a single view selector to avoid chart crowding.
+Post feed supports pod-scoped posts and forum-style categories, with feed filters driven by `?podId=` and `?category=` and a pod ↔ feed redirect flow.
 Mobile layout keeps sidebars off-canvas: the main dashboard slides over content with a backdrop, and the chat members panel overlays full screen on small devices.
 Chat members panel defaults to collapsed on pod entry.
 Mobile breakpoint guard: keep pod chat layout full-width at <=768px (avoid `left: 50%` positioning).
@@ -104,6 +110,7 @@ Agents Hub (`/agents`) is for registry-based agent installs (pod-native profiles
 Agent installs support selecting target pods; pod admins (and installers) can remove agents from pods.
 Pod sidebar lists installed agents with a Manage link to Agent Hub and admin/installer removal.
 Pod member online indicators are driven by Socket.io `podPresence` events.
+Agent Ensemble pods (`type="agent-ensemble"`) use the standard chat UI plus an Agent Ensemble sidebar panel for participant roles and start/pause/resume controls.
 
 ## Developer utilities
 
@@ -111,7 +118,9 @@ Pod member online indicators are driven by Socket.io `podPresence` events.
 - The frontend provides a simple API testing page at `/dev/api` which loads the docs and allows ad-hoc requests.
 - The frontend provides a pod context inspector at `/dev/pod-context` to view structured pod context (including LLM markdown skills) from `/api/pods/:id/context`.
 - Integration catalog metadata is available at `/api/integrations/catalog` (manifest-driven entries + per-user stats).
+- Social feed integrations (X/Instagram) are poll-based; scheduler syncs external posts into pod feeds and buffers for summary.
 - Pod context metadata is available at `/api/pods/:id/context` and can synthesize LLM markdown skills into `PodAsset` records of type `skill` (params: `skillMode`, `skillLimit`, `skillRefreshHours`).
+- Pod memory assets can be agent-scoped (`metadata.scope="agent"` + `agentName`/`instanceId`) or pod-shared (`metadata.scope="pod"`); unscoped assets are treated as shared.
 - `/dev/pod-context` includes a “Show Summary Content” toggle that renders summary markdown content for quick inspection.
 - `/api/pods/:id/context` returns `skillModeUsed` and `skillWarnings` to explain the effective skill synthesis mode.
 - Pod memory search endpoints:
@@ -123,14 +132,20 @@ Pod member online indicators are driven by Socket.io `podPresence` events.
 - Marketplace entries can include `type="mcp-app"` with `mcp.resourceUri` metadata; MCP Apps are listed for discovery and require an MCP-compatible host for UI rendering.
 - Use `MARKETPLACE_MANIFEST_URL` to fetch the external marketplace repo manifest (with `MARKETPLACE_MANIFEST_PATH` as a local fallback).
 - External provider service stubs live in `external/commonly-provider-services/` (Discord/Slack/Telegram/GroupMe). In-platform providers are legacy.
-- The Commonly Bot external runtime is configured in `docker-compose.dev.yml` as `commonly-bot` and expects `COMMONLY_BOT_TOKEN`.
+- The Commonly Bot external runtime is configured in `docker-compose.dev.yml` as `commonly-bot` and expects `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` (runtime) plus optional `COMMONLY_SUMMARIZER_USER_TOKEN` for MCP/REST access.
 - External agent service stubs live in `external/commonly-agent-services/` (Commonly Bot, Clawdbot Bridge).
 - Clawdbot dev gateway runs via the `clawdbot` docker-compose profile and stores state under `external/clawdbot-state/`.
 - Clawdbot Bridge runs in the same `clawdbot` profile and requires `CLAWDBOT_GATEWAY_TOKEN` plus `CLAWDBOT_BRIDGE_TOKEN`.
 - LiteLLM model gateway runs via the `litellm` docker-compose profile with config at `external/litellm/config.yaml`.
 - Agent runtime endpoints (token-auth) are under `/api/agents/runtime` with tokens issued via `/api/registry/pods/:podId/agents/:name/runtime-tokens`.
 - Runtime tokens can be revoked via `DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId` (Agents Hub uses `registry=commonly-official` when listing agents).
-- Pod chat supports agent mentions: `@commonly-bot` and `@clawdbot-bridge` (aliases `@commonlybot`, `@clawdbot`) enqueue `chat.mention` events when those agents are installed in the pod.
+- Agents Hub config also supports designated bot user tokens (scoped permissions) via `/api/registry/pods/:podId/agents/:name/user-token` for MCP/REST access.
+- Agents Hub can provision and control local runtimes via `/api/registry/pods/:podId/agents/:name/provision`, `/runtime-status`, `/runtime-start`, `/runtime-stop`, and `/runtime-logs`.
+- OpenClaw plugin installs/listing are available via `/api/registry/pods/:podId/agents/:name/plugins` and `/plugins/install` (local gateway only).
+- OpenClaw (Cuz) external runtime uses BOTH `OPENCLAW_RUNTIME_TOKEN` (runtime token) and `OPENCLAW_USER_TOKEN` (user token).
+- Pod chat supports agent mentions: `@commonly-bot`, `@commonly-ai-agent`, and `@clawdbot-bridge` (aliases `@commonlybot` → `commonly-bot`, `@cuz` → `commonly-ai-agent`, `@clawdbot`) enqueue `chat.mention` events when those agents are installed in the pod.
+- Thread comments support agent mentions as well and enqueue `thread.mention` events; agents reply via `/api/agents/runtime/(bot)/threads/:threadId/comments`.
+- Agent instance IDs default to `default` (even if the instance name matches the agent name) to avoid duplicate usernames like `agent-agent`.
 - Integration create/update routes enforce manifest-required fields when an integration is marked `connected`; draft integrations can still be created but remain `pending` until required config is provided.
 - Chat summarization and integration buffer summarization now persist `PodAsset` records so pod context can be retrieved as indexed assets, not only raw text summaries.
 - Webhook endpoints now include Slack, GroupMe, and Telegram:

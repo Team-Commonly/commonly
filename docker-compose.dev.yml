@@ -66,6 +66,18 @@ services:
 
       # Marketplace manifest
       - MARKETPLACE_MANIFEST_PATH=/app/packages/commonly-marketplace/marketplace.json
+      # Agent provisioning config paths
+      - OPENCLAW_CONFIG_PATH=/app/external/clawdbot-state/config/moltbot.json
+      - COMMONLY_BOT_CONFIG_PATH=/app/external/commonly-bot-state/runtime.json
+      # Allow backend to orchestrate docker compose for local runtimes
+      - AGENT_PROVISIONER_DOCKER=${AGENT_PROVISIONER_DOCKER:-1}
+      - AGENT_PROVISIONER_DOCKER_COMPOSE_FILE=/repo/docker-compose.dev.yml
+      - DOCKER_COMPOSE_BIN=docker-compose
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-commonly}
+      # OpenClaw workspace root for per-agent workspaces
+      - CLAWDBOT_WORKSPACE_DIR=${CLAWDBOT_WORKSPACE_DIR:-/home/node/clawd}
+      # Skills catalog index
+      - SKILLS_CATALOG_PATH=/app/docs/skills/awesome-agent-skills-index.json
       
       # AI Integration
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -90,8 +102,19 @@ services:
       - ./backend:/app
       # Mount marketplace manifest from repo root
       - ./packages/commonly-marketplace:/app/packages/commonly-marketplace:ro
+      # Mount skills catalog index
+      - ./docs/skills:/app/docs/skills:ro
       # Mount agent service manifests for auto-registration
       - ./external/commonly-agent-services:/app/external/commonly-agent-services:ro
+      # Mount agent runtime config state for provisioning
+      - ./external/clawdbot-state/config:/app/external/clawdbot-state/config
+      - ./external/commonly-bot-state:/app/external/commonly-bot-state
+      # Docker socket for provisioning
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Compose file reference inside container
+      - ./docker-compose.dev.yml:/app/docker-compose.dev.yml:ro
+      # Mount repo root so docker-compose build contexts resolve correctly
+      - ./:/repo:ro
       # Prevent overwriting node_modules
       - /app/node_modules
       # Mount CA certificate
@@ -99,7 +122,7 @@ services:
     networks:
       - app-network-dev
     # Development: restart on crashes
-    restart: unless-stopped
+    restart: "no"
 
   # Frontend service (Development)
   frontend:
@@ -128,7 +151,7 @@ services:
     networks:
       - app-network-dev
     # Development: restart on crashes
-    restart: unless-stopped
+    restart: "no"
     stdin_open: true
     tty: true
 
@@ -147,7 +170,7 @@ services:
       - "4000:4000"
     networks:
       - app-network-dev
-    restart: unless-stopped
+    restart: "no"
     command: ["--config", "/app/config.yaml"]
 
   # External agent runtime (Clawdbot / Moltbot Gateway)
@@ -168,12 +191,18 @@ services:
       - CLAWDBOT_GATEWAY_BIND=${CLAWDBOT_GATEWAY_BIND:-lan}
       - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
       - CLAWDBOT_CONFIG_DIR=/home/node/.clawdbot
+      - OPENCLAW_STATE_DIR=/home/node/.clawdbot
+      - OPENCLAW_CONFIG_PATH=/home/node/.clawdbot/moltbot.json
       - CLAWDBOT_WORKSPACE_DIR=/home/node/clawd
       - CLAWDBOT_SKIP_BROWSER_CONTROL_SERVER=${CLAWDBOT_SKIP_BROWSER_CONTROL_SERVER:-1}
       - CLAWDBOT_SKIP_CANVAS_HOST=${CLAWDBOT_SKIP_CANVAS_HOST:-1}
       - CLAWDBOT_SKIP_CHANNELS=${CLAWDBOT_SKIP_CHANNELS:-0}
       - COMMONLY_API_URL=${COMMONLY_API_URL:-http://backend:5000}
-      - COMMONLY_API_TOKEN=${COMMONLY_API_TOKEN}
+      - COMMONLY_USER_TOKEN=${OPENCLAW_USER_TOKEN}
+      - OPENCLAW_RUNTIME_TOKEN=${OPENCLAW_RUNTIME_TOKEN}
+      - OPENCLAW_USER_TOKEN=${OPENCLAW_USER_TOKEN}
+      - OPENCLAW_B_RUNTIME_TOKEN=${OPENCLAW_B_RUNTIME_TOKEN:-}
+      - OPENCLAW_B_USER_TOKEN=${OPENCLAW_B_USER_TOKEN:-}
       # Clawdbot uses separate Discord bot to avoid conflicts with Commonly backend
       - DISCORD_CLIENT_ID=${CLAWDBOT_DISCORD_CLIENT_ID}
       - DISCORD_BOT_TOKEN=${CLAWDBOT_DISCORD_BOT_TOKEN}
@@ -238,28 +267,8 @@ services:
     tty: true
 
   # External agent runtime (Clawdbot Bridge)
-  clawdbot-bridge:
-    profiles: ["clawdbot"]
-    image: node:20-alpine
-    container_name: clawdbot-bridge-dev
-    working_dir: /app/external/commonly-agent-services/clawdbot-bridge
-    depends_on:
-      - backend
-      - clawdbot-gateway
-    environment:
-      - COMMONLY_BASE_URL=${COMMONLY_BASE_URL:-http://backend:5000}
-      - COMMONLY_AGENT_TOKEN=${CLAWDBOT_BRIDGE_TOKEN}
-      - COMMONLY_AGENT_POLL_MS=${COMMONLY_AGENT_POLL_MS:-5000}
-      - CLAWDBOT_GATEWAY_URL=${CLAWDBOT_GATEWAY_URL:-http://clawdbot-gateway:18789}
-      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
-      - CLAWDBOT_AGENT_ID=${CLAWDBOT_AGENT_ID:-main}
-      - CLAWDBOT_MODEL=${CLAWDBOT_MODEL:-moltbot:main}
-    volumes:
-      - ./external:/app/external:ro
-    networks:
-      - app-network-dev
-    restart: unless-stopped
-    command: ["node", "index.js"]
+  # Disabled: Commonly now uses the OpenClaw gateway channel directly.
+  # clawdbot-bridge:
 
   # External agent runtime (Commonly Bot)
   commonly-bot:
@@ -270,8 +279,69 @@ services:
       - backend
     environment:
       - COMMONLY_BASE_URL=${COMMONLY_BASE_URL:-http://backend:5000}
-      - COMMONLY_AGENT_TOKEN=${COMMONLY_BOT_TOKEN}
+      - COMMONLY_AGENT_TOKEN=${COMMONLY_SUMMARIZER_RUNTIME_TOKEN}
+      - COMMONLY_USER_TOKEN=${COMMONLY_SUMMARIZER_USER_TOKEN}
       - COMMONLY_AGENT_POLL_MS=${COMMONLY_AGENT_POLL_MS:-5000}
+      - COMMONLY_AGENT_CONFIG_PATH=/app/external/commonly-bot-state/runtime.json
+    volumes:
+      - ./external:/app/external:ro
+      - ./external/commonly-bot-state:/app/external/commonly-bot-state:ro
+    networks:
+      - app-network-dev
+    restart: unless-stopped
+    command: ["node", "index.js"]
+
+  # NewsHound Agent Bridge (Gemini-powered news agent)
+  newshound-bridge:
+    profiles: ["agents", "newshound"]
+    image: node:20-alpine
+    container_name: newshound-bridge-dev
+    working_dir: /app/external/commonly-agent-services/newshound-bridge
+    depends_on:
+      - backend
+      - litellm
+    environment:
+      - AGENT_TYPE=newshound
+      - AGENT_INSTANCE_ID=${NEWSHOUND_INSTANCE_ID:-default}
+      - AGENT_DISPLAY_NAME=${NEWSHOUND_DISPLAY_NAME:-NewsHound 🐕}
+      - NEWSHOUND_BRIDGE_ENABLED=${NEWSHOUND_BRIDGE_ENABLED:-0}
+      - AGENT_MODEL=${NEWSHOUND_MODEL:-gemini-2.0-flash}
+      - AGENT_MODE=${NEWSHOUND_MODE:-passive}
+      - COMMONLY_BASE_URL=${COMMONLY_BASE_URL:-http://backend:5000}
+      - COMMONLY_AGENT_TOKEN=${NEWSHOUND_RUNTIME_TOKEN}
+      - COMMONLY_USER_TOKEN=${NEWSHOUND_USER_TOKEN}
+      - COMMONLY_AGENT_POLL_MS=${COMMONLY_AGENT_POLL_MS:-5000}
+      - LITELLM_BASE_URL=${LITELLM_BASE_URL:-http://litellm:4000}
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
+    volumes:
+      - ./external:/app/external:ro
+    networks:
+      - app-network-dev
+    restart: unless-stopped
+    command: ["node", "index.js"]
+
+  # SocialPulse Agent Bridge (GLM-4.5 powered social agent)
+  socialpulse-bridge:
+    profiles: ["agents", "socialpulse"]
+    image: node:20-alpine
+    container_name: socialpulse-bridge-dev
+    working_dir: /app/external/commonly-agent-services/socialpulse-bridge
+    depends_on:
+      - backend
+      - litellm
+    environment:
+      - AGENT_TYPE=socialpulse
+      - AGENT_INSTANCE_ID=${SOCIALPULSE_INSTANCE_ID:-default}
+      - AGENT_DISPLAY_NAME=${SOCIALPULSE_DISPLAY_NAME:-SocialPulse 📊}
+      - SOCIALPULSE_BRIDGE_ENABLED=${SOCIALPULSE_BRIDGE_ENABLED:-0}
+      - AGENT_MODEL=${SOCIALPULSE_MODEL:-glm-4.5-air}
+      - AGENT_MODE=${SOCIALPULSE_MODE:-passive}
+      - COMMONLY_BASE_URL=${COMMONLY_BASE_URL:-http://backend:5000}
+      - COMMONLY_AGENT_TOKEN=${SOCIALPULSE_RUNTIME_TOKEN}
+      - COMMONLY_USER_TOKEN=${SOCIALPULSE_USER_TOKEN}
+      - COMMONLY_AGENT_POLL_MS=${COMMONLY_AGENT_POLL_MS:-5000}
+      - LITELLM_BASE_URL=${LITELLM_BASE_URL:-http://litellm:4000}
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
     volumes:
       - ./external:/app/external:ro
     networks:

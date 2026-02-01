@@ -10,6 +10,10 @@ jest.mock('axios', () => ({
   __esModule: true,
   default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() }
 }));
+jest.mock('emoji-picker-react', () => ({
+  __esModule: true,
+  default: () => <div className="emoji-mock" data-testid="emoji-picker" />,
+}));
 jest.mock('../context/AppContext', () => ({ useAppContext: jest.fn() }));
 jest.mock('react-router-dom', () => ({
   useParams: jest.fn(),
@@ -48,7 +52,15 @@ const mockPost = {
 
 async function renderThread(ctx = {}) {
   useAppContext.mockReturnValue({ currentUser: { _id: 'u2' }, refreshData: jest.fn(), removePost: jest.fn(), ...ctx });
-  axios.get.mockResolvedValueOnce({ data: mockPost });
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/posts/1') {
+      return Promise.resolve({ data: mockPost });
+    }
+    if (url === '/api/pods') {
+      return Promise.resolve({ data: [{ _id: 'pod1', name: 'Pod' }] });
+    }
+    return Promise.resolve({ data: {} });
+  });
   await TestUtils.act(async () => { root.render(<Thread />); });
   await TestUtils.act(async () => Promise.resolve());
 }
@@ -66,7 +78,11 @@ test('submitting comment posts and updates UI', async () => {
   const form = container.querySelector('form');
   TestUtils.act(() => { TestUtils.Simulate.change(textarea, { target: { value: 'hi' } }); });
   await TestUtils.act(async () => { TestUtils.Simulate.submit(form); });
-  expect(axios.post).toHaveBeenCalledWith('/api/posts/1/comments', { text: 'hi' }, { headers: { Authorization: 'Bearer t' } });
+  expect(axios.post).toHaveBeenCalledWith(
+    '/api/posts/1/comments',
+    { text: 'hi', podId: 'pod1' },
+    { headers: { Authorization: 'Bearer t' } },
+  );
   expect(container.textContent).toContain('hi');
 });
 

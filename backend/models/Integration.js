@@ -15,7 +15,7 @@ const IntegrationSchema = new mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: ['discord', 'telegram', 'slack', 'messenger', 'groupme', 'whatsapp'],
+      enum: ['discord', 'telegram', 'slack', 'messenger', 'groupme', 'whatsapp', 'x', 'instagram'],
       default: 'discord',
     },
     status: {
@@ -41,6 +41,16 @@ const IntegrationSchema = new mongoose.Schema(
       chatId: String,
       chatTitle: String,
       chatType: String,
+      accessToken: String,
+      username: String,
+      userId: String,
+      igUserId: String,
+      category: String,
+      apiBase: String,
+      maxResults: Number,
+      exclude: String,
+      lastExternalId: String,
+      lastExternalTimestamp: Date,
       connectCode: String,
       permissions: [String],
       webhookListenerEnabled: {

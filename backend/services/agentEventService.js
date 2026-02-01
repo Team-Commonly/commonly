@@ -1,5 +1,19 @@
 const AgentEvent = require('../models/AgentEvent');
 
+// Lazy-loaded to avoid circular dependency
+let agentWebSocketService = null;
+const getWebSocketService = () => {
+  if (!agentWebSocketService) {
+    try {
+      // eslint-disable-next-line global-require
+      agentWebSocketService = require('./agentWebSocketService');
+    } catch {
+      agentWebSocketService = null;
+    }
+  }
+  return agentWebSocketService;
+};
+
 class AgentEventService {
   static async enqueue({
     agentName, podId, type, payload = {}, instanceId = 'default',
@@ -8,13 +22,29 @@ class AgentEventService {
       throw new Error('agentName, podId, and type are required');
     }
 
-    return AgentEvent.create({
+    const event = await AgentEvent.create({
       agentName: agentName.toLowerCase(),
       instanceId,
       podId,
       type,
       payload,
     });
+
+    // Push event via WebSocket if agent is connected
+    const wsService = getWebSocketService();
+    if (wsService) {
+      wsService.pushEvent({
+        _id: event._id,
+        agentName: event.agentName,
+        instanceId: event.instanceId,
+        podId: event.podId,
+        type: event.type,
+        payload: event.payload,
+        createdAt: event.createdAt,
+      });
+    }
+
+    return event;
   }
 
   static async list({

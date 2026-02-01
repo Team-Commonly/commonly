@@ -1,13 +1,53 @@
 const Post = require('../models/Post');
+const Pod = require('../models/Pod');
+const User = require('../models/User');
+const AgentMentionService = require('../services/agentMentionService');
 
 exports.createPost = async (req, res) => {
-  const { content, image, tags } = req.body;
+  const {
+    content,
+    image,
+    tags,
+    podId,
+    category,
+    source,
+  } = req.body;
   try {
+    let resolvedPodId = podId || null;
+    if (resolvedPodId) {
+      const pod = await Pod.findById(resolvedPodId).select('_id members').lean();
+      const isMember = pod?.members?.some(
+        (memberId) => memberId.toString() === req.userId.toString(),
+      );
+      if (!isMember) {
+        return res.status(403).json({ error: 'You are not a member of this pod' });
+      }
+    }
+
+    const resolvedCategory = (category || '').trim() || 'General';
+    const resolvedSource = source && typeof source === 'object'
+      ? {
+        type: source.type || (resolvedPodId ? 'pod' : 'user'),
+        provider: source.provider || 'internal',
+        externalId: source.externalId || null,
+        url: source.url || null,
+        author: source.author || null,
+        authorUrl: source.authorUrl || null,
+        channel: source.channel || null,
+      }
+      : {
+        type: resolvedPodId ? 'pod' : 'user',
+        provider: 'internal',
+      };
+
     const post = new Post({
       userId: req.userId,
       content,
       image,
       tags,
+      podId: resolvedPodId,
+      category: resolvedCategory,
+      source: resolvedSource,
     });
     await post.save();
     res.status(201).json(post);
@@ -31,7 +71,7 @@ exports.getUserStats = async (req, res) => {
 // Search posts by content or tags
 exports.searchPosts = async (req, res) => {
   try {
-    const { query, tags } = req.query;
+    const { query, tags, podId, category } = req.query;
     const searchQuery = {};
 
     if (query) {
@@ -46,9 +86,22 @@ exports.searchPosts = async (req, res) => {
       searchQuery.tags = { $in: tagArray };
     }
 
+    if (podId) {
+      if (podId === 'global' || podId === 'none') {
+        searchQuery.podId = null;
+      } else {
+        searchQuery.podId = podId;
+      }
+    }
+
+    if (category) {
+      searchQuery.category = category;
+    }
+
     const posts = await Post.find(searchQuery)
       .populate('userId', 'username profilePicture')
       .populate('comments.userId', 'username profilePicture')
+      .populate('podId', 'name type')
       .populate('likedBy', '_id')
       .sort({ createdAt: -1 });
 
@@ -58,12 +111,27 @@ exports.searchPosts = async (req, res) => {
   }
 };
 
-exports.getPosts = async (_, res) => {
+exports.getPosts = async (req, res) => {
   try {
-    const posts = await Post.find()
+    const { podId, category } = req.query;
+    const filter = {};
+    if (podId) {
+      if (podId === 'global' || podId === 'none') {
+        filter.podId = null;
+      } else {
+        filter.podId = podId;
+      }
+    }
+    if (category) {
+      filter.category = category;
+    }
+
+    const posts = await Post.find(filter)
       .populate('userId', 'username profilePicture')
       .populate('comments.userId', 'username profilePicture')
-      .populate('likedBy', '_id');
+      .populate('podId', 'name type')
+      .populate('likedBy', '_id')
+      .sort({ createdAt: -1 });
     res.json(posts);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -76,6 +144,7 @@ exports.getPostById = async (req, res) => {
     const post = await Post.findById(req.params.id)
       .populate('userId', 'username profilePicture')
       .populate('comments.userId', 'username profilePicture')
+      .populate('podId', 'name type')
       .populate('likedBy', '_id');
     if (!post) return res.status(404).json({ error: 'Post not found' });
     res.json(post);
@@ -87,7 +156,7 @@ exports.getPostById = async (req, res) => {
 // Add a comment to a post
 exports.addComment = async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, podId: requestPodId } = req.body;
 
     if (!text) {
       return res.status(400).json({ error: 'Comment text is required' });
@@ -118,6 +187,54 @@ exports.addComment = async (req, res) => {
 
     // Return only the newly added comment with populated user information
     const newComment = updatedPost.comments[updatedPost.comments.length - 1];
+
+    // Enqueue agent mentions if applicable (thread context)
+    try {
+      const resolveMentionPod = async () => {
+        const candidate = requestPodId || post.podId;
+        if (candidate) {
+          const pod = await Pod.findById(candidate).select('_id members').lean();
+          const isMember = pod?.members?.some(
+            (memberId) => memberId.toString() === req.userId.toString(),
+          );
+          return isMember ? pod._id : null;
+        }
+        const fallback = await Pod.findOne({ members: req.userId }).select('_id').lean();
+        return fallback?._id || null;
+      };
+
+      const mentionPodId = await resolveMentionPod();
+      if (mentionPodId) {
+        let username = req.user?.username;
+        if (!username) {
+          const user = await User.findById(req.userId).select('username').lean();
+          username = user?.username;
+        }
+        await AgentMentionService.enqueueMentions({
+          podId: mentionPodId,
+          message: {
+            _id: comment._id,
+            id: comment._id,
+            content: text,
+            messageType: 'thread',
+            source: 'thread',
+            createdAt: comment.createdAt,
+            thread: {
+              postId: post._id,
+              postContent: post.content,
+              postUserId: post.userId,
+              commentId: comment._id,
+              commentText: text,
+            },
+          },
+          userId: req.userId,
+          username,
+        });
+      }
+    } catch (mentionError) {
+      console.warn('Failed to enqueue thread mentions:', mentionError.message);
+    }
+
     res.status(201).json(newComment);
   } catch (err) {
     res.status(400).json({ error: err.message });

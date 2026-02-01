@@ -4,6 +4,9 @@ const Integration = require('../models/Integration');
 const IntegrationSummaryService = require('./integrationSummaryService');
 const AgentEventService = require('./agentEventService');
 const PodAssetService = require('./podAssetService');
+const externalFeedService = require('./externalFeedService');
+const { AgentInstallation } = require('../models/AgentRegistry');
+const AgentEnsembleService = require('./agentEnsembleService');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('./chatSummarizerService');
@@ -32,6 +35,22 @@ class SchedulerService {
           await SchedulerService.runSummarizer();
         } catch (error) {
           console.error('Error in scheduled summarizer:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
+
+    const externalFeedJob = cron.schedule(
+      '*/10 * * * *',
+      async () => {
+        console.log('Syncing external social feeds...');
+        try {
+          await externalFeedService.syncExternalFeeds();
+        } catch (error) {
+          console.error('Error syncing external feeds:', error);
         }
       },
       {
@@ -74,13 +93,30 @@ class SchedulerService {
       },
     );
 
-    this.jobs = [summarizerJob, dailyDigestJob, cleanupJob];
+    const ensembleJob = cron.schedule(
+      '*/1 * * * *',
+      async () => {
+        console.log('Running ensemble scheduler...');
+        try {
+          await AgentEnsembleService.processScheduled();
+        } catch (error) {
+          console.error('Error in scheduled ensemble processing:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
+
+    this.jobs = [summarizerJob, externalFeedJob, dailyDigestJob, cleanupJob, ensembleJob];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
 
     console.log('Scheduler started successfully');
     console.log('- Summarizer runs every hour');
     console.log('- Cleanup runs daily at 2 AM UTC');
+    console.log('- External feeds sync every 10 minutes');
 
     // Run initial summarizer after a short delay
     setTimeout(() => {
@@ -88,6 +124,12 @@ class SchedulerService {
         console.error('Error in initial summarizer run:', error);
       });
     }, 5000); // 5 second delay
+
+    setTimeout(() => {
+      externalFeedService.syncExternalFeeds().catch((error) => {
+        console.error('Error in initial external feed sync:', error);
+      });
+    }, 7000);
   }
 
   stop() {
@@ -237,7 +279,7 @@ class SchedulerService {
   static async summarizeIntegrationBuffers() {
     try {
       const integrations = await Integration.find({
-        type: { $in: ['discord', 'slack', 'telegram', 'groupme'] },
+        type: { $in: ['discord', 'slack', 'telegram', 'groupme', 'x', 'instagram'] },
         isActive: true,
         'config.messageBuffer.0': { $exists: true },
       }).lean();
@@ -287,16 +329,29 @@ class SchedulerService {
             );
           }
 
-          await AgentEventService.enqueue({
+          const installations = await AgentInstallation.find({
             agentName: 'commonly-bot',
             podId: integration.podId,
-            type: integration.type === 'discord' ? 'discord.summary' : 'integration.summary',
-            payload: {
-              summary,
-              integrationId: integration._id.toString(),
-              source: integration.type,
-            },
-          });
+            status: 'active',
+          }).lean();
+
+          const targets = installations.length > 0 ? installations : [{ instanceId: 'default' }];
+
+          await Promise.all(
+            targets.map((installation) => (
+              AgentEventService.enqueue({
+                agentName: 'commonly-bot',
+                instanceId: installation.instanceId || 'default',
+                podId: integration.podId,
+                type: integration.type === 'discord' ? 'discord.summary' : 'integration.summary',
+                payload: {
+                  summary,
+                  integrationId: integration._id.toString(),
+                  source: integration.type,
+                },
+              })
+            )),
+          );
 
           if (integration.type === 'discord') {
             // eslint-disable-next-line global-require

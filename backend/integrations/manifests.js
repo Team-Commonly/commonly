@@ -69,6 +69,32 @@ const manifests = {
       capabilities: ['webhook', 'summary', 'commands'],
     },
   }),
+  x: validateManifest({
+    id: 'x',
+    requiredConfig: ['accessToken', 'username'],
+    configSchema: buildConfigSchema(['accessToken', 'username', 'userId', 'category']),
+    catalog: {
+      label: 'X',
+      provider: 'x',
+      category: 'social',
+      docsPath: 'docs/x/README.md',
+      description: 'Pull X posts into pods for searchable context and summaries.',
+      capabilities: ['polling', 'posts', 'summary'],
+    },
+  }),
+  instagram: validateManifest({
+    id: 'instagram',
+    requiredConfig: ['accessToken', 'igUserId'],
+    configSchema: buildConfigSchema(['accessToken', 'igUserId', 'username', 'category']),
+    catalog: {
+      label: 'Instagram',
+      provider: 'instagram',
+      category: 'social',
+      docsPath: 'docs/instagram/README.md',
+      description: 'Pull Instagram posts into pods for searchable context and summaries.',
+      capabilities: ['polling', 'posts', 'summary'],
+    },
+  }),
 };
 
 if (sdk.catalog && typeof sdk.catalog.register === 'function') {

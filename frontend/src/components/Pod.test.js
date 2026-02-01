@@ -279,7 +279,7 @@ test('tab change navigates', async () => {
   
   // Get all tabs and click the second one (Study tab)
   const tabs = screen.getAllByRole('tab');
-  expect(tabs).toHaveLength(3); // Chat, Study, Games
+  expect(tabs).toHaveLength(4); // Chat, Study, Games, Ensemble
   
   const studyTab = tabs[1]; // Study is the second tab
   expect(studyTab).toHaveTextContent('Study');
@@ -289,6 +289,14 @@ test('tab change navigates', async () => {
   // Wait for the navigation to be called
   await waitFor(() => {
     expect(mockNavigate).toHaveBeenCalledWith('/pods/study');
+  });
+
+  const ensembleTab = tabs[3];
+  expect(ensembleTab).toHaveTextContent('Ensemble');
+  fireEvent.click(ensembleTab);
+
+  await waitFor(() => {
+    expect(mockNavigate).toHaveBeenCalledWith('/pods/agent-ensemble');
   });
 });
 

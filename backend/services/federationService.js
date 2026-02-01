@@ -10,6 +10,7 @@ const PodAsset = require('../models/PodAsset');
 const Summary = require('../models/Summary');
 const Pod = require('../models/Pod');
 const ContextAssemblerService = require('./contextAssemblerService');
+const PodAssetService = require('./podAssetService');
 
 class FederationService {
   /**
@@ -138,7 +139,10 @@ class FederationService {
    * Query skills from linked pod
    */
   static async querySkills(podId, filters, link, limit) {
-    const query = { podId, type: 'skill' };
+    const query = PodAssetService.applyVisibilityFilter(
+      { podId, type: 'skill' },
+      PodAssetService.buildAgentScopeFilter(null),
+    );
 
     // Apply scope filters
     const scope = link.scopes.find((s) => s.type === 'skills:read');
@@ -177,7 +181,10 @@ class FederationService {
    * Query assets from linked pod
    */
   static async queryAssets(podId, filters, link, limit) {
-    const query = { podId };
+    const query = PodAssetService.applyVisibilityFilter(
+      { podId },
+      PodAssetService.buildAgentScopeFilter(null),
+    );
 
     // Apply scope filters
     const scope = link.scopes.find((s) => s.type === 'assets:read');

@@ -7,6 +7,8 @@ if (process.env.PG_HOST) {
   PGPod = require('../models/pg/Pod');
 }
 
+const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble'];
+
 // Get all pods or filter by type
 exports.getAllPods = async (req, res) => {
   try {
@@ -30,7 +32,7 @@ exports.getPodsByType = async (req, res) => {
   try {
     const { type } = req.params;
 
-    if (!['chat', 'study', 'games'].includes(type)) {
+    if (!VALID_POD_TYPES.includes(type)) {
       return res.status(400).json({ error: 'Invalid pod type' });
     }
 
@@ -90,7 +92,7 @@ exports.createPod = async (req, res) => {
       return res.status(400).json({ msg: 'Name and type are required' });
     }
 
-    if (!['chat', 'study', 'games'].includes(type)) {
+    if (!VALID_POD_TYPES.includes(type)) {
       return res.status(400).json({ msg: 'Invalid pod type' });
     }
 

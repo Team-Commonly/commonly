@@ -227,7 +227,8 @@ describe('Clawdbot E2E Integration Tests', () => {
 
       // Verify agent profile was created
       const profile = await AgentProfile.findOne({
-        agentId: 'clawdbot-bridge',
+        agentName: 'clawdbot-bridge',
+        instanceId: 'default',
         podId: testPod._id,
       });
       expect(profile).toBeTruthy();
@@ -333,7 +334,11 @@ describe('Clawdbot E2E Integration Tests', () => {
       });
       expect(installation).toBeFalsy();
 
-      const agentUser = await User.findOne({ username: 'clawdbot-bridge' });
+      const agentUsername = AgentIdentityService.buildAgentUsername(
+        AgentIdentityService.resolveAgentType('clawdbot-bridge'),
+        'default',
+      );
+      const agentUser = await User.findOne({ username: agentUsername });
       const updatedPod = await Pod.findById(testPod._id);
       expect(updatedPod.members.map((m) => m.toString())).not.toContain(agentUser._id.toString());
     });

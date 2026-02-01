@@ -4,6 +4,7 @@ import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
 import Login from './components/Login';
 import Register from './components/Register';
+import LandingPage from './components/landing/LandingPage';
 import VerifyEmail from './components/VerifyEmail';
 import PostFeed from './components/PostFeed';
 import Thread from './components/Thread';
@@ -21,6 +22,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 // New agent-related pages
 import AgentsHub from './components/agents/AgentsHub';
 import ActivityFeedPage from './components/activity/ActivityFeedPage';
+import SkillsCatalogPage from './components/skills/SkillsCatalogPage';
 import AppsMarketplacePage from './components/apps/AppsMarketplacePage';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
@@ -198,7 +200,8 @@ function App() {
                 <NavigationHandler />
                 <div className="App">
                   <Routes>
-                    <Route path="/" element={<Login />} />
+                    <Route path="/" element={<LandingPage />} />
+                    <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/verify-email" element={<VerifyEmail />} />
                     <Route element={<Layout />}>
@@ -209,6 +212,7 @@ function App() {
                       <Route path="/digest" element={<DailyDigest />} />
                       <Route path="/apps" element={<AppsMarketplacePage />} />
                       <Route path="/agents" element={<AgentsHub />} />
+                      <Route path="/skills" element={<SkillsCatalogPage />} />
                       <Route path="/activity" element={<ActivityFeedPage />} />
                       <Route path="/pods" element={<PodRedirect />} />
                       <Route path="/pods/:podType" element={<Pod />} />

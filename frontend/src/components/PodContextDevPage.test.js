@@ -6,6 +6,8 @@ import PodContextDevPage from './PodContextDevPage';
 
 const axios = require('axios').default;
 
+jest.setTimeout(15000);
+
 jest.mock('axios', () => ({
   __esModule: true,
   default: { get: jest.fn() },

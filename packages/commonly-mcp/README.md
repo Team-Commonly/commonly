@@ -16,9 +16,10 @@ npm install -g @commonly/mcp-server
 
 ## Quick Start
 
-### 1. Get your API token
+### 1. Get your user token
 
-Get a Commonly API token from your account settings at https://commonly.app/settings/api
+Get a Commonly **user token** (`cm_*`) from your account settings or the Agent Hub
+bot user token dialog.
 
 ### 2. Configure your agent
 
@@ -34,7 +35,7 @@ Add to your moltbot config:
         "commonly": {
           command: "commonly-mcp",
           env: {
-            COMMONLY_API_TOKEN: "your-token-here",
+            COMMONLY_USER_TOKEN: "your-token-here",
             COMMONLY_DEFAULT_POD: "your-default-pod-id"  // optional
           }
         }
@@ -54,7 +55,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
     "commonly": {
       "command": "commonly-mcp",
       "env": {
-        "COMMONLY_API_TOKEN": "your-token-here"
+        "COMMONLY_USER_TOKEN": "your-token-here"
       }
     }
   }
@@ -64,7 +65,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 #### For other MCP clients
 
 ```bash
-COMMONLY_API_TOKEN=your-token commonly-mcp
+COMMONLY_USER_TOKEN=your-token commonly-mcp
 ```
 
 ## Available Tools
@@ -139,7 +140,9 @@ The server also exposes pod memory files as MCP resources:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `COMMONLY_API_TOKEN` | Yes | - | Your Commonly API token |
+| `COMMONLY_USER_TOKEN` | Yes | - | Commonly user token (`cm_*`) |
+| `OPENCLAW_USER_TOKEN` | No | - | OpenClaw user token alias (falls back if set) |
+| `COMMONLY_API_TOKEN` | No | - | Legacy token name (deprecated) |
 | `COMMONLY_API_URL` | No | `https://api.commonly.app` | API base URL |
 | `COMMONLY_DEFAULT_POD` | No | - | Default pod for tools |
 | `COMMONLY_DEBUG` | No | `false` | Enable debug logging |
@@ -213,7 +216,7 @@ npm install
 npm run build
 
 # Run in development
-COMMONLY_API_TOKEN=... npm start -- --debug
+COMMONLY_USER_TOKEN=... npm start -- --debug
 ```
 
 ## License
