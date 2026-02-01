@@ -1,5 +1,5 @@
 /* eslint-disable max-len */
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, TextField, IconButton, Alert,
@@ -26,7 +26,8 @@ import {
     CheckCircle as CheckCircleIcon,
     Settings as SettingsIcon,
     ContentCopy as ContentCopyIcon,
-    PersonRemove as PersonRemoveIcon
+    PersonRemove as PersonRemoveIcon,
+    Article as ArticleIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -34,6 +35,7 @@ import { useSocket } from '../context/SocketContext';
 import { useLayout } from '../context/LayoutContext';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { AgentAvatar, AgentBadge, isAgentUsername } from './common/AgentIndicator';
+import AgentEnsemblePanel from './agents/AgentEnsemblePanel';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
 import './ChatRoom.css';
@@ -92,7 +94,9 @@ const getIntegrationDisplay = (botData) => {
         telegram: '📨',
         groupme: '💬',
         whatsapp: '🟢',
-        messenger: '💠'
+        messenger: '💠',
+        x: '✖️',
+        instagram: '📸'
     };
 
     return {
@@ -138,6 +142,24 @@ const BASE_INTEGRATION_OPTIONS = [
         logo: 'https://telegram.org/img/t_logo.png',
         capabilities: ['webhook', 'summary', 'commands'],
     },
+    {
+        id: 'x',
+        label: 'X',
+        color: '#111827',
+        hoverColor: '#0B0F1A',
+        description: 'Pull posts from X into this pod.',
+        logo: 'https://cdn.simpleicons.org/x/111827',
+        capabilities: ['polling', 'posts', 'summary'],
+    },
+    {
+        id: 'instagram',
+        label: 'Instagram',
+        color: '#E4405F',
+        hoverColor: '#C13584',
+        description: 'Pull Instagram posts into this pod.',
+        logo: 'https://cdn.simpleicons.org/instagram/E4405F',
+        capabilities: ['polling', 'posts', 'summary'],
+    },
 ];
 
 /**
@@ -161,6 +183,19 @@ const formatTimeRange = (timeRange) => {
     }
 
     return 'Recent activity';
+};
+
+const normalizeAgentSegment = (value) => (
+    (value || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40)
+);
+
+const buildAgentUsername = (agentName, instanceId) => {
+    const normalized = normalizeAgentSegment(agentName);
+    const instance = normalizeAgentSegment(instanceId);
+    if (!instance || instance === 'default' || instance === normalized) {
+        return normalized || 'agent';
+    }
+    return `${normalized}-${instance}`;
 };
 
 const ChatRoom = () => {
@@ -190,6 +225,7 @@ const ChatRoom = () => {
     const messagesContainerRef = useRef(null);
     const mentionDropdownRef = useRef(null);
     const skipNextAutoScrollRef = useRef(false);
+    const initialScrollDoneRef = useRef(false);
     const [isLoadingOlder, setIsLoadingOlder] = useState(false);
     const [hasMoreMessages, setHasMoreMessages] = useState(true);
     const [usePostgresMessages, setUsePostgresMessages] = useState(false);
@@ -245,10 +281,61 @@ const ChatRoom = () => {
     const [telegramError, setTelegramError] = useState('');
     const [telegramSaving, setTelegramSaving] = useState(false);
     const telegramDiscardOnCreateRef = useRef(false);
+    const [xSetupOpen, setXSetupOpen] = useState(false);
+    const [xIntegration, setXIntegration] = useState(null);
+    const [xDraftIntegrationId, setXDraftIntegrationId] = useState(null);
+    const [xAccessToken, setXAccessToken] = useState('');
+    const [xUsername, setXUsername] = useState('');
+    const [xCategory, setXCategory] = useState('');
+    const [xError, setXError] = useState('');
+    const [xSaving, setXSaving] = useState(false);
+    const xDiscardOnCreateRef = useRef(false);
+    const [instagramSetupOpen, setInstagramSetupOpen] = useState(false);
+    const [instagramIntegration, setInstagramIntegration] = useState(null);
+    const [instagramDraftIntegrationId, setInstagramDraftIntegrationId] = useState(null);
+    const [instagramAccessToken, setInstagramAccessToken] = useState('');
+    const [instagramUserId, setInstagramUserId] = useState('');
+    const [instagramUsername, setInstagramUsername] = useState('');
+    const [instagramCategory, setInstagramCategory] = useState('');
+    const [instagramError, setInstagramError] = useState('');
+    const [instagramSaving, setInstagramSaving] = useState(false);
+    const instagramDiscardOnCreateRef = useRef(false);
 
     const isPodAdmin = room?.createdBy?._id && currentUser?._id
         ? room.createdBy._id === currentUser._id
         : false;
+
+    const { agentDisplayMap, agentMentionMap, agentMentionCounts } = useMemo(() => {
+        const displayMap = new Map();
+        const mentionMap = new Map();
+        const counts = new Map();
+        (podAgents || []).forEach((agent) => {
+            counts.set(agent.name, (counts.get(agent.name) || 0) + 1);
+            const username = buildAgentUsername(agent.name, agent.instanceId);
+            const display = agent.profile?.displayName || agent.displayName || agent.name;
+            const instanceId = agent.instanceId || 'default';
+            const displaySlug = display
+                .toString()
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9-]/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            if (username) {
+                displayMap.set(username, display);
+                mentionMap.set(username, agent.name);
+            }
+            // Also map by instanceId and displaySlug for better resolution
+            if (instanceId && instanceId !== 'default') {
+                displayMap.set(instanceId, display);
+                displayMap.set(`${agent.name}-${instanceId}`, display);
+            }
+            if (displaySlug && displaySlug !== agent.name) {
+                displayMap.set(displaySlug, display);
+            }
+        });
+        return { agentDisplayMap: displayMap, agentMentionMap: mentionMap, agentMentionCounts: counts };
+    }, [podAgents]);
 
     const mentionableItems = useMemo(() => {
         const items = [];
@@ -259,30 +346,49 @@ const ChatRoom = () => {
             const key = member.username.toLowerCase();
             if (seen.has(key)) return;
             seen.add(key);
-            const memberIsAgent = isAgentUsername(member.username);
+            const memberIsAgent = agentDisplayMap.has(member.username) || isAgentUsername(member.username);
+            const agentLabel = memberIsAgent ? (agentDisplayMap.get(member.username) || member.username) : member.username;
+            const mentionValue = memberIsAgent ? (agentMentionMap.get(member.username) || member.username) : member.username;
+            const labelSearch = memberIsAgent
+                ? `${agentLabel} ${mentionValue} ${member.username}`.toLowerCase()
+                : key;
             items.push({
                 id: member._id || key,
-                label: member.username,
-                labelLower: key,
+                label: agentLabel,
+                labelLower: labelSearch,
                 subtitle: memberIsAgent ? 'Agent' : (member._id === room?.createdBy?._id ? 'Admin' : 'Member'),
                 avatar: member.profilePicture,
                 isAgent: memberIsAgent,
+                value: mentionValue,
             });
         });
 
         (podAgents || []).forEach((agent) => {
             const agentName = agent?.name;
             if (!agentName) return;
-            const key = agentName.toLowerCase();
+            const username = buildAgentUsername(agent.name, agent.instanceId);
+            const key = username.toLowerCase();
             if (seen.has(key)) return;
             seen.add(key);
+            const display = agent.profile?.displayName || agent.displayName || agent.name;
+            const count = agentMentionCounts.get(agentName) || 0;
+            const displaySlug = display
+                .toString()
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9-]/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            const mentionValue = count > 1 ? (displaySlug || `${agent.name}-${agent.instanceId}`) : agent.name;
+            const labelSearch = `${display} ${agent.name} ${username} ${mentionValue}`.toLowerCase();
             items.push({
-                id: agentName,
-                label: agentName,
-                labelLower: key,
-                subtitle: 'Agent',
+                id: username,
+                label: display,
+                labelLower: labelSearch,
+                subtitle: `Agent • @${mentionValue}`,
                 avatar: agent?.profile?.iconUrl || agent?.profile?.avatarUrl || '',
                 isAgent: true,
+                value: mentionValue,
             });
         });
 
@@ -435,6 +541,10 @@ const ChatRoom = () => {
         }
     }, [roomId, podType, pgAvailable]);
 
+    useEffect(() => {
+        initialScrollDoneRef.current = false;
+    }, [roomId]);
+
     const fetchOlderMessages = async () => {
         if (!roomId || !hasMoreMessages || isLoadingOlder) {
             return;
@@ -524,6 +634,8 @@ const ChatRoom = () => {
             slack: 'https://api.slack.com/apps',
             groupme: 'https://dev.groupme.com/bots/new',
             telegram: 'https://t.me/BotFather',
+            x: 'https://developer.x.com/en/portal/dashboard',
+            instagram: 'https://developers.facebook.com/apps/',
         };
         return externalSetupLinks[type] || '#';
     };
@@ -809,6 +921,259 @@ const ChatRoom = () => {
         }
     };
 
+    const cleanupXDraft = async (integrationId) => {
+        if (!integrationId) return;
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setXDraftIntegrationId(null);
+            setXIntegration(null);
+            return;
+        }
+
+        try {
+            await axios.delete(`/api/integrations/${integrationId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+        } catch (err) {
+            console.warn('Failed to discard X integration draft:', err.response?.status);
+        } finally {
+            setXDraftIntegrationId(null);
+            setXIntegration(null);
+            await refreshPodIntegrations();
+        }
+    };
+
+    const handleXSetupOpen = async (existingIntegration = null) => {
+        xDiscardOnCreateRef.current = false;
+        setXError('');
+        setXAccessToken('');
+        setXUsername('');
+        setXCategory('');
+        setXIntegration(null);
+        setXDraftIntegrationId(null);
+        setXSetupOpen(true);
+
+        if (existingIntegration) {
+            setXIntegration(existingIntegration);
+            setXAccessToken(existingIntegration.config?.accessToken || '');
+            setXUsername(existingIntegration.config?.username || '');
+            setXCategory(existingIntegration.config?.category || '');
+            setXSaving(false);
+            return;
+        }
+
+        setXSaving(true);
+
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post('/api/integrations', {
+                podId: roomId,
+                type: 'x',
+                config: {}
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            const createdIntegration = response.data.integration || response.data;
+            if (xDiscardOnCreateRef.current) {
+                await cleanupXDraft(createdIntegration?._id);
+                return;
+            }
+            setXIntegration(createdIntegration);
+            setXDraftIntegrationId(createdIntegration?._id || null);
+        } catch (err) {
+            console.error('Error creating X integration:', err);
+            setXError('Failed to create X integration.');
+        } finally {
+            setXSaving(false);
+        }
+    };
+
+    const handleXSetupClose = async () => {
+        setXSetupOpen(false);
+        setXError('');
+
+        if (xSaving && !xIntegration) {
+            xDiscardOnCreateRef.current = true;
+            return;
+        }
+
+        if (xDraftIntegrationId) {
+            await cleanupXDraft(xDraftIntegrationId);
+            return;
+        }
+
+        setXIntegration(null);
+        setXDraftIntegrationId(null);
+    };
+
+    const handleXSave = async () => {
+        if (!xIntegration?._id) {
+            setXError('Integration not ready yet.');
+            return;
+        }
+        if (!xAccessToken.trim() || !xUsername.trim()) {
+            setXError('Please provide both the access token and username.');
+            return;
+        }
+
+        setXSaving(true);
+        setXError('');
+
+        try {
+            const token = localStorage.getItem('token');
+            await axios.patch(`/api/integrations/${xIntegration._id}`, {
+                config: {
+                    accessToken: xAccessToken.trim(),
+                    username: xUsername.trim(),
+                    category: xCategory.trim() || undefined
+                },
+                status: 'connected'
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            setXSetupOpen(false);
+            setXIntegration(null);
+            setXDraftIntegrationId(null);
+            xDiscardOnCreateRef.current = false;
+            await refreshPodIntegrations();
+        } catch (err) {
+            console.error('Error saving X integration:', err);
+            setXError('Failed to save X integration.');
+        } finally {
+            setXSaving(false);
+        }
+    };
+
+    const cleanupInstagramDraft = async (integrationId) => {
+        if (!integrationId) return;
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setInstagramDraftIntegrationId(null);
+            setInstagramIntegration(null);
+            return;
+        }
+
+        try {
+            await axios.delete(`/api/integrations/${integrationId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+        } catch (err) {
+            console.warn('Failed to discard Instagram integration draft:', err.response?.status);
+        } finally {
+            setInstagramDraftIntegrationId(null);
+            setInstagramIntegration(null);
+            await refreshPodIntegrations();
+        }
+    };
+
+    const handleInstagramSetupOpen = async (existingIntegration = null) => {
+        instagramDiscardOnCreateRef.current = false;
+        setInstagramError('');
+        setInstagramAccessToken('');
+        setInstagramUserId('');
+        setInstagramUsername('');
+        setInstagramCategory('');
+        setInstagramIntegration(null);
+        setInstagramDraftIntegrationId(null);
+        setInstagramSetupOpen(true);
+
+        if (existingIntegration) {
+            setInstagramIntegration(existingIntegration);
+            setInstagramAccessToken(existingIntegration.config?.accessToken || '');
+            setInstagramUserId(existingIntegration.config?.igUserId || '');
+            setInstagramUsername(existingIntegration.config?.username || '');
+            setInstagramCategory(existingIntegration.config?.category || '');
+            setInstagramSaving(false);
+            return;
+        }
+
+        setInstagramSaving(true);
+
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post('/api/integrations', {
+                podId: roomId,
+                type: 'instagram',
+                config: {}
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            const createdIntegration = response.data.integration || response.data;
+            if (instagramDiscardOnCreateRef.current) {
+                await cleanupInstagramDraft(createdIntegration?._id);
+                return;
+            }
+            setInstagramIntegration(createdIntegration);
+            setInstagramDraftIntegrationId(createdIntegration?._id || null);
+        } catch (err) {
+            console.error('Error creating Instagram integration:', err);
+            setInstagramError('Failed to create Instagram integration.');
+        } finally {
+            setInstagramSaving(false);
+        }
+    };
+
+    const handleInstagramSetupClose = async () => {
+        setInstagramSetupOpen(false);
+        setInstagramError('');
+
+        if (instagramSaving && !instagramIntegration) {
+            instagramDiscardOnCreateRef.current = true;
+            return;
+        }
+
+        if (instagramDraftIntegrationId) {
+            await cleanupInstagramDraft(instagramDraftIntegrationId);
+            return;
+        }
+
+        setInstagramIntegration(null);
+        setInstagramDraftIntegrationId(null);
+    };
+
+    const handleInstagramSave = async () => {
+        if (!instagramIntegration?._id) {
+            setInstagramError('Integration not ready yet.');
+            return;
+        }
+        if (!instagramAccessToken.trim() || !instagramUserId.trim()) {
+            setInstagramError('Please provide both the access token and IG user ID.');
+            return;
+        }
+
+        setInstagramSaving(true);
+        setInstagramError('');
+
+        try {
+            const token = localStorage.getItem('token');
+            await axios.patch(`/api/integrations/${instagramIntegration._id}`, {
+                config: {
+                    accessToken: instagramAccessToken.trim(),
+                    igUserId: instagramUserId.trim(),
+                    username: instagramUsername.trim() || undefined,
+                    category: instagramCategory.trim() || undefined
+                },
+                status: 'connected'
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            setInstagramSetupOpen(false);
+            setInstagramIntegration(null);
+            setInstagramDraftIntegrationId(null);
+            instagramDiscardOnCreateRef.current = false;
+            await refreshPodIntegrations();
+        } catch (err) {
+            console.error('Error saving Instagram integration:', err);
+            setInstagramError('Failed to save Instagram integration.');
+        } finally {
+            setInstagramSaving(false);
+        }
+    };
+
     const getIntegrationManageUrl = (type, integration) => {
         const config = integration?.config || {};
         switch (type) {
@@ -824,6 +1189,10 @@ const ChatRoom = () => {
                 return 'https://api.slack.com/apps';
             case 'groupme':
                 return 'https://dev.groupme.com/bots';
+            case 'x':
+                return 'https://developer.x.com/en/portal/dashboard';
+            case 'instagram':
+                return 'https://developers.facebook.com/apps/';
             default:
                 return null;
         }
@@ -837,6 +1206,14 @@ const ChatRoom = () => {
         }
         if (type === 'telegram') {
             handleTelegramSetupOpen(integration);
+            return;
+        }
+        if (type === 'x') {
+            handleXSetupOpen(integration);
+            return;
+        }
+        if (type === 'instagram') {
+            handleInstagramSetupOpen(integration);
             return;
         }
         const url = getIntegrationManageUrl(type, integration);
@@ -910,6 +1287,12 @@ const ChatRoom = () => {
             case 'telegram':
                 if (config.chatTitle) return config.chatTitle;
                 return config.chatId ? `Chat ${config.chatId}` : 'Telegram bot connected';
+            case 'x':
+                if (config.username) return `@${config.username}`;
+                return config.userId ? `User ${config.userId}` : 'X feed connected';
+            case 'instagram':
+                if (config.username) return `@${config.username}`;
+                return config.igUserId ? `IG ${config.igUserId}` : 'Instagram feed connected';
             default:
                 return 'Integration connected';
         }
@@ -1015,11 +1398,30 @@ const ChatRoom = () => {
     }, [messages]);
     
     // Scroll to bottom when messages change
+    const scrollToBottom = (behavior = 'auto') => {
+        const container = messagesContainerRef.current;
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+            return;
+        }
+        messagesEndRef.current?.scrollIntoView({ behavior });
+    };
+
+    useLayoutEffect(() => {
+        if (!loading && messages.length > 0 && !initialScrollDoneRef.current) {
+            initialScrollDoneRef.current = true;
+            requestAnimationFrame(() => {
+                scrollToBottom('auto');
+            });
+        }
+    }, [loading, messages.length]);
+
     useEffect(() => {
         if (skipNextAutoScrollRef.current) {
             skipNextAutoScrollRef.current = false;
             return;
         }
+        if (!initialScrollDoneRef.current) return;
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
     
@@ -1207,7 +1609,7 @@ const ChatRoom = () => {
         const cursor = input.selectionStart ?? message.length;
         const start = mentionStart >= 0 ? mentionStart : message.lastIndexOf('@', cursor);
         if (start < 0) return;
-        const insert = `@${item.label}`;
+        const insert = `@${item.value || item.label}`;
         const nextValue = `${message.slice(0, start)}${insert} ${message.slice(cursor)}`;
         setMessage(nextValue);
         setMentionOpen(false);
@@ -1641,11 +2043,12 @@ const ChatRoom = () => {
                             </Alert>
                         )}
                         {room?.members?.map(member => {
-                            const memberIsAgent = isAgentUsername(member.username);
+                            const memberIsAgent = agentDisplayMap.has(member.username) || isAgentUsername(member.username);
                             const isOnline = onlineMemberIds.includes(member._id)
                                 || member._id === currentUser?._id;
                             const isCreator = member._id === room?.createdBy?._id;
                             const canRemove = isPodAdmin && !memberIsAgent && !isCreator && member._id !== currentUser?._id;
+                            const agentDisplayName = memberIsAgent ? (agentDisplayMap.get(member.username) || member.username) : member.username;
                             return (
                                 <div key={member._id} className="sidebar-member">
                                     {memberIsAgent ? (
@@ -1665,7 +2068,7 @@ const ChatRoom = () => {
                                     )}
                                     <div className="sidebar-member-info">
                                         <div className="sidebar-member-name">
-                                            {member.username}
+                                            {agentDisplayName}
                                             {memberIsAgent && <AgentBadge username={member.username} size="small" showLabel={false} />}
                                         </div>
                                         <div className="sidebar-member-role">
@@ -1766,6 +2169,14 @@ const ChatRoom = () => {
                         )}
                     </div>
                 </div>
+
+                {room?.type === 'agent-ensemble' && (
+                    <AgentEnsemblePanel
+                        podId={roomId}
+                        podAgents={podAgents}
+                        isPodAdmin={isPodAdmin}
+                    />
+                )}
 
                 {/* Announcements section */}
                 <div className="sidebar-section">
@@ -2371,9 +2782,9 @@ const ChatRoom = () => {
                                                             size="small"
                                                             variant={hasIntegration ? 'outlined' : 'contained'}
                                                             startIcon={<AddIcon fontSize="small" />}
-                                                            href={item.id === 'groupme' || item.id === 'telegram' ? undefined : getIntegrationRedirectUrl(item.id)}
-                                                            target={item.id === 'groupme' || item.id === 'telegram' ? undefined : '_blank'}
-                                                            rel={item.id === 'groupme' || item.id === 'telegram' ? undefined : 'noopener noreferrer'}
+                                                            href={['groupme', 'telegram', 'x', 'instagram'].includes(item.id) ? undefined : getIntegrationRedirectUrl(item.id)}
+                                                            target={['groupme', 'telegram', 'x', 'instagram'].includes(item.id) ? undefined : '_blank'}
+                                                            rel={['groupme', 'telegram', 'x', 'instagram'].includes(item.id) ? undefined : 'noopener noreferrer'}
                                                             onClick={(event) => {
                                                                 if (item.id === 'groupme') {
                                                                     event.preventDefault();
@@ -2381,6 +2792,12 @@ const ChatRoom = () => {
                                                                 } else if (item.id === 'telegram') {
                                                                     event.preventDefault();
                                                                     handleTelegramSetupOpen();
+                                                                } else if (item.id === 'x') {
+                                                                    event.preventDefault();
+                                                                    handleXSetupOpen();
+                                                                } else if (item.id === 'instagram') {
+                                                                    event.preventDefault();
+                                                                    handleInstagramSetupOpen();
                                                                 }
                                                             }}
                                                             sx={{
@@ -2607,6 +3024,138 @@ const ChatRoom = () => {
                                     </Button>
                                 </DialogActions>
                             </Dialog>
+                            <Dialog
+                                open={xSetupOpen}
+                                onClose={handleXSetupClose}
+                                maxWidth="sm"
+                                fullWidth
+                            >
+                                <DialogTitle>Connect X</DialogTitle>
+                                <DialogContent sx={{ pt: 1 }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        Add an X API bearer token and the account username you want to sync into this pod.
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 2 }}>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            href="https://developer.x.com/en/portal/dashboard"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            sx={{ whiteSpace: 'nowrap' }}
+                                        >
+                                            Open X Developer Portal
+                                        </Button>
+                                    </Box>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                        <TextField
+                                            label="Access Token"
+                                            size="small"
+                                            type="password"
+                                            value={xAccessToken}
+                                            onChange={(event) => setXAccessToken(event.target.value)}
+                                        />
+                                        <TextField
+                                            label="Username"
+                                            size="small"
+                                            value={xUsername}
+                                            onChange={(event) => setXUsername(event.target.value)}
+                                        />
+                                        <TextField
+                                            label="Post Category (optional)"
+                                            size="small"
+                                            value={xCategory}
+                                            onChange={(event) => setXCategory(event.target.value)}
+                                        />
+                                    </Box>
+                                    {xError && (
+                                        <Alert severity="error" sx={{ mt: 2 }}>
+                                            {xError}
+                                        </Alert>
+                                    )}
+                                </DialogContent>
+                                <DialogActions sx={{ px: 3, pb: 2 }}>
+                                    <Button onClick={handleXSetupClose} disabled={xSaving}>
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        onClick={handleXSave}
+                                        disabled={xSaving || !xIntegration}
+                                    >
+                                        Save
+                                    </Button>
+                                </DialogActions>
+                            </Dialog>
+                            <Dialog
+                                open={instagramSetupOpen}
+                                onClose={handleInstagramSetupClose}
+                                maxWidth="sm"
+                                fullWidth
+                            >
+                                <DialogTitle>Connect Instagram</DialogTitle>
+                                <DialogContent sx={{ pt: 1 }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        Provide an Instagram Graph API access token and the IG user ID to sync.
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 2 }}>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            href="https://developers.facebook.com/apps/"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            sx={{ whiteSpace: 'nowrap' }}
+                                        >
+                                            Open Meta App Dashboard
+                                        </Button>
+                                    </Box>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                        <TextField
+                                            label="Access Token"
+                                            size="small"
+                                            type="password"
+                                            value={instagramAccessToken}
+                                            onChange={(event) => setInstagramAccessToken(event.target.value)}
+                                        />
+                                        <TextField
+                                            label="IG User ID"
+                                            size="small"
+                                            value={instagramUserId}
+                                            onChange={(event) => setInstagramUserId(event.target.value)}
+                                        />
+                                        <TextField
+                                            label="Username (optional)"
+                                            size="small"
+                                            value={instagramUsername}
+                                            onChange={(event) => setInstagramUsername(event.target.value)}
+                                        />
+                                        <TextField
+                                            label="Post Category (optional)"
+                                            size="small"
+                                            value={instagramCategory}
+                                            onChange={(event) => setInstagramCategory(event.target.value)}
+                                        />
+                                    </Box>
+                                    {instagramError && (
+                                        <Alert severity="error" sx={{ mt: 2 }}>
+                                            {instagramError}
+                                        </Alert>
+                                    )}
+                                </DialogContent>
+                                <DialogActions sx={{ px: 3, pb: 2 }}>
+                                    <Button onClick={handleInstagramSetupClose} disabled={instagramSaving}>
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        onClick={handleInstagramSave}
+                                        disabled={instagramSaving || !instagramIntegration}
+                                    >
+                                        Save
+                                    </Button>
+                                </DialogActions>
+                            </Dialog>
                         </div>
                     </div>
                 )}
@@ -2637,6 +3186,15 @@ const ChatRoom = () => {
                                     {room?.members?.length || 0} members
                                 </Typography>
                             </Box>
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<ArticleIcon />}
+                                onClick={() => navigate(`/feed?podId=${roomId}`)}
+                                sx={{ textTransform: 'none' }}
+                            >
+                                Posts
+                            </Button>
                         </Toolbar>
                     </AppBar>
                     
@@ -2695,6 +3253,9 @@ const ChatRoom = () => {
                                             (msg.userId && typeof msg.userId === 'object' && msg.userId.username) ||
                                             msg.username || 
                                             'Unknown User';
+                                        const displayName = isAgentUsername(username)
+                                            ? (agentDisplayMap.get(username) || username)
+                                            : username;
                                         
                                         // Get profile picture with multiple fallbacks
                                         const profilePicture = 
@@ -2712,9 +3273,8 @@ const ChatRoom = () => {
                                         // Get message timestamp with fallbacks
                                         const messageTime = msg.createdAt || msg.created_at || new Date();
 
-                                        // Check if this is a bot message
-                                        const isBot = username === 'commonly-bot';
-                                        const botParsed = isBot ? parseBotMessage(messageContent) : { isBotMessage: false };
+                                        // Check if this is a bot message payload
+                                        const botParsed = parseBotMessage(messageContent);
 
                                         // Render bot messages with formatted content inside regular bubble
                                         if (botParsed.isBotMessage && botParsed.data) {
@@ -2734,7 +3294,7 @@ const ChatRoom = () => {
 
                                                     <div className="message-content-wrapper">
                                                         <div className="message-user">
-                                                            {username}
+                                                            {displayName}
                                                             <span className="bot-badge">BOT</span>
                                                         </div>
                                                         <div className="message-bubble received bot-bubble">
@@ -2786,14 +3346,14 @@ const ChatRoom = () => {
                                                         <Avatar
                                                             sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
                                                         >
-                                                            {username.charAt(0).toUpperCase()}
+                                                            {displayName.charAt(0).toUpperCase()}
                                                         </Avatar>
                                                     )}
                                                 </ListItemAvatar>
 
                                                 <div className="message-content-wrapper">
                                                     <div className="message-user">
-                                                        {username}
+                                                        {displayName}
                                                         {isAgentUsername(username) && <AgentBadge username={username} size="small" />}
                                                     </div>
                                                     {/* Text message */}

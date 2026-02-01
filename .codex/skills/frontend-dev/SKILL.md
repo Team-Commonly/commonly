@@ -55,6 +55,8 @@ frontend/src/
 - Mobile layout uses off-canvas sidebars (dashboard overlay with backdrop; chat members panel overlays full screen) to avoid content shifts.
 - Chat members panel defaults to collapsed on pod entry so messages stay visible.
 - Mobile breakpoint guard: keep pod chat layout full-width at <=768px (avoid `left: 50%` positioning on chat containers).
+- Post feed supports pod-scoped posts and forum-style categories; use `?podId=` and `?category=` query params to filter, and expose pod ↔ feed navigation.
+- Social feed integrations (X/Instagram) are configured from the pod sidebar integrations panel and sync external posts into the pod feed.
 
 ## Key Patterns
 

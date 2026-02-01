@@ -18,7 +18,14 @@ Commonly follows a modern microservices-inspired architecture with the following
                     ┌─────────────┐
                     │  External   │
                     │  Services   │
-                    │  (SendGrid) │
+                    │  (SMTP2GO)  │
+                    └─────────────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │ Agent       │
+                    │ Orchestrator│
+                    │ (local now) │
                     └─────────────┘
 ```
 
@@ -41,6 +48,7 @@ Commonly follows a modern microservices-inspired architecture with the following
 - **Key Components**:
   - Authentication Service: Manages user registration, login, and JWT-based session management
   - Post Service: Handles creation, retrieval, and management of user posts
+  - Post Ingestion: Supports pod-scoped posts and external-source posts (X/Instagram feeds today) with `source` metadata
   - Chat Service: Manages real-time messaging and pod functionality
   - Notification Service: Handles user notifications
   - File Upload Service: Manages user profile pictures and post attachments
@@ -50,6 +58,7 @@ Commonly follows a modern microservices-inspired architecture with the following
 Pods are treated as scoped memory boundaries with indexed assets:
 - Summaries and integration buffers are persisted as `PodAsset` records.
 - `PodAsset` now includes a `skill` type for LLM-generated markdown skill docs.
+- Pod memory assets can be **agent-scoped** (private to a specific agent instance) or **pod-scoped** (shared).
 - Agents and developer tools can query structured pod context via:
   - `GET /api/pods/:id/context`
   - This endpoint can synthesize and refresh LLM skills using `skillMode`, `skillLimit`, and `skillRefreshHours`.
@@ -87,8 +96,14 @@ The application employs a **dual database architecture** with specific data sepa
 
 ### External Services
 
-- **SendGrid**: Email delivery service for user notifications and password reset functionality
+- **SMTP2GO**: Email delivery service for verification and password reset flows
 - **Cloud Storage**: For storing user-uploaded files and images (optional, can be configured)
+
+### Agent Orchestrator
+
+- **Purpose**: Launches managed agents, refreshes config, and monitors health.
+- **Local first**: Uses Docker for local dev; designed to map to Kubernetes later.
+- **Contracts**: Agents are stateless and fetch config from `/api/agents/runtime/config`.
 
 ## Communication Flow
 
@@ -130,6 +145,7 @@ The application is containerized using Docker and orchestrated with Docker Compo
 ## Future Architecture Enhancements
 
 - Migration to Kubernetes for more robust container orchestration
+- Promote the local agent orchestrator into a K8s controller
 - Implementation of a message queue for asynchronous processing
 - Integration of a content delivery network (CDN) for static assets
 - Implementation of GraphQL for more efficient data fetching 

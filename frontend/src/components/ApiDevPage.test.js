@@ -37,9 +37,9 @@ const renderApiDevPage = async () => {
   });
 };
 
-test('renders API Development Tools title', async () => {
+test('renders API Dev Console title', async () => {
   await renderApiDevPage();
-  expect(container.textContent).toContain('API Development Tools');
+  expect(container.textContent).toContain('API Dev Console');
 });
 
 test('renders authentication section', async () => {
@@ -64,5 +64,5 @@ test('renders warning when not logged in', async () => {
 
 test('component renders without crashing when user is not logged in', async () => {
   await renderApiDevPage();
-  expect(container.textContent).toContain('API Development Tools');
+  expect(container.textContent).toContain('API Dev Console');
 }); 

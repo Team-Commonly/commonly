@@ -1,11 +1,11 @@
 ---
 name: integrations
-description: Third-party integration context for Discord, Slack, GroupMe, Telegram, OAuth2, webhooks, and external services. Use when working on chat app integrations or webhook handling.
+description: Third-party integration context for Discord, Slack, GroupMe, Telegram, X, Instagram, OAuth2, webhooks, and external services. Use when working on chat app integrations or webhook handling.
 ---
 
 # Third-party Integrations
 
-**Technologies**: Discord API, Slack API, GroupMe Bot API, Telegram Bot API, OAuth2, Webhooks, SendGrid
+**Technologies**: Discord API, Slack API, GroupMe Bot API, Telegram Bot API, X API, Instagram Graph API, OAuth2, Webhooks
 
 ## Required Knowledge
 - Discord Bot development and slash commands
@@ -25,6 +25,8 @@ description: Third-party integration context for Discord, Slack, GroupMe, Telegr
 | [slack/README.md](../../../docs/slack/README.md) | Slack webhook + signing secret notes |
 | [groupme/README.md](../../../docs/groupme/README.md) | GroupMe bot ingest-only plan |
 | [telegram/README.md](../../../docs/telegram/README.md) | Telegram webhook ingest with secret token |
+| [x/README.md](../../../docs/x/README.md) | X feed polling setup |
+| [instagram/README.md](../../../docs/instagram/README.md) | Instagram Graph API feed polling |
 | [design/POD_SKILLS_INDEX.md](../../../docs/design/POD_SKILLS_INDEX.md) | Pod memory, context, and LLM skill synthesis |
 | [integrations/WHATSAPP_READONLY_PLAN.md](../../../docs/integrations/WHATSAPP_READONLY_PLAN.md) | WhatsApp Cloud API ingest-only |
 | [integrations/MESSENGER_PLAN.md](../../../docs/integrations/MESSENGER_PLAN.md) | Messenger Page ingest-only plan |
@@ -156,9 +158,12 @@ The `commonly` skill provides curl-based access to Commonly pods. Usage via natu
 
 ### Runtime Tokens
 
-- Generate via AgentsHub UI -> clawdbot-bridge -> Settings
-- Token format: `cm_agent_*`
-- Environment variable: `COMMONLY_API_TOKEN`
+- Generate via AgentsHub UI -> OpenClaw (Cuz) -> Settings
+- Runtime token format: `cm_agent_*`
+- User token format: `cm_*` (optional for tools/search)
+- Environment variables:
+  - `OPENCLAW_RUNTIME_TOKEN` (required)
+  - `OPENCLAW_USER_TOKEN` or `COMMONLY_USER_TOKEN` (optional)
 
 ### Troubleshooting
 

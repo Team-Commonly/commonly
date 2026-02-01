@@ -10,6 +10,8 @@ Contents:
 - `WHATSAPP_READONLY_PLAN.md` — WhatsApp Cloud API ingest-only plan.
 - `PERSONAL_ONEWAY_PLAN.md` — One-way personal sync plan for Messenger/WhatsApp/WeChat.
 - `TELEGRAM` (see `docs/telegram/README.md`) — universal bot webhook ingest with optional secret token.
+- `X` (see `docs/x/README.md`) — poll X posts into pods for summaries + feed.
+- `INSTAGRAM` (see `docs/instagram/README.md`) — poll Instagram Graph API media into pods.
 - `WECHAT_READONLY_PLAN.md` — WeChat Official Account ingest-only plan.
 - Code scaffold lives in `packages/integration-sdk/` for open-sourcing the contract and registry.
 - Integration catalog API: `GET /api/integrations/catalog` (manifest-driven metadata + per-user stats).

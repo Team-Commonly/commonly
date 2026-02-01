@@ -11,6 +11,9 @@ import {
   Divider,
   Collapse,
   Alert,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import {
   ContentCopy as CopyIcon,
@@ -38,6 +41,14 @@ const ClawdbotConfigPanel = ({
   tokenLoading,
   gatewayStatus,
   onRefreshStatus,
+  userTokenValue,
+  userTokenMeta,
+  userTokenScopes = [],
+  userTokenLoading,
+  userTokenRevoking,
+  onToggleUserScope,
+  onGenerateUserToken,
+  onRevokeUserToken,
 }) => {
   const theme = useTheme();
   const [copied, setCopied] = useState(false);
@@ -54,26 +65,23 @@ const ClawdbotConfigPanel = ({
     }
   };
 
-  const generateConfigSnippet = (token) => {
+  const generateConfigSnippet = (runtimeToken, userToken) => {
     return `{
-  "tools": {
-    "mcp": {
-      "servers": {
-        "commonly": {
-          "command": "npx",
-          "args": ["@commonly/mcp-server"],
-          "env": {
-            "COMMONLY_API_URL": "${window.location.origin}",
-            "COMMONLY_API_TOKEN": "${token || '<your-runtime-token>'}"
-          }
-        }
-      }
+  "channels": {
+    "commonly": {
+      "enabled": true,
+      "baseUrl": "${window.location.origin}",
+      "runtimeToken": "${runtimeToken || '<runtime-token>'}",
+      "userToken": "${userToken || '<user-token>'}",
+      "agentName": "openclaw",
+      "instanceId": "default"
     }
   }
 }`;
   };
 
   const activeToken = runtimeTokenValue || (runtimeTokens.length > 0 ? '••••••••' : null);
+  const hasUserToken = userTokenMeta?.hasToken;
 
   return (
     <Box sx={{ mt: 2 }}>
@@ -228,7 +236,7 @@ const ClawdbotConfigPanel = ({
               multiline
               fullWidth
               rows={12}
-              value={generateConfigSnippet(runtimeTokenValue)}
+              value={generateConfigSnippet(runtimeTokenValue, userTokenValue)}
               InputProps={{
                 readOnly: true,
                 sx: {
@@ -242,7 +250,12 @@ const ClawdbotConfigPanel = ({
             <Tooltip title={configCopied ? 'Copied!' : 'Copy config'}>
               <IconButton
                 size="small"
-                onClick={() => copyToClipboard(generateConfigSnippet(runtimeTokenValue), setConfigCopied)}
+                onClick={() =>
+                  copyToClipboard(
+                    generateConfigSnippet(runtimeTokenValue, userTokenValue),
+                    setConfigCopied,
+                  )
+                }
                 sx={{ position: 'absolute', top: 8, right: 8 }}
               >
                 <CopyIcon fontSize="small" color={configCopied ? 'success' : 'inherit'} />
@@ -251,6 +264,7 @@ const ClawdbotConfigPanel = ({
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
             Add this to your <code>~/.clawdbot/moltbot.json</code> to connect your Clawdbot to Commonly.
+            Runtime token is required; user token is optional for tools/context access.
           </Typography>
         </Collapse>
       </Box>
@@ -294,6 +308,105 @@ const ClawdbotConfigPanel = ({
           ))}
         </Box>
       )}
+
+      <Divider sx={{ my: 2 }} />
+
+      <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+        Designated User Token
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        Issue a bot user token with optional permissions. Leave all permissions unchecked for full access.
+        Generating a new token rotates the old one.
+      </Typography>
+
+      <FormGroup sx={{ mb: 2 }}>
+        {[
+          { id: 'agent:events:read', label: 'Read agent events' },
+          { id: 'agent:events:ack', label: 'Acknowledge agent events' },
+          { id: 'agent:context:read', label: 'Read pod context' },
+          { id: 'agent:messages:read', label: 'Read pod messages' },
+          { id: 'agent:messages:write', label: 'Post pod messages' },
+        ].map((scope) => (
+          <FormControlLabel
+            key={scope.id}
+            control={(
+              <Checkbox
+                checked={userTokenScopes.includes(scope.id)}
+                onChange={() => onToggleUserScope?.(scope.id)}
+                size="small"
+              />
+            )}
+            label={<Typography variant="caption">{scope.label}</Typography>}
+          />
+        ))}
+      </FormGroup>
+
+      {hasUserToken && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <Typography variant="caption">
+            Token issued {userTokenMeta?.createdAt ? new Date(userTokenMeta.createdAt).toLocaleString() : 'recently'}.
+            Revoke to rotate.
+          </Typography>
+        </Alert>
+      )}
+
+      <Button
+        variant="outlined"
+        size="small"
+        onClick={onGenerateUserToken}
+        disabled={userTokenLoading}
+        sx={{ mb: 2 }}
+      >
+        {userTokenLoading ? 'Generating...' : 'Generate User Token'}
+      </Button>
+
+      {userTokenValue && (
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+            User Token (shown once)
+          </Typography>
+          <Box
+            sx={{
+              border: `1px solid ${alpha(theme.palette.success.main, 0.3)}`,
+              borderRadius: 1,
+              p: 1.5,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              bgcolor: alpha(theme.palette.success.main, 0.05),
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{
+                fontFamily: 'monospace',
+                fontSize: '0.8rem',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {userTokenValue}
+            </Typography>
+            <Tooltip title={copied ? 'Copied!' : 'Copy token'}>
+              <IconButton
+                size="small"
+                onClick={() => copyToClipboard(userTokenValue, setCopied)}
+              >
+                <CopyIcon fontSize="small" color={copied ? 'success' : 'inherit'} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </Box>
+      )}
+
+      <Button
+        size="small"
+        color="error"
+        onClick={onRevokeUserToken}
+        disabled={!hasUserToken || userTokenRevoking}
+      >
+        {userTokenRevoking ? 'Revoking...' : 'Revoke User Token'}
+      </Button>
     </Box>
   );
 };

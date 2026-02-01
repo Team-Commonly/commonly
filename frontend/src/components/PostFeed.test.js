@@ -3,17 +3,22 @@ import { createRoot } from 'react-dom/client';
 import * as TestUtils from 'react-dom/test-utils';
 import PostFeed from './PostFeed';
 import { useAppContext } from '../context/AppContext';
-import { useOutletContext, useNavigate } from 'react-router-dom';
+import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 const axios = require('axios').default;
 
 jest.mock('axios', () => ({
   __esModule: true,
   default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() }
 }));
+jest.mock('emoji-picker-react', () => ({
+  __esModule: true,
+  default: () => <div className="emoji-mock" data-testid="emoji-picker" />,
+}));
 jest.mock('../context/AppContext', () => ({ useAppContext: jest.fn() }));
 jest.mock('react-router-dom', () => ({
   useNavigate: jest.fn(),
-  useOutletContext: jest.fn()
+  useOutletContext: jest.fn(),
+  useLocation: jest.fn()
 }));
 
 let container;
@@ -43,7 +48,8 @@ const mockPost = {
   content: 'hello',
   userId: { _id: 'u1', username: 'user', profilePicture: null },
   likes: 0,
-  comments: []
+  comments: [],
+  createdAt: new Date().toISOString()
 };
 
 async function renderFeed(appCtx = {}) {
@@ -57,7 +63,16 @@ async function renderFeed(appCtx = {}) {
   });
   useOutletContext.mockReturnValue(null);
   useNavigate.mockReturnValue(jest.fn());
-  axios.get.mockResolvedValueOnce({ data: [mockPost] });
+  useLocation.mockReturnValue({ search: '' });
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/posts') {
+      return Promise.resolve({ data: [mockPost] });
+    }
+    if (url === '/api/pods') {
+      return Promise.resolve({ data: [] });
+    }
+    return Promise.resolve({ data: [] });
+  });
   await TestUtils.act(async () => {
     root.render(<PostFeed />);
   });
@@ -66,7 +81,7 @@ async function renderFeed(appCtx = {}) {
 
 test('fetches posts and displays them', async () => {
   await renderFeed();
-  expect(axios.get).toHaveBeenCalledWith('/api/posts', { headers: { Authorization: 'Bearer t' } });
+  expect(axios.get).toHaveBeenCalledWith('/api/posts', { headers: { Authorization: 'Bearer t' }, params: {} });
   expect(container.textContent).toContain('hello');
 });
 
@@ -87,7 +102,8 @@ test('creating post submits and reloads', async () => {
   useAppContext.mockReturnValue({ currentUser: { _id: 'u2', username: 'u' }, setPosts: jest.fn(), refreshData: jest.fn(), removePost: jest.fn(), postsLoading: false });
   useOutletContext.mockReturnValue(null);
   useNavigate.mockReturnValue(jest.fn());
-  axios.get.mockResolvedValueOnce({ data: [] });
+  useLocation.mockReturnValue({ search: '' });
+  axios.get.mockImplementation(() => Promise.resolve({ data: [] }));
   axios.post.mockResolvedValue({});
   await TestUtils.act(async () => { root.render(<PostFeed />); });
   await TestUtils.act(async () => Promise.resolve());
@@ -95,7 +111,11 @@ test('creating post submits and reloads', async () => {
   const postBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Post');
   TestUtils.act(() => { TestUtils.Simulate.change(textarea, { target: { value: '#tag hi' } }); });
   await TestUtils.act(async () => { TestUtils.Simulate.click(postBtn); });
-  expect(axios.post).toHaveBeenCalledWith('/api/posts', { content: '#tag hi', tags: ['tag'] }, { headers: { Authorization: 'Bearer t' } });
+  expect(axios.post).toHaveBeenCalledWith(
+    '/api/posts',
+    { content: '#tag hi', tags: ['tag'], category: 'General' },
+    { headers: { Authorization: 'Bearer t' } },
+  );
   expect(window.location.reload).toHaveBeenCalled();
 });
 
@@ -166,4 +186,3 @@ test('emoji button has correct test id for accessibility', async () => {
   expect(emojiButton).toBeTruthy();
   expect(emojiButton.getAttribute('data-testid')).toBe('emoji-button');
 });
-

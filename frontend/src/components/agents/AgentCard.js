@@ -72,6 +72,7 @@ const AgentCard = ({
   const id = agent.id || agent._id || agent.name;
   const displayName = agent.displayName || agent.name || 'Unknown Agent';
   const agentName = agent.agentName || agent.name || '';
+  const instanceId = agent.instanceId || agent.installation?.instanceId || agent.profile?.instanceId || '';
   const description = agent.description || '';
   const type = agent.type || (agent.categories && agent.categories[0]) || 'default';
   const verified = agent.verified || false;
@@ -136,7 +137,7 @@ const AgentCard = ({
             )}
           </Box>
           <Typography variant="caption" color="text.secondary" noWrap>
-            @{agentName}
+            @{agentName}{instanceId ? ` • id:${instanceId}` : ''}
           </Typography>
         </Box>
         {installed && (
@@ -224,7 +225,7 @@ const AgentCard = ({
                 )}
               </Box>
           <Typography variant="body2" color="text.secondary">
-            @{agentName}
+            @{agentName}{instanceId ? ` • id:${instanceId}` : ''}
           </Typography>
             </Box>
           </Box>
@@ -364,7 +365,7 @@ const AgentCard = ({
               )}
             </Box>
             <Typography variant="caption" color="text.secondary">
-              @{agentName}
+              @{agentName}{instanceId ? ` • id:${instanceId}` : ''}
             </Typography>
           </Box>
           <IconButton size="small">

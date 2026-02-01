@@ -13,7 +13,18 @@ const AgentProfile = require('../models/AgentProfile');
 const Activity = require('../models/Activity');
 const Pod = require('../models/Pod');
 const User = require('../models/User');
+const AgentTemplate = require('../models/AgentTemplate');
 const AgentIdentityService = require('../services/agentIdentityService');
+const {
+  provisionAgentRuntime,
+  startDockerRuntime,
+  stopDockerRuntime,
+  restartDockerRuntime,
+  getDockerRuntimeStatus,
+  getDockerRuntimeLogs,
+  listOpenClawPlugins,
+  installOpenClawPlugin,
+} = require('../services/agentProvisionerService');
 const { hash, randomSecret } = require('../utils/secret');
 
 const parseVerifiedFilter = (value) => {
@@ -22,7 +33,340 @@ const parseVerifiedFilter = (value) => {
   return null;
 };
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const getUserId = (req) => req.userId || req.user?.id || req.user?._id;
+
+const normalizeConfigMap = (config) => {
+  if (!config) return null;
+  if (config instanceof Map) {
+    return Object.fromEntries(config.entries());
+  }
+  if (typeof config === 'object') {
+    return config;
+  }
+  return null;
+};
+
+const normalizePluginIdentifier = (value) => String(value || '').trim().toLowerCase();
+
+const getPluginSpecBase = (spec) => {
+  const normalized = normalizePluginIdentifier(spec);
+  if (!normalized) return '';
+  if (normalized.startsWith('@')) {
+    const parts = normalized.split('@');
+    if (parts.length >= 2 && parts[1]) {
+      return `@${parts[1]}`;
+    }
+    return normalized;
+  }
+  return normalized.split('@')[0];
+};
+
+const normalizeInstanceId = (raw) => {
+  const normalized = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'default';
+};
+
+/**
+ * Derive instanceId from displayName for consistent agent identity across pods.
+ * This ensures the same agent (e.g., "Cuz") gets the same instanceId regardless
+ * of which pod it's installed in, allowing shared runtime tokens and memory.
+ *
+ * @param {string} displayName - The display name (e.g., "Cuz", "Tarik")
+ * @param {string} agentName - The base agent name (e.g., "openclaw")
+ * @returns {string} - The derived instanceId (e.g., "cuz", "tarik", or "default")
+ */
+const deriveInstanceId = (displayName, agentName) => {
+  if (!displayName) return 'default';
+  const slug = String(displayName)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  // If slug matches agentName or is empty, use 'default'
+  if (!slug || slug === agentName.toLowerCase()) {
+    return 'default';
+  }
+  return slug;
+};
+
+/**
+ * Check if an agent instance already exists globally (across all pods).
+ * Returns the existing installations and agent user if found.
+ *
+ * @param {string} agentName - The base agent name
+ * @param {string} instanceId - The instance identifier
+ * @returns {Object} - { exists, installations, agentUser }
+ */
+const findExistingAgentInstance = async (agentName, instanceId) => {
+  const installations = await AgentInstallation.find({
+    agentName: agentName.toLowerCase(),
+    instanceId,
+    status: 'active',
+  }).lean();
+
+  if (installations.length === 0) {
+    return { exists: false, installations: [], agentUser: null };
+  }
+
+  const username = AgentIdentityService.buildAgentUsername(agentName, instanceId);
+  const agentUser = await User.findOne({
+    username,
+    isBot: true,
+  }).lean();
+
+  return { exists: true, installations, agentUser };
+};
+
+const resolveInstallation = async ({ agentName, podId, instanceId }) => {
+  const normalizedInstanceId = normalizeInstanceId(instanceId);
+  let installation = await AgentInstallation.findOne({
+    agentName: agentName.toLowerCase(),
+    podId,
+    instanceId: normalizedInstanceId,
+  });
+
+  if (installation) {
+    return { installation, instanceId: normalizedInstanceId };
+  }
+
+  // Fallback: if instanceId is default and there is exactly one install, use it.
+  if (normalizedInstanceId === 'default') {
+    const installs = await AgentInstallation.find({
+      agentName: agentName.toLowerCase(),
+      podId,
+      status: { $ne: 'uninstalled' },
+    }).limit(2);
+    if (installs.length === 1) {
+      return { installation: installs[0], instanceId: installs[0].instanceId || 'default' };
+    }
+  }
+
+  // Fallback: if a specific instanceId was provided but there is exactly one active install,
+  // use it to avoid hard failures when the UI doesn't know the instanceId.
+  const activeInstalls = await AgentInstallation.find({
+    agentName: agentName.toLowerCase(),
+    podId,
+    status: { $ne: 'uninstalled' },
+  }).limit(2);
+  if (activeInstalls.length === 1) {
+    return { installation: activeInstalls[0], instanceId: activeInstalls[0].instanceId || 'default' };
+  }
+
+  return { installation: null, instanceId: normalizedInstanceId };
+};
+
+const buildAgentProfileId = (agentName, instanceId) => (
+  `${agentName.toLowerCase()}:${normalizeInstanceId(instanceId)}`
+);
+
+const AGENT_USER_TOKEN_SCOPES = new Set([
+  'agent:events:read',
+  'agent:events:ack',
+  'agent:context:read',
+  'agent:messages:read',
+  'agent:messages:write',
+]);
+
+const normalizeScopes = (scopes) => {
+  if (!Array.isArray(scopes)) return [];
+  return Array.from(new Set(scopes.filter((scope) => AGENT_USER_TOKEN_SCOPES.has(scope))));
+};
+
+/**
+ * Issue a runtime token for an agent.
+ * Tokens are stored on the User model (shared across all pod installations).
+ * This ensures the same agent identity uses the same token regardless of which pod.
+ *
+ * @param {Object} agentUser - The agent's User document
+ * @param {string} label - Token label
+ * @param {Object} installation - Optional installation to also store token on (for backward compat)
+ * @returns {Object} - { token, label, existing, createdAt }
+ */
+const issueRuntimeTokenForAgent = async (agentUser, label, installation = null) => {
+  // Check if agent already has a runtime token (reuse existing)
+  if (agentUser.agentRuntimeTokens?.length > 0) {
+    const existingToken = agentUser.agentRuntimeTokens[0];
+    return {
+      existing: true,
+      label: existingToken.label,
+      createdAt: existingToken.createdAt,
+      // Can't return raw token for existing - it's hashed
+      message: 'Agent already has a runtime token. Use existing token or revoke to generate new.',
+    };
+  }
+
+  // Generate new token
+  const rawToken = `cm_agent_${randomSecret(32)}`;
+  const tokenRecord = {
+    tokenHash: hash(rawToken),
+    label: label || 'Runtime token',
+    createdAt: new Date(),
+  };
+
+  // Store on User model (primary - shared across pods)
+  agentUser.agentRuntimeTokens = agentUser.agentRuntimeTokens || [];
+  agentUser.agentRuntimeTokens.push(tokenRecord);
+  await agentUser.save();
+
+  // Also store on installation for backward compatibility
+  if (installation) {
+    installation.runtimeTokens = installation.runtimeTokens || [];
+    installation.runtimeTokens.push(tokenRecord);
+    await installation.save();
+  }
+
+  return {
+    token: rawToken,
+    label: label || 'Runtime token',
+    existing: false,
+    createdAt: tokenRecord.createdAt,
+  };
+};
+
+/**
+ * Legacy function for backward compatibility.
+ * @deprecated Use issueRuntimeTokenForAgent instead
+ */
+const issueRuntimeTokenForInstallation = async (installation, label) => {
+  const rawToken = `cm_agent_${randomSecret(32)}`;
+  installation.runtimeTokens = installation.runtimeTokens || [];
+  installation.runtimeTokens.push({
+    tokenHash: hash(rawToken),
+    label: label || 'Runtime token',
+    createdAt: new Date(),
+  });
+  await installation.save();
+  return { token: rawToken, label: label || 'Runtime token' };
+};
+
+const issueUserTokenForInstallation = async ({
+  agentName,
+  instanceId,
+  displayName,
+  podId,
+  scopes,
+}) => {
+  const agentUser = await AgentIdentityService.getOrCreateAgentUser(agentName.toLowerCase(), {
+    instanceId,
+    displayName,
+  });
+  await AgentIdentityService.ensureAgentInPod(agentUser, podId);
+  const normalizedScopes = normalizeScopes(scopes);
+  const token = agentUser.generateApiToken();
+  agentUser.apiTokenScopes = normalizedScopes;
+  await agentUser.save();
+  return { token, scopes: normalizedScopes, createdAt: agentUser.apiTokenCreatedAt };
+};
+
+/**
+ * GET /api/registry/templates
+ * List agent templates (public + creator's private)
+ */
+router.get('/templates', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const templates = await AgentTemplate.find({
+      $or: [
+        { visibility: 'public' },
+        { visibility: 'private', createdBy: userId },
+      ],
+    }).lean();
+
+    return res.json({
+      templates: templates.map((template) => ({
+        id: template._id.toString(),
+        agentName: template.agentName,
+        displayName: template.displayName,
+        description: template.description,
+        visibility: template.visibility,
+        createdBy: template.createdBy?.toString?.() || template.createdBy,
+      })),
+    });
+  } catch (error) {
+    console.error('Error listing agent templates:', error);
+    return res.status(500).json({ error: 'Failed to list agent templates' });
+  }
+});
+
+/**
+ * POST /api/registry/templates
+ * Create a new agent template (public or private)
+ */
+router.post('/templates', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const {
+      agentName,
+      displayName,
+      description = '',
+      visibility = 'private',
+    } = req.body || {};
+
+    if (!agentName || !displayName) {
+      return res.status(400).json({ error: 'agentName and displayName are required' });
+    }
+
+    const trimmedDisplayName = displayName.trim();
+    if (!trimmedDisplayName) {
+      return res.status(400).json({ error: 'displayName is required' });
+    }
+
+    const agent = await AgentRegistry.getByName(agentName);
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent type not found' });
+    }
+
+    if (!['private', 'public'].includes(visibility)) {
+      return res.status(400).json({ error: 'Invalid visibility' });
+    }
+
+    const existingTemplate = await AgentTemplate.findOne({
+      createdBy: userId,
+      displayName: { $regex: `^${escapeRegExp(trimmedDisplayName)}$`, $options: 'i' },
+    }).select('_id').lean();
+    if (existingTemplate) {
+      return res.status(400).json({ error: 'Agent name already exists' });
+    }
+
+    const template = await AgentTemplate.create({
+      agentName: agentName.toLowerCase(),
+      displayName: trimmedDisplayName,
+      description,
+      visibility,
+      createdBy: userId,
+    });
+
+    return res.json({
+      success: true,
+      template: {
+        id: template._id.toString(),
+        agentName: template.agentName,
+        displayName: template.displayName,
+        description: template.description,
+        visibility: template.visibility,
+      },
+    });
+  } catch (error) {
+    console.error('Error creating agent template:', error);
+    return res.status(500).json({ error: 'Failed to create agent template' });
+  }
+});
 
 /**
  * GET /api/registry/agents
@@ -99,6 +443,101 @@ router.get('/agents/:name', auth, async (req, res) => {
 });
 
 /**
+ * GET /api/registry/agents/:name/instances/:instanceId
+ * Check if an agent instance exists globally (across all pods).
+ * Used by UI to detect if installing to a new pod should reuse existing identity.
+ */
+router.get('/agents/:name/instances/:instanceId', auth, async (req, res) => {
+  try {
+    const { name, instanceId } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const normalizedInstanceId = normalizeInstanceId(instanceId);
+    const globalAgent = await findExistingAgentInstance(name, normalizedInstanceId);
+
+    if (!globalAgent.exists) {
+      return res.json({ exists: false });
+    }
+
+    // Get pod names for UI display
+    const podIds = globalAgent.installations.map((i) => i.podId);
+    const pods = await Pod.find({ _id: { $in: podIds } }).select('name').lean();
+    const podMap = new Map(pods.map((p) => [p._id.toString(), p.name]));
+
+    return res.json({
+      exists: true,
+      installations: globalAgent.installations.map((i) => ({
+        podId: i.podId.toString(),
+        podName: podMap.get(i.podId.toString()) || 'Unknown Pod',
+        displayName: i.displayName,
+        instanceId: i.instanceId,
+        provisionedAt: i.config?.runtime?.provisionedAt || null,
+      })),
+      hasRuntimeToken: (globalAgent.agentUser?.agentRuntimeTokens?.length || 0) > 0,
+      agentUsername: globalAgent.agentUser?.username || null,
+    });
+  } catch (error) {
+    console.error('Error checking agent instance:', error);
+    return res.status(500).json({ error: 'Failed to check agent instance' });
+  }
+});
+
+/**
+ * GET /api/registry/agents/:name/instances
+ * List all instances of an agent type (for discovery).
+ */
+router.get('/agents/:name/instances', auth, async (req, res) => {
+  try {
+    const { name } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Find all active installations of this agent type
+    const installations = await AgentInstallation.find({
+      agentName: name.toLowerCase(),
+      status: 'active',
+    }).lean();
+
+    // Group by instanceId
+    const instanceMap = new Map();
+    installations.forEach((i) => {
+      const key = i.instanceId || 'default';
+      if (!instanceMap.has(key)) {
+        instanceMap.set(key, {
+          instanceId: key,
+          displayName: i.displayName,
+          pods: [],
+        });
+      }
+      instanceMap.get(key).pods.push(i.podId.toString());
+    });
+
+    // Get pod names
+    const allPodIds = installations.map((i) => i.podId);
+    const pods = await Pod.find({ _id: { $in: allPodIds } }).select('name').lean();
+    const podMap = new Map(pods.map((p) => [p._id.toString(), p.name]));
+
+    const instances = Array.from(instanceMap.values()).map((inst) => ({
+      ...inst,
+      pods: inst.pods.map((podId) => ({
+        podId,
+        podName: podMap.get(podId) || 'Unknown Pod',
+      })),
+    }));
+
+    return res.json({ instances });
+  } catch (error) {
+    console.error('Error listing agent instances:', error);
+    return res.status(500).json({ error: 'Failed to list agent instances' });
+  }
+});
+
+/**
  * GET /api/registry/categories
  * List agent categories
  */
@@ -119,7 +558,7 @@ router.get('/categories', auth, async (req, res) => {
 router.post('/install', auth, async (req, res) => {
   try {
     const {
-      agentName, podId, version, config = {}, scopes = [],
+      agentName, podId, version, config = {}, scopes = [], instanceId, displayName,
     } = req.body;
     const userId = getUserId(req);
     if (!userId) {
@@ -156,16 +595,34 @@ router.post('/install', auth, async (req, res) => {
     //   return res.status(403).json({ error: 'Admin access required to install agents' });
     // }
 
-    // Check if already installed
-    const existing = await AgentInstallation.findOne({
+    // Derive instanceId from displayName for consistent identity across pods
+    // If explicit instanceId provided, use it; otherwise derive from displayName
+    let normalizedInstanceId;
+    if (instanceId) {
+      normalizedInstanceId = normalizeInstanceId(instanceId);
+      if (normalizedInstanceId === agentName.toLowerCase()) {
+        normalizedInstanceId = 'default';
+      }
+    } else {
+      // Derive from displayName for consistent identity
+      normalizedInstanceId = deriveInstanceId(displayName, agentName);
+    }
+
+    // Check if already installed in THIS pod
+    const existingInPod = await AgentInstallation.findOne({
       agentName: agentName.toLowerCase(),
       podId,
+      instanceId: normalizedInstanceId,
       status: 'active',
     });
 
-    if (existing) {
+    if (existingInPod) {
       return res.status(400).json({ error: 'Agent already installed in this pod' });
     }
+
+    // Check if this agent instance exists in OTHER pods (for shared identity)
+    const globalAgent = await findExistingAgentInstance(agentName, normalizedInstanceId);
+    const isReusingExistingAgent = globalAgent.exists;
 
     // Validate scopes against manifest
     const requiredScopes = agent.manifest.context?.required || [];
@@ -183,13 +640,17 @@ router.post('/install', auth, async (req, res) => {
       config,
       scopes: [...requiredScopes, ...scopes],
       installedBy: userId,
+      instanceId: normalizedInstanceId,
+      displayName: displayName || agent.displayName,
     });
 
     // Create agent profile for the pod
     await AgentProfile.create({
-      agentId: agentName,
+      agentId: buildAgentProfileId(agentName, normalizedInstanceId),
+      agentName: agentName.toLowerCase(),
+      instanceId: normalizedInstanceId,
       podId,
-      name: agent.displayName,
+      name: displayName || agent.displayName,
       purpose: agent.description,
       instructions: agent.manifest.configSchema?.defaultInstructions || '',
       persona: {
@@ -203,7 +664,10 @@ router.post('/install', auth, async (req, res) => {
     });
 
     try {
-      const agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName);
+      const agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
+        instanceId: normalizedInstanceId,
+        displayName: displayName || agent.displayName,
+      });
       await AgentIdentityService.ensureAgentInPod(agentUser, podId);
     } catch (identityError) {
       console.warn('Failed to provision agent user identity:', identityError.message);
@@ -235,15 +699,28 @@ router.post('/install', auth, async (req, res) => {
       console.warn('Failed to create activity for agent install:', activityError.message);
     }
 
+    // Build list of other pods where this agent is installed (for UI info)
+    const otherPodIds = isReusingExistingAgent
+      ? globalAgent.installations
+        .filter((i) => i.podId.toString() !== podId)
+        .map((i) => i.podId)
+      : [];
+
     res.json({
       success: true,
       installation: {
         id: installation._id.toString(),
         agentName: installation.agentName,
+        instanceId: installation.instanceId || normalizedInstanceId,
+        displayName: installation.displayName,
         version: installation.version,
         status: installation.status,
         scopes: installation.scopes,
       },
+      // Indicate if this agent already existed in other pods (shared identity)
+      sharedIdentity: isReusingExistingAgent,
+      otherPods: otherPodIds,
+      hasExistingRuntimeToken: globalAgent.agentUser?.agentRuntimeTokens?.length > 0,
     });
   } catch (error) {
     console.error('Error installing agent:', error);
@@ -258,6 +735,11 @@ router.post('/install', auth, async (req, res) => {
 router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
   try {
     const { name, podId } = req.params;
+    const { installation, instanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: req.query.instanceId,
+    });
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -281,19 +763,18 @@ router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const installation = await AgentInstallation.findOne({
-      agentName: name.toLowerCase(),
-      podId,
-    }).lean();
-
     if (!installation) {
       if (!isCreator) {
         return res.status(404).json({ error: 'Agent not installed in this pod' });
       }
 
-      await AgentProfile.deleteOne({ agentId: name.toLowerCase(), podId });
+      await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
       try {
-        await AgentIdentityService.removeAgentFromPod(name, podId);
+        const resolvedType = AgentIdentityService.resolveAgentType(name);
+        await AgentIdentityService.removeAgentFromPod(
+          AgentIdentityService.buildAgentUsername(resolvedType, instanceId),
+          podId,
+        );
       } catch (identityError) {
         console.warn('Failed to remove agent user from pod:', identityError.message);
       }
@@ -308,13 +789,17 @@ router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
     }
 
     // Uninstall
-    await AgentInstallation.uninstall(name, podId);
+    await AgentInstallation.uninstall(name, podId, instanceId);
 
     // Remove agent profile
-    await AgentProfile.deleteOne({ agentId: name.toLowerCase(), podId });
+    await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
 
     try {
-      await AgentIdentityService.removeAgentFromPod(name, podId);
+      const resolvedType = AgentIdentityService.resolveAgentType(name);
+      await AgentIdentityService.removeAgentFromPod(
+        AgentIdentityService.buildAgentUsername(resolvedType, instanceId),
+        podId,
+      );
     } catch (identityError) {
       console.warn('Failed to remove agent user from pod:', identityError.message);
     }
@@ -362,26 +847,37 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
     // Get agent profiles for more details
     const profiles = await AgentProfile.find({
       podId,
-      agentId: { $in: installations.map((i) => i.agentName) },
+      agentName: { $in: installations.map((i) => i.agentName) },
     }).lean();
 
     res.json({
       agents: installations.map((i) => {
-        const profile = profiles.find((p) => p.agentId === i.agentName);
+        const profile = profiles.find(
+          (p) => p.agentName === i.agentName && p.instanceId === (i.instanceId || 'default'),
+        );
+        const normalizedConfig = normalizeConfigMap(i.config);
         return {
           name: i.agentName,
+          instanceId: i.instanceId || 'default',
+          displayName: i.displayName,
           version: i.version,
           status: i.status,
           scopes: i.scopes,
           installedAt: i.createdAt,
           usage: i.usage,
           installedBy: i.installedBy?.toString?.() || i.installedBy,
+          runtime: i.config?.runtime || null,
+          config: normalizedConfig ? {
+            heartbeat: normalizedConfig.heartbeat || null,
+          } : null,
           profile: profile
             ? {
               displayName: profile.name,
               purpose: profile.purpose,
               isDefault: profile.isDefault,
               modelPreferences: profile.modelPreferences,
+              instructions: profile.instructions,
+              persona: profile.persona,
             }
             : null,
         };
@@ -400,6 +896,11 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
 router.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
+    const { installation, instanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: req.query.instanceId,
+    });
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -421,13 +922,7 @@ router.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =>
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const installation = await AgentInstallation.findOne({
-      agentName: name.toLowerCase(),
-      podId,
-      status: 'active',
-    }).lean();
-
-    if (!installation) {
+    if (!installation || installation.status !== 'active') {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
@@ -452,7 +947,7 @@ router.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =>
 router.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
-    const { label } = req.body || {};
+    const { label, instanceId } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -474,30 +969,20 @@ router.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const installation = await AgentInstallation.findOne({
-      agentName: name.toLowerCase(),
+    const resolved = await resolveInstallation({
+      agentName: name,
       podId,
-      status: 'active',
+      instanceId,
     });
+    const installation = resolved.installation;
+    const normalizedInstanceId = resolved.instanceId;
 
-    if (!installation) {
+    if (!installation || installation.status !== 'active') {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
-    const rawToken = `cm_agent_${randomSecret(32)}`;
-    installation.runtimeTokens = installation.runtimeTokens || [];
-    installation.runtimeTokens.push({
-      tokenHash: hash(rawToken),
-      label: label || 'Runtime token',
-      createdAt: new Date(),
-    });
-
-    await installation.save();
-
-    return res.json({
-      token: rawToken,
-      label: label || 'Runtime token',
-    });
+    const issued = await issueRuntimeTokenForInstallation(installation, label);
+    return res.json(issued);
   } catch (error) {
     console.error('Error issuing agent runtime token:', error);
     return res.status(500).json({ error: 'Failed to issue runtime token' });
@@ -511,6 +996,11 @@ router.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =
 router.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', auth, async (req, res) => {
   try {
     const { podId, name, tokenId } = req.params;
+    const { installation, instanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: req.query.instanceId,
+    });
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -532,13 +1022,7 @@ router.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', auth, async (
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const installation = await AgentInstallation.findOne({
-      agentName: name.toLowerCase(),
-      podId,
-      status: 'active',
-    });
-
-    if (!installation) {
+    if (!installation || installation.status !== 'active') {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
@@ -560,13 +1044,704 @@ router.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', auth, async (
 });
 
 /**
+ * GET /api/registry/pods/:podId/agents/:name/user-token
+ * Get metadata for the agent's designated user token (no raw token returned)
+ */
+router.get('/pods/:podId/agents/:name/user-token', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { installation, instanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: req.query.instanceId,
+    });
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!installation || installation.status !== 'active') {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+
+    const resolvedType = AgentIdentityService.resolveAgentType(name);
+    const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
+    const agentUser = await User.findOne({ username: agentUsername }).lean();
+    if (!agentUser || !agentUser.apiToken) {
+      return res.json({ hasToken: false, scopes: [] });
+    }
+
+    return res.json({
+      hasToken: true,
+      createdAt: agentUser.apiTokenCreatedAt || null,
+      scopes: agentUser.apiTokenScopes || [],
+    });
+  } catch (error) {
+    console.error('Error fetching agent user token metadata:', error);
+    return res.status(500).json({ error: 'Failed to fetch user token metadata' });
+  }
+});
+
+/**
+ * POST /api/registry/pods/:podId/agents/:name/user-token
+ * Issue a designated user API token for the agent user
+ */
+router.post('/pods/:podId/agents/:name/user-token', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { scopes, instanceId, displayName } = req.body || {};
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const resolved = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId,
+    });
+    const installation = resolved.installation;
+    const normalizedInstanceId = resolved.instanceId;
+
+    if (!installation || installation.status !== 'active') {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+
+    const issued = await issueUserTokenForInstallation({
+      agentName: name,
+      instanceId: normalizedInstanceId,
+      displayName: displayName || installation.displayName,
+      podId,
+      scopes,
+    });
+
+    return res.json(issued);
+  } catch (error) {
+    console.error('Error issuing agent user token:', error);
+    return res.status(500).json({ error: 'Failed to issue user token' });
+  }
+});
+
+/**
+ * DELETE /api/registry/pods/:podId/agents/:name/user-token
+ * Revoke designated user token for the agent user
+ */
+router.delete('/pods/:podId/agents/:name/user-token', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { installation, instanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: req.query.instanceId,
+    });
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!installation || installation.status !== 'active') {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+
+    const resolvedType = AgentIdentityService.resolveAgentType(name);
+    const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
+    const agentUser = await User.findOne({ username: agentUsername });
+    if (!agentUser) {
+      return res.status(404).json({ error: 'Agent user not found' });
+    }
+
+    agentUser.revokeApiToken();
+    agentUser.apiTokenScopes = [];
+    await agentUser.save();
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error revoking agent user token:', error);
+    return res.status(500).json({ error: 'Failed to revoke user token' });
+  }
+});
+
+/**
+ * POST /api/registry/pods/:podId/agents/:name/provision
+ * Provision an external runtime config for an agent instance (local dev).
+ */
+router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const {
+      instanceId,
+      includeUserToken,
+      label,
+      scopes,
+      force,
+    } = req.body || {};
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const resolved = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId,
+    });
+    const installation = resolved.installation;
+    const normalizedInstanceId = resolved.instanceId;
+
+    if (!installation || installation.status !== 'active') {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+
+    const requesterId = userId?.toString?.() || userId;
+    console.log(
+      `[agent-provision] request pod=${podId} agent=${name} instance=${normalizedInstanceId} user=${requesterId} ip=${req.ip}`,
+    );
+    const runtimeTokens = installation.runtimeTokens || [];
+    const lastRuntimeToken = runtimeTokens.length ? runtimeTokens[runtimeTokens.length - 1] : null;
+    const lastProvisionTokenAt = lastRuntimeToken?.label?.toLowerCase?.().startsWith('provisioned')
+      ? lastRuntimeToken.createdAt
+      : null;
+    const lastProvisionedAt = installation.config?.runtime?.provisionedAt || lastProvisionTokenAt;
+    if (!force && lastProvisionedAt) {
+      const minutesSinceProvision = (Date.now() - new Date(lastProvisionedAt).getTime()) / 60000;
+      if (Number.isFinite(minutesSinceProvision) && minutesSinceProvision < 10) {
+        console.warn(
+          `[agent-provision] throttled pod=${podId} agent=${name} instance=${normalizedInstanceId} user=${requesterId} ip=${req.ip} minutes=${minutesSinceProvision.toFixed(2)}`,
+        );
+        return res.status(429).json({
+          error: 'Provision already completed recently. Try again later or use force=true.',
+        });
+      }
+    }
+
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+    const runtimeType = typeConfig?.runtime;
+    if (!runtimeType) {
+      return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+
+    // Get or create the agent user (shared identity across pods)
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(name.toLowerCase(), {
+      instanceId: normalizedInstanceId,
+      displayName: installation.displayName,
+    });
+    await AgentIdentityService.ensureAgentInPod(agentUser, podId);
+
+    // Issue runtime token using shared User model
+    // If agent already has a token, this will return info about existing token
+    const runtimeIssued = await issueRuntimeTokenForAgent(
+      agentUser,
+      label || `Provisioned ${normalizedInstanceId}`,
+      installation, // Also store on installation for backward compat
+    );
+
+    // If existing token was found and force=true, revoke and regenerate
+    if (runtimeIssued.existing && force) {
+      // Clear existing tokens and generate new
+      agentUser.agentRuntimeTokens = [];
+      const freshToken = await issueRuntimeTokenForAgent(
+        agentUser,
+        label || `Provisioned ${normalizedInstanceId}`,
+        installation,
+      );
+      Object.assign(runtimeIssued, freshToken);
+    }
+
+    let userIssued = null;
+    if (includeUserToken || runtimeType === 'moltbot') {
+      userIssued = await issueUserTokenForInstallation({
+        agentName: name,
+        instanceId: normalizedInstanceId,
+        displayName: installation.displayName,
+        podId,
+        scopes,
+      });
+    }
+
+    const baseUrl = process.env.COMMONLY_API_URL
+      || process.env.COMMONLY_BASE_URL
+      || 'http://backend:5000';
+
+    const configPayload = normalizeConfigMap(installation.config) || {};
+
+    // Only provision if we have a new token (not existing)
+    let provisioned = { accountId: null, configPath: null, restartRequired: false };
+    if (runtimeIssued.token) {
+      provisioned = provisionAgentRuntime({
+        runtimeType,
+        agentName: name,
+        instanceId: normalizedInstanceId,
+        runtimeToken: runtimeIssued.token,
+        userToken: userIssued?.token,
+        baseUrl,
+        displayName: installation.displayName,
+        heartbeat: configPayload.heartbeat || null,
+      });
+    }
+
+    let runtimeStart = null;
+    try {
+      runtimeStart = await startDockerRuntime(runtimeType);
+    } catch (startError) {
+      console.warn('Runtime start failed:', startError.message);
+      runtimeStart = { started: false, reason: startError.message };
+    }
+
+    installation.config = installation.config || {};
+    installation.config.runtime = {
+      status: 'provisioned',
+      runtimeType,
+      accountId: provisioned.accountId,
+      configPath: provisioned.configPath,
+      restartRequired: provisioned.restartRequired,
+      runtimeStarted: runtimeStart?.started || false,
+      runtimeStartCommand: runtimeStart?.command || null,
+      provisionedAt: new Date(),
+    };
+    await installation.save();
+
+    return res.json({
+      runtimeToken: runtimeIssued.token || null,
+      runtimeTokenExisting: runtimeIssued.existing || false,
+      runtimeTokenMessage: runtimeIssued.message || null,
+      userToken: userIssued?.token || null,
+      runtimeType,
+      accountId: provisioned.accountId,
+      configPath: provisioned.configPath,
+      restartRequired: provisioned.restartRequired,
+      runtimeStarted: runtimeStart?.started || false,
+      runtimeStartCommand: runtimeStart?.command || null,
+      runtimeStartError: runtimeStart?.reason || null,
+      // Indicate this is a shared agent identity
+      sharedIdentity: true,
+      agentUsername: agentUser.username,
+    });
+  } catch (error) {
+    console.error('Error provisioning agent runtime:', error);
+    return res.status(500).json({ error: 'Failed to provision agent runtime' });
+  }
+});
+
+/**
+ * GET /api/registry/pods/:podId/agents/:name/runtime-status
+ * Check local runtime status (docker).
+ */
+router.get('/pods/:podId/agents/:name/runtime-status', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+    const runtimeType = typeConfig?.runtime;
+    if (!runtimeType) {
+      return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+
+    const status = await getDockerRuntimeStatus(runtimeType);
+    return res.json({ runtimeType, status });
+  } catch (error) {
+    console.error('Error fetching runtime status:', error);
+    return res.status(500).json({ error: 'Failed to fetch runtime status' });
+  }
+});
+
+/**
+ * POST /api/registry/pods/:podId/agents/:name/runtime-start
+ */
+router.post('/pods/:podId/agents/:name/runtime-start', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+    const runtimeType = typeConfig?.runtime;
+    if (!runtimeType) {
+      return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+
+    const started = await startDockerRuntime(runtimeType);
+    return res.json({ runtimeType, started });
+  } catch (error) {
+    console.error('Error starting runtime:', error);
+    return res.status(500).json({ error: 'Failed to start runtime' });
+  }
+});
+
+/**
+ * POST /api/registry/pods/:podId/agents/:name/runtime-stop
+ */
+router.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+    const runtimeType = typeConfig?.runtime;
+    if (!runtimeType) {
+      return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+
+    const stopped = await stopDockerRuntime(runtimeType);
+    return res.json({ runtimeType, stopped });
+  } catch (error) {
+    console.error('Error stopping runtime:', error);
+    return res.status(500).json({ error: 'Failed to stop runtime' });
+  }
+});
+
+/**
+ * POST /api/registry/pods/:podId/agents/:name/runtime-restart
+ */
+router.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+    const runtimeType = typeConfig?.runtime;
+    if (!runtimeType) {
+      return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+
+    const restarted = await restartDockerRuntime(runtimeType);
+    return res.json({ runtimeType, restarted });
+  } catch (error) {
+    console.error('Error restarting runtime:', error);
+    return res.status(500).json({ error: 'Failed to restart runtime' });
+  }
+});
+
+/**
+ * GET /api/registry/pods/:podId/agents/:name/runtime-logs
+ */
+router.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const lines = Number(req.query.lines || 200);
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+    const runtimeType = typeConfig?.runtime;
+    if (!runtimeType) {
+      return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+
+    const logs = await getDockerRuntimeLogs(runtimeType, lines);
+    return res.json({ runtimeType, ...logs });
+  } catch (error) {
+    console.error('Error fetching runtime logs:', error);
+    return res.status(500).json({ error: 'Failed to fetch runtime logs' });
+  }
+});
+
+/**
+ * GET /api/registry/pods/:podId/agents/:name/plugins
+ * List OpenClaw plugins (local gateway).
+ */
+router.get('/pods/:podId/agents/:name/plugins', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+    const runtimeType = typeConfig?.runtime;
+    if (!runtimeType) {
+      return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+    if (runtimeType !== 'moltbot') {
+      return res.status(400).json({ error: 'Plugin management is only supported for OpenClaw' });
+    }
+
+    const plugins = await listOpenClawPlugins();
+    return res.json({ runtimeType, ...plugins });
+  } catch (error) {
+    console.error('Error fetching OpenClaw plugins:', error);
+    return res.status(500).json({ error: 'Failed to list plugins' });
+  }
+});
+
+/**
+ * POST /api/registry/pods/:podId/agents/:name/plugins/install
+ * Install an OpenClaw plugin in the local gateway.
+ */
+router.post('/pods/:podId/agents/:name/plugins/install', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { spec, pluginId, link = false, restart = false } = req.body || {};
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (!spec || typeof spec !== 'string') {
+      return res.status(400).json({ error: 'spec is required' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+    const runtimeType = typeConfig?.runtime;
+    if (!runtimeType) {
+      return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+    if (runtimeType !== 'moltbot') {
+      return res.status(400).json({ error: 'Plugin management is only supported for OpenClaw' });
+    }
+
+    const pluginReport = await listOpenClawPlugins();
+    const normalizedPluginId = normalizePluginIdentifier(pluginId);
+    const specNormalized = normalizePluginIdentifier(spec);
+    const specBase = getPluginSpecBase(spec);
+    const candidates = new Set([
+      normalizedPluginId,
+      specNormalized,
+      specBase,
+    ].filter(Boolean));
+    const existing = (pluginReport.plugins || []).find((plugin) => {
+      const pluginIdValue = normalizePluginIdentifier(plugin?.id);
+      const pluginNameValue = normalizePluginIdentifier(plugin?.name);
+      return candidates.has(pluginIdValue) || candidates.has(pluginNameValue);
+    });
+    if (existing) {
+      return res.status(409).json({
+        error: 'Plugin already installed',
+        plugin: existing,
+        alreadyInstalled: true,
+      });
+    }
+
+    const installResult = await installOpenClawPlugin({ spec, link: Boolean(link) });
+    let restartResult = null;
+    if (restart) {
+      restartResult = await restartDockerRuntime(runtimeType);
+    }
+
+    return res.json({
+      installed: true,
+      spec,
+      link: Boolean(link),
+      restartRequired: true,
+      output: installResult.stdout,
+      errorOutput: installResult.stderr,
+      command: installResult.command,
+      restart: restartResult,
+    });
+  } catch (error) {
+    console.error('Error installing OpenClaw plugin:', error);
+    return res.status(500).json({ error: 'Failed to install plugin' });
+  }
+});
+
+/**
  * PATCH /api/registry/pods/:podId/agents/:name
  * Update agent configuration in a pod
  */
 router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
-    const { config, scopes, status, modelPreferences } = req.body;
+    const {
+      config,
+      scopes,
+      status,
+      modelPreferences,
+      instanceId,
+      displayName,
+      instructions,
+      persona,
+    } = req.body;
+    const normalizedInstanceId = normalizeInstanceId(instanceId);
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -594,6 +1769,7 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
     const installation = await AgentInstallation.findOne({
       agentName: name.toLowerCase(),
       podId,
+      instanceId: normalizedInstanceId,
     });
 
     if (!installation) {
@@ -602,7 +1778,9 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
 
     // Update fields
     if (config) {
-      installation.config = new Map(Object.entries(config));
+      const existingConfig = normalizeConfigMap(installation.config) || {};
+      const nextConfig = { ...existingConfig, ...config };
+      installation.config = new Map(Object.entries(nextConfig));
     }
     if (scopes) {
       installation.scopes = scopes;
@@ -610,15 +1788,24 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
     if (status && ['active', 'paused'].includes(status)) {
       installation.status = status;
     }
+    if (displayName) {
+      installation.displayName = displayName;
+    }
 
     await installation.save();
 
     // Update agent profile if needed
-    if (status || modelPreferences) {
+    if (status || modelPreferences || displayName || instructions !== undefined || persona !== undefined) {
       const updates = {};
       if (status) updates.status = status;
       if (modelPreferences) updates.modelPreferences = modelPreferences;
-      await AgentProfile.updateOne({ agentId: name.toLowerCase(), podId }, updates);
+      if (displayName) updates.name = displayName;
+      if (instructions !== undefined) updates.instructions = instructions;
+      if (persona !== undefined) updates.persona = persona;
+      await AgentProfile.updateOne(
+        { agentId: buildAgentProfileId(name, normalizedInstanceId), podId },
+        updates,
+      );
     }
 
     res.json({
@@ -717,29 +1904,32 @@ router.post('/publish', auth, async (req, res) => {
  */
 router.post('/seed', auth, async (req, res) => {
   try {
+    // Get official agent configurations from AgentIdentityService
+    const agentTypes = AgentIdentityService.getAgentTypes();
+
     const defaultAgents = [
       {
-        agentName: 'commonly-bot',
-        displayName: 'Commonly Bot',
-        description: 'Posts summaries and integration highlights into pods',
+        agentName: 'commonly-summarizer',
+        displayName: agentTypes['commonly-summarizer']?.officialDisplayName || 'Commonly Summarizer',
+        description: agentTypes['commonly-summarizer']?.officialDescription
+          || 'Lightweight summarizer bot for integrations and pod activity',
         registry: 'commonly-official',
-        categories: ['productivity', 'communication'],
+        categories: ['commonly-summarizer', 'communication'],
         tags: ['summaries', 'integrations', 'platform'],
         verified: true,
         iconUrl: '/icons/commonly-bot.png',
         manifest: {
-          name: 'commonly-bot',
+          name: 'commonly-summarizer',
           version: '1.0.0',
-          capabilities: [
-            { name: 'summaries', description: 'Post summaries into pods' },
-            { name: 'integration-updates', description: 'Share integration activity' },
-          ],
+          capabilities: (agentTypes['commonly-summarizer']?.capabilities || ['notify', 'summarize', 'integrate'])
+            .map((c) => ({ name: c, description: c })),
           context: { required: ['context:read', 'summaries:read'] },
           models: {
             supported: ['gemini-2.0-flash'],
             recommended: 'gemini-2.0-flash',
           },
           runtime: {
+            // commonly-summarizer runs as an external runtime service
             type: 'standalone',
             connection: 'rest',
           },
@@ -749,23 +1939,29 @@ router.post('/seed', auth, async (req, res) => {
         stats: { installs: 0, rating: 0, ratingCount: 0 },
       },
       {
-        agentName: 'clawdbot-bridge',
-        displayName: 'Clawdbot Bridge',
-        description: 'Routes Commonly events through Clawdbot and posts responses into pods',
+        agentName: 'openclaw',
+        displayName: agentTypes.openclaw?.officialDisplayName || 'Cuz 🦞',
+        description: agentTypes.openclaw?.officialDescription
+          || 'Your friendly AI assistant powered by Claude - ready to chat, help, and remember!',
         registry: 'commonly-official',
-        categories: ['productivity', 'communication'],
-        tags: ['clawdbot', 'bridge', 'assistant'],
+        categories: ['openclaw', 'productivity', 'communication'],
+        // openclaw is the agent type for clawdbot/moltbot runtimes (Claude-powered)
+        tags: ['assistant', 'claude', 'ai', 'chat', 'memory', 'openclaw', 'clawdbot', 'moltbot'],
         verified: true,
-        iconUrl: null,
+        iconUrl: '/icons/cuz-lobster.png',
         manifest: {
-          name: 'clawdbot-bridge',
+          name: 'openclaw',
           version: '1.0.0',
-          capabilities: [
-            { name: 'assistant', description: 'Respond to integration summaries' },
-            { name: 'multi-agent', description: 'Bridge external Clawdbot runtimes' },
-          ],
+          capabilities: (agentTypes.openclaw?.capabilities || ['chat', 'memory', 'context', 'summarize', 'code'])
+            .map((c) => ({ name: c, description: c })),
           context: { required: ['context:read', 'summaries:read', 'messages:write'] },
+          models: {
+            // Gemini only for now (Claude/GPT support coming soon)
+            supported: ['gemini-2.0-flash', 'gemini-1.5-pro'],
+            recommended: 'gemini-2.0-flash',
+          },
           runtime: {
+            // openclaw uses standalone moltbot/clawdbot runtime
             type: 'standalone',
             connection: 'rest',
           },

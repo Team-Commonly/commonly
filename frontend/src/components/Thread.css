@@ -1,3 +1,8 @@
+.thread-wrapper {
+    width: 100%;
+    box-sizing: border-box;
+}
+
 .thread-comment-form {
     margin-top: 20px;
     margin-bottom: 30px;
@@ -12,12 +17,14 @@
     border-radius: 12px;
     padding: 10px 12px;
     box-shadow: 0 -2px 12px rgba(8, 12, 24, 0.35);
+    position: relative;
+    backdrop-filter: blur(6px);
 }
 
 .comment-composer-row {
     display: flex;
     align-items: flex-start;
-    gap: 8px;
+    gap: 10px;
 }
 
 .comment-tools {
@@ -199,6 +206,75 @@
     font-size: 12px;
     color: #94a3b8;
     text-align: right;
+}
+
+@media (max-width: 600px) {
+    .comment-composer {
+        position: sticky;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        border-radius: 16px 16px 0 0;
+        padding: 12px 14px;
+        box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    .comment-send-button {
+        min-height: 44px;
+    }
+}
+
+.mention-dropdown {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 52px;
+    z-index: 1200;
+    background: rgba(15, 23, 42, 0.98);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(8, 12, 24, 0.45);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mention-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: none;
+    background: transparent;
+    padding: 8px 10px;
+    border-radius: 10px;
+    color: #e2e8f0;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.mention-item:hover,
+.mention-item.active {
+    background: rgba(37, 99, 235, 0.18);
+}
+
+.mention-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.mention-item-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.mention-item-subtitle {
+    font-size: 12px;
+    color: rgba(148, 163, 184, 0.85);
 }
 
 .post-header {

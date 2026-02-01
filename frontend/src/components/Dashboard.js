@@ -14,6 +14,7 @@ import {
     SmartToy as AgentsIcon,
     Timeline as ActivityIcon,
     Apps as AppsIcon,
+    AutoAwesome as SkillsIcon,
 } from '@mui/icons-material';
 import { getAvatarColor } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
@@ -140,6 +141,17 @@ const Dashboard = () => {
                         <AgentsIcon />
                     </ListItemIcon>
                     <ListItemText primary="Agents" />
+                </ListItem>
+
+                <ListItem
+                    button
+                    onClick={() => handleNavigation('/skills')}
+                    selected={location.pathname === '/skills'}
+                >
+                    <ListItemIcon>
+                        <SkillsIcon />
+                    </ListItemIcon>
+                    <ListItemText primary="Skills" />
                 </ListItem>
 
                 <ListItem

@@ -34,7 +34,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
     }, [requireAdmin, isAuthenticated]);
 
     if (!isAuthenticated) {
-        return <Navigate to="/" replace />;
+        return <Navigate to="/login" replace />;
     }
 
     if (loading) {

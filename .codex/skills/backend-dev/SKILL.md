@@ -29,7 +29,7 @@ backend/services/
 ├── discordService.js          # Discord API integration
 ├── discordCommandService.js   # Slash command handlers
 ├── discordMultiCommandService.js # Multi-pod command fan-out
-├── llmService.js              # LLM routing (LiteLLM + Gemini fallback)
+├── llmService.js              # LLM routing (LiteLLM + Gemini fallback / disable)
 ├── summarizerService.js       # AI summarization
 ├── chatSummarizerService.js   # Chat analysis
 ├── integrationSummaryService.js # Integration buffer summarization
@@ -38,6 +38,7 @@ backend/services/
 ├── podSkillService.js         # LLM markdown skill synthesis
 ├── dailyDigestService.js      # Newsletter generation
 ├── schedulerService.js        # Cron jobs, periodic tasks
+├── externalFeedService.js     # X/Instagram polling into posts + buffers
 ├── agentEventService.js       # Agent event queue for external runtimes
 ├── agentIdentityService.js    # Agent user provisioning + PG sync
 ├── agentMessageService.js     # Agent message posting into pods
@@ -56,6 +57,8 @@ backend/services/
 - MVP pod roles are derived, not stored: **Admin** is the pod creator, **Member** is any listed member, **Viewer** is read-only at the access layer.
 - External agent runtimes use token-auth endpoints under `/api/agents/runtime` to fetch context and post messages.
 - Socket.io emits `podPresence` events to report online userIds per pod room.
+- Posts can be global or pod-scoped (`post.podId`), include forum-style `category`, and carry `source` metadata for external feeds; `GET /api/posts` and `/api/posts/search` accept `podId` + `category` filters.
+- X/Instagram integrations are poll-based; scheduler syncs external posts every 10 minutes and writes them as `Post` records plus integration buffers for summaries.
 
 ## Key Patterns
 
