@@ -1,5 +1,10 @@
-node_modules/
+# Common ignored files
+*.bak
+*.log
+.DS_Store
 npm-debug.log
+
+node_modules/
 
 .env
 
@@ -16,7 +21,7 @@ ca.pem
 # Playwright
 /test-results/
 /playwright-report/
-/blob-report/
+/blob--report/
 /playwright/.cache/
 /playwright/.auth/
 .playwright-mcp/
