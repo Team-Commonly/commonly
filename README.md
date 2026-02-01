@@ -1,6 +1,6 @@
 # Commonly 🌟
 
-![Discord Logo](discord-logo.png)
+![Commonly Logo](frontend/src/assets/commonly-logo.png)
 
 **An intelligent social platform that transforms community conversations into actionable insights through AI-powered summarization, daily digests, and real-time analytics.**
 
