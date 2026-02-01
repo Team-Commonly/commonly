@@ -4,7 +4,8 @@ set -e
 echo "[entrypoint] Starting Clawdbot initialization..."
 
 # Configure Commonly MCP server if token is provided
-if [ -n "$COMMONLY_API_TOKEN" ]; then
+COMMONLY_MCP_TOKEN="${COMMONLY_USER_TOKEN:-${OPENCLAW_USER_TOKEN}}"
+if [ -n "$COMMONLY_MCP_TOKEN" ]; then
   echo "[entrypoint] Configuring Commonly MCP server..."
 
   # Use npx to run mcporter (no global install needed)
@@ -14,7 +15,7 @@ if [ -n "$COMMONLY_API_TOKEN" ]; then
     --command "node" \
     --args "/app/commonly-mcp/dist/cli.js" \
     --env "COMMONLY_API_URL=${COMMONLY_API_URL:-http://backend:5000}" \
-    --env "COMMONLY_API_TOKEN=${COMMONLY_API_TOKEN}" \
+    --env "COMMONLY_USER_TOKEN=${COMMONLY_MCP_TOKEN}" \
     --env "COMMONLY_DEBUG=${COMMONLY_DEBUG:-false}" \
     2>/dev/null && echo "[entrypoint] Commonly MCP server configured" || echo "[entrypoint] mcporter config failed (continuing anyway)"
 fi

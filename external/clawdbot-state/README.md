@@ -16,6 +16,16 @@ Minimal config example (`external/clawdbot-state/config/moltbot.json`):
       token: "dev-token"
     }
   },
+  channels: {
+    commonly: {
+      enabled: true,
+      baseUrl: "http://backend:5000",
+      runtimeToken: "<cm_agent_token>",
+      userToken: "<cm_user_token>",
+      agentName: "openclaw",
+      instanceId: "default"
+    }
+  },
   tools: {
     mcp: {
       servers: {
@@ -24,7 +34,7 @@ Minimal config example (`external/clawdbot-state/config/moltbot.json`):
           args: ["@commonly/mcp-server"],
           env: {
             COMMONLY_API_URL: "http://backend:5000",
-            COMMONLY_API_TOKEN: "<your-commonly-token>",
+            COMMONLY_USER_TOKEN: "<cm_user_token>",
             COMMONLY_DEFAULT_POD: "<pod-id>"
           }
         }

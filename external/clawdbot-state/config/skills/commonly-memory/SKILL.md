@@ -2,7 +2,7 @@
 name: commonly-memory
 description: Read and write to Commonly pod memory. Store insights from pod summaries and chats in MEMORY.md.
 homepage: https://commonly.cc
-metadata: {"moltbot":{"emoji":"🧠","requires":{"bins":["curl","jq"],"env":["COMMONLY_API_TOKEN"]}}}
+metadata: {"moltbot":{"emoji":"🧠","requires":{"bins":["curl","jq"],"env":["COMMONLY_USER_TOKEN"]}}}
 ---
 
 # Commonly Memory Skill
@@ -18,7 +18,8 @@ This skill enables Clawdbot to:
 ## Environment
 
 - `COMMONLY_API_URL` - Backend URL (default: `http://backend:5000`)
-- `COMMONLY_API_TOKEN` - Agent runtime token (format: `cm_agent_...`)
+- `COMMONLY_USER_TOKEN` - Commonly user token (format: `cm_...`)
+  - If you only have `OPENCLAW_USER_TOKEN`, set `COMMONLY_USER_TOKEN=$OPENCLAW_USER_TOKEN` before starting the gateway.
 
 ## Read Pod Context
 
@@ -28,7 +29,7 @@ Get assembled context for a pod including memory, skills, and summaries.
 # Get full context for a pod
 POD_ID="your-pod-id"
 curl -s "${COMMONLY_API_URL:-http://backend:5000}/api/v1/context/${POD_ID}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" | jq
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" | jq
 ```
 
 With a task for relevant matching:
@@ -36,7 +37,7 @@ With a task for relevant matching:
 POD_ID="your-pod-id"
 TASK="what are the team's priorities"
 curl -s "${COMMONLY_API_URL:-http://backend:5000}/api/v1/context/${POD_ID}?task=${TASK}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" | jq
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" | jq
 ```
 
 ## Read Pod Memory File
@@ -47,16 +48,16 @@ Read MEMORY.md, SKILLS.md, or daily logs from a pod.
 # Read pod memory
 POD_ID="your-pod-id"
 curl -s "${COMMONLY_API_URL:-http://backend:5000}/api/v1/pods/${POD_ID}/memory/MEMORY.md" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" | jq -r '.content'
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" | jq -r '.content'
 
 # Read pod skills
 curl -s "${COMMONLY_API_URL:-http://backend:5000}/api/v1/pods/${POD_ID}/memory/SKILLS.md" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" | jq -r '.content'
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" | jq -r '.content'
 
 # Read today's activity log
 TODAY=$(date +%Y-%m-%d)
 curl -s "${COMMONLY_API_URL:-http://backend:5000}/api/v1/pods/${POD_ID}/memory/memory/${TODAY}.md" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" | jq -r '.content'
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" | jq -r '.content'
 ```
 
 ## Get Recent Summaries
@@ -68,7 +69,7 @@ POD_ID="your-pod-id"
 HOURS=24
 LIMIT=10
 curl -s "${COMMONLY_API_URL:-http://backend:5000}/api/v1/pods/${POD_ID}/summaries?hours=${HOURS}&limit=${LIMIT}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" | jq
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" | jq
 ```
 
 ## Search Pod Memory
@@ -79,7 +80,7 @@ Search across all pod assets using hybrid vector + keyword search.
 POD_ID="your-pod-id"
 QUERY="deployment process"
 curl -s -G "${COMMONLY_API_URL:-http://backend:5000}/api/v1/search/${POD_ID}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" \
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" \
   --data-urlencode "q=${QUERY}" \
   --data-urlencode "limit=5" | jq
 ```
@@ -92,7 +93,7 @@ Append to the pod's daily log, memory, or create a skill.
 ```bash
 POD_ID="your-pod-id"
 curl -s -X POST "${COMMONLY_API_URL:-http://backend:5000}/api/v1/memory/${POD_ID}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" \
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "target": "daily",
@@ -106,7 +107,7 @@ curl -s -X POST "${COMMONLY_API_URL:-http://backend:5000}/api/v1/memory/${POD_ID
 ```bash
 POD_ID="your-pod-id"
 curl -s -X POST "${COMMONLY_API_URL:-http://backend:5000}/api/v1/memory/${POD_ID}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" \
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "target": "memory",
@@ -120,7 +121,7 @@ curl -s -X POST "${COMMONLY_API_URL:-http://backend:5000}/api/v1/memory/${POD_ID
 ```bash
 POD_ID="your-pod-id"
 curl -s -X POST "${COMMONLY_API_URL:-http://backend:5000}/api/v1/memory/${POD_ID}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" \
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "target": "skill",
@@ -144,7 +145,7 @@ COMMONLY_API_URL="${COMMONLY_API_URL:-http://backend:5000}"
 
 echo "Fetching pod context..."
 CONTEXT=$(curl -s "${COMMONLY_API_URL}/api/v1/context/${POD_ID}" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}")
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}")
 
 # Extract key information
 POD_NAME=$(echo "$CONTEXT" | jq -r '.pod.name // "Unknown Pod"')
@@ -181,7 +182,7 @@ During heartbeat or daily check, sync pod insights:
 ```bash
 # 1. Get recent summaries
 SUMMARIES=$(curl -s "${COMMONLY_API_URL:-http://backend:5000}/api/v1/pods/${POD_ID}/summaries?hours=24&limit=5" \
-  -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" | jq -r '.summaries')
+  -H "Authorization: Bearer ${COMMONLY_USER_TOKEN}" | jq -r '.summaries')
 
 # 2. Extract key topics (using jq)
 TOPICS=$(echo "$SUMMARIES" | jq -r '.[].content' | head -500)
