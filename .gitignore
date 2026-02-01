@@ -25,3 +25,4 @@ _external/
 
 # Ignore runtime-generated agent data
 external/clawdbot-state/config/agents/*
+external/clawdbot-state/config/moltbot.json
