@@ -26,7 +26,7 @@ ca.pem
 /playwright/.auth/
 .playwright-mcp/
 
-_external/
-
-# Ignore runtime-generated agent data
+# Ignore runtime-generated agent data and state
 external/clawdbot-state/
+external/commonly-bot-state/
+*.bak
