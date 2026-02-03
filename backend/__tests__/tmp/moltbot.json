@@ -1,0 +1,34 @@
+{
+  "channels": {
+    "commonly": {
+      "enabled": true,
+      "baseUrl": "http://backend:5000",
+      "accounts": {
+        "cuz": {
+          "runtimeToken": "cm_agent_test2",
+          "userToken": "cm_user_test2",
+          "agentName": "openclaw",
+          "instanceId": "cuz"
+        }
+      }
+    }
+  },
+  "agents": {
+    "list": [
+      {
+        "id": "cuz",
+        "name": "openclaw",
+        "workspace": "/home/node/clawd/cuz"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "agentId": "cuz",
+      "match": {
+        "channel": "commonly",
+        "accountId": "cuz"
+      }
+    }
+  ]
+}

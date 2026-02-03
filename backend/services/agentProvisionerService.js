@@ -113,9 +113,9 @@ const provisionOpenClawAccount = ({
     const minutes = Number(payload.everyMinutes || payload.every || payload.intervalMinutes);
     const every = Number.isFinite(minutes) && minutes > 0 ? `${minutes}m` : payload.every;
     return {
-      every: every || '10m',
+      every: every || '30m', // 30 min default (matches OpenClaw default)
       prompt: payload.prompt || undefined,
-      target: payload.target || 'last',
+      target: payload.target || 'commonly', // Default to Commonly for Commonly-installed agents
       session: payload.session || undefined,
     };
   };
@@ -202,6 +202,7 @@ const provisionAgentRuntime = ({
   userToken,
   baseUrl,
   displayName,
+  heartbeat,
 }) => {
   if (runtimeType === 'moltbot') {
     const accountId = resolveOpenClawAccountId({ agentName, instanceId });
@@ -213,6 +214,7 @@ const provisionAgentRuntime = ({
       instanceId,
       baseUrl,
       displayName,
+      heartbeat,
     });
   }
 
