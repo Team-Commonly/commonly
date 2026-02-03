@@ -13,7 +13,8 @@ class AgentWebSocketService {
   constructor() {
     this.io = null;
     this.agentNamespace = null;
-    this.connectedAgents = new Map(); // agentKey -> socket
+    this.connectedAgents = new Map(); // agentKey -> { socket, lastPong }
+    this.pingInterval = null;
   }
 
   /**
@@ -53,8 +54,11 @@ class AgentWebSocketService {
     this.agentNamespace.on('connection', (socket) => {
       console.log(`[agent-ws] Agent connected: ${socket.agentKey}`);
 
-      // Store connection
-      this.connectedAgents.set(socket.agentKey, socket);
+      // Store connection with lastPong timestamp
+      this.connectedAgents.set(socket.agentKey, {
+        socket,
+        lastPong: Date.now(),
+      });
 
       // Join agent-specific room
       socket.join(`agent:${socket.agentKey}`);
@@ -79,6 +83,14 @@ class AgentWebSocketService {
           socket.leave(`pod:${podId}`);
           socket.subscribedPods.delete(podId);
         });
+      });
+
+      // Handle pong responses for connection liveness
+      socket.on('pong', () => {
+        const data = this.connectedAgents.get(socket.agentKey);
+        if (data) {
+          data.lastPong = Date.now();
+        }
       });
 
       // Handle acknowledgment
@@ -107,7 +119,52 @@ class AgentWebSocketService {
       });
     });
 
+    // Start ping interval for connection liveness detection
+    this.startPingInterval();
+
     console.log('[agent-ws] Agent WebSocket namespace initialized on /agents');
+  }
+
+  /**
+   * Start periodic ping to detect stale connections
+   */
+  startPingInterval() {
+    // Clear existing interval if any
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
+
+    // Ping every 30 seconds
+    this.pingInterval = setInterval(() => {
+      const now = Date.now();
+      const staleThreshold = 90000; // 90 seconds without pong = stale
+
+      this.connectedAgents.forEach((data, agentKey) => {
+        const { socket, lastPong } = data;
+
+        // Check for stale connections
+        if (now - lastPong > staleThreshold) {
+          console.log(`[agent-ws] Stale connection detected: ${agentKey} (last pong ${Math.round((now - lastPong) / 1000)}s ago)`);
+          // Don't forcibly disconnect - let Socket.io handle it
+          // Just log for monitoring
+        }
+
+        // Send ping to all connected agents
+        if (socket?.connected) {
+          socket.emit('ping');
+        }
+      });
+    }, 30000);
+  }
+
+  /**
+   * Stop ping interval (for cleanup)
+   */
+  stopPingInterval() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
   }
 
   /**
