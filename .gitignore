@@ -30,3 +30,5 @@ ca.pem
 external/clawdbot-state/
 external/commonly-bot-state/
 *.bak
+
+_external/
