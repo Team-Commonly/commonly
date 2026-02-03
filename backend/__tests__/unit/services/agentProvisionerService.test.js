@@ -99,4 +99,133 @@ describe('agentProvisionerService', () => {
     const parsed = JSON.parse(raw);
     expect(parsed.accounts.default.runtimeToken).toBe('cm_agent_summary');
   });
+
+  describe('heartbeat configuration', () => {
+    it('sets default heartbeat target to "commonly"', () => {
+      provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        heartbeat: { enabled: true },
+      });
+
+      const raw = fs.readFileSync(openclawConfigPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
+
+      expect(agentEntry.heartbeat).toBeDefined();
+      expect(agentEntry.heartbeat.target).toBe('commonly');
+    });
+
+    it('sets default heartbeat interval to 30m', () => {
+      provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        heartbeat: { enabled: true },
+      });
+
+      const raw = fs.readFileSync(openclawConfigPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
+
+      expect(agentEntry.heartbeat.every).toBe('30m');
+    });
+
+    it('respects custom heartbeat target', () => {
+      provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        heartbeat: { enabled: true, target: 'discord' },
+      });
+
+      const raw = fs.readFileSync(openclawConfigPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
+
+      expect(agentEntry.heartbeat.target).toBe('discord');
+    });
+
+    it('respects custom heartbeat interval in minutes', () => {
+      provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        heartbeat: { enabled: true, everyMinutes: 10 },
+      });
+
+      const raw = fs.readFileSync(openclawConfigPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
+
+      expect(agentEntry.heartbeat.every).toBe('10m');
+    });
+
+    it('does not add heartbeat config when disabled', () => {
+      provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        heartbeat: { enabled: false },
+      });
+
+      const raw = fs.readFileSync(openclawConfigPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
+
+      expect(agentEntry.heartbeat).toBeUndefined();
+    });
+
+    it('removes existing heartbeat when disabled', () => {
+      // First provision with heartbeat
+      provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        heartbeat: { enabled: true },
+      });
+
+      // Verify it was added
+      let raw = fs.readFileSync(openclawConfigPath, 'utf8');
+      let parsed = JSON.parse(raw);
+      let agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
+      expect(agentEntry.heartbeat).toBeDefined();
+
+      // Re-provision with heartbeat disabled
+      provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test2',
+        userToken: 'cm_user_test2',
+        baseUrl: 'http://backend:5000',
+        heartbeat: { enabled: false },
+      });
+
+      // Verify it was removed
+      raw = fs.readFileSync(openclawConfigPath, 'utf8');
+      parsed = JSON.parse(raw);
+      agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
+      expect(agentEntry.heartbeat).toBeUndefined();
+    });
+  });
 });
