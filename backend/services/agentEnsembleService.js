@@ -404,20 +404,20 @@ class AgentEnsembleService {
     });
 
     if (state) {
-      // Prevent participant changes during active discussion
+      // Allow adding participants but not removing/reordering during active discussion
       if (state.status === 'active' && config.participants) {
         const currentCount = state.participants?.length || 0;
         const newCount = config.participants?.length || 0;
 
-        // Check if participants are being modified
-        if (currentCount !== newCount) {
+        // Prevent removing participants
+        if (newCount < currentCount) {
           throw new Error(
-            'Cannot add or remove participants during active discussion. Please stop the discussion first.',
+            'Cannot remove participants during active discussion. Please stop the discussion first.',
           );
         }
 
-        // Check if participant order/identity is changing
-        const changed = config.participants.some((p, i) => {
+        // Check if existing participants are being modified (only check existing ones)
+        const existingChanged = config.participants.slice(0, currentCount).some((p, i) => {
           const current = state.participants[i];
           return (
             p.agentType !== current.agentType ||
@@ -425,15 +425,35 @@ class AgentEnsembleService {
           );
         });
 
-        if (changed) {
-          throw new Error('Cannot modify participant identities during active discussion');
+        if (existingChanged) {
+          throw new Error('Cannot modify existing participant identities during active discussion');
+        }
+
+        // If adding participants, ensure they're added to the pod
+        if (newCount > currentCount) {
+          const newParticipants = config.participants.slice(currentCount);
+          await Promise.all(
+            newParticipants.map(async (p) => {
+              const agentUser = await AgentIdentityService.getOrCreateAgentUser(
+                p.agentType,
+                { instanceId: p.instanceId || 'default' },
+              );
+              await AgentIdentityService.ensureAgentInPod(agentUser, podId);
+            }),
+          );
         }
       }
 
       if (config.topic !== undefined) state.topic = config.topic;
-      // Only allow participant changes if not active
-      if (config.participants && state.status !== 'active') {
-        state.participants = config.participants;
+      // Allow adding participants even if active, but not removing
+      if (config.participants) {
+        if (state.status === 'active') {
+          // Only allow adding participants (already validated above)
+          state.participants = config.participants;
+        } else {
+          // Full update allowed when not active
+          state.participants = config.participants;
+        }
       }
       if (config.stopConditions) {
         state.stopConditions = { ...state.stopConditions, ...config.stopConditions };
@@ -524,9 +544,21 @@ class AgentEnsembleService {
     await Promise.allSettled(
       dueStates.map(async (state) => {
         try {
+          // Check if there's already an active discussion
+          const existing = await AgentEnsembleState.findActiveForPod(state.podId);
+          if (existing) {
+            // Complete the active discussion before starting new one
+            console.log(`[ensemble] Auto-completing active discussion before starting scheduled one in pod ${state.podId}`);
+            await AgentEnsembleService.completeDiscussion(existing._id, 'scheduled_restart');
+          }
+
+          // Start new discussion
           await AgentEnsembleService.startDiscussion(state.podId, {
             topic: state.topic,
+            participants: state.participants,
           });
+
+          // Update schedule
           state.schedule.lastScheduledAt = new Date();
           state.schedule.nextScheduledAt = AgentEnsembleService.resolveNextScheduledAt(state.schedule);
           await state.save();
