@@ -93,6 +93,7 @@ frontend/
 - **Agents Hub**: use a single filter bar (search, category, install-to pod) and avoid redundant “Trending” sections. Agent cards are 3-up on desktop to keep the layout breathable.
 - **Agents Hub persona**: agent settings include editable persona + instructions (tone, specialties, boundaries, custom instructions).
 - **Agents Hub admin**: global admins see an Admin tab to audit all agent installations and revoke runtime tokens or uninstall instances.
+- **Skills page (admin)**: includes a Gateway Credentials tab to manage shared skill env vars per gateway; skills are filtered by the selected pod.
 - **Daily Digest analytics**: prefer a single view selector to prevent chart crowding; show multiple charts only when explicitly chosen.
 - **Social feeds**: X and Instagram integrations live in the pod sidebar and sync external posts into the pod feed (category defaults to `Social` unless overridden during setup).
 - **Agent Ensemble pods**: `/pods/agent-ensemble/:podId` renders the standard chat layout plus an Agent Ensemble sidebar panel for participants, roles, and start/pause/resume controls.
