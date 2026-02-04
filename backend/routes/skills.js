@@ -5,6 +5,7 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
+const Gateway = require('../models/Gateway');
 const PodAssetService = require('../services/podAssetService');
 const SkillsCatalogService = require('../services/skillsCatalogService');
 const {
@@ -56,11 +57,12 @@ const ensurePodAccess = async (podId, userId) => {
   return pod;
 };
 
-const readOpenClawConfig = () => {
-  const configPath = getOpenClawConfigPath();
-  if (!configPath || !fs.existsSync(configPath)) return {};
+const readOpenClawConfig = (configPath) => {
+  const resolvedPath = configPath || getOpenClawConfigPath();
+  if (!resolvedPath) return {};
+  if (!fs.existsSync(resolvedPath)) return {};
   try {
-    const raw = fs.readFileSync(configPath, 'utf8');
+    const raw = fs.readFileSync(resolvedPath, 'utf8');
     if (!raw.trim()) return {};
     return JSON5.parse(raw);
   } catch (error) {
@@ -69,8 +71,8 @@ const readOpenClawConfig = () => {
   }
 };
 
-const readGatewaySkillEntries = () => {
-  const config = readOpenClawConfig();
+const readGatewaySkillEntries = (configPath) => {
+  const config = readOpenClawConfig(configPath);
   const entries = config?.skills?.entries || {};
   const output = {};
   Object.entries(entries).forEach(([skillKey, entry]) => {
@@ -79,6 +81,23 @@ const readGatewaySkillEntries = () => {
     output[skillKey] = { envKeys: keys };
   });
   return output;
+};
+
+const ensureDefaultGateway = async (userId) => {
+  const existing = await Gateway.findOne({ slug: 'default' });
+  if (existing) return existing;
+  const configPath = getOpenClawConfigPath();
+  const gateway = await Gateway.create({
+    name: 'Local Gateway',
+    slug: 'default',
+    type: 'openclaw',
+    mode: 'local',
+    baseUrl: '',
+    configPath: configPath || '',
+    status: 'active',
+    createdBy: userId || undefined,
+  });
+  return gateway;
 };
 
 // GET /api/skills/catalog?source=awesome
@@ -135,9 +154,16 @@ router.get('/catalog', auth, async (req, res) => {
 // GET /api/skills/gateway-credentials
 router.get('/gateway-credentials', auth, adminAuth, async (req, res) => {
   try {
-    const entries = readGatewaySkillEntries();
+    const gatewayId = String(req.query.gatewayId || '').trim();
+    const gateway = gatewayId
+      ? await Gateway.findById(gatewayId).lean()
+      : await ensureDefaultGateway(getUserId(req));
+    if (!gateway) {
+      return res.status(404).json({ error: 'Gateway not found' });
+    }
+    const entries = readGatewaySkillEntries(gateway.configPath);
     return res.json({
-      gatewayId: String(req.query.gatewayId || 'default'),
+      gatewayId: gateway._id?.toString(),
       entries,
     });
   } catch (error) {
@@ -149,13 +175,23 @@ router.get('/gateway-credentials', auth, adminAuth, async (req, res) => {
 // PATCH /api/skills/gateway-credentials
 router.patch('/gateway-credentials', auth, adminAuth, async (req, res) => {
   try {
+    const gatewayId = String(req.query.gatewayId || '').trim() || req.body?.gatewayId;
     const entries = req.body?.entries;
     if (!entries || typeof entries !== 'object') {
       return res.status(400).json({ error: 'entries is required' });
     }
-    syncOpenClawSkillEnv({ skillEnv: entries });
-    const updated = readGatewaySkillEntries();
-    return res.json({ gatewayId: String(req.query.gatewayId || 'default'), entries: updated });
+    const gateway = gatewayId
+      ? await Gateway.findById(gatewayId).lean()
+      : await ensureDefaultGateway(getUserId(req));
+    if (!gateway) {
+      return res.status(404).json({ error: 'Gateway not found' });
+    }
+    if (gateway.mode !== 'local') {
+      return res.status(400).json({ error: 'Gateway is not managed by this host' });
+    }
+    syncOpenClawSkillEnv({ skillEnv: entries, configPath: gateway.configPath });
+    const updated = readGatewaySkillEntries(gateway.configPath);
+    return res.json({ gatewayId: gateway._id?.toString(), entries: updated });
   } catch (error) {
     console.error('Error updating gateway credentials:', error);
     return res.status(500).json({ error: 'Failed to update gateway credentials' });
