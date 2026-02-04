@@ -25,7 +25,23 @@ Populate this file via a one-time export or UI ingestion process.
 
 Backend endpoints:
 - `GET /api/skills/catalog?source=awesome`
+- `GET /api/skills/requirements?sourceUrl=...` (credential hints)
 - `POST /api/skills/import` (requires `podId`, `name`, `content`)
+- `GET /api/skills/gateway-credentials?gatewayId=...` (admin)
+- `PATCH /api/skills/gateway-credentials` (admin, per gateway)
+- `GET /api/gateways` (admin gateway registry)
+
+## Gateway Credentials (Shared)
+
+Skill credentials apply to a **gateway**, not an agent. The Skills page exposes a
+Gateway Credentials tab (admin-only) that stores environment variables under
+`skills.entries` in the gateway config. These values are shared by every agent
+running on that gateway.
+
+- The gateway credential skill dropdown filters to skills installed in the
+  currently selected pod (falls back to the full catalog if no pod is selected).
+- Local gateways store credentials in the gateway config file.
+- Remote/K8s gateways are listed but require gateway-side write support.
 
 ## Generating the Catalog Index
 
