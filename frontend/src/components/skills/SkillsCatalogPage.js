@@ -121,6 +121,21 @@ const SkillsCatalogPage = () => {
     return Array.from(map.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [catalogItems]);
 
+  const gatewaySkillOptions = useMemo(() => {
+    if (selectedPodId && installedItems.length > 0) {
+      const map = new Map();
+      installedItems.forEach((item) => {
+        if (!item?.name) return;
+        const key = normalizeSkillKey(item.name);
+        if (!map.has(key)) {
+          map.set(key, item);
+        }
+      });
+      return Array.from(map.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }
+    return catalogSkillOptions;
+  }, [selectedPodId, installedItems, catalogSkillOptions]);
+
   const getCategory = (item) => {
     if (item?.category) return item.category;
     return 'Other';
@@ -287,7 +302,7 @@ const SkillsCatalogPage = () => {
     setGatewayHintError('');
     setGatewayHintList([]);
     try {
-      const selected = catalogSkillOptions.find(
+      const selected = gatewaySkillOptions.find(
         (item) => normalizeSkillKey(item?.name) === normalizeSkillKey(skillName),
       );
       const sourceUrl = selected?.sourceUrl;
@@ -469,10 +484,10 @@ const SkillsCatalogPage = () => {
 
   useEffect(() => {
     if (activeTab !== 'gateway') return;
-    if (!gatewaySkillKey && catalogSkillOptions.length > 0) {
-      setGatewaySkillKey(catalogSkillOptions[0].name);
+    if (!gatewaySkillKey && gatewaySkillOptions.length > 0) {
+      setGatewaySkillKey(gatewaySkillOptions[0].name);
     }
-  }, [activeTab, gatewaySkillKey, catalogSkillOptions]);
+  }, [activeTab, gatewaySkillKey, gatewaySkillOptions]);
 
   useEffect(() => {
     if (activeTab !== 'gateway') return;
@@ -814,11 +829,20 @@ const SkillsCatalogPage = () => {
                   Add Gateway
                 </Button>
               </Box>
-              {gatewayLoading && <Typography>Loading gateway credentials...</Typography>}
+            {gatewayLoading && <Typography>Loading gateway credentials...</Typography>}
             {gatewayError && <Typography color="error">{gatewayError}</Typography>}
             {!gatewayLoading && (
               <Stack spacing={2}>
-              <FormControl fullWidth>
+                {selectedPodId ? (
+                  <Typography variant="body2" color="text.secondary">
+                    Showing skills installed in this pod. Use the pod selector above to change scope.
+                  </Typography>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    Select a pod to filter skills to installed ones.
+                  </Typography>
+                )}
+                <FormControl fullWidth>
                 <InputLabel id="gateway-select-label">Gateway</InputLabel>
                 <Select
                   labelId="gateway-select-label"
@@ -841,7 +865,7 @@ const SkillsCatalogPage = () => {
                     value={gatewaySkillKey}
                     onChange={(event) => setGatewaySkillKey(event.target.value)}
                   >
-                    {catalogSkillOptions.map((item) => (
+                    {gatewaySkillOptions.map((item) => (
                       <MenuItem key={item.name} value={item.name}>
                         {item.name}
                       </MenuItem>
