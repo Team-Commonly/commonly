@@ -72,6 +72,18 @@ const SkillsCatalogPage = () => {
   const [gatewayCustomValue, setGatewayCustomValue] = useState('');
   const [gatewaySaving, setGatewaySaving] = useState(false);
   const [gatewayList, setGatewayList] = useState([]);
+  const [gatewayDialogOpen, setGatewayDialogOpen] = useState(false);
+  const [gatewayForm, setGatewayForm] = useState({
+    name: '',
+    slug: '',
+    mode: 'local',
+    baseUrl: '',
+    configPath: '',
+    namespace: 'commonly-dev',
+    image: '',
+  });
+  const [gatewayCreateLoading, setGatewayCreateLoading] = useState(false);
+  const [gatewayCreateError, setGatewayCreateError] = useState('');
   const [importedSkills, setImportedSkills] = useState(new Set());
   const [installedItems, setInstalledItems] = useState([]);
   const [importState, setImportState] = useState({
@@ -354,6 +366,54 @@ const SkillsCatalogPage = () => {
       alert(error.response?.data?.error || 'Failed to save credentials');
     } finally {
       setGatewaySaving(false);
+    }
+  };
+
+  const openGatewayDialog = () => {
+    setGatewayCreateError('');
+    setGatewayDialogOpen(true);
+  };
+
+  const closeGatewayDialog = () => {
+    setGatewayDialogOpen(false);
+  };
+
+  const handleCreateGateway = async () => {
+    if (!gatewayForm.name.trim()) {
+      setGatewayCreateError('Name is required.');
+      return;
+    }
+    setGatewayCreateLoading(true);
+    setGatewayCreateError('');
+    try {
+      const payload = {
+        name: gatewayForm.name.trim(),
+        slug: gatewayForm.slug.trim() || undefined,
+        mode: gatewayForm.mode,
+        baseUrl: gatewayForm.baseUrl.trim(),
+        configPath: gatewayForm.configPath.trim(),
+        metadata: {
+          namespace: gatewayForm.namespace.trim(),
+          image: gatewayForm.image.trim(),
+        },
+      };
+      await axios.post('/api/gateways', payload, getAuthHeaders());
+      await fetchGatewayCredentials();
+      setGatewayDialogOpen(false);
+      setGatewayForm({
+        name: '',
+        slug: '',
+        mode: 'local',
+        baseUrl: '',
+        configPath: '',
+        namespace: 'commonly-dev',
+        image: '',
+      });
+    } catch (error) {
+      console.error('Failed to create gateway:', error);
+      setGatewayCreateError(error.response?.data?.error || 'Failed to create gateway');
+    } finally {
+      setGatewayCreateLoading(false);
     }
   };
 
@@ -745,29 +805,34 @@ const SkillsCatalogPage = () => {
             <Typography variant="h6" sx={{ mb: 1 }}>
               Gateway Skill Credentials
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              These credentials apply to all agents running on this host gateway. Store only what you intend
-              to share across agents.
-            </Typography>
-            {gatewayLoading && <Typography>Loading gateway credentials...</Typography>}
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                These credentials apply to all agents running on this host gateway. Store only what you intend
+                to share across agents.
+              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+                <Button variant="outlined" onClick={openGatewayDialog}>
+                  Add Gateway
+                </Button>
+              </Box>
+              {gatewayLoading && <Typography>Loading gateway credentials...</Typography>}
             {gatewayError && <Typography color="error">{gatewayError}</Typography>}
             {!gatewayLoading && (
               <Stack spacing={2}>
-                <FormControl fullWidth>
-                  <InputLabel id="gateway-select-label">Gateway</InputLabel>
-                  <Select
-                    labelId="gateway-select-label"
-                    label="Gateway"
-                    value={gatewayId}
-                    onChange={(event) => setGatewayId(event.target.value)}
-                  >
-                    {gatewayList.map((gateway) => (
-                      <MenuItem key={gateway._id} value={gateway._id}>
-                        {gateway.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+              <FormControl fullWidth>
+                <InputLabel id="gateway-select-label">Gateway</InputLabel>
+                <Select
+                  labelId="gateway-select-label"
+                  label="Gateway"
+                  value={gatewayId}
+                  onChange={(event) => setGatewayId(event.target.value)}
+                >
+                  {gatewayList.map((gateway) => (
+                    <MenuItem key={gateway._id} value={gateway._id}>
+                      {gateway.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
                 <FormControl fullWidth>
                   <InputLabel id="gateway-skill-label">Skill</InputLabel>
                   <Select
@@ -1018,6 +1083,70 @@ const SkillsCatalogPage = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={closeLicenseDialog}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={gatewayDialogOpen} onClose={closeGatewayDialog} fullWidth maxWidth="sm">
+        <DialogTitle>Add Gateway</DialogTitle>
+        <DialogContent sx={{ display: 'grid', gap: 2, mt: 1 }}>
+          {gatewayCreateError && (
+            <Typography color="error">{gatewayCreateError}</Typography>
+          )}
+          <TextField
+            label="Name"
+            value={gatewayForm.name}
+            onChange={(event) => setGatewayForm((prev) => ({ ...prev, name: event.target.value }))}
+            fullWidth
+          />
+          <TextField
+            label="Slug (optional)"
+            value={gatewayForm.slug}
+            onChange={(event) => setGatewayForm((prev) => ({ ...prev, slug: event.target.value }))}
+            fullWidth
+          />
+          <FormControl fullWidth>
+            <InputLabel id="gateway-mode-label">Mode</InputLabel>
+            <Select
+              labelId="gateway-mode-label"
+              label="Mode"
+              value={gatewayForm.mode}
+              onChange={(event) => setGatewayForm((prev) => ({ ...prev, mode: event.target.value }))}
+            >
+              <MenuItem value="local">Local (host-managed)</MenuItem>
+              <MenuItem value="remote">Remote</MenuItem>
+              <MenuItem value="k8s">Kubernetes</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField
+            label="Base URL (optional)"
+            value={gatewayForm.baseUrl}
+            onChange={(event) => setGatewayForm((prev) => ({ ...prev, baseUrl: event.target.value }))}
+            fullWidth
+          />
+          <TextField
+            label="Config path (local gateway)"
+            value={gatewayForm.configPath}
+            onChange={(event) => setGatewayForm((prev) => ({ ...prev, configPath: event.target.value }))}
+            fullWidth
+          />
+          <TextField
+            label="K8s namespace"
+            value={gatewayForm.namespace}
+            onChange={(event) => setGatewayForm((prev) => ({ ...prev, namespace: event.target.value }))}
+            fullWidth
+          />
+          <TextField
+            label="Gateway image (placeholder)"
+            value={gatewayForm.image}
+            onChange={(event) => setGatewayForm((prev) => ({ ...prev, image: event.target.value }))}
+            fullWidth
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeGatewayDialog}>Cancel</Button>
+          <Button variant="contained" onClick={handleCreateGateway} disabled={gatewayCreateLoading}>
+            {gatewayCreateLoading ? 'Creating...' : 'Create'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Container>
