@@ -26,6 +26,7 @@ import {
   Typography,
 } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import { useAuth } from '../../context/AuthContext';
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token');
@@ -44,6 +45,8 @@ const SkillsCatalogPage = () => {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [groupByCategory, setGroupByCategory] = useState(true);
   const [activeTab, setActiveTab] = useState('catalog');
+  const { currentUser } = useAuth();
+  const isGlobalAdmin = currentUser?.role === 'admin';
 
   const [pods, setPods] = useState([]);
   const [selectedPodId, setSelectedPodId] = useState('');
@@ -52,6 +55,21 @@ const SkillsCatalogPage = () => {
   const [importOpen, setImportOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
   const [licenseState, setLicenseState] = useState({ title: '', text: '', path: '' });
+  const [requirementsLoading, setRequirementsLoading] = useState(false);
+  const [requirementsError, setRequirementsError] = useState('');
+  const [requirementsList, setRequirementsList] = useState([]);
+  const [gatewayLoading, setGatewayLoading] = useState(false);
+  const [gatewayError, setGatewayError] = useState('');
+  const [gatewayEntries, setGatewayEntries] = useState({});
+  const [gatewaySkillKey, setGatewaySkillKey] = useState('');
+  const [gatewayHintLoading, setGatewayHintLoading] = useState(false);
+  const [gatewayHintError, setGatewayHintError] = useState('');
+  const [gatewayHintList, setGatewayHintList] = useState([]);
+  const [gatewayEnvInputs, setGatewayEnvInputs] = useState({});
+  const [gatewayEnvClears, setGatewayEnvClears] = useState(new Set());
+  const [gatewayCustomKey, setGatewayCustomKey] = useState('');
+  const [gatewayCustomValue, setGatewayCustomValue] = useState('');
+  const [gatewaySaving, setGatewaySaving] = useState(false);
   const [importedSkills, setImportedSkills] = useState(new Set());
   const [installedItems, setInstalledItems] = useState([]);
   const [importState, setImportState] = useState({
@@ -74,6 +92,20 @@ const SkillsCatalogPage = () => {
     if (!importState.agentKey) return null;
     return podAgents.find((agent) => `${agent.name}:${agent.instanceId}` === importState.agentKey);
   }, [podAgents, importState.agentKey]);
+
+  const normalizeSkillKey = (value) => String(value || '').trim().toLowerCase();
+
+  const catalogSkillOptions = useMemo(() => {
+    const map = new Map();
+    catalogItems.forEach((item) => {
+      if (!item?.name) return;
+      const key = normalizeSkillKey(item.name);
+      if (!map.has(key)) {
+        map.set(key, item);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [catalogItems]);
 
   const getCategory = (item) => {
     if (item?.category) return item.category;
@@ -183,6 +215,133 @@ const SkillsCatalogPage = () => {
     }
   };
 
+  const fetchSkillRequirements = async (sourceUrl) => {
+    if (!sourceUrl) {
+      setRequirementsList([]);
+      setRequirementsError('');
+      return;
+    }
+    setRequirementsLoading(true);
+    setRequirementsError('');
+    try {
+      const response = await axios.get('/api/skills/requirements', {
+        ...getAuthHeaders(),
+        params: { sourceUrl },
+      });
+      const requirements = response.data?.requirements || [];
+      setRequirementsList(requirements);
+    } catch (error) {
+      console.warn('Failed to fetch skill requirements:', error);
+      setRequirementsError(error.response?.data?.error || 'Failed to detect credentials');
+      setRequirementsList([]);
+    } finally {
+      setRequirementsLoading(false);
+    }
+  };
+
+  const fetchGatewayCredentials = async () => {
+    if (!isGlobalAdmin) return;
+    setGatewayLoading(true);
+    setGatewayError('');
+    try {
+      const response = await axios.get('/api/skills/gateway-credentials', getAuthHeaders());
+      setGatewayEntries(response.data?.entries || {});
+    } catch (error) {
+      console.warn('Failed to load gateway credentials:', error);
+      setGatewayError(error.response?.data?.error || 'Failed to load gateway credentials');
+      setGatewayEntries({});
+    } finally {
+      setGatewayLoading(false);
+    }
+  };
+
+  const fetchGatewayHints = async (skillName) => {
+    if (!skillName) return;
+    setGatewayHintLoading(true);
+    setGatewayHintError('');
+    setGatewayHintList([]);
+    try {
+      const selected = catalogSkillOptions.find(
+        (item) => normalizeSkillKey(item?.name) === normalizeSkillKey(skillName),
+      );
+      const sourceUrl = selected?.sourceUrl;
+      if (!sourceUrl) {
+        setGatewayHintError('No source URL found for this skill.');
+        setGatewayHintLoading(false);
+        return;
+      }
+      const response = await axios.get('/api/skills/requirements', {
+        ...getAuthHeaders(),
+        params: { sourceUrl },
+      });
+      setGatewayHintList(response.data?.requirements || []);
+    } catch (error) {
+      console.warn('Failed to load gateway hints:', error);
+      setGatewayHintError(error.response?.data?.error || 'Failed to detect credentials');
+    } finally {
+      setGatewayHintLoading(false);
+    }
+  };
+
+  const updateGatewayEnvInput = (key, value) => {
+    setGatewayEnvInputs((prev) => ({ ...prev, [key]: value }));
+    setGatewayEnvClears((prev) => {
+      const next = new Set(prev);
+      if (value) {
+        next.delete(key);
+      }
+      return next;
+    });
+  };
+
+  const markGatewayClear = (key) => {
+    setGatewayEnvClears((prev) => new Set([...prev, key]));
+    setGatewayEnvInputs((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const addGatewayCustomEnv = () => {
+    const key = gatewayCustomKey.trim();
+    if (!key) return;
+    updateGatewayEnvInput(key, gatewayCustomValue.trim());
+    setGatewayCustomKey('');
+    setGatewayCustomValue('');
+  };
+
+  const saveGatewayCredentials = async () => {
+    if (!gatewaySkillKey) return;
+    const env = {};
+    Object.entries(gatewayEnvInputs).forEach(([key, value]) => {
+      if (value) env[key] = value;
+    });
+    gatewayEnvClears.forEach((key) => {
+      if (!(key in env)) env[key] = '';
+    });
+    if (!Object.keys(env).length) {
+      alert('Add at least one key or clear an existing key before saving.');
+      return;
+    }
+    setGatewaySaving(true);
+    try {
+      await axios.patch('/api/skills/gateway-credentials', {
+        entries: {
+          [gatewaySkillKey]: env,
+        },
+      }, getAuthHeaders());
+      await fetchGatewayCredentials();
+      setGatewayEnvInputs({});
+      setGatewayEnvClears(new Set());
+    } catch (error) {
+      console.error('Failed to save gateway credentials:', error);
+      alert(error.response?.data?.error || 'Failed to save credentials');
+    } finally {
+      setGatewaySaving(false);
+    }
+  };
+
   useEffect(() => {
     fetchCatalog();
     fetchPods();
@@ -195,6 +354,12 @@ const SkillsCatalogPage = () => {
   useEffect(() => {
     fetchCatalog();
   }, [searchTerm, selectedCategory, catalogPage]);
+
+  useEffect(() => {
+    if (activeTab === 'gateway') {
+      fetchGatewayCredentials();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (selectedPodId) {
@@ -217,10 +382,30 @@ const SkillsCatalogPage = () => {
   }, [importState.podId, importState.scope, selectedAgent]);
 
   useEffect(() => {
+    if (!importOpen) return;
+    fetchSkillRequirements(importState.sourceUrl);
+  }, [importOpen, importState.sourceUrl]);
+
+  useEffect(() => {
     if (importState.scope !== 'agent') {
       setImportState((prev) => ({ ...prev, agentKey: '' }));
     }
   }, [importState.scope]);
+
+  useEffect(() => {
+    if (activeTab !== 'gateway') return;
+    if (!gatewaySkillKey && catalogSkillOptions.length > 0) {
+      setGatewaySkillKey(catalogSkillOptions[0].name);
+    }
+  }, [activeTab, gatewaySkillKey, catalogSkillOptions]);
+
+  useEffect(() => {
+    if (activeTab !== 'gateway') return;
+    if (!gatewaySkillKey) return;
+    fetchGatewayHints(gatewaySkillKey);
+    setGatewayEnvInputs({});
+    setGatewayEnvClears(new Set());
+  }, [activeTab, gatewaySkillKey]);
 
   const openImportDialog = (item) => {
     setImportState({
@@ -251,6 +436,9 @@ const SkillsCatalogPage = () => {
 
   const closeImportDialog = () => {
     setImportOpen(false);
+    setRequirementsList([]);
+    setRequirementsError('');
+    setRequirementsLoading(false);
   };
 
   const isImported = (itemName) => {
@@ -380,6 +568,7 @@ const SkillsCatalogPage = () => {
         <Tabs value={activeTab} onChange={(event, value) => setActiveTab(value)}>
           <Tab value="catalog" label={`Catalog (${catalogTotalItems})`} />
           <Tab value="installed" label={`Installed (${importedSkills.size})`} />
+          {isGlobalAdmin && <Tab value="gateway" label="Gateway Credentials" />}
         </Tabs>
       </Box>
 
@@ -529,6 +718,120 @@ const SkillsCatalogPage = () => {
         </Stack>
       )}
 
+      {activeTab === 'gateway' && isGlobalAdmin && (
+        <Card>
+          <CardContent>
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              Gateway Skill Credentials
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              These credentials apply to all agents running on this host gateway. Store only what you intend
+              to share across agents.
+            </Typography>
+            {gatewayLoading && <Typography>Loading gateway credentials...</Typography>}
+            {gatewayError && <Typography color="error">{gatewayError}</Typography>}
+            {!gatewayLoading && (
+              <Stack spacing={2}>
+                <FormControl fullWidth>
+                  <InputLabel id="gateway-skill-label">Skill</InputLabel>
+                  <Select
+                    labelId="gateway-skill-label"
+                    label="Skill"
+                    value={gatewaySkillKey}
+                    onChange={(event) => setGatewaySkillKey(event.target.value)}
+                  >
+                    {catalogSkillOptions.map((item) => (
+                      <MenuItem key={item.name} value={item.name}>
+                        {item.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Box>
+                  <Typography variant="subtitle2">Detected credential hints</Typography>
+                  {gatewayHintLoading && (
+                    <Typography variant="body2">Detecting credentials...</Typography>
+                  )}
+                  {!gatewayHintLoading && gatewayHintError && (
+                    <Typography variant="body2" color="error">
+                      {gatewayHintError}
+                    </Typography>
+                  )}
+                  {!gatewayHintLoading && !gatewayHintError && gatewayHintList.length === 0 && (
+                    <Typography variant="body2" color="text.secondary">
+                      No hints detected for this skill. You can add custom variables below.
+                    </Typography>
+                  )}
+                  <Stack spacing={2} sx={{ mt: 1 }}>
+                    {gatewayHintList.map((hint) => (
+                      <TextField
+                        key={hint}
+                        fullWidth
+                        type="password"
+                        label={hint}
+                        placeholder="Leave blank to keep unchanged"
+                        value={gatewayEnvInputs[hint] || ''}
+                        onChange={(event) => updateGatewayEnvInput(hint, event.target.value)}
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2">Existing keys</Typography>
+                  <Stack spacing={1} sx={{ mt: 1 }}>
+                    {(gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.envKeys || []).length === 0 && (
+                      <Typography variant="body2" color="text.secondary">
+                        No keys stored for this skill yet.
+                      </Typography>
+                    )}
+                    {(gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.envKeys || []).map((key) => (
+                      <Box key={key} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Typography variant="body2">{key}</Typography>
+                        <Chip size="small" label="set" />
+                        <Button size="small" onClick={() => markGatewayClear(key)}>
+                          Clear
+                        </Button>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2">Add custom key</Typography>
+                  <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                    <TextField
+                      fullWidth
+                      label="Env key"
+                      value={gatewayCustomKey}
+                      onChange={(event) => setGatewayCustomKey(event.target.value)}
+                    />
+                    <TextField
+                      fullWidth
+                      type="password"
+                      label="Value"
+                      value={gatewayCustomValue}
+                      onChange={(event) => setGatewayCustomValue(event.target.value)}
+                    />
+                    <Button variant="outlined" onClick={addGatewayCustomEnv}>
+                      Add
+                    </Button>
+                  </Box>
+                </Box>
+                <Divider />
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="contained"
+                    onClick={saveGatewayCredentials}
+                    disabled={gatewaySaving || !gatewaySkillKey}
+                  >
+                    {gatewaySaving ? 'Saving...' : 'Save Credentials'}
+                  </Button>
+                </Box>
+              </Stack>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Dialog open={importOpen} onClose={closeImportDialog} maxWidth="sm" fullWidth>
         <DialogTitle>Import Skill</DialogTitle>
         <DialogContent sx={{ display: 'grid', gap: 2, mt: 1 }}>
@@ -611,6 +914,31 @@ const SkillsCatalogPage = () => {
             onChange={(event) => setImportState((prev) => ({ ...prev, sourceUrl: event.target.value }))}
             fullWidth
           />
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Credential hints
+            </Typography>
+            {requirementsLoading && (
+              <Typography variant="body2">Detecting required credentials...</Typography>
+            )}
+            {!requirementsLoading && requirementsError && (
+              <Typography variant="body2" color="error">
+                {requirementsError}
+              </Typography>
+            )}
+            {!requirementsLoading && !requirementsError && requirementsList.length > 0 && (
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', mt: 1 }}>
+                {requirementsList.map((item) => (
+                  <Chip key={item} label={item} size="small" sx={{ mb: 1 }} />
+                ))}
+              </Stack>
+            )}
+            {!requirementsLoading && !requirementsError && requirementsList.length === 0 && (
+              <Typography variant="body2">
+                No credential hints detected. Check the source README for setup details.
+              </Typography>
+            )}
+          </Box>
           <TextField
             label="License"
             value={importState.license}
