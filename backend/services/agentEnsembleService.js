@@ -32,17 +32,24 @@ class AgentEnsembleService {
     }
 
     // Check if there's already an active discussion
-    const existing = await AgentEnsembleState.findActiveForPod(podId);
+    const existing = await AgentEnsembleState.findOne({
+      podId,
+      status: { $in: ['active', 'paused'] },
+    }).sort({ createdAt: -1 });
     if (existing) {
+      if (existing.status === 'paused') {
+        throw new Error('Discussion is paused in this pod. Please resume instead.');
+      }
       throw new Error('Discussion already active in this pod');
     }
 
     // Get ensemble config from pod or options
     const config = pod.agentEnsemble || {};
     const participants = options.participants || config.participants || [];
+    const speakingParticipants = participants.filter((participant) => participant.role !== 'observer');
 
-    if (participants.length < 2) {
-      throw new Error('At least 2 participants required for ensemble discussion');
+    if (speakingParticipants.length < 2) {
+      throw new Error('At least 2 speaking participants required for ensemble discussion');
     }
 
     // Ensure all agent users exist
@@ -58,10 +65,10 @@ class AgentEnsembleService {
     );
 
     // Find starter agent (first with 'starter' role, or first in list)
-    const starterIndex = participants.findIndex((p) => p.role === 'starter');
+    const starterIndex = participants.findIndex((p) => p.role === 'starter' && p.role !== 'observer');
     const starterParticipant = starterIndex >= 0
       ? participants[starterIndex]
-      : participants[0];
+      : speakingParticipants[0];
 
     const scheduleConfig = config.schedule || {};
     const nextScheduledAt = AgentEnsembleService.resolveNextScheduledAt(scheduleConfig);
@@ -122,7 +129,25 @@ class AgentEnsembleService {
    */
   static async enqueueTurnEvent(state) {
     const { turnState, participants, topic, podId } = state;
-    const currentAgent = turnState.currentAgent;
+    const speakingParticipants = (participants || []).filter((participant) => participant.role !== 'observer');
+    if (!speakingParticipants.length) {
+      console.warn('[ensemble] No speaking participants available for turn rotation');
+      return;
+    }
+
+    const expectedAgent = speakingParticipants[turnState.turnNumber % speakingParticipants.length];
+    const currentAgentMatches = turnState.currentAgent?.agentType === expectedAgent.agentType
+      && (turnState.currentAgent?.instanceId || 'default') === (expectedAgent.instanceId || 'default');
+
+    if (!currentAgentMatches) {
+      state.turnState.currentAgent = {
+        agentType: expectedAgent.agentType,
+        instanceId: expectedAgent.instanceId || 'default',
+      };
+      await state.save();
+    }
+
+    const currentAgent = state.turnState.currentAgent;
 
     if (!currentAgent?.agentType) {
       console.warn('[ensemble] No current agent to enqueue turn for');
@@ -227,32 +252,38 @@ class AgentEnsembleService {
       return state;
     }
 
-    // Update stats
-    state.stats.totalMessages += 1;
+    const normalizedContent = (response.content || '').trim();
+    const isNoReply = normalizedContent === 'NO_REPLY';
+
     state.stats.lastActivityAt = new Date();
     turnState.waitingForResponse = false;
 
-    // Add to recent history
-    if (!state.checkpoint) {
-      state.checkpoint = { recentHistory: [] };
-    }
-    // Update checkpoint with VERIFIED agent identity
-    state.checkpoint.recentHistory.push({
-      agentType: turnState.currentAgent.agentType, // Use verified identity
-      instanceId: turnState.currentAgent.instanceId,
-      content: response.content?.substring(0, 500),
-      timestamp: new Date(),
-    });
+    if (!isNoReply) {
+      // Update stats
+      state.stats.totalMessages += 1;
 
-    // Keep only last 10 messages in history
-    if (state.checkpoint.recentHistory.length > 10) {
-      state.checkpoint.recentHistory = state.checkpoint.recentHistory.slice(-10);
-    }
+      // Add to recent history
+      if (!state.checkpoint) {
+        state.checkpoint = { recentHistory: [] };
+      }
+      // Update checkpoint with VERIFIED agent identity
+      state.checkpoint.recentHistory.push({
+        agentType: turnState.currentAgent.agentType, // Use verified identity
+        instanceId: turnState.currentAgent.instanceId,
+        content: response.content?.substring(0, 500),
+        timestamp: new Date(),
+      });
 
-    // Update checkpoint
-    state.lastProcessedMessageId = response.messageId;
-    state.checkpoint.lastMessageId = response.messageId;
-    state.checkpoint.savedAt = new Date();
+      // Keep only last 10 messages in history
+      if (state.checkpoint.recentHistory.length > 10) {
+        state.checkpoint.recentHistory = state.checkpoint.recentHistory.slice(-10);
+      }
+
+      // Update checkpoint
+      state.lastProcessedMessageId = response.messageId;
+      state.checkpoint.lastMessageId = response.messageId;
+      state.checkpoint.savedAt = new Date();
+    }
 
     // Check stop conditions
     const stopReason = AgentEnsembleService.checkStopConditions(state);
@@ -302,15 +333,24 @@ class AgentEnsembleService {
    * Pause a discussion (can be resumed later)
    */
   static async pauseDiscussion(podId) {
-    const state = await AgentEnsembleState.findActiveForPod(podId);
-    if (!state) {
+    const activeStates = await AgentEnsembleState.find({
+      podId,
+      status: 'active',
+    }).sort({ createdAt: -1 });
+
+    if (!activeStates.length) {
       throw new Error('No active discussion found');
     }
 
-    state.status = 'paused';
-    state.stats.pausedAt = new Date();
-    await state.save();
+    const pausedAt = new Date();
+    await AgentEnsembleState.updateMany(
+      { podId, status: 'active' },
+      { $set: { status: 'paused', 'stats.pausedAt': pausedAt } },
+    );
 
+    const state = activeStates[0];
+    state.status = 'paused';
+    state.stats.pausedAt = pausedAt;
     console.log(`[ensemble] Paused discussion in pod ${podId}`);
     return state;
   }
@@ -375,14 +415,61 @@ class AgentEnsembleService {
   }
 
   /**
-   * Get current state for a pod
+   * Complete all active/paused discussions for a pod.
    */
-  static async getState(podId) {
-    // Try to find active or paused state
-    const state = await AgentEnsembleState.findOne({
+  static async completeActiveForPod(podId, reason = 'manual') {
+    const states = await AgentEnsembleState.find({
       podId,
       status: { $in: ['active', 'paused'] },
     }).sort({ createdAt: -1 });
+
+    if (!states.length) {
+      throw new Error('No active discussion to complete');
+    }
+
+    const completedStates = await Promise.all(states.map(async (state) => {
+      state.status = 'completed';
+      state.stats.completedAt = new Date();
+      state.stats.completionReason = reason;
+
+      if (state.keyPoints?.length > 0) {
+        state.summary = {
+          keyInsights: state.keyPoints.map((kp) => kp.content),
+          generatedAt: new Date(),
+        };
+      }
+
+      await state.save();
+      return state;
+    }));
+
+    console.log(`[ensemble] Completed ${completedStates.length} discussions in pod ${podId}: ${reason}`);
+    return completedStates[0];
+  }
+
+  /**
+   * Get current state for a pod
+   */
+  static async getState(podId) {
+    // Try to find active or paused state (newest first)
+    const activeStates = await AgentEnsembleState.find({
+      podId,
+      status: { $in: ['active', 'paused'] },
+    }).sort({ createdAt: -1 });
+
+    const state = activeStates[0];
+
+    if (activeStates.length > 1) {
+      // Auto-complete older active/paused states to prevent duplicate turns.
+      await Promise.all(
+        activeStates.slice(1).map(async (older) => {
+          older.status = 'completed';
+          older.stats.completedAt = new Date();
+          older.stats.completionReason = 'scheduled_restart';
+          await older.save();
+        }),
+      );
+    }
 
     if (state) {
       return state;
@@ -398,10 +485,17 @@ class AgentEnsembleService {
    * Update ensemble configuration
    */
   static async updateConfig(podId, config) {
+    if (config.participants) {
+      const speakingCount = config.participants.filter((participant) => participant.role !== 'observer').length;
+      if (speakingCount < 2) {
+        throw new Error('At least 2 speaking participants required for ensemble discussion');
+      }
+    }
+
     const state = await AgentEnsembleState.findOne({
       podId,
       status: { $in: ['active', 'pending', 'paused'] },
-    });
+    }).sort({ createdAt: -1 });
 
     if (state) {
       // Allow adding participants but not removing/reordering during active discussion
@@ -478,6 +572,33 @@ class AgentEnsembleService {
         const participants = config.participants || pod.agentEnsemble?.participants || [];
         if (scheduleConfig.enabled && participants.length >= 2) {
           const nextScheduledAt = AgentEnsembleService.resolveNextScheduledAt(scheduleConfig);
+          const existingScheduled = await AgentEnsembleState.findOne({
+            podId,
+            status: 'completed',
+            'schedule.enabled': true,
+          }).sort({ 'schedule.nextScheduledAt': -1, createdAt: -1 });
+
+          if (existingScheduled) {
+            existingScheduled.status = 'pending';
+            existingScheduled.topic = config.topic || pod.agentEnsemble?.topic || 'Open discussion';
+            existingScheduled.participants = participants;
+            existingScheduled.stopConditions = {
+              maxMessages: config.stopConditions?.maxMessages || pod.agentEnsemble?.stopConditions?.maxMessages || 20,
+              maxRounds: config.stopConditions?.maxRounds || pod.agentEnsemble?.stopConditions?.maxRounds || 5,
+              maxDurationMinutes: config.stopConditions?.maxDurationMinutes
+                || pod.agentEnsemble?.stopConditions?.maxDurationMinutes || 60,
+            };
+            existingScheduled.schedule = {
+              enabled: Boolean(scheduleConfig.enabled),
+              cronExpression: scheduleConfig.cronExpression,
+              timezone: scheduleConfig.timezone || 'UTC',
+              lastScheduledAt: null,
+              nextScheduledAt,
+            };
+            await existingScheduled.save();
+            return existingScheduled;
+          }
+
           const pendingState = await AgentEnsembleState.create({
             podId,
             status: 'pending',
@@ -537,19 +658,61 @@ class AgentEnsembleService {
    * Called by scheduler service
    */
   static async processScheduled() {
-    const dueStates = await AgentEnsembleState.findScheduledDue();
+    const dueStates = await AgentEnsembleState.findScheduledDue().sort({ createdAt: -1 });
+    const seenPods = new Set();
+    const duplicates = [];
+    const scheduledStates = [];
 
-    console.log(`[ensemble] Found ${dueStates.length} scheduled discussions to start`);
+    dueStates.forEach((state) => {
+      const podKey = state.podId.toString();
+      if (seenPods.has(podKey)) {
+        duplicates.push(state._id);
+      } else {
+        seenPods.add(podKey);
+        scheduledStates.push(state);
+      }
+    });
+
+    if (duplicates.length) {
+      const completedAt = new Date();
+      await AgentEnsembleState.updateMany(
+        { _id: { $in: duplicates } },
+        {
+          $set: {
+            status: 'completed',
+            'schedule.enabled': false,
+            'stats.completedAt': completedAt,
+            'stats.completionReason': 'scheduled_restart',
+          },
+        },
+      );
+      console.warn(`[ensemble] Deduped ${duplicates.length} scheduled states`);
+    }
+
+    console.log(`[ensemble] Found ${scheduledStates.length} scheduled discussions to start`);
 
     await Promise.allSettled(
-      dueStates.map(async (state) => {
+      scheduledStates.map(async (state) => {
         try {
+          if (state.status === 'completed' && state.schedule?.nextScheduledAt) {
+            return;
+          }
+
+          const paused = await AgentEnsembleState.findOne({
+            podId: state.podId,
+            status: 'paused',
+          }).sort({ createdAt: -1 });
+          if (paused) {
+            console.log(`[ensemble] Skipping scheduled start because discussion is paused in pod ${state.podId}`);
+            return;
+          }
+
           // Check if there's already an active discussion
           const existing = await AgentEnsembleState.findActiveForPod(state.podId);
           if (existing) {
             // Complete the active discussion before starting new one
             console.log(`[ensemble] Auto-completing active discussion before starting scheduled one in pod ${state.podId}`);
-            await AgentEnsembleService.completeDiscussion(existing._id, 'scheduled_restart');
+            await AgentEnsembleService.completeActiveForPod(state.podId, 'scheduled_restart');
           }
 
           // Start new discussion

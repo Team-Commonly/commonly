@@ -85,6 +85,35 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     }))
   ), [podAgents]);
 
+  const applyStatePatch = useCallback((patch) => {
+    if (!patch) return;
+    setState((prev) => {
+      if (!prev) {
+        return patch;
+      }
+      const next = { ...prev, ...patch };
+      if (patch.turnState) {
+        next.turnState = { ...prev.turnState, ...patch.turnState };
+      }
+      if (patch.stats) {
+        next.stats = { ...prev.stats, ...patch.stats };
+      }
+      if (patch.participants) {
+        next.participants = patch.participants;
+      }
+      if (patch.stopConditions) {
+        next.stopConditions = patch.stopConditions;
+      }
+      if (patch.schedule) {
+        next.schedule = patch.schedule;
+      }
+      if (patch.summary !== undefined) {
+        next.summary = patch.summary;
+      }
+      return next;
+    });
+  }, []);
+
   const refreshState = useCallback(async () => {
     if (!podId) return;
     setLoading(true);
@@ -95,9 +124,11 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
       });
       setState(response.data?.state || null);
       setPodConfig(response.data?.podConfig || {});
+      return response.data || null;
     } catch (err) {
       console.error('Failed to load ensemble state:', err);
       setError(err.response?.data?.error || 'Unable to load agent ensemble status.');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -110,19 +141,24 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
   useEffect(() => {
     const configSource = podConfig || {};
     const stateSource = state || {};
-    const mergedConfig = {
-      ...configSource,
-      ...stateSource,
-      stopConditions: {
-        ...(configSource.stopConditions || {}),
-        ...(stateSource.stopConditions || {}),
-      },
-      schedule: {
-        ...(configSource.schedule || {}),
-        ...(stateSource.schedule || {}),
-      },
-    };
-    const participantsSource = stateSource.participants?.length
+    const useLiveState = ['active', 'paused'].includes(stateSource.status);
+    const mergedConfig = useLiveState
+      ? {
+        ...configSource,
+        ...stateSource,
+        stopConditions: {
+          ...(configSource.stopConditions || {}),
+          ...(stateSource.stopConditions || {}),
+        },
+        schedule: {
+          ...(configSource.schedule || {}),
+          ...(stateSource.schedule || {}),
+        },
+      }
+      : {
+        ...configSource,
+      };
+    const participantsSource = useLiveState && stateSource.participants?.length
       ? stateSource.participants
       : (configSource.participants || []);
 
@@ -220,16 +256,15 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     if (state?.status === 'active') {
       const originalParticipants = state.participants || [];
       const currentParticipants = buildParticipantPayload();
-      const participantsChanged =
-        originalParticipants.length !== currentParticipants.length ||
-        originalParticipants.some(
-          (orig, i) =>
-            orig.agentType !== currentParticipants[i]?.agentType ||
-            (orig.instanceId || 'default') !== (currentParticipants[i]?.instanceId || 'default'),
-        );
+      const removedParticipants = currentParticipants.length < originalParticipants.length;
+      const existingChanged = originalParticipants.some(
+        (orig, i) =>
+          orig.agentType !== currentParticipants[i]?.agentType ||
+          (orig.instanceId || 'default') !== (currentParticipants[i]?.instanceId || 'default'),
+      );
 
-      if (participantsChanged) {
-        setError('Cannot modify participants during an active discussion. Please stop the discussion first.');
+      if (removedParticipants || existingChanged) {
+        setError('Cannot modify existing participants during an active discussion. Please stop the discussion first.');
         return;
       }
     }
@@ -237,7 +272,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     setSaving(true);
     setError('');
     try {
-      await axios.patch(
+      const response = await axios.patch(
         `/api/pods/${podId}/ensemble/config`,
         {
           enabled,
@@ -257,6 +292,9 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
         },
         { headers: authHeaders },
       );
+      if (response?.data?.config) {
+        setPodConfig(response.data.config);
+      }
       await refreshState();
     } catch (err) {
       console.error('Failed to save ensemble config:', err);
@@ -275,7 +313,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     setActionLoading(true);
     setError('');
     try {
-      await axios.post(
+      const response = await axios.post(
         `/api/pods/${podId}/ensemble/start`,
         {
           topic: topic.trim(),
@@ -286,7 +324,13 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
         },
         { headers: authHeaders },
       );
-      await refreshState();
+      if (response?.data?.state) {
+        setState(response.data.state);
+      }
+      const refreshed = await refreshState();
+      if (refreshed?.state?.status && refreshed.state.status !== 'active') {
+        setError('Server did not start the discussion. Please try again or refresh.');
+      }
     } catch (err) {
       console.error('Failed to start ensemble discussion:', err);
       setError(err.response?.data?.error || 'Failed to start the discussion.');
@@ -299,8 +343,23 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     setActionLoading(true);
     setError('');
     try {
-      await axios.post(`/api/pods/${podId}/ensemble/pause`, {}, { headers: authHeaders });
-      await refreshState();
+      const response = await axios.post(`/api/pods/${podId}/ensemble/pause`, {}, { headers: authHeaders });
+      if (response?.data?.state) {
+        applyStatePatch({
+          id: response.data.state.id,
+          status: response.data.state.status,
+          stats: {
+            pausedAt: response.data.state.pausedAt,
+          },
+          turnState: {
+            turnNumber: response.data.state.turnNumber,
+          },
+        });
+      }
+      const refreshed = await refreshState();
+      if (refreshed?.state?.status && refreshed.state.status !== 'paused') {
+        setError('Pause request sent, but the server still reports the discussion as active.');
+      }
     } catch (err) {
       console.error('Failed to pause ensemble discussion:', err);
       setError(err.response?.data?.error || 'Failed to pause the discussion.');
@@ -313,8 +372,21 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     setActionLoading(true);
     setError('');
     try {
-      await axios.post(`/api/pods/${podId}/ensemble/resume`, {}, { headers: authHeaders });
-      await refreshState();
+      const response = await axios.post(`/api/pods/${podId}/ensemble/resume`, {}, { headers: authHeaders });
+      if (response?.data?.state) {
+        applyStatePatch({
+          id: response.data.state.id,
+          status: response.data.state.status,
+          turnState: {
+            turnNumber: response.data.state.turnNumber,
+            currentAgent: response.data.state.currentAgent,
+          },
+        });
+      }
+      const refreshed = await refreshState();
+      if (refreshed?.state?.status && refreshed.state.status !== 'active') {
+        setError('Resume request sent, but the server did not mark the discussion active.');
+      }
     } catch (err) {
       console.error('Failed to resume ensemble discussion:', err);
       setError(err.response?.data?.error || 'Failed to resume the discussion.');
@@ -327,8 +399,22 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     setActionLoading(true);
     setError('');
     try {
-      await axios.post(`/api/pods/${podId}/ensemble/complete`, {}, { headers: authHeaders });
-      await refreshState();
+      const response = await axios.post(`/api/pods/${podId}/ensemble/complete`, {}, { headers: authHeaders });
+      if (response?.data?.state) {
+        applyStatePatch({
+          id: response.data.state.id,
+          status: response.data.state.status,
+          summary: response.data.state.summary,
+          stats: {
+            completionReason: response.data.state.completionReason,
+            totalMessages: response.data.state.totalMessages,
+          },
+        });
+      }
+      const refreshed = await refreshState();
+      if (refreshed?.state?.status && refreshed.state.status !== 'completed') {
+        setError('Complete request sent, but the server did not mark the discussion completed.');
+      }
     } catch (err) {
       console.error('Failed to complete ensemble discussion:', err);
       setError(err.response?.data?.error || 'Failed to complete the discussion.');
@@ -340,6 +426,11 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
   const usedAgentKeys = participants
     .filter((p) => p.agentType)
     .map((p) => buildAgentKey(p.agentType, p.instanceId || 'default'));
+  const activeParticipantCount = state?.participants?.length || 0;
+  const isActive = state?.status === 'active';
+  const isConfigLocked = state?.status === 'active';
+  const configInputsDisabled = isConfigLocked || saving || loading;
+  const saveDisabled = !isPodAdmin || saving || isConfigLocked || loading;
 
   return (
     <div className="sidebar-section">
@@ -365,6 +456,16 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
             {error && (
               <Alert severity="warning" sx={{ mb: 2 }}>
                 {error}
+              </Alert>
+            )}
+            {isConfigLocked && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Configuration is locked while a discussion is active. Pause or complete the discussion to edit settings.
+              </Alert>
+            )}
+            {state?.status === 'paused' && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Discussion is paused. Resume to continue or edit configuration before resuming.
               </Alert>
             )}
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
@@ -396,6 +497,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
               fullWidth
               size="small"
               sx={{ mb: 2 }}
+              disabled={configInputsDisabled}
             />
 
             <FormControlLabel
@@ -403,6 +505,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
                 <Switch
                   checked={enabled}
                   onChange={(e) => setEnabled(e.target.checked)}
+                  disabled={configInputsDisabled}
                 />
               )}
               label="Enable ensemble"
@@ -414,6 +517,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
             </Typography>
 
             {participants.map((participant, index) => {
+              const isLockedParticipant = isActive && index < activeParticipantCount;
               const selectedKey = participant.agentType
                 ? buildAgentKey(participant.agentType, participant.instanceId || 'default')
                 : '';
@@ -434,6 +538,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
                       value={selectedKey}
                       label="Agent"
                       onChange={(e) => handleParticipantChange(index, e.target.value)}
+                      disabled={isLockedParticipant || configInputsDisabled}
                     >
                       {agentOptions.length === 0 && (
                         <MenuItem value="" disabled>
@@ -456,6 +561,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
                       value={participant.role || 'responder'}
                       label="Role"
                       onChange={(e) => handleRoleChange(index, e.target.value)}
+                      disabled={configInputsDisabled}
                     >
                       {ROLE_OPTIONS.map((option) => (
                         <MenuItem key={option.value} value={option.value}>
@@ -469,6 +575,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
                     size="small"
                     color="error"
                     onClick={() => handleRemoveParticipant(index)}
+                    disabled={isLockedParticipant || configInputsDisabled}
                   >
                     Remove
                   </Button>
@@ -481,7 +588,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
               size="small"
               onClick={handleAddParticipant}
               sx={{ mb: 2 }}
-              disabled={agentOptions.length === 0 || state?.status === 'active'}
+              disabled={agentOptions.length === 0 || configInputsDisabled}
             >
               Add participant
             </Button>
@@ -501,6 +608,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
               fullWidth
               size="small"
               sx={{ mb: 1 }}
+              disabled={configInputsDisabled}
             />
             <TextField
               label="Max rounds"
@@ -512,6 +620,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
               fullWidth
               size="small"
               sx={{ mb: 1 }}
+              disabled={configInputsDisabled}
             />
             <TextField
               label="Max duration (minutes)"
@@ -523,6 +632,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
               fullWidth
               size="small"
               sx={{ mb: 2 }}
+              disabled={configInputsDisabled}
             />
 
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -534,6 +644,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
                 value={humanParticipation}
                 label="Access"
                 onChange={(e) => setHumanParticipation(e.target.value)}
+                disabled={configInputsDisabled}
               >
                 {HUMAN_PARTICIPATION_OPTIONS.map((option) => (
                   <MenuItem key={option.value} value={option.value}>
@@ -554,6 +665,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
                     ...prev,
                     enabled: e.target.checked,
                   }))}
+                  disabled={configInputsDisabled}
                 />
               )}
               label="Enable schedule"
@@ -569,7 +681,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
               fullWidth
               size="small"
               sx={{ mb: 1 }}
-              disabled={!schedule.enabled}
+              disabled={!schedule.enabled || configInputsDisabled}
             />
             <TextField
               label="Timezone"
@@ -581,14 +693,14 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
               fullWidth
               size="small"
               sx={{ mb: 2 }}
-              disabled={!schedule.enabled}
+              disabled={!schedule.enabled || configInputsDisabled}
             />
 
             <Button
               variant="contained"
               size="small"
               onClick={handleSaveConfig}
-              disabled={!isPodAdmin || saving}
+              disabled={saveDisabled}
               sx={{ mb: 1 }}
               fullWidth
             >
@@ -606,21 +718,21 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
               <Button
                 variant="contained"
                 onClick={handleStart}
-                disabled={actionLoading || state?.status === 'active'}
+                disabled={actionLoading || state?.status === 'active' || state?.status === 'paused' || loading}
               >
                 Start discussion
               </Button>
               <Button
                 variant="outlined"
                 onClick={handlePause}
-                disabled={actionLoading || state?.status !== 'active'}
+                disabled={actionLoading || state?.status !== 'active' || loading}
               >
                 Pause discussion
               </Button>
               <Button
                 variant="outlined"
                 onClick={handleResume}
-                disabled={actionLoading || state?.status !== 'paused'}
+                disabled={actionLoading || state?.status !== 'paused' || loading}
               >
                 Resume discussion
               </Button>
@@ -628,7 +740,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
                 variant="text"
                 color="error"
                 onClick={handleComplete}
-                disabled={actionLoading || !state || state.status === 'completed'}
+                disabled={actionLoading || !state || state.status === 'completed' || loading}
               >
                 Complete discussion
               </Button>

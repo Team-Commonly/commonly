@@ -304,13 +304,12 @@ const ChatRoom = () => {
     const isPodAdmin = room?.createdBy?._id && currentUser?._id
         ? room.createdBy._id === currentUser._id
         : false;
+    const canManageEnsemble = isPodAdmin || currentUser?.role === 'admin';
 
-    const { agentDisplayMap, agentMentionMap, agentMentionCounts } = useMemo(() => {
+    const { agentDisplayMap, agentMentionMap } = useMemo(() => {
         const displayMap = new Map();
         const mentionMap = new Map();
-        const counts = new Map();
         (podAgents || []).forEach((agent) => {
-            counts.set(agent.name, (counts.get(agent.name) || 0) + 1);
             const username = buildAgentUsername(agent.name, agent.instanceId);
             const display = agent.profile?.displayName || agent.displayName || agent.name;
             const instanceId = agent.instanceId || 'default';
@@ -321,9 +320,12 @@ const ChatRoom = () => {
                 .replace(/[^a-z0-9-]/g, '-')
                 .replace(/-+/g, '-')
                 .replace(/^-+|-+$/g, '');
+            const mentionValue = instanceId !== 'default'
+                ? instanceId
+                : (displaySlug || agent.name);
             if (username) {
                 displayMap.set(username, display);
-                mentionMap.set(username, agent.name);
+                mentionMap.set(username, mentionValue);
             }
             // Also map by instanceId and displaySlug for better resolution
             if (instanceId && instanceId !== 'default') {
@@ -334,7 +336,7 @@ const ChatRoom = () => {
                 displayMap.set(displaySlug, display);
             }
         });
-        return { agentDisplayMap: displayMap, agentMentionMap: mentionMap, agentMentionCounts: counts };
+        return { agentDisplayMap: displayMap, agentMentionMap: mentionMap };
     }, [podAgents]);
 
     const mentionableItems = useMemo(() => {
@@ -371,7 +373,6 @@ const ChatRoom = () => {
             if (seen.has(key)) return;
             seen.add(key);
             const display = agent.profile?.displayName || agent.displayName || agent.name;
-            const count = agentMentionCounts.get(agentName) || 0;
             const displaySlug = display
                 .toString()
                 .trim()
@@ -379,7 +380,10 @@ const ChatRoom = () => {
                 .replace(/[^a-z0-9-]/g, '-')
                 .replace(/-+/g, '-')
                 .replace(/^-+|-+$/g, '');
-            const mentionValue = count > 1 ? (displaySlug || `${agent.name}-${agent.instanceId}`) : agent.name;
+            const instanceId = agent.instanceId || 'default';
+            const mentionValue = instanceId !== 'default'
+                ? instanceId
+                : (displaySlug || agent.name);
             const labelSearch = `${display} ${agent.name} ${username} ${mentionValue}`.toLowerCase();
             items.push({
                 id: username,
@@ -2174,7 +2178,7 @@ const ChatRoom = () => {
                     <AgentEnsemblePanel
                         podId={roomId}
                         podAgents={podAgents}
-                        isPodAdmin={isPodAdmin}
+                        isPodAdmin={canManageEnsemble}
                     />
                 )}
 

@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 const AgentEnsembleService = require('../services/agentEnsembleService');
 const Pod = require('../models/Pod');
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -159,12 +160,7 @@ router.post('/:podId/ensemble/complete', auth, async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this pod' });
     }
 
-    const state = await AgentEnsembleService.getState(podId);
-    if (!state || state.status === 'completed') {
-      return res.status(400).json({ error: 'No active discussion to complete' });
-    }
-
-    const completed = await AgentEnsembleService.completeDiscussion(state._id, 'manual');
+    const completed = await AgentEnsembleService.completeActiveForPod(podId, 'manual');
 
     return res.json({
       success: true,
@@ -261,7 +257,10 @@ router.patch('/:podId/ensemble/config', auth, async (req, res) => {
     }
 
     if (pod.createdBy.toString() !== req.user.id) {
-      return res.status(403).json({ error: 'Only pod creator can update config' });
+      const user = await User.findById(req.user.id).select('role');
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ error: 'Only pod creator or global admin can update config' });
+      }
     }
 
     const config = {};

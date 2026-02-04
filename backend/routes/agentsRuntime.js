@@ -14,9 +14,21 @@ const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 
 const router = express.Router();
 
-const ensurePodMatch = (installation, podId) => (
-  installation?.podId?.toString() === podId.toString()
-);
+const ensurePodMatch = (installationOrList, podId) => {
+  if (Array.isArray(installationOrList)) {
+    return installationOrList.some((installation) => (
+      installation?.podId?.toString() === podId.toString()
+    ));
+  }
+  return installationOrList?.podId?.toString() === podId.toString();
+};
+
+const resolveInstallationForPod = (installations = [], fallback, podId) => {
+  if (!Array.isArray(installations)) return fallback;
+  return installations.find((installation) => (
+    installation?.podId?.toString() === podId.toString()
+  )) || fallback;
+};
 
 const requireBotUser = async (req, res) => {
   const userId = req.userId || req.user?.id;
@@ -44,12 +56,27 @@ const ensureBotInstallation = async (agentName, podId, instanceId = 'default') =
 router.get('/events', agentRuntimeAuth, async (req, res) => {
   try {
     const installation = req.agentInstallation;
+    const agentUser = req.agentUser;
+    const agentName = installation?.agentName
+      || agentUser?.botMetadata?.agentName
+      || agentUser?.botMetadata?.agentType
+      || agentUser?.username;
+    const instanceId = installation?.instanceId
+      || agentUser?.botMetadata?.instanceId
+      || 'default';
+    if (!agentName) {
+      return res.status(403).json({ message: 'Agent token not authorized for events' });
+    }
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const podIds = (req.agentInstallations || [])
+      .map((item) => item?.podId)
+      .filter(Boolean);
 
     const events = await AgentEventService.list({
-      agentName: installation.agentName,
-      instanceId: installation.instanceId || 'default',
-      podId: installation.podId,
+      agentName,
+      instanceId,
+      podId: installation?.podId,
+      podIds,
       limit,
     });
 
@@ -131,10 +158,21 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
 router.post('/events/:id/ack', agentRuntimeAuth, async (req, res) => {
   try {
     const installation = req.agentInstallation;
+    const agentUser = req.agentUser;
+    const agentName = installation?.agentName
+      || agentUser?.botMetadata?.agentName
+      || agentUser?.botMetadata?.agentType
+      || agentUser?.username;
+    const instanceId = installation?.instanceId
+      || agentUser?.botMetadata?.instanceId
+      || 'default';
+    if (!agentName) {
+      return res.status(403).json({ message: 'Agent token not authorized for events' });
+    }
     await AgentEventService.acknowledge(
       req.params.id,
-      installation.agentName,
-      installation.instanceId || 'default',
+      agentName,
+      instanceId,
     );
     return res.json({ success: true });
   } catch (error) {
@@ -342,9 +380,13 @@ router.post(
 router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const installation = req.agentInstallation;
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
 
-    if (!ensurePodMatch(installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -384,9 +426,13 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
 router.get('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const installation = req.agentInstallation;
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
 
-    if (!ensurePodMatch(installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -403,9 +449,13 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
 router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const installation = req.agentInstallation;
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
 
-    if (!ensurePodMatch(installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -445,14 +495,18 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
       return res.status(404).json({ message: 'Thread not found' });
     }
 
-    if (post.podId && !ensurePodMatch(installation, post.podId)) {
+    if (post.podId && !ensurePodMatch(req.agentInstallations || installation, post.podId)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
+    const resolvedInstallation = post.podId
+      ? resolveInstallationForPod(req.agentInstallations, installation, post.podId)
+      : installation;
+
     const result = await AgentThreadService.postComment({
-      agentName: installation.agentName,
-      instanceId: installation.instanceId || 'default',
-      displayName: installation.displayName,
+      agentName: resolvedInstallation.agentName,
+      instanceId: resolvedInstallation.instanceId || 'default',
+      displayName: resolvedInstallation.displayName,
       threadId,
       content,
     });

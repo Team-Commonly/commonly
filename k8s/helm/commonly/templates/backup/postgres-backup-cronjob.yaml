@@ -1,0 +1,65 @@
+{{- if .Values.backup.postgresql.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    component: backup
+    database: postgresql
+spec:
+  schedule: {{ .Values.backup.postgresql.schedule | quote }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "commonly.labels" . | nindent 12 }}
+            component: backup
+            database: postgresql
+        spec:
+          serviceAccountName: backup-sa
+          restartPolicy: OnFailure
+          containers:
+          - name: postgres-backup
+            image: postgres:15
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              BACKUP_FILE="/tmp/backup-$(date +%Y%m%d-%H%M%S).sql.gz"
+              echo "Starting PostgreSQL backup to $BACKUP_FILE"
+
+              pg_dump -h "$PG_HOST" -U "$PG_USER" -d "$PG_DATABASE" | gzip > "$BACKUP_FILE"
+
+              GCS_PATH="gs://{{ .Values.backup.postgresql.gcs.bucket }}/{{ .Values.backup.postgresql.gcs.path }}/backup-$(date +%Y%m%d-%H%M%S).sql.gz"
+              echo "Uploading to $GCS_PATH"
+
+              gsutil cp "$BACKUP_FILE" "$GCS_PATH"
+
+              echo "Backup completed successfully"
+              rm "$BACKUP_FILE"
+            env:
+            - name: PG_HOST
+              value: postgres.{{ include "commonly.namespace" . }}.svc.cluster.local
+            - name: PG_USER
+              value: {{ .Values.postgresql.username }}
+            - name: PG_DATABASE
+              value: {{ .Values.postgresql.database }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: database-credentials
+                  key: postgres-password
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+{{- end }}

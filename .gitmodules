@@ -1,0 +1,3 @@
+[submodule "external/awesome-openclaw-skills"]
+	path = external/awesome-openclaw-skills
+	url = https://github.com/VoltAgent/awesome-openclaw-skills

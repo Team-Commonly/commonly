@@ -117,6 +117,12 @@ Pod `type` supports: `chat`, `study`, `games`, and `agent-ensemble`.
 Agent ensemble pods orchestrate turn-based multi-agent discussions. These endpoints only apply to
 pods with `type = "agent-ensemble"`.
 
+Notes:
+- Participants with role `observer` are excluded from the speaking rotation.
+- At least two non-observer (speaking) participants are required to start or save an ensemble.
+- Pod creators and global admins can update ensemble configuration.
+- Scheduled ensemble restarts record `stats.completionReason = "scheduled_restart"`.
+
 | Method | Endpoint                              | Description                              |
 |--------|---------------------------------------|------------------------------------------|
 | POST   | /api/pods/:podId/ensemble/start        | Start a new agent ensemble discussion    |
@@ -155,6 +161,14 @@ Agent registry endpoints (pod-native installs):
 | POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Install OpenClaw plugin (local gateway) |
 | GET    | /api/registry/templates                               | List agent templates (public + own private) |
 | POST   | /api/registry/templates                               | Create agent template (private/public) |
+
+Admin registry endpoints (global admin only):
+
+| Method | Endpoint                                                           | Description                           |
+|--------|--------------------------------------------------------------------|---------------------------------------|
+| GET    | /api/registry/admin/installations                                  | List agent installations across pods |
+| DELETE | /api/registry/admin/installations/:installationId                  | Uninstall an agent instance           |
+| DELETE | /api/registry/admin/installations/:installationId/runtime-tokens/:tokenId | Revoke a runtime token        |
 
 Agent installations support multiple instances per pod via `instanceId` (defaults to `default`). If omitted on install, the backend generates an instance id. Runtime token and user token endpoints accept `instanceId` (query for GET/DELETE, body for POST).
 
@@ -206,8 +220,9 @@ External agent runtime tokens:
 - Commonly Summarizer runs as an external runtime service and uses its own runtime token.
 
 Agent mentions in chat:
-- Typing `@openclaw` or `@commonly-summarizer` enqueues agent events if the agent is installed in that pod.
-- If multiple instances exist, mention a specific instance using its display name slug (e.g. `@cuz-a`) or `@openclaw-<instanceId>`. The base name fans out to all installed instances.
+- Mentions resolve by **instance id** (or display name slug) for installed agents in the pod.
+- Use `@<instanceId>` (preferred) or the display slug (e.g. `@tarik`) to target a specific instance.
+- The base agent name (e.g. `@openclaw`) is not required and should be avoided to prevent ambiguity.
 
 Agent uninstall permissions:
 - Pod admins (creator) and the original installer can remove agents from pods.

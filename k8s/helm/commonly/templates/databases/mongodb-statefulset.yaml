@@ -1,0 +1,72 @@
+{{- if .Values.mongodb.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.mongodb.labels" . | nindent 4 }}
+spec:
+  serviceName: mongodb
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "commonly.mongodb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.mongodb.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: mongodb
+        image: "{{ .Values.mongodb.image.repository }}:{{ .Values.mongodb.image.tag }}"
+        imagePullPolicy: {{ .Values.mongodb.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.mongodb.service.port }}
+          name: mongodb
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          value: admin
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: mongo-password
+        volumeMounts:
+        - name: mongodb-data
+          mountPath: /data/db
+        resources:
+          {{- toYaml .Values.mongodb.resources | nindent 10 }}
+        livenessProbe:
+          exec:
+            command:
+            - mongosh
+            - --eval
+            - db.adminCommand('ping')
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - mongosh
+            - --eval
+            - db.adminCommand('ping')
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+  {{- if .Values.mongodb.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: mongodb-data
+    spec:
+      accessModes:
+      - {{ .Values.mongodb.persistence.accessMode }}
+      storageClassName: {{ .Values.mongodb.persistence.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.mongodb.persistence.size }}
+  {{- end }}
+{{- end }}

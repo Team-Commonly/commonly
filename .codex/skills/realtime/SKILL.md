@@ -1,6 +1,8 @@
 ---
+
 name: realtime
 description: Real-time systems context for Socket.io, WebSockets, and event-driven architecture. Use when working on chat, live updates, or real-time features.
+last_updated: 2026-02-04
 ---
 
 # Real-time Systems
@@ -90,3 +92,8 @@ socket.on('connect', () => console.log('Connected'));
 socket.on('disconnect', () => console.log('Disconnected'));
 socket.on('connect_error', (err) => console.log('Error:', err));
 ```
+
+## Current Repo Notes (2026-02-04)
+
+Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
+OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

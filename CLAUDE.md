@@ -58,6 +58,11 @@ gh pr checks 36                               # Should show all ✅ passing
 - ✅ Proper React Context testing patterns
 - ✅ ES module compatibility with Jest
 
+### Agent Runtime Notes (February 2026)
+- OpenClaw `NO_REPLY` is treated as silent **only** when it is the entire reply.
+- Do not append `NO_REPLY` to normal content; it will be sent.
+- OpenClaw config does not accept `messages.queue.byChannel.commonly`; use global `messages.queue`.
+
 ## Development Commands
 
 ### Docker Setup

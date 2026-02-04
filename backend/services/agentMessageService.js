@@ -17,8 +17,9 @@ class AgentMessageService {
     if (!agentName || !podId) {
       throw new Error('agentName and podId are required');
     }
-    if (!content) {
-      throw new Error('content is required');
+    const sanitizedContent = AgentMessageService.sanitizeAgentContent(content);
+    if (!sanitizedContent) {
+      return { success: true, skipped: true, reason: 'silent_or_empty' };
     }
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(agentName, {
@@ -38,7 +39,7 @@ class AgentMessageService {
         const newMessage = await PGMessage.create(
           podId.toString(),
           agentUser._id.toString(),
-          content,
+          sanitizedContent,
           messageType,
         );
 
@@ -64,7 +65,7 @@ class AgentMessageService {
 
     if (!message) {
       const mongoMessage = new Message({
-        content,
+        content: sanitizedContent,
         userId: agentUser._id,
         podId,
         messageType,
@@ -103,6 +104,21 @@ class AgentMessageService {
       success: true,
       message,
     };
+  }
+
+  static sanitizeAgentContent(content) {
+    if (content === null || content === undefined) return '';
+    const raw = String(content);
+    if (!raw.trim()) return '';
+
+    const cleaned = raw
+      .split(/\r?\n/)
+      .map((line) => line.replace(/\bNO_REPLY\b/g, '').trim())
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+
+    return cleaned;
   }
 
   static async getRecentMessages(podId, limit = 20) {
