@@ -148,6 +148,44 @@ const syncOpenClawSkills = async ({
   return skillsDir;
 };
 
+const normalizeSkillEnvMap = (env) => {
+  if (!env || typeof env !== 'object') return null;
+  const entries = Object.entries(env)
+    .map(([key, value]) => [String(key || '').trim(), String(value ?? '').trim()])
+    .filter(([key, value]) => key && value);
+  if (!entries.length) return null;
+  return Object.fromEntries(entries);
+};
+
+const syncOpenClawSkillEnv = ({ skillEnv = {} } = {}) => {
+  if (!skillEnv || typeof skillEnv !== 'object') return null;
+  const configPath = getOpenClawConfigPath();
+  const config = readJsonFile(configPath, {});
+  config.skills = config.skills || {};
+  config.skills.entries = config.skills.entries || {};
+
+  Object.entries(skillEnv).forEach(([skillName, env]) => {
+    const skillKey = PodAssetService.normalizeSkillKey(skillName);
+    const normalizedEnv = normalizeSkillEnvMap(env);
+    if (!normalizedEnv) {
+      if (config.skills.entries[skillKey]) {
+        delete config.skills.entries[skillKey].env;
+        if (!Object.keys(config.skills.entries[skillKey]).length) {
+          delete config.skills.entries[skillKey];
+        }
+      }
+      return;
+    }
+    config.skills.entries[skillKey] = {
+      ...(config.skills.entries[skillKey] || {}),
+      env: normalizedEnv,
+    };
+  });
+
+  writeJsonFile(configPath, config);
+  return configPath;
+};
+
 const ensureHeartbeatTemplate = (accountId, heartbeat) => {
   if (!heartbeat || heartbeat.enabled === false) return null;
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
@@ -695,6 +733,7 @@ module.exports = {
   writeOpenClawHeartbeatFile,
   ensureHeartbeatTemplate,
   syncOpenClawSkills,
+  syncOpenClawSkillEnv,
 
   // Mode detection
   isK8sMode,

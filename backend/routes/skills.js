@@ -1,13 +1,37 @@
 const express = require('express');
+const fs = require('fs');
+const JSON5 = require('json5');
 const auth = require('../middleware/auth');
+const adminAuth = require('../middleware/adminAuth');
 const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('../services/podAssetService');
 const SkillsCatalogService = require('../services/skillsCatalogService');
+const {
+  getOpenClawConfigPath,
+  syncOpenClawSkillEnv,
+} = require('../services/agentProvisionerService');
 
 const router = express.Router();
 
 const getUserId = (req) => req.user?.id || req.user?._id || req.userId;
+
+const extractCredentialHints = (content) => {
+  if (!content) return [];
+  const envPattern = /\b[A-Z][A-Z0-9]*_[A-Z0-9_]{2,}\b/g;
+  const keywordPattern = /(KEY|TOKEN|SECRET|CLIENT|ACCESS|OPENAI|ANTHROPIC|GEMINI|GOOGLE|SERP|BING|BRAVE|SLACK|DISCORD|GITHUB|TWITTER|X_|FACEBOOK|INSTAGRAM)/;
+  const hits = new Set();
+
+  let match;
+  while ((match = envPattern.exec(content)) !== null) {
+    const value = match[0];
+    if (keywordPattern.test(value)) {
+      hits.add(value);
+    }
+  }
+
+  return Array.from(hits).sort();
+};
 
 const ensurePodAccess = async (podId, userId) => {
   const pod = await Pod.findById(podId).lean();
@@ -30,6 +54,31 @@ const ensurePodAccess = async (podId, userId) => {
   }
 
   return pod;
+};
+
+const readOpenClawConfig = () => {
+  const configPath = getOpenClawConfigPath();
+  if (!configPath || !fs.existsSync(configPath)) return {};
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    if (!raw.trim()) return {};
+    return JSON5.parse(raw);
+  } catch (error) {
+    console.warn('[skills] Failed to read OpenClaw config:', error.message);
+    return {};
+  }
+};
+
+const readGatewaySkillEntries = () => {
+  const config = readOpenClawConfig();
+  const entries = config?.skills?.entries || {};
+  const output = {};
+  Object.entries(entries).forEach(([skillKey, entry]) => {
+    const env = entry?.env || {};
+    const keys = Object.keys(env).filter(Boolean);
+    output[skillKey] = { envKeys: keys };
+  });
+  return output;
 };
 
 // GET /api/skills/catalog?source=awesome
@@ -80,6 +129,59 @@ router.get('/catalog', auth, async (req, res) => {
   } catch (error) {
     console.error('Error loading skills catalog:', error);
     return res.status(500).json({ error: 'Failed to load skills catalog' });
+  }
+});
+
+// GET /api/skills/gateway-credentials
+router.get('/gateway-credentials', auth, adminAuth, async (req, res) => {
+  try {
+    const entries = readGatewaySkillEntries();
+    return res.json({
+      gatewayId: String(req.query.gatewayId || 'default'),
+      entries,
+    });
+  } catch (error) {
+    console.error('Error loading gateway credentials:', error);
+    return res.status(500).json({ error: 'Failed to load gateway credentials' });
+  }
+});
+
+// PATCH /api/skills/gateway-credentials
+router.patch('/gateway-credentials', auth, adminAuth, async (req, res) => {
+  try {
+    const entries = req.body?.entries;
+    if (!entries || typeof entries !== 'object') {
+      return res.status(400).json({ error: 'entries is required' });
+    }
+    syncOpenClawSkillEnv({ skillEnv: entries });
+    const updated = readGatewaySkillEntries();
+    return res.json({ gatewayId: String(req.query.gatewayId || 'default'), entries: updated });
+  } catch (error) {
+    console.error('Error updating gateway credentials:', error);
+    return res.status(500).json({ error: 'Failed to update gateway credentials' });
+  }
+});
+
+// GET /api/skills/requirements?sourceUrl=...
+router.get('/requirements', auth, async (req, res) => {
+  try {
+    const sourceUrl = String(req.query.sourceUrl || '').trim();
+    if (!sourceUrl) {
+      return res.status(400).json({ error: 'sourceUrl is required' });
+    }
+
+    const fetched = await SkillsCatalogService.fetchSkillContentFromSource(sourceUrl);
+    const content = fetched.content || '';
+    const requirements = extractCredentialHints(content);
+
+    return res.json({
+      sourceUrl: fetched.resolvedUrl || sourceUrl,
+      requirements,
+      detectedCount: requirements.length,
+    });
+  } catch (error) {
+    console.error('Error fetching skill requirements:', error);
+    return res.status(500).json({ error: 'Failed to fetch skill requirements' });
   }
 });
 
