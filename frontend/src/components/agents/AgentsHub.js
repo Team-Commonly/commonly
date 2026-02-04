@@ -109,6 +109,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [configPersonaSpecialties, setConfigPersonaSpecialties] = useState('');
   const [configPersonaBoundaries, setConfigPersonaBoundaries] = useState('');
   const [configPersonaCustomInstructions, setConfigPersonaCustomInstructions] = useState('');
+  const [toolPolicyAllowed, setToolPolicyAllowed] = useState('commonly');
+  const [toolPolicyBlocked, setToolPolicyBlocked] = useState('');
+  const [toolPolicyRequireApproval, setToolPolicyRequireApproval] = useState('');
   const [configHeartbeatEnabled, setConfigHeartbeatEnabled] = useState(true);
   const [configHeartbeatInterval, setConfigHeartbeatInterval] = useState(60);
   const [configHeartbeatChecklist, setConfigHeartbeatChecklist] = useState('');
@@ -722,6 +725,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     'formal',
     'technical',
   ];
+  const toolPolicyHelper = 'Common: commonly (all), commonly_search, commonly_context, commonly_write.';
 
   const DEFAULT_HEARTBEAT_CHECKLIST = [
     '- Use the `commonly` skill to fetch pod context (`/api/pods/:id/context`), last 20 chat messages, and 10 most recent posts.',
@@ -811,6 +815,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigAgent(resolved);
     setConfigModel(resolved?.profile?.modelPreferences?.preferred || 'gemini-2.0-flash');
     const persona = resolved?.profile?.persona || {};
+    const toolPolicy = resolved?.profile?.toolPolicy || {};
     const heartbeatConfig = resolved?.config?.heartbeat || null;
     const heartbeatChecklist = resolved?.config?.heartbeatChecklist || '';
     const skillSyncConfig = resolved?.config?.skillSync || {};
@@ -819,6 +824,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigPersonaSpecialties(formatCommaList(persona.specialties || []));
     setConfigPersonaBoundaries(formatCommaList(persona.boundaries || []));
     setConfigPersonaCustomInstructions(persona.customInstructions || '');
+    setToolPolicyAllowed(formatCommaList(toolPolicy.allowed || ['commonly']));
+    setToolPolicyBlocked(formatCommaList(toolPolicy.blocked || []));
+    setToolPolicyRequireApproval(formatCommaList(toolPolicy.requireApproval || []));
     setConfigHeartbeatEnabled(heartbeatConfig?.enabled !== false);
     setConfigHeartbeatInterval(parseHeartbeatMinutes(heartbeatConfig));
     setConfigHeartbeatChecklist(
@@ -1036,6 +1044,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigPersonaSpecialties('');
     setConfigPersonaBoundaries('');
     setConfigPersonaCustomInstructions('');
+    setToolPolicyAllowed('commonly');
+    setToolPolicyBlocked('');
+    setToolPolicyRequireApproval('');
   };
 
   useEffect(() => {
@@ -1084,6 +1095,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     const targetPods = skillSyncAllPods ? availablePods : skillSyncPods;
     fetchSkillSyncSkills(targetPods);
   }, [configOpen, configAgent, skillSyncAllPods, skillSyncPods, skillSyncPodOptions]);
+
 
   useEffect(() => {
     if (!runtimeLogsOpen || !runtimeLogsAutoRefresh) return () => {};
@@ -1418,6 +1430,11 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           specialties: parseCommaList(configPersonaSpecialties),
           boundaries: parseCommaList(configPersonaBoundaries),
           customInstructions: configPersonaCustomInstructions,
+        },
+        toolPolicy: {
+          allowed: parseCommaList(toolPolicyAllowed),
+          blocked: parseCommaList(toolPolicyBlocked),
+          requireApproval: parseCommaList(toolPolicyRequireApproval),
         },
       }, {
         headers: getAuthHeaders(),
@@ -1948,6 +1965,36 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             onChange={(e) => setConfigPersonaCustomInstructions(e.target.value)}
             multiline
             minRows={2}
+            sx={{ mb: 2 }}
+          />
+
+          <Divider sx={{ my: 3 }} />
+
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Tool Access Policy
+          </Typography>
+          <TextField
+            fullWidth
+            label="Allowed tools/categories (comma-separated)"
+            value={toolPolicyAllowed}
+            onChange={(e) => setToolPolicyAllowed(e.target.value)}
+            helperText={toolPolicyHelper}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Blocked tools (comma-separated)"
+            value={toolPolicyBlocked}
+            onChange={(e) => setToolPolicyBlocked(e.target.value)}
+            helperText="Blocklist always wins, even if allowed."
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Require approval (comma-separated)"
+            value={toolPolicyRequireApproval}
+            onChange={(e) => setToolPolicyRequireApproval(e.target.value)}
+            helperText="Tools that should request human approval."
             sx={{ mb: 2 }}
           />
 
