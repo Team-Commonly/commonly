@@ -1,0 +1,236 @@
+{{- if .Values.backend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.backend.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "commonly.backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.backend.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.rbac.serviceAccount.name }}
+      containers:
+      - name: backend
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+        imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.backend.service.port }}
+          name: http
+        env:
+        # Node Environment
+        - name: NODE_ENV
+          value: {{ .Values.backend.env.nodeEnv }}
+        - name: PORT
+          value: {{ .Values.backend.service.port | quote }}
+
+        # Database Connections
+        - name: MONGO_URI
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: mongo-uri
+        - name: PG_HOST
+          value: postgres.{{ include "commonly.namespace" . }}.svc.cluster.local
+        - name: PG_PORT
+          value: "5432"
+        - name: PG_DATABASE
+          value: {{ .Values.postgresql.database }}
+        - name: PG_USER
+          value: {{ .Values.postgresql.username }}
+        - name: PG_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: postgres-password
+        - name: PG_SSL_ENABLED
+          value: "true"
+        - name: PG_CA_CERT_PATH
+          value: /app/certs/ca.pem
+
+        # Redis for Socket.io
+        - name: REDIS_HOST
+          value: redis.{{ include "commonly.namespace" . }}.svc.cluster.local
+        - name: REDIS_PORT
+          value: {{ .Values.redis.service.port | quote }}
+
+        # JWT and Session
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: jwt-secret
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: session-secret
+
+        # AI Services
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: gemini-api-key
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-api-key
+              optional: true
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: anthropic-api-key
+              optional: true
+
+        # Discord Integration
+        - name: DISCORD_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: discord-bot-token
+        - name: DISCORD_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: discord-client-id
+        - name: DISCORD_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: discord-client-secret
+        - name: DISCORD_GUILD_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: discord-guild-id
+              optional: true
+
+        # OAuth Providers
+        - name: GOOGLE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: google-client-id
+              optional: true
+        - name: GOOGLE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: google-client-secret
+              optional: true
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: github-client-id
+              optional: true
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: github-client-secret
+              optional: true
+
+        # Agent Runtime Configuration
+        - name: AGENT_PROVISIONER_K8S
+          value: {{ .Values.backend.env.agentProvisionerK8s | quote }}
+        - name: AGENT_PROVISIONER_DOCKER
+          value: {{ .Values.backend.env.agentProvisionerDocker | quote }}
+        - name: CLAWDBOT_GATEWAY_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: clawdbot-gateway-token
+        - name: COMMONLY_BOT_RUNTIME_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: commonly-bot-runtime-token
+
+        # Other Integrations
+        - name: SLACK_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: slack-bot-token
+              optional: true
+        - name: GROUPME_BOT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: groupme-bot-id
+              optional: true
+        - name: TELEGRAM_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: telegram-bot-token
+              optional: true
+
+        # LiteLLM Configuration
+        - name: LITELLM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: litellm-master-key
+              optional: true
+        - name: LITELLM_BASE_URL
+          value: http://litellm:4000
+
+        # Logging
+        - name: LOG_LEVEL
+          value: {{ .Values.backend.env.logLevel | default "info" }}
+
+        volumeMounts:
+        - name: postgres-ca-cert
+          mountPath: /app/certs
+          readOnly: true
+        - name: marketplace-manifest
+          mountPath: /app/packages/commonly-marketplace
+          readOnly: true
+        - name: skills-catalog
+          mountPath: /app/docs/skills
+          readOnly: true
+
+        resources:
+          {{- toYaml .Values.backend.resources | nindent 10 }}
+
+        {{- if .Values.backend.livenessProbe.enabled }}
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.backend.livenessProbe.path }}
+            port: http
+          initialDelaySeconds: {{ .Values.backend.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.backend.livenessProbe.periodSeconds }}
+        {{- end }}
+
+        {{- if .Values.backend.readinessProbe.enabled }}
+        readinessProbe:
+          httpGet:
+            path: {{ .Values.backend.readinessProbe.path }}
+            port: http
+          initialDelaySeconds: {{ .Values.backend.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.backend.readinessProbe.periodSeconds }}
+        {{- end }}
+
+      volumes:
+      - name: postgres-ca-cert
+        secret:
+          secretName: postgres-ca-cert
+      - name: marketplace-manifest
+        configMap:
+          name: marketplace-manifest
+      - name: skills-catalog
+        configMap:
+          name: skills-catalog
+{{- end }}

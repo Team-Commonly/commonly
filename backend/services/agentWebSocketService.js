@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const AgentEventService = require('./agentEventService');
+const User = require('../models/User');
 const { hash } = require('../utils/secret');
 
 /**
@@ -176,8 +177,33 @@ class AgentWebSocketService {
     if (token.startsWith('cm_agent_')) {
       // Look up token in database
       try {
-        const { AgentInstallation } = require('../models/AgentRegistry');
         const tokenHash = hash(token);
+        const agentUser = await User.findOne({
+          'agentRuntimeTokens.tokenHash': tokenHash,
+          isBot: true,
+        });
+
+        if (agentUser) {
+          try {
+            await User.updateOne(
+              { _id: agentUser._id, 'agentRuntimeTokens.tokenHash': tokenHash },
+              { $set: { 'agentRuntimeTokens.$.lastUsedAt': new Date() } },
+            );
+          } catch (err) {
+            console.warn('Failed to update agent token usage on User:', err.message);
+          }
+
+          const agentName = agentUser.botMetadata?.agentName
+            || agentUser.botMetadata?.agentType
+            || agentUser.username;
+          const instanceId = agentUser.botMetadata?.instanceId || 'default';
+
+          if (agentName) {
+            return { agentName, instanceId };
+          }
+        }
+
+        const { AgentInstallation } = require('../models/AgentRegistry');
         const installation = await AgentInstallation.findOne({
           'runtimeTokens.tokenHash': tokenHash,
           status: 'active',

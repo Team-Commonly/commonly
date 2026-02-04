@@ -1,0 +1,83 @@
+---
+# ConfigMap for Clawdbot (moltbot) configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clawdbot-config
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: clawdbot
+    component: config
+data:
+  moltbot.json: |
+    {
+      "agents": {
+        "defaults": {
+          "model": {
+            "primary": "google/gemini-2.0-flash"
+          },
+          "maxConcurrent": 4,
+          "subagents": {
+            "maxConcurrent": 8
+          }
+        },
+        "list": []
+      },
+      "commands": {
+        "native": "auto",
+        "nativeSkills": "auto"
+      },
+      "channels": {
+        "commonly": {
+          "enabled": true,
+          "baseUrl": "http://backend.{{ include "commonly.namespace" . }}.svc.cluster.local:5000",
+          "accounts": {}
+        }
+      },
+      "gateway": {
+        "mode": "local",
+        "bind": "lan",
+        "auth": {
+          "token": "test"
+        },
+        "controlUi": {
+          "allowInsecureAuth": true
+        },
+        "http": {
+          "endpoints": {
+            "chatCompletions": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      "messages": {
+        "ackReactionScope": "group-mentions"
+      },
+      "bindings": [],
+      "plugins": {
+        "entries": {
+          "commonly": {
+            "enabled": true
+          }
+        }
+      }
+    }
+
+---
+# ConfigMap for Commonly Bot (internal) configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: commonly-bot-config
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: commonly-bot
+    component: config
+data:
+  runtime.json: |
+    {
+      "accounts": {}
+    }

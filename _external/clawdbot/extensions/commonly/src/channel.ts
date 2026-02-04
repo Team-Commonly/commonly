@@ -102,6 +102,27 @@ const sanitizeOutboundText = (text: string | undefined): string => {
   return parseInlineDirectives(text, { stripReplyTags: true, stripAudioTag: true }).text;
 };
 
+const scrubNoReplyAndRepeats = (text: string, maxChars = 1600): string => {
+  const normalized = text.replace(/\r\n/g, "\n");
+  const withoutNoReply = normalized.replace(/(^|\n)\s*NO_REPLY\s*(?=\n|$)/g, "$1");
+  const paragraphs = withoutNoReply
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const deduped: string[] = [];
+  for (const paragraph of paragraphs) {
+    const last = deduped[deduped.length - 1];
+    if (last !== paragraph) {
+      deduped.push(paragraph);
+    }
+  }
+  let cleaned = deduped.join("\n\n").trim();
+  if (cleaned.length > maxChars) {
+    cleaned = `${cleaned.slice(0, maxChars).trimEnd()}...`;
+  }
+  return cleaned;
+};
+
 export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
   id: "commonly",
   meta: {
@@ -376,7 +397,7 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
             responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
             humanDelay: runtime.channel.reply.resolveHumanDelayConfig(cfg, route.agentId),
             deliver: async (payload: ReplyPayload) => {
-              const text = sanitizeOutboundText(payload.text ?? "");
+              const text = scrubNoReplyAndRepeats(sanitizeOutboundText(payload.text ?? ""));
               const mediaUrl = payload.mediaUrl;
               const message = [text.trim(), mediaUrl?.trim() || ""].filter(Boolean).join("\n");
               if (!message) return;

@@ -1,6 +1,8 @@
 ---
+
 name: agent-runtime
 description: Agent runtime tokens, events, mentions, and external runtimes (OpenClaw, summarizer).
+last_updated: 2026-02-04
 ---
 
 # Agent Runtime
@@ -19,21 +21,43 @@ description: Agent runtime tokens, events, mentions, and external runtimes (Open
 - `/api/agents/runtime/events/:id/ack`
 - `/api/agents/runtime/pods/:podId/messages`
 - `/api/agents/runtime/bot/*` (bot user token endpoints)
+- `/api/registry/pods/:podId/agents/:name/heartbeat-file` (writes OpenClaw `HEARTBEAT.md`)
+- `/api/registry/agents/:name/installations` (list pod installations for skill sync)
 
 ## Tokens
 
 - Runtime token: `cm_agent_*`
 - User token: `cm_*`
  - Multi-instance: `OPENCLAW_RUNTIME_TOKEN` + `OPENCLAW_B_RUNTIME_TOKEN` (and matching user tokens).
+- Shared runtime tokens live on the bot user and authorize all active installations
+  for the agent/instance across pods.
 
 ## Mentions
 
-- `@openclaw` and `@commonly-summarizer` enqueue events
-- If multiple instances exist, mention by display name slug or `@openclaw-<instanceId>`
+- Mention agents by **instance id** (preferred) or display slug, e.g. `@tarik`, `@cuz-b`.
+- Avoid the base agent name (e.g. `@openclaw`) to prevent ambiguity.
 - For OpenClaw multi-instance, bind each `channels.commonly.accounts.<id>` to a distinct `agentId`.
+
+## Silent Reply Token
+
+- `NO_REPLY` only suppresses output when it is the **entire reply**.
+- Do not append `NO_REPLY` to normal text; it will be treated as visible content.
+
+## Commonly Queue Settings (OpenClaw)
+
+- Per-channel overrides (e.g. `messages.queue.byChannel.commonly`) are not supported.
+- Use a global queue policy to avoid duplicate ensemble bursts:
+  - `messages.queue.mode = "queue"`
+  - `messages.queue.cap = 1`
+  - `messages.queue.drop = "old"`
 
 ## References
 
 - [AGENT_RUNTIME.md](../../../docs/agents/AGENT_RUNTIME.md)
 - [CLAWDBOT.md](../../../docs/agents/CLAWDBOT.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
+
+## Current Repo Notes (2026-02-04)
+
+Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
+OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

@@ -5,8 +5,14 @@ jest.mock('../../models/AgentRegistry', () => ({
   },
 }));
 
+jest.mock('../../models/User', () => ({
+  findOne: jest.fn(),
+  updateOne: jest.fn(),
+}));
+
 const { hash } = require('../../utils/secret');
 const { AgentInstallation } = require('../../models/AgentRegistry');
+const User = require('../../models/User');
 
 describe('agentWebSocketService', () => {
   let agentWebSocketService;
@@ -20,6 +26,7 @@ describe('agentWebSocketService', () => {
 
   describe('validateAgentToken', () => {
     it('validates cm_agent tokens using hashed runtime tokens', async () => {
+      User.findOne.mockResolvedValue(null);
       AgentInstallation.findOne.mockResolvedValue({
         _id: 'install-1',
         agentName: 'openclaw',
@@ -43,6 +50,33 @@ describe('agentWebSocketService', () => {
         agentName: 'openclaw',
         instanceId: 'default',
         podId: 'pod-123',
+      });
+    });
+
+    it('validates cm_agent tokens using shared runtime tokens on bot users', async () => {
+      User.findOne.mockResolvedValue({
+        _id: 'user-1',
+        isBot: true,
+        username: 'openclaw',
+        botMetadata: { agentName: 'openclaw', instanceId: 'cuz' },
+      });
+      User.updateOne.mockResolvedValue({});
+
+      const token = 'cm_agent_sharedtoken';
+      const result = await agentWebSocketService.validateAgentToken(token);
+
+      expect(User.findOne).toHaveBeenCalledWith({
+        'agentRuntimeTokens.tokenHash': hash(token),
+        isBot: true,
+      });
+      expect(User.updateOne).toHaveBeenCalledWith(
+        { _id: 'user-1', 'agentRuntimeTokens.tokenHash': hash(token) },
+        { $set: { 'agentRuntimeTokens.$.lastUsedAt': expect.any(Date) } },
+      );
+      expect(AgentInstallation.findOne).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        agentName: 'openclaw',
+        instanceId: 'cuz',
       });
     });
   });

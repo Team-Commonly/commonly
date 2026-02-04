@@ -1,6 +1,8 @@
 ---
+
 name: backend-dev
 description: Backend development context for Node.js/Express APIs, services, controllers, middleware, and testing patterns. Use when working on backend code.
+last_updated: 2026-02-04
 ---
 
 # Backend Development
@@ -128,3 +130,8 @@ OUTBOUND: Commonly → External
 - Each agent receives events scoped to their agentName
 - Agent chaining: commonly-bot can enqueue events for clawdbot
 - Custom agents use `registry: 'commonly-community'`
+
+## Current Repo Notes (2026-02-04)
+
+Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
+OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

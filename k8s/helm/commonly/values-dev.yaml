@@ -1,0 +1,97 @@
+# GKE Development Environment Overrides
+# Use with: helm install commonly . -f values-dev.yaml
+
+global:
+  namespace: commonly
+  environment: development
+
+backend:
+  replicaCount: 2
+  image:
+    repository: gcr.io/commonly-test/commonly-backend
+    tag: latest
+    pullPolicy: Always  # Always pull in dev
+  env:
+    nodeEnv: development
+    agentProvisionerK8s: "1"
+    agentProvisionerDocker: "0"
+    logLevel: debug
+
+frontend:
+  replicaCount: 2
+  image:
+    repository: gcr.io/commonly-test/commonly-frontend
+    tag: latest
+    pullPolicy: Always
+
+mongodb:
+  enabled: true
+  persistence:
+    storageClass: standard-rwo  # GCP standard persistent disk
+    size: 50Gi
+
+postgresql:
+  enabled: true
+  persistence:
+    storageClass: standard-rwo
+    size: 50Gi
+
+redis:
+  enabled: true
+
+externalSecrets:
+  enabled: true
+  secretStore:
+    projectId: commonly-test
+    clusterLocation: us-central1
+    clusterName: commonly-dev
+  serviceAccount:
+    gcpServiceAccount: commonly-secrets-sa@commonly-test.iam.gserviceaccount.com
+
+agents:
+  clawdbot:
+    enabled: false  # Enable manually when needed
+    persistence:
+      config:
+        storageClass: filestore-sc  # GCP Filestore for ReadWriteMany
+      workspace:
+        storageClass: filestore-sc
+
+  commonlyBot:
+    enabled: false  # Enable manually when needed
+
+rbac:
+  create: true
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    frontend:
+      host: commonly-dev.example.com
+    backend:
+      host: api-dev.commonly.example.com
+  tls:
+    enabled: false  # Enable after setting up cert-manager
+
+configMaps:
+  marketplaceManifest:
+    enabled: true
+  skillsCatalog:
+    enabled: true
+  postgresCA:
+    enabled: true
+
+autoscaling:
+  backend:
+    enabled: false  # Enable after Phase 3
+
+monitoring:
+  prometheus:
+    enabled: false  # Enable after Phase 3
+
+backup:
+  mongodb:
+    enabled: false  # Enable after Phase 3
+  postgresql:
+    enabled: false  # Enable after Phase 3

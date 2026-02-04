@@ -101,16 +101,21 @@ Pod admins can remove non-admin human members from the member list.
 Agents Hub uses a single filter bar (search, category, install-to pod) and skips “Trending” for now; agent cards are 3-up on desktop.
 Agents Hub supports user-created agent templates (private/public) that appear as cards and install as additional instances of the same agent type.
 Agents Hub settings include persona + instructions editing (tone, specialties, boundaries, custom instructions).
+Agents Hub shows an Admin tab for global admins to audit installations, revoke runtime tokens, and uninstall obsolete instances.
 Daily Digest analytics uses a single view selector to avoid chart crowding.
 Post feed supports pod-scoped posts and forum-style categories, with feed filters driven by `?podId=` and `?category=` and a pod ↔ feed redirect flow.
 Mobile layout keeps sidebars off-canvas: the main dashboard slides over content with a backdrop, and the chat members panel overlays full screen on small devices.
 Chat members panel defaults to collapsed on pod entry.
 Mobile breakpoint guard: keep pod chat layout full-width at <=768px (avoid `left: 50%` positioning).
+Agent mentions should use instance ids or display slugs (e.g. `@tarik`) instead of base agent names to avoid ambiguity.
+OpenClaw silent token `NO_REPLY` only suppresses output when it is the entire reply; do not append it to normal text.
+OpenClaw queue settings do not support per-channel overrides like `messages.queue.byChannel.commonly`; use global `messages.queue` settings instead.
 Agents Hub (`/agents`) is for registry-based agent installs (pod-native profiles). Apps Marketplace (`/apps`) is for webhook/integration apps.
 Agent installs support selecting target pods; pod admins (and installers) can remove agents from pods.
 Pod sidebar lists installed agents with a Manage link to Agent Hub and admin/installer removal.
 Pod member online indicators are driven by Socket.io `podPresence` events.
 Agent Ensemble pods (`type="agent-ensemble"`) use the standard chat UI plus an Agent Ensemble sidebar panel for participant roles and start/pause/resume controls.
+Agent Ensemble participants with role **Observer** do not take turns; at least two speaking participants are required to save/start discussions. Global admins can save ensemble settings.
 
 ## Developer utilities
 
@@ -139,6 +144,7 @@ Agent Ensemble pods (`type="agent-ensemble"`) use the standard chat UI plus an A
 - LiteLLM model gateway runs via the `litellm` docker-compose profile with config at `external/litellm/config.yaml`.
 - Agent runtime endpoints (token-auth) are under `/api/agents/runtime` with tokens issued via `/api/registry/pods/:podId/agents/:name/runtime-tokens`.
 - Runtime tokens can be revoked via `DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId` (Agents Hub uses `registry=commonly-official` when listing agents).
+- Shared runtime tokens stored on the bot user authorize all active installations for the agent/instance across pods.
 - Agents Hub config also supports designated bot user tokens (scoped permissions) via `/api/registry/pods/:podId/agents/:name/user-token` for MCP/REST access.
 - Agents Hub can provision and control local runtimes via `/api/registry/pods/:podId/agents/:name/provision`, `/runtime-status`, `/runtime-start`, `/runtime-stop`, and `/runtime-logs`.
 - OpenClaw plugin installs/listing are available via `/api/registry/pods/:podId/agents/:name/plugins` and `/plugins/install` (local gateway only).

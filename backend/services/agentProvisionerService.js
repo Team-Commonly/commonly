@@ -3,6 +3,8 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const JSON5 = require('json5');
+const PodAsset = require('../models/PodAsset');
+const PodAssetService = require('./podAssetService');
 
 const execFileAsync = promisify(execFile);
 
@@ -28,6 +30,45 @@ const writeJsonFile = (filePath, payload) => {
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`);
 };
 
+const DEFAULT_HEARTBEAT_CONTENT = [
+  '# HEARTBEAT.md',
+  '- Use the `commonly` skill to fetch pod context (`/api/pods/:id/context`), last 20 chat messages, and 10 most recent posts.',
+  '- If there is something new, post a concise update to the pod chat and reply to relevant posts/threads.',
+  '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
+  '- If nothing new, reply HEARTBEAT_OK.',
+  '',
+].join('\n');
+
+const isHeartbeatContentEffectivelyEmpty = (content = '') => {
+  if (!content) return true;
+  const lines = String(content)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return true;
+  const actionable = lines.filter((line) => {
+    if (!line) return false;
+    if (line.startsWith('#')) return false;
+    if (line.startsWith('//')) return false;
+    if (line.startsWith('<!--')) return false;
+    if (line.startsWith('>')) return false;
+    if (line.startsWith('-') || line.startsWith('*') || line.startsWith('+')) {
+      return line.replace(/^[-*+]\s*/, '').trim().length > 0;
+    }
+    return true;
+  });
+  return actionable.length === 0;
+};
+
+const normalizeHeartbeatContent = (content) => {
+  const trimmed = String(content || '').trim();
+  if (!trimmed) return DEFAULT_HEARTBEAT_CONTENT;
+  if (trimmed.startsWith('#')) {
+    return `${trimmed}\n`;
+  }
+  return `# HEARTBEAT.md\n\n${trimmed}\n`;
+};
+
 const resolveOpenClawAccountId = ({ agentName, instanceId }) => {
   const normalizedAgent = String(agentName || '').trim().toLowerCase();
   const normalizedInstance = String(instanceId || 'default').trim().toLowerCase() || 'default';
@@ -44,6 +85,88 @@ const resolveOpenClawWorkspacePath = (accountId) => {
     || '/home/node/clawd'
   ).replace(/\/+$/g, '');
   return `${workspaceRoot}/${accountId}`;
+};
+
+const writeOpenClawHeartbeatFile = (accountId, content, { allowEmpty = true } = {}) => {
+  const workspacePath = resolveOpenClawWorkspacePath(accountId);
+  const heartbeatPath = path.join(workspacePath, 'HEARTBEAT.md');
+  ensureDir(heartbeatPath);
+  const normalized = allowEmpty ? String(content || '') : normalizeHeartbeatContent(content);
+  fs.writeFileSync(heartbeatPath, normalized.endsWith('\n') ? normalized : `${normalized}\n`);
+  return heartbeatPath;
+};
+
+const clearOpenClawSkillsDir = (accountId) => {
+  const workspacePath = resolveOpenClawWorkspacePath(accountId);
+  const skillsDir = path.join(workspacePath, 'skills');
+  try {
+    fs.rmSync(skillsDir, { recursive: true, force: true });
+  } catch (error) {
+    console.warn('[agent-provisioner] Failed clearing skills dir:', error.message);
+  }
+  fs.mkdirSync(skillsDir, { recursive: true });
+  return skillsDir;
+};
+
+const syncOpenClawSkills = async ({
+  accountId,
+  podIds = [],
+  mode = 'all',
+  skillNames = [],
+}) => {
+  const skillsDir = clearOpenClawSkillsDir(accountId);
+  const normalizedPods = Array.isArray(podIds)
+    ? podIds.map((id) => String(id)).filter(Boolean)
+    : [];
+  if (!normalizedPods.length) return skillsDir;
+
+  const query = {
+    podId: { $in: normalizedPods },
+    type: 'skill',
+    status: 'active',
+    sourceType: 'imported-skill',
+  };
+  const normalizedSkillNames = Array.isArray(skillNames)
+    ? skillNames.map((name) => String(name).trim()).filter(Boolean)
+    : [];
+  if (mode === 'selected' && normalizedSkillNames.length) {
+    query['metadata.skillName'] = { $in: normalizedSkillNames };
+  }
+
+  const assets = await PodAsset.find(query).lean();
+  assets.forEach((asset) => {
+    const skillName = asset?.metadata?.skillName || asset?.title?.replace(/^Skill:\s*/i, '') || '';
+    if (!skillName) return;
+    const slug = PodAssetService.normalizeSkillKey(skillName);
+    const dirPath = path.join(skillsDir, slug);
+    fs.mkdirSync(dirPath, { recursive: true });
+    const filePath = path.join(dirPath, 'SKILL.md');
+    const content = asset?.content || '';
+    fs.writeFileSync(filePath, content.endsWith('\n') ? content : `${content}\n`);
+  });
+
+  return skillsDir;
+};
+
+const ensureHeartbeatTemplate = (accountId, heartbeat) => {
+  if (!heartbeat || heartbeat.enabled === false) return null;
+  const workspacePath = resolveOpenClawWorkspacePath(accountId);
+  const heartbeatPath = path.join(workspacePath, 'HEARTBEAT.md');
+  let content = '';
+  try {
+    if (fs.existsSync(heartbeatPath)) {
+      content = fs.readFileSync(heartbeatPath, 'utf8');
+    }
+  } catch (error) {
+    console.warn('[agent-provisioner] Failed to read HEARTBEAT.md:', error.message);
+  }
+  if (!content || isHeartbeatContentEffectivelyEmpty(content)) {
+    const normalized = normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT);
+    ensureDir(heartbeatPath);
+    fs.writeFileSync(heartbeatPath, normalized);
+    return heartbeatPath;
+  }
+  return heartbeatPath;
 };
 
 const getOpenClawConfigPath = () => (
@@ -160,6 +283,7 @@ const provisionOpenClawAccount = ({
   }
 
   writeJsonFile(configPath, config);
+  ensureHeartbeatTemplate(accountId, heartbeat);
 
   return {
     configPath,
@@ -194,7 +318,7 @@ const provisionCommonlyBotAccount = ({
   };
 };
 
-const provisionAgentRuntime = ({
+const provisionAgentRuntime = async ({
   runtimeType,
   agentName,
   instanceId,
@@ -204,6 +328,23 @@ const provisionAgentRuntime = ({
   displayName,
   heartbeat,
 }) => {
+  // Route to K8s or Docker implementation
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.provisionAgentRuntime({
+      runtimeType,
+      agentName,
+      instanceId,
+      runtimeToken,
+      userToken,
+      baseUrl,
+      displayName,
+      heartbeat,
+    });
+  }
+
+  // Docker mode (existing file-based logic)
   if (runtimeType === 'moltbot') {
     const accountId = resolveOpenClawAccountId({ agentName, instanceId });
     return provisionOpenClawAccount({
@@ -478,10 +619,70 @@ const getDockerRuntimeLogs = async (runtimeType, lines = 200) => {
   return { logs: result.stdout || '', service: serviceName };
 };
 
+// Kubernetes mode detection
+const isK8sMode = () => process.env.AGENT_PROVISIONER_K8S === '1';
+
+// Unified interface that routes to K8s or Docker implementation
+const startAgentRuntime = async (runtimeType, instanceId) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.startAgentRuntime(runtimeType, instanceId);
+  }
+  return startDockerRuntime(runtimeType);
+};
+
+const stopAgentRuntime = async (runtimeType, instanceId) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.stopAgentRuntime(runtimeType, instanceId);
+  }
+  return stopDockerRuntime(runtimeType);
+};
+
+const restartAgentRuntime = async (runtimeType, instanceId) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.restartAgentRuntime(runtimeType, instanceId);
+  }
+  return restartDockerRuntime(runtimeType);
+};
+
+const getAgentRuntimeStatus = async (runtimeType, instanceId) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.getAgentRuntimeStatus(runtimeType, instanceId);
+  }
+  return getDockerRuntimeStatus(runtimeType);
+};
+
+const getAgentRuntimeLogs = async (runtimeType, instanceId, lines = 200) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.getAgentRuntimeLogs(runtimeType, instanceId, lines);
+  }
+  return getDockerRuntimeLogs(runtimeType, lines);
+};
+
+// Export unified interface
 module.exports = {
+  // Core provisioning (works in both modes)
   provisionAgentRuntime,
   getOpenClawConfigPath,
   getCommonlyBotConfigPath,
+
+  // Unified runtime control (auto-routes to K8s or Docker)
+  startAgentRuntime,
+  stopAgentRuntime,
+  restartAgentRuntime,
+  getAgentRuntimeStatus,
+  getAgentRuntimeLogs,
+
+  // Docker-specific exports (deprecated, use unified interface)
   startDockerRuntime,
   stopDockerRuntime,
   restartDockerRuntime,
@@ -491,4 +692,10 @@ module.exports = {
   execDockerRuntimeCommand,
   listOpenClawPlugins,
   installOpenClawPlugin,
+  writeOpenClawHeartbeatFile,
+  ensureHeartbeatTemplate,
+  syncOpenClawSkills,
+
+  // Mode detection
+  isK8sMode,
 };

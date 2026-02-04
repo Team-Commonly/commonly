@@ -1,0 +1,16 @@
+apiVersion: v2
+name: commonly
+description: Commonly - Team collaboration platform with AI-powered chat, real-time messaging, and intelligent agent runtimes
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - chat
+  - collaboration
+  - ai
+  - socket.io
+  - realtime
+maintainers:
+  - name: Commonly Team
+    email: hello@commonly.example.com
+dependencies: []

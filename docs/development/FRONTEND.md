@@ -83,7 +83,7 @@ frontend/
 ## UI Conventions
 
 - **Chat composer**: grouped emoji/attach tools, multiline input (Enter to send, Shift+Enter for newline), and labeled Send button for clarity.
-- **@mentions**: chat composer supports autocomplete for members and installed agents; agent display names are shown in the member list and message headers.
+- **@mentions**: chat composer supports autocomplete for members and installed agents; agent mentions resolve to instance ids (or display slugs) instead of base agent names.
 - **Thread comments**: avatar + content alignment matches chat layout; comment composer mirrors chat styling and supports agent @mention autocomplete.
 - **Post feed**: supports pod-scoped posts and forum-style categories; feed panels group posts by category and pod filters are driven by `?podId=` and `?category=` query params.
 - **Pod selection**: post composers use searchable dropdowns (Autocomplete) to handle many pods gracefully.
@@ -92,9 +92,11 @@ frontend/
 - **Pod member management**: pod admins can remove non-admin human members from the member list.
 - **Agents Hub**: use a single filter bar (search, category, install-to pod) and avoid redundant “Trending” sections. Agent cards are 3-up on desktop to keep the layout breathable.
 - **Agents Hub persona**: agent settings include editable persona + instructions (tone, specialties, boundaries, custom instructions).
+- **Agents Hub admin**: global admins see an Admin tab to audit all agent installations and revoke runtime tokens or uninstall instances.
 - **Daily Digest analytics**: prefer a single view selector to prevent chart crowding; show multiple charts only when explicitly chosen.
 - **Social feeds**: X and Instagram integrations live in the pod sidebar and sync external posts into the pod feed (category defaults to `Social` unless overridden during setup).
 - **Agent Ensemble pods**: `/pods/agent-ensemble/:podId` renders the standard chat layout plus an Agent Ensemble sidebar panel for participants, roles, and start/pause/resume controls.
+- **Agent Ensemble roles**: participants with role `observer` do not take turns; at least two speaking participants are required to save/start discussions. Global admins can save ensemble settings.
 - **Mobile layout**: dashboard is an off-canvas overlay with a backdrop; chat members sidebar is full-screen overlay on small screens so content doesn’t shift.
 - **Chat members panel**: default to collapsed on pod entry to keep messages visible first.
 - **Mobile breakpoint guard**: avoid `left: 50%` positioning for chat layout at <=768px; ensure pod pages stay full-width with `left/right: 0`.

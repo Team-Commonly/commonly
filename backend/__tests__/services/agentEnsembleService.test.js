@@ -213,7 +213,67 @@ describe('AgentEnsembleService', () => {
     });
   });
 
+  describe('Turn policy: NO_REPLY skips message', () => {
+    it('advances turn without incrementing message count when NO_REPLY', async () => {
+      const state = await AgentEnsembleService.startDiscussion(testPod._id, {
+        createdBy: testUser._id,
+      });
+
+      const initialTurn = state.turnState.turnNumber;
+      const initialMessages = state.stats.totalMessages;
+
+      await AgentEnsembleService.processAgentResponse(state._id, {
+        agentType: state.turnState.currentAgent.agentType,
+        instanceId: state.turnState.currentAgent.instanceId,
+        content: 'NO_REPLY',
+        messageId: 'm-no-reply',
+      });
+
+      const updated = await AgentEnsembleState.findById(state._id);
+      expect(updated.stats.totalMessages).toBe(initialMessages);
+      expect(updated.turnState.turnNumber).toBe(initialTurn + 1);
+    });
+  });
+
   describe('Fix 2: Scheduled discussions', () => {
+    it('reuses completed scheduled state instead of creating duplicates', async () => {
+      await AgentEnsembleState.create({
+        podId: testPod._id,
+        status: 'completed',
+        topic: 'Old Scheduled',
+        participants: testPod.agentEnsemble.participants,
+        stopConditions: {
+          maxMessages: 20,
+          maxRounds: 5,
+          maxDurationMinutes: 60,
+        },
+        stats: {
+          totalMessages: 0,
+          completedAt: new Date(Date.now() - 1000),
+          completionReason: 'scheduled_restart',
+        },
+        schedule: {
+          enabled: true,
+          cronExpression: '*/5 * * * *',
+          timezone: 'UTC',
+          nextScheduledAt: new Date(Date.now() + 60_000),
+        },
+      });
+
+      await AgentEnsembleService.updateConfig(testPod._id, {
+        schedule: { enabled: true, frequencyMinutes: 20, timezone: 'UTC' },
+        participants: testPod.agentEnsemble.participants,
+      });
+
+      const scheduledStates = await AgentEnsembleState.find({
+        podId: testPod._id,
+        status: { $in: ['pending', 'completed'] },
+        'schedule.enabled': true,
+      });
+
+      expect(scheduledStates).toHaveLength(1);
+      expect(['pending', 'completed']).toContain(scheduledStates[0].status);
+    });
     it('should auto-complete active discussion before starting scheduled one', async () => {
       // Create a pending scheduled state
       const scheduledState = await AgentEnsembleState.create({
@@ -457,6 +517,73 @@ describe('AgentEnsembleService', () => {
       expect(updatedState.turnState.turnNumber).toBe(3);
       expect(updatedState.turnState.roundNumber).toBe(1); // First round completed
       expect(updatedState.turnState.currentAgent.instanceId).toBe('cuz'); // Back to starter
+    });
+  });
+
+  describe('Observer participants', () => {
+    it('skips observers in turn rotation', async () => {
+      testPod.agentEnsemble.participants = [
+        {
+          agentType: 'openclaw',
+          instanceId: 'cuz',
+          displayName: 'Cuz',
+          role: 'starter',
+        },
+        {
+          agentType: 'openclaw',
+          instanceId: 'observer',
+          displayName: 'Observer',
+          role: 'observer',
+        },
+        {
+          agentType: 'openclaw',
+          instanceId: 'tarik',
+          displayName: 'Tarik',
+          role: 'responder',
+        },
+      ];
+      await testPod.save();
+
+      const state = await AgentEnsembleService.startDiscussion(testPod._id, {
+        createdBy: testUser._id,
+      });
+
+      expect(state.turnState.currentAgent.instanceId).toBe('cuz');
+
+      await AgentEnsembleService.processAgentResponse(state._id, {
+        agentType: 'openclaw',
+        instanceId: 'cuz',
+        content: 'Starter message',
+        messageId: 'msg-1',
+      });
+
+      const updatedState = await AgentEnsembleState.findById(state._id);
+      expect(updatedState.turnState.currentAgent.instanceId).toBe('tarik');
+      expect(AgentEventService.enqueue).toHaveBeenCalled();
+    });
+
+    it('requires at least two speaking participants', async () => {
+      testPod.agentEnsemble.participants = [
+        {
+          agentType: 'openclaw',
+          instanceId: 'cuz',
+          displayName: 'Cuz',
+          role: 'starter',
+        },
+        {
+          agentType: 'openclaw',
+          instanceId: 'observer',
+          displayName: 'Observer',
+          role: 'observer',
+        },
+      ];
+      await testPod.save();
+
+      await expect(
+        AgentEnsembleService.startDiscussion(testPod._id, {
+          createdBy: testUser._id,
+        }),
+      ).rejects.toThrow('At least 2 speaking participants required for ensemble discussion');
     });
   });
 });

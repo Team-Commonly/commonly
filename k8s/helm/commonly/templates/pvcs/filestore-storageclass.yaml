@@ -1,0 +1,12 @@
+{{- if .Values.agents.clawdbot.persistence.enabled }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: filestore-sc
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  tier: standard
+  network: default
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+{{- end }}

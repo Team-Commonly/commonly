@@ -1,6 +1,8 @@
 ---
+
 name: devops
 description: DevOps and infrastructure context for Docker, CI/CD, GitHub Actions, deployment, and monitoring. Use when working on containers, pipelines, or deployment.
+last_updated: 2026-02-04
 ---
 
 # DevOps & Infrastructure
@@ -74,3 +76,8 @@ healthcheck:
   timeout: 10s
   retries: 3
 ```
+
+## Current Repo Notes (2026-02-04)
+
+Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
+OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

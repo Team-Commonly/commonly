@@ -65,14 +65,6 @@ const Thread = () => {
     const commentInputRef = useRef(null);
     const mentionDropdownRef = useRef(null);
 
-    const { agentMentionCounts } = useMemo(() => {
-        const counts = new Map();
-        (podAgents || []).forEach((agent) => {
-            counts.set(agent.name, (counts.get(agent.name) || 0) + 1);
-        });
-        return { agentMentionCounts: counts };
-    }, [podAgents]);
-
     const mentionableItems = useMemo(() => {
         const items = [];
         (podAgents || []).forEach((agent) => {
@@ -80,9 +72,11 @@ const Thread = () => {
             if (!agentName) return;
             const display = agent.profile?.displayName || agent.displayName || agent.name;
             const username = buildAgentUsername(agent.name, agent.instanceId);
-            const count = agentMentionCounts.get(agentName) || 0;
             const displaySlug = slugify(display);
-            const mentionValue = count > 1 ? (displaySlug || `${agent.name}-${agent.instanceId}`) : agent.name;
+            const instanceId = agent.instanceId || 'default';
+            const mentionValue = instanceId !== 'default'
+                ? instanceId
+                : (displaySlug || agent.name);
             const labelSearch = `${display} ${agent.name} ${username} ${mentionValue}`.toLowerCase();
             items.push({
                 id: username,
@@ -95,7 +89,7 @@ const Thread = () => {
             });
         });
         return items;
-    }, [podAgents, agentMentionCounts]);
+    }, [podAgents]);
 
     const filteredMentions = useMemo(() => {
         if (!mentionOpen) return [];
