@@ -61,6 +61,7 @@ const SkillsCatalogPage = () => {
   const [gatewayLoading, setGatewayLoading] = useState(false);
   const [gatewayError, setGatewayError] = useState('');
   const [gatewayEntries, setGatewayEntries] = useState({});
+  const [gatewayId, setGatewayId] = useState('');
   const [gatewaySkillKey, setGatewaySkillKey] = useState('');
   const [gatewayHintLoading, setGatewayHintLoading] = useState(false);
   const [gatewayHintError, setGatewayHintError] = useState('');
@@ -70,6 +71,7 @@ const SkillsCatalogPage = () => {
   const [gatewayCustomKey, setGatewayCustomKey] = useState('');
   const [gatewayCustomValue, setGatewayCustomValue] = useState('');
   const [gatewaySaving, setGatewaySaving] = useState(false);
+  const [gatewayList, setGatewayList] = useState([]);
   const [importedSkills, setImportedSkills] = useState(new Set());
   const [installedItems, setInstalledItems] = useState([]);
   const [importState, setImportState] = useState({
@@ -244,7 +246,19 @@ const SkillsCatalogPage = () => {
     setGatewayLoading(true);
     setGatewayError('');
     try {
-      const response = await axios.get('/api/skills/gateway-credentials', getAuthHeaders());
+      const gatewaysResponse = await axios.get('/api/gateways', getAuthHeaders());
+      const gateways = gatewaysResponse.data?.gateways || [];
+      setGatewayList(gateways);
+      const selectedGatewayId = gateways.find((g) => g._id === gatewayId)?._id
+        || gateways[0]?._id
+        || '';
+      if (selectedGatewayId && !gatewayId) {
+        setGatewayId(selectedGatewayId);
+      }
+      const response = await axios.get('/api/skills/gateway-credentials', {
+        ...getAuthHeaders(),
+        params: selectedGatewayId ? { gatewayId: selectedGatewayId } : {},
+      });
       setGatewayEntries(response.data?.entries || {});
     } catch (error) {
       console.warn('Failed to load gateway credentials:', error);
@@ -312,7 +326,7 @@ const SkillsCatalogPage = () => {
   };
 
   const saveGatewayCredentials = async () => {
-    if (!gatewaySkillKey) return;
+    if (!gatewayId || !gatewaySkillKey) return;
     const env = {};
     Object.entries(gatewayEnvInputs).forEach(([key, value]) => {
       if (value) env[key] = value;
@@ -327,6 +341,7 @@ const SkillsCatalogPage = () => {
     setGatewaySaving(true);
     try {
       await axios.patch('/api/skills/gateway-credentials', {
+        gatewayId,
         entries: {
           [gatewaySkillKey]: env,
         },
@@ -406,6 +421,12 @@ const SkillsCatalogPage = () => {
     setGatewayEnvInputs({});
     setGatewayEnvClears(new Set());
   }, [activeTab, gatewaySkillKey]);
+
+  useEffect(() => {
+    if (activeTab !== 'gateway') return;
+    if (!gatewayId) return;
+    fetchGatewayCredentials();
+  }, [activeTab, gatewayId]);
 
   const openImportDialog = (item) => {
     setImportState({
@@ -733,6 +754,21 @@ const SkillsCatalogPage = () => {
             {!gatewayLoading && (
               <Stack spacing={2}>
                 <FormControl fullWidth>
+                  <InputLabel id="gateway-select-label">Gateway</InputLabel>
+                  <Select
+                    labelId="gateway-select-label"
+                    label="Gateway"
+                    value={gatewayId}
+                    onChange={(event) => setGatewayId(event.target.value)}
+                  >
+                    {gatewayList.map((gateway) => (
+                      <MenuItem key={gateway._id} value={gateway._id}>
+                        {gateway.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth>
                   <InputLabel id="gateway-skill-label">Skill</InputLabel>
                   <Select
                     labelId="gateway-skill-label"
@@ -821,7 +857,7 @@ const SkillsCatalogPage = () => {
                   <Button
                     variant="contained"
                     onClick={saveGatewayCredentials}
-                    disabled={gatewaySaving || !gatewaySkillKey}
+                    disabled={gatewaySaving || !gatewaySkillKey || !gatewayId}
                   >
                     {gatewaySaving ? 'Saving...' : 'Save Credentials'}
                   </Button>

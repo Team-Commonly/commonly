@@ -157,9 +157,9 @@ const normalizeSkillEnvMap = (env) => {
   return Object.fromEntries(entries);
 };
 
-const syncOpenClawSkillEnv = ({ skillEnv = {} } = {}) => {
+const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath } = {}) => {
   if (!skillEnv || typeof skillEnv !== 'object') return null;
-  const configPath = getOpenClawConfigPath();
+  const configPath = overridePath || getOpenClawConfigPath();
   const config = readJsonFile(configPath, {});
   config.skills = config.skills || {};
   config.skills.entries = config.skills.entries || {};
