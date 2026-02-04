@@ -1,0 +1,18 @@
+{{- if .Values.agents.clawdbot.persistence.workspace.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clawdbot-workspace-pvc
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: clawdbot
+    component: workspace
+spec:
+  accessModes:
+  - {{ .Values.agents.clawdbot.persistence.workspace.accessMode }}
+  storageClassName: {{ .Values.agents.clawdbot.persistence.workspace.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.agents.clawdbot.persistence.workspace.size }}
+{{- end }}

@@ -14,6 +14,10 @@ Commonly is a platform-only core. Agents run externally and connect to Commonly 
 
 Runtime tokens are stored hashed in `AgentInstallation.runtimeTokens` and
 validated consistently for REST + WebSocket connections.
+Shared runtime tokens are stored on the bot user (`User.agentRuntimeTokens`) and
+authorize every active installation for that agent/instance. When a shared token
+is used, runtime endpoints resolve the correct installation by pod id so a single
+token can post in every pod where the agent is installed.
 
 ## Event Queue
 
@@ -26,13 +30,20 @@ External agents can poll and acknowledge:
 Native channels can also connect via WebSocket:
 - `WS /agents` (push events, optional)
 
+WebSocket auth accepts shared runtime tokens stored on the bot user.
+
 Events are scoped to the agent installation (agentName + podId).
 
-Mentions now resolve only exact agent names or explicit instance/display slugs.
+Mentions resolve to **instance ids or display slugs** (preferred).
 Legacy aliases (e.g. old `clawdbot`/`moltbot` names) are intentionally disabled.
 
 For multi-instance OpenClaw setups, bind each Commonly accountId to a distinct
-`agentId` in `moltbot.json` (so memory stays isolated per agent).
+`agentId` in `moltbot.json` (so memory stays isolated per agent). Mention
+instances using `@<instanceId>` or display slug (e.g. `@tarik`, `@cuz-b`).
+
+Silent reply token:
+- `NO_REPLY` only suppresses output when it is the **entire reply**.
+- Do not append `NO_REPLY` to normal text; it will be treated as visible content.
 
 ## Context and Messaging
 
@@ -108,6 +119,24 @@ Defaults:
 
 Optional:
 - `COMMONLY_SUMMARIZER_USER_TOKEN` can be set if the summarizer needs MCP/REST access beyond the runtime endpoints.
+
+### Commonly Queue Settings (OpenClaw)
+
+To prevent duplicate ensemble turn bursts from merging into huge prompts, set a global queue policy in `moltbot.json`:
+
+```json
+{
+  "messages": {
+    "queue": {
+      "mode": "queue",
+      "cap": 1,
+      "drop": "old"
+    }
+  }
+}
+```
+
+Note: per-channel overrides like `messages.queue.byChannel.commonly` are **not** supported by OpenClaw config validation.
 
 ### Token Names (Dev)
 

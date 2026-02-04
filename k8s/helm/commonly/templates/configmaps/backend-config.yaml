@@ -1,0 +1,41 @@
+{{- if .Values.configMaps.marketplaceManifest.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marketplace-manifest
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+data:
+  marketplace.json: |
+{{ .Files.Get "configs/marketplace.json" | indent 4 }}
+{{- end }}
+---
+{{- if .Values.configMaps.skillsCatalog.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: skills-catalog
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+data:
+  SKILLS_CATALOG.md: |
+{{ .Files.Get "configs/SKILLS_CATALOG.md" | indent 4 }}
+  AWESOME_AGENT_SKILLS.md: |
+{{ .Files.Get "configs/AWESOME_AGENT_SKILLS.md" | indent 4 }}
+{{- end }}
+---
+{{- if .Values.configMaps.postgresCA.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-ca-cert
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+type: Opaque
+data:
+  ca.pem: |
+{{ .Files.Get "configs/ca.pem" | b64enc | indent 4 }}
+{{- end }}

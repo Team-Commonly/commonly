@@ -94,7 +94,7 @@ class SchedulerService {
     );
 
     const ensembleJob = cron.schedule(
-      '*/1 * * * *',
+      '*/5 * * * *',
       async () => {
         console.log('Running ensemble scheduler...');
         try {

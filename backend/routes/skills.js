@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
+const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('../services/podAssetService');
 const SkillsCatalogService = require('../services/skillsCatalogService');
 
@@ -36,10 +37,139 @@ router.get('/catalog', auth, async (req, res) => {
   try {
     const source = String(req.query.source || 'awesome').trim();
     const catalog = SkillsCatalogService.loadCatalog(source);
-    return res.json(catalog);
+    const allItems = Array.isArray(catalog.items) ? catalog.items : [];
+    const query = String(req.query.q || '').trim().toLowerCase();
+    const category = String(req.query.category || '').trim();
+
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+    const parseLimit = (raw, fallback, max) => {
+      const parsed = Number.parseInt(raw, 10);
+      if (Number.isNaN(parsed)) return fallback;
+      return clamp(parsed, 1, max);
+    };
+    const page = parseLimit(req.query.page, 1, 1000);
+    const limit = parseLimit(req.query.limit, 60, 200);
+
+    const categories = Array.from(
+      new Set(allItems.map((item) => item.category || 'Other')),
+    ).sort();
+
+    const filtered = allItems.filter((item) => {
+      if (category && category !== 'all' && (item.category || 'Other') !== category) return false;
+      if (!query) return true;
+      const haystack = `${item.name || ''} ${item.description || ''}`.toLowerCase();
+      return haystack.includes(query);
+    });
+
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * limit;
+    const items = filtered.slice(start, start + limit);
+
+    return res.json({
+      source: catalog.source || source,
+      updatedAt: catalog.updatedAt || null,
+      items,
+      total,
+      page: safePage,
+      limit,
+      totalPages,
+      categories,
+    });
   } catch (error) {
     console.error('Error loading skills catalog:', error);
     return res.status(500).json({ error: 'Failed to load skills catalog' });
+  }
+});
+
+// GET /api/skills/pods/:podId/imported?scope=pod|agent&agentName=&instanceId=
+router.get('/pods/:podId/imported', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { podId } = req.params;
+    const scope = String(req.query.scope || 'pod').trim().toLowerCase();
+    const agentName = String(req.query.agentName || '').trim();
+    const instanceId = String(req.query.instanceId || '').trim();
+
+    await ensurePodAccess(podId, userId);
+
+    if (scope === 'agent' && (!agentName || !instanceId)) {
+      return res.status(400).json({ error: 'agentName and instanceId are required for agent scope.' });
+    }
+
+    const query = { podId, type: 'skill', status: 'active' };
+    if (scope === 'agent') {
+      query['metadata.scope'] = 'agent';
+      query['metadata.agentName'] = agentName;
+      query['metadata.instanceId'] = instanceId;
+    } else {
+      query['metadata.scope'] = 'pod';
+    }
+
+    const assets = await PodAsset.find(query)
+      .select('title metadata.skillName metadata.scope metadata.agentName metadata.instanceId metadata.sourceUrl metadata.description metadata.license')
+      .lean();
+
+    const items = assets.map((asset) => ({
+      name: asset?.metadata?.skillName || asset.title?.replace(/^Skill:\s*/i, '') || asset.title,
+      title: asset.title,
+      scope: asset?.metadata?.scope || 'pod',
+      agentName: asset?.metadata?.agentName || null,
+      instanceId: asset?.metadata?.instanceId || null,
+      sourceUrl: asset?.metadata?.sourceUrl || null,
+      description: asset?.metadata?.description || null,
+      license: asset?.metadata?.license || null,
+    }));
+
+    return res.json({ items });
+  } catch (error) {
+    console.error('Error loading imported skills:', error);
+    return res.status(500).json({ error: 'Failed to load imported skills' });
+  }
+});
+
+// DELETE /api/skills/pods/:podId/imported?name=...&scope=pod|agent&agentName=&instanceId=
+router.delete('/pods/:podId/imported', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { podId } = req.params;
+    const name = String(req.query.name || '').trim();
+    const scope = String(req.query.scope || 'pod').trim().toLowerCase();
+    const agentName = String(req.query.agentName || '').trim();
+    const instanceId = String(req.query.instanceId || '').trim();
+
+    if (!name) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+
+    await ensurePodAccess(podId, userId);
+
+    if (scope === 'agent' && (!agentName || !instanceId)) {
+      return res.status(400).json({ error: 'agentName and instanceId are required for agent scope.' });
+    }
+
+    const skillKey = PodAssetService.buildScopedSkillKey({
+      name,
+      scope,
+      agentName: scope === 'agent' ? agentName : undefined,
+      instanceId: scope === 'agent' ? instanceId : undefined,
+    });
+
+    const asset = await PodAsset.findOneAndUpdate(
+      { podId, type: 'skill', status: 'active', 'metadata.skillKey': skillKey },
+      { $set: { status: 'archived' } },
+      { new: true },
+    );
+
+    if (!asset) {
+      return res.status(404).json({ error: 'Skill not found' });
+    }
+
+    return res.json({ success: true, assetId: asset._id });
+  } catch (error) {
+    console.error('Error uninstalling skill:', error);
+    return res.status(500).json({ error: 'Failed to uninstall skill' });
   }
 });
 
@@ -60,18 +190,30 @@ router.post('/import', auth, async (req, res) => {
       description,
     } = req.body || {};
 
-    if (!podId || !name || !content) {
-      return res.status(400).json({ error: 'podId, name, and content are required' });
+    if (!podId || !name) {
+      return res.status(400).json({ error: 'podId and name are required' });
     }
 
     await ensurePodAccess(podId, userId);
+
+    let skillContent = content;
+    let resolvedSourceUrl = sourceUrl;
+    if (!skillContent && sourceUrl) {
+      const fetched = await SkillsCatalogService.fetchSkillContentFromSource(sourceUrl);
+      skillContent = fetched.content;
+      resolvedSourceUrl = fetched.resolvedUrl || sourceUrl;
+    }
+
+    if (!skillContent) {
+      return res.status(400).json({ error: 'Skill content is required (provide content or a SKILL.md source URL).' });
+    }
 
     const normalizedScope = scope === 'agent' ? 'agent' : 'pod';
     const metadata = {
       scope: normalizedScope,
       agentName: normalizedScope === 'agent' ? agentName : undefined,
       instanceId: normalizedScope === 'agent' ? instanceId : undefined,
-      sourceUrl: sourceUrl || null,
+      sourceUrl: resolvedSourceUrl || null,
       license: license || null,
       description: description || null,
       importedAt: new Date().toISOString(),
@@ -81,7 +223,7 @@ router.post('/import', auth, async (req, res) => {
     const asset = await PodAssetService.upsertImportedSkillAsset({
       podId,
       name,
-      markdown: content,
+      markdown: skillContent,
       tags,
       metadata,
       createdBy: userId,

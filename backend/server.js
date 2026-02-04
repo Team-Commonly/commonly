@@ -91,8 +91,17 @@ const io = socketIo(server, {
 const socketConfig = require('./config/socket');
 const agentWebSocketService = require('./services/agentWebSocketService');
 
-socketConfig.init(io);
-agentWebSocketService.init(io);
+// Socket.io Redis adapter initialization is async in K8s mode
+(async () => {
+  try {
+    await socketConfig.init(io);
+    agentWebSocketService.init(io);
+  } catch (error) {
+    console.error('Failed to initialize Socket.io:', error);
+    process.exit(1);
+  }
+})();
+
 const PORT = process.env.PORT || 5000;
 
 // Middleware

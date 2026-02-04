@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_SOURCE_URL = 'https://github.com/VoltAgent/awesome-agent-skills';
+const DEFAULT_SOURCE_URL = 'https://github.com/VoltAgent/awesome-openclaw-skills';
 const DEFAULT_TIMEOUT_MS = 8000;
 
 const getArg = (name, fallback = null) => {
@@ -17,13 +17,13 @@ const outputPath =
   getArg('out') ||
   path.resolve(__dirname, '../docs/skills/awesome-agent-skills-index.json');
 const sourceUrl = getArg('source') || DEFAULT_SOURCE_URL;
-const fetchLicenses = getArg('fetch-licenses', 'false') === 'true';
+const fetchLicenses = getArg('fetch-licenses', 'true') !== 'false';
 const githubToken = getArg('github-token') || process.env.GITHUB_TOKEN || null;
 const maxConcurrent = Number(getArg('concurrency', '6')) || 6;
 const timeoutMs = Number(getArg('timeout-ms', String(DEFAULT_TIMEOUT_MS))) || DEFAULT_TIMEOUT_MS;
 
 if (!repoPath || !fs.existsSync(repoPath)) {
-  console.error('Missing repo path. Use --repo=/path/to/awesome-agent-skills');
+  console.error('Missing repo path. Use --repo=/path/to/awesome-openclaw-skills');
   process.exit(1);
 }
 
@@ -117,6 +117,8 @@ const parseReadmeSkills = (readmeText) => {
   if (!readmeText) return [];
   const lines = readmeText.split('\n');
   const items = [];
+  let currentCategory = '';
+  let inToc = false;
 
   const patterns = [
     /^\s*-\s+\*\*\[([^\]]+)\]\(([^)]+)\)\*\*\s*-\s*(.+)\s*$/,
@@ -124,6 +126,25 @@ const parseReadmeSkills = (readmeText) => {
   ];
 
   lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('## ')) {
+      const heading = trimmed.replace(/^##\s+/, '').trim();
+      currentCategory = heading;
+      inToc = heading.toLowerCase() === 'table of contents';
+      return;
+    }
+    if (trimmed.startsWith('<details')) {
+      inToc = false;
+    }
+    if (inToc) {
+      return;
+    }
+    const summaryMatch = trimmed.match(/<summary>\s*<h3[^>]*>([^<]+)<\/h3>\s*<\/summary>/i);
+    if (summaryMatch) {
+      currentCategory = summaryMatch[1].trim();
+      inToc = false;
+      return;
+    }
     for (const pattern of patterns) {
       const match = line.match(pattern);
       if (!match) continue;
@@ -132,10 +153,13 @@ const parseReadmeSkills = (readmeText) => {
       const description = match[3].trim();
       const vendor = name.includes('/') ? name.split('/')[0] : null;
       const tags = vendor ? [vendor] : [];
+      const type = url.toLowerCase().includes('skill.md') ? 'skill' : 'plugin';
       items.push({
         id: name,
         name,
         description,
+        category: currentCategory || 'Other',
+        type,
         tags,
         content: '',
         sourceUrl: url,

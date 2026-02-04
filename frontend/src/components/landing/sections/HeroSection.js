@@ -119,7 +119,7 @@ const HeroSection = () => {
               mb: 3,
             }}
           >
-            Your team's{' '}
+            Your team&apos;s{' '}
             <Box
               component="span"
               sx={{

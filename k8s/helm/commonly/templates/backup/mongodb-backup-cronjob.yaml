@@ -1,0 +1,59 @@
+{{- if .Values.backup.mongodb.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mongodb-backup
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    component: backup
+    database: mongodb
+spec:
+  schedule: {{ .Values.backup.mongodb.schedule | quote }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "commonly.labels" . | nindent 12 }}
+            component: backup
+            database: mongodb
+        spec:
+          serviceAccountName: backup-sa
+          restartPolicy: OnFailure
+          containers:
+          - name: mongodb-backup
+            image: mongo:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              BACKUP_FILE="/tmp/backup-$(date +%Y%m%d-%H%M%S).archive.gz"
+              echo "Starting MongoDB backup to $BACKUP_FILE"
+
+              mongodump --uri="$MONGO_URI" --archive="$BACKUP_FILE" --gzip
+
+              GCS_PATH="gs://{{ .Values.backup.mongodb.gcs.bucket }}/{{ .Values.backup.mongodb.gcs.path }}/backup-$(date +%Y%m%d-%H%M%S).archive.gz"
+              echo "Uploading to $GCS_PATH"
+
+              gsutil cp "$BACKUP_FILE" "$GCS_PATH"
+
+              echo "Backup completed successfully"
+              rm "$BACKUP_FILE"
+            env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: database-credentials
+                  key: mongo-uri
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+{{- end }}

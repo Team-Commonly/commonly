@@ -39,6 +39,37 @@ const loadCatalog = (source = DEFAULT_SOURCE) => {
   }
 };
 
+const toRawGitHubUrl = (sourceUrl) => {
+  try {
+    const url = new URL(sourceUrl);
+    if (url.hostname !== 'github.com') return sourceUrl;
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 5) return sourceUrl;
+    const [owner, repo, mode, branch, ...rest] = parts;
+    if (mode !== 'blob' && mode !== 'tree') return sourceUrl;
+    const pathPart = rest.join('/');
+    if (!pathPart) return sourceUrl;
+    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${pathPart}`;
+  } catch (error) {
+    return sourceUrl;
+  }
+};
+
+const fetchSkillContentFromSource = async (sourceUrl) => {
+  if (!sourceUrl) return { content: '', resolvedUrl: sourceUrl };
+  const resolvedUrl = toRawGitHubUrl(sourceUrl);
+  if (!/^https?:\/\//i.test(resolvedUrl)) {
+    throw new Error('Unsupported skill source URL.');
+  }
+  const response = await fetch(resolvedUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch skill content (${response.status}).`);
+  }
+  const content = await response.text();
+  return { content, resolvedUrl };
+};
+
 module.exports = {
   loadCatalog,
+  fetchSkillContentFromSource,
 };

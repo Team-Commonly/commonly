@@ -14,11 +14,11 @@ describe("createReplyDispatcher", () => {
     expect(dispatcher.sendFinalReply({})).toBe(false);
     expect(dispatcher.sendFinalReply({ text: " " })).toBe(false);
     expect(dispatcher.sendFinalReply({ text: SILENT_REPLY_TOKEN })).toBe(false);
-    expect(dispatcher.sendFinalReply({ text: `${SILENT_REPLY_TOKEN} -- nope` })).toBe(false);
-    expect(dispatcher.sendFinalReply({ text: `interject.${SILENT_REPLY_TOKEN}` })).toBe(false);
+    expect(dispatcher.sendFinalReply({ text: `${SILENT_REPLY_TOKEN} -- nope` })).toBe(true);
+    expect(dispatcher.sendFinalReply({ text: `interject.${SILENT_REPLY_TOKEN}` })).toBe(true);
 
     await dispatcher.waitForIdle();
-    expect(deliver).not.toHaveBeenCalled();
+    expect(deliver).toHaveBeenCalledTimes(2);
   });
 
   it("strips heartbeat tokens and applies responsePrefix", async () => {
@@ -70,7 +70,7 @@ describe("createReplyDispatcher", () => {
     expect(deliver).toHaveBeenCalledTimes(3);
     expect(deliver.mock.calls[0][0].text).toBe("PFX already");
     expect(deliver.mock.calls[1][0].text).toBe("");
-    expect(deliver.mock.calls[2][0].text).toBe("");
+    expect(deliver.mock.calls[2][0].text).toBe(`${SILENT_REPLY_TOKEN} -- explanation`);
   });
 
   it("preserves ordering across tool, block, and final replies", async () => {

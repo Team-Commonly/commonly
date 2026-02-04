@@ -359,7 +359,31 @@ class PodContextService {
         .limit(skillLimit)
         .lean();
 
-    const skills = skillModeUsed === 'heuristic'
+    const importedSkillQuery = PodAssetService.applyVisibilityFilter(
+      { podId, type: 'skill', status: 'active', sourceType: 'imported-skill' },
+      visibilityFilter,
+    );
+    const importedSkillAssets = await PodAsset.find(importedSkillQuery)
+      .sort({ updatedAt: -1 })
+      .limit(40)
+      .lean();
+
+    const mergeSkills = (primary, secondary) => {
+      const seen = new Set();
+      const merged = [];
+      const pushSkill = (skill) => {
+        if (!skill) return;
+        const key = skill?.metadata?.skillKey || skill?._id?.toString?.();
+        if (key && seen.has(key)) return;
+        if (key) seen.add(key);
+        merged.push(skill);
+      };
+      primary.forEach(pushSkill);
+      secondary.forEach(pushSkill);
+      return merged;
+    };
+
+    const synthesizedSkills = skillModeUsed === 'heuristic'
       ? buildSkillCandidates({
         assets: rankedAssets,
         summariesWithTags: rankedSummaries,
@@ -380,6 +404,8 @@ class PodContextService {
         score: skill.metadata?.score || 0,
         tags: skill.tags || skill.metadata?.tags || [],
       }));
+
+    const skills = mergeSkills(importedSkillAssets, synthesizedSkills);
 
     return {
       pod: podDescriptor,

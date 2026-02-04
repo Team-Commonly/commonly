@@ -1,6 +1,8 @@
 ---
+
 name: llm-routing
 description: LLM routing and provider config (Gemini direct vs LiteLLM gateway), env flags, and fallback behavior.
+last_updated: 2026-02-04
 ---
 
 # LLM Routing
@@ -30,3 +32,8 @@ description: LLM routing and provider config (Gemini direct vs LiteLLM gateway),
 - [AI_FEATURES.md](../../../docs/ai-features/AI_FEATURES.md)
 - [LITELLM.md](../../../docs/development/LITELLM.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
+
+## Current Repo Notes (2026-02-04)
+
+Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
+OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

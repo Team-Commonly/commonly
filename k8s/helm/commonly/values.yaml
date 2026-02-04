@@ -1,0 +1,255 @@
+# Default values for Commonly Helm chart
+# This is a YAML-formatted file with default values
+# Override these values in values-dev.yaml or values-prod.yaml
+
+# Global settings
+global:
+  namespace: commonly
+  environment: development
+
+# Backend service configuration
+backend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: gcr.io/commonly-test/commonly-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5000
+    sessionAffinity: ClientIP
+    sessionAffinityTimeout: 10800  # 3 hours
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+  livenessProbe:
+    enabled: true
+    path: /api/health
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    enabled: true
+    path: /api/health
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  env:
+    nodeEnv: development
+    agentProvisionerK8s: "1"
+    agentProvisionerDocker: "0"
+
+# Frontend service configuration
+frontend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: gcr.io/commonly-test/commonly-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# MongoDB configuration
+mongodb:
+  enabled: true
+  image:
+    repository: mongo
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 27017
+  persistence:
+    enabled: true
+    storageClass: standard-rwo
+    size: 50Gi
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "15"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5432
+  persistence:
+    enabled: true
+    storageClass: standard-rwo
+    size: 50Gi
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+  database: commonly
+  username: postgres
+
+# Redis configuration (for Socket.io adapter)
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 6379
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# External Secrets Operator configuration
+externalSecrets:
+  enabled: true
+  secretStore:
+    name: gcpsm-secretstore
+    projectId: commonly-test
+    clusterLocation: us-central1
+    clusterName: commonly-dev
+  serviceAccount:
+    name: external-secrets-sa
+    gcpServiceAccount: commonly-secrets-sa@commonly-test.iam.gserviceaccount.com
+
+# Agent runtime configuration
+agents:
+  clawdbot:
+    enabled: false
+    image:
+      repository: clawdbot
+      tag: latest
+      pullPolicy: IfNotPresent
+    config:
+      gatewayPort: 18789
+      bridgePort: 18790
+    persistence:
+      config:
+        enabled: true
+        storageClass: filestore-sc
+        size: 10Gi
+        accessMode: ReadWriteMany
+      workspace:
+        enabled: true
+        storageClass: filestore-sc
+        size: 100Gi
+        accessMode: ReadWriteMany
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  commonlyBot:
+    enabled: false
+    image:
+      repository: node
+      tag: "20-alpine"
+      pullPolicy: IfNotPresent
+    env:
+      pollIntervalMs: 5000
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+# RBAC configuration
+rbac:
+  create: true
+  serviceAccount:
+    name: agent-provisioner
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "backend"
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "commonly-backend"
+  hosts:
+    frontend:
+      host: commonly-dev.example.com
+      path: /
+      pathType: Prefix
+    backend:
+      host: api-dev.commonly.example.com
+      path: /
+      pathType: Prefix
+  tls:
+    enabled: false
+    secretName: commonly-tls
+
+# ConfigMaps configuration
+configMaps:
+  marketplaceManifest:
+    enabled: true
+  skillsCatalog:
+    enabled: true
+  postgresCA:
+    enabled: true
+
+# Autoscaling configuration
+autoscaling:
+  backend:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# Monitoring configuration
+monitoring:
+  prometheus:
+    enabled: false
+    serviceMonitor:
+      enabled: false
+
+# Backup configuration
+backup:
+  mongodb:
+    enabled: false
+    schedule: "0 2 * * *"
+    gcs:
+      bucket: commonly-dev-backups
+      path: mongodb
+  postgresql:
+    enabled: false
+    schedule: "0 2 * * *"
+    gcs:
+      bucket: commonly-dev-backups
+      path: postgresql

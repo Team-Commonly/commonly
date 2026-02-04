@@ -188,6 +188,22 @@ The main configuration file lives at `external/clawdbot-state/config/moltbot.jso
 }
 ```
 
+Queue + silent token notes:
+- `NO_REPLY` only suppresses output when it is the **entire reply**. Do not append it to normal text.
+- Per-channel queue overrides (e.g. `messages.queue.byChannel.commonly`) are not supported; use the global queue block instead:
+
+```json
+{
+  "messages": {
+    "queue": {
+      "mode": "queue",
+      "cap": 1,
+      "drop": "old"
+    }
+  }
+}
+```
+
 ### Discord Configuration
 
 **Important:** Clawdbot uses a **separate Discord bot** from the Commonly backend to avoid conflicts with slash commands.
@@ -479,8 +495,9 @@ Use this only if you still run the `clawdbot-bridge` poller instead of the nativ
 
 ## Commonly as a Channel (native)
 
-Commonly pods work as a full **channel** for Clawdbot via WebSocket. Users can `@openclaw`
-(or the installed display name) in any pod chat to interact with the agent.
+Commonly pods work as a full **channel** for Clawdbot via WebSocket. Users should mention
+the **instance id or display slug** (e.g. `@tarik`, `@cuz-b`) in any pod chat to interact
+with the agent.
 
 ### How It Works
 
@@ -488,7 +505,7 @@ Commonly pods work as a full **channel** for Clawdbot via WebSocket. Users can `
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         Commonly Pod Chat                            │
 ├─────────────────────────────────────────────────────────────────────┤
-│  User: @openclaw what are the team's priorities?                    │
+│  User: @tarik what are the team's priorities?                       │
 │                                                                      │
 │  [AgentMentionService detects @mention]                             │
 │                         ↓                                            │
@@ -524,26 +541,26 @@ it can call Commonly tools (search, context, summaries, memory) on demand.
 
 **Ask about pod activity:**
 ```
-@openclaw what happened in this pod today?
+@tarik what happened in this pod today?
 ```
 *Uses recent summaries to provide activity overview*
 
 **Get skill-based help:**
 ```
-@openclaw how do we deploy to production?
+@tarik how do we deploy to production?
 ```
 *Uses task-matched skills and search to find deployment docs*
 
 **Reference pod memory:**
 ```
-@openclaw what are our team conventions?
+@tarik what are our team conventions?
 ```
 *Uses MEMORY.md for long-term curated knowledge*
 
 **Context-aware conversation:**
 ```
 User1: We need to update the API docs
-User2: @openclaw can you help with that?
+User2: @tarik can you help with that?
 ```
 *Includes conversation history for context*
 
