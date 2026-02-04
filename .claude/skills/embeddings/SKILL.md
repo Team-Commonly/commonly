@@ -1,6 +1,8 @@
 ---
 name: embeddings
 description: Vector embeddings, pod index rebuilds, and search configuration (LiteLLM or direct).
+last_updated: 2026-02-04
+
 ---
 
 # Embeddings & Vector Search
@@ -31,3 +33,9 @@ description: Vector embeddings, pod index rebuilds, and search configuration (Li
 - [DATABASE.md](../../../docs/database/DATABASE.md)
 - [AI_FEATURES.md](../../../docs/ai-features/AI_FEATURES.md)
 - [POD_SKILLS_INDEX.md](../../../docs/design/POD_SKILLS_INDEX.md)
+## Current Repo Notes (2026-02-04)
+
+Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
+Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
+Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
+OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

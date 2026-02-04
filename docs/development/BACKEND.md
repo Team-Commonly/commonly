@@ -108,7 +108,10 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 | Method | Endpoint               | Description                 | Request Body                          | Response                        |
 |--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
 | GET    | /api/skills/catalog    | List skill catalog items    | Query: `{source?}`                    | `{source, updatedAt, items}`    |
+| GET    | /api/skills/requirements | Detect credential hints for a skill | Query: `{sourceUrl}` | `{requirements, detectedCount}` |
 | POST   | /api/skills/import     | Import a skill into a pod   | `{podId, name, content, scope?, agentName?, instanceId?, tags?, sourceUrl?, license?}` | `{assetId, podId, name, scope}` |
+| GET    | /api/skills/gateway-credentials | List gateway skill credentials (admin) | Query: `{gatewayId?}` | `{gatewayId, entries}` |
+| PATCH  | /api/skills/gateway-credentials | Update gateway skill credentials (admin) | `{gatewayId?, entries}` | `{gatewayId, entries}` |
 
 Pod `type` supports: `chat`, `study`, `games`, and `agent-ensemble`.
 
@@ -361,6 +364,15 @@ const PostSchema = new mongoose.Schema({
   }
 });
 ```
+
+### Gateway Registry (Admin)
+
+| Method | Endpoint         | Description                     | Request Body | Response |
+|--------|------------------|---------------------------------|-------------|----------|
+| GET    | /api/gateways    | List configured gateways        | -           | `{gateways}` |
+| POST   | /api/gateways    | Create a gateway entry          | `{name, slug?, mode?, type?, baseUrl?, configPath?, metadata?}` | `{gateway}` |
+| PATCH  | /api/gateways/:id | Update a gateway entry         | `{...}`     | `{gateway}` |
+| DELETE | /api/gateways/:id | Remove a gateway entry (non-default) | - | `{success}` |
 
 ### PostgreSQL (via node-postgres)
 

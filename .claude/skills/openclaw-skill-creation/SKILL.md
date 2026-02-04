@@ -1,6 +1,8 @@
 ---
 name: openclaw-skill-creation
 description: Create or update OpenClaw (Cuz/Clawdbot/Moltbot) skills and Commonly MCP skill prompts; include legacy names and runtime constraints.
+last_updated: 2026-02-04
+
 ---
 
 # OpenClaw Skill Creation
@@ -38,3 +40,9 @@ Include these names in skill descriptions and examples so older references still
 - [CLAWDBOT.md](../../../docs/agents/CLAWDBOT.md)
 - [AGENT_RUNTIME.md](../../../docs/agents/AGENT_RUNTIME.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
+## Current Repo Notes (2026-02-04)
+
+Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
+Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
+Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
+OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

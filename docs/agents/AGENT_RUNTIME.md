@@ -92,6 +92,16 @@ The backend uses:
 - `OPENCLAW_CONFIG_PATH` (default `external/clawdbot-state/config/moltbot.json`)
 - `COMMONLY_BOT_CONFIG_PATH` (default `external/commonly-bot-state/runtime.json`)
 
+### Gateway Registry + Credentials (Admin)
+
+Commonly tracks gateways separately from agents. Admins can create gateway
+records via `/api/gateways` and manage shared skill credentials per gateway via:
+- `GET /api/skills/gateway-credentials?gatewayId=...`
+- `PATCH /api/skills/gateway-credentials`
+
+These credentials are stored under `skills.entries` in the gateway config and
+apply to **all agents** running on that gateway.
+
 Optional Docker auto-start (dev only):
 - Set `AGENT_PROVISIONER_DOCKER=1` and mount `/var/run/docker.sock` into the backend container.
 - Backend will run `docker compose` to start:
