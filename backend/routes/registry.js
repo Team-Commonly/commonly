@@ -8,6 +8,7 @@ const express = require('express');
 
 const router = express.Router();
 const auth = require('../middleware/auth');
+const adminAuth = require('../middleware/adminAuth');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
 const Activity = require('../models/Activity');
@@ -15,6 +16,7 @@ const Pod = require('../models/Pod');
 const User = require('../models/User');
 const AgentTemplate = require('../models/AgentTemplate');
 const AgentIdentityService = require('../services/agentIdentityService');
+const { generateText } = require('../services/llmService');
 const {
   provisionAgentRuntime,
   startDockerRuntime,
@@ -24,6 +26,8 @@ const {
   getDockerRuntimeLogs,
   listOpenClawPlugins,
   installOpenClawPlugin,
+  writeOpenClawHeartbeatFile,
+  syncOpenClawSkills,
 } = require('../services/agentProvisionerService');
 const { hash, randomSecret } = require('../utils/secret');
 
@@ -72,6 +76,38 @@ const normalizeInstanceId = (raw) => {
     .replace(/^-+|-+$/g, '');
   return normalized || 'default';
 };
+
+const userHasPodAccess = (pod, userId) => {
+  if (!pod || !userId) return false;
+  const userIdStr = userId.toString();
+  if (pod.createdBy?.toString() === userIdStr) return true;
+  return Boolean(pod.members?.some((m) => (m.userId?.toString?.() || m.toString()) === userIdStr));
+};
+
+const parseJsonFromText = (text) => {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(text.slice(start, end + 1));
+      } catch (innerError) {
+        return null;
+      }
+    }
+    return null;
+  }
+};
+
+const serializeRuntimeTokens = (tokens = []) => tokens.map((token) => ({
+  id: token._id?.toString(),
+  label: token.label,
+  createdAt: token.createdAt,
+  lastUsedAt: token.lastUsedAt,
+}));
 
 /**
  * Derive instanceId from displayName for consistent agent identity across pods.
@@ -1044,6 +1080,239 @@ router.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', auth, async (
 });
 
 /**
+ * GET /api/registry/admin/installations
+ * List agent installations across all pods (admin only)
+ */
+router.get('/admin/installations', auth, adminAuth, async (req, res) => {
+  try {
+    const {
+      q,
+      status = 'active',
+      limit: limitParam,
+      offset: offsetParam,
+    } = req.query || {};
+
+    const limit = Math.min(Math.max(parseInt(limitParam, 10) || 200, 1), 1000);
+    const offset = Math.max(parseInt(offsetParam, 10) || 0, 0);
+
+    const filter = {};
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+
+    if (q) {
+      const regex = new RegExp(escapeRegExp(String(q).trim()), 'i');
+      const matchedPods = await Pod.find({ name: regex }).select('_id').lean();
+      const matchedPodIds = matchedPods.map((pod) => pod._id);
+      filter.$or = [
+        { agentName: regex },
+        { displayName: regex },
+        { instanceId: regex },
+        ...(matchedPodIds.length ? [{ podId: { $in: matchedPodIds } }] : []),
+      ];
+    }
+
+    const [total, installations] = await Promise.all([
+      AgentInstallation.countDocuments(filter),
+      AgentInstallation.find(filter)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const podIds = installations.map((install) => install.podId).filter(Boolean);
+    const pods = await Pod.find({ _id: { $in: podIds } })
+      .select('_id name createdBy')
+      .lean();
+    const podMap = new Map(pods.map((pod) => [pod._id.toString(), pod]));
+
+    const userIds = new Set();
+    installations.forEach((install) => {
+      if (install.installedBy) userIds.add(install.installedBy.toString());
+    });
+    pods.forEach((pod) => {
+      if (pod.createdBy) userIds.add(pod.createdBy.toString());
+    });
+
+    const users = userIds.size
+      ? await User.find({ _id: { $in: Array.from(userIds) } })
+        .select('_id username email role')
+        .lean()
+      : [];
+    const userMap = new Map(users.map((user) => [user._id.toString(), user]));
+
+    const payload = installations.map((install) => {
+      const pod = podMap.get(install.podId?.toString?.() || '');
+      const installedBy = install.installedBy
+        ? userMap.get(install.installedBy.toString())
+        : null;
+      const podOwner = pod?.createdBy
+        ? userMap.get(pod.createdBy.toString())
+        : null;
+
+      return {
+        id: install._id?.toString(),
+        agentName: install.agentName,
+        instanceId: install.instanceId,
+        displayName: install.displayName,
+        version: install.version,
+        status: install.status,
+        scopes: install.scopes || [],
+        pod: pod
+          ? {
+            id: pod._id?.toString(),
+            name: pod.name,
+            createdBy: podOwner
+              ? {
+                id: podOwner._id?.toString(),
+                username: podOwner.username,
+                email: podOwner.email,
+                role: podOwner.role,
+              }
+              : null,
+          }
+          : null,
+        installedBy: installedBy
+          ? {
+            id: installedBy._id?.toString(),
+            username: installedBy.username,
+            email: installedBy.email,
+            role: installedBy.role,
+          }
+          : null,
+        runtimeTokens: serializeRuntimeTokens(install.runtimeTokens || []),
+        usage: install.usage || {},
+        createdAt: install.createdAt,
+        updatedAt: install.updatedAt,
+        config: normalizeConfigMap(install.config) || {},
+      };
+    });
+
+    return res.json({
+      total,
+      installations: payload,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    console.error('Error listing admin installations:', error);
+    return res.status(500).json({ error: 'Failed to list installations' });
+  }
+});
+
+// GET /api/registry/agents/:name/installations?instanceId=
+router.get('/agents/:name/installations', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const agentName = String(req.params.name || '').toLowerCase();
+    const instanceId = normalizeInstanceId(req.query.instanceId);
+    const installations = await AgentInstallation.find({
+      agentName,
+      instanceId,
+      status: 'active',
+    }).lean();
+    if (!installations.length) {
+      return res.json({ installations: [] });
+    }
+    const podIds = installations.map((i) => i.podId).filter(Boolean);
+    const pods = await Pod.find({ _id: { $in: podIds } })
+      .select('name members createdBy')
+      .lean();
+    const podMap = new Map(pods.map((pod) => [pod._id.toString(), pod]));
+    const results = installations
+      .map((install) => {
+        const pod = podMap.get(install.podId?.toString?.());
+        if (!pod || !userHasPodAccess(pod, userId)) return null;
+        return {
+          podId: pod._id,
+          podName: pod.name,
+          instanceId: install.instanceId,
+        };
+      })
+      .filter(Boolean);
+    return res.json({ installations: results });
+  } catch (error) {
+    console.error('Error listing agent installations:', error);
+    return res.status(500).json({ error: 'Failed to list installations' });
+  }
+});
+
+/**
+ * DELETE /api/registry/admin/installations/:installationId/runtime-tokens/:tokenId
+ * Revoke a runtime token for an installation (admin only)
+ */
+router.delete('/admin/installations/:installationId/runtime-tokens/:tokenId', auth, adminAuth, async (req, res) => {
+  try {
+    const { installationId, tokenId } = req.params;
+    const installation = await AgentInstallation.findById(installationId);
+    if (!installation) {
+      return res.status(404).json({ error: 'Installation not found' });
+    }
+
+    const originalCount = installation.runtimeTokens?.length || 0;
+    installation.runtimeTokens = (installation.runtimeTokens || []).filter(
+      (token) => token._id?.toString() !== tokenId,
+    );
+
+    if ((installation.runtimeTokens || []).length === originalCount) {
+      return res.status(404).json({ error: 'Runtime token not found' });
+    }
+
+    await installation.save();
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error revoking admin runtime token:', error);
+    return res.status(500).json({ error: 'Failed to revoke runtime token' });
+  }
+});
+
+/**
+ * DELETE /api/registry/admin/installations/:installationId
+ * Uninstall an agent instance from a pod (admin only)
+ */
+router.delete('/admin/installations/:installationId', auth, adminAuth, async (req, res) => {
+  try {
+    const { installationId } = req.params;
+    const installation = await AgentInstallation.findById(installationId);
+    if (!installation) {
+      return res.status(404).json({ error: 'Installation not found' });
+    }
+
+    if (installation.status === 'uninstalled') {
+      return res.json({ success: true, alreadyUninstalled: true });
+    }
+
+    installation.status = 'uninstalled';
+    await installation.save();
+
+    const podId = installation.podId;
+    const agentName = installation.agentName;
+    const instanceId = installation.instanceId;
+
+    await AgentProfile.deleteOne({ agentId: buildAgentProfileId(agentName, instanceId), podId });
+
+    try {
+      const resolvedType = AgentIdentityService.resolveAgentType(agentName);
+      await AgentIdentityService.removeAgentFromPod(
+        AgentIdentityService.buildAgentUsername(resolvedType, instanceId),
+        podId,
+      );
+    } catch (identityError) {
+      console.warn('Failed to remove agent user from pod:', identityError.message);
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error uninstalling admin installation:', error);
+    return res.status(500).json({ error: 'Failed to uninstall installation' });
+  }
+});
+
+/**
  * GET /api/registry/pods/:podId/agents/:name/user-token
  * Get metadata for the agent's designated user token (no raw token returned)
  */
@@ -1728,6 +1997,164 @@ router.post('/pods/:podId/agents/:name/plugins/install', auth, async (req, res) 
  * PATCH /api/registry/pods/:podId/agents/:name
  * Update agent configuration in a pod
  */
+router.post('/pods/:podId/agents/:name/persona/generate', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { instanceId } = req.body;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const resolved = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId,
+    });
+
+    if (!resolved.installation) {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+
+    const profile = await AgentProfile.findOne({
+      agentId: buildAgentProfileId(name, resolved.instanceId),
+      podId,
+    }).lean();
+
+    const displayName = resolved.installation.displayName || profile?.name || name;
+    const purpose = profile?.purpose || resolved.installation?.displayName || name;
+    const seed = Math.floor(Math.random() * 1000000);
+
+    const prompt = [
+      'You are generating a random but useful persona for an AI agent in a team workspace.',
+      `Seed: ${seed}.`,
+      `Agent name: ${displayName}.`,
+      `Agent purpose/summary: ${purpose}.`,
+      'Return ONLY JSON with this shape:',
+      '{',
+      '  "tone": "string",',
+      '  "specialties": ["string", "..."],',
+      '  "boundaries": ["string", "..."],',
+      '  "customInstructions": "1-2 sentences.",',
+      '  "exampleInstructions": "3-6 short bullet lines as plain text, no markdown."',
+      '}',
+      'Keep specialties and boundaries concrete and short. Avoid emojis.',
+    ].join('\n');
+
+    let generated = null;
+    try {
+      const text = await generateText(prompt, { temperature: 0.7 });
+      generated = parseJsonFromText(text);
+    } catch (error) {
+      console.warn('Persona generation failed, using fallback:', error.message);
+    }
+
+    if (!generated || typeof generated !== 'object') {
+      generated = {
+        tone: 'friendly',
+        specialties: ['insight synthesis', 'clear explanations', 'actionable next steps'],
+        boundaries: ['avoid speculation', 'ask clarifying questions when unsure', 'be concise'],
+        customInstructions: 'Keep answers practical and structured.',
+        exampleInstructions: [
+          '- Summarize the key points first.',
+          '- Ask one clarifying question if needed.',
+          '- Offer a concrete next step.',
+        ].join('\n'),
+      };
+    }
+
+    return res.json({
+      success: true,
+      seed,
+      persona: {
+        tone: generated.tone || 'friendly',
+        specialties: Array.isArray(generated.specialties) ? generated.specialties : [],
+        boundaries: Array.isArray(generated.boundaries) ? generated.boundaries : [],
+        customInstructions: generated.customInstructions || '',
+      },
+      exampleInstructions: generated.exampleInstructions || '',
+    });
+  } catch (error) {
+    console.error('Error generating agent persona:', error);
+    return res.status(500).json({ error: 'Failed to generate persona' });
+  }
+});
+
+router.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { instanceId, content, reset } = req.body;
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (name.toLowerCase() !== 'openclaw') {
+      return res.status(400).json({ error: 'Heartbeat file updates are only supported for OpenClaw agents.' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const resolved = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId,
+    });
+
+    if (!resolved.installation) {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+
+    const normalizedInstanceId = normalizeInstanceId(resolved.instanceId);
+    const accountId = normalizedInstanceId;
+    const trimmed = String(content || '').trim();
+    const normalized = trimmed
+      ? (trimmed.startsWith('#') ? `${trimmed}\n` : `# HEARTBEAT.md\n\n${trimmed}\n`)
+      : '# HEARTBEAT.md\n\n';
+
+    const filePath = writeOpenClawHeartbeatFile(accountId, normalized, { allowEmpty: true });
+
+    return res.json({ success: true, path: filePath, reset: Boolean(reset) });
+  } catch (error) {
+    console.error('Error updating heartbeat file:', error);
+    return res.status(500).json({ error: 'Failed to update heartbeat file' });
+  }
+});
+
+/**
+ * PATCH /api/registry/pods/:podId/agents/:name
+ * Update agent configuration in a pod
+ */
 router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
@@ -1806,6 +2233,37 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
         { agentId: buildAgentProfileId(name, normalizedInstanceId), podId },
         updates,
       );
+    }
+
+    const skillSync = config?.skillSync || null;
+    if (skillSync && name.toLowerCase() === 'openclaw') {
+      const mode = skillSync.mode === 'selected' ? 'selected' : 'all';
+      const requestedPodIds = Array.isArray(skillSync.podIds)
+        ? skillSync.podIds.map((id) => String(id)).filter(Boolean)
+        : [];
+      let podIdsToSync = requestedPodIds;
+      if (skillSync.allPods) {
+        const installations = await AgentInstallation.find({
+          agentName: name.toLowerCase(),
+          instanceId: normalizedInstanceId,
+          status: 'active',
+        }).lean();
+        podIdsToSync = installations.map((i) => i.podId?.toString?.()).filter(Boolean);
+      }
+      if (podIdsToSync.length) {
+        const pods = await Pod.find({ _id: { $in: podIdsToSync } })
+          .select('members createdBy')
+          .lean();
+        podIdsToSync = pods
+          .filter((p) => userHasPodAccess(p, userId))
+          .map((p) => p._id.toString());
+      }
+      await syncOpenClawSkills({
+        accountId: normalizedInstanceId,
+        podIds: podIdsToSync,
+        mode,
+        skillNames: Array.isArray(skillSync.skillNames) ? skillSync.skillNames : [],
+      });
     }
 
     res.json({

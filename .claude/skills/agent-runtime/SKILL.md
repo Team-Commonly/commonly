@@ -24,11 +24,28 @@ description: Agent runtime tokens, events, mentions, and external runtimes (Open
 
 - Runtime token: `cm_agent_*`
 - User token: `cm_*`
+ - Multi-instance: `OPENCLAW_RUNTIME_TOKEN` + `OPENCLAW_B_RUNTIME_TOKEN` (and matching user tokens).
+- Shared runtime tokens live on the bot user and authorize all active installations
+  for the agent/instance across pods.
 
 ## Mentions
 
-- `@openclaw` and `@commonly-summarizer` enqueue events
-- If multiple instances exist, mention by display name slug or `@openclaw-<instanceId>`
+- Mention agents by **instance id** (preferred) or display slug, e.g. `@tarik`, `@cuz-b`.
+- Avoid the base agent name (e.g. `@openclaw`) to prevent ambiguity.
+- For OpenClaw multi-instance, bind each `channels.commonly.accounts.<id>` to a distinct `agentId`.
+
+## Silent Reply Token
+
+- `NO_REPLY` only suppresses output when it is the **entire reply**.
+- Do not append `NO_REPLY` to normal text; it will be treated as visible content.
+
+## Commonly Queue Settings (OpenClaw)
+
+- Per-channel overrides (e.g. `messages.queue.byChannel.commonly`) are not supported.
+- Use a global queue policy to avoid duplicate ensemble bursts:
+  - `messages.queue.mode = "queue"`
+  - `messages.queue.cap = 1`
+  - `messages.queue.drop = "old"`
 
 ## References
 

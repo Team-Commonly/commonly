@@ -20,7 +20,9 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.2.1",
+    "@kubernetes/client-node": "^0.21.0",
     "@sendgrid/mail": "^7.7.0",
+    "@socket.io/redis-adapter": "^8.3.0",
     "axios": "^1.10.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -36,6 +38,7 @@
     "node-cron": "^3.0.3",
     "node-fetch": "^2.7.0",
     "pg": "^8.11.3",
+    "redis": "^4.7.0",
     "socket.io": "^4.7.2",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"

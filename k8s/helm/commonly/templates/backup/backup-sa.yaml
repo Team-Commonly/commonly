@@ -1,0 +1,14 @@
+{{- if or .Values.backup.mongodb.enabled .Values.backup.postgresql.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-sa
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    component: backup
+  annotations:
+    # Workload Identity annotation for GCS access
+    iam.gke.io/gcp-service-account: commonly-backup-sa@PROJECT_ID.iam.gserviceaccount.com
+{{- end }}

@@ -84,6 +84,46 @@ router.get('/', async (req, res) => {
     health.status = 'degraded';
   }
 
+  // Check Redis connection (K8s mode for Socket.io adapter)
+  if (process.env.AGENT_PROVISIONER_K8S === '1') {
+    try {
+      // eslint-disable-next-line global-require
+      const { createClient } = require('redis');
+      const redisHost = process.env.REDIS_HOST || 'redis';
+      const redisPort = process.env.REDIS_PORT || 6379;
+      const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}` });
+
+      const redisStart = Date.now();
+      await redisClient.connect();
+      const pong = await redisClient.ping();
+      await redisClient.disconnect();
+
+      if (pong === 'PONG') {
+        health.checks.redis = {
+          status: 'healthy',
+          latency: `${Date.now() - redisStart}ms`,
+        };
+      } else {
+        health.checks.redis = {
+          status: 'unhealthy',
+          error: 'Ping failed',
+        };
+        health.status = 'degraded';
+      }
+    } catch (error) {
+      health.checks.redis = {
+        status: 'unhealthy',
+        error: error.message,
+      };
+      health.status = 'degraded';
+    }
+  } else {
+    health.checks.redis = {
+      status: 'not_configured',
+      message: 'Redis not configured (Docker Compose mode)',
+    };
+  }
+
   // Check external services configuration
   health.checks.services = {
     discord: {
@@ -150,6 +190,26 @@ router.get('/ready', async (req, res) => {
         return res.status(503).json({
           status: 'not_ready',
           reason: 'PostgreSQL not connected',
+        });
+      }
+    }
+
+    // Check Redis in K8s mode (required for Socket.io adapter)
+    if (process.env.AGENT_PROVISIONER_K8S === '1') {
+      try {
+        // eslint-disable-next-line global-require
+        const { createClient } = require('redis');
+        const redisHost = process.env.REDIS_HOST || 'redis';
+        const redisPort = process.env.REDIS_PORT || 6379;
+        const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}` });
+
+        await redisClient.connect();
+        await redisClient.ping();
+        await redisClient.disconnect();
+      } catch (redisError) {
+        return res.status(503).json({
+          status: 'not_ready',
+          reason: 'Redis not connected (required in K8s mode)',
         });
       }
     }

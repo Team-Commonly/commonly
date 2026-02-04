@@ -35,13 +35,22 @@ import {
   FormGroup,
   FormControlLabel,
   Checkbox,
+  ListItemText,
   Card,
   CardContent,
   CardActions,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  CircularProgress,
 } from '@mui/material';
 import {
   Search as SearchIcon,
   ContentCopy as CopyIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import AgentCard from './AgentCard';
 import ClawdbotConfigPanel from './ClawdbotConfigPanel';
@@ -76,6 +85,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const theme = useTheme();
   const location = useLocation();
   const { currentUser } = useAuth();
+  const isGlobalAdmin = currentUser?.role === 'admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState(0);
   const [category, setCategory] = useState('all');
@@ -100,9 +110,20 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [configPersonaBoundaries, setConfigPersonaBoundaries] = useState('');
   const [configPersonaCustomInstructions, setConfigPersonaCustomInstructions] = useState('');
   const [configHeartbeatEnabled, setConfigHeartbeatEnabled] = useState(true);
-  const [configHeartbeatInterval, setConfigHeartbeatInterval] = useState(10);
-  const [configHeartbeatPrompt, setConfigHeartbeatPrompt] = useState('');
+  const [configHeartbeatInterval, setConfigHeartbeatInterval] = useState(60);
+  const [configHeartbeatChecklist, setConfigHeartbeatChecklist] = useState('');
+  const [heartbeatResetLoading, setHeartbeatResetLoading] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
+  const [skillSyncMode, setSkillSyncMode] = useState('all');
+  const [skillSyncAllPods, setSkillSyncAllPods] = useState(true);
+  const [skillSyncPods, setSkillSyncPods] = useState([]);
+  const [skillSyncSkills, setSkillSyncSkills] = useState([]);
+  const [skillSyncPodsLoading, setSkillSyncPodsLoading] = useState(false);
+  const [skillSyncSkillLoading, setSkillSyncSkillLoading] = useState(false);
+  const [skillSyncPodOptions, setSkillSyncPodOptions] = useState([]);
+  const [skillSyncSkillOptions, setSkillSyncSkillOptions] = useState([]);
+  const [autoPersonaLoading, setAutoPersonaLoading] = useState(false);
+  const [autoPersonaTarget, setAutoPersonaTarget] = useState('');
   const [runtimeTokens, setRuntimeTokens] = useState([]);
   const [runtimeTokenLabel, setRuntimeTokenLabel] = useState('Local dev');
   const [runtimeTokenValue, setRuntimeTokenValue] = useState('');
@@ -124,15 +145,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [runtimeLogsFilter, setRuntimeLogsFilter] = useState('');
   const runtimeLogsInputRef = useRef(null);
   const runtimeLogsScrollRef = useRef({ top: 0, atBottom: true });
-  const [openclawPlugins, setOpenclawPlugins] = useState([]);
-  const [openclawPluginsLoading, setOpenclawPluginsLoading] = useState(false);
-  const [openclawPluginsError, setOpenclawPluginsError] = useState('');
-  const [openclawPluginSpec, setOpenclawPluginSpec] = useState('');
-  const [openclawPluginId, setOpenclawPluginId] = useState('');
-  const [openclawPluginLink, setOpenclawPluginLink] = useState(false);
-  const [openclawPluginRestart, setOpenclawPluginRestart] = useState(true);
-  const [openclawPluginInstallLoading, setOpenclawPluginInstallLoading] = useState(false);
-  const [openclawPluginInstallResult, setOpenclawPluginInstallResult] = useState(null);
   const [userTokenValue, setUserTokenValue] = useState('');
   const [userTokenScopes, setUserTokenScopes] = useState([]);
   const [userTokenMeta, setUserTokenMeta] = useState({ hasToken: false, createdAt: null });
@@ -169,6 +181,17 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [createAgentVisibility, setCreateAgentVisibility] = useState('private');
   const [createSaving, setCreateSaving] = useState(false);
   const [clawdbotGatewayStatus, setClawdbotGatewayStatus] = useState(null);
+  const [adminInstallations, setAdminInstallations] = useState([]);
+  const [adminTotal, setAdminTotal] = useState(0);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState('');
+  const [adminSearch, setAdminSearch] = useState('');
+  const [adminShowAll, setAdminShowAll] = useState(false);
+  const [adminTokensOpen, setAdminTokensOpen] = useState(false);
+  const [adminTokensInstallation, setAdminTokensInstallation] = useState(null);
+  const [adminRevokeLoadingId, setAdminRevokeLoadingId] = useState(null);
+  const [adminUninstallTarget, setAdminUninstallTarget] = useState(null);
+  const [adminUninstallLoading, setAdminUninstallLoading] = useState(false);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
@@ -185,6 +208,33 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     if (!currentUserId || !pod) return false;
     const creatorId = normalizePodCreatorId(pod);
     return creatorId?.toString?.() === currentUserId.toString();
+  };
+
+  const adminTabIndex = isGlobalAdmin ? 2 : -1;
+
+  const formatDateTime = (value) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString();
+  };
+
+  const renderAdminStatusChip = (status) => {
+    const normalized = status || 'unknown';
+    let color = 'default';
+    if (normalized === 'active') color = 'success';
+    if (normalized === 'paused') color = 'warning';
+    if (normalized === 'error') color = 'error';
+    if (normalized === 'uninstalled') color = 'default';
+    return (
+      <Chip
+        size="small"
+        label={normalized}
+        color={color}
+        variant={normalized === 'uninstalled' ? 'outlined' : 'filled'}
+        sx={{ textTransform: 'capitalize' }}
+      />
+    );
   };
 
   const accessiblePods = useMemo(() => {
@@ -319,6 +369,29 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
+  const fetchAdminInstallations = async () => {
+    if (!isGlobalAdmin) return;
+    setAdminLoading(true);
+    setAdminError('');
+    try {
+      const params = new URLSearchParams();
+      if (adminSearch.trim()) params.append('q', adminSearch.trim());
+      params.append('status', adminShowAll ? 'all' : 'active');
+      params.append('limit', '200');
+      params.append('offset', '0');
+      const response = await axios.get(`/api/registry/admin/installations?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      setAdminInstallations(response.data.installations || []);
+      setAdminTotal(response.data.total || 0);
+    } catch (err) {
+      console.error('Error fetching admin installations:', err);
+      setAdminError('Failed to load installations.');
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
   const fetchClawdbotStatus = async () => {
     try {
       const response = await axios.get('/api/health/clawdbot', {
@@ -337,6 +410,27 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
+  useEffect(() => {
+    if (!isGlobalAdmin && activeTab > 1) {
+      setActiveTab(0);
+    }
+  }, [isGlobalAdmin, activeTab]);
+
+  useEffect(() => {
+    if (!isGlobalAdmin) return;
+    if (activeTab !== adminTabIndex) return;
+    fetchAdminInstallations();
+  }, [isGlobalAdmin, activeTab, adminTabIndex, adminShowAll]);
+
+  useEffect(() => {
+    if (!isGlobalAdmin) return;
+    if (activeTab !== adminTabIndex) return;
+    const handle = setTimeout(() => {
+      fetchAdminInstallations();
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [isGlobalAdmin, activeTab, adminTabIndex, adminSearch]);
+
   const openInstallDialog = (agent) => {
     const defaultPodId = selectedPodId
       || accessiblePods[0]?._id
@@ -347,6 +441,80 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setInstallInstanceId('');
     setInstallPodIds(defaultPodId ? [defaultPodId] : []);
     setInstallDialogOpen(true);
+  };
+
+  const openAdminTokensDialog = (installation) => {
+    setAdminTokensInstallation(installation);
+    setAdminTokensOpen(true);
+  };
+
+  const closeAdminTokensDialog = () => {
+    setAdminTokensOpen(false);
+    setAdminTokensInstallation(null);
+  };
+
+  const handleAdminRevokeToken = async (tokenId) => {
+    if (!adminTokensInstallation?.id) return;
+    setAdminRevokeLoadingId(tokenId);
+    try {
+      await axios.delete(
+        `/api/registry/admin/installations/${adminTokensInstallation.id}/runtime-tokens/${tokenId}`,
+        { headers: getAuthHeaders() },
+      );
+      setAdminInstallations((prev) => prev.map((item) => {
+        if (item.id !== adminTokensInstallation.id) return item;
+        return {
+          ...item,
+          runtimeTokens: (item.runtimeTokens || []).filter((token) => token.id !== tokenId),
+        };
+      }));
+      setAdminTokensInstallation((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          runtimeTokens: (prev.runtimeTokens || []).filter((token) => token.id !== tokenId),
+        };
+      });
+    } catch (err) {
+      console.error('Error revoking admin runtime token:', err);
+      setAdminError('Failed to revoke runtime token.');
+    } finally {
+      setAdminRevokeLoadingId(null);
+    }
+  };
+
+  const openAdminUninstallDialog = (installation) => {
+    setAdminUninstallTarget(installation);
+  };
+
+  const closeAdminUninstallDialog = () => {
+    setAdminUninstallTarget(null);
+  };
+
+  const handleAdminUninstallConfirm = async () => {
+    if (!adminUninstallTarget?.id) return;
+    setAdminUninstallLoading(true);
+    try {
+      await axios.delete(`/api/registry/admin/installations/${adminUninstallTarget.id}`, {
+        headers: getAuthHeaders(),
+      });
+      setAdminInstallations((prev) => {
+        if (!adminShowAll) {
+          return prev.filter((item) => item.id !== adminUninstallTarget.id);
+        }
+        return prev.map((item) => (
+          item.id === adminUninstallTarget.id
+            ? { ...item, status: 'uninstalled' }
+            : item
+        ));
+      });
+      closeAdminUninstallDialog();
+    } catch (err) {
+      console.error('Error uninstalling admin installation:', err);
+      setAdminError('Failed to uninstall installation.');
+    } finally {
+      setAdminUninstallLoading(false);
+    }
   };
 
   const closeInstallDialog = () => {
@@ -555,12 +723,13 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     'technical',
   ];
 
-  const DEFAULT_HEARTBEAT_PROMPT = (
-    "Check recent messages in the pod using the commonly skill. "
-    + "If there is nothing new or useful to add since the last heartbeat, reply HEARTBEAT_OK. "
-    + "If there is something new, post a concise update to the pod and write a short memory note to memory/YYYY-MM-DD.md "
-    + "(include key points and message ids; create the memory/ folder if missing)."
-  );
+  const DEFAULT_HEARTBEAT_CHECKLIST = [
+    '- Use the `commonly` skill to fetch pod context (`/api/pods/:id/context`), last 20 chat messages, and 10 most recent posts.',
+    '- If there is something new, post a concise update to the pod chat and reply to relevant posts/threads.',
+    '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
+    '- If nothing new, reply HEARTBEAT_OK.',
+  ].join('\n');
+
 
   const formatCommaList = (items = []) => items.filter(Boolean).join(', ');
   const parseCommaList = (value = '') => value
@@ -573,14 +742,14 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     return Math.min(Math.max(parsed, min), max);
   };
   const parseHeartbeatMinutes = (heartbeat) => {
-    if (!heartbeat) return 10;
+    if (!heartbeat) return 60;
     if (Number.isFinite(heartbeat.everyMinutes)) return heartbeat.everyMinutes;
     const raw = String(heartbeat.every || '').trim().toLowerCase();
-    if (!raw) return 10;
+    if (!raw) return 60;
     const match = raw.match(/([0-9]+)\s*m/);
     if (match) return Number(match[1]);
     const value = Number(raw);
-    return Number.isFinite(value) ? value : 10;
+    return Number.isFinite(value) ? value : 60;
   };
 
   const isInstalled = (agentName) => {
@@ -643,6 +812,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigModel(resolved?.profile?.modelPreferences?.preferred || 'gemini-2.0-flash');
     const persona = resolved?.profile?.persona || {};
     const heartbeatConfig = resolved?.config?.heartbeat || null;
+    const heartbeatChecklist = resolved?.config?.heartbeatChecklist || '';
+    const skillSyncConfig = resolved?.config?.skillSync || {};
     setConfigInstructions(resolved?.profile?.instructions || '');
     setConfigPersonaTone(persona.tone || 'friendly');
     setConfigPersonaSpecialties(formatCommaList(persona.specialties || []));
@@ -650,7 +821,15 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigPersonaCustomInstructions(persona.customInstructions || '');
     setConfigHeartbeatEnabled(heartbeatConfig?.enabled !== false);
     setConfigHeartbeatInterval(parseHeartbeatMinutes(heartbeatConfig));
-    setConfigHeartbeatPrompt(heartbeatConfig?.prompt || DEFAULT_HEARTBEAT_PROMPT);
+    setConfigHeartbeatChecklist(
+      heartbeatChecklist && heartbeatChecklist.trim()
+        ? heartbeatChecklist
+        : DEFAULT_HEARTBEAT_CHECKLIST,
+    );
+    setSkillSyncMode(skillSyncConfig.mode === 'selected' ? 'selected' : 'all');
+    setSkillSyncAllPods(skillSyncConfig.allPods !== false);
+    setSkillSyncPods(Array.isArray(skillSyncConfig.podIds) ? skillSyncConfig.podIds : []);
+    setSkillSyncSkills(Array.isArray(skillSyncConfig.skillNames) ? skillSyncConfig.skillNames : []);
     setRuntimeTokenValue('');
     setRuntimeTokenLabel('Local dev');
     setUserTokenValue('');
@@ -660,6 +839,91 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     // Fetch Clawdbot gateway status if opening clawdbot-bridge config
     if (agent?.name === 'clawdbot-bridge') {
       fetchClawdbotStatus();
+    }
+  };
+
+  const handleAutoPersona = async () => {
+    if (!selectedPodId || !configAgent) {
+      alert('Select a pod and open an agent configuration first.');
+      return;
+    }
+    const resolved = resolveInstalledAgent(configAgent);
+    const instanceId = resolved.instanceId || 'default';
+    const targetKey = `${resolved.name || resolved.agentName || resolved.name}:${instanceId}`;
+    setAutoPersonaLoading(true);
+    setAutoPersonaTarget(targetKey);
+
+    try {
+      const response = await axios.post(
+        `/api/registry/pods/${selectedPodId}/agents/${resolved.name || resolved.agentName || resolved.name}/persona/generate`,
+        { instanceId },
+        { headers: getAuthHeaders() },
+      );
+      const persona = response.data?.persona || {};
+      const exampleInstructions = response.data?.exampleInstructions || '';
+
+      setConfigPersonaTone(persona.tone || 'friendly');
+      setConfigPersonaSpecialties(formatCommaList(persona.specialties || []));
+      setConfigPersonaBoundaries(formatCommaList(persona.boundaries || []));
+      setConfigPersonaCustomInstructions(persona.customInstructions || '');
+      setConfigInstructions((prev) => (prev && prev.trim() ? prev : exampleInstructions));
+    } catch (error) {
+      console.error('Failed to generate persona:', error);
+      alert(error.response?.data?.error || 'Failed to generate persona.');
+    } finally {
+      setAutoPersonaLoading(false);
+      setAutoPersonaTarget('');
+    }
+  };
+
+  const fetchSkillSyncPods = async () => {
+    if (!configAgent || (configAgent.name || configAgent.agentName) !== 'openclaw') return;
+    setSkillSyncPodsLoading(true);
+    try {
+      const instanceId = configAgent.instanceId || 'default';
+      const response = await axios.get(
+        `/api/registry/agents/${configAgent.name}/installations?instanceId=${encodeURIComponent(instanceId)}`,
+        { headers: getAuthHeaders() },
+      );
+      const pods = response.data?.installations || [];
+      setSkillSyncPodOptions(pods);
+    } catch (error) {
+      console.error('Failed to load skill sync pods:', error);
+      setSkillSyncPodOptions([]);
+    } finally {
+      setSkillSyncPodsLoading(false);
+    }
+  };
+
+  const fetchSkillSyncSkills = async (podIds) => {
+    const targets = Array.isArray(podIds) ? podIds.filter(Boolean) : [];
+    if (!targets.length) {
+      setSkillSyncSkillOptions([]);
+      return;
+    }
+    setSkillSyncSkillLoading(true);
+    try {
+      const responses = await Promise.all(
+        targets.map((podId) => axios.get(`/api/skills/pods/${podId}/imported`, {
+          headers: getAuthHeaders(),
+          params: { scope: 'pod' },
+        })),
+      );
+      const items = responses.flatMap((res) => res.data?.items || []);
+      const unique = new Map();
+      items.forEach((item) => {
+        if (!item?.name) return;
+        const key = item.name.toLowerCase();
+        if (!unique.has(key)) {
+          unique.set(key, item);
+        }
+      });
+      setSkillSyncSkillOptions(Array.from(unique.values()));
+    } catch (error) {
+      console.error('Failed to load skill sync skills:', error);
+      setSkillSyncSkillOptions([]);
+    } finally {
+      setSkillSyncSkillLoading(false);
     }
   };
 
@@ -772,15 +1036,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigPersonaSpecialties('');
     setConfigPersonaBoundaries('');
     setConfigPersonaCustomInstructions('');
-    setOpenclawPlugins([]);
-    setOpenclawPluginsLoading(false);
-    setOpenclawPluginsError('');
-    setOpenclawPluginSpec('');
-    setOpenclawPluginId('');
-    setOpenclawPluginLink(false);
-    setOpenclawPluginRestart(true);
-    setOpenclawPluginInstallLoading(false);
-    setOpenclawPluginInstallResult(null);
   };
 
   useEffect(() => {
@@ -817,10 +1072,18 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   }, [configOpen, configAgent]);
 
   useEffect(() => {
-    if (!configOpen || !configAgent || !selectedPodId) return;
-    if (configAgent.name !== 'openclaw') return;
-    fetchOpenClawPlugins();
-  }, [configOpen, configAgent, selectedPodId]);
+    if (!configOpen || !configAgent) return;
+    if ((configAgent.name || configAgent.agentName) !== 'openclaw') return;
+    fetchSkillSyncPods();
+  }, [configOpen, configAgent]);
+
+  useEffect(() => {
+    if (!configOpen || !configAgent) return;
+    if ((configAgent.name || configAgent.agentName) !== 'openclaw') return;
+    const availablePods = skillSyncPodOptions.map((pod) => pod.podId);
+    const targetPods = skillSyncAllPods ? availablePods : skillSyncPods;
+    fetchSkillSyncSkills(targetPods);
+  }, [configOpen, configAgent, skillSyncAllPods, skillSyncPods, skillSyncPodOptions]);
 
   useEffect(() => {
     if (!runtimeLogsOpen || !runtimeLogsAutoRefresh) return () => {};
@@ -1036,52 +1299,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     });
   }, [runtimeLogsContent, runtimeLogsFilter, runtimeLogsOpen]);
 
-  const fetchOpenClawPlugins = async () => {
-    if (!selectedPodId || !configAgent || configAgent.name !== 'openclaw') return;
-    setOpenclawPluginsLoading(true);
-    setOpenclawPluginsError('');
-    try {
-      const response = await axios.get(
-        `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/plugins`,
-        { headers: getAuthHeaders() },
-      );
-      setOpenclawPlugins(response.data?.plugins || []);
-    } catch (err) {
-      console.error('Error fetching OpenClaw plugins:', err);
-      setOpenclawPluginsError(err.response?.data?.error || 'Failed to fetch plugins');
-      setOpenclawPlugins([]);
-    } finally {
-      setOpenclawPluginsLoading(false);
-    }
-  };
-
-  const handleInstallOpenClawPlugin = async () => {
-    if (!selectedPodId || !configAgent || configAgent.name !== 'openclaw') return;
-    if (!openclawPluginSpec.trim()) return;
-    setOpenclawPluginInstallLoading(true);
-    setOpenclawPluginInstallResult(null);
-    setOpenclawPluginsError('');
-    try {
-      const response = await axios.post(
-        `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/plugins/install`,
-        {
-          spec: openclawPluginSpec.trim(),
-          pluginId: openclawPluginId.trim() || undefined,
-          link: openclawPluginLink,
-          restart: openclawPluginRestart,
-        },
-        { headers: getAuthHeaders() },
-      );
-      setOpenclawPluginInstallResult(response.data);
-      await fetchOpenClawPlugins();
-    } catch (err) {
-      console.error('Error installing OpenClaw plugin:', err);
-      setOpenclawPluginsError(err.response?.data?.error || 'Failed to install plugin');
-      setOpenclawPluginInstallResult(err.response?.data || null);
-    } finally {
-      setOpenclawPluginInstallLoading(false);
-    }
-  };
 
   const handleRevokeRuntimeToken = async (tokenId) => {
     if (!configAgent || !selectedPodId || !tokenId) return;
@@ -1174,13 +1391,24 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigSaving(true);
     try {
       const instanceId = configAgent.instanceId || 'default';
+      const isOpenClaw = (configAgent.name || configAgent.agentName) === 'openclaw';
       await axios.patch(`/api/registry/pods/${selectedPodId}/agents/${configAgent.name}`, {
         config: {
           heartbeat: {
             enabled: configHeartbeatEnabled,
             everyMinutes: clampNumber(configHeartbeatInterval, 10),
-            prompt: configHeartbeatPrompt || DEFAULT_HEARTBEAT_PROMPT,
           },
+          heartbeatChecklist: configHeartbeatChecklist || '',
+          ...(isOpenClaw
+            ? {
+              skillSync: {
+                mode: skillSyncMode,
+                allPods: skillSyncAllPods,
+                podIds: skillSyncPods,
+                skillNames: skillSyncSkills,
+              },
+            }
+            : {}),
         },
         modelPreferences: { preferred: configModel },
         instanceId,
@@ -1194,6 +1422,17 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       }, {
         headers: getAuthHeaders(),
       });
+
+      if (isOpenClaw) {
+        await axios.post(
+          `/api/registry/pods/${selectedPodId}/agents/${configAgent.name || configAgent.agentName}/heartbeat-file`,
+          {
+            instanceId,
+            content: configHeartbeatChecklist || '',
+          },
+          { headers: getAuthHeaders() },
+        );
+      }
       await fetchInstalledAgents();
       closeConfigDialog();
     } catch (err) {
@@ -1201,6 +1440,31 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       alert(err.response?.data?.error || 'Failed to update agent configuration');
     } finally {
       setConfigSaving(false);
+    }
+  };
+
+  const handleResetHeartbeatChecklist = async () => {
+    if (!configAgent || !selectedPodId) return;
+    const isOpenClaw = (configAgent.name || configAgent.agentName) === 'openclaw';
+    if (!isOpenClaw) return;
+    const instanceId = configAgent.instanceId || 'default';
+    setHeartbeatResetLoading(true);
+    try {
+      setConfigHeartbeatChecklist(DEFAULT_HEARTBEAT_CHECKLIST);
+      await axios.post(
+        `/api/registry/pods/${selectedPodId}/agents/${configAgent.name || configAgent.agentName}/heartbeat-file`,
+        {
+          instanceId,
+          content: DEFAULT_HEARTBEAT_CHECKLIST,
+          reset: true,
+        },
+        { headers: getAuthHeaders() },
+      );
+    } catch (error) {
+      console.error('Failed to reset heartbeat checklist:', error);
+      alert(error.response?.data?.error || 'Failed to reset heartbeat checklist.');
+    } finally {
+      setHeartbeatResetLoading(false);
     }
   };
 
@@ -1341,6 +1605,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         <Tabs value={activeTab} onChange={(e, v) => setActiveTab(v)}>
           <Tab label="Discover" />
           <Tab label={`Installed ${installedAgents.length > 0 ? `(${installedAgents.length})` : ''}`} />
+          {isGlobalAdmin && (
+            <Tab label={`Admin ${adminTotal > 0 ? `(${adminTotal})` : ''}`} />
+          )}
         </Tabs>
       </Box>
 
@@ -1438,6 +1705,162 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         </Box>
       )}
 
+      {isGlobalAdmin && activeTab === adminTabIndex && (
+        <Box>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              mb: 3,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+              <TextField
+                size="small"
+                placeholder="Search agent, instance, or pod..."
+                value={adminSearch}
+                onChange={(e) => setAdminSearch(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{ minWidth: { xs: '100%', sm: 320 } }}
+              />
+              <FormControlLabel
+                control={(
+                  <Checkbox
+                    checked={adminShowAll}
+                    onChange={(e) => setAdminShowAll(e.target.checked)}
+                  />
+                )}
+                label="Include uninstalled"
+              />
+              <Box sx={{ flexGrow: 1 }} />
+              <Button
+                variant="outlined"
+                startIcon={<RefreshIcon />}
+                onClick={fetchAdminInstallations}
+                disabled={adminLoading}
+              >
+                Refresh
+              </Button>
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              {adminTotal} total installations
+            </Typography>
+          </Paper>
+
+          {adminError && (
+            <Alert severity="warning" sx={{ mb: 3 }}>
+              {adminError}
+            </Alert>
+          )}
+
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Agent</TableCell>
+                  <TableCell>Instance</TableCell>
+                  <TableCell>Pod</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Tokens</TableCell>
+                  <TableCell>Last Used</TableCell>
+                  <TableCell>Installed By</TableCell>
+                  <TableCell align="right">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {adminLoading && (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                      <CircularProgress size={24} />
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!adminLoading && adminInstallations.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                      <Typography color="text.secondary">No installations found.</Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!adminLoading && adminInstallations.map((install) => (
+                  <TableRow key={install.id}>
+                    <TableCell>
+                      <Typography variant="subtitle2">
+                        {install.displayName || install.agentName}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {install.agentName}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {install.instanceId || 'default'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {install.pod?.name || 'Unknown pod'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {install.pod?.id || '—'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{renderAdminStatusChip(install.status)}</TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="body2">
+                          {(install.runtimeTokens || []).length}
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => openAdminTokensDialog(install)}
+                        >
+                          Manage
+                        </Button>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {formatDateTime(install.usage?.lastUsedAt)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {install.installedBy?.username || 'Unknown'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {install.installedBy?.email || '—'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        onClick={() => openAdminUninstallDialog(install)}
+                        disabled={install.status === 'uninstalled'}
+                      >
+                        Uninstall
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
+
       <Dialog open={configOpen} onClose={closeConfigDialog} fullWidth maxWidth={configAgent?.name === 'clawdbot-bridge' ? 'sm' : 'xs'}>
         <DialogTitle>
           Agent Settings
@@ -1470,6 +1893,16 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           <Typography variant="subtitle2" sx={{ mb: 1 }}>
             Persona & Instructions
           </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleAutoPersona}
+              disabled={autoPersonaLoading || !selectedPodId || !configAgent}
+            >
+              {autoPersonaLoading ? 'Generating...' : 'Auto-generate Persona'}
+            </Button>
+          </Box>
           <TextField
             fullWidth
             label="System instructions"
@@ -1523,6 +1956,30 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           <Typography variant="subtitle2" sx={{ mb: 1 }}>
             Heartbeat
           </Typography>
+          {(configAgent?.name === 'openclaw' || configAgent?.agentName === 'openclaw') && (
+            <TextField
+              fullWidth
+              label="Heartbeat checklist (HEARTBEAT.md)"
+              value={configHeartbeatChecklist}
+              onChange={(e) => setConfigHeartbeatChecklist(e.target.value)}
+              multiline
+              minRows={4}
+              sx={{ mb: 2 }}
+              helperText="Stored in the agent workspace HEARTBEAT.md. Keep this short."
+            />
+          )}
+          {(configAgent?.name === 'openclaw' || configAgent?.agentName === 'openclaw') && (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+              <Button
+                size="small"
+                variant="text"
+                onClick={handleResetHeartbeatChecklist}
+                disabled={heartbeatResetLoading}
+              >
+                {heartbeatResetLoading ? 'Resetting...' : 'Reset to Default Checklist'}
+              </Button>
+            </Box>
+          )}
           <FormControlLabel
             control={(
               <Checkbox
@@ -1542,120 +1999,90 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             inputProps={{ min: 1 }}
             sx={{ mb: 2 }}
           />
-          <TextField
-            fullWidth
-            label="Heartbeat prompt"
-            value={configHeartbeatPrompt}
-            onChange={(e) => setConfigHeartbeatPrompt(e.target.value)}
-            multiline
-            minRows={3}
-            sx={{ mb: 2 }}
-          />
-
           <Box sx={{ mt: 2 }}>
             <Button variant="outlined" onClick={openSkillsCatalog}>
               Import Skill from Catalog
             </Button>
           </Box>
 
-          {configAgent?.name === 'openclaw' && (
+          {(configAgent?.name === 'openclaw' || configAgent?.agentName === 'openclaw') && (
             <Box sx={{ mt: 3 }}>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                OpenClaw Plugins
+                Workspace Skills
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Install channel plugins into the local OpenClaw gateway. This affects all OpenClaw instances on
-                this machine and may require a gateway restart.
+                Sync imported pod skills into this agent’s workspace `skills/` directory. Saving overwrites the
+                directory to avoid conflicts.
               </Typography>
-              {openclawPluginsError && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {openclawPluginsError}
-                </Alert>
-              )}
-              {openclawPluginInstallResult?.alreadyInstalled && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  Plugin already installed. No changes applied.
-                </Alert>
-              )}
-              <Stack spacing={2} sx={{ mb: 2 }}>
-                <TextField
-                  fullWidth
-                  label="Plugin spec or path"
-                  value={openclawPluginSpec}
-                  onChange={(e) => setOpenclawPluginSpec(e.target.value)}
-                  placeholder="@openclaw/plugin-name or ./path/to/plugin"
-                />
-                <TextField
-                  fullWidth
-                  label="Plugin ID (optional, prevents overwrite)"
-                  value={openclawPluginId}
-                  onChange={(e) => setOpenclawPluginId(e.target.value)}
-                  placeholder="plugin-id"
-                />
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
-                  <FormControlLabel
-                    control={(
-                      <Checkbox
-                        checked={openclawPluginLink}
-                        onChange={(event) => setOpenclawPluginLink(event.target.checked)}
-                      />
-                    )}
-                    label="Link local path"
+              <FormControlLabel
+                control={(
+                  <Checkbox
+                    checked={skillSyncAllPods}
+                    onChange={(event) => setSkillSyncAllPods(event.target.checked)}
                   />
-                  <FormControlLabel
-                    control={(
-                      <Checkbox
-                        checked={openclawPluginRestart}
-                        onChange={(event) => setOpenclawPluginRestart(event.target.checked)}
-                      />
-                    )}
-                    label="Restart gateway after install"
-                  />
-                  <Button
-                    variant="contained"
-                    onClick={handleInstallOpenClawPlugin}
-                    disabled={!openclawPluginSpec.trim() || openclawPluginInstallLoading}
+                )}
+                label="Use all pods where this agent is installed"
+                sx={{ mb: 2 }}
+              />
+              {!skillSyncAllPods && (
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel id="skill-sync-pods-label">Pods to sync</InputLabel>
+                  <Select
+                    labelId="skill-sync-pods-label"
+                    label="Pods to sync"
+                    multiple
+                    value={skillSyncPods}
+                    onChange={(event) => setSkillSyncPods(event.target.value)}
+                    renderValue={(selected) => {
+                      const names = skillSyncPodOptions
+                        .filter((pod) => selected.includes(pod.podId))
+                        .map((pod) => pod.podName);
+                      return names.join(', ');
+                    }}
                   >
-                    {openclawPluginInstallLoading ? 'Installing...' : 'Install Plugin'}
-                  </Button>
-                  <Button variant="text" onClick={fetchOpenClawPlugins} disabled={openclawPluginsLoading}>
-                    Refresh List
-                  </Button>
-                </Stack>
-              </Stack>
-              {(openclawPluginInstallResult?.output || openclawPluginInstallResult?.errorOutput) && (
-                <TextField
-                  fullWidth
-                  label="Installer Output"
-                  value={[
-                    openclawPluginInstallResult?.output,
-                    openclawPluginInstallResult?.errorOutput,
-                  ].filter(Boolean).join('\n')}
-                  multiline
-                  minRows={3}
-                  InputProps={{ readOnly: true }}
-                  sx={{ mb: 2 }}
-                />
+                    {skillSyncPodOptions.map((pod) => (
+                      <MenuItem key={pod.podId} value={pod.podId}>
+                        <Checkbox checked={skillSyncPods.includes(pod.podId)} />
+                        <ListItemText primary={pod.podName} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               )}
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Installed Plugins
-              </Typography>
-              {openclawPluginsLoading && (
-                <Typography color="text.secondary">Loading plugins...</Typography>
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel id="skill-sync-mode-label">Sync mode</InputLabel>
+                <Select
+                  labelId="skill-sync-mode-label"
+                  label="Sync mode"
+                  value={skillSyncMode}
+                  onChange={(event) => setSkillSyncMode(event.target.value)}
+                >
+                  <MenuItem value="all">All imported skills</MenuItem>
+                  <MenuItem value="selected">Only selected skills</MenuItem>
+                </Select>
+              </FormControl>
+              {skillSyncMode === 'selected' && (
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel id="skill-sync-skills-label">Skills to sync</InputLabel>
+                  <Select
+                    labelId="skill-sync-skills-label"
+                    label="Skills to sync"
+                    multiple
+                    value={skillSyncSkills}
+                    onChange={(event) => setSkillSyncSkills(event.target.value)}
+                    renderValue={(selected) => selected.join(', ')}
+                  >
+                    {skillSyncSkillOptions.map((skill) => (
+                      <MenuItem key={skill.name} value={skill.name}>
+                        <Checkbox checked={skillSyncSkills.includes(skill.name)} />
+                        <ListItemText primary={skill.name} secondary={skill.description || ''} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               )}
-              {!openclawPluginsLoading && openclawPlugins.length === 0 && (
-                <Typography color="text.secondary">No plugins detected yet.</Typography>
-              )}
-              {!openclawPluginsLoading && openclawPlugins.length > 0 && (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {openclawPlugins.map((plugin) => (
-                    <Chip
-                      key={plugin.id || plugin.name}
-                      label={`${plugin.name || plugin.id} (${plugin.status || 'unknown'})`}
-                      variant="outlined"
-                    />
-                  ))}
-                </Box>
+              {(skillSyncPodsLoading || skillSyncSkillLoading) && (
+                <Typography color="text.secondary">Loading skill sync data...</Typography>
               )}
             </Box>
           )}
@@ -1943,6 +2370,79 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           <Button onClick={closeConfigDialog}>Cancel</Button>
           <Button variant="contained" onClick={saveConfig} disabled={configSaving}>
             Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={adminTokensOpen} onClose={closeAdminTokensDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          Runtime Tokens
+          {adminTokensInstallation?.displayName
+            ? ` • ${adminTokensInstallation.displayName}`
+            : adminTokensInstallation?.agentName
+          }
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          {adminTokensInstallation?.runtimeTokens?.length ? (
+            <Stack spacing={1.5}>
+              {adminTokensInstallation.runtimeTokens.map((token) => (
+                <Paper key={token.id} variant="outlined" sx={{ p: 1.5 }}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="subtitle2">
+                        {token.label || 'Untitled token'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Created {formatDateTime(token.createdAt)} • Last used {formatDateTime(token.lastUsedAt)}
+                      </Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      onClick={() => handleAdminRevokeToken(token.id)}
+                      disabled={adminRevokeLoadingId === token.id}
+                    >
+                      {adminRevokeLoadingId === token.id ? 'Revoking...' : 'Revoke'}
+                    </Button>
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          ) : (
+            <Alert severity="info">No runtime tokens for this installation.</Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeAdminTokensDialog}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(adminUninstallTarget)} onClose={closeAdminUninstallDialog} fullWidth maxWidth="xs">
+        <DialogTitle>Uninstall agent instance</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            This will remove the agent from the pod and revoke access for this installation.
+          </Typography>
+          {adminUninstallTarget && (
+            <Alert severity="warning">
+              {adminUninstallTarget.displayName || adminUninstallTarget.agentName}
+              {' • '}
+              {adminUninstallTarget.instanceId || 'default'}
+              {' • '}
+              {adminUninstallTarget.pod?.name || 'Unknown pod'}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeAdminUninstallDialog}>Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleAdminUninstallConfirm}
+            disabled={adminUninstallLoading}
+          >
+            {adminUninstallLoading ? 'Uninstalling...' : 'Uninstall'}
           </Button>
         </DialogActions>
       </Dialog>

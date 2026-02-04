@@ -134,6 +134,7 @@ const AgentEnsembleStateSchema = new mongoose.Schema(
           'consensus',
           'keyword',
           'manual',
+          'scheduled_restart',
           'error',
         ],
       },
@@ -227,31 +228,43 @@ AgentEnsembleStateSchema.virtual('canContinue').get(function canContinue() {
   return true;
 });
 
+// Helper to return only participants that should take turns
+AgentEnsembleStateSchema.methods.getSpeakingParticipants = function getSpeakingParticipants() {
+  return (this.participants || []).filter((participant) => participant.role !== 'observer');
+};
+
 // Method to get next agent in rotation
 AgentEnsembleStateSchema.methods.getNextAgent = function getNextAgent() {
-  const { participants, turnState } = this;
-  if (!participants || participants.length === 0) return null;
+  const { turnState } = this;
+  const speakingParticipants = this.getSpeakingParticipants();
+  if (!speakingParticipants.length) return null;
 
-  const nextIndex = (turnState.turnNumber + 1) % participants.length;
-  return participants[nextIndex];
+  const nextIndex = (turnState.turnNumber + 1) % speakingParticipants.length;
+  return speakingParticipants[nextIndex];
 };
 
 // Method to advance to next turn
 AgentEnsembleStateSchema.methods.advanceTurn = function advanceTurn() {
-  const { turnState, participants } = this;
+  const { turnState } = this;
+  const speakingParticipants = this.getSpeakingParticipants();
+
+  if (!speakingParticipants.length) {
+    turnState.waitingForResponse = false;
+    return this;
+  }
 
   turnState.turnNumber += 1;
   turnState.turnStartedAt = new Date();
   turnState.waitingForResponse = true;
 
   // Check if we completed a round
-  if (turnState.turnNumber % participants.length === 0) {
+  if (turnState.turnNumber % speakingParticipants.length === 0) {
     turnState.roundNumber += 1;
   }
 
   // Set current agent
-  const currentIndex = turnState.turnNumber % participants.length;
-  const current = participants[currentIndex];
+  const currentIndex = turnState.turnNumber % speakingParticipants.length;
+  const current = speakingParticipants[currentIndex];
   turnState.currentAgent = {
     agentType: current.agentType,
     instanceId: current.instanceId,
@@ -289,7 +302,7 @@ AgentEnsembleStateSchema.methods.complete = function complete(reason, summaryCon
 
 // Static method to find active ensemble for a pod
 AgentEnsembleStateSchema.statics.findActiveForPod = function findActiveForPod(podId) {
-  return this.findOne({ podId, status: 'active' });
+  return this.findOne({ podId, status: 'active' }).sort({ createdAt: -1 });
 };
 
 // Static method to find all paused ensembles for resume

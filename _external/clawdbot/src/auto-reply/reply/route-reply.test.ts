@@ -156,7 +156,7 @@ describe("routeReply", () => {
     expect(mocks.sendMessageSlack).not.toHaveBeenCalled();
   });
 
-  it("drops payloads that start with the silent token", async () => {
+  it("sends payloads that include the silent token with other content", async () => {
     mocks.sendMessageSlack.mockClear();
     const res = await routeReply({
       payload: { text: `${SILENT_REPLY_TOKEN} -- (why am I here?)` },
@@ -165,7 +165,7 @@ describe("routeReply", () => {
       cfg: {} as never,
     });
     expect(res.ok).toBe(true);
-    expect(mocks.sendMessageSlack).not.toHaveBeenCalled();
+    expect(mocks.sendMessageSlack).toHaveBeenCalled();
   });
 
   it("applies responsePrefix when routing", async () => {
