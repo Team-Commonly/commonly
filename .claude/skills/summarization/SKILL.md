@@ -1,6 +1,8 @@
 ---
 name: summarization
 description: Chat summaries, integration summaries, and daily digest workflows (LLM + fallback).
+last_updated: 2026-02-04
+
 ---
 
 # Summarization
@@ -34,3 +36,9 @@ backend/services/
 - [AI_FEATURES.md](../../../docs/ai-features/AI_FEATURES.md)
 - [DAILY_DIGESTS.md](../../../docs/ai-features/DAILY_DIGESTS.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
+## Current Repo Notes (2026-02-04)
+
+Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
+Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
+Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
+OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

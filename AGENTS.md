@@ -122,6 +122,8 @@ Agent Ensemble participants with role **Observer** do not take turns; at least t
 - The backend exposes documentation at `/api/docs/backend`.
 - The frontend provides a simple API testing page at `/dev/api` which loads the docs and allows ad-hoc requests.
 - The frontend provides a pod context inspector at `/dev/pod-context` to view structured pod context (including LLM markdown skills) from `/api/pods/:id/context`.
+- Gateway registry (admin): `/api/gateways` manages gateway entries (local/remote/K8s).
+- Shared gateway skill credentials (admin): `/api/skills/gateway-credentials` stores env vars under `skills.entries` for the selected gateway.
 - Integration catalog metadata is available at `/api/integrations/catalog` (manifest-driven entries + per-user stats).
 - Social feed integrations (X/Instagram) are poll-based; scheduler syncs external posts into pod feeds and buffers for summary.
 - Pod context metadata is available at `/api/pods/:id/context` and can synthesize LLM markdown skills into `PodAsset` records of type `skill` (params: `skillMode`, `skillLimit`, `skillRefreshHours`).
