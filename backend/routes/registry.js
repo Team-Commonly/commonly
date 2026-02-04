@@ -216,6 +216,29 @@ const normalizeScopes = (scopes) => {
   return Array.from(new Set(scopes.filter((scope) => AGENT_USER_TOKEN_SCOPES.has(scope))));
 };
 
+const sanitizeStringList = (value) => {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((entry) => String(entry || '').trim()).filter(Boolean)));
+};
+
+const normalizeToolPolicy = (policy) => {
+  if (!policy || typeof policy !== 'object') return null;
+  return {
+    allowed: sanitizeStringList(policy.allowed),
+    blocked: sanitizeStringList(policy.blocked),
+    requireApproval: sanitizeStringList(policy.requireApproval),
+  };
+};
+
+const normalizeContextPolicy = (policy) => {
+  if (!policy || typeof policy !== 'object') return null;
+  const next = { ...policy };
+  if (next.maxTokens !== undefined) next.maxTokens = Number(next.maxTokens);
+  if (next.compactionThreshold !== undefined) next.compactionThreshold = Number(next.compactionThreshold);
+  if (next.summaryHours !== undefined) next.summaryHours = Number(next.summaryHours);
+  return next;
+};
+
 /**
  * Issue a runtime token for an agent.
  * Tokens are stored on the User model (shared across all pod installations).
@@ -905,6 +928,7 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
           runtime: i.config?.runtime || null,
           config: normalizedConfig ? {
             heartbeat: normalizedConfig.heartbeat || null,
+            skillSync: normalizedConfig.skillSync || null,
           } : null,
           profile: profile
             ? {
@@ -914,6 +938,8 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
               modelPreferences: profile.modelPreferences,
               instructions: profile.instructions,
               persona: profile.persona,
+              toolPolicy: profile.toolPolicy,
+              contextPolicy: profile.contextPolicy,
             }
             : null,
         };
@@ -2167,7 +2193,11 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
       displayName,
       instructions,
       persona,
+      toolPolicy,
+      contextPolicy,
     } = req.body;
+    const normalizedToolPolicy = normalizeToolPolicy(toolPolicy);
+    const normalizedContextPolicy = normalizeContextPolicy(contextPolicy);
     const normalizedInstanceId = normalizeInstanceId(instanceId);
     const userId = getUserId(req);
     if (!userId) {
@@ -2222,13 +2252,23 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
     await installation.save();
 
     // Update agent profile if needed
-    if (status || modelPreferences || displayName || instructions !== undefined || persona !== undefined) {
+    if (
+      status
+      || modelPreferences
+      || displayName
+      || instructions !== undefined
+      || persona !== undefined
+      || normalizedToolPolicy !== null
+      || normalizedContextPolicy !== null
+    ) {
       const updates = {};
       if (status) updates.status = status;
       if (modelPreferences) updates.modelPreferences = modelPreferences;
       if (displayName) updates.name = displayName;
       if (instructions !== undefined) updates.instructions = instructions;
       if (persona !== undefined) updates.persona = persona;
+      if (normalizedToolPolicy !== null) updates.toolPolicy = normalizedToolPolicy;
+      if (normalizedContextPolicy !== null) updates.contextPolicy = normalizedContextPolicy;
       await AgentProfile.updateOne(
         { agentId: buildAgentProfileId(name, normalizedInstanceId), podId },
         updates,
