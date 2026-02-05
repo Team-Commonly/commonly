@@ -16,6 +16,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Main Guide**: `/CLAUDE.md` (this file)
 - **Frontend Testing**: `/frontend/TESTING.md`
 - **Backend Testing**: `/backend/TESTING.md`
+- **Kubernetes Deployment**: `/docs/deployment/KUBERNETES.md`
+- **Docker Deployment**: `/docs/deployment/DEPLOYMENT.md`
 
 ### 🛠️ Essential Commands
 ```bash
@@ -102,6 +104,19 @@ gh pr checks 36                               # Should show all ✅ passing
 - 🏭 Minified and optimized assets
 - 🏭 Production-ready configuration
 - 🏭 Stable, cacheable container images
+
+#### Kubernetes Deployment (GKE, EKS, AKS, etc.)
+For production cloud deployments, see `/docs/deployment/KUBERNETES.md`:
+- `helm install commonly ./k8s/helm/commonly` - Deploy with Helm
+- `kubectl get pods -n commonly` - Check pod status
+- `kubectl logs -n commonly -l app=backend` - View backend logs
+- `kubectl rollout restart deployment backend -n commonly` - Restart deployment
+
+**Key Requirements:**
+- Frontend MUST be built with `--build-arg REACT_APP_API_URL=http://api.YOUR_DOMAIN.com`
+- Backend requires `FRONTEND_URL` environment variable for CORS
+- MongoDB connection string must include auth: `mongodb://admin:PASSWORD@mongodb:27017/commonly?authSource=admin`
+- Email verification requires SMTP2GO environment variables (optional, auto-verifies without them)
 
 ### Testing
 - `./dev.sh test` - Run backend tests in development container (recommended)

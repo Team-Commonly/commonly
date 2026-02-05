@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import axios from '../utils/axiosConfig';
 import { Box, TextField, Button, Typography, Container, Paper } from '@mui/material';
 import { Link } from 'react-router-dom';
 import commonlyLogo from '../assets/commonly-logo.png';
