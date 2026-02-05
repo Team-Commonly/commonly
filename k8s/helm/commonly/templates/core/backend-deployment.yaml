@@ -72,6 +72,38 @@ spec:
             secretKeyRef:
               name: api-keys
               key: session-secret
+        - name: FRONTEND_URL
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: FRONTEND_URL
+              optional: true
+
+        # Email Configuration (SMTP2GO)
+        - name: SMTP2GO_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: SMTP2GO_API_KEY
+              optional: true
+        - name: SMTP2GO_FROM_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: SMTP2GO_FROM_EMAIL
+              optional: true
+        - name: SMTP2GO_FROM_NAME
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: SMTP2GO_FROM_NAME
+              optional: true
+        - name: SMTP2GO_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: SMTP2GO_BASE_URL
+              optional: true
 
         # AI Services
         - name: GEMINI_API_KEY
