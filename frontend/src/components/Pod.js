@@ -28,6 +28,9 @@ const Pod = () => {
     const [roomDescription, setRoomDescription] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [tabValue, setTabValue] = useState(0);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
     const navigate = useNavigate();
     const { podType } = useParams();
     
@@ -171,6 +174,35 @@ const Pod = () => {
             setError('Failed to create pod. Please try again later.');
         }
     };
+
+    const openDeleteDialog = (pod) => {
+        setDeleteTarget(pod);
+        setDeleteDialogOpen(true);
+    };
+
+    const closeDeleteDialog = () => {
+        setDeleteDialogOpen(false);
+        setDeleteTarget(null);
+    };
+
+    const handleDeletePod = async () => {
+        if (!deleteTarget) return;
+        setIsDeleting(true);
+        try {
+            await axios.delete(`/api/pods/${deleteTarget._id}`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            setPods((prev) => prev.filter((pod) => pod._id !== deleteTarget._id));
+            closeDeleteDialog();
+        } catch (err) {
+            console.error('Error deleting pod:', err);
+            setError(err.response?.data?.msg || 'Failed to delete pod. Please try again.');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
     
     // Check if user is a member of a pod
     const isMember = (pod) => {
@@ -293,7 +325,7 @@ const Pod = () => {
             ) : (
                 <Grid
                     container
-                    spacing={{ xs: 2, sm: 3 }}
+                    spacing={{ xs: 0, sm: 3 }}
                     className="pod-grid"
                     sx={{ justifyContent: { xs: 'center', sm: 'flex-start' } }}
                 >
@@ -367,11 +399,20 @@ const Pod = () => {
                                         <Button 
                                             variant="contained" 
                                             color="primary"
-                                            fullWidth
+                                            fullWidth={!(currentUser && pod.createdBy && pod.createdBy._id === currentUser._id)}
                                             onClick={() => handleJoinRoom(pod._id)}
                                         >
                                             {isMember(pod) ? 'Open Chat' : 'Join Room'}
                                         </Button>
+                                        {currentUser && pod.createdBy && pod.createdBy._id === currentUser._id && (
+                                            <Button
+                                                variant="text"
+                                                color="error"
+                                                onClick={() => openDeleteDialog(pod)}
+                                            >
+                                                Delete
+                                            </Button>
+                                        )}
                                     </CardActions>
                                 </Card>
                             </Grid>
@@ -439,6 +480,21 @@ const Pod = () => {
                         disabled={!roomName.trim()}
                     >
                         Create Pod
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog open={deleteDialogOpen} onClose={closeDeleteDialog}>
+                <DialogTitle>Delete Pod</DialogTitle>
+                <DialogContent>
+                    <Typography>
+                        Delete &quot;{deleteTarget?.name}&quot;? This will remove messages, assets, and agent installs for the pod.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={closeDeleteDialog}>Cancel</Button>
+                    <Button color="error" variant="contained" onClick={handleDeletePod} disabled={isDeleting}>
+                        {isDeleting ? 'Deleting...' : 'Delete'}
                     </Button>
                 </DialogActions>
             </Dialog>
