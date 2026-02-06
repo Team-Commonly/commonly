@@ -32,6 +32,10 @@ rules:
 - apiGroups: [""]
   resources: ["configmaps"]
   verbs: ["get", "list", "create", "update", "patch", "delete"]
+# PVC management for gateway workspaces
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
 # Secret management for agent tokens
 - apiGroups: [""]
   resources: ["secrets"]

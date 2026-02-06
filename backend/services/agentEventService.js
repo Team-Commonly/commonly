@@ -1,4 +1,6 @@
 const AgentEvent = require('../models/AgentEvent');
+const { AgentInstallation } = require('../models/AgentRegistry');
+const Integration = require('../models/Integration');
 
 // Lazy-loaded to avoid circular dependency
 let agentWebSocketService = null;
@@ -15,6 +17,63 @@ const getWebSocketService = () => {
 };
 
 class AgentEventService {
+  static hasIntegrationReadScope(installation) {
+    const scopes = installation?.scopes || [];
+    return scopes.includes('integration:read') || scopes.includes('integrations:read');
+  }
+
+  static mergeAvailableIntegrations(existing, incoming) {
+    const byKey = new Map();
+    (Array.isArray(existing) ? existing : []).forEach((item) => {
+      const key = `${item?.id || ''}:${item?.type || ''}`;
+      byKey.set(key, item);
+    });
+    (Array.isArray(incoming) ? incoming : []).forEach((item) => {
+      const key = `${item?.id || ''}:${item?.type || ''}`;
+      byKey.set(key, item);
+    });
+    return Array.from(byKey.values());
+  }
+
+  static async enrichHeartbeatPayload({
+    agentName, instanceId, podId, payload,
+  }) {
+    const installation = await AgentInstallation.findOne({
+      agentName: agentName.toLowerCase(),
+      podId,
+      instanceId,
+      status: 'active',
+    }).select('scopes').lean();
+
+    if (!installation || !this.hasIntegrationReadScope(installation)) {
+      return payload;
+    }
+
+    const integrations = await Integration.find({
+      podId,
+      isActive: true,
+      status: 'connected',
+      'config.agentAccessEnabled': true,
+    }).select('type config.channelId config.channelName config.groupId config.groupName').lean();
+
+    const availableIntegrations = integrations.map((integration) => ({
+      id: integration._id?.toString(),
+      type: integration.type,
+      channelId: integration.config?.channelId,
+      channelName: integration.config?.channelName,
+      groupId: integration.config?.groupId,
+      groupName: integration.config?.groupName,
+    }));
+
+    return {
+      ...payload,
+      availableIntegrations: this.mergeAvailableIntegrations(
+        payload?.availableIntegrations,
+        availableIntegrations,
+      ),
+    };
+  }
+
   static async enqueue({
     agentName, podId, type, payload = {}, instanceId = 'default',
   }) {
@@ -22,12 +81,21 @@ class AgentEventService {
       throw new Error('agentName, podId, and type are required');
     }
 
+    const eventPayload = type === 'heartbeat'
+      ? await this.enrichHeartbeatPayload({
+        agentName,
+        instanceId,
+        podId,
+        payload,
+      })
+      : payload;
+
     const event = await AgentEvent.create({
       agentName: agentName.toLowerCase(),
       instanceId,
       podId,
       type,
-      payload,
+      payload: eventPayload,
     });
 
     // Push event via WebSocket if agent is connected

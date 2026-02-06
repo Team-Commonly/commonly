@@ -2,9 +2,31 @@ process.env.PG_HOST = '';
 const podController = require('../../../controllers/podController');
 const Pod = require('../../../models/Pod');
 const Message = require('../../../models/Message');
+const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
+const AgentProfile = require('../../../models/AgentProfile');
+const AgentIdentityService = require('../../../services/agentIdentityService');
 
 jest.mock('../../../models/Pod');
 jest.mock('../../../models/Message');
+jest.mock('../../../models/AgentRegistry', () => ({
+  AgentRegistry: {
+    findOne: jest.fn(),
+    create: jest.fn(),
+    incrementInstalls: jest.fn(),
+  },
+  AgentInstallation: {
+    isInstalled: jest.fn(),
+    install: jest.fn(),
+  },
+}));
+jest.mock('../../../models/AgentProfile', () => ({
+  updateOne: jest.fn(),
+}));
+jest.mock('../../../services/agentIdentityService', () => ({
+  getAgentTypeConfig: jest.fn(),
+  getOrCreateAgentUser: jest.fn(),
+  ensureAgentInPod: jest.fn(),
+}));
 
 describe('podController', () => {
   afterEach(() => jest.clearAllMocks());
@@ -34,6 +56,19 @@ describe('podController', () => {
     const savedPod = { _id: 'p1', populate: jest.fn().mockResolvedValue() };
     const save = jest.fn().mockResolvedValue(savedPod);
     Pod.mockImplementation(() => ({ save }));
+    AgentRegistry.findOne.mockResolvedValue({
+      agentName: 'commonly-bot',
+      latestVersion: '1.0.0',
+      displayName: 'Commonly Bot',
+      manifest: { context: { required: ['context:read'] } },
+    });
+    AgentInstallation.isInstalled.mockResolvedValue(false);
+    AgentInstallation.install.mockResolvedValue({
+      displayName: 'Commonly Bot',
+      instanceId: 'default',
+    });
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue({ _id: 'agent-1' });
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(savedPod);
 
     const req = {
       body: { name: 'Ensemble Pod', description: 'AI pod', type: 'agent-ensemble' },
@@ -46,6 +81,11 @@ describe('podController', () => {
     expect(save).toHaveBeenCalled();
     expect(savedPod.populate).toHaveBeenCalledWith('createdBy', 'username profilePicture');
     expect(savedPod.populate).toHaveBeenCalledWith('members', 'username profilePicture');
+    expect(AgentInstallation.install).toHaveBeenCalledWith('commonly-bot', 'p1', expect.objectContaining({
+      installedBy: 'creator',
+      instanceId: 'default',
+    }));
+    expect(AgentProfile.updateOne).toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(savedPod);
   });
 

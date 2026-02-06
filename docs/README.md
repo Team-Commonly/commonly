@@ -26,6 +26,7 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 | [deployment/](./deployment/) | Docker, CI/CD, production deployment | 2 |
 | [development/](./development/) | Backend, frontend, linting guides | 5 |
 | [skills/](./skills/) | Skill catalogs + import flow | 1 |
+| [plans/](./plans/) | Launch plans and feature specifications | 3 |
 | [task_optimization/](./task_optimization/) | Completed implementation tasks | 1 |
 
 ## Quick Links by Topic
@@ -35,6 +36,7 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 - [Deployment Guide](./deployment/DEPLOYMENT.md)
 - [Backend Development](./development/BACKEND.md)
 - [Frontend Development](./development/FRONTEND.md)
+- [Summarizer & Agents](./SUMMARIZER_AND_AGENTS.md) - Understanding the relationship between scheduled summaries and intelligent agents
 
 ### Discord Integration
 - [Discord Setup](./discord/DISCORD_SETUP.md)
@@ -70,9 +72,15 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 ### Instagram Integration
 - [Instagram Overview](./instagram/README.md)
 
-### AI Features
+### AI Features & Agents
+- [Summarizer & Agents Relationship](./SUMMARIZER_AND_AGENTS.md) - **Start here** to understand how automated summaries and agents work together
 - [AI Features Overview](./ai-features/AI_FEATURES.md)
 - [Daily Digests](./ai-features/DAILY_DIGESTS.md)
+- [Agent Runtime](./agents/AGENT_RUNTIME.md)
+
+### Launch Planning
+- [Public Launch v1.0 Plan](./plans/PUBLIC_LAUNCH_V1.md) - Strategy for first public version
+- [Social Fun Features Spec](./plans/SOCIAL_FUN_FEATURES_SPEC.md) - Technical specs for launch features
 
 ### Skills
 - [Skills Catalog (import flow)](./skills/SKILLS_CATALOG.md)

@@ -7,6 +7,7 @@ const PodAssetService = require('./podAssetService');
 const externalFeedService = require('./externalFeedService');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentEnsembleService = require('./agentEnsembleService');
+const PodCurationService = require('./podCurationService');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('./chatSummarizerService');
@@ -109,7 +110,29 @@ class SchedulerService {
       },
     );
 
-    this.jobs = [summarizerJob, externalFeedJob, dailyDigestJob, cleanupJob, ensembleJob];
+    const themedPodAutonomyJob = cron.schedule(
+      '15 */2 * * *',
+      async () => {
+        console.log('Running themed pod autonomy...');
+        try {
+          const result = await PodCurationService.runThemedPodAutonomy({
+            hours: 12,
+            minMatches: 4,
+          });
+          console.log(
+            `Themed pod autonomy complete. Created: ${result.createdPods?.length || 0}, Triggered: ${result.triggeredPods?.length || 0}`,
+          );
+        } catch (error) {
+          console.error('Error in themed pod autonomy scheduler:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
+
+    this.jobs = [summarizerJob, externalFeedJob, dailyDigestJob, cleanupJob, ensembleJob, themedPodAutonomyJob];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
 
@@ -117,6 +140,7 @@ class SchedulerService {
     console.log('- Summarizer runs every hour');
     console.log('- Cleanup runs daily at 2 AM UTC');
     console.log('- External feeds sync every 10 minutes');
+    console.log('- Themed pod autonomy runs every 2 hours');
 
     // Run initial summarizer after a short delay
     setTimeout(() => {
@@ -130,6 +154,15 @@ class SchedulerService {
         console.error('Error in initial external feed sync:', error);
       });
     }, 7000);
+
+    setTimeout(() => {
+      PodCurationService.runThemedPodAutonomy({
+        hours: 12,
+        minMatches: 4,
+      }).catch((error) => {
+        console.error('Error in initial themed pod autonomy run:', error);
+      });
+    }, 9000);
   }
 
   stop() {
@@ -162,35 +195,27 @@ class SchedulerService {
       console.log('Step 1: Summarizing external integration buffers...');
       await SchedulerService.summarizeIntegrationBuffers();
 
-      // Step 2: Summarize individual chat rooms
-      console.log('Step 2: Summarizing individual chat rooms...');
-      const chatRoomSummaries = await chatSummarizerService.summarizeAllActiveChats();
+      // Step 2: Agent-driven pod summary requests
+      console.log('Step 2: Dispatching pod summary requests to commonly-bot...');
+      const podSummaryDispatch = await SchedulerService.dispatchPodSummaryRequests();
 
-      // Step 3: Run main summarizers (posts and overall chat summary)
-      console.log('Step 3: Running main summarizers...');
-      const [postSummary, chatSummary] = await Promise.allSettled([
-        summarizerService.summarizePosts(),
-        summarizerService.summarizeChats(),
-      ]);
+      // Step 3 (legacy): optional direct summarizers
+      let chatRoomSummaries = [];
+      let postSummary = { status: 'skipped', reason: 'legacy summarizer disabled' };
+      let chatSummary = { status: 'skipped', reason: 'legacy summarizer disabled' };
 
-      // Log results
-      console.log(
-        `✓ Created ${chatRoomSummaries.length} individual chat room summaries`,
-      );
-
-      if (postSummary.status === 'fulfilled') {
-        console.log(`✓ Posts summary created: "${postSummary.value.title}"`);
+      if (process.env.LEGACY_SUMMARIZER_ENABLED === '1') {
+        console.log('Step 3: Running legacy summarizers...');
+        chatRoomSummaries = await chatSummarizerService.summarizeAllActiveChats();
+        [postSummary, chatSummary] = await Promise.allSettled([
+          summarizerService.summarizePosts(),
+          summarizerService.summarizeChats(),
+        ]);
       } else {
-        console.error('✗ Posts summary failed:', postSummary.reason);
+        console.log('Step 3: Legacy summarizers disabled (agent-first mode)');
       }
 
-      if (chatSummary.status === 'fulfilled') {
-        console.log(
-          `✓ Overall chat summary created: "${chatSummary.value.title}"`,
-        );
-      } else {
-        console.error('✗ Overall chat summary failed:', chatSummary.reason);
-      }
+      console.log(`✓ Pod summary requests enqueued: ${podSummaryDispatch.enqueued}`);
 
       const duration = Date.now() - startTime;
       console.log(`Summarization completed in ${duration}ms`);
@@ -198,6 +223,7 @@ class SchedulerService {
       const result = {
         success: true,
         results: {
+          podSummaryDispatch,
           chatRooms: chatRoomSummaries,
           posts: postSummary,
           chats: chatSummary,
@@ -389,6 +415,36 @@ class SchedulerService {
       console.error('Error summarizing integration buffers:', error);
       return [];
     }
+  }
+
+  static async dispatchPodSummaryRequests({ trigger = 'scheduled-hourly', windowMinutes = 60 } = {}) {
+    const installations = await AgentInstallation.find({
+      agentName: 'commonly-bot',
+      status: 'active',
+    }).select('podId instanceId').lean();
+
+    if (!installations.length) {
+      return { enqueued: 0 };
+    }
+
+    await Promise.all(
+      installations.map((installation) => (
+        AgentEventService.enqueue({
+          agentName: 'commonly-bot',
+          instanceId: installation.instanceId || 'default',
+          podId: installation.podId,
+          type: 'summary.request',
+          payload: {
+            source: 'pod',
+            trigger,
+            windowMinutes,
+            includeDigest: true,
+          },
+        })
+      )),
+    );
+
+    return { enqueued: installations.length };
   }
 
   // Manual trigger for testing

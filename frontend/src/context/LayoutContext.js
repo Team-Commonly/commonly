@@ -16,7 +16,15 @@ export const LayoutProvider = ({ children }) => {
   // Load initial state from localStorage on mount
   useEffect(() => {
     const savedState = localStorage.getItem('dashboardCollapsed');
-    const initialState = savedState === 'true';
+    let initialState = savedState === 'true';
+
+    if (savedState === null) {
+      const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+      if (isMobile) {
+        initialState = true;
+        localStorage.setItem('dashboardCollapsed', 'true');
+      }
+    }
     setIsDashboardCollapsed(initialState);
 
     // Apply class to body based on initial state

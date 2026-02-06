@@ -13,14 +13,19 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  TextField,
+  FormControlLabel,
+  Switch
 } from '@mui/material';
 import {
   Add as AddIcon,
   Refresh as RefreshIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  Settings as SettingsIcon
 } from '@mui/icons-material';
 import axios from 'axios';
+import getApiBaseUrl from '../utils/apiBaseUrl';
 import { AuthContext } from '../context/AuthContext';
 
 // Discord logo component
@@ -33,7 +38,7 @@ const DiscordIcon = () => (
 // Use OAuth flow with redirect instead of simple bot invite
 const getDiscordOAuthUrl = (podId) => {
   const clientId = process.env.REACT_APP_DISCORD_CLIENT_ID;
-  const redirectUri = encodeURIComponent(`${process.env.REACT_APP_API_URL}/api/discord/callback`);
+  const redirectUri = encodeURIComponent(`${getApiBaseUrl()}/api/discord/callback`);
   const scopes = encodeURIComponent('bot applications.commands');
   const permissions = '536873984'; // Send Messages (2048) + Manage Webhooks (536870912) = 536873984
   const state = `pod_${podId}`;
@@ -50,6 +55,11 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
   const [success, setSuccess] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [integrationToDelete, setIntegrationToDelete] = useState(null);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [integrationToConfigure, setIntegrationToConfigure] = useState(null);
+  const [botToken, setBotToken] = useState('');
+  const [enableAgentAccess, setEnableAgentAccess] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [podInfo, setPodInfo] = useState(null);
 
   // Check if user can delete integration (only used in non-viewOnly mode)
@@ -150,6 +160,44 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
   const handleDeleteCancel = () => {
     setDeleteDialogOpen(false);
     setIntegrationToDelete(null);
+  };
+
+  const handleSettingsOpen = (integration) => {
+    setIntegrationToConfigure(integration);
+    setBotToken(integration?.config?.botToken || '');
+    setEnableAgentAccess(Boolean(integration?.config?.agentAccessEnabled));
+    setSettingsDialogOpen(true);
+  };
+
+  const handleSettingsClose = () => {
+    setSettingsDialogOpen(false);
+    setIntegrationToConfigure(null);
+    setBotToken('');
+    setEnableAgentAccess(false);
+  };
+
+  const handleSettingsSave = async () => {
+    if (!integrationToConfigure?._id) return;
+    try {
+      setSettingsSaving(true);
+      const token = localStorage.getItem('token');
+      await axios.patch(`/api/integrations/${integrationToConfigure._id}`, {
+        config: {
+          botToken: botToken.trim() || null,
+          agentAccessEnabled: enableAgentAccess,
+        },
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSuccess('Discord integration settings updated');
+      handleSettingsClose();
+      await fetchIntegrations();
+    } catch (updateError) {
+      console.error('Error updating Discord integration settings:', updateError);
+      setError(updateError.response?.data?.message || 'Failed to update Discord settings');
+    } finally {
+      setSettingsSaving(false);
+    }
   };
 
   const getStatusColor = (status) => {
@@ -351,6 +399,16 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
                         borderRadius: 2
                       }}
                     />
+                    <Chip
+                      label={integration.config?.agentAccessEnabled ? 'Agent access on' : 'Agent access off'}
+                      size="small"
+                      color={integration.config?.agentAccessEnabled ? 'success' : 'default'}
+                      variant={integration.config?.agentAccessEnabled ? 'filled' : 'outlined'}
+                      sx={{
+                        fontWeight: 500,
+                        borderRadius: 2
+                      }}
+                    />
                     
                     <Tooltip title="Refresh">
                       <IconButton
@@ -368,6 +426,25 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
                         <RefreshIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
+
+                    {!viewOnly && (
+                      <Tooltip title="Agent access settings">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleSettingsOpen(integration)}
+                          disabled={loading}
+                          sx={{
+                            color: 'text.secondary',
+                            '&:hover': {
+                              color: '#5865F2',
+                              backgroundColor: 'rgba(88, 101, 242, 0.1)'
+                            }
+                          }}
+                        >
+                          <SettingsIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                     
                     {!viewOnly && (
                       <Tooltip title={canDeleteIntegration(integration) ? "Delete Integration" : "No permission to delete"}>
@@ -423,6 +500,40 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
             disabled={loading}
           >
             {loading ? <CircularProgress size={20} /> : 'Remove'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={settingsDialogOpen} onClose={handleSettingsClose} maxWidth="sm" fullWidth>
+        <DialogTitle>Discord Agent Access</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Configure bot token and whether installed agents can fetch Discord messages.
+          </Typography>
+          <TextField
+            label="Bot Token"
+            placeholder="Paste Discord bot token"
+            type="password"
+            fullWidth
+            value={botToken}
+            onChange={(event) => setBotToken(event.target.value)}
+            helperText="Used by runtime agents when message fetch endpoints are enabled."
+            sx={{ mb: 2 }}
+          />
+          <FormControlLabel
+            control={(
+              <Switch
+                checked={enableAgentAccess}
+                onChange={(event) => setEnableAgentAccess(event.target.checked)}
+              />
+            )}
+            label="Allow agents to fetch Discord messages"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleSettingsClose} disabled={settingsSaving}>Cancel</Button>
+          <Button onClick={handleSettingsSave} variant="contained" disabled={settingsSaving}>
+            {settingsSaving ? 'Saving...' : 'Save'}
           </Button>
         </DialogActions>
       </Dialog>

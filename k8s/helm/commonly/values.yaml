@@ -7,10 +7,15 @@ global:
   namespace: commonly
   environment: development
 
+# Agent provisioning (RBAC + PVCs)
+agentProvisioning:
+  enabled: true
+  createWorkspacePvc: false
+
 # Backend service configuration
 backend:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
   image:
     repository: gcr.io/commonly-test/commonly-backend
     tag: latest
@@ -23,10 +28,12 @@ backend:
   resources:
     requests:
       memory: "512Mi"
-      cpu: "500m"
+      cpu: "200m"
     limits:
       memory: "2Gi"
-      cpu: "2000m"
+      cpu: "1000m"
+  nodeSelector: {}
+  tolerations: []
   livenessProbe:
     enabled: true
     path: /api/health
@@ -41,29 +48,44 @@ backend:
     nodeEnv: development
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
+    agentProvisionerNodePool: ""
+    commonlyApiUrl: ""
+    clawdbotGatewayUrl: ""
+    moltbotGatewayUrl: ""
+    pgHost: "commonly-db-commonly-default.d.aivencloud.com"
+    pgPort: "21257"
+    pgDatabase: "defaultdb"
+    pgUser: "avnadmin"
+    pgSslEnabled: "true"
+    pgCaCertPath: "/app/certs/ca.pem"
+    marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
+  nodeSelector: {}
+  tolerations: []
 
 # Frontend service configuration
 frontend:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
   image:
     repository: gcr.io/commonly-test/commonly-frontend
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   service:
     type: ClusterIP
     port: 80
   resources:
     requests:
       memory: "256Mi"
-      cpu: "200m"
+      cpu: "100m"
     limits:
       memory: "512Mi"
       cpu: "500m"
+  nodeSelector: {}
+  tolerations: []
 
 # MongoDB configuration
 mongodb:
-  enabled: true
+  enabled: false
   image:
     repository: mongo
     tag: latest
@@ -79,14 +101,14 @@ mongodb:
   resources:
     requests:
       memory: "512Mi"
-      cpu: "500m"
+      cpu: "300m"
     limits:
       memory: "2Gi"
       cpu: "2000m"
 
 # PostgreSQL configuration
 postgresql:
-  enabled: true
+  enabled: false
   image:
     repository: postgres
     tag: "15"
@@ -102,12 +124,14 @@ postgresql:
   resources:
     requests:
       memory: "512Mi"
-      cpu: "500m"
+      cpu: "300m"
     limits:
       memory: "2Gi"
       cpu: "2000m"
   database: commonly
   username: postgres
+  nodeSelector: {}
+  tolerations: []
 
 # Redis configuration (for Socket.io adapter)
 redis:
@@ -122,14 +146,16 @@ redis:
   resources:
     requests:
       memory: "256Mi"
-      cpu: "100m"
+      cpu: "50m"
     limits:
       memory: "512Mi"
       cpu: "500m"
+  nodeSelector: {}
+  tolerations: []
 
 # External Secrets Operator configuration
 externalSecrets:
-  enabled: true
+  enabled: false
   secretStore:
     name: gcpsm-secretstore
     projectId: commonly-test
@@ -142,32 +168,39 @@ externalSecrets:
 # Agent runtime configuration
 agents:
   clawdbot:
-    enabled: false
+    enabled: true
     image:
-      repository: clawdbot
+      repository: gcr.io/commonly-test/clawdbot-gateway
       tag: latest
       pullPolicy: IfNotPresent
     config:
       gatewayPort: 18789
       bridgePort: 18790
+      gatewayBind: lan
     persistence:
       config:
         enabled: true
-        storageClass: filestore-sc
-        size: 10Gi
-        accessMode: ReadWriteMany
+        storageClass: standard-rwo
+        size: 1Gi
+        accessMode: ReadWriteOnce
       workspace:
         enabled: true
-        storageClass: filestore-sc
-        size: 100Gi
-        accessMode: ReadWriteMany
+        storageClass: standard-rwo
+        size: 10Gi
+        accessMode: ReadWriteOnce
     resources:
       requests:
-        memory: "256Mi"
+        memory: "512Mi"
         cpu: "200m"
       limits:
-        memory: "1Gi"
+        memory: "2Gi"
         cpu: "1000m"
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    nodeSelector: {}
+    tolerations: []
 
   commonlyBot:
     enabled: false
@@ -196,6 +229,7 @@ ingress:
   enabled: true
   className: nginx
   annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/websocket-services: "backend"
@@ -203,11 +237,11 @@ ingress:
     nginx.ingress.kubernetes.io/session-cookie-name: "commonly-backend"
   hosts:
     frontend:
-      host: commonly-dev.example.com
+      host: app.commonly.me
       path: /
       pathType: Prefix
     backend:
-      host: api-dev.commonly.example.com
+      host: api.commonly.me
       path: /
       pathType: Prefix
   tls:
@@ -222,6 +256,15 @@ configMaps:
     enabled: true
   postgresCA:
     enabled: true
+
+# Skills catalog storage (optional)
+skillsCatalogStorage:
+  enabled: true
+  size: 1Gi
+  storageClassName: standard-rwo
+  accessMode: ReadWriteOnce
+  bootstrapFromImage: true
+  downloadUrl: "https://storage.googleapis.com/commonly-test_cloudbuild/awesome-agent-skills-index.json"
 
 # Autoscaling configuration
 autoscaling:
@@ -238,6 +281,25 @@ monitoring:
     enabled: false
     serviceMonitor:
       enabled: false
+
+# Cloudflare Tunnel (optional)
+cloudflared:
+  enabled: true
+  namespace: ingress-nginx
+  tunnelId: YOUR_CLOUDFLARE_TUNNEL_ID
+  credentialsSecretName: cloudflared-commonly-k8s
+  image:
+    repository: cloudflare/cloudflared
+    tag: "2026.1.2"
+  replicas: 2
+  ingressService: nginx-ingress-ingress-nginx-controller.ingress-nginx.svc.cluster.local
+  ingressPort: 80
+  metricsPort: 2000
+  hostnames:
+    - app.commonly.me
+    - api.commonly.me
+    - app-dev.commonly.me
+    - api-dev.commonly.me
 
 # Backup configuration
 backup:

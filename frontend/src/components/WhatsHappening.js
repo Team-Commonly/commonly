@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Paper, Box, Typography, CircularProgress, Chip, Divider, IconButton, Tooltip, Card, CardContent, Collapse } from '@mui/material';
+import { Paper, Box, Typography, CircularProgress, Chip, Divider, IconButton, Tooltip, Card, CardContent, Collapse, Alert } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -27,6 +27,7 @@ const WhatsHappening = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshNotice, setRefreshNotice] = useState('');
   const [expandedSections, setExpandedSections] = useState({
     chatRooms: true,
     studyRooms: false,
@@ -102,6 +103,7 @@ const WhatsHappening = () => {
       await axios.post('/api/summaries/trigger', {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      setRefreshNotice('');
       
       // Wait a moment for summaries to be generated
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -111,6 +113,9 @@ const WhatsHappening = () => {
       
     } catch (error) {
       console.error('Error during refresh:', error);
+      if (error?.response?.status === 403) {
+        setRefreshNotice('Only global admins can trigger fresh regeneration. Showing latest available summaries.');
+      }
       // Fall back to just fetching existing summaries
       await fetchSummaries(false);
     } finally {
@@ -501,6 +506,11 @@ const WhatsHappening = () => {
             </IconButton>
           </Tooltip>
         </Box>
+        {refreshNotice && (
+          <Alert severity="info" sx={{ mb: 1.5 }}>
+            {refreshNotice}
+          </Alert>
+        )}
       </Box>
 
       {error ? (

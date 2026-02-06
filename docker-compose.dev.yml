@@ -182,7 +182,7 @@ services:
     profiles: ["clawdbot"]
     build:
       context: ./_external/clawdbot
-      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile}
+      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile.commonly}
     container_name: clawdbot-gateway-dev
     depends_on:
       - backend
@@ -190,7 +190,6 @@ services:
       # Required for Claude Code OAuth authentication
       - HOME=/home/node
       - CLAWDBOT_GATEWAY_PORT=${CLAWDBOT_GATEWAY_PORT:-18789}
-      - CLAWDBOT_BRIDGE_PORT=${CLAWDBOT_BRIDGE_PORT:-18790}
       - CLAWDBOT_GATEWAY_BIND=${CLAWDBOT_GATEWAY_BIND:-lan}
       - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
       - CLAWDBOT_CONFIG_DIR=/home/node/.clawdbot
@@ -206,6 +205,7 @@ services:
       - OPENCLAW_USER_TOKEN=${OPENCLAW_USER_TOKEN}
       - OPENCLAW_B_RUNTIME_TOKEN=${OPENCLAW_B_RUNTIME_TOKEN:-}
       - OPENCLAW_B_USER_TOKEN=${OPENCLAW_B_USER_TOKEN:-}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
       # Clawdbot uses separate Discord bot to avoid conflicts with Commonly backend
       - DISCORD_CLIENT_ID=${CLAWDBOT_DISCORD_CLIENT_ID}
       - DISCORD_BOT_TOKEN=${CLAWDBOT_DISCORD_BOT_TOKEN}
@@ -228,7 +228,6 @@ services:
       - ./packages/commonly-mcp:/app/commonly-mcp:ro
     ports:
       - "${CLAWDBOT_GATEWAY_PORT:-18789}:18789"
-      - "${CLAWDBOT_BRIDGE_PORT:-18790}:18790"
     networks:
       - app-network-dev
     restart: unless-stopped
@@ -248,7 +247,7 @@ services:
     profiles: ["clawdbot"]
     build:
       context: ./_external/clawdbot
-      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile}
+      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile.commonly}
     container_name: clawdbot-cli-dev
     depends_on:
       - clawdbot-gateway
@@ -308,7 +307,7 @@ services:
       - AGENT_INSTANCE_ID=${NEWSHOUND_INSTANCE_ID:-default}
       - AGENT_DISPLAY_NAME=${NEWSHOUND_DISPLAY_NAME:-NewsHound 🐕}
       - NEWSHOUND_BRIDGE_ENABLED=${NEWSHOUND_BRIDGE_ENABLED:-0}
-      - AGENT_MODEL=${NEWSHOUND_MODEL:-gemini-2.0-flash}
+      - AGENT_MODEL=${NEWSHOUND_MODEL:-gemini-2.5-flash}
       - AGENT_MODE=${NEWSHOUND_MODE:-passive}
       - COMMONLY_BASE_URL=${COMMONLY_BASE_URL:-http://backend:5000}
       - COMMONLY_AGENT_TOKEN=${NEWSHOUND_RUNTIME_TOKEN}

@@ -1,4 +1,6 @@
 // Avatar options with different colors and styles
+import { normalizeUploadUrl } from './apiBaseUrl';
+
 export const avatarOptions = [
     { id: 'default', color: 'primary.main' },
     { id: 'red', color: '#e53935' },
@@ -15,4 +17,18 @@ export const avatarOptions = [
 export const getAvatarColor = (avatarId) => {
     const avatar = avatarOptions.find(option => option.id === avatarId);
     return avatar ? avatar.color : 'primary.main';
-}; 
+};
+
+const isLikelyImageUrl = (value) => {
+    if (!value || typeof value !== 'string') return false;
+    if (value.startsWith('data:image/')) return true;
+    if (value.startsWith('http://') || value.startsWith('https://')) return true;
+    if (value.startsWith('/api/uploads/') || value.startsWith('/uploads/')) return true;
+    return false;
+};
+
+export const getAvatarSrc = (avatarId) => {
+    if (!avatarId) return null;
+    if (avatarOptions.some(option => option.id === avatarId)) return null;
+    return isLikelyImageUrl(avatarId) ? normalizeUploadUrl(avatarId) : null;
+};

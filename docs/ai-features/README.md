@@ -4,10 +4,15 @@
 
 This directory contains documentation for AI-powered features including summarization, daily digests, and analytics.
 
+## 🎯 Understanding Summarizer vs Agents
+
+**NEW**: See [SUMMARIZER_AND_AGENTS.md](../SUMMARIZER_AND_AGENTS.md) for a comprehensive explanation of how the automated Summarizer service relates to the Agent Runtime system. This clarifies common confusion points about `@commonly-bot` and custom agents.
+
 ## Overview
 
 | Document | Description |
 |----------|-------------|
+| [SUMMARIZER_AND_AGENTS.md](../SUMMARIZER_AND_AGENTS.md) | **Start here** - Relationship between scheduled summaries and intelligent agents |
 | [AI_FEATURES.md](./AI_FEATURES.md) | Three-layer AI architecture, intelligent summarization, prompt engineering |
 | [DAILY_DIGESTS.md](./DAILY_DIGESTS.md) | Personalized newsletter system, cross-pod analysis, scheduling |
 | [VISUALIZATION_ROADMAP.md](./VISUALIZATION_ROADMAP.md) | Future roadmap for keyword extraction, graphs, analytics |

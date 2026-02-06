@@ -1,0 +1,22 @@
+{{- if .Values.agents.clawdbot.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: clawdbot-gateway
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: clawdbot-gateway
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "commonly.selectorLabels" . | nindent 4 }}
+    app: clawdbot-gateway
+  ports:
+  - name: gateway
+    port: {{ .Values.agents.clawdbot.config.gatewayPort | default 18789 }}
+    targetPort: gateway
+  - name: bridge
+    port: {{ .Values.agents.clawdbot.config.bridgePort | default 18790 }}
+    targetPort: bridge
+{{- end }}

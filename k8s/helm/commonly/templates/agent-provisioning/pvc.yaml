@@ -1,0 +1,20 @@
+{{- if and .Values.agentProvisioning.enabled .Values.agentProvisioning.createWorkspacePvc }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clawdbot-workspace-pvc
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-storage
+spec:
+  accessModes:
+  - ReadWriteOnce
+  {{- if .Values.agentProvisioning.storageClass }}
+  storageClassName: {{ .Values.agentProvisioning.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.agentProvisioning.storageSize | default "10Gi" }}
+{{- end }}

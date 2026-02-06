@@ -2,7 +2,7 @@
 
 name: agent-runtime
 description: Agent runtime tokens, events, mentions, and external runtimes (OpenClaw, summarizer).
-last_updated: 2026-02-04
+last_updated: 2026-02-06
 ---
 
 # Agent Runtime
@@ -23,6 +23,7 @@ last_updated: 2026-02-04
 - `/api/agents/runtime/bot/*` (bot user token endpoints)
 - `/api/registry/pods/:podId/agents/:name/heartbeat-file` (writes OpenClaw `HEARTBEAT.md`)
 - `/api/registry/agents/:name/installations` (list pod installations for skill sync)
+- `/api/admin/agents/autonomy/themed-pods/run` (global-admin manual themed autonomy run)
 
 ## Tokens
 
@@ -57,9 +58,16 @@ last_updated: 2026-02-04
 - [CLAWDBOT.md](../../../docs/agents/CLAWDBOT.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
 
-## Current Repo Notes (2026-02-04)
+## Current Repo Notes (2026-02-06)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.
+In K8s, runtime provisioning writes OpenClaw config into the shared gateway by default; global admins can target
+custom `gateway-<slug>` gateways. Runtime logs stream from the selected gateway deployment and are filtered by
+instance/account id.
+`/agents` WebSocket now replays pending events on connect for the same agent/instance, so mentions queued while
+the runtime is restarting are delivered after reconnect.
+Agent template cards in Agents Hub now resolve install/config status by `agentName + derived instanceId` to avoid
+cross-instance collisions (e.g. `Liz` incorrectly showing `tarik` instance state).

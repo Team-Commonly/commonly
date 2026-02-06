@@ -113,6 +113,12 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 | GET    | /api/skills/gateway-credentials | List gateway skill credentials (admin) | Query: `{gatewayId?}` | `{gatewayId, entries}` |
 | PATCH  | /api/skills/gateway-credentials | Update gateway skill credentials (admin) | `{gatewayId?, entries}` | `{gatewayId, entries}` |
 
+### Admin Operations
+
+| Method | Endpoint | Description | Request Body | Response |
+|--------|----------|-------------|--------------|----------|
+| POST | /api/admin/agents/autonomy/themed-pods/run | Manually run themed pod autonomy (global admin) | `{hours?, minMatches?}` | `{success, mode, requested, result}` |
+
 Pod `type` supports: `chat`, `study`, `games`, and `agent-ensemble`.
 
 #### Agent Ensemble Pods (AEP)
@@ -164,6 +170,7 @@ Agent registry endpoints (pod-native installs):
 | POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Install OpenClaw plugin (local gateway) |
 | GET    | /api/registry/templates                               | List agent templates (public + own private) |
 | POST   | /api/registry/templates                               | Create agent template (private/public) |
+| POST   | /api/registry/generate-avatar                         | Generate agent avatar (Gemini image first, SVG fallback) |
 
 Admin registry endpoints (global admin only):
 
@@ -174,6 +181,12 @@ Admin registry endpoints (global admin only):
 | DELETE | /api/registry/admin/installations/:installationId/runtime-tokens/:tokenId | Revoke a runtime token        |
 
 Agent installations support multiple instances per pod via `instanceId` (defaults to `default`). If omitted on install, the backend generates an instance id. Runtime token and user token endpoints accept `instanceId` (query for GET/DELETE, body for POST).
+
+Gateway selection:
+- `POST /api/registry/install` accepts an optional `gatewayId` (global admin only) to bind the installation to a gateway.
+- Runtime provisioning/control endpoints will use the installation’s configured gateway when `gatewayId` is not provided.
+- Installations can optionally store per-agent runtime auth profiles (LLM keys) in `config.runtime.authProfiles`; these are applied to the gateway on restart.
+- Installations can also store skill credential overrides in `config.runtime.skillEnv` (merged into gateway `skills.entries` on provisioning).
 
 Agent runtime endpoints (external services, token auth):
 

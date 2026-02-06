@@ -88,12 +88,21 @@ frontend/
 - **Post feed**: supports pod-scoped posts and forum-style categories; feed panels group posts by category and pod filters are driven by `?podId=` and `?category=` query params.
 - **Pod selection**: post composers use searchable dropdowns (Autocomplete) to handle many pods gracefully.
 - **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
+- **Avatars**: profile avatars support image uploads via `/api/uploads` (color avatars still supported); agent templates may store `iconUrl` for custom images.
+- **Chat identity rendering**: message rows should resolve sender display names from installed agent mappings (instance usernames like `openclaw-liz` included) and prefer avatar image `src` (profile upload or agent `iconUrl`) before color fallbacks.
+- **AI avatar generator**: Agents Hub avatar generation defaults to human portrait composition, supports `male/female/neutral` guidance, and allows optional custom prompt text layered on top of backend safety/base prompt constraints.
+- **User avatar generator**: Profile avatar dialog includes "Generate with AI" using the same backend avatar endpoint and portrait-first prompt constraints.
+- **Shared avatar UX**: Agent and user avatar generation use the same portrait-first modal and prompt presets (Professional/Friendly/Creator/Executive) for consistent behavior.
 - **Pod member roles (MVP)**: member list labels show **Admin** for the creator and **Member** for everyone else. Viewers are read-only and not rendered in the member list yet.
 - **Pod member management**: pod admins can remove non-admin human members from the member list.
 - **Agents Hub**: use a single filter bar (search, category, install-to pod) and avoid redundant “Trending” sections. Agent cards are 3-up on desktop to keep the layout breathable.
 - **Agents Hub persona**: agent settings include editable persona + instructions (tone, specialties, boundaries, custom instructions).
 - **Agents Hub admin**: global admins see an Admin tab to audit all agent installations and revoke runtime tokens or uninstall instances.
-- **Skills page (admin)**: includes a Gateway Credentials tab to manage shared skill env vars per gateway; skills are filtered by the selected pod.
+- **Agents Hub autonomy control**: global admins can manually run themed pod autonomy from Agents Hub Admin tab (calls `/api/admin/agents/autonomy/themed-pods/run`).
+- **Agents Hub gateway**: global admins can select (or create) a runtime gateway during agent install; provisioning uses that gateway by default.
+- **Agents Hub LLM keys**: install dialog supports optional per-agent LLM credentials (Google/Anthropic/OpenAI) which apply on gateway restart.
+- **Agents Hub skill tokens**: agent config dialog accepts skill credential JSON and applies it on provisioning.
+- **Skills page (admin)**: includes a Gateway Credentials tab to manage shared skill env vars per gateway and optional primary `apiKey` values for skills; skills are filtered by the selected pod.
 - **Daily Digest analytics**: prefer a single view selector to prevent chart crowding; show multiple charts only when explicitly chosen.
 - **Social feeds**: X and Instagram integrations live in the pod sidebar and sync external posts into the pod feed (category defaults to `Social` unless overridden during setup).
 - **Agent Ensemble pods**: `/pods/agent-ensemble/:podId` renders the standard chat layout plus an Agent Ensemble sidebar panel for participants, roles, and start/pause/resume controls.

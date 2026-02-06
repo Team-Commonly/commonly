@@ -9,7 +9,7 @@ class LiteLLMClient {
   constructor(config = {}) {
     this.baseUrl = config.baseUrl || process.env.LITELLM_BASE_URL || 'http://litellm:4000';
     this.apiKey = config.apiKey || process.env.LITELLM_API_KEY || process.env.LITELLM_MASTER_KEY;
-    this.defaultModel = config.model || process.env.AGENT_MODEL || 'gemini-2.0-flash';
+    this.defaultModel = config.model || process.env.AGENT_MODEL || 'gemini-2.5-flash';
     this.defaultTemperature = config.temperature || 0.7;
     this.defaultMaxTokens = config.maxTokens || 1024;
   }

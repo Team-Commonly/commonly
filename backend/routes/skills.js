@@ -17,11 +17,40 @@ const router = express.Router();
 
 const getUserId = (req) => req.user?.id || req.user?._id || req.userId;
 
-const extractCredentialHints = (content) => {
+const extractCredentialMetadata = (content) => {
+  const metadata = { envs: [], primaryEnv: null };
+  if (!content) return metadata;
+  const frontmatterMatch = content.match(/^---\s*([\s\S]*?)\s*---/);
+  if (!frontmatterMatch) return metadata;
+  const frontmatter = frontmatterMatch[1];
+  const metadataLine = frontmatter.split('\n').find((line) => line.trim().startsWith('metadata:'));
+  if (!metadataLine) return metadata;
+  const raw = metadataLine.split('metadata:')[1]?.trim();
+  if (!raw) return metadata;
+  try {
+    const parsed = JSON5.parse(raw);
+    const moltbot = parsed?.moltbot || {};
+    const envs = moltbot?.requires?.env || moltbot?.requires?.envs || [];
+    if (Array.isArray(envs)) {
+      metadata.envs = envs.map((env) => String(env || '').trim()).filter(Boolean);
+    }
+    metadata.primaryEnv = String(moltbot?.primaryEnv || moltbot?.requires?.primaryEnv || '').trim() || null;
+  } catch (error) {
+    console.warn('[skills] Failed to parse metadata JSON in skill frontmatter:', error.message);
+  }
+  return metadata;
+};
+
+const extractCredentialHints = (content, metadataOverride) => {
   if (!content) return [];
   const envPattern = /\b[A-Z][A-Z0-9]*_[A-Z0-9_]{2,}\b/g;
-  const keywordPattern = /(KEY|TOKEN|SECRET|CLIENT|ACCESS|OPENAI|ANTHROPIC|GEMINI|GOOGLE|SERP|BING|BRAVE|SLACK|DISCORD|GITHUB|TWITTER|X_|FACEBOOK|INSTAGRAM)/;
+  const keywordPattern = /(KEY|TOKEN|SECRET|CLIENT|ACCESS|PROJECT|OPENAI|ANTHROPIC|GEMINI|GOOGLE|SERP|BING|BRAVE|SLACK|DISCORD|GITHUB|TWITTER|X_|FACEBOOK|INSTAGRAM)/;
   const hits = new Set();
+
+  const metadata = metadataOverride || extractCredentialMetadata(content);
+  if (metadata?.envs?.length) {
+    metadata.envs.forEach((env) => hits.add(String(env).trim()));
+  }
 
   let match;
   while ((match = envPattern.exec(content)) !== null) {
@@ -31,7 +60,7 @@ const extractCredentialHints = (content) => {
     }
   }
 
-  return Array.from(hits).sort();
+  return Array.from(hits).filter(Boolean).sort();
 };
 
 const ensurePodAccess = async (podId, userId) => {
@@ -78,7 +107,15 @@ const readGatewaySkillEntries = (configPath) => {
   Object.entries(entries).forEach(([skillKey, entry]) => {
     const env = entry?.env || {};
     const keys = Object.keys(env).filter(Boolean);
-    output[skillKey] = { envKeys: keys };
+    const rawKeys = Object.keys(entry || {}).filter(
+      (key) => key && key !== 'env' && key !== 'apiKey',
+    );
+    const merged = Array.from(new Set([...keys, ...rawKeys]));
+    output[skillKey] = {
+      envKeys: merged,
+      apiKeyPresent: Boolean(entry?.apiKey),
+      rawKeys,
+    };
   });
   return output;
 };
@@ -108,6 +145,7 @@ router.get('/catalog', auth, async (req, res) => {
     const allItems = Array.isArray(catalog.items) ? catalog.items : [];
     const query = String(req.query.q || '').trim().toLowerCase();
     const category = String(req.query.category || '').trim();
+    const sort = String(req.query.sort || '').trim().toLowerCase();
 
     const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
     const parseLimit = (raw, fallback, max) => {
@@ -129,11 +167,21 @@ router.get('/catalog', auth, async (req, res) => {
       return haystack.includes(query);
     });
 
-    const total = filtered.length;
+    const sorted = [...filtered];
+    if (sort === 'stars') {
+      const toStars = (item) => (Number.isFinite(item?.stars) ? item.stars : -1);
+      sorted.sort((a, b) => {
+        const diff = toStars(b) - toStars(a);
+        if (diff !== 0) return diff;
+        return String(a?.name || '').localeCompare(String(b?.name || ''));
+      });
+    }
+
+    const total = sorted.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePage = Math.min(page, totalPages);
     const start = (safePage - 1) * limit;
-    const items = filtered.slice(start, start + limit);
+    const items = sorted.slice(start, start + limit);
 
     return res.json({
       source: catalog.source || source,
@@ -208,11 +256,16 @@ router.get('/requirements', auth, async (req, res) => {
 
     const fetched = await SkillsCatalogService.fetchSkillContentFromSource(sourceUrl);
     const content = fetched.content || '';
-    const requirements = extractCredentialHints(content);
+    const metadata = extractCredentialMetadata(content);
+    const requirements = extractCredentialHints(content, metadata);
+    const primaryEnv = metadata.primaryEnv
+      || (metadata.envs.length === 1 ? metadata.envs[0] : null)
+      || (requirements.length === 1 ? requirements[0] : null);
 
     return res.json({
       sourceUrl: fetched.resolvedUrl || sourceUrl,
       requirements,
+      primaryEnv,
       detectedCount: requirements.length,
     });
   } catch (error) {
@@ -336,10 +389,17 @@ router.post('/import', auth, async (req, res) => {
 
     let skillContent = content;
     let resolvedSourceUrl = sourceUrl;
+    let extraFiles = [];
     if (!skillContent && sourceUrl) {
       const fetched = await SkillsCatalogService.fetchSkillContentFromSource(sourceUrl);
       skillContent = fetched.content;
       resolvedSourceUrl = fetched.resolvedUrl || sourceUrl;
+    }
+    if (resolvedSourceUrl) {
+      extraFiles = await SkillsCatalogService.fetchSkillDirectoryFiles(resolvedSourceUrl, {
+        maxFiles: 60,
+        maxBytes: 300_000,
+      });
     }
 
     if (!skillContent) {
@@ -356,6 +416,7 @@ router.post('/import', auth, async (req, res) => {
       description: description || null,
       importedAt: new Date().toISOString(),
       tags: tags,
+      extraFiles,
     };
 
     const asset = await PodAssetService.upsertImportedSkillAsset({

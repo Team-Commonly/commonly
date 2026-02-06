@@ -11,6 +11,45 @@ const config = require("../config/discord");
  * Handles Discord bot integration and webhook management
  */
 class DiscordService {
+  static async fetchMessages(options = {}) {
+    const {
+      channelId, botToken, limit = 50, before, after,
+    } = options;
+
+    if (!channelId) {
+      throw new Error('Channel ID is required');
+    }
+    if (!botToken) {
+      throw new Error('Discord bot token is required');
+    }
+
+    const params = {
+      limit: Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100),
+    };
+    if (before) params.before = before;
+    if (after) params.after = after;
+
+    const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bot ${botToken}`,
+        "Content-Type": "application/json",
+      },
+      params,
+    });
+
+    return (response.data || []).map((msg) => ({
+      id: msg.id,
+      authorId: msg.author?.id,
+      authorName: msg.author?.username || 'Unknown',
+      content: msg.content || '',
+      timestamp: msg.timestamp,
+      attachments: (msg.attachments || []).map((att) => att.url).filter(Boolean),
+      reactions: (msg.reactions || []).map((reaction) => reaction.emoji?.name).filter(Boolean),
+      isBot: Boolean(msg.author?.bot),
+    }));
+  }
+
   constructor(integrationId) {
     this.integrationId = integrationId;
     this.client = new Client({
@@ -284,41 +323,11 @@ class DiscordService {
    */
   async fetchMessages(options = {}) {
     try {
-      const { limit = 50, before } = options;
-
-      const channelId = this.integration?.config?.channelId;
-      if (!channelId) {
-        throw new Error("Channel ID not found in integration config");
-      }
-
-      const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
-      const params = { limit };
-
-      if (before) {
-        params.before = before;
-      }
-
-      const response = await axios.get(url, {
-        headers: {
-          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        params,
+      return DiscordService.fetchMessages({
+        channelId: this.integration?.config?.channelId,
+        botToken: this.integration?.config?.botToken || process.env.DISCORD_BOT_TOKEN,
+        ...options,
       });
-
-      const messages = response.data.map((msg) => ({
-        messageId: msg.id,
-        content: msg.content,
-        author: msg.author.username,
-        timestamp: new Date(msg.timestamp),
-        attachments: msg.attachments.map((att) => att.url),
-        embeds: msg.embeds,
-      }));
-
-      // Filter out bot messages for cleaner content
-      const filteredMessages = messages.filter((msg) => !msg.author?.bot);
-
-      return filteredMessages;
     } catch (error) {
       console.error("Error fetching Discord messages:", error);
       throw error;

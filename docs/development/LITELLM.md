@@ -27,7 +27,7 @@ Set these env vars so backend AI services route through LiteLLM:
 
 - `LITELLM_BASE_URL` (ex: `http://litellm:4000` in docker)
 - `LITELLM_API_KEY` (same value as `LITELLM_MASTER_KEY`)
-- `LITELLM_CHAT_MODEL` (optional, defaults to `gemini-2.0-flash`)
+- `LITELLM_CHAT_MODEL` (optional, defaults to `gemini-2.5-flash`)
 - `LITELLM_DISABLED=true` to bypass LiteLLM and call Gemini directly.
 
 To route **embeddings** through LiteLLM as well, set:

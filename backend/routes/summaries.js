@@ -3,16 +3,55 @@ const express = require('express');
 const router = express.Router();
 const summarizerService = require('../services/summarizerService');
 const Summary = require('../models/Summary');
+const User = require('../models/User');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('../services/chatSummarizerService');
 
 const ChatSummarizerService = chatSummarizerService.constructor;
 const schedulerService = require('../services/schedulerService');
+const AgentEventService = require('../services/agentEventService');
+const { AgentInstallation } = require('../models/AgentRegistry');
 
 const SchedulerService = schedulerService.constructor;
 const dailyDigestService = require('../services/dailyDigestService');
 const auth = require('../middleware/auth');
+
+const SUMMARY_AGENT = 'commonly-bot';
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getActiveSummaryInstallationsForPod = async (podId) => AgentInstallation.find({
+  agentName: SUMMARY_AGENT,
+  podId,
+  status: 'active',
+}).select('instanceId').lean();
+
+const waitForSummaryByEventIds = async ({
+  podId,
+  eventIds,
+  timeoutMs = 9000,
+  intervalMs = 500,
+}) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const summary = await Summary.findOne({
+      type: 'chats',
+      podId,
+      'metadata.eventId': { $in: eventIds },
+    }).sort({ createdAt: -1 }).lean();
+    if (summary) return summary;
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(intervalMs);
+  }
+  return null;
+};
+
+const isGlobalAdminUser = async (userId) => {
+  if (!userId) return false;
+  const user = await User.findById(userId).select('role').lean();
+  return Boolean(user && user.role === 'admin');
+};
 
 // GET /api/summaries - Get recent summaries
 router.get('/', auth, async (req, res) => {
@@ -37,8 +76,17 @@ router.get('/latest', auth, async (req, res) => {
       SummarizerService.getRecentSummaries('chats', 1),
     ]);
 
+    let posts = postSummaries[0] || null;
+    if (!posts) {
+      try {
+        posts = await summarizerService.summarizeAllPosts();
+      } catch (allPostsError) {
+        console.warn('Failed to build on-demand all-posts summary for /latest:', allPostsError.message);
+      }
+    }
+
     res.json({
-      posts: postSummaries[0] || null,
+      posts,
       chats: chatSummaries[0] || null,
     });
   } catch (error) {
@@ -47,17 +95,32 @@ router.get('/latest', auth, async (req, res) => {
   }
 });
 
-// POST /api/summaries/trigger - Manually trigger summarizer (admin only)
+// POST /api/summaries/trigger - Manually trigger agent summary refresh
 router.post('/trigger', auth, async (req, res) => {
   try {
-    // For now, anyone can trigger it for testing.
-    // In production, you might want to check admin privileges
+    const userId = req.user?.id || req.userId;
+    if (!(await isGlobalAdminUser(userId))) {
+      return res.status(403).json({ error: 'Global admin access required' });
+    }
 
-    // Trigger garbage collection first
+    // Manual refresh path now enqueues agent summary events only (no direct legacy summarizer calls).
     await SummarizerService.garbageCollectForDigest();
+    const [integrationResults, podSummaryDispatch] = await Promise.all([
+      SchedulerService.summarizeIntegrationBuffers(),
+      SchedulerService.dispatchPodSummaryRequests({
+        trigger: 'manual-refresh',
+        windowMinutes: 60,
+      }),
+    ]);
 
-    const result = await SchedulerService.triggerSummarizer();
-    res.json({ message: 'Summarizer triggered successfully', result });
+    res.json({
+      message: 'Agent summary refresh triggered successfully',
+      result: {
+        mode: 'agent-event-only',
+        integrationResultsCount: integrationResults.length,
+        podSummaryDispatch,
+      },
+    });
   } catch (error) {
     console.error('Error triggering summarizer:', error);
     res.status(500).json({ error: 'Failed to trigger summarizer' });
@@ -200,19 +263,48 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
   try {
     const { podId } = req.params;
     console.log(`Manual summary refresh requested for pod: ${podId}`);
+    const windowMinutes = Math.max(5, Math.min(240, parseInt(req.body?.windowMinutes, 10) || 60));
+    const installations = await getActiveSummaryInstallationsForPod(podId);
+    if (!installations.length) {
+      return res.status(409).json({
+        error: 'No active commonly-bot installation found for this pod',
+      });
+    }
 
-    // Generate a fresh summary for this specific pod
-    const summary = await chatSummarizerService.summarizePodMessages(podId);
+    const events = await Promise.all(
+      installations.map((installation) => AgentEventService.enqueue({
+        agentName: SUMMARY_AGENT,
+        instanceId: installation.instanceId || 'default',
+        podId,
+        type: 'summary.request',
+        payload: {
+          source: 'pod',
+          trigger: 'manual-pod-refresh',
+          windowMinutes,
+          includeDigest: true,
+        },
+      })),
+    );
+
+    const eventIds = events.map((event) => event?._id?.toString()).filter(Boolean);
+    const summary = await waitForSummaryByEventIds({
+      podId,
+      eventIds,
+    });
 
     if (!summary) {
-      return res
-        .status(404)
-        .json({ error: 'No messages found for this pod in the last hour' });
+      const latest = await ChatSummarizerService.getLatestPodSummary(podId);
+      return res.status(202).json({
+        message: 'Summary request queued; latest available summary returned',
+        summary: latest || null,
+        queued: true,
+      });
     }
 
     res.json({
-      message: 'Summary refreshed successfully',
+      message: 'Summary refreshed successfully (agent-generated)',
       summary,
+      queued: false,
     });
   } catch (error) {
     console.error('Error refreshing pod summary:', error);

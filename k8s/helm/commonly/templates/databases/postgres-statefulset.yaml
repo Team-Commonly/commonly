@@ -61,6 +61,14 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
+      {{- if and .Values.postgresql.nodeSelector (gt (len .Values.postgresql.nodeSelector) 0) }}
+      nodeSelector:
+        {{- toYaml .Values.postgresql.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.postgresql.tolerations (gt (len .Values.postgresql.tolerations) 0) }}
+      tolerations:
+        {{- toYaml .Values.postgresql.tolerations | nindent 8 }}
+      {{- end }}
   {{- if .Values.postgresql.persistence.enabled }}
   volumeClaimTemplates:
   - metadata:

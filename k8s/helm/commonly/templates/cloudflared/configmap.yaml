@@ -1,0 +1,20 @@
+{{- if .Values.cloudflared.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-commonly-k8s-config
+  namespace: {{ .Values.cloudflared.namespace | default (include "commonly.namespace" .) }}
+  labels:
+    app: cloudflared-commonly-k8s
+data:
+  config.yml: |
+    tunnel: {{ .Values.cloudflared.tunnelId }}
+    credentials-file: /etc/cloudflared/credentials.json
+
+    ingress:
+{{- range .Values.cloudflared.hostnames }}
+      - hostname: {{ . }}
+        service: http://{{ $.Values.cloudflared.ingressService }}:{{ $.Values.cloudflared.ingressPort }}
+{{- end }}
+      - service: http_status:404
+{{- end }}
