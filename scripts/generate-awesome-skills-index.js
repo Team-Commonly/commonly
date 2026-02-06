@@ -19,6 +19,7 @@ const outputPath =
 const sourceUrl = getArg('source') || DEFAULT_SOURCE_URL;
 const fetchLicenses = getArg('fetch-licenses', 'true') !== 'false';
 const githubToken = getArg('github-token') || process.env.GITHUB_TOKEN || null;
+const fetchStars = getArg('fetch-stars', githubToken ? 'true' : 'false') !== 'false';
 const maxConcurrent = Number(getArg('concurrency', '6')) || 6;
 const timeoutMs = Number(getArg('timeout-ms', String(DEFAULT_TIMEOUT_MS))) || DEFAULT_TIMEOUT_MS;
 
@@ -213,6 +214,54 @@ const tryFetchLicense = async (owner, repo) => {
   return null;
 };
 
+const fetchRepoInfo = async (owner, repo) => {
+  const url = `https://api.github.com/repos/${owner}/${repo}`;
+  const res = await fetchWithTimeout(url, {
+    headers: {
+      ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
+      Accept: 'application/vnd.github.v3+json',
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Repo fetch failed (${res.status})`);
+  }
+  const payload = await res.json();
+  return {
+    stars: Number.isFinite(payload.stargazers_count) ? payload.stargazers_count : 0,
+  };
+};
+
+const enrichRepoStats = async (itemsList) => {
+  const queue = itemsList.map((item) => ({ item }));
+  let index = 0;
+  const results = [...itemsList];
+  const cache = new Map();
+
+  const worker = async () => {
+    while (index < queue.length) {
+      const current = queue[index];
+      index += 1;
+      const repoInfo = parseGitHubRepo(current.item.sourceUrl);
+      if (!repoInfo) continue;
+      const repoKey = `${repoInfo.owner}/${repoInfo.repo}`;
+      if (!cache.has(repoKey)) {
+        try {
+          cache.set(repoKey, await fetchRepoInfo(repoInfo.owner, repoInfo.repo));
+        } catch (err) {
+          cache.set(repoKey, { stars: 0 });
+        }
+      }
+      const payload = cache.get(repoKey);
+      current.item.repo = repoKey;
+      current.item.stars = payload?.stars ?? 0;
+    }
+  };
+
+  const workers = Array.from({ length: maxConcurrent }, () => worker());
+  await Promise.all(workers);
+  return results;
+};
+
 const enrichLicenses = async (itemsList) => {
   const queue = itemsList.map((item) => ({ item }));
   let index = 0;
@@ -275,6 +324,10 @@ if (skillFiles.length > 0) {
 }
 
 const run = async () => {
+  if (fetchStars && items.length > 0) {
+    console.log(`Fetching GitHub stars for ${items.length} skills...`);
+    items = await enrichRepoStats(items);
+  }
   if (fetchLicenses && items.length > 0) {
     console.log(`Fetching licenses for ${items.length} skills...`);
     items = await enrichLicenses(items);

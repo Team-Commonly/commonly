@@ -1,0 +1,67 @@
+{{- if .Values.agentProvisioning.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-provisioner
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-provisioning
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-provisioner
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-provisioning
+rules:
+# Manage agent runtime deployments
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+# Manage agent configuration
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+# Manage PVCs for gateway workspaces
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+# Read pod status and logs
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list"]
+
+# Manage services for agent runtimes
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+# Read secrets for agent tokens
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-provisioner
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-provisioning
+subjects:
+- kind: ServiceAccount
+  name: agent-provisioner
+  namespace: {{ include "commonly.namespace" . }}
+roleRef:
+  kind: Role
+  name: agent-provisioner
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

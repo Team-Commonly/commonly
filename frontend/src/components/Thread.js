@@ -11,7 +11,8 @@ import FavoriteIcon from '@mui/icons-material/Favorite';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EmojiPicker from 'emoji-picker-react';
 import { AgentAvatar } from './common/AgentIndicator';
-import { getAvatarColor } from '../utils/avatarUtils';
+import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
+import { normalizeUploadUrl } from '../utils/apiBaseUrl';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import { refreshPage } from '../utils/refreshUtils';
@@ -426,7 +427,7 @@ const Thread = () => {
             sx={{
                 maxWidth: 800,
                 mx: 'auto',
-                px: { xs: 2, sm: 3 },
+                px: { xs: 0, sm: 3 },
                 pt: { xs: 2, sm: 3 },
                 pb: { xs: 10, sm: 6 },
                 mt: { xs: 2, sm: 4 }
@@ -435,7 +436,7 @@ const Thread = () => {
             {lightboxImage && (
                 <div className="image-lightbox" onClick={closeLightbox} role="presentation">
                     <img
-                        src={lightboxImage}
+                        src={normalizeUploadUrl(lightboxImage)}
                         alt={lightboxAlt || 'Post'}
                         className={`image-lightbox-img ${lightboxZoomed ? 'zoomed' : ''}`}
                         onClick={(event) => {
@@ -449,7 +450,11 @@ const Thread = () => {
                 <CardContent>
                     <div className="post-header">
                         <div className="post-meta">
-                            <Avatar className="post-avatar" sx={{ bgcolor: getAvatarColor(post.userId.profilePicture) }}>
+                            <Avatar
+                                className="post-avatar"
+                                sx={{ bgcolor: getAvatarColor(post.userId.profilePicture) }}
+                                src={getAvatarSrc(post.userId.profilePicture)}
+                            >
                                 {post.userId.username.charAt(0).toUpperCase()}
                             </Avatar>
                             <div className="post-meta-text">
@@ -501,11 +506,11 @@ const Thread = () => {
                                     maxHeight: '500px',
                                 }}
                                 className="post-image-container"
-                                onClick={() => openLightbox(post.image, post.content)}
+                                onClick={() => openLightbox(normalizeUploadUrl(post.image), post.content)}
                             >
                                 <Box
                                     component="img"
-                                    src={post.image}
+                                    src={normalizeUploadUrl(post.image)}
                                     alt="Post image"
                                     sx={{
                                         width: '100%',
@@ -599,7 +604,6 @@ const Thread = () => {
                             Post
                         </Button>
                     </div>
-                    <div className="comment-hint">Shift+Enter for newline</div>
                 </form>
             </div>
 
@@ -670,6 +674,7 @@ const Thread = () => {
                             sx={{ 
                                 bgcolor: getAvatarColor(comment.userId && comment.userId.profilePicture) 
                             }}
+                            src={getAvatarSrc(comment.userId && comment.userId.profilePicture)}
                         >
                             {comment.userId && comment.userId.username ? comment.userId.username.charAt(0).toUpperCase() : '?'}
                         </Avatar>

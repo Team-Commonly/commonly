@@ -21,7 +21,7 @@ class NewsHoundBridge extends BridgeBase {
     this.llm = new LiteLLMClient({
       baseUrl: config.litellmBaseUrl || process.env.LITELLM_BASE_URL,
       apiKey: config.litellmApiKey || process.env.LITELLM_API_KEY,
-      model: config.model || process.env.AGENT_MODEL || 'gemini-2.0-flash',
+      model: config.model || process.env.AGENT_MODEL || 'gemini-2.5-flash',
       temperature: 0.7,
     });
   }

@@ -73,6 +73,10 @@ const IntegrationSchema = new mongoose.Schema(
         type: Number,
         default: 1000,
       },
+      agentAccessEnabled: {
+        type: Boolean,
+        default: false,
+      },
     },
     ingestTokens: [
       {

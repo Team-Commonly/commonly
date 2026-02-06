@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, TextField, IconButton, Alert,
     Avatar, List, ListItem, ListItemAvatar,
-    Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Card, CardContent, Collapse
+    Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Card, CardContent, Collapse, FormControlLabel, Switch
 } from '@mui/material';
 import { 
     Add as AddIcon,
@@ -33,10 +33,11 @@ import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useLayout } from '../context/LayoutContext';
-import { getAvatarColor } from '../utils/avatarUtils';
+import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { AgentAvatar, AgentBadge, isAgentUsername } from './common/AgentIndicator';
 import AgentEnsemblePanel from './agents/AgentEnsemblePanel';
 import axios from 'axios';
+import getApiBaseUrl, { normalizeUploadUrl } from '../utils/apiBaseUrl';
 import EmojiPicker from 'emoji-picker-react';
 import './ChatRoom.css';
 
@@ -241,7 +242,7 @@ const ChatRoom = () => {
     const [memberActionError, setMemberActionError] = useState('');
     const [removingMemberIds, setRemovingMemberIds] = useState({});
     const integrationRedirectBase = (process.env.REACT_APP_INTEGRATION_REDIRECT_BASE_URL
-        || process.env.REACT_APP_API_URL
+        || getApiBaseUrl()
         || '').replace(/\/$/, '');
     
     // State for real data from API
@@ -269,6 +270,8 @@ const ChatRoom = () => {
     const [groupmeDraftIntegrationId, setGroupmeDraftIntegrationId] = useState(null);
     const [groupmeBotId, setGroupmeBotId] = useState('');
     const [groupmeGroupId, setGroupmeGroupId] = useState('');
+    const [groupmeAccessToken, setGroupmeAccessToken] = useState('');
+    const [groupmeAgentAccessEnabled, setGroupmeAgentAccessEnabled] = useState(false);
     const [groupmeError, setGroupmeError] = useState('');
     const [groupmeSaving, setGroupmeSaving] = useState(false);
     const [groupmeGroupName, setGroupmeGroupName] = useState('');
@@ -306,12 +309,14 @@ const ChatRoom = () => {
         : false;
     const canManageEnsemble = isPodAdmin || currentUser?.role === 'admin';
 
-    const { agentDisplayMap, agentMentionMap } = useMemo(() => {
+    const { agentDisplayMap, agentMentionMap, agentAvatarMap } = useMemo(() => {
         const displayMap = new Map();
         const mentionMap = new Map();
+        const avatarMap = new Map();
         (podAgents || []).forEach((agent) => {
             const username = buildAgentUsername(agent.name, agent.instanceId);
             const display = agent.profile?.displayName || agent.displayName || agent.name;
+            const avatar = agent.profile?.iconUrl || agent.profile?.avatarUrl || agent.iconUrl || '';
             const instanceId = agent.instanceId || 'default';
             const displaySlug = display
                 .toString()
@@ -326,17 +331,21 @@ const ChatRoom = () => {
             if (username) {
                 displayMap.set(username, display);
                 mentionMap.set(username, mentionValue);
+                avatarMap.set(username, avatar);
             }
             // Also map by instanceId and displaySlug for better resolution
             if (instanceId && instanceId !== 'default') {
                 displayMap.set(instanceId, display);
                 displayMap.set(`${agent.name}-${instanceId}`, display);
+                avatarMap.set(instanceId, avatar);
+                avatarMap.set(`${agent.name}-${instanceId}`, avatar);
             }
             if (displaySlug && displaySlug !== agent.name) {
                 displayMap.set(displaySlug, display);
+                avatarMap.set(displaySlug, avatar);
             }
         });
-        return { agentDisplayMap: displayMap, agentMentionMap: mentionMap };
+        return { agentDisplayMap: displayMap, agentMentionMap: mentionMap, agentAvatarMap: avatarMap };
     }, [podAgents]);
 
     const mentionableItems = useMemo(() => {
@@ -618,7 +627,7 @@ const ChatRoom = () => {
 
     const getDiscordOAuthUrl = (podId, guildId = null) => {
         const clientId = process.env.REACT_APP_DISCORD_CLIENT_ID;
-        const redirectUri = encodeURIComponent(`${process.env.REACT_APP_API_URL}/api/discord/callback`);
+        const redirectUri = encodeURIComponent(`${getApiBaseUrl()}/api/discord/callback`);
         const scopes = encodeURIComponent('bot applications.commands');
         const permissions = '536873984';
         const state = `pod_${podId}`;
@@ -724,6 +733,8 @@ const ChatRoom = () => {
         setGroupmeError('');
         setGroupmeBotId('');
         setGroupmeGroupId('');
+        setGroupmeAccessToken('');
+        setGroupmeAgentAccessEnabled(false);
         setGroupmeGroupName('');
         setGroupmeGroupUrl('');
         setGroupmeIntegration(null);
@@ -733,6 +744,8 @@ const ChatRoom = () => {
             setGroupmeIntegration(existingIntegration);
             setGroupmeBotId(existingIntegration.config?.botId || '');
             setGroupmeGroupId(existingIntegration.config?.groupId || '');
+            setGroupmeAccessToken(existingIntegration.config?.accessToken || '');
+            setGroupmeAgentAccessEnabled(Boolean(existingIntegration.config?.agentAccessEnabled));
             setGroupmeGroupName(existingIntegration.config?.groupName || '');
             setGroupmeGroupUrl(existingIntegration.config?.groupUrl || '');
             setGroupmeSaving(false);
@@ -793,6 +806,10 @@ const ChatRoom = () => {
             setGroupmeError('Please provide both Bot ID and Group ID.');
             return;
         }
+        if (groupmeAgentAccessEnabled && !groupmeAccessToken.trim()) {
+            setGroupmeError('Access Token is required when agent access is enabled.');
+            return;
+        }
 
         setGroupmeSaving(true);
         setGroupmeError('');
@@ -803,6 +820,8 @@ const ChatRoom = () => {
                 config: {
                     botId: groupmeBotId.trim(),
                     groupId: groupmeGroupId.trim(),
+                    accessToken: groupmeAccessToken.trim() || undefined,
+                    agentAccessEnabled: groupmeAgentAccessEnabled,
                     groupName: groupmeGroupName.trim() || undefined,
                     groupUrl: groupmeGroupUrl.trim() || undefined
                 },
@@ -1270,6 +1289,19 @@ const ChatRoom = () => {
             default:
                 return 'Unknown';
         }
+    };
+
+    const integrationSupportsAgentAccess = (type) => ['discord', 'groupme'].includes(type);
+
+    const hasAgentAccessEnabled = (integration) => (
+        integrationSupportsAgentAccess(integration?.type)
+        && Boolean(integration?.config?.agentAccessEnabled)
+    );
+
+    const getAggregateAgentAccess = (integrations = []) => {
+        const supported = integrations.filter((integration) => integrationSupportsAgentAccess(integration?.type));
+        if (!supported.length) return null;
+        return supported.some((integration) => hasAgentAccessEnabled(integration));
     };
 
     const getIntegrationDetails = (integration) => {
@@ -2632,6 +2664,7 @@ const ChatRoom = () => {
                                         const hasMultiple = linked.length > 1;
                                         const isExpanded = !!expandedIntegrations[item.id];
                                         const status = hasIntegration ? getAggregateStatus(linked) : null;
+                                        const aggregateAgentAccess = hasIntegration ? getAggregateAgentAccess(linked) : null;
                                         const detailText = hasIntegration ? getIntegrationDetails(linked[0]) : item.description;
                                         const showCardManage = hasIntegration && !hasMultiple;
 
@@ -2781,6 +2814,15 @@ const ChatRoom = () => {
                                                                     {status ? getStatusText(status) : 'Not connected'}
                                                                 </Typography>
                                                             </Box>
+                                                            {aggregateAgentAccess !== null && (
+                                                                <Chip
+                                                                    size="small"
+                                                                    label={aggregateAgentAccess ? 'Agent access on' : 'Agent access off'}
+                                                                    variant={aggregateAgentAccess ? 'filled' : 'outlined'}
+                                                                    color={aggregateAgentAccess ? 'success' : 'default'}
+                                                                    sx={{ height: 20, fontWeight: 600 }}
+                                                                />
+                                                            )}
                                                         </Box>
                                                         <Button
                                                             size="small"
@@ -2858,6 +2900,15 @@ const ChatRoom = () => {
                                                                                 <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                                                                                     {getStatusText(integration.status)}
                                                                                 </Typography>
+                                                                                {integrationSupportsAgentAccess(integration.type) && (
+                                                                                    <Chip
+                                                                                        size="small"
+                                                                                        label={hasAgentAccessEnabled(integration) ? 'Agent access on' : 'Agent access off'}
+                                                                                        variant={hasAgentAccessEnabled(integration) ? 'filled' : 'outlined'}
+                                                                                        color={hasAgentAccessEnabled(integration) ? 'success' : 'default'}
+                                                                                        sx={{ height: 18, fontWeight: 600 }}
+                                                                                    />
+                                                                                )}
                                                                                 <Tooltip title="Manage connection">
                                                                                     <IconButton
                                                                                         size="small"
@@ -2937,6 +2988,23 @@ const ChatRoom = () => {
                                             size="small"
                                             value={groupmeGroupId}
                                             onChange={(event) => setGroupmeGroupId(event.target.value)}
+                                        />
+                                        <TextField
+                                            label="Access Token (for agent message fetch)"
+                                            size="small"
+                                            type="password"
+                                            value={groupmeAccessToken}
+                                            onChange={(event) => setGroupmeAccessToken(event.target.value)}
+                                            helperText="Required only when enabling agent access."
+                                        />
+                                        <FormControlLabel
+                                            control={(
+                                                <Switch
+                                                    checked={groupmeAgentAccessEnabled}
+                                                    onChange={(event) => setGroupmeAgentAccessEnabled(event.target.checked)}
+                                                />
+                                            )}
+                                            label="Allow agents to fetch GroupMe messages"
                                         />
                                         <TextField
                                             label="Group Name (optional)"
@@ -3177,30 +3245,32 @@ const ChatRoom = () => {
             <Container maxWidth={false} disableGutters className={`chat-room-container ${isDashboardCollapsed ? 'dashboard-collapsed' : ''} ${showMembers ? 'sidebar-visible' : ''}`}>
                 <div className="main-chat-content">
                     {/* Chat header */}
-                    <AppBar position="fixed" color="default" elevation={1} className="chat-room-header">
-                        <Toolbar>
-                            <IconButton edge="start" color="inherit" onClick={() => navigate(`/pods/${podType}`)} sx={{ mr: 2 }}>
-                                <ArrowBackIcon />
-                            </IconButton>
-                            <Box sx={{ flexGrow: 1 }}>
-                                <Typography variant="h6" component="div">
-                                    {room?.name || 'Chat Room'}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    {room?.members?.length || 0} members
-                                </Typography>
-                            </Box>
-                            <Button
-                                size="small"
-                                variant="outlined"
-                                startIcon={<ArticleIcon />}
-                                onClick={() => navigate(`/feed?podId=${roomId}`)}
-                                sx={{ textTransform: 'none' }}
-                            >
-                                Posts
-                            </Button>
-                        </Toolbar>
-                    </AppBar>
+                    {!isMobile && (
+                        <AppBar position="fixed" color="default" elevation={1} className="chat-room-header">
+                            <Toolbar>
+                                <IconButton edge="start" color="inherit" onClick={() => navigate(`/pods/${podType}`)} sx={{ mr: 2 }}>
+                                    <ArrowBackIcon />
+                                </IconButton>
+                                <Box sx={{ flexGrow: 1 }}>
+                                    <Typography variant="h6" component="div">
+                                        {room?.name || 'Chat Room'}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        {room?.members?.length || 0} members
+                                    </Typography>
+                                </Box>
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<ArticleIcon />}
+                                    onClick={() => navigate(`/feed?podId=${roomId}`)}
+                                    sx={{ textTransform: 'none' }}
+                                >
+                                    Posts
+                                </Button>
+                            </Toolbar>
+                        </AppBar>
+                    )}
                     
                     {/* Chat Content */}
                     <Box className="chat-content-container">
@@ -3257,12 +3327,13 @@ const ChatRoom = () => {
                                             (msg.userId && typeof msg.userId === 'object' && msg.userId.username) ||
                                             msg.username || 
                                             'Unknown User';
-                                        const displayName = isAgentUsername(username)
-                                            ? (agentDisplayMap.get(username) || username)
-                                            : username;
+                                        const mappedDisplayName = agentDisplayMap.get(username);
+                                        const isAgentMessage = Boolean(mappedDisplayName) || isAgentUsername(username);
+                                        const displayName = mappedDisplayName || username;
                                         
                                         // Get profile picture with multiple fallbacks
                                         const profilePicture = 
+                                            agentAvatarMap.get(username) ||
                                             (msg.userId && typeof msg.userId === 'object' && msg.userId.profilePicture) ||
                                             msg.profile_picture || 
                                             msg.profilePicture ||  // Handle camelCase from socket messages
@@ -3293,7 +3364,21 @@ const ChatRoom = () => {
                                                     className="message-item received"
                                                 >
                                                     <ListItemAvatar className="message-avatar">
-                                                        <Avatar sx={{ bgcolor: '#5865F2' }}>🤖</Avatar>
+                                                        {isAgentMessage ? (
+                                                            <AgentAvatar
+                                                                username={username}
+                                                                src={getAvatarSrc(profilePicture)}
+                                                                size={40}
+                                                                showBadge={true}
+                                                            />
+                                                        ) : (
+                                                            <Avatar
+                                                                src={getAvatarSrc(profilePicture)}
+                                                                sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
+                                                            >
+                                                                {displayName.charAt(0).toUpperCase()}
+                                                            </Avatar>
+                                                        )}
                                                     </ListItemAvatar>
 
                                                     <div className="message-content-wrapper">
@@ -3339,15 +3424,16 @@ const ChatRoom = () => {
                                                 className={`message-item ${isCurrentUser ? 'sent' : 'received'}`}
                                             >
                                                 <ListItemAvatar className="message-avatar">
-                                                    {isAgentUsername(username) ? (
+                                                    {isAgentMessage ? (
                                                         <AgentAvatar
                                                             username={username}
-                                                            src={profilePicture}
+                                                            src={getAvatarSrc(profilePicture)}
                                                             size={40}
                                                             showBadge={true}
                                                         />
                                                     ) : (
                                                         <Avatar
+                                                            src={getAvatarSrc(profilePicture)}
                                                             sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
                                                         >
                                                             {displayName.charAt(0).toUpperCase()}
@@ -3358,7 +3444,7 @@ const ChatRoom = () => {
                                                 <div className="message-content-wrapper">
                                                     <div className="message-user">
                                                         {displayName}
-                                                        {isAgentUsername(username) && <AgentBadge username={username} size="small" />}
+                                                        {isAgentMessage && <AgentBadge username={username} size="small" />}
                                                     </div>
                                                     {/* Text message */}
                                                     {messageType === 'text' && (
@@ -3371,10 +3457,10 @@ const ChatRoom = () => {
                                                     {messageType === 'image' && (
                                                         <div className={`message-image-container ${isCurrentUser ? 'sent' : 'received'}`}>
                                                             <img
-                                                                src={messageContent}
+                                                                src={normalizeUploadUrl(messageContent)}
                                                                 alt="Shared"
                                                                 className="message-image"
-                                                                onClick={() => window.open(messageContent, '_blank')}
+                                                                onClick={() => window.open(normalizeUploadUrl(messageContent), '_blank')}
                                                             />
                                                         </div>
                                                     )}
@@ -3515,7 +3601,6 @@ const ChatRoom = () => {
                         </Button>
                     </div>
                     
-                    <div className="composer-hint">Shift+Enter for newline</div>
                 </Paper>
             </Container>
 

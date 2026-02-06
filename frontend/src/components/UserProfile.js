@@ -33,11 +33,12 @@ import KeyIcon from '@mui/icons-material/Key';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { avatarOptions, getAvatarColor } from '../utils/avatarUtils';
+import { avatarOptions, getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import { useNavigate } from 'react-router-dom';
 import AppsManagement from './AppsManagement';
+import AvatarGenerator from './agents/AvatarGenerator';
 
 const UserProfile = () => {
     const { refreshAvatars } = useAppContext();
@@ -47,7 +48,10 @@ const UserProfile = () => {
     const [error, setError] = useState('');
     const [openAvatarDialog, setOpenAvatarDialog] = useState(false);
     const [selectedAvatar, setSelectedAvatar] = useState('default');
+    const [avatarFile, setAvatarFile] = useState(null);
+    const [avatarPreview, setAvatarPreview] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
+    const [avatarGeneratorOpen, setAvatarGeneratorOpen] = useState(false);
     const [currentTab, setCurrentTab] = useState(0);
     const [apiToken, setApiToken] = useState(null);
     const [apiTokenCreatedAt, setApiTokenCreatedAt] = useState(null);
@@ -105,19 +109,51 @@ const UserProfile = () => {
 
     const handleCloseAvatarDialog = () => {
         setOpenAvatarDialog(false);
+        setAvatarFile(null);
+        setAvatarPreview('');
         blurActiveElement();
     };
 
     const handleAvatarSelect = (avatarId) => {
         setSelectedAvatar(avatarId);
+        setAvatarFile(null);
+        setAvatarPreview('');
+    };
+
+    const handleGeneratedAvatarSelect = (avatarDataUri) => {
+        if (!avatarDataUri) return;
+        setSelectedAvatar(avatarDataUri);
+        setAvatarFile(null);
+        setAvatarPreview('');
+        setAvatarGeneratorOpen(false);
+    };
+
+    const handleAvatarFileChange = (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        setAvatarFile(file);
+        setAvatarPreview(URL.createObjectURL(file));
+        setSelectedAvatar('default');
     };
 
     const handleSaveAvatar = async () => {
         setIsUpdating(true);
         try {
+            let nextProfilePicture = selectedAvatar;
+            if (avatarFile) {
+                const formData = new FormData();
+                formData.append('image', avatarFile);
+                const uploadRes = await axios.post('/api/uploads', formData, {
+                    headers: { 
+                        Authorization: `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+                nextProfilePicture = uploadRes.data?.url || selectedAvatar;
+            }
             const response = await axios.put(
                 '/api/auth/profile',
-                { profilePicture: selectedAvatar },
+                { profilePicture: nextProfilePicture },
                 { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
             );
             setUser(response.data);
@@ -205,6 +241,7 @@ const UserProfile = () => {
     if (!user) return (
         <Typography sx={{ p: 2 }}>Loading...</Typography>
     );
+    const isSelectedAvatarColor = avatarOptions.some((avatar) => avatar.id === selectedAvatar);
 
     return (
         <Box sx={{ maxWidth: 1000, mx: 'auto', p: { xs: 2, md: 4 }, mt: { xs: 2, md: 6 } }}>
@@ -221,6 +258,7 @@ const UserProfile = () => {
                                             bgcolor: getAvatarColor(user.profilePicture),
                                             fontSize: '2.2rem'
                                         }}
+                                        src={getAvatarSrc(user.profilePicture)}
                                     >
                                         {user.username.charAt(0).toUpperCase()}
                                     </Avatar>
@@ -472,8 +510,40 @@ const UserProfile = () => {
                 onClose={handleCloseAvatarDialog}
                 disableRestoreFocus={true}
             >
-                <DialogTitle>Choose Your Avatar Color</DialogTitle>
+                <DialogTitle>Choose Your Avatar</DialogTitle>
                 <DialogContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                        <Avatar
+                            sx={{
+                                width: 72,
+                                height: 72,
+                                bgcolor: getAvatarColor(selectedAvatar),
+                                fontSize: '1.6rem'
+                            }}
+                            src={avatarPreview || (isSelectedAvatarColor ? null : getAvatarSrc(selectedAvatar)) || null}
+                        >
+                            {user.username.charAt(0).toUpperCase()}
+                        </Avatar>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'center' }}>
+                            <Button variant="outlined" component="label">
+                                Upload image
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    hidden
+                                    onChange={handleAvatarFileChange}
+                                />
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                onClick={() => setAvatarGeneratorOpen(true)}
+                            >
+                                Generate with AI
+                            </Button>
+                        </Box>
+                    </Box>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', my: 2 }}>
                         {avatarOptions.map((avatar) => (
                             <Avatar
@@ -504,6 +574,14 @@ const UserProfile = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            <AvatarGenerator
+                open={avatarGeneratorOpen}
+                onClose={() => setAvatarGeneratorOpen(false)}
+                onSelect={handleGeneratedAvatarSelect}
+                agentName={user.username || 'user'}
+                targetType="user"
+            />
 
             {/* Snackbar for notifications */}
             <Snackbar

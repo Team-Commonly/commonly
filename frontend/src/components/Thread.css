@@ -209,6 +209,12 @@
 }
 
 @media (max-width: 600px) {
+    .thread-wrapper {
+        padding: 12px 20px 0 16px;
+        margin: 0 !important;
+        max-width: 100% !important;
+    }
+
     .comment-composer {
         position: sticky;
         bottom: 0;
@@ -281,19 +287,19 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
+    gap: 10px;
     margin-bottom: 6px;
 }
 
 .post-meta {
     display: flex;
     align-items: flex-start;
-    gap: 12px;
+    gap: 10px;
 }
 
 .post-avatar {
-    width: 40px !important;
-    height: 40px !important;
+    width: 32px !important;
+    height: 32px !important;
     flex-shrink: 0;
 }
 
@@ -304,11 +310,11 @@
 }
 
 .post-body {
-    margin-left: 52px;
+    margin-left: 42px;
 }
 
 .comment-item {
-    padding: 16px;
+    padding: 12px;
     margin-bottom: 16px;
     background-color: rgba(15, 23, 42, 0.92) !important;
     border: 1px solid rgba(148, 163, 184, 0.18) !important;
@@ -317,12 +323,12 @@
 .comment-row {
     display: flex;
     align-items: flex-start;
-    gap: 12px;
+    gap: 10px;
 }
 
 .comment-avatar {
-    width: 32px !important;
-    height: 32px !important;
+    width: 28px !important;
+    height: 28px !important;
     flex-shrink: 0;
 }
 
@@ -351,6 +357,7 @@
     text-align: left;
     word-break: break-word;
     color: #e2e8f0;
+    font-size: 0.95rem;
 }
 
 /* Mobile responsiveness */

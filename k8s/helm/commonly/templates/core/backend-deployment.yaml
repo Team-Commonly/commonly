@@ -17,6 +17,31 @@ spec:
         {{- include "commonly.backend.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.rbac.serviceAccount.name }}
+      {{- if and .Values.skillsCatalogStorage.enabled .Values.skillsCatalogStorage.bootstrapFromImage }}
+      initContainers:
+      - name: skills-catalog-bootstrap
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+        imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            if [ -n "${SKILLS_CATALOG_URL}" ]; then
+              echo "Downloading skills catalog from ${SKILLS_CATALOG_URL}";
+              curl -fsSL "${SKILLS_CATALOG_URL}" -o /catalog/awesome-agent-skills-index.json;
+              exit 0;
+            fi
+            if [ -f /app/docs/skills/awesome-agent-skills-index.json ]; then
+              cp /app/docs/skills/awesome-agent-skills-index.json /catalog/awesome-agent-skills-index.json;
+              exit 0;
+            fi
+            echo "skills catalog not found in image or download URL, skipping bootstrap";
+        env:
+        - name: SKILLS_CATALOG_URL
+          value: {{ .Values.skillsCatalogStorage.downloadUrl | quote }}
+        volumeMounts:
+        - name: skills-catalog
+          mountPath: /catalog
+      {{- end }}
       containers:
       - name: backend
         image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
@@ -38,22 +63,24 @@ spec:
               name: database-credentials
               key: mongo-uri
         - name: PG_HOST
-          value: postgres.{{ include "commonly.namespace" . }}.svc.cluster.local
+          value: {{ .Values.backend.env.pgHost | default (printf "postgres.%s.svc.cluster.local" (include "commonly.namespace" .)) | quote }}
         - name: PG_PORT
-          value: "5432"
+          value: {{ .Values.backend.env.pgPort | default "5432" | quote }}
         - name: PG_DATABASE
-          value: {{ .Values.postgresql.database }}
+          value: {{ .Values.backend.env.pgDatabase | default .Values.postgresql.database | quote }}
         - name: PG_USER
-          value: {{ .Values.postgresql.username }}
+          value: {{ .Values.backend.env.pgUser | default .Values.postgresql.username | quote }}
         - name: PG_PASSWORD
           valueFrom:
             secretKeyRef:
               name: database-credentials
               key: postgres-password
         - name: PG_SSL_ENABLED
-          value: "true"
+          value: {{ .Values.backend.env.pgSslEnabled | default "true" | quote }}
         - name: PG_CA_CERT_PATH
-          value: /app/certs/ca.pem
+          value: {{ .Values.backend.env.pgCaCertPath | default "/app/certs/ca.pem" | quote }}
+        - name: PG_SSL_CA_PATH
+          value: {{ .Values.backend.env.pgCaCertPath | default "/app/certs/ca.pem" | quote }}
 
         # Redis for Socket.io
         - name: REDIS_HOST
@@ -178,6 +205,20 @@ spec:
           value: {{ .Values.backend.env.agentProvisionerK8s | quote }}
         - name: AGENT_PROVISIONER_DOCKER
           value: {{ .Values.backend.env.agentProvisionerDocker | quote }}
+        {{- if .Values.backend.env.agentProvisionerNodePool }}
+        - name: AGENT_PROVISIONER_NODE_POOL
+          value: {{ .Values.backend.env.agentProvisionerNodePool | quote }}
+        {{- end }}
+        - name: K8S_NAMESPACE
+          value: {{ include "commonly.namespace" . | quote }}
+        - name: COMMONLY_API_URL
+          value: {{ .Values.backend.env.commonlyApiUrl | default (printf "http://backend.%s.svc.cluster.local:5000" (include "commonly.namespace" .)) | quote }}
+        - name: CLAWDBOT_GATEWAY_URL
+          value: {{ .Values.backend.env.clawdbotGatewayUrl | default (printf "http://clawdbot-gateway.%s.svc.cluster.local:18789" (include "commonly.namespace" .)) | quote }}
+        - name: MOLTBOT_GATEWAY_URL
+          value: {{ .Values.backend.env.moltbotGatewayUrl | default (printf "ws://clawdbot-gateway.%s.svc.cluster.local:18789" (include "commonly.namespace" .)) | quote }}
+        - name: CLAWDBOT_IMAGE
+          value: "{{ .Values.agents.clawdbot.image.repository }}:{{ .Values.agents.clawdbot.image.tag }}"
         - name: CLAWDBOT_GATEWAY_TOKEN
           valueFrom:
             secretKeyRef:
@@ -218,6 +259,10 @@ spec:
               optional: true
         - name: LITELLM_BASE_URL
           value: http://litellm:4000
+        - name: SKILLS_CATALOG_PATH
+          value: /app/docs/skills/awesome-agent-skills-index.json
+        - name: MARKETPLACE_MANIFEST_PATH
+          value: {{ .Values.backend.env.marketplaceManifestPath | default "/app/packages/commonly-marketplace/marketplace.json" | quote }}
 
         # Logging
         - name: LOG_LEVEL
@@ -255,6 +300,15 @@ spec:
           periodSeconds: {{ .Values.backend.readinessProbe.periodSeconds }}
         {{- end }}
 
+      {{- if and .Values.backend.nodeSelector (gt (len .Values.backend.nodeSelector) 0) }}
+      nodeSelector:
+        {{- toYaml .Values.backend.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.backend.tolerations (gt (len .Values.backend.tolerations) 0) }}
+      tolerations:
+        {{- toYaml .Values.backend.tolerations | nindent 8 }}
+      {{- end }}
+
       volumes:
       - name: postgres-ca-cert
         secret:
@@ -262,7 +316,13 @@ spec:
       - name: marketplace-manifest
         configMap:
           name: marketplace-manifest
+      {{- if .Values.skillsCatalogStorage.enabled }}
+      - name: skills-catalog
+        persistentVolumeClaim:
+          claimName: skills-catalog-pvc
+      {{- else }}
       - name: skills-catalog
         configMap:
           name: skills-catalog
+      {{- end }}
 {{- end }}

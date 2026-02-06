@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import io from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import axios from 'axios';
+import getApiBaseUrl from '../utils/apiBaseUrl';
 
 const SocketContext = createContext();
 
@@ -56,7 +57,7 @@ export const SocketProvider = ({ children }) => {
             console.log('Attempting to connect to socket server...');
             
             // Check if we have a valid API URL
-            const apiUrl = process.env.REACT_APP_API_URL || window.location.origin;
+            const apiUrl = getApiBaseUrl();
             console.log('Using API URL for socket connection:', apiUrl);
             
             const newSocket = io(apiUrl, {

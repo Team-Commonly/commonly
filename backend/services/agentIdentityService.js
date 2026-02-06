@@ -53,7 +53,8 @@ const buildAgentEmail = (agentType, instanceId) => {
  *
  * Types:
  * - openclaw: Claude-powered conversational AI (official: "Cuz 🦞")
- * - commonly-summarizer: Lightweight summarization bot (official: "Commonly Summarizer")
+ * - commonly-bot: Built-in summary bot (official: "Commonly Bot")
+ * - commonly-summarizer: Legacy alias for commonly-bot
  * - claude-code: Claude Code integration (future)
  * - codex: OpenAI Codex integration (future)
  */
@@ -66,12 +67,20 @@ const AGENT_TYPES = {
     capabilities: ['chat', 'memory', 'context', 'summarize', 'code'],
     runtime: 'moltbot',
   },
-  'commonly-summarizer': {
-    officialDisplayName: 'Commonly Summarizer',
-    officialDescription: 'Lightweight summarizer bot for integrations and pod activity',
+  'commonly-bot': {
+    officialDisplayName: 'Commonly Bot',
+    officialDescription: 'Built-in summary bot for integrations, pod activity, and digest context',
     icon: '📋',
     botType: 'system',
-    capabilities: ['notify', 'summarize', 'integrate'],
+    capabilities: ['notify', 'summarize', 'integrate', 'digest'],
+    runtime: 'internal',
+  },
+  'commonly-summarizer': {
+    officialDisplayName: 'Commonly Summarizer (Legacy)',
+    officialDescription: 'Legacy alias for Commonly Bot',
+    icon: '📋',
+    botType: 'system',
+    capabilities: ['notify', 'summarize', 'integrate', 'digest'],
     runtime: 'internal',
   },
   'claude-code': {
@@ -109,7 +118,9 @@ const AGENT_TYPES = {
 };
 
 // Legacy agent name mapping is intentionally disabled to avoid alias collisions.
-const LEGACY_AGENT_MAP = {};
+const LEGACY_AGENT_MAP = {
+  'commonly-summarizer': 'commonly-bot',
+};
 
 class AgentIdentityService {
   /**
@@ -128,7 +139,7 @@ class AgentIdentityService {
     }
 
     // Handle legacy agent names
-    const resolvedType = agentType.toLowerCase();
+    const resolvedType = AgentIdentityService.resolveAgentType(agentType);
     const typeConfig = AGENT_TYPES[resolvedType];
 
     const instanceId = options.instanceId || 'default';
@@ -146,7 +157,7 @@ class AgentIdentityService {
         runtimeId: options.runtimeId || null,
         officialAgent: isOfficial,
         capabilities: options.capabilities || typeConfig?.capabilities || [],
-        agentType: resolvedType,
+        agentName: resolvedType,
         instanceId,
         runtime: typeConfig?.runtime || 'unknown',
       };
@@ -176,12 +187,38 @@ class AgentIdentityService {
         runtimeId: options.runtimeId || agentUser.botMetadata?.runtimeId || null,
         officialAgent: isOfficial,
         capabilities: options.capabilities || typeConfig?.capabilities || [],
-        agentType: resolvedType,
+        agentName: resolvedType,
         instanceId,
         runtime: typeConfig?.runtime || 'unknown',
       };
       await agentUser.save();
       console.log(`Upgraded user to bot: ${username}`);
+    } else {
+      const existingMeta = agentUser.botMetadata || {};
+      const requestedDisplayName = options.displayName
+        ? String(options.displayName).trim()
+        : '';
+      const needsUpdate = !existingMeta.agentName
+        || existingMeta.agentName !== resolvedType
+        || existingMeta.instanceId !== instanceId
+        || !existingMeta.runtime
+        || (requestedDisplayName && existingMeta.displayName !== requestedDisplayName);
+      if (needsUpdate) {
+        agentUser.botMetadata = {
+          ...existingMeta,
+          displayName: options.displayName || existingMeta.displayName || typeConfig?.officialDisplayName || resolvedType,
+          description: options.description || existingMeta.description || typeConfig?.officialDescription || `${resolvedType} agent`,
+          icon: existingMeta.icon || typeConfig?.icon || '🤖',
+          runtimeId: options.runtimeId || existingMeta.runtimeId || null,
+          officialAgent: instanceId === 'default' && !!typeConfig,
+          capabilities: options.capabilities || existingMeta.capabilities || typeConfig?.capabilities || [],
+          agentName: resolvedType,
+          instanceId,
+          runtime: existingMeta.runtime || typeConfig?.runtime || 'unknown',
+        };
+        await agentUser.save();
+        console.log(`Refreshed bot metadata: ${username}`);
+      }
     }
 
     return agentUser;
@@ -198,7 +235,7 @@ class AgentIdentityService {
    * Get configuration for a specific agent type
    */
   static getAgentTypeConfig(agentType) {
-    const resolvedType = agentType?.toLowerCase();
+    const resolvedType = this.resolveAgentType(agentType);
     return AGENT_TYPES[resolvedType] || null;
   }
 
@@ -206,7 +243,7 @@ class AgentIdentityService {
    * Check if an agent type is a known/official type
    */
   static isKnownAgentType(agentType) {
-    const resolvedType = agentType?.toLowerCase();
+    const resolvedType = this.resolveAgentType(agentType);
     return !!AGENT_TYPES[resolvedType];
   }
 
@@ -214,7 +251,8 @@ class AgentIdentityService {
    * Resolve legacy agent name to current agent type
    */
   static resolveAgentType(agentNameOrType) {
-    return agentNameOrType?.toLowerCase();
+    const normalized = agentNameOrType?.toLowerCase();
+    return LEGACY_AGENT_MAP[normalized] || normalized;
   }
 
   static buildAgentUsername(agentType, instanceId) {

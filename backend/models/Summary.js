@@ -30,6 +30,9 @@ const summarySchema = new mongoose.Schema({
     podName: { type: String }, // For chat summaries
     userId: { type: String }, // For daily digest summaries
     subscribedPods: { type: Number }, // Number of subscribed pods for daily digest
+    source: { type: String },
+    sources: [{ type: String }],
+    eventId: { type: String },
   },
   // Enhanced analytics data for daily digests
   analytics: {

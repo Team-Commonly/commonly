@@ -19,7 +19,7 @@
     ],
     "context": {
       "required": ["context:read", "summaries:read", "messages:write"],
-      "optional": ["integrations:read", "search:read", "memory:read"]
+      "optional": ["integrations:read", "integration:read", "integration:messages:read", "search:read", "memory:read"]
     },
     "runtime": {
       "type": "standalone",

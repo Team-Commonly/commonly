@@ -17,7 +17,8 @@ import {
     Send as SendIcon,
     Close as CloseIcon
 } from '@mui/icons-material';
-import { getAvatarColor } from '../utils/avatarUtils';
+import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
+import { normalizeUploadUrl } from '../utils/apiBaseUrl';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import EmojiPicker from 'emoji-picker-react';
@@ -434,7 +435,7 @@ const PostFeed = () => {
             {lightboxImage && (
                 <div className="image-lightbox" onClick={closeLightbox} role="presentation">
                     <img
-                        src={lightboxImage}
+                        src={normalizeUploadUrl(lightboxImage)}
                         alt={lightboxAlt || 'Post'}
                         className={`image-lightbox-img ${lightboxZoomed ? 'zoomed' : ''}`}
                         onClick={(event) => {
@@ -460,7 +461,11 @@ const PostFeed = () => {
                         <Avatar 
                             sx={{ 
                                 bgcolor: getAvatarColor(currentUser.profilePicture),
+                                width: 32,
+                                height: 32,
+                                fontSize: '0.9rem'
                             }}
+                            src={getAvatarSrc(currentUser.profilePicture)}
                         >
                             {currentUser.username.charAt(0).toUpperCase()}
                         </Avatar>
@@ -479,8 +484,8 @@ const PostFeed = () => {
                             }}
                             sx={{ 
                                 '& .MuiInputBase-root': { 
-                                    fontSize: '1.1rem',
-                                    p: 1
+                                    fontSize: '1rem',
+                                    p: 0.75
                                 }
                             }}
                         />
@@ -501,32 +506,6 @@ const PostFeed = () => {
                             </Box>
                         )}
 
-                        <Box className="composer-meta-row">
-                            <Autocomplete
-                                size="small"
-                                options={podOptions}
-                                value={selectedPodOption}
-                                loading={podsLoading}
-                                onChange={(_, value) => setSelectedPodId(value?._id || 'global')}
-                                getOptionLabel={(option) => option?.name || 'Global feed'}
-                                isOptionEqualToValue={(option, value) => option._id === value._id}
-                                disableClearable
-                                renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        label="Post to"
-                                        className="composer-meta-select"
-                                    />
-                                )}
-                            />
-                            <TextField
-                                size="small"
-                                label="Category"
-                                value={postCategory}
-                                onChange={(e) => setPostCategory(e.target.value)}
-                                className="composer-meta-select"
-                            />
-                        </Box>
                         <Box className="composer-category-chips">
                             {CATEGORY_OPTIONS.map((option) => (
                                 <Chip
@@ -540,39 +519,53 @@ const PostFeed = () => {
                             ))}
                         </Box>
                         
-                        <Box sx={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center',
-                            mt: 2,
-                            position: 'relative'
-                        }}>
-                            <Box sx={{ display: 'flex', gap: 1, position: 'relative' }}>
-                                <IconButton 
-                                    ref={emojiButtonRef}
-                                    color="primary" 
+                        <Box className="composer-actions-row">
+                            <Box className="composer-actions-main">
+                                <Box sx={{ display: 'flex', gap: 1, position: 'relative' }}>
+                                    <IconButton 
+                                        ref={emojiButtonRef}
+                                        color="primary" 
+                                        size="small"
+                                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                        className="emoji-button"
+                                        data-testid="emoji-button"
+                                    >
+                                        <EmojiEmotionsIcon fontSize="small" />
+                                    </IconButton>
+                                    <IconButton 
+                                        component="label"
+                                        color="primary" 
+                                        size="small"
+                                        aria-label="Attach image"
+                                    >
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={handleImageUpload}
+                                            ref={fileInputRef}
+                                            style={{ display: 'none' }}
+                                        />
+                                        <ImageIcon fontSize="small" />
+                                    </IconButton>
+                                </Box>
+                                <Autocomplete
                                     size="small"
-                                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                                    className="emoji-button"
-                                    data-testid="emoji-button"
-                                >
-                                    <EmojiEmotionsIcon fontSize="small" />
-                                </IconButton>
-                                <IconButton 
-                                    component="label"
-                                    color="primary" 
-                                    size="small"
-                                    aria-label="Attach image"
-                                >
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        onChange={handleImageUpload}
-                                        ref={fileInputRef}
-                                        style={{ display: 'none' }}
-                                    />
-                                    <ImageIcon fontSize="small" />
-                                </IconButton>
+                                    options={podOptions}
+                                    value={selectedPodOption}
+                                    loading={podsLoading}
+                                    onChange={(_, value) => setSelectedPodId(value?._id || 'global')}
+                                    getOptionLabel={(option) => option?.name || 'Global feed'}
+                                    isOptionEqualToValue={(option, value) => option._id === value._id}
+                                    disableClearable
+                                    className="composer-meta-inline"
+                                    renderInput={(params) => (
+                                        <TextField
+                                            {...params}
+                                            label="Post to"
+                                            className="composer-meta-select"
+                                        />
+                                    )}
+                                />
                             </Box>
                             <Button 
                                 variant="contained" 
@@ -581,6 +574,7 @@ const PostFeed = () => {
                                 disabled={(!postContent.trim() && !selectedImage) || isSubmitting}
                                 onClick={handleCreatePost}
                                 endIcon={isSubmitting ? <CircularProgress size={16} /> : <SendIcon />}
+                                className="composer-post-button"
                                 sx={{ 
                                     borderRadius: 5,
                                     px: 2
@@ -821,20 +815,25 @@ const PostFeed = () => {
                         className="post-card"
                         onClick={() => navigate(`/thread/${post._id}`)}
                     >
-                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
                             <Avatar sx={{ 
                                 bgcolor: getAvatarColor(post.userId.profilePicture),
-                            }}>
+                                width: 32,
+                                height: 32,
+                                fontSize: '0.9rem'
+                            }}
+                            src={getAvatarSrc(post.userId.profilePicture)}
+                            >
                                 {post.userId.username.charAt(0).toUpperCase()}
                             </Avatar>
                             <Box sx={{ flex: 1 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                                        <Typography variant="body1" sx={{ fontWeight: 600, fontSize: '0.9rem' }}>
                                             {post.userId.username}
                                         </Typography>
                                         {post.createdAt && (
-                                            <Typography variant="body2" color="text.secondary">
+                                            <Typography variant="caption" color="text.secondary">
                                                 · {formatDistanceToNow(new Date(post.createdAt))} ago
                                             </Typography>
                                         )}
@@ -897,7 +896,9 @@ const PostFeed = () => {
                                     className="post-content"
                                     sx={{ 
                                         mb: 2,
-                                        textAlign: 'left'
+                                        textAlign: 'left',
+                                        fontSize: '0.85rem',
+                                        lineHeight: 1.28
                                     }}
                                 >
                                     {post.content.split(/(#\w+)/g).map((part, index) => {
@@ -931,25 +932,17 @@ const PostFeed = () => {
                                             mb: 2, 
                                             borderRadius: '8px',
                                             overflow: 'hidden',
-                                            maxHeight: '400px',
                                         }}
                                         className="post-image-container"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            openLightbox(post.image, post.content);
+                                            openLightbox(normalizeUploadUrl(post.image), post.content);
                                         }}
                                     >
                                         <Box
                                             component="img"
-                                            src={post.image}
+                                            src={normalizeUploadUrl(post.image)}
                                             alt="Post image"
-                                            sx={{
-                                                width: '100%',
-                                                maxHeight: '400px',
-                                                objectFit: 'contain',
-                                                borderRadius: '8px',
-                                                backgroundColor: 'rgba(15, 23, 42, 0.6)'
-                                            }}
                                             className="post-image"
                                         />
                                     </Box>

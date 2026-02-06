@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const AgentEventService = require('./agentEventService');
+const { AgentInstallation } = require('../models/AgentRegistry');
 const User = require('../models/User');
 const { hash } = require('../utils/secret');
 
@@ -64,6 +65,9 @@ class AgentWebSocketService {
       // Join agent-specific room
       socket.join(`agent:${socket.agentKey}`);
 
+      // Replay pending events so mentions queued before connection are not lost.
+      this.replayPendingEvents(socket);
+
       // Handle pod subscription
       socket.on('subscribe', ({ podIds }) => {
         if (!Array.isArray(podIds)) return;
@@ -124,6 +128,43 @@ class AgentWebSocketService {
     this.startPingInterval();
 
     console.log('[agent-ws] Agent WebSocket namespace initialized on /agents');
+  }
+
+  async replayPendingEvents(socket, limit = 50) {
+    try {
+      const installations = await AgentInstallation.find({
+        agentName: socket.agentName.toLowerCase(),
+        instanceId: socket.instanceId || 'default',
+        status: 'active',
+      }).select('podId').lean();
+
+      const podIds = Array.from(
+        new Set(
+          (installations || [])
+            .map((installation) => installation?.podId?.toString())
+            .filter(Boolean),
+        ),
+      );
+
+      if (!podIds.length) return;
+
+      const events = await AgentEventService.list({
+        agentName: socket.agentName,
+        instanceId: socket.instanceId || 'default',
+        podIds,
+        limit,
+      });
+
+      if (!events.length) return;
+
+      events.forEach((event) => {
+        socket.emit('event', event);
+      });
+
+      console.log(`[agent-ws] Replayed ${events.length} pending event(s) for ${socket.agentKey}`);
+    } catch (error) {
+      console.warn(`[agent-ws] Failed to replay pending events for ${socket?.agentKey}: ${error.message}`);
+    }
   }
 
   /**

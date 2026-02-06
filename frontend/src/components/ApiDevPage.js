@@ -401,14 +401,14 @@ const ApiDevPage = () => {
                         litellm: {
                             enabled: true,
                             baseUrl: "http://litellm:4000",
-                            model: "gemini-2.0-flash",
+                            model: "gemini-2.5-flash",
                             embeddingProvider: "litellm",
                             embeddingModel: "text-embedding-3-large",
                             embeddingDimensions: 3072,
                             ok: true,
                             models: [
                                 { id: "gpt-4o" },
-                                { id: "gemini-2.0-flash" }
+                                { id: "gemini-2.5-flash" }
                             ]
                         },
                         gemini: {

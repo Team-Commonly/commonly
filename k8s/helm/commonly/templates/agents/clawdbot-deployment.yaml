@@ -1,0 +1,208 @@
+{{- if .Values.agents.clawdbot.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clawdbot-gateway
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: clawdbot-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "commonly.selectorLabels" . | nindent 6 }}
+      app: clawdbot-gateway
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.selectorLabels" . | nindent 8 }}
+        app: clawdbot-gateway
+    spec:
+      {{- with .Values.agents.clawdbot.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+      - name: clawdbot-auth-seed
+        image: "{{ .Values.agents.clawdbot.image.repository }}:{{ .Values.agents.clawdbot.image.tag }}"
+        imagePullPolicy: {{ .Values.agents.clawdbot.image.pullPolicy }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const configPath = process.env.OPENCLAW_CONFIG_PATH || '/config/moltbot.json';
+          const stateDir = process.env.OPENCLAW_STATE_DIR || '/state';
+          const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
+          const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+          const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
+          if (!fs.existsSync(configPath)) {
+            console.log('[auth-seed] missing config:', configPath);
+            process.exit(0);
+          }
+          let cfg;
+          try {
+            cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          } catch (err) {
+            console.log('[auth-seed] invalid config:', err.message);
+            process.exit(0);
+          }
+          const accounts = cfg?.channels?.commonly?.accounts || {};
+          const accountIds = Object.keys(accounts);
+          if (!accountIds.length) {
+            console.log('[auth-seed] no accounts found');
+            process.exit(0);
+          }
+          accountIds.forEach((accountId) => {
+            const agentDir = path.join(stateDir, 'agents', accountId, 'agent');
+            const authPath = path.join(agentDir, 'auth-profiles.json');
+            const customProfiles = accounts[accountId]?.authProfiles;
+            const hasCustomProfiles = customProfiles && typeof customProfiles === 'object'
+              && Object.keys(customProfiles).length > 0;
+            if (!hasCustomProfiles && fs.existsSync(authPath)) {
+              console.log('[auth-seed] exists:', authPath);
+              return;
+            }
+            fs.mkdirSync(agentDir, { recursive: true });
+            const store = { version: 1, profiles: {} };
+            if (hasCustomProfiles) {
+              store.profiles = customProfiles;
+            } else {
+              if (geminiKey) {
+                store.profiles['google:default'] = { type: 'api_key', provider: 'google', key: geminiKey };
+              }
+              if (anthropicKey) {
+                store.profiles['anthropic:default'] = { type: 'api_key', provider: 'anthropic', key: anthropicKey };
+              }
+              if (openaiKey) {
+                store.profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
+              }
+            }
+            fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
+            console.log('[auth-seed] wrote:', authPath, hasCustomProfiles ? 'custom profiles' : 'default keys');
+          });
+          NODE
+        env:
+        - name: OPENCLAW_CONFIG_PATH
+          value: /config/moltbot.json
+        - name: OPENCLAW_STATE_DIR
+          value: /state
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: gemini-api-key
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: anthropic-api-key
+              optional: true
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-api-key
+              optional: true
+        volumeMounts:
+        - name: clawdbot-config
+          mountPath: /config
+          readOnly: true
+        - name: clawdbot-state
+          mountPath: /state
+      containers:
+      - name: clawdbot-gateway
+        image: "{{ .Values.agents.clawdbot.image.repository }}:{{ .Values.agents.clawdbot.image.tag }}"
+        imagePullPolicy: {{ .Values.agents.clawdbot.image.pullPolicy }}
+        command:
+        - node
+        - dist/index.js
+        - gateway
+        - --bind
+        - {{ .Values.agents.clawdbot.config.gatewayBind | default "lan" | quote }}
+        - --port
+        - {{ .Values.agents.clawdbot.config.gatewayPort | default 18789 | quote }}
+        - --allow-unconfigured
+        env:
+        - name: CLAWDBOT_GATEWAY_PORT
+          value: {{ .Values.agents.clawdbot.config.gatewayPort | default 18789 | quote }}
+        - name: CLAWDBOT_GATEWAY_BIND
+          value: {{ .Values.agents.clawdbot.config.gatewayBind | default "lan" | quote }}
+        - name: CLAWDBOT_GATEWAY_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: clawdbot-gateway-token
+        - name: OPENCLAW_GATEWAY_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: clawdbot-gateway-token
+        - name: CLAWDBOT_CONFIG_DIR
+          value: /config
+        - name: OPENCLAW_STATE_DIR
+          value: /state
+        - name: OPENCLAW_CONFIG_PATH
+          value: /config/moltbot.json
+        - name: CLAWDBOT_WORKSPACE_DIR
+          value: /workspace
+        - name: CLAWDBOT_SKIP_BROWSER_CONTROL_SERVER
+          value: "1"
+        - name: CLAWDBOT_SKIP_CANVAS_HOST
+          value: "1"
+        - name: COMMONLY_API_URL
+          value: {{ .Values.backend.env.commonlyApiUrl | default (printf "http://backend.%s.svc.cluster.local:5000" (include "commonly.namespace" .)) | quote }}
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: gemini-api-key
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: anthropic-api-key
+              optional: true
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-api-key
+              optional: true
+        ports:
+        - containerPort: {{ .Values.agents.clawdbot.config.gatewayPort | default 18789 }}
+          name: gateway
+        - containerPort: {{ .Values.agents.clawdbot.config.bridgePort | default 18790 }}
+          name: bridge
+        resources:
+          {{- toYaml .Values.agents.clawdbot.resources | nindent 10 }}
+        volumeMounts:
+        - name: clawdbot-config
+          mountPath: /config
+          readOnly: true
+        - name: clawdbot-state
+          mountPath: /state
+        - name: clawdbot-workspace
+          mountPath: /workspace
+      volumes:
+      - name: clawdbot-config
+        configMap:
+          name: clawdbot-config
+      - name: clawdbot-state
+        persistentVolumeClaim:
+          claimName: clawdbot-config-pvc
+      - name: clawdbot-workspace
+        persistentVolumeClaim:
+          claimName: clawdbot-workspace-pvc
+      {{- with .Values.agents.clawdbot.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agents.clawdbot.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

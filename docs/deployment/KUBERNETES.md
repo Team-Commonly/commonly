@@ -110,6 +110,38 @@ kubectl logs -n commonly -l app=backend --tail=50
 kubectl logs -n commonly -l app=frontend --tail=50
 ```
 
+## Commonly GKE Notes (Default + Dev Pools)
+
+Commonly uses two Helm values files:
+- `./k8s/helm/commonly/values.yaml` for the default pool (production).
+- `./k8s/helm/commonly/values-dev.yaml` for the dev pool.
+
+Backend build + rollout:
+
+```bash
+gcloud builds submit --config cloudbuild.backend.yaml .
+
+# Production pool
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:latest -n commonly
+
+# Dev pool
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:latest -n commonly-dev
+```
+
+Helm upgrade:
+
+```bash
+helm upgrade commonly ./k8s/helm/commonly -n commonly -f ./k8s/helm/commonly/values.yaml
+helm upgrade commonly-dev ./k8s/helm/commonly -n commonly-dev -f ./k8s/helm/commonly/values-dev.yaml
+```
+
+Gateway restart (when runtime configs or auth profiles change):
+
+```bash
+kubectl rollout restart deployment/clawdbot-gateway -n commonly
+kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
+```
+
 ## Important Configuration Notes
 
 ### CORS Configuration
@@ -225,18 +257,23 @@ Ensure all required keys exist in the `api-keys` secret (see step 3 above).
 To upgrade an existing deployment:
 
 ```bash
-# Rebuild and push new images
-docker build -t ${REGISTRY}/commonly-backend:latest ./backend
-docker push ${REGISTRY}/commonly-backend:latest
+# Rebuild and push new images (Cloud Build)
+gcloud builds submit --config cloudbuild.backend.yaml .
 
 # Upgrade with Helm
 helm upgrade commonly ./k8s/helm/commonly \
+  -f ./k8s/helm/commonly/values.yaml \
+  --namespace default
+
+helm upgrade commonly-dev ./k8s/helm/commonly \
   -f ./k8s/helm/commonly/values-dev.yaml \
-  --namespace commonly
+  --namespace commonly-dev
 
 # Or force rollout
-kubectl rollout restart deployment backend -n commonly
-kubectl rollout restart deployment frontend -n commonly
+kubectl rollout restart deployment backend -n default
+kubectl rollout restart deployment frontend -n default
+kubectl rollout restart deployment backend -n commonly-dev
+kubectl rollout restart deployment frontend -n commonly-dev
 ```
 
 ## Production Considerations

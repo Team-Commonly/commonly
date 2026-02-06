@@ -1,13 +1,143 @@
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
+const Post = require('../models/Post');
+const Summary = require('../models/Summary');
+const PodAsset = require('../models/PodAsset');
+const Integration = require('../models/Integration');
+const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
+const AgentProfile = require('../models/AgentProfile');
+const AgentIdentityService = require('../services/agentIdentityService');
 const _User = require('../models/User');
 // Add PGPod at the top level if it's available
 let PGPod;
+let PGMessage;
 if (process.env.PG_HOST) {
   PGPod = require('../models/pg/Pod');
+  PGMessage = require('../models/pg/Message');
 }
 
 const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble'];
+const DEFAULT_POD_AGENT = process.env.DEFAULT_POD_AGENT_NAME || 'commonly-bot';
+const DEFAULT_POD_AGENT_SCOPES = [
+  'context:read',
+  'summaries:read',
+  'messages:write',
+  'integration:read',
+  'integration:messages:read',
+];
+
+const buildDefaultAgentProfileId = (agentName, instanceId = 'default') => (
+  `${agentName.toLowerCase()}:${instanceId || 'default'}`
+);
+
+const ensureDefaultAgentRegistryEntry = async (agentName) => {
+  const normalized = String(agentName || '').trim().toLowerCase();
+  if (!normalized) return null;
+
+  let agent = await AgentRegistry.findOne({ agentName: normalized });
+  if (agent) return agent;
+
+  if (normalized !== 'commonly-bot') {
+    return null;
+  }
+
+  const commonlyBotType = AgentIdentityService.getAgentTypeConfig('commonly-bot');
+  const capabilities = (commonlyBotType?.capabilities || ['summarize', 'digest', 'integrations'])
+    .map((name) => ({ name, description: name }));
+
+  agent = await AgentRegistry.create({
+    agentName: 'commonly-bot',
+    displayName: commonlyBotType?.officialDisplayName || 'Commonly Bot',
+    description: commonlyBotType?.officialDescription
+      || 'Built-in summary agent for pod activity, integrations, and daily digest context',
+    registry: 'commonly-official',
+    categories: ['automation', 'summaries', 'communication'],
+    tags: ['summaries', 'digest', 'integrations', 'commonly'],
+    verified: true,
+    iconUrl: '/icons/commonly-bot.png',
+    manifest: {
+      name: 'commonly-bot',
+      version: '1.0.0',
+      capabilities,
+      context: {
+        required: ['context:read', 'summaries:read', 'messages:write'],
+      },
+      runtime: {
+        type: 'standalone',
+        connection: 'rest',
+      },
+    },
+    latestVersion: '1.0.0',
+    versions: [{ version: '1.0.0', publishedAt: new Date() }],
+    stats: { installs: 0, rating: 0, ratingCount: 0 },
+  });
+
+  return agent;
+};
+
+const installDefaultAgentForPod = async ({ pod, userId }) => {
+  if (!pod?._id || !userId) return;
+  if (process.env.AUTO_INSTALL_DEFAULT_AGENT === '0') return;
+
+  const agent = await ensureDefaultAgentRegistryEntry(DEFAULT_POD_AGENT);
+  if (!agent) {
+    console.warn(`[pod] default agent "${DEFAULT_POD_AGENT}" not found; skipping auto-install`);
+    return;
+  }
+
+  const instanceId = 'default';
+  const alreadyInstalled = await AgentInstallation.isInstalled(agent.agentName, pod._id, instanceId);
+  if (alreadyInstalled) return;
+
+  const requiredScopes = agent.manifest?.context?.required || [];
+  const scopes = Array.from(new Set([...requiredScopes, ...DEFAULT_POD_AGENT_SCOPES]));
+
+  const installation = await AgentInstallation.install(agent.agentName, pod._id, {
+    version: agent.latestVersion || '1.0.0',
+    config: { preset: 'default-pod-agent', autoInstalled: true },
+    scopes,
+    installedBy: userId,
+    instanceId,
+    displayName: agent.displayName || 'Commonly Bot',
+  });
+
+  await AgentRegistry.incrementInstalls(agent.agentName);
+
+  await AgentProfile.updateOne(
+    {
+      podId: pod._id,
+      agentName: agent.agentName,
+      instanceId,
+    },
+    {
+      $setOnInsert: {
+        agentId: buildDefaultAgentProfileId(agent.agentName, instanceId),
+        name: installation.displayName || agent.displayName || 'Commonly Bot',
+        purpose: 'Summarizes pod and integration activity and contributes context for daily digest.',
+        instructions: 'You summarize key pod activity, highlight important updates, and keep context concise.',
+        createdBy: userId,
+      },
+      $set: {
+        status: 'active',
+        persona: {
+          tone: 'friendly',
+          specialties: ['summarization', 'community updates', 'digest highlights'],
+        },
+      },
+    },
+    { upsert: true },
+  );
+
+  try {
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
+      instanceId,
+      displayName: installation.displayName || agent.displayName || 'Commonly Bot',
+    });
+    await AgentIdentityService.ensureAgentInPod(agentUser, pod._id);
+  } catch (identityError) {
+    console.warn('[pod] failed to provision default agent user identity:', identityError.message);
+  }
+};
 
 // Get all pods or filter by type
 exports.getAllPods = async (req, res) => {
@@ -130,6 +260,15 @@ exports.createPod = async (req, res) => {
       console.error('Error creating pod in PostgreSQL:', pgErr.message);
       // We don't fail the request if PostgreSQL creation fails
       // The synchronization script can fix this later
+    }
+
+    try {
+      await installDefaultAgentForPod({
+        pod,
+        userId: req.userId,
+      });
+    } catch (defaultAgentError) {
+      console.warn('[pod] default agent auto-install failed:', defaultAgentError.message);
     }
 
     res.json(pod);
@@ -334,6 +473,22 @@ exports.deletePod = async (req, res) => {
 
     // Delete all messages in the pod
     await Message.deleteMany({ podId: req.params.id });
+    if (PGMessage) {
+      await PGMessage.deleteByPodId(req.params.id);
+    }
+
+    await Promise.allSettled([
+      Post.deleteMany({ podId: req.params.id }),
+      Summary.deleteMany({ podId: req.params.id }),
+      PodAsset.deleteMany({ podId: req.params.id }),
+      Integration.deleteMany({ podId: req.params.id }),
+      AgentInstallation.deleteMany({ podId: req.params.id }),
+      AgentProfile.deleteMany({ podId: req.params.id }),
+    ]);
+
+    if (PGPod) {
+      await PGPod.delete(req.params.id);
+    }
 
     // Delete the pod
     await Pod.deleteOne({ _id: req.params.id });

@@ -18,7 +18,7 @@ const upload = multer({
     // Accept all common image formats
     if (
       !file.originalname.match(
-        /\.(jpg|jpeg|png|gif|webp|JPG|JPEG|PNG|GIF|WEBP)$/,
+        /\.(jpg|jpeg|png|gif|webp|svg|JPG|JPEG|PNG|GIF|WEBP|SVG)$/,
       )
     ) {
       return cb(new Error('Only image files are allowed!'), false);

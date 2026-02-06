@@ -30,6 +30,57 @@ const userSchema = new mongoose.Schema({
     instanceId: { type: String }, // Instance id for multi-install
   },
 
+  // Agent avatar metadata (for AI-generated avatars)
+  avatarMetadata: {
+    style: {
+      type: String,
+      enum: ['banana', 'abstract', 'minimalist', 'cartoon', 'geometric', 'custom'],
+    },
+    personality: {
+      type: String,
+      enum: ['friendly', 'professional', 'playful', 'wise', 'creative'],
+    },
+    colorScheme: {
+      type: String,
+      enum: ['vibrant', 'pastel', 'monochrome', 'neon'],
+    },
+    generatedAt: { type: Date },
+    prompt: { type: String }, // AI prompt used to generate avatar
+  },
+
+  // Agent personality configuration
+  agentConfig: {
+    personality: {
+      tone: {
+        type: String,
+        enum: ['friendly', 'professional', 'sarcastic', 'educational', 'humorous'],
+        default: 'friendly',
+      },
+      interests: [{
+        type: String,
+        trim: true,
+      }],
+      behavior: {
+        type: String,
+        enum: ['reactive', 'proactive', 'balanced'],
+        default: 'reactive',
+      },
+      responseStyle: {
+        type: String,
+        enum: ['concise', 'detailed', 'conversational'],
+        default: 'conversational',
+      },
+    },
+    systemPrompt: {
+      type: String,
+      default: 'You are a helpful AI assistant.',
+    },
+    capabilities: [{
+      type: String,
+      enum: ['chat', 'summarize', 'curate', 'moderate', 'translate'],
+    }],
+  },
+
   // Agent runtime tokens (shared across all pod installations)
   agentRuntimeTokens: [
     {
