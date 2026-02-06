@@ -1,0 +1,55 @@
+{{- if .Values.cloudflared.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared-commonly-k8s
+  namespace: {{ .Values.cloudflared.namespace | default (include "commonly.namespace" .) }}
+  labels:
+    app: cloudflared-commonly-k8s
+spec:
+  replicas: {{ .Values.cloudflared.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: cloudflared-commonly-k8s
+  template:
+    metadata:
+      labels:
+        app: cloudflared-commonly-k8s
+    spec:
+      containers:
+        - name: cloudflared
+          image: "{{ .Values.cloudflared.image.repository }}:{{ .Values.cloudflared.image.tag }}"
+          args:
+            - tunnel
+            - --config
+            - /etc/cloudflared/config.yml
+            - --metrics
+            - 0.0.0.0:{{ .Values.cloudflared.metricsPort | default 2000 }}
+            - run
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.cloudflared.metricsPort | default 2000 }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.cloudflared.metricsPort | default 2000 }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: cloudflared-config
+              mountPath: /etc/cloudflared/config.yml
+              subPath: config.yml
+            - name: cloudflared-credentials
+              mountPath: /etc/cloudflared/credentials.json
+              subPath: credentials.json
+      volumes:
+        - name: cloudflared-config
+          configMap:
+            name: cloudflared-commonly-k8s-config
+        - name: cloudflared-credentials
+          secret:
+            secretName: {{ .Values.cloudflared.credentialsSecretName }}
+{{- end }}

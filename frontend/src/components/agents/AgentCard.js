@@ -58,8 +58,10 @@ const AgentCard = ({
   onInstall,
   onConfigure,
   onRemove,
+  onEdit,
   onViewProfile,
   canRemove = false,
+  canEdit = false,
   loading = false,
 }) => {
   const theme = useTheme();
@@ -117,6 +119,7 @@ const AgentCard = ({
             fontSize: '1.25rem',
             mr: 1.5,
           }}
+          src={iconUrl || undefined}
         >
           {typeIcon}
         </Avatar>
@@ -208,6 +211,7 @@ const AgentCard = ({
                 fontSize: '2rem',
                 boxShadow: `0 0 20px ${alpha(typeColor, 0.2)}`,
               }}
+              src={iconUrl || undefined}
             >
               {typeIcon}
             </Avatar>
@@ -350,6 +354,7 @@ const AgentCard = ({
               color: typeColor,
               fontSize: '1.5rem',
             }}
+            src={iconUrl || undefined}
           >
             {typeIcon}
           </Avatar>
@@ -461,14 +466,21 @@ const AgentCard = ({
             )}
           </>
         ) : (
-          <Button
-            size="small"
-            variant="contained"
-            onClick={() => onInstall?.(agent)}
-            sx={{ minHeight: 34 }}
-          >
-            Install
-          </Button>
+          <>
+            {canEdit && (
+              <Button size="small" onClick={() => onEdit?.(agent)} sx={{ minHeight: 34 }}>
+                Edit
+              </Button>
+            )}
+            <Button
+              size="small"
+              variant="contained"
+              onClick={() => onInstall?.(agent)}
+              sx={{ minHeight: 34 }}
+            >
+              Install
+            </Button>
+          </>
         )}
       </CardActions>
     </Card>

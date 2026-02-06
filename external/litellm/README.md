@@ -38,7 +38,7 @@ Set these env vars for the backend so AI services use LiteLLM:
 
 - `LITELLM_BASE_URL=http://litellm:4000`
 - `LITELLM_API_KEY=dev-litellm-key`
-- `LITELLM_CHAT_MODEL=gemini-2.0-flash` (optional)
+- `LITELLM_CHAT_MODEL=gemini-2.5-flash` (optional)
 
 Embedding config example:
 

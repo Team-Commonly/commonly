@@ -5,7 +5,7 @@ const GatewaySchema = new mongoose.Schema(
     name: { type: String, required: true },
     slug: { type: String, required: true, unique: true },
     type: { type: String, enum: ['openclaw'], default: 'openclaw' },
-    mode: { type: String, enum: ['local', 'remote'], default: 'local' },
+    mode: { type: String, enum: ['local', 'remote', 'k8s'], default: 'local' },
     baseUrl: { type: String, default: '' },
     configPath: { type: String, default: '' },
     status: { type: String, enum: ['active', 'paused', 'disabled'], default: 'active' },

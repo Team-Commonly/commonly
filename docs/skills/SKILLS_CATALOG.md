@@ -21,10 +21,16 @@ When running the backend in Docker, mount the catalog into the container
 and set `SKILLS_CATALOG_PATH=/app/docs/skills/awesome-agent-skills-index.json`
 (already configured in `docker-compose.dev.yml`).
 
+When running in Kubernetes, the catalog is stored on a PVC and bootstrapped
+into `/app/docs/skills/awesome-agent-skills-index.json` at pod startup.
+Configure via Helm `skillsCatalogStorage` settings (see `values.yaml` and
+`values-dev.yaml`).
+
 Populate this file via a one-time export or UI ingestion process.
 
 Backend endpoints:
 - `GET /api/skills/catalog?source=awesome`
+- `GET /api/skills/catalog?source=awesome&sort=stars` (sort by GitHub stars, descending)
 - `GET /api/skills/requirements?sourceUrl=...` (credential hints)
 - `POST /api/skills/import` (requires `podId`, `name`, `content`)
 - `GET /api/skills/gateway-credentials?gatewayId=...` (admin)
@@ -63,6 +69,14 @@ If you hit GitHub rate limits, pass `--github-token=...` (or `GITHUB_TOKEN`)
 to authenticate.
 
 This writes to `docs/skills/awesome-agent-skills-index.json` with license metadata.
+
+Optional: include GitHub stars per skill source repo by passing `--fetch-stars=true`
+and a `GITHUB_TOKEN` to avoid rate limits. The generator adds `repo` and `stars`
+to each catalog item when available.
+
+K8s deployments should upload the generated index to a shared location (e.g. GCS)
+and set `skillsCatalogStorage.downloadUrl` to that URL so both default and dev
+stay in sync.
 
 If the upstream repo is README-only (no `SKILL.md` files), the generator
 falls back to parsing skill links from `README.md`. In that mode, items

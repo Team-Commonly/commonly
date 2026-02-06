@@ -22,8 +22,11 @@ import {
   Paper,
   alpha,
   useTheme,
+  Avatar,
   FormControl,
   Stack,
+  Radio,
+  RadioGroup,
   Select,
   MenuItem,
   InputLabel,
@@ -54,6 +57,7 @@ import {
 } from '@mui/icons-material';
 import AgentCard from './AgentCard';
 import ClawdbotConfigPanel from './ClawdbotConfigPanel';
+import AvatarGenerator from './AvatarGenerator';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useLocation } from 'react-router-dom';
@@ -103,12 +107,20 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [seeding, setSeeding] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [configAgent, setConfigAgent] = useState(null);
-  const [configModel, setConfigModel] = useState('gemini-2.0-flash');
+  const [configModel, setConfigModel] = useState('gemini-2.5-pro');
   const [configInstructions, setConfigInstructions] = useState('');
   const [configPersonaTone, setConfigPersonaTone] = useState('friendly');
   const [configPersonaSpecialties, setConfigPersonaSpecialties] = useState('');
   const [configPersonaBoundaries, setConfigPersonaBoundaries] = useState('');
   const [configPersonaCustomInstructions, setConfigPersonaCustomInstructions] = useState('');
+  const [configAuthMode, setConfigAuthMode] = useState('default');
+  const [configAuthKeys, setConfigAuthKeys] = useState({
+    google: '',
+    anthropic: '',
+    openai: '',
+  });
+  const [configSkillEnvJson, setConfigSkillEnvJson] = useState('');
+  const [configSkillEnvError, setConfigSkillEnvError] = useState('');
   const [toolPolicyAllowed, setToolPolicyAllowed] = useState('commonly');
   const [toolPolicyBlocked, setToolPolicyBlocked] = useState('');
   const [toolPolicyRequireApproval, setToolPolicyRequireApproval] = useState('');
@@ -136,8 +148,21 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [provisionResult, setProvisionResult] = useState(null);
   const [provisionError, setProvisionError] = useState('');
   const [provisionIncludeUserToken, setProvisionIncludeUserToken] = useState(true);
+  const [runtimeGatewayMode, setRuntimeGatewayMode] = useState('shared');
+  const [runtimeGatewayId, setRuntimeGatewayId] = useState('');
+  const [runtimeGatewayList, setRuntimeGatewayList] = useState([]);
+  const [runtimeGatewayLoading, setRuntimeGatewayLoading] = useState(false);
+  const [runtimeGatewayError, setRuntimeGatewayError] = useState('');
   const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [runtimeStatusLoading, setRuntimeStatusLoading] = useState(false);
+  const [createAgentAvatarFile, setCreateAgentAvatarFile] = useState(null);
+  const [createAgentAvatarPreview, setCreateAgentAvatarPreview] = useState('');
+  const [avatarGeneratorOpen, setAvatarGeneratorOpen] = useState(false);
+  const [editTemplateOpen, setEditTemplateOpen] = useState(false);
+  const [editTemplate, setEditTemplate] = useState(null);
+  const [editTemplateAvatarFile, setEditTemplateAvatarFile] = useState(null);
+  const [editTemplateAvatarPreview, setEditTemplateAvatarPreview] = useState('');
+  const [editTemplateSaving, setEditTemplateSaving] = useState(false);
   const [runtimeStatusError, setRuntimeStatusError] = useState('');
   const [runtimeLogsOpen, setRuntimeLogsOpen] = useState(false);
   const [runtimeLogsLoading, setRuntimeLogsLoading] = useState(false);
@@ -175,6 +200,24 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [installSaving, setInstallSaving] = useState(false);
   const [installInstanceName, setInstallInstanceName] = useState('');
   const [installInstanceId, setInstallInstanceId] = useState('');
+  const [installGatewayMode, setInstallGatewayMode] = useState('shared');
+  const [installGatewayId, setInstallGatewayId] = useState('');
+  const [installGatewayToken, setInstallGatewayToken] = useState('');
+  const [installLlmMode, setInstallLlmMode] = useState('default');
+  const [installLlmKeys, setInstallLlmKeys] = useState({
+    google: '',
+    anthropic: '',
+    openai: '',
+  });
+  const [installGatewayCreateOpen, setInstallGatewayCreateOpen] = useState(false);
+  const [installGatewayCreateLoading, setInstallGatewayCreateLoading] = useState(false);
+  const [installGatewayCreateError, setInstallGatewayCreateError] = useState('');
+  const [installGatewayForm, setInstallGatewayForm] = useState({
+    name: '',
+    slug: '',
+    mode: 'k8s',
+    namespace: '',
+  });
   const [existingAgentInfo, setExistingAgentInfo] = useState(null);
   const [checkingExisting, setCheckingExisting] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -195,13 +238,27 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [adminRevokeLoadingId, setAdminRevokeLoadingId] = useState(null);
   const [adminUninstallTarget, setAdminUninstallTarget] = useState(null);
   const [adminUninstallLoading, setAdminUninstallLoading] = useState(false);
+  const [adminAutonomyHours, setAdminAutonomyHours] = useState(12);
+  const [adminAutonomyMinMatches, setAdminAutonomyMinMatches] = useState(4);
+  const [adminAutonomyLoading, setAdminAutonomyLoading] = useState(false);
+  const [adminAutonomyResult, setAdminAutonomyResult] = useState(null);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
     return { 'x-auth-token': token };
   };
 
+  const resolveRuntimeGatewayId = () => (
+    runtimeGatewayMode === 'custom' && isGlobalAdmin ? runtimeGatewayId : ''
+  );
+
   const currentUserId = currentUser?._id || currentUser?.id || null;
+  const runtimeGatewayOptions = useMemo(
+    () => runtimeGatewayList.filter((gateway) => gateway?.mode === 'k8s'),
+    [runtimeGatewayList],
+  );
+  const selectedRuntimeGateway = runtimeGatewayOptions.find((gateway) => gateway?._id === runtimeGatewayId)
+    || null;
 
   const normalizePodCreatorId = (pod) => (
     pod?.createdBy?._id || pod?.createdBy || null
@@ -443,6 +500,11 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setInstallInstanceName(agent?.displayName || agent?.name || '');
     setInstallInstanceId('');
     setInstallPodIds(defaultPodId ? [defaultPodId] : []);
+    setInstallGatewayMode('shared');
+    setInstallGatewayId('');
+    setInstallGatewayToken('');
+    setInstallLlmMode('default');
+    setInstallLlmKeys({ google: '', anthropic: '', openai: '' });
     setInstallDialogOpen(true);
   };
 
@@ -520,14 +582,118 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
+  const handleRunThemedAutonomy = async () => {
+    if (!isGlobalAdmin) return;
+    setAdminAutonomyLoading(true);
+    setAdminError('');
+    setAdminAutonomyResult(null);
+    try {
+      const parsedHours = Number(adminAutonomyHours);
+      const parsedMinMatches = Number(adminAutonomyMinMatches);
+      const hours = Number.isFinite(parsedHours) && parsedHours > 0 ? parsedHours : 12;
+      const minMatches = Number.isFinite(parsedMinMatches) && parsedMinMatches > 0 ? parsedMinMatches : 4;
+      const response = await axios.post(
+        '/api/admin/agents/autonomy/themed-pods/run',
+        {
+          hours,
+          minMatches,
+        },
+        { headers: getAuthHeaders() },
+      );
+      const result = response.data?.result || {};
+      setAdminAutonomyResult({
+        scannedPosts: result.scannedPosts || 0,
+        createdPods: (result.createdPods || []).length,
+        triggeredPods: (result.triggeredPods || []).length,
+      });
+      fetchAdminInstallations();
+    } catch (err) {
+      console.error('Error running themed autonomy:', err);
+      setAdminError(err?.response?.data?.error || 'Failed to run themed autonomy.');
+    } finally {
+      setAdminAutonomyLoading(false);
+    }
+  };
+
   const closeInstallDialog = () => {
     setInstallDialogOpen(false);
     setInstallAgent(null);
     setInstallPodIds([]);
     setInstallInstanceName('');
     setInstallInstanceId('');
+    setInstallGatewayMode('shared');
+    setInstallGatewayId('');
+    setInstallGatewayToken('');
+    setInstallLlmMode('default');
+    setInstallLlmKeys({ google: '', anthropic: '', openai: '' });
+    setInstallGatewayCreateOpen(false);
+    setInstallGatewayCreateError('');
+    setInstallGatewayCreateLoading(false);
+    setInstallGatewayForm({
+      name: '',
+      slug: '',
+      mode: 'k8s',
+      namespace: '',
+    });
     setExistingAgentInfo(null);
     setCheckingExisting(false);
+  };
+
+  const openInstallGatewayCreateDialog = () => {
+    if (!isGlobalAdmin) return;
+    setInstallGatewayCreateError('');
+    setInstallGatewayToken('');
+    setInstallGatewayForm({
+      name: '',
+      slug: '',
+      mode: 'k8s',
+      namespace: '',
+    });
+    setInstallGatewayCreateOpen(true);
+  };
+
+  const closeInstallGatewayCreateDialog = () => {
+    setInstallGatewayCreateOpen(false);
+  };
+
+  const handleInstallGatewayCreate = async () => {
+    if (!isGlobalAdmin) return;
+    if (!installGatewayForm.name.trim()) {
+      setInstallGatewayCreateError('Gateway name is required.');
+      return;
+    }
+    setInstallGatewayCreateLoading(true);
+    setInstallGatewayCreateError('');
+    try {
+      const payload = {
+        name: installGatewayForm.name.trim(),
+        slug: installGatewayForm.slug.trim() || undefined,
+        mode: 'k8s',
+        metadata: {},
+      };
+      if (installGatewayForm.namespace.trim()) {
+        payload.metadata.namespace = installGatewayForm.namespace.trim();
+      }
+      const response = await axios.post('/api/gateways', payload, { headers: getAuthHeaders() });
+      const newGateway = response.data?.gateway;
+      const token = response.data?.gatewayToken || '';
+      if (newGateway) {
+        setRuntimeGatewayList((prev) => {
+          const next = prev.filter((gateway) => gateway?._id !== newGateway._id);
+          next.push(newGateway);
+          return next;
+        });
+        setInstallGatewayMode('custom');
+        setInstallGatewayId(newGateway._id);
+      }
+      setInstallGatewayToken(token);
+      closeInstallGatewayCreateDialog();
+    } catch (err) {
+      console.error('Error creating gateway:', err);
+      setInstallGatewayCreateError(err.response?.data?.error || 'Failed to create gateway');
+    } finally {
+      setInstallGatewayCreateLoading(false);
+    }
   };
 
   const openCreateDialog = () => {
@@ -535,6 +701,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setCreateAgentName('');
     setCreateAgentDescription('');
     setCreateAgentVisibility('private');
+    setCreateAgentAvatarFile(null);
+    setCreateAgentAvatarPreview('');
     setCreateDialogOpen(true);
   };
 
@@ -544,6 +712,46 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setCreateAgentName('');
     setCreateAgentDescription('');
     setCreateAgentVisibility('private');
+    setCreateAgentAvatarFile(null);
+    setCreateAgentAvatarPreview('');
+  };
+
+  const handleCreateTemplateAvatarChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setCreateAgentAvatarFile(file);
+    setCreateAgentAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const handleAvatarGenerated = (avatarDataUri, metadata) => {
+    if (!avatarDataUri || typeof avatarDataUri !== 'string' || !avatarDataUri.startsWith('data:image/')) {
+      alert('Invalid generated avatar data. Please try again.');
+      return;
+    }
+
+    // Convert data URI to blob for upload
+    const byteString = atob(avatarDataUri.split(',')[1]);
+    const mimeString = avatarDataUri.split(',')[0].split(':')[1].split(';')[0];
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    const blob = new Blob([ab], { type: mimeString });
+    const extensionByMime = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+      'image/svg+xml': 'svg',
+    };
+    const extension = extensionByMime[mimeString] || 'png';
+    const file = new File([blob], `avatar.${extension}`, { type: mimeString });
+
+    setCreateAgentAvatarFile(file);
+    setCreateAgentAvatarPreview(avatarDataUri);
+    setAvatarGeneratorOpen(false);
   };
 
   /**
@@ -604,10 +812,34 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     return () => clearTimeout(timeoutId);
   }, [installDialogOpen, installAgent, installInstanceName]);
 
+  const buildInstallAuthProfiles = () => {
+    if (installLlmMode !== 'custom') return null;
+    const profiles = {};
+    const googleKey = installLlmKeys.google.trim();
+    const anthropicKey = installLlmKeys.anthropic.trim();
+    const openaiKey = installLlmKeys.openai.trim();
+    if (googleKey) {
+      profiles['google:default'] = { type: 'api_key', provider: 'google', key: googleKey };
+    }
+    if (anthropicKey) {
+      profiles['anthropic:default'] = { type: 'api_key', provider: 'anthropic', key: anthropicKey };
+    }
+    if (openaiKey) {
+      profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
+    }
+    return Object.keys(profiles).length ? profiles : null;
+  };
+
   const handleInstall = async () => {
     if (!installAgent) return;
     if (installPodIds.length === 0) {
       alert('Select at least one pod to install this agent.');
+      return;
+    }
+
+    const selectedGatewayId = installGatewayMode === 'custom' ? installGatewayId : '';
+    if (installGatewayMode === 'custom' && !selectedGatewayId) {
+      alert('Select a custom gateway before installing.');
       return;
     }
 
@@ -631,6 +863,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         }
       }
 
+      const authProfiles = buildInstallAuthProfiles();
+      const installConfig = authProfiles ? { runtime: { authProfiles } } : undefined;
+
       const results = await Promise.allSettled(
         installPodIds.map((podId) => (
           axios.post('/api/registry/install', {
@@ -639,6 +874,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             scopes: installScopes,
             instanceId: resolvedInstanceId || undefined,
             displayName: installInstanceName || agentDetails.data?.displayName || agentName,
+            gatewayId: selectedGatewayId || undefined,
+            config: installConfig,
           }, {
             headers: getAuthHeaders(),
           })
@@ -670,11 +907,24 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
     setCreateSaving(true);
     try {
+      let iconUrl = '';
+      if (createAgentAvatarFile) {
+        const formData = new FormData();
+        formData.append('image', createAgentAvatarFile);
+        const uploadRes = await axios.post('/api/uploads', formData, {
+          headers: { 
+            ...getAuthHeaders(),
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        iconUrl = uploadRes.data?.url || '';
+      }
       await axios.post('/api/registry/templates', {
         agentName: createAgentType,
         displayName: createAgentName,
         description: createAgentDescription,
         visibility: createAgentVisibility,
+        iconUrl,
       }, {
         headers: getAuthHeaders(),
       });
@@ -682,9 +932,88 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       closeCreateDialog();
     } catch (err) {
       console.error('Error creating agent template:', err);
-      alert(err.response?.data?.error || 'Failed to create agent');
+      const message = err.response?.data?.error || err.message || 'Failed to create agent';
+      const status = err.response?.status;
+      alert(status ? `${message} (status ${status})` : message);
     } finally {
       setCreateSaving(false);
+    }
+  };
+
+  const openEditTemplateDialog = (template) => {
+    setEditTemplate({
+      ...template,
+      displayName: template.displayName || '',
+      description: template.description || '',
+      visibility: template.visibility || 'private',
+      iconUrl: template.iconUrl || '',
+    });
+    setEditTemplateAvatarFile(null);
+    setEditTemplateAvatarPreview('');
+    setEditTemplateOpen(true);
+  };
+
+  const closeEditTemplateDialog = () => {
+    setEditTemplateOpen(false);
+    setEditTemplate(null);
+    setEditTemplateAvatarFile(null);
+    setEditTemplateAvatarPreview('');
+  };
+
+  const handleEditTemplateAvatarChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setEditTemplateAvatarFile(file);
+    setEditTemplateAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const handleUpdateTemplate = async () => {
+    if (!editTemplate) return;
+    setEditTemplateSaving(true);
+    try {
+      let iconUrl = editTemplate.iconUrl || '';
+      if (editTemplateAvatarFile) {
+        const formData = new FormData();
+        formData.append('image', editTemplateAvatarFile);
+        const uploadRes = await axios.post('/api/uploads', formData, {
+          headers: { 
+            ...getAuthHeaders(),
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        iconUrl = uploadRes.data?.url || '';
+      }
+      await axios.patch(`/api/registry/templates/${editTemplate.templateId || editTemplate.id}`, {
+        displayName: editTemplate.displayName,
+        description: editTemplate.description,
+        visibility: editTemplate.visibility,
+        iconUrl,
+      }, {
+        headers: getAuthHeaders(),
+      });
+      await fetchTemplates();
+      closeEditTemplateDialog();
+    } catch (err) {
+      console.error('Error updating agent template:', err);
+      alert(err.response?.data?.error || 'Failed to update agent');
+    } finally {
+      setEditTemplateSaving(false);
+    }
+  };
+
+  const handleDeleteTemplate = async () => {
+    if (!editTemplate) return;
+    const confirmed = window.confirm('Delete this agent? This cannot be undone.');
+    if (!confirmed) return;
+    try {
+      await axios.delete(`/api/registry/templates/${editTemplate.templateId || editTemplate.id}`, {
+        headers: getAuthHeaders(),
+      });
+      await fetchTemplates();
+      closeEditTemplateDialog();
+    } catch (err) {
+      console.error('Error deleting agent template:', err);
+      alert(err.response?.data?.error || 'Failed to delete agent');
     }
   };
 
@@ -714,7 +1043,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const currentPodId = selectedPodId;
 
   const modelOptions = [
-    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (default)' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (recommended)' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
     { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
   ];
 
@@ -764,8 +1094,53 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     return installedAgents.find((a) => a.name === agentName && a.instanceId === instanceId) || null;
   };
 
+  const getAgentTargetInstanceId = (agent) => {
+    if (!agent) return 'default';
+    if (agent.instanceId) return agent.instanceId;
+    const baseName = agent.agentName || agent.name;
+    if (agent.templateId) {
+      return deriveInstanceId(agent.displayName || baseName, baseName);
+    }
+    return 'default';
+  };
+
+  const isInstalledAgent = (agent) => {
+    if (!agent) return false;
+    const baseName = agent.agentName || agent.name;
+    const targetInstanceId = getAgentTargetInstanceId(agent);
+    if (agent.templateId) {
+      return Boolean(getInstallation(baseName, targetInstanceId));
+    }
+    return isInstalled(baseName);
+  };
+
+  const canRemoveAgent = (agent) => {
+    if (!agent) return false;
+    if (canRemoveInSelectedPod) return true;
+    const baseName = agent.agentName || agent.name;
+    const targetInstanceId = getAgentTargetInstanceId(agent);
+    return getInstallation(baseName, targetInstanceId)?.installedBy === currentUserId;
+  };
+
   const resolveInstalledAgent = (agent) => {
     if (!agent || agent.instanceId) return agent;
+    const baseName = agent.agentName || agent.name;
+    if (agent.templateId) {
+      const targetInstanceId = getAgentTargetInstanceId(agent);
+      const match = getInstallation(baseName, targetInstanceId);
+      if (match) {
+        return {
+          ...agent,
+          instanceId: match.instanceId,
+          installedBy: match.installedBy,
+          profile: match.profile,
+          config: match.config,
+          runtime: match.runtime,
+          displayName: agent.displayName || match.displayName || baseName,
+        };
+      }
+      return agent;
+    }
     const matches = installedAgents.filter((installed) => installed.name === agent.name);
     if (matches.length === 1) {
       const match = matches[0];
@@ -775,6 +1150,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         installedBy: match.installedBy,
         profile: match.profile,
         config: match.config,
+        runtime: match.runtime,
         displayName: agent.displayName || match.displayName || agent.name,
       };
     }
@@ -791,6 +1167,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       agentName: template.agentName,
       displayName: template.displayName,
       description: template.description,
+      iconUrl: template.iconUrl,
       verified: false,
       categories: [
         ...(agents.find((agent) => agent.name === template.agentName)?.categories || []),
@@ -813,7 +1190,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       return;
     }
     setConfigAgent(resolved);
-    setConfigModel(resolved?.profile?.modelPreferences?.preferred || 'gemini-2.0-flash');
+    setConfigModel(resolved?.profile?.modelPreferences?.preferred || 'gemini-2.5-pro');
     const persona = resolved?.profile?.persona || {};
     const toolPolicy = resolved?.profile?.toolPolicy || {};
     const heartbeatConfig = resolved?.config?.heartbeat || null;
@@ -834,6 +1211,11 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         ? heartbeatChecklist
         : DEFAULT_HEARTBEAT_CHECKLIST,
     );
+    const hasCustomAuthProfiles = Boolean(resolved?.runtime?.hasCustomAuthProfiles);
+    setConfigAuthMode(hasCustomAuthProfiles ? 'custom' : 'default');
+    setConfigAuthKeys({ google: '', anthropic: '', openai: '' });
+    setConfigSkillEnvJson('');
+    setConfigSkillEnvError('');
     setSkillSyncMode(skillSyncConfig.mode === 'selected' ? 'selected' : 'all');
     setSkillSyncAllPods(skillSyncConfig.allPods !== false);
     setSkillSyncPods(Array.isArray(skillSyncConfig.podIds) ? skillSyncConfig.podIds : []);
@@ -1044,6 +1426,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigPersonaSpecialties('');
     setConfigPersonaBoundaries('');
     setConfigPersonaCustomInstructions('');
+    setConfigAuthMode('default');
+    setConfigAuthKeys({ google: '', anthropic: '', openai: '' });
+    setConfigSkillEnvJson('');
+    setConfigSkillEnvError('');
     setToolPolicyAllowed('commonly');
     setToolPolicyBlocked('');
     setToolPolicyRequireApproval('');
@@ -1074,7 +1460,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   useEffect(() => {
     if (!configOpen || !configAgent || !selectedPodId) return;
     fetchRuntimeStatus();
-  }, [configOpen, configAgent, selectedPodId]);
+  }, [configOpen, configAgent, selectedPodId, runtimeGatewayMode, runtimeGatewayId]);
 
   useEffect(() => {
     if (!configOpen || !configAgent) return;
@@ -1096,6 +1482,18 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     fetchSkillSyncSkills(targetPods);
   }, [configOpen, configAgent, skillSyncAllPods, skillSyncPods, skillSyncPodOptions]);
 
+  useEffect(() => {
+    if (!configOpen || !configAgent) return;
+    const configuredGatewayId = configAgent?.runtime?.gatewayId || '';
+    if (configuredGatewayId) {
+      setRuntimeGatewayMode('custom');
+      setRuntimeGatewayId(configuredGatewayId);
+    } else {
+      setRuntimeGatewayMode('shared');
+      setRuntimeGatewayId('');
+    }
+  }, [configOpen, configAgent]);
+
 
   useEffect(() => {
     if (!runtimeLogsOpen || !runtimeLogsAutoRefresh) return () => {};
@@ -1103,7 +1501,62 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       fetchRuntimeLogs();
     }, 4000);
     return () => clearInterval(interval);
-  }, [runtimeLogsOpen, runtimeLogsAutoRefresh, runtimeLogsLines, configAgent, selectedPodId]);
+  }, [runtimeLogsOpen, runtimeLogsAutoRefresh, runtimeLogsLines, configAgent, selectedPodId, runtimeGatewayMode, runtimeGatewayId]);
+
+  useEffect(() => {
+    if (!isGlobalAdmin || (!configOpen && !installDialogOpen)) return;
+    let cancelled = false;
+    const fetchGateways = async () => {
+      setRuntimeGatewayLoading(true);
+      setRuntimeGatewayError('');
+      try {
+        const response = await axios.get('/api/gateways', getAuthHeaders());
+        const gateways = response.data?.gateways || [];
+        const active = gateways.filter((gateway) => gateway?.status !== 'disabled');
+        if (cancelled) return;
+        setRuntimeGatewayList(active);
+      } catch (error) {
+        if (cancelled) return;
+        console.warn('Failed to load gateways:', error);
+        setRuntimeGatewayError(error.response?.data?.error || 'Failed to load gateways');
+        setRuntimeGatewayList([]);
+      } finally {
+        if (!cancelled) {
+          setRuntimeGatewayLoading(false);
+        }
+      }
+    };
+    fetchGateways();
+    return () => {
+      cancelled = true;
+    };
+  }, [configOpen, installDialogOpen, isGlobalAdmin]);
+
+  useEffect(() => {
+    if (runtimeGatewayMode !== 'custom') return;
+    if (runtimeGatewayId) return;
+    const firstGateway = runtimeGatewayList.find((gateway) => gateway.mode === 'k8s' && gateway.slug !== 'default')
+      || runtimeGatewayList.find((gateway) => gateway.mode === 'k8s')
+      || runtimeGatewayList[0];
+    if (firstGateway?._id) {
+      setRuntimeGatewayId(firstGateway._id);
+    }
+  }, [runtimeGatewayMode, runtimeGatewayId, runtimeGatewayList]);
+
+  useEffect(() => {
+    if (!installDialogOpen) return;
+    if (installGatewayMode !== 'custom') {
+      if (installGatewayId) setInstallGatewayId('');
+      return;
+    }
+    if (installGatewayId) return;
+    const firstGateway = runtimeGatewayList.find((gateway) => gateway.mode === 'k8s' && gateway.slug !== 'default')
+      || runtimeGatewayList.find((gateway) => gateway.mode === 'k8s')
+      || runtimeGatewayList[0];
+    if (firstGateway?._id) {
+      setInstallGatewayId(firstGateway._id);
+    }
+  }, [installDialogOpen, installGatewayMode, installGatewayId, runtimeGatewayList]);
 
   useEffect(() => {
     const fetchUserTokenMeta = async () => {
@@ -1158,19 +1611,29 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
   const handleProvisionRuntime = async () => {
     if (!selectedPodId || !configAgent) return;
+    const normalizedAgent = String(configAgent.name || configAgent.agentName || '').toLowerCase();
+    if (normalizedAgent === 'commonly-bot' && !isGlobalAdmin) {
+      setProvisionError('Only global admins can provision commonly-bot runtime.');
+      return;
+    }
     setProvisionLoading(true);
     setProvisionError('');
     setProvisionResult(null);
     try {
       const resolved = resolveInstalledAgent(configAgent);
       const instanceId = resolved.instanceId || 'default';
+      const gatewayId = resolveRuntimeGatewayId();
+      const payload = {
+        instanceId,
+        includeUserToken: provisionIncludeUserToken,
+        label: 'Provisioned runtime',
+      };
+      if (gatewayId) {
+        payload.gatewayId = gatewayId;
+      }
       const response = await axios.post(
         `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/provision`,
-        {
-          instanceId,
-          includeUserToken: provisionIncludeUserToken,
-          label: 'Provisioned runtime',
-        },
+        payload,
         { headers: getAuthHeaders() },
       );
       setProvisionResult(response.data);
@@ -1199,9 +1662,15 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setRuntimeStatusLoading(true);
     setRuntimeStatusError('');
     try {
+      const instanceId = configAgent.instanceId || 'default';
+      const gatewayId = resolveRuntimeGatewayId();
+      const params = { instanceId };
+      if (gatewayId) {
+        params.gatewayId = gatewayId;
+      }
       const response = await axios.get(
         `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/runtime-status`,
-        { headers: getAuthHeaders() },
+        { headers: getAuthHeaders(), params },
       );
       setRuntimeStatus(response.data || null);
     } catch (err) {
@@ -1217,9 +1686,15 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     if (!selectedPodId || !configAgent) return;
     setRuntimeStatusLoading(true);
     try {
+      const instanceId = configAgent.instanceId || 'default';
+      const gatewayId = resolveRuntimeGatewayId();
+      const payload = { instanceId };
+      if (gatewayId) {
+        payload.gatewayId = gatewayId;
+      }
       await axios.post(
         `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/runtime-start`,
-        {},
+        payload,
         { headers: getAuthHeaders() },
       );
       await fetchRuntimeStatus();
@@ -1235,9 +1710,15 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     if (!selectedPodId || !configAgent) return;
     setRuntimeStatusLoading(true);
     try {
+      const instanceId = configAgent.instanceId || 'default';
+      const gatewayId = resolveRuntimeGatewayId();
+      const payload = { instanceId };
+      if (gatewayId) {
+        payload.gatewayId = gatewayId;
+      }
       await axios.post(
         `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/runtime-stop`,
-        {},
+        payload,
         { headers: getAuthHeaders() },
       );
       await fetchRuntimeStatus();
@@ -1253,9 +1734,15 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     if (!selectedPodId || !configAgent) return;
     setRuntimeStatusLoading(true);
     try {
+      const instanceId = configAgent.instanceId || 'default';
+      const gatewayId = resolveRuntimeGatewayId();
+      const payload = { instanceId };
+      if (gatewayId) {
+        payload.gatewayId = gatewayId;
+      }
       await axios.post(
         `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/runtime-restart`,
-        {},
+        payload,
         { headers: getAuthHeaders() },
       );
       await fetchRuntimeStatus();
@@ -1280,9 +1767,15 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           atBottom: scrollTop + clientHeight >= scrollHeight - 8,
         };
       }
+      const instanceId = configAgent.instanceId || 'default';
+      const gatewayId = resolveRuntimeGatewayId();
+      const params = { lines: runtimeLogsLines, instanceId };
+      if (gatewayId) {
+        params.gatewayId = gatewayId;
+      }
       const response = await axios.get(
-        `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/runtime-logs?lines=${runtimeLogsLines}`,
-        { headers: getAuthHeaders() },
+        `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/runtime-logs`,
+        { headers: getAuthHeaders(), params },
       );
       setRuntimeLogsContent(response.data?.logs || '');
     } catch (err) {
@@ -1396,14 +1889,64 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
+  const handleCopyInstallGatewayToken = async () => {
+    if (!installGatewayToken) return;
+    try {
+      await navigator.clipboard.writeText(installGatewayToken);
+    } catch (err) {
+      console.warn('Clipboard copy failed:', err);
+    }
+  };
+
+  const provisionGatewayMissing = runtimeGatewayMode === 'custom' && !runtimeGatewayId;
+
+  const buildConfigAuthProfiles = () => {
+    if (configAuthMode !== 'custom') return null;
+    const profiles = {};
+    const googleKey = configAuthKeys.google.trim();
+    const anthropicKey = configAuthKeys.anthropic.trim();
+    const openaiKey = configAuthKeys.openai.trim();
+    if (googleKey) {
+      profiles['google:default'] = { type: 'api_key', provider: 'google', key: googleKey };
+    }
+    if (anthropicKey) {
+      profiles['anthropic:default'] = { type: 'api_key', provider: 'anthropic', key: anthropicKey };
+    }
+    if (openaiKey) {
+      profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
+    }
+    return Object.keys(profiles).length ? profiles : null;
+  };
+
+  const parseSkillEnvJson = () => {
+    const raw = configSkillEnvJson.trim();
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return { error: 'Skill token JSON must be an object.' };
+      }
+      return { value: parsed };
+    } catch (error) {
+      return { error: 'Skill token JSON is invalid.' };
+    }
+  };
+
   const saveConfig = async () => {
     if (!configAgent || !selectedPodId) {
       return;
     }
+    const skillEnvParsed = parseSkillEnvJson();
+    if (skillEnvParsed?.error) {
+      setConfigSkillEnvError(skillEnvParsed.error);
+      return;
+    }
+    setConfigSkillEnvError('');
     setConfigSaving(true);
     try {
       const instanceId = configAgent.instanceId || 'default';
       const isOpenClaw = (configAgent.name || configAgent.agentName) === 'openclaw';
+      const authProfiles = buildConfigAuthProfiles();
       await axios.patch(`/api/registry/pods/${selectedPodId}/agents/${configAgent.name}`, {
         config: {
           heartbeat: {
@@ -1411,6 +1954,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             everyMinutes: clampNumber(configHeartbeatInterval, 10),
           },
           heartbeatChecklist: configHeartbeatChecklist || '',
+          runtime: {
+            authProfiles: authProfiles ?? null,
+            skillEnv: skillEnvParsed?.value ?? null,
+          },
           ...(isOpenClaw
             ? {
               skillSync: {
@@ -1660,11 +2207,13 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                     <Grid item xs={12} sm={6} md={4} lg={4} key={agent.templateId || agent.name}>
                     <AgentCard
                       agent={agent}
-                      installed={isInstalled(agent.name)}
+                      installed={isInstalledAgent(agent)}
                       onInstall={openInstallDialog}
                       onConfigure={openConfigDialog}
                       onRemove={handleRemove}
-                      canRemove={canRemoveInSelectedPod || getInstallation(agent.name)?.installedBy === currentUserId}
+                      canRemove={canRemoveAgent(agent)}
+                      onEdit={agent.templateId && agent.createdBy === currentUserId ? openEditTemplateDialog : null}
+                      canEdit={agent.templateId && agent.createdBy === currentUserId}
                     />
                     </Grid>
                   ))}
@@ -1724,6 +2273,53 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
       {isGlobalAdmin && activeTab === adminTabIndex && (
         <Box>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              mb: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            <Typography variant="subtitle1">Themed Pod Autonomy</Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+              <TextField
+                size="small"
+                type="number"
+                label="Hours"
+                value={adminAutonomyHours}
+                onChange={(e) => setAdminAutonomyHours(e.target.value)}
+                inputProps={{ min: 1, max: 168 }}
+                sx={{ width: { xs: '100%', sm: 140 } }}
+              />
+              <TextField
+                size="small"
+                type="number"
+                label="Min Matches"
+                value={adminAutonomyMinMatches}
+                onChange={(e) => setAdminAutonomyMinMatches(e.target.value)}
+                inputProps={{ min: 1, max: 50 }}
+                sx={{ width: { xs: '100%', sm: 160 } }}
+              />
+              <Button
+                variant="contained"
+                startIcon={<RefreshIcon />}
+                onClick={handleRunThemedAutonomy}
+                disabled={adminAutonomyLoading}
+              >
+                {adminAutonomyLoading ? 'Running...' : 'Run Now'}
+              </Button>
+            </Stack>
+            {adminAutonomyResult && (
+              <Alert severity="success">
+                Themed autonomy run complete. Scanned {adminAutonomyResult.scannedPosts} posts, created{' '}
+                {adminAutonomyResult.createdPods} pod(s), triggered {adminAutonomyResult.triggeredPods} pod(s).
+              </Alert>
+            )}
+          </Paper>
+
           <Paper
             variant="outlined"
             sx={{
@@ -1904,6 +2500,84 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               ))}
             </Select>
           </FormControl>
+
+          <Divider sx={{ my: 3 }} />
+
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            LLM Credentials
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Provide custom keys for this agent or use the gateway defaults. Keys are write-only.
+          </Typography>
+          <FormControl component="fieldset" sx={{ mb: 2 }}>
+            <RadioGroup
+              value={configAuthMode}
+              onChange={(event) => setConfigAuthMode(event.target.value)}
+            >
+              <FormControlLabel value="default" control={<Radio />} label="Use gateway defaults" />
+              <FormControlLabel value="custom" control={<Radio />} label="Provide custom keys" />
+            </RadioGroup>
+          </FormControl>
+          {configAuthMode === 'custom' && (
+            <>
+              <TextField
+                fullWidth
+                label="Google / Gemini API key"
+                value={configAuthKeys.google}
+                onChange={(event) => setConfigAuthKeys((prev) => ({ ...prev, google: event.target.value }))}
+                size="small"
+                type="password"
+                sx={{ mb: 2 }}
+              />
+              <TextField
+                fullWidth
+                label="Anthropic / Claude API key"
+                value={configAuthKeys.anthropic}
+                onChange={(event) => setConfigAuthKeys((prev) => ({ ...prev, anthropic: event.target.value }))}
+                size="small"
+                type="password"
+                sx={{ mb: 2 }}
+              />
+              <TextField
+                fullWidth
+                label="OpenAI / GPT API key"
+                value={configAuthKeys.openai}
+                onChange={(event) => setConfigAuthKeys((prev) => ({ ...prev, openai: event.target.value }))}
+                size="small"
+                type="password"
+                sx={{ mb: 2 }}
+              />
+            </>
+          )}
+          {configAgent?.runtime?.hasCustomAuthProfiles && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              This agent already has custom keys on the gateway. Saving with defaults will reset it.
+            </Alert>
+          )}
+
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Skill API Tokens
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Provide JSON mapping of skill names to env/apiKey entries. Example:
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            minRows={4}
+            value={configSkillEnvJson}
+            onChange={(event) => setConfigSkillEnvJson(event.target.value)}
+            placeholder={`{\n  \"notion\": { \"env\": { \"NOTION_API_KEY\": \"...\" } },\n  \"tavily\": { \"apiKey\": \"...\" }\n}`}
+            sx={{ mb: 2 }}
+          />
+          {configSkillEnvError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {configSkillEnvError}
+            </Alert>
+          )}
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            Apply changes by provisioning runtime (or restarting the gateway) after saving.
+          </Typography>
 
           <Divider sx={{ my: 3 }} />
 
@@ -2158,30 +2832,104 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           ) : (
             <>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Provision Runtime (Local)
+                Provision Runtime
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Create tokens and write local runtime config for this agent instance.
+                Create tokens and write runtime config for this agent instance on the shared gateway or a custom gateway.
               </Typography>
+              <FormControl component="fieldset" sx={{ mb: 2 }}>
+                <RadioGroup
+                  value={runtimeGatewayMode}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setRuntimeGatewayMode(nextValue);
+                    if (nextValue === 'shared') {
+                      setRuntimeGatewayId('');
+                    }
+                  }}
+                >
+                  <FormControlLabel value="shared" control={<Radio />} label="Shared gateway (default)" />
+                  <FormControlLabel
+                    value="custom"
+                    control={<Radio />}
+                    label="Custom gateway"
+                    disabled={!isGlobalAdmin}
+                  />
+                </RadioGroup>
+              </FormControl>
+              {!isGlobalAdmin && (
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Gateway selection is available to global admins.
+                </Typography>
+              )}
+              {runtimeGatewayMode === 'custom' && (
+                <>
+                  <FormControl
+                    fullWidth
+                    sx={{ mb: 2 }}
+                    disabled={!isGlobalAdmin || runtimeGatewayLoading || runtimeGatewayOptions.length === 0}
+                  >
+                    <InputLabel id="runtime-gateway-label">Gateway</InputLabel>
+                    <Select
+                      labelId="runtime-gateway-label"
+                      label="Gateway"
+                      value={runtimeGatewayId}
+                      onChange={(event) => setRuntimeGatewayId(event.target.value)}
+                    >
+                      {runtimeGatewayOptions.map((gateway) => (
+                        <MenuItem key={gateway._id} value={gateway._id}>
+                          {gateway.name || gateway.slug}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {runtimeGatewayLoading && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Loading gateways...
+                    </Typography>
+                  )}
+                  {runtimeGatewayError && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      {runtimeGatewayError}
+                    </Alert>
+                  )}
+                  {!runtimeGatewayLoading && runtimeGatewayOptions.length === 0 && (
+                    <Alert severity="info" sx={{ mb: 2 }}>
+                      No custom gateways available yet.
+                    </Alert>
+                  )}
+                </>
+              )}
               <FormControlLabel
                 control={(
                   <Checkbox
                     checked={provisionIncludeUserToken}
                     onChange={(event) => setProvisionIncludeUserToken(event.target.checked)}
+                    disabled={String(configAgent?.name || configAgent?.agentName || '').toLowerCase() === 'commonly-bot' && !isGlobalAdmin}
                   />
                 )}
                 label="Include bot user token (recommended for OpenClaw)"
                 sx={{ mb: 2 }}
               />
+              {String(configAgent?.name || configAgent?.agentName || '').toLowerCase() === 'commonly-bot' && !isGlobalAdmin && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Provisioning commonly-bot is restricted to global admins.
+                </Alert>
+              )}
               <Button
                 variant="contained"
                 onClick={handleProvisionRuntime}
-                disabled={provisionLoading}
+                disabled={provisionLoading || provisionGatewayMissing || (String(configAgent?.name || configAgent?.agentName || '').toLowerCase() === 'commonly-bot' && !isGlobalAdmin)}
                 fullWidth
                 sx={{ mb: 2 }}
               >
                 {provisionLoading ? 'Provisioning...' : 'Provision Runtime'}
               </Button>
+              {provisionGatewayMissing && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  Select a custom gateway before provisioning.
+                </Alert>
+              )}
               {provisionError && (
                 <Alert severity="error" sx={{ mb: 2 }}>
                   {provisionError}
@@ -2190,11 +2938,16 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               {provisionResult && (
                 <Alert severity={provisionResult.restartRequired ? 'warning' : 'success'} sx={{ mb: 2 }}>
                   {provisionResult.restartRequired
-                    ? 'Runtime config written. OpenClaw gateway needs restart.'
+                    ? (provisionResult.runtimeRestarted
+                      ? 'Runtime config written. Gateway restarted.'
+                      : 'Runtime config written. Gateway restart required.')
                     : 'Runtime config written.'}
                   {provisionResult.runtimeStarted
-                    ? ' Runtime container started.'
-                    : ' Runtime container not started.'}
+                    ? ' Runtime started.'
+                    : ' Runtime not started.'}
+                  {provisionResult.runtimeRestartError
+                    ? ` Restart error: ${provisionResult.runtimeRestartError}`
+                    : ''}
                 </Alert>
               )}
 
@@ -2202,7 +2955,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                 Runtime Controls
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Start/stop and inspect the local runtime container.
+                Start/stop and inspect the runtime (gateway-managed in Kubernetes).
               </Typography>
               <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
                 <Button
@@ -2254,6 +3007,13 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                 <Alert severity="info" sx={{ mb: 2 }}>
                   Status: {runtimeStatus.status?.status || runtimeStatus.status?.state || runtimeStatus.status}
                   {runtimeStatus.status?.service ? ` • Service ${runtimeStatus.status.service}` : ''}
+                  {(() => {
+                    const gatewayLabel = runtimeStatus.gatewaySlug
+                      || selectedRuntimeGateway?.name
+                      || selectedRuntimeGateway?.slug
+                      || (runtimeGatewayMode === 'custom' ? 'Custom gateway' : 'Shared gateway');
+                    return gatewayLabel ? ` • Gateway ${gatewayLabel}` : '';
+                  })()}
                 </Alert>
               )}
 
@@ -2507,7 +3267,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               sx={{ width: 120 }}
             />
             <TextField
-              label="Filter (instance id)"
+              label="Filter (instance or account id)"
               value={runtimeLogsFilter}
               onChange={(event) => setRuntimeLogsFilter(event.target.value)}
               size="small"
@@ -2747,6 +3507,149 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             sx={{ mb: 2 }}
             helperText={`Derived from name: "${deriveInstanceId(installInstanceName, installAgent?.agentName || installAgent?.name)}"`}
           />
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Runtime gateway
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Use the shared gateway or select a custom gateway for this agent installation.
+          </Typography>
+          <FormControl component="fieldset" sx={{ mb: 2 }}>
+            <RadioGroup
+              value={installGatewayMode}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setInstallGatewayMode(nextValue);
+                if (nextValue === 'shared') {
+                  setInstallGatewayId('');
+                }
+              }}
+            >
+              <FormControlLabel value="shared" control={<Radio />} label="Shared gateway (default)" />
+              <FormControlLabel
+                value="custom"
+                control={<Radio />}
+                label="Custom gateway"
+                disabled={!isGlobalAdmin}
+              />
+            </RadioGroup>
+          </FormControl>
+          {!isGlobalAdmin && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Gateway selection is available to global admins.
+            </Typography>
+          )}
+          {installGatewayMode === 'custom' && (
+            <>
+              <FormControl
+                fullWidth
+                sx={{ mb: 2 }}
+                disabled={!isGlobalAdmin || runtimeGatewayLoading || runtimeGatewayOptions.length === 0}
+              >
+                <InputLabel id="install-gateway-label">Gateway</InputLabel>
+                <Select
+                  labelId="install-gateway-label"
+                  label="Gateway"
+                  value={installGatewayId}
+                  onChange={(event) => setInstallGatewayId(event.target.value)}
+                >
+                  {runtimeGatewayOptions.map((gateway) => (
+                    <MenuItem key={gateway._id} value={gateway._id}>
+                      {gateway.name || gateway.slug}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+                <Button
+                  variant="outlined"
+                  onClick={openInstallGatewayCreateDialog}
+                  disabled={!isGlobalAdmin}
+                >
+                  Create gateway
+                </Button>
+              </Stack>
+              {runtimeGatewayLoading && (
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Loading gateways...
+                </Typography>
+              )}
+              {runtimeGatewayError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {runtimeGatewayError}
+                </Alert>
+              )}
+              {!runtimeGatewayLoading && runtimeGatewayOptions.length === 0 && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  No custom gateways available yet.
+                </Alert>
+              )}
+            </>
+          )}
+          {installGatewayToken && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <TextField
+                fullWidth
+                label="Gateway token (copy now)"
+                value={installGatewayToken}
+                size="small"
+                InputProps={{ readOnly: true }}
+              />
+              <Tooltip title="Copy">
+                <IconButton onClick={handleCopyInstallGatewayToken}>
+                  <CopyIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          )}
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            LLM credentials
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Use the gateway’s default keys or provide custom keys for this agent.
+            Custom keys are stored per installation and applied on gateway restart.
+          </Typography>
+          <FormControl component="fieldset" sx={{ mb: 2 }}>
+            <RadioGroup
+              value={installLlmMode}
+              onChange={(event) => setInstallLlmMode(event.target.value)}
+            >
+              <FormControlLabel value="default" control={<Radio />} label="Use gateway defaults" />
+              <FormControlLabel value="custom" control={<Radio />} label="Provide custom keys" />
+            </RadioGroup>
+          </FormControl>
+          {installLlmMode === 'custom' && (
+            <>
+              <TextField
+                fullWidth
+                label="Google / Gemini API key"
+                value={installLlmKeys.google}
+                onChange={(event) => setInstallLlmKeys((prev) => ({ ...prev, google: event.target.value }))}
+                size="small"
+                type="password"
+                sx={{ mb: 2 }}
+              />
+              <TextField
+                fullWidth
+                label="Anthropic / Claude API key"
+                value={installLlmKeys.anthropic}
+                onChange={(event) => setInstallLlmKeys((prev) => ({ ...prev, anthropic: event.target.value }))}
+                size="small"
+                type="password"
+                sx={{ mb: 2 }}
+              />
+              <TextField
+                fullWidth
+                label="OpenAI / GPT API key"
+                value={installLlmKeys.openai}
+                onChange={(event) => setInstallLlmKeys((prev) => ({ ...prev, openai: event.target.value }))}
+                size="small"
+                type="password"
+                sx={{ mb: 2 }}
+              />
+            </>
+          )}
           {accessiblePods.length === 0 && userPods.length === 0 ? (
             <Alert severity="info">Join or create a pod to install agents.</Alert>
           ) : (
@@ -2781,6 +3684,59 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             disabled={installSaving || installPodIds.length === 0}
           >
             Install
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={installGatewayCreateOpen} onClose={closeInstallGatewayCreateDialog} fullWidth maxWidth="xs">
+        <DialogTitle>Create gateway</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          {installGatewayCreateError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {installGatewayCreateError}
+            </Alert>
+          )}
+          <TextField
+            fullWidth
+            label="Gateway name"
+            value={installGatewayForm.name}
+            onChange={(event) => setInstallGatewayForm((prev) => ({ ...prev, name: event.target.value }))}
+            size="small"
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Slug (optional)"
+            value={installGatewayForm.slug}
+            onChange={(event) => setInstallGatewayForm((prev) => ({ ...prev, slug: event.target.value }))}
+            size="small"
+            sx={{ mb: 2 }}
+            helperText="Defaults to a slugified version of the name."
+          />
+          <TextField
+            fullWidth
+            label="Mode"
+            value="k8s"
+            size="small"
+            sx={{ mb: 2 }}
+            InputProps={{ readOnly: true }}
+          />
+          <TextField
+            fullWidth
+            label="Namespace (optional)"
+            value={installGatewayForm.namespace}
+            onChange={(event) => setInstallGatewayForm((prev) => ({ ...prev, namespace: event.target.value }))}
+            size="small"
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeInstallGatewayCreateDialog}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleInstallGatewayCreate}
+            disabled={installGatewayCreateLoading}
+          >
+            {installGatewayCreateLoading ? 'Creating...' : 'Create'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -2822,6 +3778,36 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             rows={3}
             sx={{ mb: 2 }}
           />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+            <Avatar
+              sx={{ width: 48, height: 48, bgcolor: alpha(theme.palette.primary.main, 0.15) }}
+              src={createAgentAvatarPreview || undefined}
+            />
+            <Stack direction="row" spacing={1}>
+              <Button
+                variant="contained"
+                size="small"
+                onClick={() => setAvatarGeneratorOpen(true)}
+                disabled={!createAgentName}
+              >
+                🎨 Generate AI Avatar
+              </Button>
+              <Button variant="outlined" size="small" component="label">
+                Upload
+                <input
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={handleCreateTemplateAvatarChange}
+                />
+              </Button>
+            </Stack>
+          </Box>
+          {!createAgentName && (
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+              Enter an agent name first to generate an AI avatar
+            </Typography>
+          )}
           <FormControl fullWidth size="small">
             <InputLabel id="create-agent-visibility-label">Visibility</InputLabel>
             <Select
@@ -2842,6 +3828,73 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={editTemplateOpen} onClose={closeEditTemplateDialog} fullWidth maxWidth="xs">
+        <DialogTitle>Edit Agent</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <TextField
+            fullWidth
+            label="Agent name"
+            value={editTemplate?.displayName || ''}
+            onChange={(e) => setEditTemplate((prev) => ({ ...prev, displayName: e.target.value }))}
+            size="small"
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Description"
+            value={editTemplate?.description || ''}
+            onChange={(e) => setEditTemplate((prev) => ({ ...prev, description: e.target.value }))}
+            size="small"
+            multiline
+            rows={3}
+            sx={{ mb: 2 }}
+          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+            <Avatar
+              sx={{ width: 48, height: 48, bgcolor: alpha(theme.palette.primary.main, 0.15) }}
+              src={editTemplateAvatarPreview || editTemplate?.iconUrl || undefined}
+            />
+            <Button variant="outlined" component="label">
+              Upload avatar
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={handleEditTemplateAvatarChange}
+              />
+            </Button>
+          </Box>
+          <FormControl fullWidth size="small">
+            <InputLabel id="edit-agent-visibility-label">Visibility</InputLabel>
+            <Select
+              labelId="edit-agent-visibility-label"
+              label="Visibility"
+              value={editTemplate?.visibility || 'private'}
+              onChange={(e) => setEditTemplate((prev) => ({ ...prev, visibility: e.target.value }))}
+            >
+              <MenuItem value="private">Private (only me)</MenuItem>
+              <MenuItem value="public">Public (anyone can install)</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeEditTemplateDialog}>Cancel</Button>
+          <Button color="error" onClick={handleDeleteTemplate}>Delete</Button>
+          <Button variant="contained" onClick={handleUpdateTemplate} disabled={editTemplateSaving}>
+            {editTemplateSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* AI Avatar Generator Modal */}
+      <AvatarGenerator
+        open={avatarGeneratorOpen}
+        onClose={() => setAvatarGeneratorOpen(false)}
+        onSelect={handleAvatarGenerated}
+        agentName={createAgentName}
+        targetType="agent"
+      />
     </Container>
   );
 };

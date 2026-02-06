@@ -14,6 +14,20 @@ const k8sAppsApi = kc.makeApiClient(k8s.AppsV1Api);
 
 const NAMESPACE = process.env.K8S_NAMESPACE || 'commonly';
 const BACKEND_SERVICE_URL = process.env.COMMONLY_API_URL || 'http://backend.commonly.svc.cluster.local:5000';
+const AGENT_NODE_POOL = String(process.env.AGENT_PROVISIONER_NODE_POOL || '').trim();
+const AGENT_NODE_SELECTOR = (() => {
+  if (!AGENT_NODE_POOL) return null;
+  return { pool: AGENT_NODE_POOL };
+})();
+const AGENT_TOLERATIONS = (() => {
+  if (!AGENT_NODE_POOL) return null;
+  return [{
+    key: 'pool',
+    operator: 'Equal',
+    value: AGENT_NODE_POOL,
+    effect: 'NoSchedule',
+  }];
+})();
 
 /**
  * Resolve OpenClaw account ID from agent name and instance ID
@@ -25,6 +39,28 @@ const resolveOpenClawAccountId = ({ agentName, instanceId }) => {
     return normalizedInstance;
   }
   return `${normalizedAgent}-${normalizedInstance}`;
+};
+
+const normalizeGatewaySlug = (gateway) => {
+  const slug = String(gateway?.slug || '').trim().toLowerCase();
+  if (!slug) return '';
+  return slug.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+};
+
+const resolveGatewayDeploymentName = (gateway) => {
+  const slug = normalizeGatewaySlug(gateway);
+  if (gateway?.mode === 'k8s' && slug) {
+    return `gateway-${slug}`;
+  }
+  return 'clawdbot-gateway';
+};
+
+const resolveGatewayConfigMapName = (gateway) => {
+  const slug = normalizeGatewaySlug(gateway);
+  if (gateway?.mode === 'k8s' && slug) {
+    return `gateway-${slug}-config`;
+  }
+  return 'clawdbot-config';
 };
 
 /**
@@ -65,7 +101,11 @@ const writeConfigMap = async (configMapName, key, data) => {
   };
 
   try {
-    // Try to update existing ConfigMap
+    // Try to update existing ConfigMap (requires resourceVersion)
+    const existing = await k8sApi.readNamespacedConfigMap(configMapName, NAMESPACE);
+    if (existing?.body?.metadata?.resourceVersion) {
+      configMap.metadata.resourceVersion = existing.body.metadata.resourceVersion;
+    }
     await k8sApi.replaceNamespacedConfigMap(configMapName, NAMESPACE, configMap);
     console.log(`[k8s-provisioner] Updated ConfigMap ${configMapName}`);
   } catch (error) {
@@ -91,8 +131,10 @@ const provisionOpenClawAccount = async ({
   baseUrl,
   displayName,
   heartbeat,
+  authProfiles,
+  skillEnv,
+  configMapName = 'clawdbot-config',
 }) => {
-  const configMapName = 'clawdbot-config';
   const configKey = 'moltbot.json';
 
   // Read existing config
@@ -104,6 +146,13 @@ const provisionOpenClawAccount = async ({
   config.channels.commonly.enabled = true;
   config.channels.commonly.baseUrl = config.channels.commonly.baseUrl || baseUrl || BACKEND_SERVICE_URL;
   config.channels.commonly.accounts = config.channels.commonly.accounts || {};
+
+  const existingAccount = config.channels.commonly.accounts[accountId] || {};
+  const resolvedRuntimeToken = runtimeToken || existingAccount.runtimeToken;
+  const resolvedUserToken = userToken || existingAccount.userToken;
+  if (!resolvedRuntimeToken) {
+    throw new Error('Missing runtime token for OpenClaw account provisioning');
+  }
 
   const normalizeKey = (value, fallback) => {
     const normalized = String(value ?? fallback ?? '').trim().toLowerCase();
@@ -126,11 +175,24 @@ const provisionOpenClawAccount = async ({
 
   // Add/update account
   config.channels.commonly.accounts[accountId] = {
-    runtimeToken,
-    userToken,
+    runtimeToken: resolvedRuntimeToken,
+    userToken: resolvedUserToken,
     agentName,
     instanceId,
+    ...(authProfiles ? { authProfiles } : {}),
   };
+
+  if (skillEnv && typeof skillEnv === 'object') {
+    config.skills = config.skills || {};
+    config.skills.entries = config.skills.entries || {};
+    Object.entries(skillEnv).forEach(([skillName, entry]) => {
+      if (!entry || typeof entry !== 'object') return;
+      config.skills.entries[skillName] = {
+        ...(entry.env ? { env: entry.env } : {}),
+        ...(entry.apiKey ? { apiKey: entry.apiKey } : {}),
+      };
+    });
+  }
 
   // Update agents list
   config.agents = config.agents || {};
@@ -362,6 +424,8 @@ const buildAgentDeploymentManifest = ({
         metadata: { labels },
         spec: {
           serviceAccountName: 'agent-provisioner',
+          ...(AGENT_NODE_SELECTOR ? { nodeSelector: AGENT_NODE_SELECTOR } : {}),
+          ...(AGENT_TOLERATIONS ? { tolerations: AGENT_TOLERATIONS } : {}),
           containers: [containerSpec],
           volumes,
         },
@@ -382,11 +446,15 @@ const provisionAgentRuntime = async ({
   baseUrl,
   displayName,
   heartbeat,
+  authProfiles,
+  skillEnv,
+  gateway,
 }) => {
   console.log(`[k8s-provisioner] Provisioning ${runtimeType} agent: ${agentName}/${instanceId}`);
 
   let result;
   let accountId;
+  let deploymentName = null;
 
   if (runtimeType === 'moltbot') {
     accountId = resolveOpenClawAccountId({ agentName, instanceId });
@@ -399,7 +467,12 @@ const provisionAgentRuntime = async ({
       baseUrl,
       displayName,
       heartbeat,
+      authProfiles,
+      skillEnv,
+      configMapName: resolveGatewayConfigMapName(gateway),
     });
+    // Use the shared clawdbot gateway deployment (no per-agent runtime pods).
+    deploymentName = resolveGatewayDeploymentName(gateway);
   } else if (runtimeType === 'internal') {
     accountId = instanceId;
     result = await provisionCommonlyBotAccount({
@@ -409,49 +482,61 @@ const provisionAgentRuntime = async ({
       agentName,
       instanceId,
     });
+    deploymentName = `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
   } else {
     throw new Error(`Provisioning not supported for runtime: ${runtimeType}`);
   }
 
-  // Create or update Deployment
-  const deployment = buildAgentDeploymentManifest({
-    runtimeType,
-    accountId,
-    agentName,
-    instanceId,
-  });
+  if (runtimeType === 'internal') {
+    // Create or update Deployment only for internal runtimes.
+    const deployment = buildAgentDeploymentManifest({
+      runtimeType,
+      accountId,
+      agentName,
+      instanceId,
+    });
 
-  try {
-    await k8sAppsApi.readNamespacedDeployment(deployment.metadata.name, NAMESPACE);
-    // Deployment exists, update it
-    await k8sAppsApi.replaceNamespacedDeployment(deployment.metadata.name, NAMESPACE, deployment);
-    console.log(`[k8s-provisioner] Updated Deployment ${deployment.metadata.name}`);
-  } catch (error) {
-    if (error.response && error.response.statusCode === 404) {
-      // Create new Deployment
-      await k8sAppsApi.createNamespacedDeployment(NAMESPACE, deployment);
-      console.log(`[k8s-provisioner] Created Deployment ${deployment.metadata.name}`);
-    } else {
-      throw new Error(`Failed to create/update Deployment: ${error.message}`);
+    try {
+      await k8sAppsApi.readNamespacedDeployment(deployment.metadata.name, NAMESPACE);
+      // Deployment exists, update it
+      await k8sAppsApi.replaceNamespacedDeployment(deployment.metadata.name, NAMESPACE, deployment);
+      console.log(`[k8s-provisioner] Updated Deployment ${deployment.metadata.name}`);
+    } catch (error) {
+      if (error.response && error.response.statusCode === 404) {
+        // Create new Deployment
+        await k8sAppsApi.createNamespacedDeployment(NAMESPACE, deployment);
+        console.log(`[k8s-provisioner] Created Deployment ${deployment.metadata.name}`);
+      } else {
+        throw new Error(`Failed to create/update Deployment: ${error.message}`);
+      }
     }
   }
 
   return {
     ...result,
-    deployment: deployment.metadata.name,
+    deployment: deploymentName,
     namespace: NAMESPACE,
+    sharedGateway: runtimeType === 'moltbot',
   };
+};
+
+const resolveRuntimeDeploymentName = (runtimeType, instanceId, gateway) => {
+  if (runtimeType === 'moltbot') {
+    return resolveGatewayDeploymentName(gateway);
+  }
+  const accountId = instanceId;
+  return `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
 };
 
 /**
  * Start agent runtime (scale to 1 replica)
  */
-const startAgentRuntime = async (runtimeType, instanceId) => {
-  const accountId = runtimeType === 'moltbot'
-    ? resolveOpenClawAccountId({ agentName: 'openclaw', instanceId })
-    : instanceId;
-
-  const deploymentName = `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+  if (runtimeType === 'moltbot') {
+    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+    return { started: true, deployment: deploymentName, sharedGateway: true };
+  }
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
   try {
     const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
@@ -471,12 +556,12 @@ const startAgentRuntime = async (runtimeType, instanceId) => {
 /**
  * Stop agent runtime (scale to 0 replicas)
  */
-const stopAgentRuntime = async (runtimeType, instanceId) => {
-  const accountId = runtimeType === 'moltbot'
-    ? resolveOpenClawAccountId({ agentName: 'openclaw', instanceId })
-    : instanceId;
-
-  const deploymentName = `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+  if (runtimeType === 'moltbot') {
+    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+    return { stopped: true, deployment: deploymentName, sharedGateway: true };
+  }
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
   try {
     const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
@@ -496,12 +581,8 @@ const stopAgentRuntime = async (runtimeType, instanceId) => {
 /**
  * Restart agent runtime (trigger rolling restart)
  */
-const restartAgentRuntime = async (runtimeType, instanceId) => {
-  const accountId = runtimeType === 'moltbot'
-    ? resolveOpenClawAccountId({ agentName: 'openclaw', instanceId })
-    : instanceId;
-
-  const deploymentName = `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+const restartAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
   try {
     const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
@@ -515,22 +596,45 @@ const restartAgentRuntime = async (runtimeType, instanceId) => {
     await k8sAppsApi.replaceNamespacedDeployment(deploymentName, NAMESPACE, deployment);
 
     console.log(`[k8s-provisioner] Restarted agent runtime: ${deploymentName}`);
-    return { restarted: true, deployment: deploymentName };
+    return { restarted: true, deployment: deploymentName, sharedGateway: runtimeType === 'moltbot' };
   } catch (error) {
     console.error(`[k8s-provisioner] Failed to restart ${deploymentName}:`, error.message);
-    return { restarted: false, reason: error.message };
+    return { restarted: false, reason: error.message, sharedGateway: runtimeType === 'moltbot' };
   }
 };
 
 /**
  * Get agent runtime status
  */
-const getAgentRuntimeStatus = async (runtimeType, instanceId) => {
-  const accountId = runtimeType === 'moltbot'
-    ? resolveOpenClawAccountId({ agentName: 'openclaw', instanceId })
-    : instanceId;
+const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
+  if (runtimeType === 'moltbot') {
+    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+    try {
+      const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
+      const deployment = response.body;
+      const replicas = deployment.spec.replicas || 0;
+      const availableReplicas = deployment.status.availableReplicas || 0;
+      const readyReplicas = deployment.status.readyReplicas || 0;
 
-  const deploymentName = `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      let status = 'unknown';
+      if (replicas === 0) status = 'stopped';
+      else if (availableReplicas === replicas && readyReplicas === replicas) status = 'running';
+      else if (availableReplicas > 0) status = 'starting';
+      else status = 'pending';
+
+      return {
+        status,
+        deployment: deploymentName,
+        replicas,
+        availableReplicas,
+        readyReplicas,
+        sharedGateway: true,
+      };
+    } catch (error) {
+      return { status: 'not_found', deployment: deploymentName, sharedGateway: true };
+    }
+  }
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
   try {
     const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
@@ -569,31 +673,26 @@ const getAgentRuntimeStatus = async (runtimeType, instanceId) => {
 /**
  * Get agent runtime logs
  */
-const getAgentRuntimeLogs = async (runtimeType, instanceId, lines = 200) => {
-  const accountId = runtimeType === 'moltbot'
-    ? resolveOpenClawAccountId({ agentName: 'openclaw', instanceId })
-    : instanceId;
-
-  const deploymentName = `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-
+const getDeploymentLogs = async ({ deploymentName, lines, filterTokens = [] }) => {
   try {
-    // Find pods for this deployment
-    const labelSelector = `agent-account=${accountId},agent-type=${runtimeType}`;
+    const deploymentResponse = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
+    const matchLabels = deploymentResponse.body?.spec?.selector?.matchLabels || {};
+    const labelSelector = Object.entries(matchLabels)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(',');
+
     const podsResponse = await k8sApi.listNamespacedPod(
       NAMESPACE,
       undefined,
       undefined,
       undefined,
       undefined,
-      labelSelector,
+      labelSelector || undefined,
     );
-
-    const pods = podsResponse.body.items;
-    if (pods.length === 0) {
+    const pods = podsResponse.body.items || [];
+    if (!pods.length) {
       return { logs: '', reason: 'No pods found for deployment' };
     }
-
-    // Get logs from the most recent pod
     const pod = pods[0];
     const logsResponse = await k8sApi.readNamespacedPodLog(
       pod.metadata.name,
@@ -607,8 +706,42 @@ const getAgentRuntimeLogs = async (runtimeType, instanceId, lines = 200) => {
       undefined,
       lines,
     );
+    let logs = logsResponse.body || '';
+    const tokens = (filterTokens || []).map((t) => String(t || '').trim()).filter(Boolean);
+    if (tokens.length) {
+      logs = logs
+        .split('\n')
+        .filter((line) => {
+          if (!line) return false;
+          if (tokens.some((token) => line.includes(`[commonly] [${token}]`))) return true;
+          if (tokens.some((token) => line.includes(token))) return true;
+          return false;
+        })
+        .join('\n');
+    }
+    return { logs, pod: pod.metadata.name, deployment: deploymentName };
+  } catch (error) {
+    console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, error.message);
+    return { logs: '', reason: error.message };
+  }
+};
 
-    return { logs: logsResponse.body || '', pod: pod.metadata.name };
+const getAgentRuntimeLogs = async (
+  runtimeType,
+  instanceId,
+  lines = 200,
+  options = {},
+) => {
+  if (runtimeType === 'moltbot') {
+    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+    const filterTokens = options.filterTokens || [];
+    return getDeploymentLogs({ deploymentName, lines, filterTokens });
+  }
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+
+  try {
+    // Find pods for this deployment
+    return getDeploymentLogs({ deploymentName, lines });
   } catch (error) {
     console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, error.message);
     return { logs: '', reason: error.message };

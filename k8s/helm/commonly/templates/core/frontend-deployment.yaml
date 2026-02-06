@@ -37,4 +37,12 @@ spec:
             port: http
           initialDelaySeconds: 10
           periodSeconds: 5
+      {{- if and .Values.frontend.nodeSelector (gt (len .Values.frontend.nodeSelector) 0) }}
+      nodeSelector:
+        {{- toYaml .Values.frontend.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.frontend.tolerations (gt (len .Values.frontend.tolerations) 0) }}
+      tolerations:
+        {{- toYaml .Values.frontend.tolerations | nindent 8 }}
+      {{- end }}
 {{- end }}

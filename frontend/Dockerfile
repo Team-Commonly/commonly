@@ -6,9 +6,6 @@ COPY package*.json ./
 
 RUN npm install
 
-# Copy the .env file first (if it exists) to ensure it's used during the build
-COPY .env* ./
-
 COPY . .
 
 # Add build arguments for environment variables

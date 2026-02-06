@@ -1,0 +1,18 @@
+{{- if .Values.skillsCatalogStorage.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: skills-catalog-pvc
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.skillsCatalogStorage.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.skillsCatalogStorage.size | quote }}
+  {{- if .Values.skillsCatalogStorage.storageClassName }}
+  storageClassName: {{ .Values.skillsCatalogStorage.storageClassName | quote }}
+  {{- end }}
+{{- end }}

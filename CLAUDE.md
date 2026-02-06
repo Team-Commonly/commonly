@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 📁 Key Documentation Files
 - **Main Guide**: `/CLAUDE.md` (this file)
+- **Summarizer & Agents**: `/docs/SUMMARIZER_AND_AGENTS.md` - How automated summaries and intelligent agents work together
 - **Frontend Testing**: `/frontend/TESTING.md`
 - **Backend Testing**: `/backend/TESTING.md`
 - **Kubernetes Deployment**: `/docs/deployment/KUBERNETES.md`

@@ -14,7 +14,7 @@ node_modules/
 build/
 dist/
 
-ca.pem
+*.pem
 
 .cursor/
 

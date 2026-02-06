@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const Gateway = require('../models/Gateway');
 const { getOpenClawConfigPath } = require('../services/agentProvisionerService');
+const k8sGatewayProvisioner = require('../services/gatewayProvisionerServiceK8s');
 
 const router = express.Router();
 
@@ -81,6 +82,30 @@ router.post('/', auth, adminAuth, async (req, res) => {
       createdBy: getUserId(req),
     });
 
+    if (mode === 'k8s') {
+      const gatewayToken = k8sGatewayProvisioner.generateGatewayToken();
+      try {
+        const provisioned = await k8sGatewayProvisioner.provisionGateway({
+          gateway,
+          token: gatewayToken,
+        });
+        const updates = {
+          baseUrl: gateway.baseUrl || provisioned.baseUrl,
+          metadata: {
+            ...(gateway.metadata || {}),
+            namespace: provisioned.namespace,
+            service: provisioned.service,
+            deployment: provisioned.deployment,
+          },
+        };
+        const updatedGateway = await Gateway.findByIdAndUpdate(gateway._id, updates, { new: true });
+        return res.status(201).json({ gateway: updatedGateway, gatewayToken });
+      } catch (error) {
+        await gateway.deleteOne();
+        throw error;
+      }
+    }
+
     return res.status(201).json({ gateway });
   } catch (error) {
     console.error('Error creating gateway:', error);
@@ -100,6 +125,26 @@ router.patch('/:id', auth, adminAuth, async (req, res) => {
     if (!gateway) {
       return res.status(404).json({ error: 'Gateway not found' });
     }
+    if (gateway.mode === 'k8s') {
+      const provisioned = await k8sGatewayProvisioner.provisionGateway({
+        gateway,
+        token: updates?.metadata?.gatewayToken,
+      });
+      const updated = await Gateway.findByIdAndUpdate(
+        gateway._id,
+        {
+          baseUrl: gateway.baseUrl || provisioned.baseUrl,
+          metadata: {
+            ...(gateway.metadata || {}),
+            namespace: provisioned.namespace,
+            service: provisioned.service,
+            deployment: provisioned.deployment,
+          },
+        },
+        { new: true },
+      );
+      return res.json({ gateway: updated });
+    }
     return res.json({ gateway });
   } catch (error) {
     console.error('Error updating gateway:', error);
@@ -117,6 +162,9 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
     }
     if (gateway.slug === 'default') {
       return res.status(400).json({ error: 'Default gateway cannot be removed' });
+    }
+    if (gateway.mode === 'k8s') {
+      await k8sGatewayProvisioner.deleteGateway({ gateway });
     }
     await gateway.deleteOne();
     return res.json({ success: true });

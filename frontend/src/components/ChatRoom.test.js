@@ -140,3 +140,45 @@ test('shows remove member button for pod admin', async () => {
   const removeButtons = container.querySelectorAll('button[aria-label="Remove member"]');
   expect(removeButtons.length).toBe(1);
 });
+
+test('renders agent display name for instance usernames in messages', async () => {
+  axios.get
+    .mockResolvedValueOnce({
+      data: {
+        _id: '1',
+        name: 'Room',
+        members: [{ _id: 'u' }],
+        createdBy: { _id: 'u', username: 'me', profilePicture: null }
+      }
+    })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({
+      data: [{
+        _id: 'm-agent',
+        content: 'hello from agent',
+        messageType: 'text',
+        userId: { _id: 'a1', username: 'openclaw-liz', profilePicture: null },
+        createdAt: '2026-01-01T00:00:00.000Z'
+      }]
+    })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({
+      data: {
+        agents: [{
+          name: 'openclaw',
+          instanceId: 'liz',
+          displayName: 'Liz Assistant',
+          iconUrl: '/api/uploads/liz.png',
+          profile: { displayName: 'Liz Assistant' }
+        }]
+      }
+    })
+    .mockResolvedValueOnce({ data: { entries: [] } });
+
+  await TestUtils.act(async () => { root.render(<ChatRoom />); });
+  await TestUtils.act(async () => Promise.resolve());
+
+  expect(container.textContent).toContain('Liz Assistant');
+  expect(container.textContent).toContain('hello from agent');
+});

@@ -12,6 +12,8 @@ const Post = require('../models/Post');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 
+const Integration = require('../models/Integration');
+
 const router = express.Router();
 
 const ensurePodMatch = (installationOrList, podId) => {
@@ -28,6 +30,11 @@ const resolveInstallationForPod = (installations = [], fallback, podId) => {
   return installations.find((installation) => (
     installation?.podId?.toString() === podId.toString()
   )) || fallback;
+};
+
+const hasAnyScope = (installation, acceptedScopes = []) => {
+  const scopes = installation?.scopes || [];
+  return acceptedScopes.some((scope) => scopes.includes(scope));
 };
 
 const requireBotUser = async (req, res) => {
@@ -515,6 +522,135 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
   } catch (error) {
     console.error('Error posting agent thread comment:', error);
     return res.status(500).json({ message: error.message || 'Failed to post comment' });
+  }
+});
+
+/**
+ * GET /pods/:podId/integrations (agent runtime token auth)
+ * Get integration configs for a pod that agents can access
+ */
+router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req, res) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+
+    // Verify agent is installed in this pod
+    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+
+    // Verify agent has integration:read scope
+    if (!hasAnyScope(installation, ['integration:read', 'integrations:read'])) {
+      return res.status(403).json({ message: 'Missing integration:read scope' });
+    }
+
+    // Fetch integrations for this pod where agentAccessEnabled = true
+    const integrations = await Integration.find({
+      podId,
+      'config.agentAccessEnabled': true,
+      status: 'connected',
+    }).select('type config').lean();
+
+    // Return sanitized integration data
+    return res.json({
+      integrations: integrations.map((integration) => ({
+        id: integration._id,
+        type: integration.type,
+        channelId: integration.config?.channelId,
+        channelName: integration.config?.channelName,
+        groupId: integration.config?.groupId,
+        groupName: integration.config?.groupName,
+        // Bot tokens exposed ONLY to agents with proper scopes
+        botToken: integration.config?.botToken,
+        accessToken: integration.config?.accessToken,
+      })),
+    });
+  } catch (error) {
+    console.error('Error fetching integrations for agent:', error);
+    return res.status(500).json({ message: 'Failed to fetch integrations' });
+  }
+});
+
+/**
+ * GET /pods/:podId/integrations/:integrationId/messages (agent runtime token auth)
+ * Fetch messages from Discord/GroupMe channel
+ */
+router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth, async (req, res) => {
+  try {
+    const { podId, integrationId } = req.params;
+    const {
+      limit: rawLimit = '100', before, after,
+    } = req.query;
+
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+
+    // Verify agent is installed in this pod
+    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+
+    // Verify agent has integration:messages:read scope
+    if (!hasAnyScope(installation, ['integration:messages:read', 'integrations:messages:read'])) {
+      return res.status(403).json({ message: 'Missing integration:messages:read scope' });
+    }
+
+    // Parse limit with bounds (1-1000)
+    const limit = Math.min(Math.max(parseInt(rawLimit, 10) || 100, 1), 1000);
+
+    // Fetch integration
+    const integration = await Integration.findOne({
+      _id: integrationId,
+      podId,
+      'config.agentAccessEnabled': true,
+    }).lean();
+
+    if (!integration) {
+      return res.status(404).json({ message: 'Integration not found or agent access disabled' });
+    }
+
+    // Fetch messages from Discord/GroupMe API
+    let messages = [];
+
+    if (integration.type === 'discord') {
+      if (!integration.config?.botToken) {
+        return res.status(400).json({ message: 'Discord integration missing botToken' });
+      }
+      const DiscordService = require('../services/discordService');
+      messages = await DiscordService.fetchMessages({
+        channelId: integration.config.channelId,
+        botToken: integration.config.botToken,
+        limit,
+        before,
+        after,
+      });
+    } else if (integration.type === 'groupme') {
+      if (!integration.config?.accessToken || !integration.config?.groupId) {
+        return res.status(400).json({ message: 'GroupMe integration missing accessToken or groupId' });
+      }
+      const GroupMeService = require('../services/groupmeService');
+      messages = await GroupMeService.fetchMessages({
+        groupId: integration.config.groupId,
+        accessToken: integration.config.accessToken,
+        limit,
+        before,
+        after,
+      });
+    } else {
+      return res.status(400).json({ message: `Integration type ${integration.type} does not support message fetching` });
+    }
+
+    return res.json({ messages });
+  } catch (error) {
+    console.error('Error fetching messages for agent:', error);
+    return res.status(500).json({ message: error.message || 'Failed to fetch messages' });
   }
 });
 

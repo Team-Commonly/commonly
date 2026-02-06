@@ -14,7 +14,7 @@ const getLiteLLMConfig = () => {
   return {
     baseUrl: baseUrl.replace(/\/$/, ''),
     apiKey,
-    model: process.env.LITELLM_CHAT_MODEL || 'gemini-2.0-flash',
+    model: process.env.LITELLM_CHAT_MODEL || 'gemini-2.5-flash',
   };
 };
 

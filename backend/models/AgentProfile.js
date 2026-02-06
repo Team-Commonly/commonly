@@ -138,11 +138,11 @@ const AgentProfileSchema = new mongoose.Schema(
     modelPreferences: {
       preferred: {
         type: String,
-        default: 'gemini-2.0-flash',
+        default: 'gemini-2.5-pro',
       },
       fallback: {
         type: String,
-        default: 'gemini-2.0-flash',
+        default: 'gemini-2.5-flash',
       },
     },
 

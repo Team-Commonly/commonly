@@ -45,6 +45,37 @@ helm install nginx-ingress ingress-nginx/ingress-nginx \
   --set controller.service.type=LoadBalancer
 ```
 
+### 2b. Cloudflare Tunnel (Optional)
+
+If you want Cloudflare Tunnel managed by this chart, create the tunnel and
+credentials secret, then enable `cloudflared` in `values.yaml`:
+
+```bash
+# Create a tunnel
+cloudflared tunnel create commonly-k8s
+
+# Create the credentials secret in the target namespace
+kubectl create secret generic cloudflared-commonly-k8s \
+  -n ingress-nginx \
+  --from-file=credentials.json=/home/USER/.cloudflared/<TUNNEL_ID>.json
+```
+
+Then set:
+```yaml
+cloudflared:
+  enabled: true
+  namespace: ingress-nginx
+  tunnelId: <TUNNEL_ID>
+  credentialsSecretName: cloudflared-commonly-k8s
+  ingressService: nginx-ingress-ingress-nginx-controller.ingress-nginx.svc.cluster.local
+  ingressPort: 80
+  hostnames:
+    - app.commonly.me
+    - api.commonly.me
+    - app-dev.commonly.me
+    - api-dev.commonly.me
+```
+
 ### 3. Set up GCP Secret Manager
 
 Create a GCP service account with Secret Manager permissions:
@@ -161,6 +192,22 @@ externalSecrets:
     clusterLocation: us-central1
     clusterName: commonly-dev
 ```
+
+#### Skills Catalog Storage (Optional)
+
+By default, the skills catalog is mounted from a ConfigMap (metadata only). For
+the full `awesome-agent-skills-index.json`, enable PVC-backed storage:
+
+```yaml
+skillsCatalogStorage:
+  enabled: true
+  size: 1Gi
+  storageClassName: standard-rwo
+  accessMode: ReadWriteOnce
+```
+
+Note: `ReadWriteOnce` PVCs only attach to one node. For multi-replica backend
+deployments, use a RWX-capable storage class or scale backend replicas to 1.
 
 ## Upgrading
 
