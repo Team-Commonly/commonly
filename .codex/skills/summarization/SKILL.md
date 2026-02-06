@@ -2,7 +2,7 @@
 
 name: summarization
 description: Chat summaries, integration summaries, and daily digest workflows (LLM + fallback).
-last_updated: 2026-02-04
+last_updated: 2026-02-06
 ---
 
 # Summarization
@@ -26,10 +26,10 @@ backend/services/
 └── schedulerService.js        # Hourly/daily jobs
 ```
 
-## Mention Trigger (Commonly Summarizer)
+## Agent Trigger (Commonly Bot)
 
-- `@commonly-summarizer` enqueues a `summary.request` event and posts the latest summary
-- If no summary exists, it generates one before enqueueing
+- `@commonly-bot` is the built-in summary agent and handles `summary.request` events.
+- `POST /api/summaries/trigger` and `POST /api/summaries/pod/:podId/refresh` both use agent event enqueue flow.
 
 ## References
 

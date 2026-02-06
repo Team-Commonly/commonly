@@ -14,8 +14,8 @@
 }
 
 .create-post-input {
-    font-size: 1.1rem !important;
-    padding: 12px 0 !important;
+    font-size: 1rem !important;
+    padding: 8px 0 !important;
 }
 
 /* Improved emoji picker positioning */
@@ -195,7 +195,8 @@
 .post-content {
     white-space: pre-wrap;
     word-break: break-word;
-    line-height: 1.4;
+    line-height: 1.28;
+    font-size: 0.85rem;
 }
 
 .post-image-container {
@@ -203,6 +204,8 @@
     transition: opacity 0.2s ease;
     position: relative;
     background: rgba(15, 23, 42, 0.6);
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
 }
 
 .post-image-container:hover {
@@ -212,7 +215,8 @@
 .post-image {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%;
+    object-fit: cover;
     transition: transform 0.2s ease;
 }
 
@@ -235,15 +239,52 @@
     color: #475569 !important;
 }
 
-.composer-meta-row {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: 8px;
+.composer-meta-inline {
+    flex: 1 1 220px;
+    max-width: 320px;
 }
 
 .composer-meta-select {
-    min-width: 180px;
+    min-width: 220px;
+}
+
+.composer-meta-select .MuiInputBase-root {
+    min-height: 36px;
+}
+
+.composer-actions-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 16px;
+    position: relative;
+}
+
+.composer-actions-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.composer-post-button {
+    align-self: flex-end;
+}
+
+@media (max-width: 600px) {
+    .composer-actions-row {
+        gap: 10px;
+    }
+
+    .composer-meta-inline {
+        flex: 1 1 auto;
+        max-width: none;
+    }
+
+    .composer-meta-select {
+        min-width: 140px;
+    }
 }
 
 .composer-category-chips {

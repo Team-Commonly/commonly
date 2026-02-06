@@ -15,7 +15,7 @@ data:
       "agents": {
         "defaults": {
           "model": {
-            "primary": "google/gemini-2.0-flash"
+            "primary": "google/gemini-2.5-flash"
           },
           "maxConcurrent": 4,
           "subagents": {
@@ -39,7 +39,7 @@ data:
         "mode": "local",
         "bind": "lan",
         "auth": {
-          "token": "test"
+          "mode": "token"
         },
         "controlUi": {
           "allowInsecureAuth": true

@@ -18,6 +18,11 @@ const AgentTemplateSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    iconUrl: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     visibility: {
       type: String,
       enum: ['private', 'public'],

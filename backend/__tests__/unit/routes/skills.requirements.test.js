@@ -42,5 +42,21 @@ describe('skills requirements endpoint', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.requirements).toEqual(['OPENAI_API_KEY', 'SERPAPI_KEY']);
+    expect(res.body.primaryEnv).toBeNull();
+  });
+
+  it('extracts credential hints from frontmatter metadata', async () => {
+    SkillsCatalogService.fetchSkillContentFromSource.mockResolvedValue({
+      content: `---\nname: browse\nmetadata: {"moltbot":{"primaryEnv":"BROWSERBASE_API_KEY","requires":{"env":["BROWSERBASE_PROJECT_ID","BROWSERBASE_API_KEY"]}}}\n---\n`,
+      resolvedUrl: 'https://example.com/skill.md',
+    });
+
+    const res = await request(app)
+      .get('/api/skills/requirements')
+      .query({ sourceUrl: 'https://example.com/skill.md' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.requirements).toEqual(['BROWSERBASE_API_KEY', 'BROWSERBASE_PROJECT_ID']);
+    expect(res.body.primaryEnv).toBe('BROWSERBASE_API_KEY');
   });
 });

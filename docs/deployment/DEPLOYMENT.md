@@ -86,7 +86,7 @@ OPENAI_API_KEY=
 LITELLM_MASTER_KEY=dev-litellm-key
 LITELLM_BASE_URL=http://litellm:4000
 LITELLM_API_KEY=dev-litellm-key
-LITELLM_CHAT_MODEL=gemini-2.0-flash
+LITELLM_CHAT_MODEL=gemini-2.5-flash
 LITELLM_DISABLED=true
 EMBEDDING_PROVIDER=litellm
 EMBEDDING_MODEL=text-embedding-3-large
@@ -198,6 +198,151 @@ Note: In development, the backend container will install dependencies on first b
 **Discord Integration:** Commands are automatically registered during startup if Discord credentials are provided.
 
 ### Discord Interactions Endpoint (Public URL)
+
+## Kubernetes / GKE (Commonly Notes)
+
+Commonly uses Helm for cluster deployments. There are two standard pools:
+- `values.yaml` → default pool (production).
+- `values-dev.yaml` → dev pool.
+
+Build backend image with Cloud Build:
+
+```bash
+gcloud builds submit --config cloudbuild.backend.yaml .
+```
+
+Update backend image in the cluster:
+
+```bash
+# Default pool (production)
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:latest -n commonly
+
+# Dev pool
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:latest -n commonly-dev
+```
+
+Apply Helm values (includes gateway + config updates):
+
+```bash
+# Default pool
+helm upgrade commonly ./k8s/helm/commonly -n commonly -f ./k8s/helm/commonly/values.yaml
+
+# Dev pool
+helm upgrade commonly-dev ./k8s/helm/commonly -n commonly-dev -f ./k8s/helm/commonly/values-dev.yaml
+```
+
+Restart the gateway when runtime configs or auth profiles change:
+
+```bash
+kubectl rollout restart deployment/clawdbot-gateway -n commonly
+kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
+```
+
+## Kubernetes Deployment (Default + Dev)
+
+Commonly runs two K8s environments in the same cluster:
+
+- **Default** (customer-ready): namespace `commonly`, node pool `default-pool`
+- **Dev** (active iteration): namespace `commonly-dev`, node pool `dev-pool` (taint `pool=dev:NoSchedule`)
+
+### Namespaces + Hosts
+
+Hostnames are routed through Cloudflare Tunnel to the shared NGINX ingress.
+
+- `app.commonly.me` → frontend (default)
+- `api.commonly.me` → backend (default)
+- `app-dev.commonly.me` → frontend (dev)
+- `api-dev.commonly.me` → backend (dev)
+
+### Helm Values
+
+Use the same chart with separate values files:
+
+```bash
+helm upgrade commonly k8s/helm/commonly -n default -f k8s/helm/commonly/values.yaml
+helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev -f k8s/helm/commonly/values-dev.yaml
+```
+
+Key deltas:
+- `values.yaml` (default): no `AGENT_PROVISIONER_NODE_POOL` pin; schedules on default pool.
+- `values-dev.yaml` (dev): `AGENT_PROVISIONER_NODE_POOL=dev` and node selectors/tolerations for `pool=dev`.
+
+### Build + Deploy (Cloud Build + Helm)
+
+Backend images are built with Cloud Build:
+
+```bash
+gcloud builds submit --config cloudbuild.backend.yaml .
+```
+
+Then deploy with Helm:
+
+```bash
+helm upgrade commonly k8s/helm/commonly -n default -f k8s/helm/commonly/values.yaml
+helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev -f k8s/helm/commonly/values-dev.yaml
+```
+
+### Databases (External)
+
+Both environments use external MongoDB and PostgreSQL.
+
+Secrets (per namespace):
+- `database-credentials` → `mongo-uri`, `postgres-password`
+- `postgres-ca-cert` → `ca.pem` (Postgres CA)
+
+**Dev CA handling**: dev uses a manually managed `postgres-ca-cert` secret.
+Set `configMaps.postgresCA.enabled=false` in `values-dev.yaml` so Helm does not overwrite it.
+
+### Agent Provisioning (K8s)
+
+K8s provisioning is enabled by default:
+- `AGENT_PROVISIONER_K8S=1`
+- `K8S_NAMESPACE` is set from Helm (`commonly` or `commonly-dev`)
+- `COMMONLY_API_URL` is set to the in-cluster backend service
+- `AGENT_PROVISIONER_NODE_POOL=dev` in dev to pin provisioned agents
+
+### Clawdbot Gateway
+
+The Helm chart deploys a native gateway (`clawdbot-gateway`) in each namespace.
+It requires:
+- `CLAWDBOT_GATEWAY_TOKEN` in the `api-keys` secret
+- Image: `gcr.io/commonly-test/clawdbot-gateway:latest`
+- `GEMINI_API_KEY` in the `api-keys` secret (for default OpenClaw model auth)
+
+Gateway pods seed `auth-profiles.json` for each account on startup so new agents
+inherit the default Gemini auth without manual setup.
+
+Gateway provisioning via the Admin UI can also create **dedicated** gateways:
+- Mode `k8s` provisions `gateway-<slug>` Deployment/Service in the selected namespace.
+- A workspace PVC is created per gateway (`gateway-<slug>-workspace`).
+- The API returns a one-time `gatewayToken` when the gateway is created.
+
+Agents Hub runtime provisioning supports two gateway options:
+- **Shared gateway** (default): writes runtime config into the namespace `clawdbot-gateway` ConfigMap.
+- **Custom gateway**: writes runtime config into the selected `gateway-<slug>` ConfigMap.
+
+Runtime logs for OpenClaw are streamed from the selected gateway deployment and filtered by the
+agent instance/account id.
+
+Health check:
+```
+GET /api/health/clawdbot
+```
+
+### Skills Catalog Storage (K8s)
+
+The skills catalog index is stored on a PVC and bootstrapped at pod start.
+Configure in `values.yaml` / `values-dev.yaml`:
+
+```
+skillsCatalogStorage:
+  enabled: true
+  bootstrapFromImage: true
+  downloadUrl: "https://storage.googleapis.com/commonly-test_cloudbuild/awesome-agent-skills-index.json"
+```
+
+The backend reads it from:
+`/app/docs/skills/awesome-agent-skills-index.json`
 
 If you configure a public Discord interactions endpoint (for slash commands), ensure the hostname routes to your backend:
 

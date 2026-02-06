@@ -2,7 +2,7 @@ import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { 
     List, ListItem, ListItemIcon, ListItemText, Typography, 
-    Avatar, Divider, Box, Skeleton, IconButton
+    Avatar, Divider, Box, Skeleton, IconButton, useMediaQuery, useTheme
 } from '@mui/material';
 import {
     Home as HomeIcon,
@@ -16,7 +16,7 @@ import {
     Apps as AppsIcon,
     AutoAwesome as SkillsIcon,
 } from '@mui/icons-material';
-import { getAvatarColor } from '../utils/avatarUtils';
+import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 import { useLayout } from '../context/LayoutContext';
 import './Dashboard.css';
@@ -25,11 +25,17 @@ const Dashboard = () => {
     const { currentUser, userLoading, refreshData } = useAppContext();
     const { isDashboardCollapsed, toggleDashboard } = useLayout();
     const location = useLocation();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
     // Function to handle navigation with refresh
     const handleNavigation = (path) => {
         // Refresh data to ensure we have the latest state
         refreshData();
+
+        if (isMobile && !isDashboardCollapsed) {
+            toggleDashboard();
+        }
         
         // Use window.location for a full page refresh
         window.location.href = path;
@@ -56,7 +62,7 @@ const Dashboard = () => {
                                         bgcolor: getAvatarColor(currentUser.profilePicture), 
                                         cursor: 'pointer'
                                     }}
-                                    src={currentUser.profilePicture}
+                                    src={getAvatarSrc(currentUser.profilePicture)}
                                     onClick={toggleDashboard}
                                 >
                                     {currentUser.username.charAt(0).toUpperCase()}

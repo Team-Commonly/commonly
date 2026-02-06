@@ -30,7 +30,7 @@ const buildAccounts = () => {
       id: 'default',
       runtimeToken: token,
       userToken,
-      agentName: 'commonly-summarizer',
+      agentName: 'commonly-bot',
       instanceId: 'default',
     }];
   }
@@ -81,6 +81,55 @@ const fetchEvents = async (runtimeToken) => {
   return data.events || [];
 };
 
+const fetchRecentMessages = async (runtimeToken, podId, limit = 40) => {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/messages?limit=${limit}`, {
+    headers: buildHeaders(runtimeToken),
+  });
+  if (!res.ok) {
+    return [];
+  }
+  const data = await res.json();
+  return data.messages || [];
+};
+
+const buildHeuristicPodSummary = (messages = []) => {
+  const meaningful = messages
+    .filter((msg) => msg?.content && String(msg.content).trim())
+    .slice(-30);
+  if (!meaningful.length) {
+    return null;
+  }
+
+  const byUser = new Map();
+  const topics = [];
+  meaningful.forEach((msg) => {
+    const user = msg.username || msg.userId?.username || 'unknown';
+    byUser.set(user, (byUser.get(user) || 0) + 1);
+    const text = String(msg.content || '').trim();
+    if (text) topics.push(text);
+  });
+
+  const topUsers = Array.from(byUser.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name, count]) => `${name} (${count})`)
+    .join(', ');
+
+  const highlights = topics
+    .slice(-5)
+    .map((line) => `- ${line.substring(0, 140)}`)
+    .join('\n');
+
+  return {
+    type: 'chat-summary',
+    source: 'pod',
+    sourceLabel: 'Commonly',
+    channel: 'pod-chat',
+    messageCount: meaningful.length,
+    summary: `Recent pod activity snapshot:\n\nTop contributors: ${topUsers || 'n/a'}\n\nRecent highlights:\n${highlights}`,
+  };
+};
+
 const postMessage = async (runtimeToken, podId, content, metadata = {}) => {
   const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/messages`, {
     method: 'POST',
@@ -104,6 +153,23 @@ const ackEvent = async (runtimeToken, eventId) => {
 };
 
 const handleEvent = async (runtimeToken, event) => {
+  if (!event?.payload?.summary && event?.type === 'summary.request') {
+    const messages = await fetchRecentMessages(runtimeToken, event.podId, 50);
+    const synthetic = buildHeuristicPodSummary(messages);
+    if (!synthetic?.summary) {
+      return ackEvent(runtimeToken, event._id);
+    }
+
+    const content = `[BOT_MESSAGE]${JSON.stringify(synthetic)}`;
+    await postMessage(runtimeToken, event.podId, content, {
+      source: 'commonly-bot',
+      eventId: event._id,
+      summaryType: 'chats',
+      messageCount: synthetic.messageCount,
+    });
+    return ackEvent(runtimeToken, event._id);
+  }
+
   if (!event?.payload?.summary) {
     return ackEvent(runtimeToken, event._id);
   }
@@ -116,6 +182,8 @@ const handleEvent = async (runtimeToken, event) => {
   await postMessage(runtimeToken, event.podId, content, {
     source: 'commonly-bot',
     eventId: event._id,
+    summaryType: event.payload?.summary?.summaryType || 'chats',
+    messageCount: event.payload?.summary?.messageCount || 0,
   });
 
   return ackEvent(runtimeToken, event._id);

@@ -1,6 +1,8 @@
 const socketConfig = require('../config/socket');
 const Message = require('../models/Message');
+const Summary = require('../models/Summary');
 const AgentIdentityService = require('./agentIdentityService');
+const PodAssetService = require('./podAssetService');
 
 let PGMessage;
 try {
@@ -11,6 +13,104 @@ try {
 }
 
 class AgentMessageService {
+  static extractStructuredSummary(content, metadata = {}) {
+    const result = {
+      summaryType: metadata?.summaryType || null,
+      title: metadata?.title || metadata?.summary?.title || null,
+      body: metadata?.summary?.content || metadata?.summaryContent || null,
+      timeRange: metadata?.summary?.timeRange || metadata?.timeRange || null,
+      messageCount: metadata?.summary?.messageCount
+        || metadata?.messageCount
+        || metadata?.summary?.totalItems
+        || metadata?.totalItems
+        || 0,
+      source: metadata?.source || null,
+      eventId: metadata?.eventId || null,
+    };
+
+    if (result.body) {
+      return result;
+    }
+
+    const raw = String(content || '').trim();
+    if (!raw.startsWith('[BOT_MESSAGE]')) {
+      return null;
+    }
+
+    const payloadRaw = raw.replace(/^\[BOT_MESSAGE\]/, '');
+    try {
+      const parsed = JSON.parse(payloadRaw);
+      return {
+        summaryType: result.summaryType || parsed.summaryType || parsed.type || 'chats',
+        title: result.title || parsed.title || null,
+        body: parsed.summary || parsed.content || null,
+        timeRange: result.timeRange || parsed.timeRange || null,
+        messageCount: result.messageCount || parsed.messageCount || 0,
+        source: result.source || parsed.source || parsed.sourceLabel || 'agent',
+        eventId: result.eventId || parsed.eventId || null,
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  static mapSummaryType(summaryType) {
+    const normalized = String(summaryType || 'chats').toLowerCase();
+    if (normalized.includes('daily')) return 'daily-digest';
+    if (normalized.includes('post')) return 'posts';
+    return 'chats';
+  }
+
+  static async persistSummaryFromAgentMessage({
+    agentName,
+    podId,
+    content,
+    metadata,
+  }) {
+    const structured = AgentMessageService.extractStructuredSummary(content, metadata);
+    if (!structured?.body) return null;
+
+    const summaryType = AgentMessageService.mapSummaryType(structured.summaryType);
+    const now = new Date();
+    const defaultStart = new Date(now.getTime() - (60 * 60 * 1000));
+    const start = structured.timeRange?.start ? new Date(structured.timeRange.start) : defaultStart;
+    const end = structured.timeRange?.end ? new Date(structured.timeRange.end) : now;
+
+    if (structured.eventId) {
+      const existing = await Summary.findOne({
+        podId,
+        type: summaryType,
+        'metadata.eventId': structured.eventId,
+      });
+      if (existing) return existing;
+    }
+
+    const summary = await Summary.create({
+      type: summaryType,
+      podId: summaryType === 'daily-digest' ? undefined : podId,
+      title: structured.title || `${agentName} Summary`,
+      content: structured.body,
+      timeRange: { start, end },
+      metadata: {
+        totalItems: Number.isFinite(structured.messageCount) ? structured.messageCount : 0,
+        podName: metadata?.podName || undefined,
+        source: structured.source || 'agent',
+        sources: structured.source ? [structured.source] : [],
+        eventId: structured.eventId || undefined,
+      },
+    });
+
+    if (summaryType !== 'daily-digest') {
+      try {
+        await PodAssetService.createChatSummaryAsset({ podId, summary });
+      } catch (assetError) {
+        console.warn('Failed to persist summary pod asset from agent message:', assetError.message);
+      }
+    }
+
+    return summary;
+  }
+
   static async postMessage({
     agentName, podId, content, metadata = {}, messageType = 'text', instanceId = 'default', displayName,
   }) {
@@ -26,6 +126,7 @@ class AgentMessageService {
       instanceId,
       displayName,
     });
+    const senderDisplayName = agentUser.botMetadata?.displayName || displayName || agentUser.username;
     const pod = await AgentIdentityService.ensureAgentInPod(agentUser, podId);
     if (!pod) {
       throw new Error('Pod not found');
@@ -50,10 +151,10 @@ class AgentMessageService {
           messageType: newMessage.message_type || messageType,
           userId: {
             _id: agentUser._id,
-            username: agentUser.username,
+            username: senderDisplayName,
             profilePicture: agentUser.profilePicture,
           },
-          username: agentUser.username,
+          username: senderDisplayName,
           profile_picture: agentUser.profilePicture,
           createdAt: newMessage.created_at,
           metadata,
@@ -77,6 +178,18 @@ class AgentMessageService {
       message = mongoMessage;
     }
 
+    let persistedSummary = null;
+    try {
+      persistedSummary = await AgentMessageService.persistSummaryFromAgentMessage({
+        agentName,
+        podId,
+        content: sanitizedContent,
+        metadata,
+      });
+    } catch (summaryError) {
+      console.warn('Failed to persist summary from agent message:', summaryError.message);
+    }
+
     try {
       const io = socketConfig.getIO();
       const formattedMessage = {
@@ -86,10 +199,10 @@ class AgentMessageService {
         messageType: message.messageType || messageType,
         userId: message.userId || {
           _id: agentUser._id,
-          username: agentUser.username,
+          username: senderDisplayName,
           profilePicture: agentUser.profilePicture,
         },
-        username: message.username || agentUser.username,
+        username: message.username || senderDisplayName,
         profile_picture: message.profile_picture || agentUser.profilePicture,
         createdAt: message.createdAt,
         metadata: message.metadata || metadata,
@@ -103,6 +216,12 @@ class AgentMessageService {
     return {
       success: true,
       message,
+      summary: persistedSummary
+        ? {
+          id: persistedSummary._id?.toString?.() || persistedSummary._id,
+          type: persistedSummary.type,
+        }
+        : null,
     };
   }
 

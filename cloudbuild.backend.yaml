@@ -1,0 +1,10 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    dir: 'backend'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/commonly-test/commonly-backend:latest'
+      - '.'
+images:
+  - 'gcr.io/commonly-test/commonly-backend:latest'

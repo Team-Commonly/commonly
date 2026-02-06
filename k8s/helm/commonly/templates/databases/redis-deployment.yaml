@@ -43,4 +43,12 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
+      {{- if and .Values.redis.nodeSelector (gt (len .Values.redis.nodeSelector) 0) }}
+      nodeSelector:
+        {{- toYaml .Values.redis.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.redis.tolerations (gt (len .Values.redis.tolerations) 0) }}
+      tolerations:
+        {{- toYaml .Values.redis.tolerations | nindent 8 }}
+      {{- end }}
 {{- end }}

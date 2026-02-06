@@ -14,16 +14,19 @@ const AgentProfile = require('../models/AgentProfile');
 const Activity = require('../models/Activity');
 const Pod = require('../models/Pod');
 const User = require('../models/User');
+const Gateway = require('../models/Gateway');
 const AgentTemplate = require('../models/AgentTemplate');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { generateText } = require('../services/llmService');
 const {
   provisionAgentRuntime,
-  startDockerRuntime,
-  stopDockerRuntime,
+  startAgentRuntime,
+  stopAgentRuntime,
+  restartAgentRuntime,
+  getAgentRuntimeStatus,
+  getAgentRuntimeLogs,
+  isK8sMode,
   restartDockerRuntime,
-  getDockerRuntimeStatus,
-  getDockerRuntimeLogs,
   listOpenClawPlugins,
   installOpenClawPlugin,
   writeOpenClawHeartbeatFile,
@@ -52,6 +55,68 @@ const normalizeConfigMap = (config) => {
   return null;
 };
 
+const normalizeRuntimeAuthProfiles = (profiles) => {
+  if (!profiles || typeof profiles !== 'object') return null;
+  const normalized = {};
+  Object.entries(profiles).forEach(([key, value]) => {
+    if (!value || typeof value !== 'object') return;
+    const provider = String(value.provider || '').trim().toLowerCase();
+    const rawKey = String(value.key || '').trim();
+    if (!provider || !rawKey) return;
+    const type = String(value.type || 'api_key').trim().toLowerCase();
+    if (type !== 'api_key') return;
+    const profileId = String(key || `${provider}:default`).trim();
+    normalized[profileId || `${provider}:default`] = {
+      type: 'api_key',
+      provider,
+      key: rawKey,
+    };
+  });
+  return Object.keys(normalized).length ? normalized : null;
+};
+
+const normalizeSkillEnvEntries = (entries) => {
+  if (!entries || typeof entries !== 'object') return null;
+  const normalized = {};
+  Object.entries(entries).forEach(([skillName, value]) => {
+    const name = String(skillName || '').trim();
+    if (!name || !value || typeof value !== 'object') return;
+    const env = value.env && typeof value.env === 'object' ? value.env : {};
+    const envEntries = Object.entries(env)
+      .map(([key, val]) => [String(key || '').trim(), String(val ?? '').trim()])
+      .filter(([key, val]) => key && val);
+    const apiKey = String(value.apiKey ?? '').trim();
+    if (!envEntries.length && !apiKey) return;
+    normalized[name] = {
+      ...(envEntries.length ? { env: Object.fromEntries(envEntries) } : {}),
+      ...(apiKey ? { apiKey } : {}),
+    };
+  });
+  return Object.keys(normalized).length ? normalized : null;
+};
+
+const sanitizeRuntimeConfig = (runtimeConfig) => {
+  if (!runtimeConfig || typeof runtimeConfig !== 'object') return runtimeConfig;
+  const { authProfiles, skillEnv, ...rest } = runtimeConfig;
+  const providers = authProfiles && typeof authProfiles === 'object'
+    ? Array.from(new Set(
+      Object.values(authProfiles)
+        .map((profile) => String(profile?.provider || '').trim().toLowerCase())
+        .filter(Boolean),
+    ))
+    : [];
+  const skillKeys = skillEnv && typeof skillEnv === 'object'
+    ? Object.keys(skillEnv).map((key) => String(key || '').trim()).filter(Boolean)
+    : [];
+  return {
+    ...rest,
+    authProviders: providers,
+    hasCustomAuthProfiles: providers.length > 0,
+    hasCustomSkillEnv: skillKeys.length > 0,
+    skillEnvKeys: skillKeys,
+  };
+};
+
 const normalizePluginIdentifier = (value) => String(value || '').trim().toLowerCase();
 
 const getPluginSpecBase = (spec) => {
@@ -75,6 +140,70 @@ const normalizeInstanceId = (raw) => {
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');
   return normalized || 'default';
+};
+
+const buildRuntimeLogFilters = ({ runtimeType, agentName, instanceId }) => {
+  if (runtimeType !== 'moltbot') return [];
+  const normalizedInstance = normalizeInstanceId(instanceId);
+  const normalizedAgent = String(agentName || '').trim().toLowerCase();
+  const accountId = normalizedAgent === 'openclaw'
+    ? normalizedInstance
+    : `${normalizedAgent}-${normalizedInstance}`;
+  const tokens = [normalizedInstance, accountId, normalizedAgent].filter(Boolean);
+  return Array.from(new Set(tokens));
+};
+
+const resolveGatewayForRequest = async ({ gatewayId, userId }) => {
+  if (!gatewayId) return null;
+  const user = await User.findById(userId).select('role').lean();
+  if (!user || user.role !== 'admin') {
+    const error = new Error('Global admin required to select a gateway');
+    error.status = 403;
+    throw error;
+  }
+  const gateway = await Gateway.findById(gatewayId).lean();
+  if (!gateway) {
+    const error = new Error('Gateway not found');
+    error.status = 404;
+    throw error;
+  }
+  if (gateway.status && gateway.status !== 'active') {
+    const error = new Error('Gateway is not active');
+    error.status = 400;
+    throw error;
+  }
+  if (isK8sMode() && gateway.mode !== 'k8s') {
+    const error = new Error('Gateway must be K8s mode in this environment');
+    error.status = 400;
+    throw error;
+  }
+  return gateway;
+};
+
+const isGlobalAdminUser = async (userId) => {
+  const user = await User.findById(userId).select('role').lean();
+  return Boolean(user && user.role === 'admin');
+};
+
+const resolveGatewayForInstallation = async ({ gatewayId }) => {
+  if (!gatewayId) return null;
+  const gateway = await Gateway.findById(gatewayId).lean();
+  if (!gateway) {
+    const error = new Error('Gateway not found');
+    error.status = 404;
+    throw error;
+  }
+  if (gateway.status && gateway.status !== 'active') {
+    const error = new Error('Gateway is not active');
+    error.status = 400;
+    throw error;
+  }
+  if (isK8sMode() && gateway.mode !== 'k8s') {
+    const error = new Error('Gateway must be K8s mode in this environment');
+    error.status = 400;
+    throw error;
+  }
+  return gateway;
 };
 
 const userHasPodAccess = (pod, userId) => {
@@ -216,6 +345,11 @@ const normalizeScopes = (scopes) => {
   return Array.from(new Set(scopes.filter((scope) => AGENT_USER_TOKEN_SCOPES.has(scope))));
 };
 
+const AUTO_GRANTED_INTEGRATION_SCOPES = [
+  'integration:read',
+  'integration:messages:read',
+];
+
 const sanitizeStringList = (value) => {
   if (!Array.isArray(value)) return [];
   return Array.from(new Set(value.map((entry) => String(entry || '').trim()).filter(Boolean)));
@@ -349,6 +483,7 @@ router.get('/templates', auth, async (req, res) => {
         agentName: template.agentName,
         displayName: template.displayName,
         description: template.description,
+        iconUrl: template.iconUrl,
         visibility: template.visibility,
         createdBy: template.createdBy?.toString?.() || template.createdBy,
       })),
@@ -374,6 +509,7 @@ router.post('/templates', auth, async (req, res) => {
       agentName,
       displayName,
       description = '',
+      iconUrl = '',
       visibility = 'private',
     } = req.body || {};
 
@@ -407,6 +543,7 @@ router.post('/templates', auth, async (req, res) => {
       agentName: agentName.toLowerCase(),
       displayName: trimmedDisplayName,
       description,
+      iconUrl,
       visibility,
       createdBy: userId,
     });
@@ -418,12 +555,111 @@ router.post('/templates', auth, async (req, res) => {
         agentName: template.agentName,
         displayName: template.displayName,
         description: template.description,
+        iconUrl: template.iconUrl,
         visibility: template.visibility,
       },
     });
   } catch (error) {
     console.error('Error creating agent template:', error);
     return res.status(500).json({ error: 'Failed to create agent template' });
+  }
+});
+
+/**
+ * PATCH /api/registry/templates/:id
+ * Update an existing agent template (creator only)
+ */
+router.patch('/templates/:id', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const template = await AgentTemplate.findById(req.params.id);
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    if (template.createdBy?.toString?.() !== userId.toString()) {
+      return res.status(403).json({ error: 'Not authorized to update this template' });
+    }
+
+    const {
+      displayName,
+      description,
+      visibility,
+      iconUrl,
+    } = req.body || {};
+
+    if (displayName !== undefined) {
+      const trimmed = String(displayName).trim();
+      if (!trimmed) {
+        return res.status(400).json({ error: 'displayName is required' });
+      }
+      template.displayName = trimmed;
+    }
+
+    if (description !== undefined) {
+      template.description = description;
+    }
+
+    if (visibility !== undefined) {
+      if (!['private', 'public'].includes(visibility)) {
+        return res.status(400).json({ error: 'Invalid visibility' });
+      }
+      template.visibility = visibility;
+    }
+
+    if (iconUrl !== undefined) {
+      template.iconUrl = iconUrl || '';
+    }
+
+    await template.save();
+
+    return res.json({
+      success: true,
+      template: {
+        id: template._id.toString(),
+        agentName: template.agentName,
+        displayName: template.displayName,
+        description: template.description,
+        iconUrl: template.iconUrl,
+        visibility: template.visibility,
+      },
+    });
+  } catch (error) {
+    console.error('Error updating agent template:', error);
+    return res.status(500).json({ error: 'Failed to update agent template' });
+  }
+});
+
+/**
+ * DELETE /api/registry/templates/:id
+ * Remove an agent template (creator only)
+ */
+router.delete('/templates/:id', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const template = await AgentTemplate.findById(req.params.id);
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    if (template.createdBy?.toString?.() !== userId.toString()) {
+      return res.status(403).json({ error: 'Not authorized to delete this template' });
+    }
+
+    await AgentTemplate.deleteOne({ _id: template._id });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting agent template:', error);
+    return res.status(500).json({ error: 'Failed to delete agent template' });
   }
 });
 
@@ -617,7 +853,7 @@ router.get('/categories', auth, async (req, res) => {
 router.post('/install', auth, async (req, res) => {
   try {
     const {
-      agentName, podId, version, config = {}, scopes = [], instanceId, displayName,
+      agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId,
     } = req.body;
     const userId = getUserId(req);
     if (!userId) {
@@ -693,11 +929,38 @@ router.post('/install', auth, async (req, res) => {
       });
     }
 
+    const installConfig = normalizeConfigMap(config) || {};
+    const runtimeConfig = typeof installConfig.runtime === 'object' && installConfig.runtime
+      ? { ...installConfig.runtime }
+      : {};
+    const normalizedAuthProfiles = normalizeRuntimeAuthProfiles(runtimeConfig.authProfiles);
+    if (normalizedAuthProfiles) {
+      runtimeConfig.authProfiles = normalizedAuthProfiles;
+    }
+    const normalizedSkillEnv = normalizeSkillEnvEntries(runtimeConfig.skillEnv);
+    if (normalizedSkillEnv) {
+      runtimeConfig.skillEnv = normalizedSkillEnv;
+    }
+    let resolvedGateway = null;
+    if (gatewayId) {
+      resolvedGateway = await resolveGatewayForRequest({ gatewayId, userId });
+      runtimeConfig.gatewayId = resolvedGateway._id.toString();
+    }
+    if (Object.keys(runtimeConfig).length) {
+      installConfig.runtime = runtimeConfig;
+    }
+
+    const grantedScopes = Array.from(new Set([
+      ...requiredScopes,
+      ...scopes,
+      ...AUTO_GRANTED_INTEGRATION_SCOPES,
+    ]));
+
     // Create installation
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,
-      config,
-      scopes: [...requiredScopes, ...scopes],
+      config: installConfig,
+      scopes: grantedScopes,
       installedBy: userId,
       instanceId: normalizedInstanceId,
       displayName: displayName || agent.displayName,
@@ -717,7 +980,7 @@ router.post('/install', auth, async (req, res) => {
         specialties: agent.manifest.capabilities?.map((c) => c.name) || [],
       },
       toolPolicy: {
-        allowed: scopes.filter((s) => s.includes(':')).map((s) => s.split(':')[0]),
+        allowed: grantedScopes.filter((s) => s.includes(':')).map((s) => s.split(':')[0]),
       },
       createdBy: userId,
     });
@@ -775,6 +1038,7 @@ router.post('/install', auth, async (req, res) => {
         version: installation.version,
         status: installation.status,
         scopes: installation.scopes,
+        runtime: sanitizeRuntimeConfig(installConfig.runtime) || null,
       },
       // Indicate if this agent already existed in other pods (shared identity)
       sharedIdentity: isReusingExistingAgent,
@@ -902,6 +1166,10 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
 
     // Get installations
     const installations = await AgentInstallation.getInstalledAgents(podId);
+    const registryEntries = await AgentRegistry.find({
+      agentName: { $in: installations.map((i) => i.agentName) },
+    }).select('agentName iconUrl').lean();
+    const iconMap = new Map(registryEntries.map((entry) => [entry.agentName, entry.iconUrl || '']));
 
     // Get agent profiles for more details
     const profiles = await AgentProfile.find({
@@ -915,17 +1183,19 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
           (p) => p.agentName === i.agentName && p.instanceId === (i.instanceId || 'default'),
         );
         const normalizedConfig = normalizeConfigMap(i.config);
+        const runtimeConfig = sanitizeRuntimeConfig(normalizedConfig?.runtime || i.config?.runtime || null);
         return {
           name: i.agentName,
           instanceId: i.instanceId || 'default',
           displayName: i.displayName,
+          iconUrl: iconMap.get(i.agentName) || '',
           version: i.version,
           status: i.status,
           scopes: i.scopes,
           installedAt: i.createdAt,
           usage: i.usage,
           installedBy: i.installedBy?.toString?.() || i.installedBy,
-          runtime: i.config?.runtime || null,
+          runtime: runtimeConfig,
           config: normalizedConfig ? {
             heartbeat: normalizedConfig.heartbeat || null,
             skillSync: normalizedConfig.skillSync || null,
@@ -1211,7 +1481,13 @@ router.get('/admin/installations', auth, adminAuth, async (req, res) => {
         usage: install.usage || {},
         createdAt: install.createdAt,
         updatedAt: install.updatedAt,
-        config: normalizeConfigMap(install.config) || {},
+        config: (() => {
+          const normalizedConfig = normalizeConfigMap(install.config) || {};
+          if (normalizedConfig.runtime) {
+            normalizedConfig.runtime = sanitizeRuntimeConfig(normalizedConfig.runtime);
+          }
+          return normalizedConfig;
+        })(),
       };
     });
 
@@ -1517,10 +1793,19 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       label,
       scopes,
       force,
+      gatewayId,
     } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const resolvedType = AgentIdentityService.resolveAgentType(name);
+    if (resolvedType === 'commonly-bot') {
+      const isGlobalAdmin = await isGlobalAdminUser(userId);
+      if (!isGlobalAdmin) {
+        return res.status(403).json({ error: 'Global admin required to provision commonly-bot runtime' });
+      }
     }
 
     const pod = await Pod.findById(podId).lean();
@@ -1622,32 +1907,63 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       || 'http://backend:5000';
 
     const configPayload = normalizeConfigMap(installation.config) || {};
+    const runtimeAuthProfiles = normalizeRuntimeAuthProfiles(configPayload?.runtime?.authProfiles) || null;
+    const runtimeSkillEnv = normalizeSkillEnvEntries(configPayload?.runtime?.skillEnv) || null;
+    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await resolveGatewayForRequest({ gatewayId, userId });
+    } else if (configuredGatewayId) {
+      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
+    }
 
     // Only provision if we have a new token (not existing)
     let provisioned = { accountId: null, configPath: null, restartRequired: false };
-    if (runtimeIssued.token) {
+    const shouldProvision = Boolean(runtimeIssued.token || runtimeAuthProfiles || runtimeSkillEnv);
+    if (shouldProvision) {
       provisioned = provisionAgentRuntime({
         runtimeType,
         agentName: name,
         instanceId: normalizedInstanceId,
-        runtimeToken: runtimeIssued.token,
+        runtimeToken: runtimeIssued.token || null,
         userToken: userIssued?.token,
         baseUrl,
         displayName: installation.displayName,
         heartbeat: configPayload.heartbeat || null,
+        gateway,
+        authProfiles: runtimeAuthProfiles,
+        skillEnv: runtimeSkillEnv,
       });
     }
 
     let runtimeStart = null;
     try {
-      runtimeStart = await startDockerRuntime(runtimeType);
+      runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
     } catch (startError) {
       console.warn('Runtime start failed:', startError.message);
       runtimeStart = { started: false, reason: startError.message };
     }
 
+    let runtimeRestart = null;
+    if (provisioned.restartRequired) {
+      try {
+        runtimeRestart = await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
+      } catch (restartError) {
+        console.warn('Runtime restart failed:', restartError.message);
+        runtimeRestart = { restarted: false, reason: restartError.message };
+      }
+    }
+
+    const existingRuntimeConfig = { ...(normalizeConfigMap(installation.config)?.runtime || {}) };
+    if (runtimeAuthProfiles) {
+      existingRuntimeConfig.authProfiles = runtimeAuthProfiles;
+    }
+    if (runtimeSkillEnv) {
+      existingRuntimeConfig.skillEnv = runtimeSkillEnv;
+    }
     installation.config = installation.config || {};
     installation.config.runtime = {
+      ...existingRuntimeConfig,
       status: 'provisioned',
       runtimeType,
       accountId: provisioned.accountId,
@@ -1655,6 +1971,9 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       restartRequired: provisioned.restartRequired,
       runtimeStarted: runtimeStart?.started || false,
       runtimeStartCommand: runtimeStart?.command || null,
+      gatewayId: gateway?._id || existingRuntimeConfig.gatewayId || null,
+      gatewaySlug: gateway?.slug || existingRuntimeConfig.gatewaySlug || null,
+      sharedGateway: runtimeStart?.sharedGateway || false,
       provisionedAt: new Date(),
     };
     await installation.save();
@@ -1671,12 +1990,20 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       runtimeStarted: runtimeStart?.started || false,
       runtimeStartCommand: runtimeStart?.command || null,
       runtimeStartError: runtimeStart?.reason || null,
+      gatewayId: gateway?._id || null,
+      gatewaySlug: gateway?.slug || null,
+      sharedGateway: runtimeStart?.sharedGateway || false,
+      runtimeRestarted: runtimeRestart?.restarted || false,
+      runtimeRestartError: runtimeRestart?.reason || null,
       // Indicate this is a shared agent identity
       sharedIdentity: true,
       agentUsername: agentUser.username,
     });
   } catch (error) {
     console.error('Error provisioning agent runtime:', error);
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     return res.status(500).json({ error: 'Failed to provision agent runtime' });
   }
 });
@@ -1692,6 +2019,8 @@ router.get('/pods/:podId/agents/:name/runtime-status', auth, async (req, res) =>
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    const instanceId = normalizeInstanceId(req.query.instanceId || 'default');
+    const gatewayId = req.query.gatewayId || null;
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
@@ -1709,16 +2038,35 @@ router.get('/pods/:podId/agents/:name/runtime-status', auth, async (req, res) =>
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId,
+    });
+    const effectiveInstanceId = resolvedInstanceId || instanceId;
+
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
     if (!runtimeType) {
       return res.status(400).json({ error: 'Unknown agent runtime type' });
     }
 
-    const status = await getDockerRuntimeStatus(runtimeType);
-    return res.json({ runtimeType, status });
+    const configPayload = normalizeConfigMap(installation?.config) || {};
+    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await resolveGatewayForRequest({ gatewayId, userId });
+    } else if (configuredGatewayId) {
+      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
+    }
+
+    const status = await getAgentRuntimeStatus(runtimeType, effectiveInstanceId, { gateway });
+    return res.json({ runtimeType, status, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
   } catch (error) {
     console.error('Error fetching runtime status:', error);
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     return res.status(500).json({ error: 'Failed to fetch runtime status' });
   }
 });
@@ -1729,10 +2077,12 @@ router.get('/pods/:podId/agents/:name/runtime-status', auth, async (req, res) =>
 router.post('/pods/:podId/agents/:name/runtime-start', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
+    const { instanceId, gatewayId } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
@@ -1750,16 +2100,35 @@ router.post('/pods/:podId/agents/:name/runtime-start', auth, async (req, res) =>
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: normalizedInstanceId,
+    });
+    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
     if (!runtimeType) {
       return res.status(400).json({ error: 'Unknown agent runtime type' });
     }
 
-    const started = await startDockerRuntime(runtimeType);
-    return res.json({ runtimeType, started });
+    const configPayload = normalizeConfigMap(installation?.config) || {};
+    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await resolveGatewayForRequest({ gatewayId, userId });
+    } else if (configuredGatewayId) {
+      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
+    }
+
+    const started = await startAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
+    return res.json({ runtimeType, started, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
   } catch (error) {
     console.error('Error starting runtime:', error);
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     return res.status(500).json({ error: 'Failed to start runtime' });
   }
 });
@@ -1770,10 +2139,12 @@ router.post('/pods/:podId/agents/:name/runtime-start', auth, async (req, res) =>
 router.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
+    const { instanceId, gatewayId } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
@@ -1791,16 +2162,35 @@ router.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req, res) => 
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: normalizedInstanceId,
+    });
+    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
     if (!runtimeType) {
       return res.status(400).json({ error: 'Unknown agent runtime type' });
     }
 
-    const stopped = await stopDockerRuntime(runtimeType);
-    return res.json({ runtimeType, stopped });
+    const configPayload = normalizeConfigMap(installation?.config) || {};
+    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await resolveGatewayForRequest({ gatewayId, userId });
+    } else if (configuredGatewayId) {
+      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
+    }
+
+    const stopped = await stopAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
+    return res.json({ runtimeType, stopped, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
   } catch (error) {
     console.error('Error stopping runtime:', error);
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     return res.status(500).json({ error: 'Failed to stop runtime' });
   }
 });
@@ -1811,10 +2201,12 @@ router.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req, res) => 
 router.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
+    const { instanceId, gatewayId } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
@@ -1832,16 +2224,35 @@ router.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req, res) 
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: normalizedInstanceId,
+    });
+    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
     if (!runtimeType) {
       return res.status(400).json({ error: 'Unknown agent runtime type' });
     }
 
-    const restarted = await restartDockerRuntime(runtimeType);
-    return res.json({ runtimeType, restarted });
+    const configPayload = normalizeConfigMap(installation?.config) || {};
+    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await resolveGatewayForRequest({ gatewayId, userId });
+    } else if (configuredGatewayId) {
+      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
+    }
+
+    const restarted = await restartAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
+    return res.json({ runtimeType, restarted, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
   } catch (error) {
     console.error('Error restarting runtime:', error);
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     return res.status(500).json({ error: 'Failed to restart runtime' });
   }
 });
@@ -1853,6 +2264,8 @@ router.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
     const lines = Number(req.query.lines || 200);
+    const instanceId = normalizeInstanceId(req.query.instanceId || 'default');
+    const gatewayId = req.query.gatewayId || null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -1874,16 +2287,41 @@ router.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId,
+    });
+    const effectiveInstanceId = resolvedInstanceId || instanceId;
+
     const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
     const runtimeType = typeConfig?.runtime;
     if (!runtimeType) {
       return res.status(400).json({ error: 'Unknown agent runtime type' });
     }
 
-    const logs = await getDockerRuntimeLogs(runtimeType, lines);
-    return res.json({ runtimeType, ...logs });
+    const configPayload = normalizeConfigMap(installation?.config) || {};
+    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await resolveGatewayForRequest({ gatewayId, userId });
+    } else if (configuredGatewayId) {
+      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
+    }
+
+    const filterTokens = buildRuntimeLogFilters({ runtimeType, agentName: name, instanceId: effectiveInstanceId });
+    const logs = await getAgentRuntimeLogs(runtimeType, effectiveInstanceId, lines, { gateway, filterTokens });
+    return res.json({
+      runtimeType,
+      ...logs,
+      gatewayId: gateway?._id || null,
+      gatewaySlug: gateway?.slug || null,
+    });
   } catch (error) {
     console.error('Error fetching runtime logs:', error);
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     return res.status(500).json({ error: 'Failed to fetch runtime logs' });
   }
 });
@@ -2237,6 +2675,22 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
     if (config) {
       const existingConfig = normalizeConfigMap(installation.config) || {};
       const nextConfig = { ...existingConfig, ...config };
+      if (nextConfig.runtime && typeof nextConfig.runtime === 'object') {
+        const runtimeConfig = { ...nextConfig.runtime };
+        const normalizedAuthProfiles = normalizeRuntimeAuthProfiles(runtimeConfig.authProfiles);
+        if (normalizedAuthProfiles) {
+          runtimeConfig.authProfiles = normalizedAuthProfiles;
+        } else if (runtimeConfig.authProfiles === null) {
+          delete runtimeConfig.authProfiles;
+        }
+        const normalizedSkillEnv = normalizeSkillEnvEntries(runtimeConfig.skillEnv);
+        if (normalizedSkillEnv) {
+          runtimeConfig.skillEnv = normalizedSkillEnv;
+        } else if (runtimeConfig.skillEnv === null) {
+          delete runtimeConfig.skillEnv;
+        }
+        nextConfig.runtime = runtimeConfig;
+      }
       installation.config = new Map(Object.entries(nextConfig));
     }
     if (scopes) {
@@ -2407,27 +2861,27 @@ router.post('/seed', auth, async (req, res) => {
 
     const defaultAgents = [
       {
-        agentName: 'commonly-summarizer',
-        displayName: agentTypes['commonly-summarizer']?.officialDisplayName || 'Commonly Summarizer',
-        description: agentTypes['commonly-summarizer']?.officialDescription
-          || 'Lightweight summarizer bot for integrations and pod activity',
+        agentName: 'commonly-bot',
+        displayName: agentTypes['commonly-bot']?.officialDisplayName || 'Commonly Bot',
+        description: agentTypes['commonly-bot']?.officialDescription
+          || 'Built-in summary bot for integrations, pod activity, and digest context',
         registry: 'commonly-official',
-        categories: ['commonly-summarizer', 'communication'],
+        categories: ['commonly-bot', 'communication'],
         tags: ['summaries', 'integrations', 'platform'],
         verified: true,
         iconUrl: '/icons/commonly-bot.png',
         manifest: {
-          name: 'commonly-summarizer',
+          name: 'commonly-bot',
           version: '1.0.0',
-          capabilities: (agentTypes['commonly-summarizer']?.capabilities || ['notify', 'summarize', 'integrate'])
+          capabilities: (agentTypes['commonly-bot']?.capabilities || ['notify', 'summarize', 'integrate'])
             .map((c) => ({ name: c, description: c })),
           context: { required: ['context:read', 'summaries:read'] },
           models: {
-            supported: ['gemini-2.0-flash'],
-            recommended: 'gemini-2.0-flash',
+            supported: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+            recommended: 'gemini-2.5-pro',
           },
           runtime: {
-            // commonly-summarizer runs as an external runtime service
+            // commonly-bot runs as an external runtime service
             type: 'standalone',
             connection: 'rest',
           },
@@ -2455,8 +2909,8 @@ router.post('/seed', auth, async (req, res) => {
           context: { required: ['context:read', 'summaries:read', 'messages:write'] },
           models: {
             // Gemini only for now (Claude/GPT support coming soon)
-            supported: ['gemini-2.0-flash', 'gemini-1.5-pro'],
-            recommended: 'gemini-2.0-flash',
+            supported: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-pro'],
+            recommended: 'gemini-2.5-pro',
           },
           runtime: {
             // openclaw uses standalone moltbot/clawdbot runtime
@@ -2493,6 +2947,82 @@ router.post('/seed', auth, async (req, res) => {
   } catch (error) {
     console.error('Error seeding agents:', error);
     res.status(500).json({ error: 'Failed to seed agents' });
+  }
+});
+
+/**
+ * Generate AI avatar for an agent
+ * POST /api/registry/generate-avatar
+ */
+router.post('/generate-avatar', auth, async (req, res) => {
+  try {
+    const AgentAvatarService = require('../services/agentAvatarService');
+    const {
+      agentName, style, personality, colorScheme, gender, customPrompt,
+    } = req.body;
+
+    // Validate inputs
+    if (!agentName) {
+      return res.status(400).json({ error: 'agentName is required' });
+    }
+
+    const validStyles = ['banana', 'abstract', 'minimalist', 'cartoon', 'geometric', 'anime', 'realistic', 'game'];
+    if (style && !validStyles.includes(style)) {
+      return res.status(400).json({ error: `Invalid style. Must be one of: ${validStyles.join(', ')}` });
+    }
+
+    const validPersonalities = ['friendly', 'professional', 'playful', 'wise', 'creative'];
+    if (personality && !validPersonalities.includes(personality)) {
+      return res.status(400).json({ error: `Invalid personality. Must be one of: ${validPersonalities.join(', ')}` });
+    }
+
+    const validColorSchemes = ['vibrant', 'pastel', 'monochrome', 'neon'];
+    if (colorScheme && !validColorSchemes.includes(colorScheme)) {
+      return res.status(400).json({ error: `Invalid colorScheme. Must be one of: ${validColorSchemes.join(', ')}` });
+    }
+    const validGenders = ['male', 'female', 'neutral'];
+    if (gender && !validGenders.includes(gender)) {
+      return res.status(400).json({ error: `Invalid gender. Must be one of: ${validGenders.join(', ')}` });
+    }
+    if (customPrompt && typeof customPrompt !== 'string') {
+      return res.status(400).json({ error: 'customPrompt must be a string' });
+    }
+
+    // Generate avatar
+    const avatarResult = await AgentAvatarService.generateAvatarDetailed({
+      agentName,
+      style: style || 'realistic',
+      personality: personality || 'friendly',
+      colorScheme: colorScheme || 'vibrant',
+      gender: gender || 'neutral',
+      customPrompt: customPrompt || '',
+    });
+    const avatarDataUri = avatarResult.avatar;
+
+    // Validate
+    const validation = AgentAvatarService.validateAvatar(avatarDataUri);
+    if (!validation.valid) {
+      throw new Error('Generated avatar validation failed');
+    }
+
+    res.json({
+      success: true,
+      avatar: avatarDataUri,
+      metadata: {
+        style: style || 'realistic',
+        personality: personality || 'friendly',
+        colorScheme: colorScheme || 'vibrant',
+        gender: gender || 'neutral',
+        size: validation.size,
+        format: validation.format,
+        source: avatarResult.metadata?.source || 'unknown',
+        model: avatarResult.metadata?.model || null,
+        fallbackUsed: Boolean(avatarResult.metadata?.fallbackUsed),
+      },
+    });
+  } catch (error) {
+    console.error('Avatar generation failed:', error);
+    res.status(500).json({ error: 'Failed to generate avatar', details: error.message });
   }
 });
 

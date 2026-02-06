@@ -1,0 +1,16 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    dir: 'frontend'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/commonly-test/commonly-frontend:latest'
+      - '-f'
+      - 'Dockerfile'
+      - '--build-arg'
+      - 'REACT_APP_API_URL=${_REACT_APP_API_URL}'
+      - '.'
+images:
+  - 'gcr.io/commonly-test/commonly-frontend:latest'
+substitutions:
+  _REACT_APP_API_URL: ''

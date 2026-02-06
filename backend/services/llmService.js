@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const DEFAULT_MODEL = 'gemini-2.0-flash';
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 let geminiClient = null;
 let geminiModel = null;

@@ -378,7 +378,7 @@
 
 .summary-label {
     font-weight: 600 !important;
-    color: #666666 !important;
+    color: #a3b1c6 !important;
     font-size: 0.75rem !important;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -392,28 +392,28 @@
 
 .summary-toggle {
     padding: 6px !important;
-    color: #1da1f2 !important;
+    color: #7fb8ff !important;
     transition: all 0.2s ease !important;
-    background-color: rgba(29, 161, 242, 0.05) !important;
+    background-color: rgba(96, 165, 250, 0.15) !important;
     border-radius: 6px !important;
     min-width: 32px !important;
     min-height: 32px !important;
 }
 
 .summary-toggle:hover {
-    background-color: rgba(29, 161, 242, 0.1) !important;
+    background-color: rgba(96, 165, 250, 0.25) !important;
     transform: scale(1.05) !important;
 }
 
 .summary-toggle.active {
-    background-color: rgba(29, 161, 242, 0.15) !important;
-    color: #1976d2 !important;
+    background-color: rgba(96, 165, 250, 0.35) !important;
+    color: #e2e8f0 !important;
 }
 
 .refresh-btn {
     padding: 6px !important;
-    color: #666666 !important;
-    background-color: rgba(0, 0, 0, 0.05) !important;
+    color: #cbd5f5 !important;
+    background-color: rgba(148, 163, 184, 0.18) !important;
     border-radius: 6px !important;
     min-width: 32px !important;
     min-height: 32px !important;
@@ -421,31 +421,39 @@
 }
 
 .refresh-btn:hover {
-    background-color: rgba(0, 0, 0, 0.1) !important;
+    background-color: rgba(148, 163, 184, 0.28) !important;
     transform: scale(1.05) !important;
 }
 
 /* Content area */
 .summary-content {
-    min-height: 60px;
-    color: #333333;
+    min-height: 72px;
+    color: #e2e8f0;
     font-size: 0.95rem;
     line-height: 1.5;
 }
 
 .ai-summary-text {
-    color: #333333 !important;
-    font-weight: 400 !important;
+    color: #e2e8f0 !important;
+    font-weight: 500 !important;
     line-height: 1.5 !important;
 }
 
 .description-text {
-    color: #666666 !important;
+    color: #cbd5f5 !important;
     font-weight: 400 !important;
     line-height: 1.5 !important;
 }
 
+.summary-content .ai-summary-text,
+.summary-content .description-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 .no-activity {
-    color: #999999 !important;
+    color: #a8b3c8 !important;
     font-style: italic !important;
 } 

@@ -8,9 +8,32 @@ const PodAssetService = require('./podAssetService');
 
 const execFileAsync = promisify(execFile);
 
+const getOpenClawWorkspaceOwnership = () => {
+  const uidRaw = process.env.OPENCLAW_WORKSPACE_UID || process.env.CLAWDBOT_WORKSPACE_UID;
+  const gidRaw = process.env.OPENCLAW_WORKSPACE_GID || process.env.CLAWDBOT_WORKSPACE_GID;
+  const uid = Number.parseInt(uidRaw, 10);
+  const gid = Number.parseInt(gidRaw, 10);
+  return {
+    uid: Number.isFinite(uid) ? uid : 1000,
+    gid: Number.isFinite(gid) ? gid : 1000,
+  };
+};
+
+const chownPath = (targetPath) => {
+  const { uid, gid } = getOpenClawWorkspaceOwnership();
+  try {
+    fs.chownSync(targetPath, uid, gid);
+  } catch (error) {
+    if (error?.code !== 'EPERM') {
+      console.warn('[agent-provisioner] Failed to chown path:', error.message);
+    }
+  }
+};
+
 const ensureDir = (filePath) => {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
+  chownPath(dir);
 };
 
 const readJsonFile = (filePath, fallback) => {
@@ -28,6 +51,7 @@ const readJsonFile = (filePath, fallback) => {
 const writeJsonFile = (filePath, payload) => {
   ensureDir(filePath);
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`);
+  chownPath(filePath);
 };
 
 const DEFAULT_HEARTBEAT_CONTENT = [
@@ -93,6 +117,7 @@ const writeOpenClawHeartbeatFile = (accountId, content, { allowEmpty = true } = 
   ensureDir(heartbeatPath);
   const normalized = allowEmpty ? String(content || '') : normalizeHeartbeatContent(content);
   fs.writeFileSync(heartbeatPath, normalized.endsWith('\n') ? normalized : `${normalized}\n`);
+  chownPath(heartbeatPath);
   return heartbeatPath;
 };
 
@@ -105,6 +130,7 @@ const clearOpenClawSkillsDir = (accountId) => {
     console.warn('[agent-provisioner] Failed clearing skills dir:', error.message);
   }
   fs.mkdirSync(skillsDir, { recursive: true });
+  chownPath(skillsDir);
   return skillsDir;
 };
 
@@ -134,15 +160,54 @@ const syncOpenClawSkills = async ({
   }
 
   const assets = await PodAsset.find(query).lean();
+
+  const ensureDirWithMode = (dirPath) => {
+    fs.mkdirSync(dirPath, { recursive: true });
+    chownPath(dirPath);
+    try {
+      fs.chmodSync(dirPath, 0o755);
+    } catch (error) {
+      console.warn('[agent-provisioner] Failed to chmod dir:', error.message);
+    }
+  };
+
+  const setFileMode = (filePath) => {
+    const lower = filePath.toLowerCase();
+    const isScript = lower.includes(`${path.sep}scripts${path.sep}`)
+      || lower.endsWith('.py')
+      || lower.endsWith('.sh')
+      || lower.endsWith('.bash');
+    const mode = isScript ? 0o755 : 0o644;
+    try {
+      fs.chmodSync(filePath, mode);
+    } catch (error) {
+      console.warn('[agent-provisioner] Failed to chmod file:', error.message);
+    }
+    chownPath(filePath);
+  };
   assets.forEach((asset) => {
     const skillName = asset?.metadata?.skillName || asset?.title?.replace(/^Skill:\s*/i, '') || '';
     if (!skillName) return;
     const slug = PodAssetService.normalizeSkillKey(skillName);
     const dirPath = path.join(skillsDir, slug);
-    fs.mkdirSync(dirPath, { recursive: true });
+    ensureDirWithMode(dirPath);
     const filePath = path.join(dirPath, 'SKILL.md');
     const content = asset?.content || '';
     fs.writeFileSync(filePath, content.endsWith('\n') ? content : `${content}\n`);
+    setFileMode(filePath);
+
+    const extraFiles = Array.isArray(asset?.metadata?.extraFiles)
+      ? asset.metadata.extraFiles
+      : [];
+    extraFiles.forEach((file) => {
+      const relPath = String(file?.path || '').trim();
+      const fileContent = file?.content;
+      if (!relPath || typeof fileContent !== 'string') return;
+      const targetPath = path.join(dirPath, relPath);
+      ensureDirWithMode(path.dirname(targetPath));
+      fs.writeFileSync(targetPath, fileContent);
+      setFileMode(targetPath);
+    });
   });
 
   return skillsDir;
@@ -157,6 +222,11 @@ const normalizeSkillEnvMap = (env) => {
   return Object.fromEntries(entries);
 };
 
+const normalizeSkillApiKey = (value) => {
+  const next = String(value ?? '').trim();
+  return next ? next : null;
+};
+
 const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath } = {}) => {
   if (!skillEnv || typeof skillEnv !== 'object') return null;
   const configPath = overridePath || getOpenClawConfigPath();
@@ -164,22 +234,66 @@ const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath } = {}) 
   config.skills = config.skills || {};
   config.skills.entries = config.skills.entries || {};
 
-  Object.entries(skillEnv).forEach(([skillName, env]) => {
+  Object.entries(skillEnv).forEach(([skillName, entry]) => {
     const skillKey = PodAssetService.normalizeSkillKey(skillName);
+    const hasEnvProp = entry && typeof entry === 'object'
+      ? Object.prototype.hasOwnProperty.call(entry, 'env')
+      : false;
+    const hasApiKeyProp = entry && typeof entry === 'object'
+      ? Object.prototype.hasOwnProperty.call(entry, 'apiKey')
+      : false;
+    const hasRawFlag = entry && typeof entry === 'object'
+      ? Object.prototype.hasOwnProperty.call(entry, '__raw') && entry.__raw === true
+      : false;
+    const isRawEntry = entry && typeof entry === 'object' && (!hasEnvProp && !hasApiKeyProp);
+    const env = entry && typeof entry === 'object' && hasEnvProp ? entry.env : entry;
+    const apiKey = entry && typeof entry === 'object' ? entry.apiKey : null;
+    const rawEntry = isRawEntry
+      ? Object.fromEntries(
+        Object.entries(entry)
+          .map(([key, value]) => [String(key || '').trim(), value])
+          .filter(([key]) => key),
+      )
+      : null;
     const normalizedEnv = normalizeSkillEnvMap(env);
-    if (!normalizedEnv) {
+    const normalizedApiKey = normalizeSkillApiKey(apiKey);
+    if (!normalizedEnv && !normalizedApiKey && (!rawEntry || !Object.keys(rawEntry).length)) {
       if (config.skills.entries[skillKey]) {
         delete config.skills.entries[skillKey].env;
+        if (hasApiKeyProp) {
+          delete config.skills.entries[skillKey].apiKey;
+        }
         if (!Object.keys(config.skills.entries[skillKey]).length) {
           delete config.skills.entries[skillKey];
         }
       }
       return;
     }
+    if (hasRawFlag) {
+      const cleaned = Object.fromEntries(
+        Object.entries(entry || {})
+          .filter(([key]) => key && key !== '__raw')
+          .map(([key, value]) => [String(key || '').trim(), value]),
+      );
+      if (!Object.keys(cleaned).length) {
+        delete config.skills.entries[skillKey];
+        return;
+      }
+      config.skills.entries[skillKey] = cleaned;
+      return;
+    }
+    if (rawEntry && Object.keys(rawEntry).length) {
+      config.skills.entries[skillKey] = rawEntry;
+      return;
+    }
     config.skills.entries[skillKey] = {
       ...(config.skills.entries[skillKey] || {}),
-      env: normalizedEnv,
+      ...(normalizedEnv ? { env: normalizedEnv } : {}),
+      ...(normalizedApiKey ? { apiKey: normalizedApiKey } : {}),
     };
+    if (hasApiKeyProp && !normalizedApiKey) {
+      delete config.skills.entries[skillKey].apiKey;
+    }
   });
 
   writeJsonFile(configPath, config);
@@ -202,6 +316,7 @@ const ensureHeartbeatTemplate = (accountId, heartbeat) => {
     const normalized = normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT);
     ensureDir(heartbeatPath);
     fs.writeFileSync(heartbeatPath, normalized);
+    chownPath(heartbeatPath);
     return heartbeatPath;
   }
   return heartbeatPath;
@@ -226,6 +341,7 @@ const provisionOpenClawAccount = ({
   baseUrl,
   displayName,
   heartbeat,
+  authProfiles,
 }) => {
   const configPath = getOpenClawConfigPath();
   const config = readJsonFile(configPath, {});
@@ -235,6 +351,13 @@ const provisionOpenClawAccount = ({
   config.channels.commonly.enabled = true;
   config.channels.commonly.baseUrl = config.channels.commonly.baseUrl || baseUrl;
   config.channels.commonly.accounts = config.channels.commonly.accounts || {};
+
+  const existingAccount = config.channels.commonly.accounts[accountId] || {};
+  const resolvedRuntimeToken = runtimeToken || existingAccount.runtimeToken;
+  const resolvedUserToken = userToken || existingAccount.userToken;
+  if (!resolvedRuntimeToken) {
+    throw new Error('Missing runtime token for OpenClaw account provisioning');
+  }
 
   const normalizeKey = (value, fallback) => {
     const normalized = String(value ?? fallback ?? '').trim().toLowerCase();
@@ -255,10 +378,11 @@ const provisionOpenClawAccount = ({
   });
 
   config.channels.commonly.accounts[accountId] = {
-    runtimeToken,
-    userToken,
+    runtimeToken: resolvedRuntimeToken,
+    userToken: resolvedUserToken,
     agentName,
     instanceId,
+    ...(authProfiles ? { authProfiles } : {}),
   };
 
   config.agents = config.agents || {};
@@ -365,6 +489,8 @@ const provisionAgentRuntime = async ({
   baseUrl,
   displayName,
   heartbeat,
+  authProfiles,
+  skillEnv,
 }) => {
   // Route to K8s or Docker implementation
   if (isK8sMode()) {
@@ -379,13 +505,15 @@ const provisionAgentRuntime = async ({
       baseUrl,
       displayName,
       heartbeat,
+      authProfiles,
+      skillEnv,
     });
   }
 
   // Docker mode (existing file-based logic)
   if (runtimeType === 'moltbot') {
     const accountId = resolveOpenClawAccountId({ agentName, instanceId });
-    return provisionOpenClawAccount({
+    const result = provisionOpenClawAccount({
       accountId,
       runtimeToken,
       userToken,
@@ -394,7 +522,12 @@ const provisionAgentRuntime = async ({
       baseUrl,
       displayName,
       heartbeat,
+      authProfiles,
     });
+    if (skillEnv) {
+      syncOpenClawSkillEnv({ skillEnv, configPath: getOpenClawConfigPath() });
+    }
+    return result;
   }
 
   if (runtimeType === 'internal') {
@@ -661,47 +794,47 @@ const getDockerRuntimeLogs = async (runtimeType, lines = 200) => {
 const isK8sMode = () => process.env.AGENT_PROVISIONER_K8S === '1';
 
 // Unified interface that routes to K8s or Docker implementation
-const startAgentRuntime = async (runtimeType, instanceId) => {
+const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.startAgentRuntime(runtimeType, instanceId);
+    return k8sProvisioner.startAgentRuntime(runtimeType, instanceId, options);
   }
   return startDockerRuntime(runtimeType);
 };
 
-const stopAgentRuntime = async (runtimeType, instanceId) => {
+const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.stopAgentRuntime(runtimeType, instanceId);
+    return k8sProvisioner.stopAgentRuntime(runtimeType, instanceId, options);
   }
   return stopDockerRuntime(runtimeType);
 };
 
-const restartAgentRuntime = async (runtimeType, instanceId) => {
+const restartAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.restartAgentRuntime(runtimeType, instanceId);
+    return k8sProvisioner.restartAgentRuntime(runtimeType, instanceId, options);
   }
   return restartDockerRuntime(runtimeType);
 };
 
-const getAgentRuntimeStatus = async (runtimeType, instanceId) => {
+const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.getAgentRuntimeStatus(runtimeType, instanceId);
+    return k8sProvisioner.getAgentRuntimeStatus(runtimeType, instanceId, options);
   }
   return getDockerRuntimeStatus(runtimeType);
 };
 
-const getAgentRuntimeLogs = async (runtimeType, instanceId, lines = 200) => {
+const getAgentRuntimeLogs = async (runtimeType, instanceId, lines = 200, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
-    return k8sProvisioner.getAgentRuntimeLogs(runtimeType, instanceId, lines);
+    return k8sProvisioner.getAgentRuntimeLogs(runtimeType, instanceId, lines, options);
   }
   return getDockerRuntimeLogs(runtimeType, lines);
 };

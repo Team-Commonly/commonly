@@ -43,6 +43,7 @@ const SkillsCatalogPage = () => {
   const [categories, setCategories] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [sortBy, setSortBy] = useState('default');
   const [groupByCategory, setGroupByCategory] = useState(true);
   const [activeTab, setActiveTab] = useState('catalog');
   const { currentUser } = useAuth();
@@ -66,8 +67,13 @@ const SkillsCatalogPage = () => {
   const [gatewayHintLoading, setGatewayHintLoading] = useState(false);
   const [gatewayHintError, setGatewayHintError] = useState('');
   const [gatewayHintList, setGatewayHintList] = useState([]);
+  const [gatewayPrimaryEnv, setGatewayPrimaryEnv] = useState('');
   const [gatewayEnvInputs, setGatewayEnvInputs] = useState({});
   const [gatewayEnvClears, setGatewayEnvClears] = useState(new Set());
+  const [gatewayApiKeyInput, setGatewayApiKeyInput] = useState('');
+  const [gatewayApiKeyClear, setGatewayApiKeyClear] = useState(false);
+  const [gatewayAdvancedOpen, setGatewayAdvancedOpen] = useState(false);
+  const [gatewayAdvancedJson, setGatewayAdvancedJson] = useState('');
   const [gatewayCustomKey, setGatewayCustomKey] = useState('');
   const [gatewayCustomValue, setGatewayCustomValue] = useState('');
   const [gatewaySaving, setGatewaySaving] = useState(false);
@@ -176,6 +182,7 @@ const SkillsCatalogPage = () => {
           source: 'awesome',
           q: searchTerm || undefined,
           category: selectedCategory !== 'all' ? selectedCategory : undefined,
+          sort: sortBy !== 'default' ? sortBy : undefined,
           page: catalogPage,
           limit: 60,
         },
@@ -301,6 +308,7 @@ const SkillsCatalogPage = () => {
     setGatewayHintLoading(true);
     setGatewayHintError('');
     setGatewayHintList([]);
+    setGatewayPrimaryEnv('');
     try {
       const selected = gatewaySkillOptions.find(
         (item) => normalizeSkillKey(item?.name) === normalizeSkillKey(skillName),
@@ -315,7 +323,10 @@ const SkillsCatalogPage = () => {
         ...getAuthHeaders(),
         params: { sourceUrl },
       });
-      setGatewayHintList(response.data?.requirements || []);
+      const requirements = response.data?.requirements || [];
+      const primaryEnv = response.data?.primaryEnv || '';
+      setGatewayPrimaryEnv(primaryEnv);
+      setGatewayHintList(requirements.filter((hint) => hint !== primaryEnv));
     } catch (error) {
       console.warn('Failed to load gateway hints:', error);
       setGatewayHintError(error.response?.data?.error || 'Failed to detect credentials');
@@ -344,6 +355,11 @@ const SkillsCatalogPage = () => {
     });
   };
 
+  const markGatewayApiKeyClear = () => {
+    setGatewayApiKeyInput('');
+    setGatewayApiKeyClear(true);
+  };
+
   const addGatewayCustomEnv = () => {
     const key = gatewayCustomKey.trim();
     if (!key) return;
@@ -354,6 +370,58 @@ const SkillsCatalogPage = () => {
 
   const saveGatewayCredentials = async () => {
     if (!gatewayId || !gatewaySkillKey) return;
+    const trimmedAdvanced = gatewayAdvancedJson.trim();
+    if (gatewayAdvancedOpen) {
+      if (!trimmedAdvanced) {
+        alert('Advanced JSON is enabled. Provide a JSON entry to save.');
+        return;
+      }
+      let parsed = null;
+      try {
+        parsed = JSON.parse(trimmedAdvanced);
+      } catch (error) {
+        alert('Advanced JSON must be valid JSON.');
+        return;
+      }
+      let entry = null;
+      if (parsed?.skills?.entries && typeof parsed.skills.entries === 'object') {
+        entry = parsed.skills.entries[normalizeSkillKey(gatewaySkillKey)]
+          || parsed.skills.entries[gatewaySkillKey]
+          || null;
+      } else if (parsed?.entries && typeof parsed.entries === 'object') {
+        entry = parsed.entries[normalizeSkillKey(gatewaySkillKey)]
+          || parsed.entries[gatewaySkillKey]
+          || null;
+      } else {
+        entry = parsed;
+      }
+      if (!entry || typeof entry !== 'object') {
+        alert('Advanced JSON must be an object representing the skill entry.');
+        return;
+      }
+      setGatewaySaving(true);
+      try {
+        await axios.patch('/api/skills/gateway-credentials', {
+          gatewayId,
+          entries: {
+            [gatewaySkillKey]: { __raw: true, ...entry },
+          },
+        }, getAuthHeaders());
+        await fetchGatewayCredentials();
+        setGatewayEnvInputs({});
+        setGatewayEnvClears(new Set());
+        setGatewayApiKeyInput('');
+        setGatewayApiKeyClear(false);
+        return;
+      } catch (error) {
+        console.error('Failed to save gateway credentials:', error);
+        alert(error.response?.data?.error || 'Failed to save credentials');
+        return;
+      } finally {
+        setGatewaySaving(false);
+      }
+    }
+
     const env = {};
     Object.entries(gatewayEnvInputs).forEach(([key, value]) => {
       if (value) env[key] = value;
@@ -361,21 +429,43 @@ const SkillsCatalogPage = () => {
     gatewayEnvClears.forEach((key) => {
       if (!(key in env)) env[key] = '';
     });
-    if (!Object.keys(env).length) {
+    const hasPrimaryEnv = Boolean(gatewayPrimaryEnv);
+    const rawEntry = {};
+    if (hasPrimaryEnv) {
+      if (gatewayApiKeyInput) rawEntry[gatewayPrimaryEnv] = gatewayApiKeyInput;
+      if (gatewayApiKeyClear) rawEntry[gatewayPrimaryEnv] = '';
+      Object.entries(env).forEach(([key, value]) => {
+        rawEntry[key] = value;
+      });
+    }
+    const shouldSendRaw = hasPrimaryEnv && Object.keys(rawEntry).length > 0;
+    const shouldSendApiKey = Boolean(gatewayApiKeyInput) || gatewayApiKeyClear;
+    if (!Object.keys(env).length && !shouldSendApiKey && !shouldSendRaw) {
       alert('Add at least one key or clear an existing key before saving.');
       return;
     }
     setGatewaySaving(true);
     try {
+      const payloadEntry = {};
+      if (shouldSendRaw) {
+        Object.assign(payloadEntry, rawEntry);
+      } else if (Object.keys(env).length) {
+        payloadEntry.env = env;
+      }
+      if (!shouldSendRaw && shouldSendApiKey) {
+        payloadEntry.apiKey = gatewayApiKeyInput ? gatewayApiKeyInput : '';
+      }
       await axios.patch('/api/skills/gateway-credentials', {
         gatewayId,
         entries: {
-          [gatewaySkillKey]: env,
+          [gatewaySkillKey]: payloadEntry,
         },
       }, getAuthHeaders());
       await fetchGatewayCredentials();
       setGatewayEnvInputs({});
       setGatewayEnvClears(new Set());
+      setGatewayApiKeyInput('');
+      setGatewayApiKeyClear(false);
     } catch (error) {
       console.error('Failed to save gateway credentials:', error);
       alert(error.response?.data?.error || 'Failed to save credentials');
@@ -439,11 +529,11 @@ const SkillsCatalogPage = () => {
 
   useEffect(() => {
     setCatalogPage(1);
-  }, [searchTerm, selectedCategory]);
+  }, [searchTerm, selectedCategory, sortBy]);
 
   useEffect(() => {
     fetchCatalog();
-  }, [searchTerm, selectedCategory, catalogPage]);
+  }, [searchTerm, selectedCategory, sortBy, catalogPage]);
 
   useEffect(() => {
     if (activeTab === 'gateway') {
@@ -495,6 +585,9 @@ const SkillsCatalogPage = () => {
     fetchGatewayHints(gatewaySkillKey);
     setGatewayEnvInputs({});
     setGatewayEnvClears(new Set());
+    setGatewayApiKeyInput('');
+    setGatewayApiKeyClear(false);
+    setGatewayAdvancedJson('');
   }, [activeTab, gatewaySkillKey]);
 
   useEffect(() => {
@@ -652,6 +745,19 @@ const SkillsCatalogPage = () => {
           </Select>
         </FormControl>
 
+        <FormControl sx={{ minWidth: 200 }}>
+          <InputLabel id="skills-sort-label">Sort</InputLabel>
+          <Select
+            labelId="skills-sort-label"
+            value={sortBy}
+            label="Sort"
+            onChange={(event) => setSortBy(event.target.value)}
+          >
+            <MenuItem value="default">Default</MenuItem>
+            <MenuItem value="stars">Most stars</MenuItem>
+          </Select>
+        </FormControl>
+
         <FormControlLabel
           control={
             <Switch
@@ -695,6 +801,13 @@ const SkillsCatalogPage = () => {
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                       {item.description || 'No description'}
                     </Typography>
+                    {Number.isFinite(item.stars) && item.stars >= 0 && (
+                      <Chip
+                        size="small"
+                        label={`★ ${item.stars.toLocaleString()}`}
+                        sx={{ mb: 1 }}
+                      />
+                    )}
                     {item.type && (
                       <Chip
                         size="small"
@@ -900,11 +1013,51 @@ const SkillsCatalogPage = () => {
                       />
                     ))}
                   </Stack>
+                  {gatewayPrimaryEnv && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="subtitle2">Primary API key</Typography>
+                      <TextField
+                        fullWidth
+                        type="password"
+                        label={`${gatewayPrimaryEnv}`}
+                        placeholder="Stored directly under the skill entry"
+                        value={gatewayApiKeyInput}
+                        onChange={(event) => {
+                          setGatewayApiKeyInput(event.target.value);
+                          if (event.target.value) {
+                            setGatewayApiKeyClear(false);
+                          }
+                        }}
+                        sx={{ mt: 1 }}
+                      />
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                        This value is saved to `skills.entries.{normalizeSkillKey(gatewaySkillKey)}.{gatewayPrimaryEnv}`.
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Use the Advanced JSON option to store keys directly under the skill entry.
+                      </Typography>
+                      <Box
+                        component="pre"
+                        sx={{
+                          mt: 1,
+                          mb: 0,
+                          p: 1.5,
+                          borderRadius: 1,
+                          bgcolor: 'action.hover',
+                          fontSize: '0.75rem',
+                          overflowX: 'auto',
+                        }}
+                      >
+                        {`skills:\n  entries:\n    ${normalizeSkillKey(gatewaySkillKey) || '<skill>'}:\n      apiKey: ${gatewayPrimaryEnv}`}
+                      </Box>
+                    </Box>
+                  )}
                 </Box>
                 <Box>
                   <Typography variant="subtitle2">Existing keys</Typography>
                   <Stack spacing={1} sx={{ mt: 1 }}>
-                    {(gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.envKeys || []).length === 0 && (
+                    {(gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.envKeys || []).length === 0
+                      && !gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.apiKeyPresent && (
                       <Typography variant="body2" color="text.secondary">
                         No keys stored for this skill yet.
                       </Typography>
@@ -918,6 +1071,15 @@ const SkillsCatalogPage = () => {
                         </Button>
                       </Box>
                     ))}
+                    {gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.apiKeyPresent && (
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Typography variant="body2">apiKey</Typography>
+                        <Chip size="small" label="set" />
+                        <Button size="small" onClick={markGatewayApiKeyClear}>
+                          Clear
+                        </Button>
+                      </Box>
+                    )}
                   </Stack>
                 </Box>
                 <Box>
@@ -940,6 +1102,33 @@ const SkillsCatalogPage = () => {
                       Add
                     </Button>
                   </Box>
+                </Box>
+                <Box>
+                  <FormControlLabel
+                    control={(
+                      <Switch
+                        checked={gatewayAdvancedOpen}
+                        onChange={(event) => setGatewayAdvancedOpen(event.target.checked)}
+                      />
+                    )}
+                    label="Advanced JSON entry"
+                  />
+                  {gatewayAdvancedOpen && (
+                    <Box sx={{ mt: 1 }}>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={4}
+                        label="Custom entry JSON"
+                        placeholder={`{\n  \"${gatewayPrimaryEnv || 'TAVILY_API_KEY'}\": \"${gatewayPrimaryEnv ? '...' : '...'}\"\n}`}
+                        value={gatewayAdvancedJson}
+                        onChange={(event) => setGatewayAdvancedJson(event.target.value)}
+                      />
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                        This replaces the fields above and is saved as `skills.entries.{normalizeSkillKey(gatewaySkillKey)}`.
+                      </Typography>
+                    </Box>
+                  )}
                 </Box>
                 <Divider />
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>

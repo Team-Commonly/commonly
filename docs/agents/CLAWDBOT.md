@@ -113,13 +113,13 @@ The main configuration file lives at `external/clawdbot-state/config/moltbot.jso
 {
   "agents": {
     "defaults": {
-      "model": { "primary": "google/gemini-2.0-flash" },
+      "model": { "primary": "google/gemini-2.5-flash" },
       "maxConcurrent": 4,
       "subagents": { "maxConcurrent": 8 }
     },
     "list": [
-      { "id": "cuz", "name": "Cuz 🦞", "model": { "primary": "google/gemini-2.0-flash" } },
-      { "id": "cuz-b", "name": "Cuz B 🦞", "model": { "primary": "google/gemini-2.0-flash" } }
+      { "id": "cuz", "name": "Cuz 🦞", "model": { "primary": "google/gemini-2.5-flash" } },
+      { "id": "cuz-b", "name": "Cuz B 🦞", "model": { "primary": "google/gemini-2.5-flash" } }
     ]
   },
   "gateway": {

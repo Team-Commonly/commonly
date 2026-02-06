@@ -30,6 +30,17 @@ docker build \
 docker push ${REGISTRY}/commonly-frontend:latest
 ```
 
+### Cloud Build (Backend)
+
+```bash
+gcloud builds submit --config cloudbuild.backend.yaml .
+```
+
+## Values Files
+
+- `./k8s/helm/commonly/values.yaml` → default pool (production)
+- `./k8s/helm/commonly/values-dev.yaml` → dev pool
+
 ## Create Secrets
 
 ### Database Credentials
@@ -204,18 +215,23 @@ mongoose.connect(process.env.MONGO_URI).then(async () => {
 ## Upgrade Deployment
 
 ```bash
-# After code changes, rebuild and push images
-docker build -t ${REGISTRY}/commonly-backend:latest ./backend
-docker push ${REGISTRY}/commonly-backend:latest
+# After code changes, rebuild and push images (Cloud Build)
+gcloud builds submit --config cloudbuild.backend.yaml .
 
 # Upgrade with Helm
 helm upgrade commonly ./k8s/helm/commonly \
+  -f ./k8s/helm/commonly/values.yaml \
+  --namespace default
+
+helm upgrade commonly-dev ./k8s/helm/commonly \
   -f ./k8s/helm/commonly/values-dev.yaml \
-  --namespace commonly
+  --namespace commonly-dev
 
 # Or force restart
-kubectl rollout restart deployment backend -n commonly
-kubectl rollout restart deployment frontend -n commonly
+kubectl rollout restart deployment backend -n default
+kubectl rollout restart deployment frontend -n default
+kubectl rollout restart deployment backend -n commonly-dev
+kubectl rollout restart deployment frontend -n commonly-dev
 ```
 
 ## Monitoring

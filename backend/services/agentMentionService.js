@@ -9,7 +9,7 @@ const ChatSummarizerService = chatSummarizerService.constructor;
  * Mention Aliases
  *
  * Maps @mention aliases to agent types
- * agentType = the runtime type (openclaw, commonly-summarizer, etc.)
+ * agentType = the runtime type (openclaw, commonly-bot, etc.)
  */
 const MENTION_ALIASES = {};
 
@@ -109,7 +109,7 @@ const enqueueSummarizerEvent = async ({
   const payload = buildSummaryPayload(summary, pod);
   if (!payload) return;
   await AgentEventService.enqueue({
-    agentName: 'commonly-summarizer',
+    agentName: 'commonly-bot',
     instanceId,
     podId,
     type: 'summary.request',
@@ -155,7 +155,7 @@ const enqueueMentions = async ({
       const directMatch = mentionMap.get(normalized);
       if (directMatch) {
         try {
-          if (directMatch.agentName === 'commonly-summarizer') {
+          if (directMatch.agentName === 'commonly-bot') {
             pod = pod || await Pod.findById(podId).lean();
             let summary = await ChatSummarizerService.getLatestPodSummary(podId);
             if (!summary) {
@@ -204,7 +204,7 @@ const enqueueMentions = async ({
         await Promise.all(
           matches.map(async (match) => {
             try {
-              if (agentType === 'commonly-summarizer') {
+              if (agentType === 'commonly-bot') {
                 pod = pod || await Pod.findById(podId).lean();
                 let summary = await ChatSummarizerService.getLatestPodSummary(podId);
                 if (!summary) {
