@@ -1,8 +1,21 @@
 const fs = require('fs');
+const LiteLLMClient = require('../shared/litellm-client');
 const baseUrl = process.env.COMMONLY_BASE_URL || 'http://localhost:5000';
 const token = process.env.COMMONLY_AGENT_TOKEN;
 const userToken = process.env.COMMONLY_USER_TOKEN;
 const configPath = process.env.COMMONLY_AGENT_CONFIG_PATH;
+const SOCIAL_POST_LIMIT = parseInt(process.env.COMMONLY_SOCIAL_CURATION_LIMIT, 10) || 60;
+const ENABLE_SOCIAL_REPHRASE = process.env.COMMONLY_SOCIAL_REPHRASE_ENABLED !== '0';
+const ENABLE_SOCIAL_FEED_POST = process.env.COMMONLY_SOCIAL_POST_TO_FEED === '1';
+const ENABLE_SOCIAL_IMAGE = process.env.COMMONLY_SOCIAL_IMAGE_ENABLED === '1';
+const ENABLE_SOCIAL_EXTERNAL_PUBLISH = process.env.COMMONLY_SOCIAL_PUBLISH_EXTERNAL === '1';
+const SOCIAL_REPHRASE_MODEL = process.env.COMMONLY_SOCIAL_REPHRASE_MODEL || process.env.AGENT_MODEL || 'gemini-2.5-flash';
+const SOCIAL_IMAGE_MODEL = process.env.COMMONLY_SOCIAL_IMAGE_MODEL || 'gemini-2.5-flash-image';
+const llmClient = new LiteLLMClient({
+  model: SOCIAL_REPHRASE_MODEL,
+  temperature: 0.55,
+  maxTokens: 400,
+});
 
 const loadConfigAccounts = () => {
   if (!configPath) return [];
@@ -39,6 +52,11 @@ const buildAccounts = () => {
 
 const buildHeaders = (runtimeToken) => ({
   Authorization: `Bearer ${runtimeToken}`,
+  'Content-Type': 'application/json',
+});
+
+const buildUserHeaders = (tokenValue) => ({
+  Authorization: `Bearer ${tokenValue}`,
   'Content-Type': 'application/json',
 });
 
@@ -90,6 +108,298 @@ const fetchRecentMessages = async (runtimeToken, podId, limit = 40) => {
   }
   const data = await res.json();
   return data.messages || [];
+};
+
+const fetchSocialPosts = async (limit = SOCIAL_POST_LIMIT) => {
+  const res = await fetch(`${baseUrl}/api/posts?category=Social`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch social posts: ${res.status}`);
+  }
+  const posts = await res.json();
+  if (!Array.isArray(posts)) return [];
+  return posts
+    .filter((post) => {
+      const provider = String(post?.source?.provider || '').toLowerCase();
+      return provider === 'x' || provider === 'instagram';
+    })
+    .slice(0, Math.max(1, limit));
+};
+
+const normalizeWords = (value) => String(value || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .split(/\s+/)
+  .filter((word) => word.length >= 3);
+
+const STOPWORDS = new Set([
+  'about', 'after', 'again', 'against', 'also', 'because', 'being', 'between', 'could', 'from',
+  'have', 'just', 'more', 'other', 'over', 'such', 'than', 'that', 'their', 'there', 'these',
+  'they', 'this', 'those', 'through', 'under', 'very', 'what', 'when', 'where', 'which', 'while',
+  'with', 'would', 'your', 'http', 'https',
+]);
+
+const buildTopicHints = (context) => {
+  const podName = context?.pod?.name || '';
+  const podDescription = context?.pod?.description || '';
+  const words = [...normalizeWords(podName), ...normalizeWords(podDescription)];
+  return Array.from(new Set(words)).slice(0, 10);
+};
+
+const scorePost = (post, hints = []) => {
+  const content = String(post?.content || '').toLowerCase();
+  if (!hints.length) return 1;
+  return hints.reduce((score, hint) => (content.includes(hint) ? score + 2 : score), 1);
+};
+
+const toHashtags = (post) => {
+  const tokens = normalizeWords(post?.content || '')
+    .filter((word) => !STOPWORDS.has(word))
+    .slice(0, 3)
+    .map((word) => `#${word}`);
+  return Array.from(new Set(tokens)).slice(0, 2);
+};
+
+const summarizeIdea = (text) => {
+  const keywords = normalizeWords(text).filter((word) => !STOPWORDS.has(word));
+  const top = Array.from(new Set(keywords)).slice(0, 5);
+  if (!top.length) return 'A notable update worth discussing';
+  if (top.length === 1) return `A notable update about ${top[0]}`;
+  if (top.length === 2) return `A notable update about ${top[0]} and ${top[1]}`;
+  return `A notable update touching on ${top[0]}, ${top[1]}, and ${top[2]}`;
+};
+
+const wordSet = (text) => new Set(normalizeWords(text).filter((word) => !STOPWORDS.has(word)));
+
+const lexicalOverlap = (aText, bText) => {
+  const a = wordSet(aText);
+  const b = wordSet(bText);
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  a.forEach((word) => {
+    if (b.has(word)) intersection += 1;
+  });
+  return intersection / Math.min(a.size, b.size);
+};
+
+const parseJsonBlock = (raw) => {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+};
+
+const rephraseSocialPost = async ({ post, podName }) => {
+  if (!ENABLE_SOCIAL_REPHRASE || !llmClient?.baseUrl) return null;
+  const sourceText = String(post?.content || '').trim();
+  if (!sourceText) return null;
+
+  const prompt = [
+    'Rewrite this source post into a short, original community-friendly summary.',
+    'Constraints:',
+    '- Do not copy phrases directly from the source.',
+    '- Keep under 28 words.',
+    '- Keep factual fidelity.',
+    '- No quotation marks.',
+    '- Mention why it matters to this community.',
+    `Community: ${podName || 'General social pod'}`,
+    '',
+    `Source text: ${sourceText}`,
+    '',
+    'Return JSON only: {"summary":"...","why":"...","tags":["#a","#b"]}',
+  ].join('\n');
+
+  try {
+    const raw = await llmClient.chat(
+      'You are a careful social curator. Prioritize originality, attribution, and brevity.',
+      prompt,
+      { model: SOCIAL_REPHRASE_MODEL, temperature: 0.5, maxTokens: 300 },
+    );
+    const parsed = parseJsonBlock(raw);
+    if (!parsed?.summary) return null;
+    const overlap = lexicalOverlap(sourceText, parsed.summary);
+    if (overlap > 0.7) return null;
+    return {
+      summary: String(parsed.summary).trim(),
+      why: String(parsed.why || '').trim(),
+      tags: Array.isArray(parsed.tags) ? parsed.tags.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 2) : [],
+      overlap,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const generateSocialImage = async ({ headline, tags = [] }) => {
+  if (!ENABLE_SOCIAL_IMAGE || !llmClient?.baseUrl) return null;
+  const apiKey = llmClient.apiKey;
+  const prompt = [
+    'Create an editorial social card image concept.',
+    'No logos or trademarks.',
+    'Style: clean, modern, high contrast, abstract shapes.',
+    `Headline: ${headline}`,
+    tags.length ? `Tags: ${tags.join(' ')}` : '',
+  ].filter(Boolean).join('\n');
+
+  try {
+    const res = await fetch(`${llmClient.baseUrl}/v1/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: SOCIAL_IMAGE_MODEL,
+        prompt,
+        size: '1024x1024',
+        n: 1,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.data?.[0]?.url || null;
+  } catch {
+    return null;
+  }
+};
+
+const postFeedEntry = async ({ tokenValue, podId, content, image, source }) => {
+  if (!ENABLE_SOCIAL_FEED_POST || !tokenValue) return null;
+  try {
+    const sourceProvider = source?.provider;
+    const sourceExternalId = source?.externalId;
+    if (sourceProvider && sourceExternalId) {
+      const existingRes = await fetch(
+        `${baseUrl}/api/posts?podId=${encodeURIComponent(podId)}&category=Social`,
+      );
+      if (existingRes.ok) {
+        const existingPosts = await existingRes.json();
+        const alreadyExists = Array.isArray(existingPosts) && existingPosts.some((post) => (
+          String(post?.source?.provider || '').toLowerCase() === String(sourceProvider).toLowerCase()
+          && String(post?.source?.externalId || '') === String(sourceExternalId)
+          && String(post?.source?.type || '') === 'external-rephrased'
+        ));
+        if (alreadyExists) return null;
+      }
+    }
+
+    const res = await fetch(`${baseUrl}/api/posts`, {
+      method: 'POST',
+      headers: buildUserHeaders(tokenValue),
+      body: JSON.stringify({
+        podId,
+        content,
+        image: image || '',
+        category: 'Social',
+        source: source || { type: 'pod', provider: 'commonly-bot' },
+      }),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+};
+
+const listWritableIntegrations = async (runtimeToken, podId) => {
+  try {
+    const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/integrations`, {
+      headers: buildHeaders(runtimeToken),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.integrations) ? data.integrations : [];
+  } catch {
+    return [];
+  }
+};
+
+const publishToIntegration = async ({
+  runtimeToken,
+  podId,
+  integrationId,
+  text,
+  caption,
+  imageUrl,
+  hashtags = [],
+  sourceUrl,
+}) => {
+  try {
+    const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/integrations/${integrationId}/publish`, {
+      method: 'POST',
+      headers: buildHeaders(runtimeToken),
+      body: JSON.stringify({
+        text,
+        caption,
+        imageUrl,
+        hashtags,
+        sourceUrl,
+      }),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+};
+
+const fetchSocialPolicy = async (runtimeToken, podId) => {
+  try {
+    const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/social-policy`, {
+      headers: buildHeaders(runtimeToken),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.policy || null;
+  } catch {
+    return null;
+  }
+};
+
+const buildCuratedDigest = ({ posts, podName }) => {
+  if (!posts.length) return null;
+  const top = posts.slice(0, 3);
+  const lines = top.map((post, index) => {
+    const author = post?.source?.author || 'Unknown source';
+    const provider = String(post?.source?.provider || 'social').toUpperCase();
+    const url = post?.source?.url || post?.source?.authorUrl || '';
+    const idea = summarizeIdea(post?.content || '');
+    const tags = toHashtags(post);
+    return [
+      `${index + 1}. ${idea}.`,
+      `   Source: ${author} on ${provider}${url ? ` (${url})` : ''}`,
+      tags.length ? `   ${tags.join(' ')}` : null,
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
+
+  const summaryText = [
+    `Curator pulse for ${podName || 'this pod'}:`,
+    lines,
+    'Want one of these expanded into a discussion thread? Mention me.',
+  ].join('\n\n');
+
+  return {
+    text: summaryText,
+    summary: {
+      title: 'Social Feed Highlights',
+      content: summaryText,
+      summaryType: 'posts',
+      messageCount: top.length,
+      timeRange: {
+        start: top[top.length - 1]?.createdAt || new Date().toISOString(),
+        end: top[0]?.createdAt || new Date().toISOString(),
+      },
+    },
+    topPosts: top,
+  };
 };
 
 const buildHeuristicPodSummary = (messages = []) => {
@@ -152,7 +462,129 @@ const ackEvent = async (runtimeToken, eventId) => {
   }
 };
 
-const handleEvent = async (runtimeToken, event) => {
+const handleEvent = async (account, event) => {
+  const runtimeToken = account?.runtimeToken;
+  const accountUserToken = account?.userToken || userToken;
+  if (event?.type === 'curate') {
+    const topN = Math.min(Math.max(parseInt(event?.payload?.topN, 10) || 3, 1), 5);
+    const context = await fetch(`${baseUrl}/api/agents/runtime/pods/${event.podId}/context`, {
+      headers: buildHeaders(runtimeToken),
+    }).then((res) => (res.ok ? res.json() : null)).catch(() => null);
+    const hints = buildTopicHints(context);
+    const socialPosts = await fetchSocialPosts(event?.payload?.limit || SOCIAL_POST_LIMIT);
+    const ranked = socialPosts
+      .map((post) => ({ post, score: scorePost(post, hints) }))
+      .sort((a, b) => b.score - a.score)
+      .map((entry) => entry.post);
+    const digest = buildCuratedDigest({
+      posts: ranked.slice(0, topN),
+      podName: context?.pod?.name,
+    });
+
+    if (!digest) {
+      await ackEvent(runtimeToken, event._id);
+      return;
+    }
+
+    await postMessage(runtimeToken, event.podId, digest.text, {
+      source: 'commonly-bot',
+      eventId: event._id,
+      summaryType: 'posts',
+      messageCount: digest.summary.messageCount,
+      summary: digest.summary,
+    });
+
+    const socialPolicy = await fetchSocialPolicy(runtimeToken, event.podId);
+    const policyMode = String(socialPolicy?.socialMode || 'repost').toLowerCase();
+    const policyPublishEnabled = Boolean(socialPolicy?.publishEnabled);
+    const policyStrictAttribution = socialPolicy?.strictAttribution !== false;
+    const useRewriteMode = policyMode === 'rewrite';
+
+    // Optional per-item feed posts with policy-aware curation + optional generated image.
+    if (ENABLE_SOCIAL_FEED_POST && digest.topPosts?.length) {
+      let externalPublished = false;
+      for (const post of digest.topPosts) {
+        // eslint-disable-next-line no-await-in-loop
+        const rewritten = useRewriteMode
+          ? await rephraseSocialPost({
+            post,
+            podName: context?.pod?.name,
+          })
+          : null;
+        const tags = (rewritten?.tags?.length ? rewritten.tags : toHashtags(post)).slice(0, 2);
+        const sourceAuthor = post?.source?.author || 'Unknown source';
+        const sourceProvider = String(post?.source?.provider || 'social').toUpperCase();
+        const sourceUrl = post?.source?.url || post?.source?.authorUrl || '';
+        const summaryLine = useRewriteMode
+          ? (rewritten?.summary || summarizeIdea(post?.content || ''))
+          : `Shared signal from ${sourceProvider}`;
+        const whyLine = useRewriteMode && rewritten?.why ? `Why it matters: ${rewritten.why}` : '';
+        // eslint-disable-next-line no-await-in-loop
+        const generatedImage = await generateSocialImage({ headline: summaryLine, tags });
+        const sourceLine = `Source: ${sourceAuthor} on ${sourceProvider}${sourceUrl ? ` (${sourceUrl})` : ''}`;
+        const postContent = useRewriteMode
+          ? [
+            summaryLine,
+            whyLine,
+            tags.length ? tags.join(' ') : '',
+            sourceLine,
+          ].filter(Boolean).join('\n\n')
+          : [
+            summaryLine,
+            sourceLine,
+            tags.length ? tags.join(' ') : '',
+          ].filter(Boolean).join('\n\n');
+        // eslint-disable-next-line no-await-in-loop
+        await postFeedEntry({
+          tokenValue: accountUserToken,
+          podId: event.podId,
+          content: postContent,
+          image: generatedImage || '',
+          source: {
+            type: 'external-rephrased',
+            provider: post?.source?.provider || 'social',
+            externalId: post?.source?.externalId || null,
+            url: sourceUrl || null,
+            author: sourceAuthor,
+            authorUrl: post?.source?.authorUrl || null,
+            channel: post?.source?.channel || null,
+          },
+        });
+
+        if (ENABLE_SOCIAL_EXTERNAL_PUBLISH && policyPublishEnabled && !externalPublished) {
+          if (policyStrictAttribution && !sourceUrl) {
+            // Skip external publish when strict attribution requires a source link.
+            // eslint-disable-next-line no-continue
+            continue;
+          }
+          // eslint-disable-next-line no-await-in-loop
+          const integrations = await listWritableIntegrations(runtimeToken, event.podId);
+          const target = integrations.find((item) => ['x', 'instagram'].includes(String(item?.type || '').toLowerCase()));
+          if (target?.id) {
+            const publishText = useRewriteMode ? postContent : 'Shared via Commonly';
+            // eslint-disable-next-line no-await-in-loop
+            const published = await publishToIntegration({
+              runtimeToken,
+              podId: event.podId,
+              integrationId: target.id,
+              text: publishText,
+              caption: publishText,
+              imageUrl: generatedImage || post?.image || '',
+              hashtags: tags,
+              sourceUrl: sourceUrl || undefined,
+            });
+            if (published?.success) {
+              externalPublished = true;
+            }
+          }
+        }
+      }
+    }
+
+    await ackEvent(runtimeToken, event._id);
+    return;
+  }
+
   if (!event?.payload?.summary && event?.type === 'summary.request') {
     const messages = await fetchRecentMessages(runtimeToken, event.podId, 50);
     const synthetic = buildHeuristicPodSummary(messages);
@@ -196,7 +628,7 @@ const pollAccount = async (account) => {
     }
     const events = await fetchEvents(account.runtimeToken);
     for (const event of events) {
-      await handleEvent(account.runtimeToken, event);
+      await handleEvent(account, event);
     }
   } catch (error) {
     console.error(`Commonly Bot poll failed (${account.id}):`, error.message);

@@ -2,12 +2,22 @@ process.env.PG_HOST = '';
 const podController = require('../../../controllers/podController');
 const Pod = require('../../../models/Pod');
 const Message = require('../../../models/Message');
+const Post = require('../../../models/Post');
+const Summary = require('../../../models/Summary');
+const PodAsset = require('../../../models/PodAsset');
+const Integration = require('../../../models/Integration');
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentProfile = require('../../../models/AgentProfile');
 const AgentIdentityService = require('../../../services/agentIdentityService');
+const User = require('../../../models/User');
 
 jest.mock('../../../models/Pod');
 jest.mock('../../../models/Message');
+jest.mock('../../../models/Post', () => ({ deleteMany: jest.fn() }));
+jest.mock('../../../models/Summary', () => ({ deleteMany: jest.fn() }));
+jest.mock('../../../models/PodAsset', () => ({ deleteMany: jest.fn() }));
+jest.mock('../../../models/Integration', () => ({ deleteMany: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     findOne: jest.fn(),
@@ -17,10 +27,12 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
     isInstalled: jest.fn(),
     install: jest.fn(),
+    deleteMany: jest.fn(),
   },
 }));
 jest.mock('../../../models/AgentProfile', () => ({
   updateOne: jest.fn(),
+  deleteMany: jest.fn(),
 }));
 jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn(),
@@ -29,6 +41,14 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 describe('podController', () => {
+  beforeEach(() => {
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(null),
+      }),
+    });
+  });
+
   afterEach(() => jest.clearAllMocks());
 
   it('getPodsByType returns 400 for invalid type', async () => {
@@ -99,6 +119,36 @@ describe('podController', () => {
     };
     await podController.deletePod(req, res);
     expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('deletePod allows global admin to delete pod they did not create', async () => {
+    Pod.findById.mockResolvedValue({ createdBy: 'creator' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ role: 'admin' }),
+      }),
+    });
+    Pod.deleteOne.mockResolvedValue({ deletedCount: 1 });
+    Message.deleteMany.mockResolvedValue({ deletedCount: 2 });
+    Post.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    Summary.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    PodAsset.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    Integration.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    AgentInstallation.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    AgentProfile.deleteMany.mockResolvedValue({ deletedCount: 0 });
+
+    const req = { params: { id: 'p1' }, userId: 'global-admin' };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+      send: jest.fn(),
+    };
+
+    await podController.deletePod(req, res);
+
+    expect(Message.deleteMany).toHaveBeenCalledWith({ podId: 'p1' });
+    expect(Pod.deleteOne).toHaveBeenCalledWith({ _id: 'p1' });
+    expect(res.json).toHaveBeenCalledWith({ msg: 'Pod deleted' });
   });
 
   it('removeMember denies removal when user is not creator', async () => {

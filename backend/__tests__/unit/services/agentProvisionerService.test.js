@@ -1,9 +1,10 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { provisionAgentRuntime } = require('../../../services/agentProvisionerService');
 
 describe('agentProvisionerService', () => {
-  const tempDir = path.join(__dirname, '../../../__tests__/tmp');
+  const tempDir = path.join(os.tmpdir(), 'commonly-agent-provisioner-tests');
   const openclawConfigPath = path.join(tempDir, 'moltbot.json');
   const commonlyConfigPath = path.join(tempDir, 'commonly-bot.json');
 
@@ -13,15 +14,17 @@ describe('agentProvisionerService', () => {
     if (fs.existsSync(commonlyConfigPath)) fs.unlinkSync(commonlyConfigPath);
     process.env.OPENCLAW_CONFIG_PATH = openclawConfigPath;
     process.env.COMMONLY_BOT_CONFIG_PATH = commonlyConfigPath;
+    process.env.OPENCLAW_WORKSPACE_ROOT = path.join(tempDir, 'workspaces');
   });
 
   afterAll(() => {
     delete process.env.OPENCLAW_CONFIG_PATH;
     delete process.env.COMMONLY_BOT_CONFIG_PATH;
+    delete process.env.OPENCLAW_WORKSPACE_ROOT;
   });
 
-  it('writes OpenClaw account config', () => {
-    const result = provisionAgentRuntime({
+  it('writes OpenClaw account config', async () => {
+    const result = await provisionAgentRuntime({
       runtimeType: 'moltbot',
       agentName: 'openclaw',
       instanceId: 'cuz',
@@ -36,7 +39,119 @@ describe('agentProvisionerService', () => {
     expect(parsed.channels.commonly.accounts.cuz.runtimeToken).toBe('cm_agent_test');
     expect(parsed.bindings.find((b) => b.match?.accountId === 'cuz')).toBeTruthy();
     const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
-    expect(agentEntry.workspace).toBe('/home/node/clawd/cuz');
+    expect(agentEntry.workspace).toBe(path.join(tempDir, 'workspaces', 'cuz'));
+  });
+
+  it('writes connected integration channel accounts into OpenClaw config', async () => {
+    provisionAgentRuntime({
+      runtimeType: 'moltbot',
+      agentName: 'openclaw',
+      instanceId: 'cuz',
+      runtimeToken: 'cm_agent_test',
+      userToken: 'cm_user_test',
+      baseUrl: 'http://backend:5000',
+      integrationChannels: {
+        discord: [{ accountId: 'disc-1', name: 'Discord Dev', token: 'disc-token' }],
+        slack: [{
+          accountId: 'slack-1',
+          name: 'Slack Dev',
+          botToken: 'xoxb-123',
+          appToken: 'xapp-123',
+          signingSecret: 'sig-123',
+          channelId: 'C123',
+        }],
+        telegram: [{
+          accountId: 'tg-1',
+          name: 'Telegram Dev',
+          botToken: 'tg-token',
+          webhookSecret: 'tg-secret',
+          chatId: '-1001',
+        }],
+      },
+    });
+
+    const raw = fs.readFileSync(openclawConfigPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    expect(parsed.channels.discord.token).toBe('disc-token');
+    expect(parsed.channels.discord.accounts['disc-1'].token).toBe('disc-token');
+    expect(parsed.channels.slack.botToken).toBe('xoxb-123');
+    expect(parsed.channels.slack.accounts['slack-1'].botToken).toBe('xoxb-123');
+    expect(parsed.channels.telegram.botToken).toBe('tg-token');
+    expect(parsed.channels.telegram.accounts['tg-1'].botToken).toBe('tg-token');
+  });
+
+  it('applies global channel token env fallbacks when integration list is empty', () => {
+    process.env.DISCORD_BOT_TOKEN = 'env-disc-token';
+    process.env.SLACK_BOT_TOKEN = 'env-slack-token';
+    process.env.TELEGRAM_BOT_TOKEN = 'env-telegram-token';
+    process.env.BRAVE_API_KEY = 'env-brave-key';
+    try {
+      provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        integrationChannels: { discord: [], slack: [], telegram: [] },
+      });
+
+      const raw = fs.readFileSync(openclawConfigPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      expect(parsed.channels.discord.token).toBe('env-disc-token');
+      expect(parsed.channels.slack.botToken).toBe('env-slack-token');
+      expect(parsed.channels.telegram.botToken).toBe('env-telegram-token');
+      expect(parsed.tools.web.search.provider).toBe('brave');
+      expect(parsed.tools.web.search.apiKey).toBe('env-brave-key');
+      expect(parsed.tools.web.search.enabled).toBe(true);
+    } finally {
+      delete process.env.DISCORD_BOT_TOKEN;
+      delete process.env.SLACK_BOT_TOKEN;
+      delete process.env.TELEGRAM_BOT_TOKEN;
+      delete process.env.BRAVE_API_KEY;
+    }
+  });
+
+  it('overwrites stale OpenClaw workspace paths on reprovision', () => {
+    const seed = {
+      channels: {
+        commonly: {
+          enabled: true,
+          baseUrl: 'http://backend:5000',
+          accounts: {
+            cuz: {
+              runtimeToken: 'cm_agent_old',
+              userToken: 'cm_user_old',
+              agentName: 'openclaw',
+              instanceId: 'cuz',
+            },
+          },
+        },
+      },
+      agents: {
+        list: [{ id: 'cuz', name: 'Cuz', workspace: '/workspace/_master' }],
+      },
+      bindings: [
+        {
+          agentId: 'cuz',
+          match: { channel: 'commonly', accountId: 'cuz' },
+        },
+      ],
+    };
+    fs.writeFileSync(openclawConfigPath, `${JSON.stringify(seed, null, 2)}\n`);
+
+    provisionAgentRuntime({
+      runtimeType: 'moltbot',
+      agentName: 'openclaw',
+      instanceId: 'cuz',
+      runtimeToken: 'cm_agent_new',
+      userToken: 'cm_user_new',
+      baseUrl: 'http://backend:5000',
+    });
+
+    const parsed = JSON.parse(fs.readFileSync(openclawConfigPath, 'utf8'));
+    const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
+    expect(agentEntry.workspace).toBe(path.join(tempDir, 'workspaces', 'cuz'));
   });
 
   it('removes stale OpenClaw account entries for the same agent instance', () => {
@@ -85,8 +200,8 @@ describe('agentProvisionerService', () => {
     expect(parsed.bindings.find((b) => b.match?.accountId === 'default')).toBeUndefined();
   });
 
-  it('writes Commonly bot runtime config', () => {
-    const result = provisionAgentRuntime({
+  it('writes Commonly bot runtime config', async () => {
+    const result = await provisionAgentRuntime({
       runtimeType: 'internal',
       agentName: 'commonly-summarizer',
       instanceId: 'default',

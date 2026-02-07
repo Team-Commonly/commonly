@@ -205,20 +205,31 @@ Commonly uses Helm for cluster deployments. There are two standard pools:
 - `values.yaml` → default pool (production).
 - `values-dev.yaml` → dev pool.
 
-Build backend image with Cloud Build:
+Build backend + frontend images with Cloud Build:
 
 ```bash
-gcloud builds submit --config cloudbuild.backend.yaml .
+BACKEND_TAG=$(date +%Y%m%d%H%M%S)
+FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
+
+gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
 ```
 
-Update backend image in the cluster:
+Update backend + frontend images in the cluster:
 
 ```bash
 # Default pool (production)
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:latest -n commonly
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
 
 # Dev pool
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:latest -n commonly-dev
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+
+kubectl rollout status deployment/backend -n commonly
+kubectl rollout status deployment/frontend -n commonly
+kubectl rollout status deployment/backend -n commonly-dev
+kubectl rollout status deployment/frontend -n commonly-dev
 ```
 
 Apply Helm values (includes gateway + config updates):
@@ -259,7 +270,7 @@ Hostnames are routed through Cloudflare Tunnel to the shared NGINX ingress.
 Use the same chart with separate values files:
 
 ```bash
-helm upgrade commonly k8s/helm/commonly -n default -f k8s/helm/commonly/values.yaml
+helm upgrade commonly k8s/helm/commonly -n commonly -f k8s/helm/commonly/values.yaml
 helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev -f k8s/helm/commonly/values-dev.yaml
 ```
 
@@ -269,17 +280,28 @@ Key deltas:
 
 ### Build + Deploy (Cloud Build + Helm)
 
-Backend images are built with Cloud Build:
+Backend + frontend images are built with Cloud Build:
 
 ```bash
-gcloud builds submit --config cloudbuild.backend.yaml .
+BACKEND_TAG=$(date +%Y%m%d%H%M%S)
+FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
+
+gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
 ```
 
-Then deploy with Helm:
+Then deploy/rollout:
 
 ```bash
-helm upgrade commonly k8s/helm/commonly -n default -f k8s/helm/commonly/values.yaml
-helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev -f k8s/helm/commonly/values-dev.yaml
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+
+kubectl rollout status deployment/backend -n commonly
+kubectl rollout status deployment/frontend -n commonly
+kubectl rollout status deployment/backend -n commonly-dev
+kubectl rollout status deployment/frontend -n commonly-dev
 ```
 
 ### Databases (External)
@@ -308,6 +330,7 @@ It requires:
 - `CLAWDBOT_GATEWAY_TOKEN` in the `api-keys` secret
 - Image: `gcr.io/commonly-test/clawdbot-gateway:latest`
 - `GEMINI_API_KEY` in the `api-keys` secret (for default OpenClaw model auth)
+- Deployment strategy: `Recreate` (required because gateway config/workspace PVCs are `ReadWriteOnce`; rolling updates can deadlock on volume multi-attach)
 
 Gateway pods seed `auth-profiles.json` for each account on startup so new agents
 inherit the default Gemini auth without manual setup.

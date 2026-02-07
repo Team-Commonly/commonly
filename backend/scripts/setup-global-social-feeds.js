@@ -11,6 +11,8 @@
  *   - X_GLOBAL_ACCESS_TOKEN
  *   - X_GLOBAL_USERNAME (e.g., "CommonlyHQ")
  *   - X_GLOBAL_USER_ID
+ *   - X_GLOBAL_FOLLOW_USERNAMES (optional comma-separated usernames)
+ *   - X_GLOBAL_FOLLOW_USER_IDS (optional comma-separated ids)
  *   - INSTAGRAM_GLOBAL_ACCESS_TOKEN
  *   - INSTAGRAM_GLOBAL_IG_USER_ID
  *   - INSTAGRAM_GLOBAL_USERNAME (e.g., "commonly.app")
@@ -22,6 +24,11 @@ const mongoose = require('mongoose');
 const Integration = require('../models/Integration');
 const Pod = require('../models/Pod');
 const User = require('../models/User');
+
+const parseEnvList = (value) => String(value || '')
+  .split(',')
+  .map((item) => item.trim().replace(/^@/, ''))
+  .filter(Boolean);
 
 async function setupGlobalSocialFeeds() {
   try {
@@ -58,6 +65,8 @@ async function setupGlobalSocialFeeds() {
 
     // 3. Setup X (Twitter) Integration
     if (process.env.X_GLOBAL_ACCESS_TOKEN) {
+      const followUsernames = parseEnvList(process.env.X_GLOBAL_FOLLOW_USERNAMES);
+      const followUserIds = parseEnvList(process.env.X_GLOBAL_FOLLOW_USER_IDS);
       // Check if integration already exists
       let xIntegration = await Integration.findOne({
         type: 'x',
@@ -71,6 +80,8 @@ async function setupGlobalSocialFeeds() {
           accessToken: process.env.X_GLOBAL_ACCESS_TOKEN,
           username: process.env.X_GLOBAL_USERNAME || 'CommonlyHQ',
           userId: process.env.X_GLOBAL_USER_ID,
+          followUsernames,
+          followUserIds,
           category: 'Social',
           maxResults: 50,
           exclude: 'retweets,replies'
@@ -86,6 +97,8 @@ async function setupGlobalSocialFeeds() {
             accessToken: process.env.X_GLOBAL_ACCESS_TOKEN,
             username: process.env.X_GLOBAL_USERNAME || 'CommonlyHQ',
             userId: process.env.X_GLOBAL_USER_ID,
+            followUsernames,
+            followUserIds,
             category: 'Social',
             maxResults: 50,
             exclude: 'retweets,replies',

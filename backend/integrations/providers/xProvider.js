@@ -80,6 +80,12 @@ function createXProvider(integration) {
   const config = integration?.config || {};
   const apiBase = config.apiBase || process.env.X_API_BASE_URL || DEFAULT_API_BASE;
   const sanitizedUsername = config.username ? config.username.replace(/^@/, '') : '';
+  const followUsernames = Array.isArray(config.followUsernames)
+    ? config.followUsernames.map((item) => String(item || '').trim().replace(/^@/, '')).filter(Boolean)
+    : [];
+  const followUserIds = Array.isArray(config.followUserIds)
+    ? config.followUserIds.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
 
   return {
     async validateConfig() {
@@ -104,7 +110,7 @@ function createXProvider(integration) {
       return items.map((tweet) => normalizeXTweet(tweet, user)).filter(Boolean);
     },
 
-    async syncRecent({ sinceId } = {}) {
+    async syncRecent({ sinceId, sinceTimestamp } = {}) {
       const accessToken = config.accessToken;
       const maxResults = config.maxResults;
       const exclude = config.exclude || 'replies,retweets';
@@ -112,37 +118,82 @@ function createXProvider(integration) {
         throw new Error('Missing X access token');
       }
 
-      let resolvedUser = null;
+      const resolvedUsers = [];
+
       if (config.userId) {
-        resolvedUser = {
+        resolvedUsers.push({
           id: config.userId,
           username: config.username,
           name: config.username,
-        };
+        });
       } else if (sanitizedUsername) {
-        resolvedUser = await fetchXUser({
+        const primaryUser = await fetchXUser({
           apiBase,
           accessToken,
           username: sanitizedUsername,
         });
+        if (primaryUser?.id) resolvedUsers.push(primaryUser);
       }
 
-      if (!resolvedUser?.id) {
+      if (followUserIds.length > 0) {
+        followUserIds.forEach((id) => {
+          resolvedUsers.push({ id });
+        });
+      }
+
+      if (followUsernames.length > 0) {
+        const extraUsers = await Promise.all(
+          followUsernames.map((username) => (
+            fetchXUser({
+              apiBase,
+              accessToken,
+              username,
+            }).catch(() => null)
+          )),
+        );
+        extraUsers.filter((user) => user?.id).forEach((user) => {
+          resolvedUsers.push(user);
+        });
+      }
+
+      const uniqueUsers = Array.from(
+        resolvedUsers.reduce((map, user) => {
+          if (!user?.id) return map;
+          map.set(String(user.id), user);
+          return map;
+        }, new Map()).values(),
+      );
+
+      if (!uniqueUsers.length) {
         throw new Error('Missing X userId/username');
       }
 
-      const tweets = await fetchXTweets({
-        apiBase,
-        accessToken,
-        userId: resolvedUser.id,
-        sinceId,
-        maxResults,
-        exclude,
-      });
+      const tweetsByUser = await Promise.all(
+        uniqueUsers.map(async (user) => {
+          const tweets = await fetchXTweets({
+            apiBase,
+            accessToken,
+            userId: user.id,
+            sinceId: followUserIds.length || followUsernames.length ? undefined : sinceId,
+            maxResults,
+            exclude,
+          });
+          return { user, tweets };
+        }),
+      );
 
-      const messages = tweets
-        .map((tweet) => normalizeXTweet(tweet, resolvedUser))
-        .filter(Boolean);
+      const sinceDate = sinceTimestamp ? new Date(sinceTimestamp) : null;
+      const messages = tweetsByUser
+        .flatMap(({ user, tweets }) => (
+          tweets.map((tweet) => normalizeXTweet(tweet, user)).filter(Boolean)
+        ))
+        .filter((message) => {
+          if (!sinceDate || Number.isNaN(sinceDate.valueOf())) return true;
+          const ts = new Date(message.timestamp);
+          if (Number.isNaN(ts.valueOf())) return true;
+          return ts > sinceDate;
+        })
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
       return {
         success: true,
@@ -150,8 +201,9 @@ function createXProvider(integration) {
         messages,
         content: messages.length ? `Fetched ${messages.length} post(s) from X` : 'No new posts',
         meta: {
-          userId: resolvedUser.id,
-          username: resolvedUser.username || sanitizedUsername,
+          userId: uniqueUsers[0]?.id,
+          username: uniqueUsers[0]?.username || sanitizedUsername,
+          watchedUsers: uniqueUsers.length,
         },
       };
     },
@@ -162,6 +214,43 @@ function createXProvider(integration) {
         return { ok: false, error: 'Missing X access configuration' };
       }
       return { ok: true };
+    },
+
+    async publishPost({ text, hashtags = [], sourceUrl } = {}) {
+      const accessToken = config.accessToken;
+      if (!accessToken) {
+        throw new Error('Missing X access token');
+      }
+
+      const baseText = String(text || '').trim();
+      if (!baseText) {
+        throw new Error('text is required for X publishing');
+      }
+
+      const normalizedTags = Array.isArray(hashtags)
+        ? hashtags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 4)
+        : [];
+      const sourceSuffix = sourceUrl ? `\n\nSource: ${String(sourceUrl).trim()}` : '';
+      const tagSuffix = normalizedTags.length ? `\n\n${normalizedTags.join(' ')}` : '';
+      let tweetText = `${baseText}${tagSuffix}${sourceSuffix}`.trim();
+      if (tweetText.length > 280) {
+        tweetText = `${tweetText.slice(0, 277)}...`;
+      }
+
+      const response = await axios.post(
+        `${apiBase}/tweets`,
+        { text: tweetText },
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+
+      const id = response?.data?.data?.id || null;
+      return {
+        success: true,
+        provider: 'x',
+        externalId: id,
+        url: buildXPostUrl(sanitizedUsername || config.username, id),
+        text: tweetText,
+      };
     },
   };
 }

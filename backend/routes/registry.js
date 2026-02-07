@@ -5,6 +5,9 @@
  */
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const JSON5 = require('json5');
 
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -15,6 +18,7 @@ const Activity = require('../models/Activity');
 const Pod = require('../models/Pod');
 const User = require('../models/User');
 const Gateway = require('../models/Gateway');
+const Integration = require('../models/Integration');
 const AgentTemplate = require('../models/AgentTemplate');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { generateText } = require('../services/llmService');
@@ -26,8 +30,8 @@ const {
   getAgentRuntimeStatus,
   getAgentRuntimeLogs,
   isK8sMode,
-  restartDockerRuntime,
   listOpenClawPlugins,
+  listOpenClawBundledSkills,
   installOpenClawPlugin,
   writeOpenClawHeartbeatFile,
   syncOpenClawSkills,
@@ -114,6 +118,105 @@ const sanitizeRuntimeConfig = (runtimeConfig) => {
     hasCustomAuthProfiles: providers.length > 0,
     hasCustomSkillEnv: skillKeys.length > 0,
     skillEnvKeys: skillKeys,
+  };
+};
+
+const buildOpenClawIntegrationChannels = (integrations = []) => {
+  const channels = {
+    discord: [],
+    slack: [],
+    telegram: [],
+  };
+  integrations.forEach((integration) => {
+    if (!integration || typeof integration !== 'object') return;
+    const id = String(integration._id || '').trim();
+    const type = String(integration.type || '').trim().toLowerCase();
+    const config = integration.config && typeof integration.config === 'object' ? integration.config : {};
+    const name = String(
+      config.channelName
+      || config.groupName
+      || config.chatTitle
+      || integration.name
+      || `${type}-${id}`,
+    ).trim();
+    if (type === 'discord') {
+      const token = String(config.botToken || process.env.DISCORD_BOT_TOKEN || '').trim();
+      if (!id || !token) return;
+      channels.discord.push({
+        accountId: id,
+        name,
+        token,
+      });
+      return;
+    }
+    if (type === 'slack') {
+      const botToken = String(config.botToken || process.env.SLACK_BOT_TOKEN || '').trim();
+      const appToken = String(config.appToken || process.env.SLACK_APP_TOKEN || '').trim();
+      const signingSecret = String(config.signingSecret || process.env.SLACK_SIGNING_SECRET || '').trim();
+      if (!id || !botToken) return;
+      channels.slack.push({
+        accountId: id,
+        name,
+        botToken,
+        ...(appToken ? { appToken } : {}),
+        ...(signingSecret ? { signingSecret } : {}),
+        ...(config.channelId ? { channelId: String(config.channelId) } : {}),
+      });
+      return;
+    }
+    if (type === 'telegram') {
+      const botToken = String(config.botToken || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+      const webhookSecret = String(config.secretToken || process.env.TELEGRAM_SECRET_TOKEN || '').trim();
+      if (!id || !botToken) return;
+      channels.telegram.push({
+        accountId: id,
+        name,
+        botToken,
+        ...(webhookSecret ? { webhookSecret } : {}),
+        ...(config.chatId ? { chatId: String(config.chatId) } : {}),
+      });
+    }
+  });
+  return channels;
+};
+
+const buildAgentInstallationPayload = (installation, {
+  profile = null,
+  iconUrl = '',
+} = {}) => {
+  if (!installation) return null;
+  const normalizedConfig = normalizeConfigMap(installation.config);
+  const runtimeConfig = sanitizeRuntimeConfig(normalizedConfig?.runtime || installation.config?.runtime || null);
+  return {
+    name: installation.agentName,
+    instanceId: installation.instanceId || 'default',
+    displayName: installation.displayName,
+    iconUrl,
+    version: installation.version,
+    status: installation.status,
+    scopes: installation.scopes,
+    installedAt: installation.createdAt,
+    usage: installation.usage,
+    installedBy: installation.installedBy?.toString?.() || installation.installedBy,
+    runtime: runtimeConfig,
+    config: normalizedConfig ? {
+      heartbeat: normalizedConfig.heartbeat || null,
+      autonomy: normalizedConfig.autonomy || null,
+      heartbeatChecklist: normalizedConfig.heartbeatChecklist || '',
+      skillSync: normalizedConfig.skillSync || null,
+    } : null,
+    profile: profile
+      ? {
+        displayName: profile.name,
+        purpose: profile.purpose,
+        isDefault: profile.isDefault,
+        modelPreferences: profile.modelPreferences,
+        instructions: profile.instructions,
+        persona: profile.persona,
+        toolPolicy: profile.toolPolicy,
+        contextPolicy: profile.contextPolicy,
+      }
+      : null,
   };
 };
 
@@ -238,6 +341,599 @@ const serializeRuntimeTokens = (tokens = []) => tokens.map((token) => ({
   lastUsedAt: token.lastUsedAt,
 }));
 
+const parseEnvFlag = (value) => {
+  if (value === undefined || value === null) return false;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return false;
+  return !['0', 'false', 'no', 'off', 'disabled', 'none'].includes(normalized);
+};
+
+const hasAnyEnv = (keys = []) => keys.some((key) => parseEnvFlag(process.env[key]));
+
+const detectGatewayPresetCapabilities = async () => {
+  const capability = {
+    generatedAt: new Date().toISOString(),
+    pluginStatus: 'unknown',
+    plugins: [],
+    llmProviders: {
+      google: hasAnyEnv(['GEMINI_API_KEY']),
+      openai: hasAnyEnv(['OPENAI_API_KEY']),
+      anthropic: hasAnyEnv(['ANTHROPIC_API_KEY']),
+      litellm: hasAnyEnv(['LITELLM_BASE_URL']),
+    },
+    integrations: {
+      discord: hasAnyEnv(['DISCORD_BOT_TOKEN']),
+      slack: hasAnyEnv(['SLACK_BOT_TOKEN', 'SLACK_CLIENT_ID']),
+      telegram: hasAnyEnv(['TELEGRAM_BOT_TOKEN']),
+      x: hasAnyEnv(['X_API_BASE_URL']),
+      instagram: hasAnyEnv(['INSTAGRAM_GRAPH_API_BASE']),
+    },
+  };
+
+  try {
+    const report = await listOpenClawPlugins();
+    const plugins = Array.isArray(report?.plugins) ? report.plugins : [];
+    capability.pluginStatus = 'detected';
+    capability.plugins = plugins.map((plugin) => ({
+      name: plugin.name || '',
+      spec: plugin.spec || plugin.name || '',
+      version: plugin.version || '',
+    }));
+  } catch (error) {
+    capability.pluginStatus = 'unavailable';
+    capability.plugins = [];
+  }
+
+  return capability;
+};
+
+const DOCKERFILE_PATH_CANDIDATES = [
+  path.resolve(__dirname, '../../_external/clawdbot/Dockerfile.commonly'),
+  '/repo/_external/clawdbot/Dockerfile.commonly',
+];
+
+const SKILLS_DIR_CANDIDATES = [
+  path.resolve(__dirname, '../../_external/clawdbot/skills'),
+  '/repo/_external/clawdbot/skills',
+];
+
+const OPENCLAW_METADATA_REGEX = /^---\s*[\s\S]*?metadata:\s*([\s\S]*?)\n---/m;
+const ENV_HINT_REGEX = /\b[A-Z][A-Z0-9]*_[A-Z0-9_]{2,}\b/g;
+
+const findFirstExistingPath = (candidates = []) => candidates.find((candidate) => {
+  try {
+    return fs.existsSync(candidate);
+  } catch (error) {
+    return false;
+  }
+}) || null;
+
+const parseSkillMetadata = (skillContent) => {
+  if (!skillContent) return {};
+  const match = skillContent.match(OPENCLAW_METADATA_REGEX);
+  if (!match) return {};
+  const raw = String(match[1] || '').trim();
+  if (!raw) return {};
+  try {
+    return JSON5.parse(raw);
+  } catch (error) {
+    return {};
+  }
+};
+
+const extractEnvHints = (skillContent) => {
+  if (!skillContent) return [];
+  const hits = new Set();
+  let match;
+  while ((match = ENV_HINT_REGEX.exec(skillContent)) !== null) {
+    hits.add(match[0]);
+  }
+  return Array.from(hits).sort();
+};
+
+const detectBuiltInOpenClawSkills = () => {
+  const skillsDir = findFirstExistingPath(SKILLS_DIR_CANDIDATES);
+  if (!skillsDir) {
+    return { status: 'unavailable', skills: [] };
+  }
+  let entries = [];
+  try {
+    entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+  } catch (error) {
+    return { status: 'unavailable', skills: [] };
+  }
+
+  const skills = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .map((skillName) => {
+      const skillFile = path.join(skillsDir, skillName, 'SKILL.md');
+      let content = '';
+      try {
+        content = fs.readFileSync(skillFile, 'utf8');
+      } catch (error) {
+        content = '';
+      }
+      const metadata = parseSkillMetadata(content);
+      const openclawMeta = metadata?.openclaw || {};
+      const requires = openclawMeta.requires || {};
+      return {
+        id: skillName,
+        requiresBins: Array.isArray(requires.bins) ? requires.bins : [],
+        requiresEnv: Array.isArray(requires.env) ? requires.env : extractEnvHints(content),
+      };
+    });
+
+  return {
+    status: 'detected',
+    skills,
+  };
+};
+
+const detectDockerfileCommonlyPackages = () => {
+  const dockerfilePath = findFirstExistingPath(DOCKERFILE_PATH_CANDIDATES);
+  if (!dockerfilePath) {
+    return { status: 'unavailable', aptPackages: [], pythonPackages: [] };
+  }
+  let content = '';
+  try {
+    content = fs.readFileSync(dockerfilePath, 'utf8');
+  } catch (error) {
+    return { status: 'unavailable', aptPackages: [], pythonPackages: [] };
+  }
+
+  const aptMatch = content.match(/apt-get install -y --no-install-recommends([\s\S]*?)&&/m);
+  const aptPackages = aptMatch
+    ? aptMatch[1]
+      .split('\n')
+      .map((line) => line.replace(/[#\\]/g, '').trim())
+      .filter(Boolean)
+      .flatMap((line) => line.split(/\s+/))
+      .filter(Boolean)
+    : [];
+
+  const pythonPackages = [];
+  const pipInstallMatches = content.match(/pip install --no-cache-dir\s+([^\n]+)/g) || [];
+  pipInstallMatches.forEach((line) => {
+    const parts = line.split(/\s+/).filter(Boolean);
+    const pkg = parts[parts.length - 1];
+    if (pkg && pkg !== '--upgrade' && pkg !== 'pip') {
+      pythonPackages.push(pkg.trim());
+    }
+  });
+
+  return {
+    status: 'detected',
+    aptPackages: Array.from(new Set(aptPackages)).sort(),
+    pythonPackages: Array.from(new Set(pythonPackages)).sort(),
+  };
+};
+
+const binLooksInstalled = (binName, dockerCapabilities) => {
+  const name = String(binName || '').trim().toLowerCase();
+  if (!name) return false;
+  const aptSet = new Set((dockerCapabilities.aptPackages || []).map((pkg) => String(pkg).toLowerCase()));
+  const pythonSet = new Set(
+    (dockerCapabilities.pythonPackages || []).map((pkg) => String(pkg).toLowerCase()),
+  );
+
+  const binToPkg = {
+    rg: 'ripgrep',
+    yq: 'yq',
+    ffmpeg: 'ffmpeg',
+    git: 'git',
+    gh: 'gh',
+    jq: 'jq',
+    python3: 'python3',
+    uv: 'uv',
+    clawhub: 'clawhub',
+  };
+  const packageName = binToPkg[name] || name;
+  return aptSet.has(packageName) || pythonSet.has(packageName);
+};
+
+const PRESET_DEFINITIONS = [
+  {
+    id: 'research-analyst',
+    title: 'Research Analyst',
+    category: 'Research',
+    agentName: 'openclaw',
+    description: 'Investigates topics, validates claims, and produces source-backed summaries for pods.',
+    targetUsage: 'Market scans, competitor research, technical deep-dives.',
+    recommendedModel: 'gemini-2.5-pro',
+    requiredTools: [
+      { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
+      {
+        id: 'web-search',
+        label: 'Web search plugin/skill (e.g. tavily)',
+        type: 'plugin',
+        matchAny: ['tavily', 'search'],
+      },
+    ],
+    apiRequirements: [
+      {
+        key: 'GEMINI_API_KEY',
+        purpose: 'Default model provider',
+        envAny: ['GEMINI_API_KEY'],
+      },
+      {
+        key: 'TAVILY_API_KEY',
+        purpose: 'Web research retrieval',
+        envAny: ['TAVILY_API_KEY'],
+      },
+    ],
+    installHints: {
+      scopes: ['agent:context:read', 'agent:messages:write'],
+      runtime: 'openclaw',
+    },
+    defaultSkills: [
+      { id: 'github', reason: 'Repository and issue research tasks.' },
+      { id: 'notion', reason: 'Knowledge capture and research notes.' },
+      { id: 'weather', reason: 'Quick geo/weather context for location-based requests.' },
+      { id: 'tmux', reason: 'Long-running interactive task sessions.' },
+    ],
+  },
+  {
+    id: 'engineering-copilot',
+    title: 'Engineering Copilot',
+    category: 'Development',
+    agentName: 'openclaw',
+    description: 'Handles coding tasks, refactors, debugging, and repo-aware implementation support.',
+    targetUsage: 'Shipping features, bug fixing, test generation.',
+    recommendedModel: 'gemini-2.5-pro',
+    requiredTools: [
+      { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
+      {
+        id: 'git-tools',
+        label: 'Git/repo tooling plugin set',
+        type: 'plugin',
+        matchAny: ['git', 'github', 'repo'],
+      },
+    ],
+    apiRequirements: [
+      {
+        key: 'GEMINI_API_KEY',
+        purpose: 'Default model provider',
+        envAny: ['GEMINI_API_KEY'],
+      },
+      {
+        key: 'OPENAI_API_KEY',
+        purpose: 'Optional alternative coding model',
+        envAny: ['OPENAI_API_KEY'],
+      },
+    ],
+    installHints: {
+      scopes: ['agent:context:read', 'agent:messages:write'],
+      runtime: 'openclaw',
+    },
+    defaultSkills: [
+      { id: 'github', reason: 'PR/repo operations and source control context.' },
+      { id: 'tmux', reason: 'Session management for long running coding tasks.' },
+      { id: 'video-frames', reason: 'Debug UI/video capture artifacts when needed.' },
+      { id: 'openai-whisper-api', reason: 'Transcribe captured audio/video snippets in workflows.' },
+    ],
+  },
+  {
+    id: 'integration-operator',
+    title: 'Integration Operator',
+    category: 'Operations',
+    agentName: 'openclaw',
+    description: 'Monitors connected channels and automates cross-platform triage and status updates.',
+    targetUsage: 'Community moderation, integration triage, cross-channel operations.',
+    recommendedModel: 'gemini-2.5-flash',
+    requiredTools: [
+      { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
+      { id: 'integration-read', label: 'Integration runtime scopes', type: 'core' },
+    ],
+    apiRequirements: [
+      {
+        key: 'DISCORD_BOT_TOKEN',
+        purpose: 'Discord integration support',
+        envAny: ['DISCORD_BOT_TOKEN'],
+      },
+      {
+        key: 'TELEGRAM_BOT_TOKEN',
+        purpose: 'Telegram integration support',
+        envAny: ['TELEGRAM_BOT_TOKEN'],
+      },
+    ],
+    installHints: {
+      scopes: ['integration:read', 'integration:messages:read', 'agent:messages:write'],
+      runtime: 'openclaw',
+    },
+    defaultSkills: [
+      { id: 'discord', reason: 'Discord workflows and operations.' },
+      { id: 'slack', reason: 'Slack workflows and operations.' },
+      { id: 'trello', reason: 'Create and track ops tasks from integration events.' },
+      { id: 'weather', reason: 'Lightweight utility skill available by default.' },
+    ],
+  },
+  {
+    id: 'autonomy-curator',
+    title: 'Autonomy Curator',
+    category: 'Content',
+    agentName: 'commonly-summarizer',
+    description: 'Curates feed highlights and themed pod updates from integration activity.',
+    targetUsage: 'Automated digests, themed pod curation, social highlights.',
+    recommendedModel: 'gemini-2.5-flash',
+    requiredTools: [
+      { id: 'scheduler', label: 'Scheduler + heartbeat events', type: 'core' },
+      { id: 'integrations', label: 'Social/integration feeds enabled', type: 'core' },
+    ],
+    apiRequirements: [
+      {
+        key: 'GEMINI_API_KEY',
+        purpose: 'Summary generation',
+        envAny: ['GEMINI_API_KEY'],
+      },
+      {
+        key: 'COMMONLY_SUMMARIZER_RUNTIME_TOKEN',
+        purpose: 'Runtime auth (issued in Agent Hub)',
+        envAny: ['COMMONLY_SUMMARIZER_RUNTIME_TOKEN'],
+      },
+    ],
+    installHints: {
+      scopes: ['agent:events:read', 'agent:events:ack', 'agent:messages:write'],
+      runtime: 'internal',
+    },
+    defaultSkills: [
+      { id: 'github', reason: 'Track and summarize engineering/project activity snapshots.' },
+      { id: 'weather', reason: 'Example no-key utility fallback in low-config setups.' },
+    ],
+  },
+  {
+    id: 'x-curator',
+    title: 'X Curator',
+    category: 'Social',
+    agentName: 'openclaw',
+    description: 'Uses X integration credentials to monitor feeds, curate highlights, and post concise updates into Commonly pods.',
+    targetUsage: 'Social monitoring, trend curation, and pod-level social digests.',
+    recommendedModel: 'gemini-2.5-flash',
+    requiredTools: [
+      { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
+      { id: 'integration-read', label: 'Integration runtime scopes', type: 'core' },
+    ],
+    apiRequirements: [
+      {
+        key: 'GEMINI_API_KEY',
+        purpose: 'Curation and summary generation',
+        envAny: ['GEMINI_API_KEY'],
+      },
+    ],
+    installHints: {
+      scopes: ['integration:read', 'integration:messages:read', 'agent:context:read', 'agent:messages:write'],
+      runtime: 'openclaw',
+    },
+    defaultSkills: [
+      { id: 'tavily', reason: 'Optional enrichment and source validation for discovered topics.' },
+      { id: 'github', reason: 'Track linked repos/topics when social posts reference engineering work.' },
+      { id: 'trello', reason: 'Turn curated topics into follow-up tasks.' },
+    ],
+  },
+  {
+    id: 'social-trend-scout',
+    title: 'Social Trend Scout',
+    category: 'Social',
+    agentName: 'openclaw',
+    description: 'Tracks social signals across connected feeds and surfaces high-value trends to kick off pod discussion.',
+    targetUsage: 'Trend watch, topic discovery, and social feed triage.',
+    recommendedModel: 'gemini-2.5-flash',
+    requiredTools: [
+      { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
+      { id: 'integration-read', label: 'Integration runtime scopes', type: 'core' },
+    ],
+    apiRequirements: [
+      {
+        key: 'GEMINI_API_KEY',
+        purpose: 'Trend summarization and rewrite quality',
+        envAny: ['GEMINI_API_KEY'],
+      },
+    ],
+    installHints: {
+      scopes: ['integration:read', 'integration:messages:read', 'agent:context:read', 'agent:messages:write'],
+      runtime: 'openclaw',
+    },
+    defaultSkills: [
+      { id: 'discord', reason: 'Cross-channel social signal collection.' },
+      { id: 'slack', reason: 'Community ops and social trend relay.' },
+      { id: 'weather', reason: 'Simple utility fallback skill.' },
+    ],
+  },
+  {
+    id: 'social-amplifier',
+    title: 'Social Amplifier',
+    category: 'Social',
+    agentName: 'commonly-bot',
+    description: 'Publishes curated social highlights with policy-aware repost or rewrite behavior.',
+    targetUsage: 'Feed amplification, source-attributed reposting, lightweight campaign loops.',
+    recommendedModel: 'gemini-2.5-flash',
+    requiredTools: [
+      { id: 'scheduler', label: 'Scheduler + heartbeat events', type: 'core' },
+      { id: 'integrations', label: 'Social/integration feeds enabled', type: 'core' },
+    ],
+    apiRequirements: [
+      {
+        key: 'GEMINI_API_KEY',
+        purpose: 'Optional rewrite quality',
+        envAny: ['GEMINI_API_KEY'],
+      },
+      {
+        key: 'COMMONLY_SUMMARIZER_RUNTIME_TOKEN',
+        purpose: 'Runtime auth (issued in Agent Hub)',
+        envAny: ['COMMONLY_SUMMARIZER_RUNTIME_TOKEN'],
+      },
+    ],
+    installHints: {
+      scopes: ['agent:events:read', 'agent:events:ack', 'agent:messages:write', 'integration:read', 'integration:write'],
+      runtime: 'internal',
+    },
+    defaultSkills: [
+      { id: 'github', reason: 'Optional source context enrichment for linked posts.' },
+      { id: 'weather', reason: 'Example low-friction utility fallback.' },
+    ],
+  },
+  {
+    id: 'community-hype-host',
+    title: 'Community Hype Host',
+    category: 'Social',
+    agentName: 'openclaw',
+    description: 'Turns notable posts into engaging prompts, follow-up questions, and short discussion starters.',
+    targetUsage: 'Keep public pods lively with fun, human-friendly conversation starters.',
+    recommendedModel: 'gemini-2.5-flash',
+    requiredTools: [
+      { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
+      { id: 'integration-read', label: 'Integration runtime scopes', type: 'core' },
+    ],
+    apiRequirements: [
+      {
+        key: 'GEMINI_API_KEY',
+        purpose: 'Creative response generation',
+        envAny: ['GEMINI_API_KEY'],
+      },
+    ],
+    installHints: {
+      scopes: ['integration:read', 'agent:context:read', 'agent:messages:write'],
+      runtime: 'openclaw',
+    },
+    defaultSkills: [
+      { id: 'discord', reason: 'Community interaction patterns and moderation etiquette.' },
+      { id: 'trello', reason: 'Capture follow-up ideas and campaign actions.' },
+      { id: 'weather', reason: 'General utility fallback.' },
+    ],
+  },
+];
+
+const resolvePresetTool = (tool, capabilities) => {
+  if (tool.type === 'core') {
+    return { ...tool, available: true };
+  }
+  if (tool.type === 'plugin') {
+    const pluginSpecs = (capabilities.plugins || [])
+      .map((plugin) => `${plugin.name || ''} ${plugin.spec || ''}`.toLowerCase());
+    const available = (tool.matchAny || []).some((needle) => pluginSpecs.some((spec) => spec.includes(needle)));
+    return { ...tool, available };
+  }
+  return { ...tool, available: false };
+};
+
+const resolvePresetApiRequirement = (requirement) => ({
+  ...requirement,
+  configured: hasAnyEnv(requirement.envAny || [requirement.key]),
+});
+
+const resolvePresetSkills = ({ preset, builtInSkills, dockerCapabilities }) => {
+  const skillMap = new Map((builtInSkills.skills || []).map((skill) => [skill.id, skill]));
+  const defaultSkills = Array.isArray(preset.defaultSkills) ? preset.defaultSkills : [];
+  return defaultSkills.map((entry) => {
+    const builtIn = skillMap.get(entry.id);
+    const requiresBins = Array.isArray(builtIn?.requiresBins) ? builtIn.requiresBins : [];
+    const requiresEnv = Array.isArray(builtIn?.requiresEnv) ? builtIn.requiresEnv : [];
+    const binsReady = requiresBins.every((bin) => binLooksInstalled(bin, dockerCapabilities));
+    const envReady = requiresEnv.every((envName) => hasAnyEnv([envName]));
+    const binStatus = requiresBins.map((bin) => ({
+      bin,
+      installed: binLooksInstalled(bin, dockerCapabilities),
+    }));
+    const envStatus = requiresEnv.map((envKey) => ({
+      key: envKey,
+      configured: hasAnyEnv([envKey]),
+    }));
+    let setupStatus = 'ready';
+    if (!builtIn) setupStatus = 'missing-skill';
+    else if (!binsReady) setupStatus = 'needs-package-install';
+    else if (!envReady) setupStatus = 'needs-api-env';
+    return {
+      id: entry.id,
+      reason: entry.reason || '',
+      available: Boolean(builtIn),
+      requirements: {
+        bins: requiresBins,
+        env: requiresEnv,
+      },
+      binStatus,
+      envStatus,
+      setupStatus,
+      readiness: {
+        binsReady,
+        envReady,
+        ready: Boolean(builtIn) && binsReady && envReady,
+      },
+    };
+  });
+};
+
+router.get('/presets', auth, async (req, res) => {
+  try {
+    const capabilities = await detectGatewayPresetCapabilities();
+    const builtInSkills = detectBuiltInOpenClawSkills();
+    const dockerCapabilities = detectDockerfileCommonlyPackages();
+    const presets = PRESET_DEFINITIONS.map((preset) => {
+      const resolvedSkills = resolvePresetSkills({
+        preset,
+        builtInSkills,
+        dockerCapabilities,
+      });
+      const recommendedEnvMap = new Map();
+      (preset.apiRequirements || []).forEach((requirement) => {
+        const key = String(requirement.key || '').trim();
+        if (!key) return;
+        recommendedEnvMap.set(key, {
+          key,
+          purpose: requirement.purpose || '',
+          configured: hasAnyEnv(requirement.envAny || [key]),
+          source: 'preset-api',
+        });
+      });
+      resolvedSkills.forEach((skill) => {
+        (skill.envStatus || []).forEach((envEntry) => {
+          if (!envEntry?.key) return;
+          if (!recommendedEnvMap.has(envEntry.key)) {
+            recommendedEnvMap.set(envEntry.key, {
+              key: envEntry.key,
+              purpose: `Required by skill ${skill.id}`,
+              configured: Boolean(envEntry.configured),
+              source: 'skill',
+            });
+          }
+        });
+      });
+      return {
+        ...preset,
+        requiredTools: (preset.requiredTools || []).map(
+          (tool) => resolvePresetTool(tool, capabilities),
+        ),
+        apiRequirements: (preset.apiRequirements || []).map(resolvePresetApiRequirement),
+        defaultSkills: resolvedSkills,
+        recommendedEnv: Array.from(recommendedEnvMap.values()),
+        readiness: (() => {
+        const toolsReady = (preset.requiredTools || [])
+          .every((tool) => resolvePresetTool(tool, capabilities).available);
+        const apisReady = (preset.apiRequirements || [])
+          .every((requirement) => hasAnyEnv(requirement.envAny || [requirement.key]));
+        const skillsReady = resolvedSkills.every((skill) => skill.readiness.ready);
+        return {
+          toolsReady,
+          apisReady,
+          skillsReady,
+          ready: toolsReady && apisReady && skillsReady,
+        };
+        })(),
+      };
+    });
+
+    return res.json({
+      presets,
+      capabilities,
+      runtimeSkills: builtInSkills,
+      dockerCapabilities,
+    });
+  } catch (error) {
+    console.error('Error listing agent presets:', error);
+    return res.status(500).json({ error: 'Failed to list agent presets' });
+  }
+});
+
 /**
  * Derive instanceId from displayName for consistent agent identity across pods.
  * This ensures the same agent (e.g., "Cuz") gets the same instanceId regardless
@@ -260,6 +956,18 @@ const deriveInstanceId = (displayName, agentName) => {
     return 'default';
   }
   return slug;
+};
+
+const resolveRuntimeInstanceId = ({ agentName, requestedInstanceId, installation }) => {
+  const installedInstanceId = normalizeInstanceId(installation?.instanceId || requestedInstanceId);
+  const normalizedRequested = normalizeInstanceId(requestedInstanceId);
+  if (String(agentName || '').trim().toLowerCase() !== 'openclaw') {
+    return installedInstanceId;
+  }
+  if (installedInstanceId !== 'default') return installedInstanceId;
+  if (normalizedRequested !== 'default') return normalizedRequested;
+  const derived = deriveInstanceId(installation?.displayName, agentName);
+  return derived !== 'default' ? derived : normalizedRequested;
 };
 
 /**
@@ -457,6 +1165,190 @@ const issueUserTokenForInstallation = async ({
   agentUser.apiTokenScopes = normalizedScopes;
   await agentUser.save();
   return { token, scopes: normalizedScopes, createdAt: agentUser.apiTokenCreatedAt };
+};
+
+const reprovisionInstallation = async ({
+  installation,
+  force = true,
+  runtimeTokenCache = new Map(),
+  userTokenCache = new Map(),
+} = {}) => {
+  if (!installation) {
+    throw new Error('Installation is required');
+  }
+
+  const podId = String(installation.podId || '').trim();
+  const name = String(installation.agentName || '').trim().toLowerCase();
+  const normalizedInstanceId = normalizeInstanceId(installation.instanceId);
+  const identityKey = `${name}:${normalizedInstanceId}`;
+  const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+  const runtimeType = typeConfig?.runtime;
+  if (!runtimeType) {
+    throw new Error('Unknown agent runtime type');
+  }
+
+  const agentUser = await AgentIdentityService.getOrCreateAgentUser(name, {
+    instanceId: normalizedInstanceId,
+    displayName: installation.displayName,
+  });
+  await AgentIdentityService.ensureAgentInPod(agentUser, podId);
+
+  const issueLabel = `Bulk reprovision ${normalizedInstanceId}`;
+  let runtimeToken = runtimeTokenCache.get(identityKey) || null;
+  let runtimeIssued = {
+    existing: Boolean(runtimeToken),
+    token: runtimeToken,
+    label: issueLabel,
+  };
+  if (!runtimeToken) {
+    runtimeIssued = await issueRuntimeTokenForAgent(agentUser, issueLabel, installation);
+    if (runtimeIssued.existing && force) {
+      agentUser.agentRuntimeTokens = [];
+      const freshToken = await issueRuntimeTokenForAgent(agentUser, issueLabel, installation);
+      runtimeIssued = { ...runtimeIssued, ...freshToken };
+    }
+    runtimeToken = runtimeIssued.token || null;
+    if (runtimeToken) {
+      runtimeTokenCache.set(identityKey, runtimeToken);
+    }
+  }
+
+  let userToken = userTokenCache.get(identityKey) || null;
+  if (!userToken || runtimeType === 'moltbot') {
+    if (!userToken) {
+      const userIssued = await issueUserTokenForInstallation({
+        agentName: name,
+        instanceId: normalizedInstanceId,
+        displayName: installation.displayName,
+        podId,
+        scopes: installation.scopes || [],
+      });
+      userToken = userIssued?.token || null;
+      if (userToken) {
+        userTokenCache.set(identityKey, userToken);
+      }
+    }
+  }
+
+  const baseUrl = process.env.COMMONLY_API_URL
+    || process.env.COMMONLY_BASE_URL
+    || 'http://backend:5000';
+  const configPayload = normalizeConfigMap(installation.config) || {};
+  const runtimeAuthProfiles = normalizeRuntimeAuthProfiles(configPayload?.runtime?.authProfiles) || null;
+  const runtimeSkillEnv = normalizeSkillEnvEntries(configPayload?.runtime?.skillEnv) || null;
+  const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+  const gateway = configuredGatewayId
+    ? await resolveGatewayForInstallation({ gatewayId: configuredGatewayId })
+    : null;
+
+  let integrationChannels = null;
+  if (runtimeType === 'moltbot') {
+    const integrations = await Integration.find({
+      podId,
+      status: 'connected',
+      isActive: { $ne: false },
+      type: { $in: ['discord', 'slack', 'telegram'] },
+    })
+      .select('_id type config channelName groupName chatTitle name')
+      .lean();
+    integrationChannels = buildOpenClawIntegrationChannels(integrations);
+  }
+
+  const provisioned = await provisionAgentRuntime({
+    runtimeType,
+    agentName: name,
+    instanceId: normalizedInstanceId,
+    runtimeToken: runtimeToken || null,
+    userToken,
+    baseUrl,
+    displayName: installation.displayName,
+    heartbeat: configPayload.heartbeat || null,
+    gateway,
+    authProfiles: runtimeAuthProfiles,
+    skillEnv: runtimeSkillEnv,
+    integrationChannels,
+  });
+
+  let runtimeStart = null;
+  try {
+    runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
+  } catch (startError) {
+    runtimeStart = { started: false, reason: startError.message };
+  }
+
+  let runtimeRestart = null;
+  if (provisioned.restartRequired) {
+    try {
+      runtimeRestart = await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
+    } catch (restartError) {
+      runtimeRestart = { restarted: false, reason: restartError.message };
+    }
+  }
+
+  let skillsSynced = null;
+  if (name === 'openclaw') {
+    const skillSync = configPayload?.skillSync || null;
+    const mode = skillSync?.mode === 'selected' ? 'selected' : 'all';
+    let podIdsToSync = Array.isArray(skillSync?.podIds)
+      ? skillSync.podIds.map((id) => String(id)).filter(Boolean)
+      : [podId];
+    if (skillSync?.allPods) {
+      const allInstallations = await AgentInstallation.find({
+        agentName: name,
+        instanceId: normalizedInstanceId,
+        status: 'active',
+      }).lean();
+      podIdsToSync = allInstallations
+        .map((i) => i.podId?.toString?.())
+        .filter(Boolean);
+    }
+    try {
+      const pathSynced = await syncOpenClawSkills({
+        accountId: normalizedInstanceId,
+        podIds: podIdsToSync,
+        mode,
+        skillNames: Array.isArray(skillSync?.skillNames) ? skillSync.skillNames : [],
+        gateway,
+      });
+      skillsSynced = { success: true, path: pathSynced, podIds: podIdsToSync };
+    } catch (syncError) {
+      skillsSynced = { success: false, error: syncError.message };
+    }
+  }
+
+  const existingRuntimeConfig = { ...(normalizeConfigMap(installation.config)?.runtime || {}) };
+  if (runtimeAuthProfiles) existingRuntimeConfig.authProfiles = runtimeAuthProfiles;
+  if (runtimeSkillEnv) existingRuntimeConfig.skillEnv = runtimeSkillEnv;
+  installation.config = installation.config || {};
+  installation.config.runtime = {
+    ...existingRuntimeConfig,
+    status: 'provisioned',
+    runtimeType,
+    accountId: provisioned.accountId,
+    configPath: provisioned.configPath,
+    restartRequired: provisioned.restartRequired,
+    runtimeStarted: runtimeStart?.started || false,
+    runtimeStartCommand: runtimeStart?.command || null,
+    gatewayId: gateway?._id || existingRuntimeConfig.gatewayId || null,
+    gatewaySlug: gateway?.slug || existingRuntimeConfig.gatewaySlug || null,
+    sharedGateway: runtimeStart?.sharedGateway || false,
+    provisionedAt: new Date(),
+  };
+  await installation.save();
+
+  return {
+    installationId: installation._id?.toString(),
+    podId,
+    agentName: name,
+    instanceId: normalizedInstanceId,
+    runtimeType,
+    runtimeStarted: runtimeStart?.started || false,
+    runtimeRestarted: runtimeRestart?.restarted || false,
+    runtimeStartError: runtimeStart?.reason || null,
+    runtimeRestartError: runtimeRestart?.reason || null,
+    tokenRotated: Boolean(runtimeIssued.token),
+    skillsSynced,
+  };
 };
 
 /**
@@ -847,6 +1739,30 @@ router.get('/categories', auth, async (req, res) => {
 });
 
 /**
+ * GET /api/registry/openclaw/bundled-skills
+ * List bundled gateway skills available under /app/skills.
+ */
+router.get('/openclaw/bundled-skills', auth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const gatewayId = String(req.query.gatewayId || '').trim();
+    const gateway = gatewayId ? await resolveGatewayForRequest({ gatewayId, userId }) : null;
+    const result = await listOpenClawBundledSkills({ gateway });
+    return res.json({
+      skills: result.skills || [],
+      gatewayId: gateway?._id?.toString?.() || null,
+      deployment: result.deployment || null,
+    });
+  } catch (error) {
+    console.error('Error listing bundled OpenClaw skills:', error);
+    return res.status(500).json({ error: 'Failed to list bundled skills' });
+  }
+});
+
+/**
  * POST /api/registry/install
  * Install an agent to a pod
  */
@@ -1067,6 +1983,7 @@ router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    const isGlobalAdmin = await isGlobalAdminUser(userId);
 
     // Verify user has admin access to pod
     const pod = await Pod.findById(podId).lean();
@@ -1082,12 +1999,12 @@ router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
       return memberId && memberId === userId.toString();
     });
 
-    if (!membership && !isCreator) {
+    if (!membership && !isCreator && !isGlobalAdmin) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     if (!installation) {
-      if (!isCreator) {
+      if (!isCreator && !isGlobalAdmin) {
         return res.status(404).json({ error: 'Agent not installed in this pod' });
       }
 
@@ -1107,7 +2024,7 @@ router.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
 
     const isInstaller = installation.installedBy?.toString?.() === userId.toString();
 
-    if (!isCreator && !isInstaller) {
+    if (!isCreator && !isInstaller && !isGlobalAdmin) {
       return res.status(403).json({ error: 'Only pod admins or installers can remove agents' });
     }
 
@@ -1182,42 +2099,70 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
         const profile = profiles.find(
           (p) => p.agentName === i.agentName && p.instanceId === (i.instanceId || 'default'),
         );
-        const normalizedConfig = normalizeConfigMap(i.config);
-        const runtimeConfig = sanitizeRuntimeConfig(normalizedConfig?.runtime || i.config?.runtime || null);
-        return {
-          name: i.agentName,
-          instanceId: i.instanceId || 'default',
-          displayName: i.displayName,
+        return buildAgentInstallationPayload(i, {
+          profile,
           iconUrl: iconMap.get(i.agentName) || '',
-          version: i.version,
-          status: i.status,
-          scopes: i.scopes,
-          installedAt: i.createdAt,
-          usage: i.usage,
-          installedBy: i.installedBy?.toString?.() || i.installedBy,
-          runtime: runtimeConfig,
-          config: normalizedConfig ? {
-            heartbeat: normalizedConfig.heartbeat || null,
-            skillSync: normalizedConfig.skillSync || null,
-          } : null,
-          profile: profile
-            ? {
-              displayName: profile.name,
-              purpose: profile.purpose,
-              isDefault: profile.isDefault,
-              modelPreferences: profile.modelPreferences,
-              instructions: profile.instructions,
-              persona: profile.persona,
-              toolPolicy: profile.toolPolicy,
-              contextPolicy: profile.contextPolicy,
-            }
-            : null,
-        };
+        });
       }),
     });
   } catch (error) {
     console.error('Error listing pod agents:', error);
     res.status(500).json({ error: 'Failed to list pod agents' });
+  }
+});
+
+/**
+ * GET /api/registry/pods/:podId/agents/:name?instanceId=
+ * Return a single installed agent payload with latest persisted config/profile.
+ */
+router.get('/pods/:podId/agents/:name', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { installation } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: req.query.instanceId,
+    });
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!installation || installation.status === 'uninstalled') {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+
+    const [registryEntry, profile] = await Promise.all([
+      AgentRegistry.findOne({ agentName: installation.agentName }).select('iconUrl').lean(),
+      AgentProfile.findOne({
+        podId,
+        agentName: installation.agentName,
+        instanceId: installation.instanceId || 'default',
+      }).lean(),
+    ]);
+
+    return res.json({
+      agent: buildAgentInstallationPayload(installation, {
+        profile,
+        iconUrl: registryEntry?.iconUrl || '',
+      }),
+    });
+  } catch (error) {
+    console.error('Error loading installed pod agent:', error);
+    return res.status(500).json({ error: 'Failed to load installed agent' });
   }
 });
 
@@ -1258,12 +2203,12 @@ router.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =>
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
-    const tokens = (installation.runtimeTokens || []).map((token) => ({
-      id: token._id?.toString(),
-      label: token.label,
-      createdAt: token.createdAt,
-      lastUsedAt: token.lastUsedAt,
-    }));
+    const resolvedType = AgentIdentityService.resolveAgentType(name);
+    const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
+    const agentUser = await User.findOne({ username: agentUsername, isBot: true })
+      .select('agentRuntimeTokens')
+      .lean();
+    const tokens = serializeRuntimeTokens(agentUser?.agentRuntimeTokens || []);
 
     return res.json({ tokens });
   } catch (error) {
@@ -1307,13 +2252,28 @@ router.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) =
       instanceId,
     });
     const installation = resolved.installation;
-    const normalizedInstanceId = resolved.instanceId;
+    const normalizedInstanceId = resolveRuntimeInstanceId({
+      agentName: name,
+      requestedInstanceId: resolved.instanceId,
+      installation,
+    });
 
     if (!installation || installation.status !== 'active') {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
-    const issued = await issueRuntimeTokenForInstallation(installation, label);
+    const resolvedType = AgentIdentityService.resolveAgentType(name);
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(resolvedType, {
+      instanceId: normalizedInstanceId,
+      displayName: installation.displayName,
+    });
+    await AgentIdentityService.ensureAgentInPod(agentUser, podId);
+
+    const issued = await issueRuntimeTokenForAgent(
+      agentUser,
+      label || `Provisioned ${normalizedInstanceId}`,
+      installation,
+    );
     return res.json(issued);
   } catch (error) {
     console.error('Error issuing agent runtime token:', error);
@@ -1358,16 +2318,33 @@ router.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', auth, async (
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
-    const originalCount = installation.runtimeTokens?.length || 0;
-    installation.runtimeTokens = (installation.runtimeTokens || []).filter(
+    const resolvedType = AgentIdentityService.resolveAgentType(name);
+    const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
+    const agentUser = await User.findOne({ username: agentUsername, isBot: true });
+    if (!agentUser) {
+      return res.status(404).json({ error: 'Agent user not found' });
+    }
+
+    const originalCount = agentUser.agentRuntimeTokens?.length || 0;
+    agentUser.agentRuntimeTokens = (agentUser.agentRuntimeTokens || []).filter(
       (token) => token._id?.toString() !== tokenId,
     );
 
-    if ((installation.runtimeTokens || []).length === originalCount) {
+    if ((agentUser.agentRuntimeTokens || []).length === originalCount) {
       return res.status(404).json({ error: 'Runtime token not found' });
     }
 
-    await installation.save();
+    await agentUser.save();
+    await AgentInstallation.updateMany(
+      {
+        agentName: name.toLowerCase(),
+        instanceId,
+        status: { $ne: 'uninstalled' },
+      },
+      {
+        $pull: { runtimeTokens: { _id: tokenId } },
+      },
+    );
     return res.json({ success: true });
   } catch (error) {
     console.error('Error revoking agent runtime token:', error);
@@ -1500,6 +2477,69 @@ router.get('/admin/installations', auth, adminAuth, async (req, res) => {
   } catch (error) {
     console.error('Error listing admin installations:', error);
     return res.status(500).json({ error: 'Failed to list installations' });
+  }
+});
+
+/**
+ * POST /api/registry/admin/installations/reprovision-all
+ * Force reprovision all active agent installations (global admin only).
+ */
+router.post('/admin/installations/reprovision-all', auth, adminAuth, async (req, res) => {
+  try {
+    const limitRaw = Number(req.body?.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0
+      ? Math.min(Math.floor(limitRaw), 5000)
+      : 1000;
+    const activeInstallations = await AgentInstallation.find({ status: 'active' })
+      .sort({ updatedAt: -1 })
+      .limit(limit);
+
+    const runtimeTokenCache = new Map();
+    const userTokenCache = new Map();
+    const items = [];
+    for (const installation of activeInstallations) {
+      try {
+        const result = await reprovisionInstallation({
+          installation,
+          force: true,
+          runtimeTokenCache,
+          userTokenCache,
+        });
+        items.push({
+          installationId: result.installationId,
+          agentName: result.agentName,
+          instanceId: result.instanceId,
+          podId: result.podId,
+          success: true,
+          runtimeStarted: result.runtimeStarted,
+          runtimeRestarted: result.runtimeRestarted,
+          runtimeStartError: result.runtimeStartError,
+          runtimeRestartError: result.runtimeRestartError,
+        });
+      } catch (error) {
+        items.push({
+          installationId: installation._id?.toString(),
+          agentName: installation.agentName,
+          instanceId: installation.instanceId || 'default',
+          podId: installation.podId?.toString?.() || null,
+          success: false,
+          error: error.message,
+        });
+      }
+    }
+
+    const succeeded = items.filter((item) => item.success).length;
+    const failed = items.length - succeeded;
+    return res.json({
+      success: failed === 0,
+      attempted: items.length,
+      succeeded,
+      failed,
+      items,
+    });
+  } catch (error) {
+    console.error('Error running bulk reprovision:', error);
+    return res.status(500).json({ error: 'Failed to run bulk reprovision' });
   }
 });
 
@@ -1655,13 +2695,16 @@ router.get('/pods/:podId/agents/:name/user-token', auth, async (req, res) => {
     const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
     const agentUser = await User.findOne({ username: agentUsername }).lean();
     if (!agentUser || !agentUser.apiToken) {
-      return res.json({ hasToken: false, scopes: [] });
+      return res.json({ hasToken: false, scopes: [], scopeMode: 'none' });
     }
+    const normalizedScopes = normalizeScopes(agentUser.apiTokenScopes || []);
+    const scopeMode = normalizedScopes.length > 0 ? 'scoped' : 'all';
 
     return res.json({
       hasToken: true,
       createdAt: agentUser.apiTokenCreatedAt || null,
-      scopes: agentUser.apiTokenScopes || [],
+      scopes: normalizedScopes,
+      scopeMode,
     });
   } catch (error) {
     console.error('Error fetching agent user token metadata:', error);
@@ -1704,7 +2747,11 @@ router.post('/pods/:podId/agents/:name/user-token', auth, async (req, res) => {
       instanceId,
     });
     const installation = resolved.installation;
-    const normalizedInstanceId = resolved.instanceId;
+    const normalizedInstanceId = resolveRuntimeInstanceId({
+      agentName: name,
+      requestedInstanceId: resolved.instanceId,
+      installation,
+    });
 
     if (!installation || installation.status !== 'active') {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
@@ -1717,8 +2764,10 @@ router.post('/pods/:podId/agents/:name/user-token', auth, async (req, res) => {
       podId,
       scopes,
     });
-
-    return res.json(issued);
+    return res.json({
+      ...issued,
+      scopeMode: Array.isArray(issued.scopes) && issued.scopes.length > 0 ? 'scoped' : 'all',
+    });
   } catch (error) {
     console.error('Error issuing agent user token:', error);
     return res.status(500).json({ error: 'Failed to issue user token' });
@@ -1830,7 +2879,11 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       instanceId,
     });
     const installation = resolved.installation;
-    const normalizedInstanceId = resolved.instanceId;
+    const normalizedInstanceId = resolveRuntimeInstanceId({
+      agentName: name,
+      requestedInstanceId: resolved.instanceId,
+      installation,
+    });
 
     if (!installation || installation.status !== 'active') {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
@@ -1919,9 +2972,24 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
 
     // Only provision if we have a new token (not existing)
     let provisioned = { accountId: null, configPath: null, restartRequired: false };
-    const shouldProvision = Boolean(runtimeIssued.token || runtimeAuthProfiles || runtimeSkillEnv);
+    let integrationChannels = null;
+    if (runtimeType === 'moltbot') {
+      const integrations = await Integration.find({
+        podId,
+        status: 'connected',
+        isActive: { $ne: false },
+        type: { $in: ['discord', 'slack', 'telegram'] },
+      })
+        .select('_id type config channelName groupName chatTitle name')
+        .lean();
+      integrationChannels = buildOpenClawIntegrationChannels(integrations);
+    }
+    // For OpenClaw, always re-run provisioning so shared-instance settings apply across pods
+    // even when the runtime token already exists and no new raw token is returned.
+    const shouldProvision = runtimeType === 'moltbot'
+      || Boolean(runtimeIssued.token || runtimeAuthProfiles || runtimeSkillEnv);
     if (shouldProvision) {
-      provisioned = provisionAgentRuntime({
+      provisioned = await provisionAgentRuntime({
         runtimeType,
         agentName: name,
         instanceId: normalizedInstanceId,
@@ -1933,6 +3001,7 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
         gateway,
         authProfiles: runtimeAuthProfiles,
         skillEnv: runtimeSkillEnv,
+        integrationChannels,
       });
     }
 
@@ -1951,6 +3020,50 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       } catch (restartError) {
         console.warn('Runtime restart failed:', restartError.message);
         runtimeRestart = { restarted: false, reason: restartError.message };
+      }
+    }
+
+    let skillsSynced = null;
+    if (name.toLowerCase() === 'openclaw') {
+      const skillSync = configPayload?.skillSync || null;
+      const mode = skillSync?.mode === 'selected' ? 'selected' : 'all';
+      const requestedPodIds = Array.isArray(skillSync?.podIds)
+        ? skillSync.podIds.map((id) => String(id)).filter(Boolean)
+        : [String(podId)];
+      let podIdsToSync = requestedPodIds;
+
+      if (skillSync?.allPods) {
+        const allInstallations = await AgentInstallation.find({
+          agentName: name.toLowerCase(),
+          instanceId: normalizedInstanceId,
+          status: 'active',
+        }).lean();
+        podIdsToSync = allInstallations
+          .map((i) => i.podId?.toString?.())
+          .filter(Boolean);
+      }
+
+      if (podIdsToSync.length) {
+        const pods = await Pod.find({ _id: { $in: podIdsToSync } })
+          .select('members createdBy')
+          .lean();
+        podIdsToSync = pods
+          .filter((p) => userHasPodAccess(p, userId))
+          .map((p) => p._id.toString());
+      }
+
+      try {
+        const skillsPath = await syncOpenClawSkills({
+          accountId: normalizedInstanceId,
+          podIds: podIdsToSync,
+          mode,
+          skillNames: Array.isArray(skillSync?.skillNames) ? skillSync.skillNames : [],
+          gateway,
+        });
+        skillsSynced = { success: true, path: skillsPath, podIds: podIdsToSync };
+      } catch (syncError) {
+        console.warn('OpenClaw skill sync failed during provision:', syncError.message);
+        skillsSynced = { success: false, error: syncError.message };
       }
     }
 
@@ -1995,6 +3108,7 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       sharedGateway: runtimeStart?.sharedGateway || false,
       runtimeRestarted: runtimeRestart?.restarted || false,
       runtimeRestartError: runtimeRestart?.reason || null,
+      skillsSynced,
       // Indicate this is a shared agent identity
       sharedIdentity: true,
       agentUsername: agentUser.username,
@@ -2328,11 +3442,13 @@ router.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req, res) => {
 
 /**
  * GET /api/registry/pods/:podId/agents/:name/plugins
- * List OpenClaw plugins (local gateway).
+ * List OpenClaw plugins for the selected/runtime gateway.
  */
 router.get('/pods/:podId/agents/:name/plugins', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
+    const instanceId = normalizeInstanceId(req.query.instanceId || 'default');
+    const gatewayId = req.query.gatewayId || null;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -2363,8 +3479,27 @@ router.get('/pods/:podId/agents/:name/plugins', auth, async (req, res) => {
       return res.status(400).json({ error: 'Plugin management is only supported for OpenClaw' });
     }
 
-    const plugins = await listOpenClawPlugins();
-    return res.json({ runtimeType, ...plugins });
+    const { installation } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId,
+    });
+    const configPayload = normalizeConfigMap(installation?.config) || {};
+    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await resolveGatewayForRequest({ gatewayId, userId });
+    } else if (configuredGatewayId) {
+      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
+    }
+
+    const plugins = await listOpenClawPlugins({ gateway });
+    return res.json({
+      runtimeType,
+      ...plugins,
+      gatewayId: gateway?._id || null,
+      gatewaySlug: gateway?.slug || null,
+    });
   } catch (error) {
     console.error('Error fetching OpenClaw plugins:', error);
     return res.status(500).json({ error: 'Failed to list plugins' });
@@ -2373,12 +3508,19 @@ router.get('/pods/:podId/agents/:name/plugins', auth, async (req, res) => {
 
 /**
  * POST /api/registry/pods/:podId/agents/:name/plugins/install
- * Install an OpenClaw plugin in the local gateway.
+ * Install an OpenClaw plugin in the selected/runtime gateway.
  */
 router.post('/pods/:podId/agents/:name/plugins/install', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
-    const { spec, pluginId, link = false, restart = false } = req.body || {};
+    const {
+      spec,
+      pluginId,
+      link = false,
+      restart = false,
+      instanceId,
+      gatewayId,
+    } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -2413,7 +3555,23 @@ router.post('/pods/:podId/agents/:name/plugins/install', auth, async (req, res) 
       return res.status(400).json({ error: 'Plugin management is only supported for OpenClaw' });
     }
 
-    const pluginReport = await listOpenClawPlugins();
+    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: normalizedInstanceId,
+    });
+    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+    const configPayload = normalizeConfigMap(installation?.config) || {};
+    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await resolveGatewayForRequest({ gatewayId, userId });
+    } else if (configuredGatewayId) {
+      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
+    }
+
+    const pluginReport = await listOpenClawPlugins({ gateway });
     const normalizedPluginId = normalizePluginIdentifier(pluginId);
     const specNormalized = normalizePluginIdentifier(spec);
     const specBase = getPluginSpecBase(spec);
@@ -2435,10 +3593,10 @@ router.post('/pods/:podId/agents/:name/plugins/install', auth, async (req, res) 
       });
     }
 
-    const installResult = await installOpenClawPlugin({ spec, link: Boolean(link) });
+    const installResult = await installOpenClawPlugin({ spec, link: Boolean(link), gateway });
     let restartResult = null;
     if (restart) {
-      restartResult = await restartDockerRuntime(runtimeType);
+      restartResult = await restartAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
     }
 
     return res.json({
@@ -2450,6 +3608,8 @@ router.post('/pods/:podId/agents/:name/plugins/install', auth, async (req, res) 
       errorOutput: installResult.stderr,
       command: installResult.command,
       restart: restartResult,
+      gatewayId: gateway?._id || null,
+      gatewaySlug: gateway?.slug || null,
     });
   } catch (error) {
     console.error('Error installing OpenClaw plugin:', error);
@@ -2606,7 +3766,7 @@ router.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) =
       ? (trimmed.startsWith('#') ? `${trimmed}\n` : `# HEARTBEAT.md\n\n${trimmed}\n`)
       : '# HEARTBEAT.md\n\n';
 
-    const filePath = writeOpenClawHeartbeatFile(accountId, normalized, { allowEmpty: true });
+    const filePath = await writeOpenClawHeartbeatFile(accountId, normalized, { allowEmpty: true });
 
     return res.json({ success: true, path: filePath, reset: Boolean(reset) });
   } catch (error) {
@@ -2671,39 +3831,77 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
-    // Update fields
-    if (config) {
-      const existingConfig = normalizeConfigMap(installation.config) || {};
-      const nextConfig = { ...existingConfig, ...config };
-      if (nextConfig.runtime && typeof nextConfig.runtime === 'object') {
-        const runtimeConfig = { ...nextConfig.runtime };
-        const normalizedAuthProfiles = normalizeRuntimeAuthProfiles(runtimeConfig.authProfiles);
-        if (normalizedAuthProfiles) {
-          runtimeConfig.authProfiles = normalizedAuthProfiles;
-        } else if (runtimeConfig.authProfiles === null) {
-          delete runtimeConfig.authProfiles;
+    const applyInstallationSettings = (targetInstallation) => {
+      if (!targetInstallation) return;
+      if (config) {
+        const existingConfig = normalizeConfigMap(targetInstallation.config) || {};
+        const nextConfig = { ...existingConfig, ...config };
+        if (nextConfig.runtime && typeof nextConfig.runtime === 'object') {
+          const runtimeConfig = { ...nextConfig.runtime };
+          const normalizedAuthProfiles = normalizeRuntimeAuthProfiles(runtimeConfig.authProfiles);
+          if (normalizedAuthProfiles) {
+            runtimeConfig.authProfiles = normalizedAuthProfiles;
+          } else if (runtimeConfig.authProfiles === null) {
+            delete runtimeConfig.authProfiles;
+          }
+          const normalizedSkillEnv = normalizeSkillEnvEntries(runtimeConfig.skillEnv);
+          if (normalizedSkillEnv) {
+            runtimeConfig.skillEnv = normalizedSkillEnv;
+          } else if (runtimeConfig.skillEnv === null) {
+            delete runtimeConfig.skillEnv;
+          }
+          nextConfig.runtime = runtimeConfig;
         }
-        const normalizedSkillEnv = normalizeSkillEnvEntries(runtimeConfig.skillEnv);
-        if (normalizedSkillEnv) {
-          runtimeConfig.skillEnv = normalizedSkillEnv;
-        } else if (runtimeConfig.skillEnv === null) {
-          delete runtimeConfig.skillEnv;
-        }
-        nextConfig.runtime = runtimeConfig;
+        targetInstallation.config = new Map(Object.entries(nextConfig));
       }
-      installation.config = new Map(Object.entries(nextConfig));
-    }
-    if (scopes) {
-      installation.scopes = scopes;
-    }
-    if (status && ['active', 'paused'].includes(status)) {
-      installation.status = status;
-    }
-    if (displayName) {
-      installation.displayName = displayName;
+      if (scopes) {
+        targetInstallation.scopes = scopes;
+      }
+      if (status && ['active', 'paused'].includes(status)) {
+        targetInstallation.status = status;
+      }
+      if (displayName) {
+        targetInstallation.displayName = displayName;
+      }
+    };
+
+    const peerInstallations = await AgentInstallation.find({
+      agentName: name.toLowerCase(),
+      instanceId: normalizedInstanceId,
+      status: { $ne: 'uninstalled' },
+    });
+
+    const peerByPod = new Map(
+      peerInstallations.map((entry) => [entry.podId?.toString?.() || '', entry]),
+    );
+    if (!peerByPod.has(podId.toString())) {
+      peerByPod.set(podId.toString(), installation);
     }
 
-    await installation.save();
+    let accessiblePodIds = [podId.toString()];
+    if (peerByPod.size > 1) {
+      const peerPodIds = Array.from(peerByPod.keys()).filter(Boolean);
+      const peerPods = await Pod.find({ _id: { $in: peerPodIds } })
+        .select('_id members createdBy')
+        .lean();
+      accessiblePodIds = peerPods
+        .filter((entry) => userHasPodAccess(entry, userId))
+        .map((entry) => entry._id.toString());
+      if (!accessiblePodIds.includes(podId.toString())) {
+        accessiblePodIds.push(podId.toString());
+      }
+    }
+
+    const accessiblePodSet = new Set(accessiblePodIds);
+    const installationsToUpdate = Array.from(peerByPod.entries())
+      .filter(([entryPodId]) => accessiblePodSet.has(entryPodId))
+      .map(([, entry]) => entry);
+
+    for (const targetInstallation of installationsToUpdate) {
+      applyInstallationSettings(targetInstallation);
+      // eslint-disable-next-line no-await-in-loop
+      await targetInstallation.save();
+    }
 
     // Update agent profile if needed
     if (
@@ -2723,8 +3921,11 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
       if (persona !== undefined) updates.persona = persona;
       if (normalizedToolPolicy !== null) updates.toolPolicy = normalizedToolPolicy;
       if (normalizedContextPolicy !== null) updates.contextPolicy = normalizedContextPolicy;
-      await AgentProfile.updateOne(
-        { agentId: buildAgentProfileId(name, normalizedInstanceId), podId },
+      await AgentProfile.updateMany(
+        {
+          agentId: buildAgentProfileId(name, normalizedInstanceId),
+          podId: { $in: accessiblePodIds },
+        },
         updates,
       );
     }
@@ -2768,6 +3969,7 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
         status: installation.status,
         scopes: installation.scopes,
       },
+      updatedPods: accessiblePodIds.length,
     });
   } catch (error) {
     console.error('Error updating agent:', error);

@@ -430,29 +430,25 @@ const SkillsCatalogPage = () => {
       if (!(key in env)) env[key] = '';
     });
     const hasPrimaryEnv = Boolean(gatewayPrimaryEnv);
-    const rawEntry = {};
-    if (hasPrimaryEnv) {
-      if (gatewayApiKeyInput) rawEntry[gatewayPrimaryEnv] = gatewayApiKeyInput;
-      if (gatewayApiKeyClear) rawEntry[gatewayPrimaryEnv] = '';
-      Object.entries(env).forEach(([key, value]) => {
-        rawEntry[key] = value;
-      });
-    }
-    const shouldSendRaw = hasPrimaryEnv && Object.keys(rawEntry).length > 0;
     const shouldSendApiKey = Boolean(gatewayApiKeyInput) || gatewayApiKeyClear;
-    if (!Object.keys(env).length && !shouldSendApiKey && !shouldSendRaw) {
+    if (!Object.keys(env).length && !shouldSendApiKey) {
       alert('Add at least one key or clear an existing key before saving.');
       return;
     }
     setGatewaySaving(true);
     try {
       const payloadEntry = {};
-      if (shouldSendRaw) {
-        Object.assign(payloadEntry, rawEntry);
+      const payloadEnv = { ...env };
+      if (hasPrimaryEnv) {
+        if (gatewayApiKeyInput) payloadEnv[gatewayPrimaryEnv] = gatewayApiKeyInput;
+        if (gatewayApiKeyClear) payloadEnv[gatewayPrimaryEnv] = '';
+      }
+      if (Object.keys(payloadEnv).length) {
+        payloadEntry.env = payloadEnv;
       } else if (Object.keys(env).length) {
         payloadEntry.env = env;
       }
-      if (!shouldSendRaw && shouldSendApiKey) {
+      if (shouldSendApiKey) {
         payloadEntry.apiKey = gatewayApiKeyInput ? gatewayApiKeyInput : '';
       }
       await axios.patch('/api/skills/gateway-credentials', {

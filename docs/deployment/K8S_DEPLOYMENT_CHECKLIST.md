@@ -30,10 +30,14 @@ docker build \
 docker push ${REGISTRY}/commonly-frontend:latest
 ```
 
-### Cloud Build (Backend)
+### Cloud Build (Backend + Frontend)
 
 ```bash
-gcloud builds submit --config cloudbuild.backend.yaml .
+BACKEND_TAG=$(date +%Y%m%d%H%M%S)
+FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
+
+gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
 ```
 
 ## Values Files
@@ -94,6 +98,10 @@ helm install commonly ./k8s/helm/commonly \
   --set ingress.hosts.frontend.host=${DOMAIN} \
   --set ingress.hosts.backend.host=api.${DOMAIN}
 ```
+
+Gateway strategy check:
+- Ensure `agents.clawdbot.strategy.type=Recreate` in values files.
+- This prevents `ReadWriteOnce` PVC multi-attach deadlocks during gateway upgrades.
 
 ## Verify Deployment
 
@@ -216,22 +224,21 @@ mongoose.connect(process.env.MONGO_URI).then(async () => {
 
 ```bash
 # After code changes, rebuild and push images (Cloud Build)
-gcloud builds submit --config cloudbuild.backend.yaml .
+BACKEND_TAG=$(date +%Y%m%d%H%M%S)
+FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
+gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
 
-# Upgrade with Helm
-helm upgrade commonly ./k8s/helm/commonly \
-  -f ./k8s/helm/commonly/values.yaml \
-  --namespace default
+# Roll out both components to both namespaces
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
 
-helm upgrade commonly-dev ./k8s/helm/commonly \
-  -f ./k8s/helm/commonly/values-dev.yaml \
-  --namespace commonly-dev
-
-# Or force restart
-kubectl rollout restart deployment backend -n default
-kubectl rollout restart deployment frontend -n default
-kubectl rollout restart deployment backend -n commonly-dev
-kubectl rollout restart deployment frontend -n commonly-dev
+kubectl rollout status deployment/backend -n commonly
+kubectl rollout status deployment/frontend -n commonly
+kubectl rollout status deployment/backend -n commonly-dev
+kubectl rollout status deployment/frontend -n commonly-dev
 ```
 
 ## Monitoring
