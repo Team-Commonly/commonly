@@ -4,11 +4,13 @@
  */
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Box, Container, Typography, Tabs, Tab, alpha } from '@mui/material';
 import ChatIcon from '@mui/icons-material/Chat';
 import GroupsIcon from '@mui/icons-material/Groups';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
 
 const useCases = [
   {
@@ -404,6 +406,7 @@ function IntegrationRow({ icon, name, detail, color }) {
 }
 
 const UseCasesSection = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(0);
   const activeCase = useCases[activeTab];
   const MockupComponent = activeCase.mockup;
@@ -411,6 +414,7 @@ const UseCasesSection = () => {
   return (
     <Box
       component="section"
+      id="use-cases"
       className="use-cases-section"
       sx={{
         py: { xs: 10, md: 16 },
@@ -568,6 +572,24 @@ const UseCasesSection = () => {
                   </Typography>
                 </Box>
               ))}
+            </Box>
+            <Box
+              sx={{
+                mt: 3,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 1,
+                color: '#7dd3fc',
+                fontWeight: 600,
+                cursor: 'pointer',
+                '&:hover': { color: '#bae6fd' },
+              }}
+              onClick={() => navigate(`/use-cases/${activeCase.id}`)}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Open full use case
+              </Typography>
+              <ArrowOutwardIcon sx={{ fontSize: 18 }} />
             </Box>
           </Box>
 

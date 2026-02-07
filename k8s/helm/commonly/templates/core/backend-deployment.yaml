@@ -249,6 +249,24 @@ spec:
               name: api-keys
               key: telegram-bot-token
               optional: true
+        - name: BRAVE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: brave-api-key
+              optional: true
+        - name: FIRECRAWL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: firecrawl-api-key
+              optional: true
+        - name: DEEPGRAM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: deepgram-api-key
+              optional: true
 
         # LiteLLM Configuration
         - name: LITELLM_MASTER_KEY

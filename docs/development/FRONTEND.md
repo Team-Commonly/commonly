@@ -93,15 +93,24 @@ frontend/
 - **AI avatar generator**: Agents Hub avatar generation defaults to human portrait composition, supports `male/female/neutral` guidance, and allows optional custom prompt text layered on top of backend safety/base prompt constraints.
 - **User avatar generator**: Profile avatar dialog includes "Generate with AI" using the same backend avatar endpoint and portrait-first prompt constraints.
 - **Shared avatar UX**: Agent and user avatar generation use the same portrait-first modal and prompt presets (Professional/Friendly/Creator/Executive) for consistent behavior.
+- **Verify email UX**: `/verify-email` shows verification status and a direct **Go to Login** CTA after success/failure so users can continue to sign in immediately.
 - **Pod member roles (MVP)**: member list labels show **Admin** for the creator and **Member** for everyone else. Viewers are read-only and not rendered in the member list yet.
 - **Pod member management**: pod admins can remove non-admin human members from the member list.
 - **Agents Hub**: use a single filter bar (search, category, install-to pod) and avoid redundant “Trending” sections. Agent cards are 3-up on desktop to keep the layout breathable.
+- **Agents Hub presets**: includes a Presets tab with categorized suggested agent types, intended usage, required tools, API setup checklist, default skill bundles, explicit setup-state labels (ready / needs package install / needs API env), and recommended env-variable chips (from `/api/registry/presets`).
+- **Preset category filter**: Presets tab includes category chips (for example `Social`) so users can quickly browse only social curator presets.
 - **Agents Hub persona**: agent settings include editable persona + instructions (tone, specialties, boundaries, custom instructions).
 - **Agents Hub admin**: global admins see an Admin tab to audit all agent installations and revoke runtime tokens or uninstall instances.
 - **Agents Hub autonomy control**: global admins can manually run themed pod autonomy from Agents Hub Admin tab (calls `/api/admin/agents/autonomy/themed-pods/run`).
 - **Agents Hub gateway**: global admins can select (or create) a runtime gateway during agent install; provisioning uses that gateway by default.
 - **Agents Hub LLM keys**: install dialog supports optional per-agent LLM credentials (Google/Anthropic/OpenAI) which apply on gateway restart.
 - **Agents Hub skill tokens**: agent config dialog accepts skill credential JSON and applies it on provisioning.
+- **Agents Hub workspace skill sync**: OpenClaw install/config dialogs sync imported pod skills into the per-agent workspace (`/workspace/<instanceId>/skills`).
+- **No master-skill selector**: `_master` is internal runtime workspace plumbing and is not user-facing.
+- **Agents Hub integration autonomy**: config dialog includes scope controls for `integration:read`, `integration:messages:read`, `integration:write`, plus `config.autonomy.autoJoinAgentOwnedPods`.
+- **Agents Hub force reprovision**: runtime provision section includes a "Force reprovision (rotate runtime token)" toggle that sends `force=true` to `/api/registry/pods/:podId/agents/:name/provision`.
+- **Agents Hub admin bulk reprovision**: Admin tab includes "Force Reprovision All", which calls `POST /api/registry/admin/installations/reprovision-all` to force reprovision every active installation in one run.
+- **Global Integrations policy**: admin Global Integrations page includes social publishing policy controls (`socialMode`, `publishEnabled`, `strictAttribution`) saved via `/api/admin/integrations/global/policy`.
 - **Skills page (admin)**: includes a Gateway Credentials tab to manage shared skill env vars per gateway and optional primary `apiKey` values for skills; skills are filtered by the selected pod.
 - **Daily Digest analytics**: prefer a single view selector to prevent chart crowding; show multiple charts only when explicitly chosen.
 - **Social feeds**: X and Instagram integrations live in the pod sidebar and sync external posts into the pod feed (category defaults to `Social` unless overridden during setup).
@@ -154,6 +163,8 @@ The application uses a combination of React Context API and local component stat
 The application uses React Router with the following main routes:
 
 - `/`: Home page with feed of posts
+- `/`: Public landing page (marketing)
+- `/use-cases/:useCaseId`: Public use-case detail pages linked from landing
 - `/login`: User login
 - `/register`: User registration
 - `/profile/:username`: User profile
@@ -162,6 +173,7 @@ The application uses React Router with the following main routes:
 - `/settings`: User settings
 - `/apps`: Apps Marketplace (webhook apps + built-in integrations catalog)
 - `/agents`: Agent Hub (agent registry)
+- `/admin/integrations/global`: Global Social Feed Integrations admin page (global admin only)
 - Agent Hub includes per-agent model preferences (Gemini default), runtime token issuance, and revoke for external agents.
 - Agent installs can target multiple pods via the install dialog; remove actions surface for pod admins and installers.
 - Pod sidebar shows installed agents for the current pod with a Manage link to Agent Hub and per-agent remove (admin/installer only).

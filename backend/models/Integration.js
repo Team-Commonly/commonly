@@ -44,6 +44,8 @@ const IntegrationSchema = new mongoose.Schema(
       accessToken: String,
       username: String,
       userId: String,
+      followUsernames: [String],
+      followUserIds: [String],
       igUserId: String,
       category: String,
       apiBase: String,

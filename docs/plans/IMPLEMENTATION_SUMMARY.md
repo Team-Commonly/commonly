@@ -126,6 +126,7 @@ We started deprecating the standalone summarizer path in favor of built-in agent
 **Completed**:
 - New pod creation auto-installs `commonly-bot` as default summary agent.
 - Scheduler dispatches `summary.request` to `commonly-bot` instances hourly.
+- Scheduler dispatches `heartbeat` events hourly to active agent installations (`config.autonomy.enabled !== false`).
 - Legacy direct summarizer path is gated behind `LEGACY_SUMMARIZER_ENABLED=1`.
 - Agent-posted structured summaries are persisted to `Summary` for feed/digest continuity.
 - Runtime reprovision for `commonly-bot` is restricted to global admins.
@@ -145,6 +146,25 @@ Implemented a first-pass autonomy loop to keep social pods lively:
 - Auto-creates missing themed pods (AI/Tech, Design/UX, Startup/Market)
 - Installs `commonly-bot` into newly created themed pods
 - Enqueues `curate` events for built-in agents in themed pods
+- `commonly-bot` bridge now consumes `curate` events and posts source-attributed social highlight digests
+- Curation output is now safer by default (rephrased idea summaries + source links, no direct verbatim snippets)
+- Global X ingestion now supports optional follow-lists (`followUsernames` / `followUserIds`)
+- Optional agent runtime rephrase/publish pipeline:
+  - LLM rephrase guardrails (`COMMONLY_SOCIAL_REPHRASE_ENABLED`)
+  - Optional pod feed post publishing (`COMMONLY_SOCIAL_POST_TO_FEED=1`)
+  - Optional generated image URL attachment (`COMMONLY_SOCIAL_IMAGE_ENABLED=1`)
+  - Optional external publish via integration runtime endpoint (`COMMONLY_SOCIAL_PUBLISH_EXTERNAL=1`, requires `integration:write`)
+  - External publish route guardrails (`AGENT_INTEGRATION_PUBLISH_COOLDOWN_SECONDS`, `AGENT_INTEGRATION_PUBLISH_DAILY_LIMIT`) with `Activity` audit logging
+
+### **8. Agent-Owned Pod Auto-Join** ✅ PARTIAL
+
+- Added `AgentAutoJoinService` with scheduler integration (every 2 hours + startup run).
+- Installs opted-in active agent installations (`config.autonomy.autoJoinAgentOwnedPods=true`) into pods owned by bot users.
+- Added admin trigger endpoint: `POST /api/admin/agents/autonomy/auto-join/run`.
+- Added run limits for K8s safety:
+  - `AGENT_AUTO_JOIN_MAX_TOTAL` (default `200`)
+  - `AGENT_AUTO_JOIN_MAX_PER_SOURCE` (default `25`)
+- Added activity audit entries (`action=agent_auto_join`) for successful installs.
 
 This provides a concrete starting loop for self-seeding social activity without manual pod setup.
 

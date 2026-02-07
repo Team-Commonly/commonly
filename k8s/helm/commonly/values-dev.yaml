@@ -90,6 +90,8 @@ externalSecrets:
 agents:
   clawdbot:
     enabled: true
+    strategy:
+      type: Recreate
     persistence:
       config:
         storageClass: standard-rwo

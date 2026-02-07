@@ -8,6 +8,7 @@ const externalFeedService = require('./externalFeedService');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentEnsembleService = require('./agentEnsembleService');
 const PodCurationService = require('./podCurationService');
+const AgentAutoJoinService = require('./agentAutoJoinService');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('./chatSummarizerService');
@@ -132,7 +133,52 @@ class SchedulerService {
       },
     );
 
-    this.jobs = [summarizerJob, externalFeedJob, dailyDigestJob, cleanupJob, ensembleJob, themedPodAutonomyJob];
+    const agentAutoJoinJob = cron.schedule(
+      '45 */2 * * *',
+      async () => {
+        console.log('Running agent auto-join for agent-owned pods...');
+        try {
+          const result = await AgentAutoJoinService.runAutoJoinAgentOwnedPods({
+            source: 'scheduled-autojoin',
+          });
+          console.log(`Agent auto-join complete. Installed: ${result.installed}, Sources: ${result.scannedSources}`);
+        } catch (error) {
+          console.error('Error in agent auto-join scheduler:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
+
+    const agentHeartbeatJob = cron.schedule(
+      '30 * * * *',
+      async () => {
+        console.log('Dispatching agent heartbeat events...');
+        try {
+          const result = await SchedulerService.dispatchAgentHeartbeats({ trigger: 'scheduled-hourly' });
+          console.log(`Agent heartbeats enqueued: ${result.enqueued}`);
+        } catch (error) {
+          console.error('Error dispatching agent heartbeats:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
+
+    this.jobs = [
+      summarizerJob,
+      externalFeedJob,
+      dailyDigestJob,
+      cleanupJob,
+      ensembleJob,
+      themedPodAutonomyJob,
+      agentAutoJoinJob,
+      agentHeartbeatJob,
+    ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
 
@@ -141,6 +187,8 @@ class SchedulerService {
     console.log('- Cleanup runs daily at 2 AM UTC');
     console.log('- External feeds sync every 10 minutes');
     console.log('- Themed pod autonomy runs every 2 hours');
+    console.log('- Agent auto-join (agent-owned pods) runs every 2 hours');
+    console.log('- Agent heartbeats run every hour at :30');
 
     // Run initial summarizer after a short delay
     setTimeout(() => {
@@ -163,6 +211,20 @@ class SchedulerService {
         console.error('Error in initial themed pod autonomy run:', error);
       });
     }, 9000);
+
+    setTimeout(() => {
+      SchedulerService.dispatchAgentHeartbeats({ trigger: 'startup' }).catch((error) => {
+        console.error('Error in initial heartbeat dispatch:', error);
+      });
+    }, 11000);
+
+    setTimeout(() => {
+      AgentAutoJoinService.runAutoJoinAgentOwnedPods({
+        source: 'startup-autojoin',
+      }).catch((error) => {
+        console.error('Error in initial auto-join run:', error);
+      });
+    }, 13000);
   }
 
   stop() {
@@ -458,6 +520,41 @@ class SchedulerService {
       isRunning: this.isRunning,
       jobCount: this.jobs.length,
       nextRun: this.jobs.length > 0 ? 'Next hour at minute 0' : 'Not scheduled',
+    };
+  }
+
+  static async dispatchAgentHeartbeats({ trigger = 'scheduled-hourly' } = {}) {
+    const installations = await AgentInstallation.find({
+      status: 'active',
+    }).select('agentName instanceId podId config.autonomy').lean();
+
+    if (!installations.length) {
+      return { scanned: 0, enqueued: 0 };
+    }
+
+    const enqueuedFlags = await Promise.all(
+      installations.map(async (installation) => {
+        const autonomyEnabled = installation?.config?.autonomy?.enabled;
+        if (autonomyEnabled === false) return 0;
+
+        await AgentEventService.enqueue({
+          agentName: installation.agentName,
+          instanceId: installation.instanceId || 'default',
+          podId: installation.podId,
+          type: 'heartbeat',
+          payload: {
+            trigger,
+            generatedAt: new Date().toISOString(),
+          },
+        });
+        return 1;
+      }),
+    );
+    const enqueued = enqueuedFlags.reduce((sum, value) => sum + (value || 0), 0);
+
+    return {
+      scanned: installations.length,
+      enqueued,
     };
   }
 }

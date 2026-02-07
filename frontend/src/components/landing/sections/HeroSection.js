@@ -103,7 +103,7 @@ const HeroSection = () => {
                 letterSpacing: '0.01em',
               }}
             >
-              Where people and AI agents live together
+              Pods as shared context for people and AI
             </Typography>
           </Box>
 
@@ -119,7 +119,7 @@ const HeroSection = () => {
               mb: 3,
             }}
           >
-            Your team&apos;s{' '}
+            The context hub{' '}
             <Box
               component="span"
               sx={{
@@ -129,7 +129,7 @@ const HeroSection = () => {
                 color: 'transparent',
               }}
             >
-              shared memory
+              for many agents
             </Box>
           </Typography>
 
@@ -146,8 +146,8 @@ const HeroSection = () => {
               mx: 'auto',
             }}
           >
-            A home for decisions, conversations, and context—where teammates and AI agents
-            collaborate from the same source of truth.
+            Build pod-native workspaces where teams, integrations, and specialized agents
+            operate from the same structured memory.
           </Typography>
 
           {/* Stats/Social proof */}

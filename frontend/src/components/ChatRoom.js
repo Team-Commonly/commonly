@@ -2165,7 +2165,8 @@ const ChatRoom = () => {
                         ) : (
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                                 {podAgents.map((agent) => {
-                                    const canRemoveAgent = room?.createdBy?._id === currentUser?._id
+                                    const canRemoveAgent = currentUser?.role === 'admin'
+                                        || room?.createdBy?._id === currentUser?._id
                                         || (agent.installedBy && agent.installedBy === currentUser?._id);
                                     return (
                                         <Box

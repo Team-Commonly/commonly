@@ -187,7 +187,7 @@ jest.mock('@mui/icons-material', () => {
 
 jest.mock('axios', () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn() }
+  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() }
 }));
 jest.mock('../context/AuthContext', () => ({ useAuth: jest.fn() }));
 jest.mock('react-router-dom', () => ({
@@ -213,7 +213,7 @@ const mockPod = {
   name: 'Room',
   description: 'Desc',
   type: 'chat',
-  createdBy: { username: 'a' },
+  createdBy: { _id: 'owner-1', username: 'a' },
   members: []
 };
 
@@ -324,4 +324,17 @@ test('search filters pods', async () => {
   await waitFor(() => {
     expect(screen.getByText('No pods found in this category')).toBeInTheDocument();
   });
+});
+
+test('global admin sees delete button for a pod they did not create', async () => {
+  useAuth.mockReturnValue({ currentUser: { _id: 'admin-1', role: 'admin' } });
+  axios.get.mockResolvedValueOnce({ data: [mockPod] });
+
+  renderPodWithRouter(<Pod />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Room')).toBeInTheDocument();
+  });
+
+  expect(screen.getAllByText('Delete').length).toBeGreaterThan(0);
 });

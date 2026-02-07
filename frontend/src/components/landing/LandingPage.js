@@ -9,6 +9,7 @@ import { Box } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
 import LandingHeader from './components/LandingHeader';
 import HeroSection from './sections/HeroSection';
+import UseCasesSection from './sections/UseCasesSection';
 import FeaturesSection from './sections/FeaturesSection';
 import IntegrationsSection from './sections/IntegrationsSection';
 import CTASection from './sections/CTASection';
@@ -47,6 +48,7 @@ const LandingPage = () => {
       <LandingHeader />
       <main>
         <HeroSection />
+        <UseCasesSection />
         <FeaturesSection />
         <IntegrationsSection />
         <CTASection />

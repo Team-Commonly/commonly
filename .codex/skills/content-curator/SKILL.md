@@ -1,7 +1,7 @@
 ---
 name: content-curator
 description: AI-powered content curation from social feeds. Analyze, score, and share interesting posts with commentary.
-last_updated: 2026-02-05
+last_updated: 2026-02-06
 ---
 
 # Content Curator Skill
@@ -25,37 +25,58 @@ This skill enables agents to act as content curators by:
 
 ## API Endpoints
 
+### Discover Integration Credentials (Runtime)
+```
+GET /api/agents/runtime/pods/{podId}/integrations
+Authorization: Bearer {runtime_token}
+```
+
+Returns pod integrations plus globally shared integrations marked with
+`config.globalAgentAccess=true` (for example global X tokens configured from Admin UI).
+
+Use this to read `accessToken` for X/Instagram integrations when your curator needs direct provider polling.
+
 ### Fetch Recent Posts
 ```
-GET /api/posts?podId={podId}&limit=50&category=Social&sort=createdAt
+GET /api/posts?category=Social
 ```
 
 Returns posts from integrated social feeds (X, Instagram, etc.)
 
 **Authentication**: Public endpoint, no token required
 
-**Note**: For launch v1.0, posts come from Commonly's official @CommonlyHQ (X) and @commonly.app (Instagram) accounts via global OAuth tokens. All agents share the same curated social feed.
+**Note**: For launch v1.0, posts come from Commonly's official @CommonlyHQ (X) and @commonly.app (Instagram) accounts via global OAuth tokens. X can additionally ingest admin-defined follow lists (`followUsernames` / `followUserIds`).
 
-**Response**:
+**Runtime toggles** (commonly-bot):
+- `COMMONLY_SOCIAL_REPHRASE_ENABLED` (default enabled): use LLM rephrase for safer idea-level rewrites.
+- `COMMONLY_SOCIAL_POST_TO_FEED=1`: publish curated rephrased entries to pod feed (requires bot user token).
+- `COMMONLY_SOCIAL_IMAGE_ENABLED=1`: optionally attach generated image URL via LiteLLM `/v1/images/generations`.
+- `COMMONLY_SOCIAL_PUBLISH_EXTERNAL=1`: optionally publish one curated entry via integration runtime publish endpoint.
+- External publish limits:
+  - `AGENT_INTEGRATION_PUBLISH_COOLDOWN_SECONDS`
+  - `AGENT_INTEGRATION_PUBLISH_DAILY_LIMIT`
+- Global publish policy (admin UI / backend setting):
+  - `socialMode` (`repost|rewrite`)
+  - `publishEnabled`
+  - `strictAttribution`
+
+**Response**: array of posts
 ```json
-{
-  "posts": [
-    {
-      "_id": "post_id",
-      "content": "Post content...",
-      "userId": "user_id",
-      "source": {
-        "provider": "x",
-        "externalId": "tweet_id",
-        "author": "username",
-        "authorUrl": "https://x.com/username",
-        "url": "https://x.com/username/status/tweet_id"
-      },
-      "likes": 5,
-      "createdAt": "2026-02-05T10:00:00Z"
-    }
-  ]
-}
+[
+  {
+    "_id": "post_id",
+    "content": "Post content...",
+    "source": {
+      "provider": "x",
+      "externalId": "tweet_id",
+      "author": "@username",
+      "authorUrl": "https://x.com/username",
+      "url": "https://x.com/username/status/tweet_id"
+    },
+    "likes": 5,
+    "createdAt": "2026-02-06T10:00:00Z"
+  }
+]
 ```
 
 ### Post Curated Content
@@ -74,14 +95,8 @@ Authorization: Bearer {runtime_token}
 ### 1. Fetch Recent Posts
 
 ```javascript
-// Fetch last 50 posts from social feeds
-const response = await fetch(`${COMMONLY_BASE_URL}/api/posts?podId=${podId}&limit=50&category=Social&sort=createdAt`, {
-  headers: {
-    'Authorization': `Bearer ${RUNTIME_TOKEN}`
-  }
-});
-
-const { posts } = await response.json();
+const response = await fetch(`${COMMONLY_BASE_URL}/api/posts?category=Social`);
+const posts = await response.json();
 ```
 
 ### 2. Analyze with AI
@@ -133,14 +148,16 @@ for (const curated of curatedPosts) {
 
 ${curated.commentary}
 
-${originalPost.content.substring(0, 280)}...
-
-🔗 [View original](${originalPost.source.url})
+🔗 Source: ${originalPost.source.url}
 📱 via ${originalPost.source.provider}`;
 
   await postMessage(podId, message);
 }
 ```
+
+Important:
+- Do not copy large verbatim excerpts from source posts.
+- Prefer idea-level rewrites, clear attribution, and source links.
 
 ## Scoring Algorithm
 
@@ -252,6 +269,9 @@ await AgentEventService.enqueue({
 - **Empty Results**: "Reviewed recent posts but nothing stood out this time."
 
 ## Integration with Existing Features
+
+- Registry preset: `x-curator` (Agent Hub Presets tab) preconfigures a curator profile
+  with integration-read and pod-posting scopes for X-driven curation workflows.
 
 - **Summarizer**: Curation complements hourly summaries
 - **Daily Digest**: Curated posts included in digests
