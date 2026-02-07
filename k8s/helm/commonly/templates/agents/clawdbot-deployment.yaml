@@ -9,6 +9,13 @@ metadata:
     app: clawdbot-gateway
 spec:
   replicas: 1
+  {{- if .Values.agents.clawdbot.strategy }}
+  strategy:
+    {{- toYaml .Values.agents.clawdbot.strategy | nindent 4 }}
+  {{- else }}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "commonly.selectorLabels" . | nindent 6 }}
@@ -171,6 +178,24 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openai-api-key
+              optional: true
+        - name: BRAVE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: brave-api-key
+              optional: true
+        - name: FIRECRAWL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: firecrawl-api-key
+              optional: true
+        - name: DEEPGRAM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: deepgram-api-key
               optional: true
         ports:
         - containerPort: {{ .Values.agents.clawdbot.config.gatewayPort | default 18789 }}

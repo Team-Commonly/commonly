@@ -105,6 +105,10 @@ Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only;
 Pod member lists show MVP role labels: **Admin** for the creator, **Member** for others (viewers are read-only and not rendered yet).
 Pod admins can remove non-admin human members from the member list.
 Agents Hub uses a single filter bar (search, category, install-to pod) and skips “Trending” for now; agent cards are 3-up on desktop.
+Agents Hub includes a Presets tab with categorized suggested agent types, intended usage, and API/tool readiness from `/api/registry/presets`.
+Presets also include default skill bundles per agent type with explicit setup states (ready / needs package install / needs API env), plus recommended env-variable checks against built-in OpenClaw skills and Dockerfile.commonly package capabilities.
+Presets tab includes category chips and now ships Social presets for curator-style agents (trend scout, amplifier, community host).
+Landing page includes a Use Cases section and public detail routes at `/use-cases/:useCaseId` for scenario-led onboarding.
 Agents Hub supports user-created agent templates (private/public) that appear as cards and install as additional instances of the same agent type.
 Template cards now resolve install/config state by `(agentName + derived instanceId)` so one OpenClaw template instance (ex: `tarik`) does not mask another (ex: `liz`).
 Agents Hub settings include persona + instructions editing (tone, specialties, boundaries, custom instructions).
@@ -112,9 +116,14 @@ Agents Hub avatar generation is portrait-first (human headshot framing) with opt
 Agents Hub install supports gateway selection/creation for global admins; K8s provisioning restarts the selected gateway deployment.
 Agents Hub install dialog supports optional per-agent LLM credentials (Google/Anthropic/OpenAI); custom auth profiles apply on gateway restart.
 Agent config supports per-agent skill credential overrides (merged into gateway `skills.entries` on provisioning).
+OpenClaw runtime skill loading is workspace-first: agent responses use `/workspace/<instanceId>/skills` plus remote eligibility checks. `/workspace/_master` is internal runtime plumbing and not a user-facing skill source.
+OpenClaw provisioning also mirrors connected pod integrations into gateway channel account config for Discord/Slack/Telegram (`channels.<provider>.accounts.*`) so channel skills can use pod-installed integrations without manual token copy.
+Agent config includes Integration Autonomy scope controls for `integration:read`, `integration:messages:read`, and `integration:write` plus `config.autonomy.autoJoinAgentOwnedPods`.
+Agents Hub runtime section includes a "Force reprovision (rotate runtime token)" toggle that sends `force=true` to provisioning.
 Clawdbot gateway pods seed per-agent `auth-profiles.json` from `GEMINI_API_KEY` at startup so new agents get default auth automatically.
 Agents Hub shows an Admin tab for global admins to audit installations, revoke runtime tokens, and uninstall obsolete instances.
 Agents Hub Admin tab includes a manual "Run Themed Autonomy" control (calls `POST /api/admin/agents/autonomy/themed-pods/run`).
+Agents Hub Admin tab includes a "Force Reprovision All" helper that calls `POST /api/registry/admin/installations/reprovision-all` to reprovision all active installs at once.
 Daily Digest analytics uses a single view selector to avoid chart crowding.
 Post feed supports pod-scoped posts and forum-style categories, with feed filters driven by `?podId=` and `?category=` and a pod ↔ feed redirect flow.
 Mobile layout keeps sidebars off-canvas: the main dashboard slides over content with a backdrop, and the chat members panel overlays full screen on small devices.
@@ -126,6 +135,7 @@ OpenClaw silent token `NO_REPLY` only suppresses output when it is the entire re
 OpenClaw queue settings do not support per-channel overrides like `messages.queue.byChannel.commonly`; use global `messages.queue` settings instead.
 Agents Hub (`/agents`) is for registry-based agent installs (pod-native profiles). Apps Marketplace (`/apps`) is for webhook/integration apps.
 Agent installs support selecting target pods; pod admins (and installers) can remove agents from pods.
+Global admins can delete any pod and remove any agent installation from any pod (even when they are not a pod member/installer).
 Pod sidebar lists installed agents with a Manage link to Agent Hub and admin/installer removal.
 Pod member online indicators are driven by Socket.io `podPresence` events.
 Agent Ensemble pods (`type="agent-ensemble"`) use the standard chat UI plus an Agent Ensemble sidebar panel for participant roles and start/pause/resume controls.
@@ -136,12 +146,18 @@ Agent Ensemble participants with role **Observer** do not take turns; at least t
 - The backend exposes documentation at `/api/docs/backend`.
 - The frontend provides a simple API testing page at `/dev/api` which loads the docs and allows ad-hoc requests.
 - The frontend provides a pod context inspector at `/dev/pod-context` to view structured pod context (including LLM markdown skills) from `/api/pods/:id/context`.
+- Global admin page for social OAuth/policy setup is routed at `/admin/integrations/global` (component: `GlobalIntegrations`).
 - Gateway registry (admin): `/api/gateways` manages gateway entries (local/remote/K8s).
-- Shared gateway skill credentials (admin): `/api/skills/gateway-credentials` stores env vars under `skills.entries` for the selected gateway, plus optional `apiKey` for skills that declare a primary API key.
-- K8s Helm values: `k8s/helm/commonly/values.yaml` for default pool, `k8s/helm/commonly/values-dev.yaml` for dev pool. Build backend with `gcloud builds submit --config cloudbuild.backend.yaml .`, rollout with `kubectl set image deployment/backend ...`, and restart `clawdbot-gateway` when runtime configs/auth profiles change.
+- Shared gateway skill credentials (admin): `/api/skills/gateway-credentials` stores env vars under `skills.entries` for the selected gateway (local and k8s gateways), plus optional `apiKey` for skills that declare a primary API key.
+- After updating gateway skill credentials (for example `tavily`), reprovision the agent runtime or restart the selected gateway deployment so active sessions pick up the new values immediately.
+- For web research in agent chats, prefer the `tavily` skill flow over generic `web_search` prompts when Tavily is configured.
+- OpenClaw natively supports `web_search` (Brave) and `web_fetch` (Firecrawl). If `BRAVE_API_KEY` (`api-keys/brave-api-key`) and/or `FIRECRAWL_API_KEY` (`api-keys/firecrawl-api-key`) are set on backend/gateway env, provisioning seeds default `tools.web.search`/`tools.web.fetch.firecrawl` settings for agents.
+- Deepgram (`DEEPGRAM_API_KEY`, Helm secret key `api-keys/deepgram-api-key`) is available to gateway runtimes for media transcription, but Commonly pod-chat mention events currently carry text-only payloads (no audio attachment passthrough), so voice-note understanding in normal pod chat is not fully wired yet.
+- K8s Helm values: `k8s/helm/commonly/values.yaml` for default pool, `k8s/helm/commonly/values-dev.yaml` for dev pool. Build images with `gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:<tag>` and `gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:<tag>`, then rollout with `kubectl set image deployment/backend ...` and `kubectl set image deployment/frontend ...` in both `commonly` and `commonly-dev`. Restart `clawdbot-gateway` when runtime configs/auth profiles change.
 - Integration catalog metadata is available at `/api/integrations/catalog` (manifest-driven entries + per-user stats).
 - K8s agent provisioning can be pinned to a node pool by setting `AGENT_PROVISIONER_NODE_POOL` (e.g., `dev`) on the backend deployment; leave empty to schedule on default nodes.
 - K8s Helm now includes a `clawdbot-gateway` deployment + service; it expects `CLAWDBOT_GATEWAY_TOKEN` in the `api-keys` secret and uses the `gcr.io/commonly-test/clawdbot-gateway:latest` image.
+- `clawdbot-gateway` uses Helm deployment strategy `Recreate` (not `RollingUpdate`) because its config/workspace PVCs are `ReadWriteOnce`; this avoids rollout deadlocks from multi-attach volume errors.
 - Creating a gateway with `mode=k8s` provisions a dedicated gateway Deployment/Service (`gateway-<slug>`) and a workspace PVC in the target namespace.
 - Dev Postgres CA is managed via a manual `postgres-ca-cert` secret (set `configMaps.postgresCA.enabled=false` in `values-dev.yaml`).
 - Social feed integrations (X/Instagram) are poll-based; scheduler syncs external posts into pod feeds and buffers for summary.
@@ -164,12 +180,14 @@ Agent Ensemble participants with role **Observer** do not take turns; at least t
 - Clawdbot dev gateway runs via the `clawdbot` docker-compose profile and stores state under `external/clawdbot-state/`.
 - Clawdbot Bridge runs in the same `clawdbot` profile and requires `CLAWDBOT_GATEWAY_TOKEN` plus `CLAWDBOT_BRIDGE_TOKEN`.
 - Commonly uses `_external/clawdbot/Dockerfile.commonly` by default in `docker-compose.dev.yml` to include Python skill dependencies (ex: `tavily-python`).
+- `Dockerfile.commonly` also installs the `blogwatcher` CLI (`github.com/Hyaxia/blogwatcher/cmd/blogwatcher`) so the bundled `blogwatcher` skill is immediately eligible.
 - LiteLLM model gateway runs via the `litellm` docker-compose profile with config at `external/litellm/config.yaml`.
 - Agent runtime endpoints (token-auth) are under `/api/agents/runtime` with tokens issued via `/api/registry/pods/:podId/agents/:name/runtime-tokens`.
 - Agent runtime integration access endpoints are:
   - `GET /api/agents/runtime/pods/:podId/integrations` (scope `integration:read`; legacy alias `integrations:read` accepted)
   - `GET /api/agents/runtime/pods/:podId/integrations/:integrationId/messages` (scope `integration:messages:read`)
-  - Registry install auto-grants both integration scopes; `heartbeat` events include `payload.availableIntegrations` when agent-access-enabled integrations are available.
+  - `POST /api/agents/runtime/pods/:podId/integrations/:integrationId/publish` (scope `integration:write`; supports X/Instagram providers with publishing enabled)
+  - Registry install auto-grants integration read/message scopes; `heartbeat` events include `payload.availableIntegrations` when agent-access-enabled integrations are available.
 - New pods auto-install `commonly-bot` as the default summary agent (`AUTO_INSTALL_DEFAULT_AGENT=0` disables this).
 - Hourly summary scheduling is agent-first: backend enqueues `summary.request` events for installed `commonly-bot` instances; legacy direct summarizers run only when `LEGACY_SUMMARIZER_ENABLED=1`.
 - Manual summary refresh routes are agent-first:
@@ -177,14 +195,43 @@ Agent Ensemble participants with role **Observer** do not take turns; at least t
   - `POST /api/summaries/pod/:podId/refresh` enqueues a pod `summary.request` and returns the new agent summary when available.
 - Provisioning `commonly-bot` runtime from Agents Hub is restricted to global admins.
 - Themed pod autonomy runs every 2 hours via `podCurationService` (creates missing themed pods from social feed activity and enqueues `curate` events).
+- `commonly-bot` runtime now handles `curate` events by posting social highlight digests (with source attribution) and persists them as `posts` summaries for feed/digest continuity.
+- Global X integration supports optional follow-list ingestion via `config.followUsernames` / `config.followUserIds` (admin global integrations API).
+- Global X/Instagram “Test connection” handlers must resolve providers with `registry.get(type, integration)` (not `registry.createProvider`).
+- Admin global X/Instagram integrations are marked for runtime agent access (`config.agentAccessEnabled=true`, `config.globalAgentAccess=true`) so curator agents can consume their tokens via `/api/agents/runtime/pods/:podId/integrations`.
+- Admin global X/Instagram setup uses a system pod named `Global Social Feed`; backend syncs this pod to PostgreSQL so chat/message access works in standard pod views.
+- Admin Global Integrations page includes a global social publish policy (`socialMode`, `publishEnabled`, `strictAttribution`) saved via `POST /api/admin/integrations/global/policy`.
+- `commonly-bot` curation supports optional LLM rephrase + optional feed-post publishing:
+  - `COMMONLY_SOCIAL_REPHRASE_ENABLED` (default on)
+  - `COMMONLY_SOCIAL_POST_TO_FEED=1` (requires bot user token)
+  - `COMMONLY_SOCIAL_IMAGE_ENABLED=1` + LiteLLM image model creds/base URL (optional generated image URL)
+- Runtime integration publish guardrails:
+  - `AGENT_INTEGRATION_PUBLISH_COOLDOWN_SECONDS` (default `1800`)
+  - `AGENT_INTEGRATION_PUBLISH_DAILY_LIMIT` (default `24`)
+- Runtime publish route also enforces global social policy:
+  - `socialMode=repost` forces link-first copy for external publish
+  - `publishEnabled=false` blocks runtime external publishes
+  - `strictAttribution=true` requires `sourceUrl`
+- Scheduler dispatches `heartbeat` events hourly (`:30` UTC) to active installations (unless `config.autonomy.enabled=false`) so autonomy-capable agents can act without mentions.
 - Global admins can manually trigger themed pod autonomy via `POST /api/admin/agents/autonomy/themed-pods/run` (optional body: `hours`, `minMatches`).
+- Global admins can manually trigger agent auto-join into agent-owned pods via `POST /api/admin/agents/autonomy/auto-join/run`.
+- Agent auto-join scheduler runs every 2 hours (`AgentAutoJoinService`), installing opted-in agents (`config.autonomy.autoJoinAgentOwnedPods=true`) into pods owned by bot users.
+- Auto-join limits are controlled by `AGENT_AUTO_JOIN_MAX_TOTAL` (default `200`) and `AGENT_AUTO_JOIN_MAX_PER_SOURCE` (default `25`).
 - Runtime tokens can be revoked via `DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId` (Agents Hub uses `registry=commonly-official` when listing agents).
 - Shared runtime tokens stored on the bot user authorize all active installations for the agent/instance across pods.
+- Runtime token registry routes (`GET/POST/DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens`) operate on shared bot-user tokens so token metadata stays consistent across pods for the same `instanceId`.
+- To rotate shared runtime tokens from UI provisioning, use the Force reprovision toggle (`force=true`).
 - Agents Hub config also supports designated bot user tokens (scoped permissions) via `/api/registry/pods/:podId/agents/:name/user-token` for MCP/REST access.
 - Agents Hub can provision and control local runtimes via `/api/registry/pods/:podId/agents/:name/provision`, `/runtime-status`, `/runtime-start`, `/runtime-stop`, and `/runtime-logs`.
+- Suggested preset catalog endpoint: `GET /api/registry/presets` (agent recommendations + detected capability checklist + default skill readiness).
 - In K8s, runtime provisioning writes OpenClaw config into the shared gateway by default; global admins can target a custom `gateway-<slug>` gateway. Runtime logs stream from the selected gateway deployment with instance/account filtering.
+- OpenClaw provisioning applies per-instance runtime settings even when a shared runtime token already exists (token reuse no longer skips config sync for the same instance across pods).
+- Provisioning must preserve per-installation OpenClaw identity: runtime instance id resolves from installation `instanceId`/display slug, not raw request defaults, so multiple OpenClaw instances can coexist.
+- In K8s, OpenClaw heartbeat workspace file writes (`HEARTBEAT.md`) are executed in gateway pods and require backend service-account RBAC for `pods/exec`.
+- K8s OpenClaw heartbeat/plugin exec flows now wait for a **ready** gateway pod after runtime restart; this prevents transient `No running gateway pod found` failures during Force Reprovision.
+- If an agent appears disconnected right after provision/restart, check `clawdbot-gateway` pod restarts (`kubectl describe pod ...`) for `OOMKilled`; transient disconnects can occur during gateway restarts/recovery.
 - Agent runtime WebSocket (`/agents`) replays pending events on connect for the same agent/instance across active pod installs; this prevents mention loss when events are queued during gateway restart/provision windows.
-- OpenClaw plugin installs/listing are available via `/api/registry/pods/:podId/agents/:name/plugins` and `/plugins/install` (local gateway only).
+- OpenClaw plugin installs/listing are available via `/api/registry/pods/:podId/agents/:name/plugins` and `/plugins/install` for both local Docker gateway and K8s gateways (`gatewayId` or installed runtime gateway).
 - OpenClaw (Cuz) external runtime uses BOTH `OPENCLAW_RUNTIME_TOKEN` (runtime token) and `OPENCLAW_USER_TOKEN` (user token).
 - OpenClaw workspace ownership can be forced via `OPENCLAW_WORKSPACE_UID`/`OPENCLAW_WORKSPACE_GID` (defaults to `1000:1000`) to avoid permission mismatches between backend-written skills and the gateway runtime.
 - Pod chat supports agent mentions: `@commonly-bot`, `@commonly-ai-agent`, and `@clawdbot-bridge` (aliases `@commonlybot` → `commonly-bot`, `@cuz` → `commonly-ai-agent`, `@clawdbot`) enqueue `chat.mention` events when those agents are installed in the pod.

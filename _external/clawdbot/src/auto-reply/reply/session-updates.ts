@@ -167,6 +167,42 @@ export async function ensureSkillSnapshot(params: {
   skillsSnapshot?: SessionEntry["skillsSnapshot"];
   systemSent: boolean;
 }> {
+  const sameSkillList = (
+    left: SessionEntry["skillsSnapshot"] | undefined,
+    right: SessionEntry["skillsSnapshot"] | undefined,
+  ): boolean => {
+    const leftSkills = left?.skills ?? [];
+    const rightSkills = right?.skills ?? [];
+    if (leftSkills.length !== rightSkills.length) {
+      return false;
+    }
+    for (let idx = 0; idx < leftSkills.length; idx += 1) {
+      const a = leftSkills[idx];
+      const b = rightSkills[idx];
+      if (!a || !b || a.name !== b.name || a.primaryEnv !== b.primaryEnv) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const sameSkillSnapshot = (
+    left: SessionEntry["skillsSnapshot"] | undefined,
+    right: SessionEntry["skillsSnapshot"] | undefined,
+  ): boolean => {
+    if (!left && !right) {
+      return true;
+    }
+    if (!left || !right) {
+      return false;
+    }
+    return (
+      (left.version ?? 0) === (right.version ?? 0) &&
+      left.prompt === right.prompt &&
+      sameSkillList(left, right)
+    );
+  };
+
   const {
     sessionEntry,
     sessionStore,
@@ -186,6 +222,9 @@ export async function ensureSkillSnapshot(params: {
   ensureSkillsWatcher({ workspaceDir, config: cfg });
   const shouldRefreshSnapshot =
     snapshotVersion > 0 && (nextEntry?.skillsSnapshot?.version ?? 0) < snapshotVersion;
+  // Some long-lived sessions can keep version 0 forever (no watcher bump),
+  // so force a recompute to avoid stale skill snapshots.
+  const shouldRecomputeSnapshot = shouldRefreshSnapshot || snapshotVersion === 0;
 
   if (isFirstTurnInSession && sessionStore && sessionKey) {
     const current = nextEntry ??
@@ -194,7 +233,7 @@ export async function ensureSkillSnapshot(params: {
         updatedAt: Date.now(),
       };
     const skillSnapshot =
-      isFirstTurnInSession || !current.skillsSnapshot || shouldRefreshSnapshot
+      isFirstTurnInSession || !current.skillsSnapshot || shouldRecomputeSnapshot
         ? buildWorkspaceSkillSnapshot(workspaceDir, {
             config: cfg,
             skillFilter,
@@ -218,7 +257,7 @@ export async function ensureSkillSnapshot(params: {
     systemSent = true;
   }
 
-  const skillsSnapshot = shouldRefreshSnapshot
+  const skillsSnapshot = shouldRecomputeSnapshot
     ? buildWorkspaceSkillSnapshot(workspaceDir, {
         config: cfg,
         skillFilter,
@@ -234,13 +273,14 @@ export async function ensureSkillSnapshot(params: {
             eligibility: { remote: remoteEligibility },
             snapshotVersion,
           })));
-  if (
+  const shouldPersistUpdatedSnapshot =
     skillsSnapshot &&
     sessionStore &&
     sessionKey &&
     !isFirstTurnInSession &&
-    (!nextEntry?.skillsSnapshot || shouldRefreshSnapshot)
-  ) {
+    (!nextEntry?.skillsSnapshot || shouldRecomputeSnapshot) &&
+    !sameSkillSnapshot(nextEntry?.skillsSnapshot, skillsSnapshot);
+  if (shouldPersistUpdatedSnapshot) {
     const current = nextEntry ?? {
       sessionId: sessionId ?? crypto.randomUUID(),
       updatedAt: Date.now(),

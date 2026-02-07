@@ -64,6 +64,12 @@ const buildGatewayConfig = ({ backendUrl }) => ({
   messages: { ackReactionScope: 'group-mentions' },
   bindings: [],
   plugins: { entries: { commonly: { enabled: true } } },
+  skills: {
+    load: {
+      watch: true,
+      watchDebounceMs: 250,
+    },
+  },
 });
 
 const createOrUpdateConfigMap = async ({ name, namespace, data }) => {
@@ -215,6 +221,18 @@ const createOrUpdateDeployment = async ({
                 {
                   name: 'OPENAI_API_KEY',
                   valueFrom: { secretKeyRef: { name: 'api-keys', key: 'openai-api-key', optional: true } },
+                },
+                {
+                  name: 'BRAVE_API_KEY',
+                  valueFrom: { secretKeyRef: { name: 'api-keys', key: 'brave-api-key', optional: true } },
+                },
+                {
+                  name: 'FIRECRAWL_API_KEY',
+                  valueFrom: { secretKeyRef: { name: 'api-keys', key: 'firecrawl-api-key', optional: true } },
+                },
+                {
+                  name: 'DEEPGRAM_API_KEY',
+                  valueFrom: { secretKeyRef: { name: 'api-keys', key: 'deepgram-api-key', optional: true } },
                 },
               ],
               ports: [

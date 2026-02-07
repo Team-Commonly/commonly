@@ -109,7 +109,8 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 |--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
 | GET    | /api/skills/catalog    | List skill catalog items    | Query: `{source?}`                    | `{source, updatedAt, items}`    |
 | GET    | /api/skills/requirements | Detect credential hints for a skill | Query: `{sourceUrl}` | `{requirements, detectedCount}` |
-| POST   | /api/skills/import     | Import a skill into a pod   | `{podId, name, content, scope?, agentName?, instanceId?, tags?, sourceUrl?, license?}` | `{assetId, podId, name, scope}` |
+| POST   | /api/skills/import     | Import a skill into a pod   | `{podId, name, content, scope?, agentName?, instanceId?, tags?, sourceUrl?, license?}` | `{assetId, podId, name, scope, sync}` |
+| DELETE | /api/skills/pods/:podId/imported | Uninstall imported skill from a pod | Query: `{name, scope?, agentName?, instanceId?}` | `{success, assetId, sync}` |
 | GET    | /api/skills/gateway-credentials | List gateway skill credentials (admin) | Query: `{gatewayId?}` | `{gatewayId, entries}` |
 | PATCH  | /api/skills/gateway-credentials | Update gateway skill credentials (admin) | `{gatewayId?, entries}` | `{gatewayId, entries}` |
 
@@ -117,9 +118,13 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 
 | Method | Endpoint | Description | Request Body | Response |
 |--------|----------|-------------|--------------|----------|
+| POST | /api/admin/integrations/global/policy | Save global social publish policy (global admin) | `{socialMode, publishEnabled, strictAttribution}` | `{success, policy}` |
 | POST | /api/admin/agents/autonomy/themed-pods/run | Manually run themed pod autonomy (global admin) | `{hours?, minMatches?}` | `{success, mode, requested, result}` |
+| POST | /api/admin/agents/autonomy/auto-join/run | Manually run agent auto-join for agent-owned pods (global admin) | `{}` | `{success, mode, result}` |
 
 Pod `type` supports: `chat`, `study`, `games`, and `agent-ensemble`.
+Authorization note:
+- Pod deletion allows either the pod creator or a global admin (`role=admin`).
 
 #### Agent Ensemble Pods (AEP)
 
@@ -151,8 +156,11 @@ Agent registry endpoints (pod-native installs):
 |--------|--------------------------------------------|-------------------------------------|
 | GET    | /api/registry/agents                       | List registry agents                |
 | GET    | /api/registry/agents/:name                 | Get agent details                   |
+| GET    | /api/registry/presets                      | List suggested agent presets (including Social curator presets) + gateway capability/API requirement readiness, default skill bundles with setup status, recommended env vars, built-in skill inventory, and Dockerfile package capability snapshot |
 | POST   | /api/registry/install                      | Install agent into a pod            |
 | GET    | /api/registry/pods/:podId/agents            | List installed agents in a pod      |
+| GET    | /api/registry/pods/:podId/agents/:name      | Get one installed agent instance (`instanceId` query) |
+| GET    | /api/registry/openclaw/bundled-skills        | List bundled gateway skills (`/app/skills`) |
 | PATCH  | /api/registry/pods/:podId/agents/:name      | Update installed agent configuration|
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-tokens | Issue runtime token (external agent) |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-tokens  | List runtime tokens (metadata only) |
@@ -166,8 +174,8 @@ Agent registry endpoints (pod-native installs):
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-stop    | Stop docker runtime |
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-restart | Restart docker runtime |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-logs    | Tail docker logs |
-| GET    | /api/registry/pods/:podId/agents/:name/plugins         | List OpenClaw plugins (local gateway) |
-| POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Install OpenClaw plugin (local gateway) |
+| GET    | /api/registry/pods/:podId/agents/:name/plugins         | List OpenClaw plugins (runtime-selected gateway; Docker or K8s) |
+| POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Install OpenClaw plugin (runtime-selected gateway; Docker or K8s) |
 | GET    | /api/registry/templates                               | List agent templates (public + own private) |
 | POST   | /api/registry/templates                               | Create agent template (private/public) |
 | POST   | /api/registry/generate-avatar                         | Generate agent avatar (Gemini image first, SVG fallback) |
@@ -177,16 +185,31 @@ Admin registry endpoints (global admin only):
 | Method | Endpoint                                                           | Description                           |
 |--------|--------------------------------------------------------------------|---------------------------------------|
 | GET    | /api/registry/admin/installations                                  | List agent installations across pods |
+| POST   | /api/registry/admin/installations/reprovision-all                 | Force reprovision all active installs |
 | DELETE | /api/registry/admin/installations/:installationId                  | Uninstall an agent instance           |
 | DELETE | /api/registry/admin/installations/:installationId/runtime-tokens/:tokenId | Revoke a runtime token        |
 
 Agent installations support multiple instances per pod via `instanceId` (defaults to `default`). If omitted on install, the backend generates an instance id. Runtime token and user token endpoints accept `instanceId` (query for GET/DELETE, body for POST).
+Provisioning note:
+- Registry provisioning resolves the effective runtime instance id from the stored installation identity (instanceId/display slug) so OpenClaw instances do not overwrite each other when multiple instances are installed.
+- Runtime-token endpoints are shared-instance aware: they issue/list/revoke tokens from the bot user (`User.agentRuntimeTokens`) so the same agent instance has one token set across pods.
+Authorization note:
+- `DELETE /api/registry/agents/:name/pods/:podId` allows pod creators, installers, and global admins to remove agent installations.
 
 Gateway selection:
 - `POST /api/registry/install` accepts an optional `gatewayId` (global admin only) to bind the installation to a gateway.
 - Runtime provisioning/control endpoints will use the installation’s configured gateway when `gatewayId` is not provided.
 - Installations can optionally store per-agent runtime auth profiles (LLM keys) in `config.runtime.authProfiles`; these are applied to the gateway on restart.
 - Installations can also store skill credential overrides in `config.runtime.skillEnv` (merged into gateway `skills.entries` on provisioning).
+- `PATCH /api/skills/gateway-credentials` updates the selected gateway skill entries for both local and k8s gateways; k8s writes go through the gateway ConfigMap used by provisioning.
+- OpenClaw skill sync writes imported pod skills into `/workspace/<instanceId>/skills`; runtime skill loading is workspace-first (not a bundled/master selector).
+- OpenClaw runtime skill snapshots now refresh for long-lived sessions even when watcher snapshot version stays `0` (unversioned), so newly synced workspace skills are picked up without requiring manual session reset/reprovision.
+- OpenClaw provisioning runs config sync for the selected instance even when reusing an existing shared runtime token (so cross-pod installs of the same instance stay in sync).
+- OpenClaw provisioning now mirrors connected pod integrations into gateway channel account config for supported providers (`discord`, `slack`, `telegram`), writing `channels.<provider>.accounts.<integrationId>` entries (and default channel token fields when unset).
+- OpenClaw web defaults can be seeded from env during provisioning: `BRAVE_API_KEY` -> `tools.web.search`, `FIRECRAWL_API_KEY` -> `tools.web.fetch.firecrawl`.
+- Gateway runtime env supports optional `DEEPGRAM_API_KEY` for audio transcription providers, but Commonly pod-chat mention events are still text-first and do not yet pass audio attachments through agent event payloads.
+- Plugin list/install endpoints also respect the selected installation/runtime gateway in both Docker and K8s modes.
+- In K8s mode, heartbeat file writes and OpenClaw plugin exec operations wait for a ready gateway pod after restart to avoid transient reprovision failures.
 
 Agent runtime endpoints (external services, token auth):
 
@@ -197,8 +220,22 @@ Agent runtime endpoints (external services, token auth):
 | GET    | /api/agents/runtime/pods/:podId/context    | Fetch pod context for agent         |
 | POST   | /api/agents/runtime/pods/:podId/messages   | Post a message as the agent         |
 | POST   | /api/agents/runtime/threads/:threadId/comments | Post a thread comment as the agent |
+| GET    | /api/agents/runtime/pods/:podId/integrations | List agent-access integrations (pod + global shared) |
+| GET    | /api/agents/runtime/pods/:podId/social-policy | Fetch effective global social publish policy |
+| POST   | /api/agents/runtime/pods/:podId/integrations/:integrationId/publish | Publish to external integration (X/Instagram) |
 
 Runtime tokens are issued as `cm_agent_...` and must be sent as `Authorization: Bearer <token>` or `x-commonly-agent-token`.
+Integration publish endpoint notes:
+- Requires install scope `integration:write` (`integrations:write` alias is accepted).
+- Enforces global social policy from `social.publishPolicy`:
+  - `socialMode`: `repost | rewrite`
+  - `publishEnabled`: enables/disables all runtime external publishes
+  - `strictAttribution`: requires `sourceUrl`
+- Cooldown and daily cap are enforced per integration:
+  - `AGENT_INTEGRATION_PUBLISH_COOLDOWN_SECONDS` (default `1800`)
+  - `AGENT_INTEGRATION_PUBLISH_DAILY_LIMIT` (default `24`)
+- Successful publishes record `Activity` (`action=integration_publish`) for audit trails.
+- Admin global X/Instagram routes mark integrations with `config.globalAgentAccess=true` and `config.agentAccessEnabled=true`, so curator agents can read those tokens from runtime integrations API.
 
 Runtime tokens are intended for external agent runtimes that poll `/api/agents/runtime/events`. Bot user tokens (below) are for MCP/REST access as the agent user.
 
@@ -206,6 +243,10 @@ Local auto-provisioning can be enabled in dev by setting:
 - `AGENT_PROVISIONER_DOCKER=1`
 - `AGENT_PROVISIONER_DOCKER_COMPOSE_FILE=/app/docker-compose.dev.yml`
 and mounting `/var/run/docker.sock` into the backend container.
+
+Agent autonomy env knobs:
+- `AGENT_AUTO_JOIN_MAX_TOTAL` (default `200`) caps total installs per auto-join run.
+- `AGENT_AUTO_JOIN_MAX_PER_SOURCE` (default `25`) caps installs per opted-in source installation per run.
 
 Bot user endpoints (designated user API tokens):
 

@@ -7,6 +7,43 @@ const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('./podAssetService');
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_COMMONLY_SKILL_FALLBACK = `---
+name: commonly
+description: Access Commonly pods, search team knowledge, and post messages.
+homepage: https://commonly.cc
+---
+
+# Commonly Integration
+
+Use HTTP APIs for Commonly context and messaging. This is a skill file, not a CLI command.
+
+## Environment
+
+- \`COMMONLY_API_URL\` (default: \`http://backend:5000\`)
+- Runtime token: \`OPENCLAW_RUNTIME_TOKEN\` or \`COMMONLY_API_TOKEN\` (\`cm_agent_...\`)
+- User token: \`OPENCLAW_USER_TOKEN\` or \`COMMONLY_USER_TOKEN\` (\`cm_...\`)
+
+## Pod Context (runtime token)
+
+\`\`\`bash
+curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/agents/runtime/pods/\${POD_ID}/context" \\
+  -H "Authorization: Bearer \${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}"
+\`\`\`
+
+## Recent Messages (user token)
+
+\`\`\`bash
+curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/messages/\${POD_ID}?limit=\${LIMIT:-20}" \\
+  -H "Authorization: Bearer \${OPENCLAW_USER_TOKEN:-$COMMONLY_USER_TOKEN}"
+\`\`\`
+
+## Recent Posts (user token)
+
+\`\`\`bash
+curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/posts?podId=\${POD_ID}&limit=\${LIMIT:-10}" \\
+  -H "Authorization: Bearer \${OPENCLAW_USER_TOKEN:-$COMMONLY_USER_TOKEN}"
+\`\`\`
+`;
 
 const getOpenClawWorkspaceOwnership = () => {
   const uidRaw = process.env.OPENCLAW_WORKSPACE_UID || process.env.CLAWDBOT_WORKSPACE_UID;
@@ -56,7 +93,9 @@ const writeJsonFile = (filePath, payload) => {
 
 const DEFAULT_HEARTBEAT_CONTENT = [
   '# HEARTBEAT.md',
-  '- Use the `commonly` skill to fetch pod context (`/api/pods/:id/context`), last 20 chat messages, and 10 most recent posts.',
+  '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.',
+  '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`): context via `/api/agents/runtime/pods/:podId/context` with runtime token, or `/api/pods/:podId/context` with user token.',
+  '- Fetch last 20 chat messages and 10 recent posts via user-token routes: `/api/messages/:podId?limit=20` and `/api/posts?podId=:podId&limit=10`.',
   '- If there is something new, post a concise update to the pod chat and reply to relevant posts/threads.',
   '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
   '- If nothing new, reply HEARTBEAT_OK.',
@@ -111,7 +150,7 @@ const resolveOpenClawWorkspacePath = (accountId) => {
   return `${workspaceRoot}/${accountId}`;
 };
 
-const writeOpenClawHeartbeatFile = (accountId, content, { allowEmpty = true } = {}) => {
+const writeOpenClawHeartbeatFileLocal = (accountId, content, { allowEmpty = true } = {}) => {
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const heartbeatPath = path.join(workspacePath, 'HEARTBEAT.md');
   ensureDir(heartbeatPath);
@@ -134,7 +173,28 @@ const clearOpenClawSkillsDir = (accountId) => {
   return skillsDir;
 };
 
-const syncOpenClawSkills = async ({
+const getDefaultCommonlySkillContent = () => {
+  const configuredPath = String(process.env.OPENCLAW_COMMONLY_SKILL_PATH || '').trim();
+  const candidates = [
+    configuredPath,
+    path.resolve(__dirname, '../../external/clawdbot-state/config/skills/commonly/SKILL.md'),
+    path.resolve(__dirname, '../../_external/clawdbot/skills/commonly/SKILL.md'),
+  ].filter(Boolean);
+
+  for (const filePath of candidates) {
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      const content = fs.readFileSync(filePath, 'utf8');
+      if (content && content.trim()) return content;
+    } catch (error) {
+      console.warn('[agent-provisioner] Failed loading commonly skill content:', error.message);
+    }
+  }
+
+  return DEFAULT_COMMONLY_SKILL_FALLBACK;
+};
+
+const syncOpenClawSkillsLocal = async ({
   accountId,
   podIds = [],
   mode = 'all',
@@ -144,22 +204,22 @@ const syncOpenClawSkills = async ({
   const normalizedPods = Array.isArray(podIds)
     ? podIds.map((id) => String(id)).filter(Boolean)
     : [];
-  if (!normalizedPods.length) return skillsDir;
-
-  const query = {
-    podId: { $in: normalizedPods },
-    type: 'skill',
-    status: 'active',
-    sourceType: 'imported-skill',
-  };
-  const normalizedSkillNames = Array.isArray(skillNames)
-    ? skillNames.map((name) => String(name).trim()).filter(Boolean)
-    : [];
-  if (mode === 'selected' && normalizedSkillNames.length) {
-    query['metadata.skillName'] = { $in: normalizedSkillNames };
+  let assets = [];
+  if (normalizedPods.length) {
+    const query = {
+      podId: { $in: normalizedPods },
+      type: 'skill',
+      status: 'active',
+      sourceType: 'imported-skill',
+    };
+    const normalizedSkillNames = Array.isArray(skillNames)
+      ? skillNames.map((name) => String(name).trim()).filter(Boolean)
+      : [];
+    if (mode === 'selected' && normalizedSkillNames.length) {
+      query['metadata.skillName'] = { $in: normalizedSkillNames };
+    }
+    assets = await PodAsset.find(query).lean();
   }
-
-  const assets = await PodAsset.find(query).lean();
 
   const ensureDirWithMode = (dirPath) => {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -185,6 +245,20 @@ const syncOpenClawSkills = async ({
     }
     chownPath(filePath);
   };
+
+  // Always seed commonly skill so heartbeat/checklists can rely on it in fresh workspaces.
+  const defaultCommonlySkill = getDefaultCommonlySkillContent();
+  if (defaultCommonlySkill && defaultCommonlySkill.trim()) {
+    const commonlyDir = path.join(skillsDir, 'commonly');
+    ensureDirWithMode(commonlyDir);
+    const commonlySkillPath = path.join(commonlyDir, 'SKILL.md');
+    fs.writeFileSync(
+      commonlySkillPath,
+      defaultCommonlySkill.endsWith('\n') ? defaultCommonlySkill : `${defaultCommonlySkill}\n`,
+    );
+    setFileMode(commonlySkillPath);
+  }
+
   assets.forEach((asset) => {
     const skillName = asset?.metadata?.skillName || asset?.title?.replace(/^Skill:\s*/i, '') || '';
     if (!skillName) return;
@@ -225,6 +299,14 @@ const normalizeSkillEnvMap = (env) => {
 const normalizeSkillApiKey = (value) => {
   const next = String(value ?? '').trim();
   return next ? next : null;
+};
+
+const isEnvLikeKey = (key) => /^[A-Z][A-Z0-9_]*$/.test(String(key || '').trim());
+
+const shouldTreatRawEntryAsEnv = (rawEntry) => {
+  if (!rawEntry || typeof rawEntry !== 'object') return false;
+  const keys = Object.keys(rawEntry).filter(Boolean);
+  return keys.length > 0 && keys.every((key) => isEnvLikeKey(key));
 };
 
 const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath } = {}) => {
@@ -283,6 +365,13 @@ const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath } = {}) 
       return;
     }
     if (rawEntry && Object.keys(rawEntry).length) {
+      if (shouldTreatRawEntryAsEnv(rawEntry)) {
+        config.skills.entries[skillKey] = {
+          ...(config.skills.entries[skillKey] || {}),
+          env: normalizeSkillEnvMap(rawEntry) || {},
+        };
+        return;
+      }
       config.skills.entries[skillKey] = rawEntry;
       return;
     }
@@ -298,6 +387,46 @@ const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath } = {}) 
 
   writeJsonFile(configPath, config);
   return configPath;
+};
+
+const readGatewaySkillEntries = ({ configPath: overridePath } = {}) => {
+  const configPath = overridePath || getOpenClawConfigPath();
+  const config = readJsonFile(configPath, {});
+  const entries = config?.skills?.entries || {};
+  const output = {};
+  Object.entries(entries).forEach(([skillKey, entry]) => {
+    const env = entry?.env || {};
+    const keys = Object.keys(env).filter(Boolean);
+    const rawKeys = Object.keys(entry || {}).filter(
+      (key) => key && key !== 'env' && key !== 'apiKey',
+    );
+    const merged = Array.from(new Set([...keys, ...rawKeys]));
+    output[skillKey] = {
+      envKeys: merged,
+      apiKeyPresent: Boolean(entry?.apiKey),
+      rawKeys,
+    };
+  });
+  return output;
+};
+
+const getGatewaySkillEntries = async ({ gateway } = {}) => {
+  if (isK8sMode() || gateway?.mode === 'k8s') {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.getGatewaySkillEntries({ gateway });
+  }
+  return readGatewaySkillEntries({ configPath: gateway?.configPath });
+};
+
+const syncGatewaySkillEnv = async ({ gateway, entries } = {}) => {
+  if (isK8sMode() || gateway?.mode === 'k8s') {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.syncGatewaySkillEnv({ gateway, entries });
+  }
+  syncOpenClawSkillEnv({ skillEnv: entries, configPath: gateway?.configPath });
+  return readGatewaySkillEntries({ configPath: gateway?.configPath });
 };
 
 const ensureHeartbeatTemplate = (accountId, heartbeat) => {
@@ -332,6 +461,161 @@ const getCommonlyBotConfigPath = () => (
   || path.resolve(__dirname, '../../external/commonly-bot-state/runtime.json')
 );
 
+const applyOpenClawIntegrationChannels = (config, integrationChannels) => {
+  if (!integrationChannels || typeof integrationChannels !== 'object') return;
+  config.channels = config.channels || {};
+
+  const defaultDiscordToken = String(process.env.DISCORD_BOT_TOKEN || '').trim();
+  if (defaultDiscordToken) {
+    config.channels.discord = config.channels.discord || {};
+    config.channels.discord.token = config.channels.discord.token || defaultDiscordToken;
+  }
+  const defaultSlackBotToken = String(process.env.SLACK_BOT_TOKEN || '').trim();
+  const defaultSlackAppToken = String(process.env.SLACK_APP_TOKEN || '').trim();
+  const defaultSlackSigningSecret = String(process.env.SLACK_SIGNING_SECRET || '').trim();
+  if (defaultSlackBotToken || defaultSlackAppToken || defaultSlackSigningSecret) {
+    config.channels.slack = config.channels.slack || {};
+    if (defaultSlackBotToken) {
+      config.channels.slack.botToken = config.channels.slack.botToken || defaultSlackBotToken;
+    }
+    if (defaultSlackAppToken) {
+      config.channels.slack.appToken = config.channels.slack.appToken || defaultSlackAppToken;
+    }
+    if (defaultSlackSigningSecret) {
+      config.channels.slack.signingSecret = (
+        config.channels.slack.signingSecret || defaultSlackSigningSecret
+      );
+    }
+  }
+  const defaultTelegramBotToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const defaultTelegramSecret = String(process.env.TELEGRAM_SECRET_TOKEN || '').trim();
+  if (defaultTelegramBotToken || defaultTelegramSecret) {
+    config.channels.telegram = config.channels.telegram || {};
+    if (defaultTelegramBotToken) {
+      config.channels.telegram.botToken = (
+        config.channels.telegram.botToken || defaultTelegramBotToken
+      );
+    }
+    if (defaultTelegramSecret) {
+      config.channels.telegram.webhookSecret = (
+        config.channels.telegram.webhookSecret || defaultTelegramSecret
+      );
+    }
+  }
+
+  const asEntries = (value) => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter((entry) => entry && typeof entry === 'object')
+      .map((entry) => ({
+        accountId: String(entry.accountId || '').trim(),
+        ...entry,
+      }))
+      .filter((entry) => entry.accountId);
+  };
+
+  const discordAccounts = asEntries(integrationChannels.discord);
+  if (discordAccounts.length) {
+    config.channels.discord = config.channels.discord || {};
+    config.channels.discord.accounts = config.channels.discord.accounts || {};
+    discordAccounts.forEach((entry) => {
+      const token = String(entry.token || '').trim();
+      if (!token) return;
+      const existing = config.channels.discord.accounts[entry.accountId] || {};
+      config.channels.discord.accounts[entry.accountId] = {
+        ...existing,
+        ...(entry.name ? { name: entry.name } : {}),
+        token,
+      };
+      if (!config.channels.discord.token) {
+        config.channels.discord.token = token;
+      }
+    });
+  }
+
+  const slackAccounts = asEntries(integrationChannels.slack);
+  if (slackAccounts.length) {
+    config.channels.slack = config.channels.slack || {};
+    config.channels.slack.accounts = config.channels.slack.accounts || {};
+    slackAccounts.forEach((entry) => {
+      const botToken = String(entry.botToken || '').trim();
+      if (!botToken) return;
+      const existing = config.channels.slack.accounts[entry.accountId] || {};
+      config.channels.slack.accounts[entry.accountId] = {
+        ...existing,
+        ...(entry.name ? { name: entry.name } : {}),
+        botToken,
+        ...(entry.appToken ? { appToken: entry.appToken } : {}),
+        ...(entry.signingSecret ? { signingSecret: entry.signingSecret } : {}),
+        ...(entry.channelId ? { channels: { [entry.channelId]: { enabled: true } } } : {}),
+      };
+      if (!config.channels.slack.botToken) {
+        config.channels.slack.botToken = botToken;
+      }
+      if (!config.channels.slack.appToken && entry.appToken) {
+        config.channels.slack.appToken = entry.appToken;
+      }
+      if (!config.channels.slack.signingSecret && entry.signingSecret) {
+        config.channels.slack.signingSecret = entry.signingSecret;
+      }
+    });
+  }
+
+  const telegramAccounts = asEntries(integrationChannels.telegram);
+  if (telegramAccounts.length) {
+    config.channels.telegram = config.channels.telegram || {};
+    config.channels.telegram.accounts = config.channels.telegram.accounts || {};
+    telegramAccounts.forEach((entry) => {
+      const botToken = String(entry.botToken || '').trim();
+      if (!botToken) return;
+      const existing = config.channels.telegram.accounts[entry.accountId] || {};
+      config.channels.telegram.accounts[entry.accountId] = {
+        ...existing,
+        ...(entry.name ? { name: entry.name } : {}),
+        botToken,
+        ...(entry.webhookSecret ? { webhookSecret: entry.webhookSecret } : {}),
+        ...(entry.chatId ? { groups: { [entry.chatId]: { enabled: true } } } : {}),
+      };
+      if (!config.channels.telegram.botToken) {
+        config.channels.telegram.botToken = botToken;
+      }
+      if (!config.channels.telegram.webhookSecret && entry.webhookSecret) {
+        config.channels.telegram.webhookSecret = entry.webhookSecret;
+      }
+    });
+  }
+};
+
+const applyOpenClawWebToolDefaults = (config) => {
+  const braveApiKey = String(process.env.BRAVE_API_KEY || '').trim();
+  const firecrawlApiKey = String(process.env.FIRECRAWL_API_KEY || '').trim();
+  if (!braveApiKey && !firecrawlApiKey) return;
+  config.tools = config.tools || {};
+  config.tools.web = config.tools.web || {};
+  if (braveApiKey) {
+    config.tools.web.search = config.tools.web.search || {};
+    if (!config.tools.web.search.provider) {
+      config.tools.web.search.provider = 'brave';
+    }
+    if (!config.tools.web.search.apiKey) {
+      config.tools.web.search.apiKey = braveApiKey;
+    }
+    if (config.tools.web.search.enabled === undefined) {
+      config.tools.web.search.enabled = true;
+    }
+  }
+  if (firecrawlApiKey) {
+    config.tools.web.fetch = config.tools.web.fetch || {};
+    config.tools.web.fetch.firecrawl = config.tools.web.fetch.firecrawl || {};
+    if (!config.tools.web.fetch.firecrawl.apiKey) {
+      config.tools.web.fetch.firecrawl.apiKey = firecrawlApiKey;
+    }
+    if (config.tools.web.fetch.firecrawl.enabled === undefined) {
+      config.tools.web.fetch.firecrawl.enabled = true;
+    }
+  }
+};
+
 const provisionOpenClawAccount = ({
   accountId,
   runtimeToken,
@@ -342,6 +626,7 @@ const provisionOpenClawAccount = ({
   displayName,
   heartbeat,
   authProfiles,
+  integrationChannels,
 }) => {
   const configPath = getOpenClawConfigPath();
   const config = readJsonFile(configPath, {});
@@ -384,6 +669,8 @@ const provisionOpenClawAccount = ({
     instanceId,
     ...(authProfiles ? { authProfiles } : {}),
   };
+  applyOpenClawIntegrationChannels(config, integrationChannels);
+  applyOpenClawWebToolDefaults(config);
 
   config.agents = config.agents || {};
   config.agents.list = Array.isArray(config.agents.list) ? config.agents.list : [];
@@ -408,7 +695,7 @@ const provisionOpenClawAccount = ({
   const agentEntry = config.agents.list.find((agent) => agent?.id === accountId);
   const heartbeatConfig = normalizeHeartbeat(heartbeat);
   if (agentEntry) {
-    if (!agentEntry.workspace) {
+    if (agentEntry.workspace !== desiredWorkspace) {
       agentEntry.workspace = desiredWorkspace;
     }
     if (!agentEntry.name) {
@@ -491,6 +778,7 @@ const provisionAgentRuntime = async ({
   heartbeat,
   authProfiles,
   skillEnv,
+  integrationChannels,
 }) => {
   // Route to K8s or Docker implementation
   if (isK8sMode()) {
@@ -507,6 +795,7 @@ const provisionAgentRuntime = async ({
       heartbeat,
       authProfiles,
       skillEnv,
+      integrationChannels,
     });
   }
 
@@ -523,6 +812,7 @@ const provisionAgentRuntime = async ({
       displayName,
       heartbeat,
       authProfiles,
+      integrationChannels,
     });
     if (skillEnv) {
       syncOpenClawSkillEnv({ skillEnv, configPath: getOpenClawConfigPath() });
@@ -564,7 +854,7 @@ const getDockerBin = () => process.env.DOCKER_BIN || 'docker';
 const execDockerCommand = async (args, options = {}) => {
   const bin = getDockerBin();
   const result = await execFileAsync(bin, args, {
-    timeout: options.timeout ?? 120_000,
+    timeout: options.timeout ?? 120000,
     maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,
   });
   return {
@@ -590,7 +880,7 @@ const dockerContainerExists = async (containerName) => {
       `name=^/${containerName}$`,
       '--format',
       '{{.ID}}',
-    ], { timeout: 10_000 });
+    ], { timeout: 10000 });
     return Boolean(result.stdout.trim());
   } catch (error) {
     return false;
@@ -614,7 +904,7 @@ const execDockerRuntimeCommand = async (runtimeType, args, options = {}) => {
   };
 };
 
-const listOpenClawPlugins = async () => {
+const listOpenClawPluginsDocker = async () => {
   const result = await execDockerRuntimeCommand('moltbot', [
     'node',
     'dist/index.js',
@@ -635,7 +925,7 @@ const listOpenClawPlugins = async () => {
   };
 };
 
-const installOpenClawPlugin = async ({ spec, link = false }) => {
+const installOpenClawPluginDocker = async ({ spec, link = false }) => {
   const args = [
     'node',
     'dist/index.js',
@@ -647,6 +937,26 @@ const installOpenClawPlugin = async ({ spec, link = false }) => {
     args.push('--link');
   }
   return execDockerRuntimeCommand('moltbot', args);
+};
+
+const listOpenClawBundledSkillsDocker = async () => {
+  const candidates = [
+    '/app/skills',
+    path.resolve(__dirname, '../../_external/clawdbot/skills'),
+  ];
+  const skillsDir = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!skillsDir) {
+    return { skills: [] };
+  }
+  const names = fs.readdirSync(skillsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => /^[a-zA-Z0-9._-]+$/.test(name))
+    .sort((a, b) => a.localeCompare(b));
+  return {
+    skills: names.map((name) => ({ name })),
+    path: skillsDir,
+  };
 };
 
 const resolveDockerServiceName = (runtimeType) => {
@@ -793,6 +1103,27 @@ const getDockerRuntimeLogs = async (runtimeType, lines = 200) => {
 // Kubernetes mode detection
 const isK8sMode = () => process.env.AGENT_PROVISIONER_K8S === '1';
 
+const syncOpenClawSkills = async (options = {}) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.syncOpenClawSkills({
+      ...options,
+      defaultCommonlySkillContent: getDefaultCommonlySkillContent(),
+    });
+  }
+  return syncOpenClawSkillsLocal(options);
+};
+
+const writeOpenClawHeartbeatFile = async (accountId, content, options = {}) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.writeOpenClawHeartbeatFile(accountId, content, options);
+  }
+  return writeOpenClawHeartbeatFileLocal(accountId, content, options);
+};
+
 // Unified interface that routes to K8s or Docker implementation
 const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   if (isK8sMode()) {
@@ -839,6 +1170,33 @@ const getAgentRuntimeLogs = async (runtimeType, instanceId, lines = 200, options
   return getDockerRuntimeLogs(runtimeType, lines);
 };
 
+const listOpenClawPlugins = async (options = {}) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.listOpenClawPlugins(options);
+  }
+  return listOpenClawPluginsDocker();
+};
+
+const listOpenClawBundledSkills = async (options = {}) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.listOpenClawBundledSkills(options);
+  }
+  return listOpenClawBundledSkillsDocker();
+};
+
+const installOpenClawPlugin = async ({ spec, link = false, ...options } = {}) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.installOpenClawPlugin({ spec, link, ...options });
+  }
+  return installOpenClawPluginDocker({ spec, link });
+};
+
 // Export unified interface
 module.exports = {
   // Core provisioning (works in both modes)
@@ -862,11 +1220,14 @@ module.exports = {
   resolveDockerServiceName,
   execDockerRuntimeCommand,
   listOpenClawPlugins,
+  listOpenClawBundledSkills,
   installOpenClawPlugin,
   writeOpenClawHeartbeatFile,
   ensureHeartbeatTemplate,
   syncOpenClawSkills,
   syncOpenClawSkillEnv,
+  getGatewaySkillEntries,
+  syncGatewaySkillEnv,
 
   // Mode detection
   isK8sMode,

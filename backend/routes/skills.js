@@ -1,21 +1,34 @@
 const express = require('express');
-const fs = require('fs');
 const JSON5 = require('json5');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const Gateway = require('../models/Gateway');
+const { AgentInstallation } = require('../models/AgentRegistry');
 const PodAssetService = require('../services/podAssetService');
 const SkillsCatalogService = require('../services/skillsCatalogService');
 const {
   getOpenClawConfigPath,
-  syncOpenClawSkillEnv,
+  syncOpenClawSkills,
+  getGatewaySkillEntries,
+  syncGatewaySkillEnv,
 } = require('../services/agentProvisionerService');
 
 const router = express.Router();
 
 const getUserId = (req) => req.user?.id || req.user?._id || req.userId;
+
+const normalizeConfigMap = (config) => {
+  if (!config) return {};
+  if (config instanceof Map) {
+    return Object.fromEntries(config.entries());
+  }
+  if (typeof config === 'object') {
+    return config;
+  }
+  return {};
+};
 
 const extractCredentialMetadata = (content) => {
   const metadata = { envs: [], primaryEnv: null };
@@ -86,40 +99,6 @@ const ensurePodAccess = async (podId, userId) => {
   return pod;
 };
 
-const readOpenClawConfig = (configPath) => {
-  const resolvedPath = configPath || getOpenClawConfigPath();
-  if (!resolvedPath) return {};
-  if (!fs.existsSync(resolvedPath)) return {};
-  try {
-    const raw = fs.readFileSync(resolvedPath, 'utf8');
-    if (!raw.trim()) return {};
-    return JSON5.parse(raw);
-  } catch (error) {
-    console.warn('[skills] Failed to read OpenClaw config:', error.message);
-    return {};
-  }
-};
-
-const readGatewaySkillEntries = (configPath) => {
-  const config = readOpenClawConfig(configPath);
-  const entries = config?.skills?.entries || {};
-  const output = {};
-  Object.entries(entries).forEach(([skillKey, entry]) => {
-    const env = entry?.env || {};
-    const keys = Object.keys(env).filter(Boolean);
-    const rawKeys = Object.keys(entry || {}).filter(
-      (key) => key && key !== 'env' && key !== 'apiKey',
-    );
-    const merged = Array.from(new Set([...keys, ...rawKeys]));
-    output[skillKey] = {
-      envKeys: merged,
-      apiKeyPresent: Boolean(entry?.apiKey),
-      rawKeys,
-    };
-  });
-  return output;
-};
-
 const ensureDefaultGateway = async (userId) => {
   const existing = await Gateway.findOne({ slug: 'default' });
   if (existing) return existing;
@@ -135,6 +114,79 @@ const ensureDefaultGateway = async (userId) => {
     createdBy: userId || undefined,
   });
   return gateway;
+};
+
+const syncOpenClawInstallationsForPodSkillChange = async ({ podId }) => {
+  const installations = await AgentInstallation.find({
+    podId,
+    agentName: 'openclaw',
+    status: 'active',
+  }).lean();
+
+  if (!installations.length) {
+    return { attempted: 0, synced: 0, failed: 0, items: [] };
+  }
+
+  const items = await Promise.all(installations.map(async (installation) => {
+    const instanceId = String(installation.instanceId || 'default').trim() || 'default';
+    const config = normalizeConfigMap(installation.config);
+    const skillSync = config?.skillSync || null;
+    const mode = skillSync?.mode === 'selected' ? 'selected' : 'all';
+    let podIdsToSync = Array.isArray(skillSync?.podIds)
+      ? skillSync.podIds.map((id) => String(id)).filter(Boolean)
+      : [String(podId)];
+
+    if (skillSync?.allPods) {
+      const linkedInstallations = await AgentInstallation.find({
+        agentName: 'openclaw',
+        instanceId,
+        status: 'active',
+      })
+        .select('podId')
+        .lean();
+      podIdsToSync = linkedInstallations
+        .map((entry) => entry.podId?.toString?.())
+        .filter(Boolean);
+    }
+
+    const gatewayId = config?.runtime?.gatewayId;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await Gateway.findById(gatewayId).lean();
+    }
+
+    try {
+      const syncedPath = await syncOpenClawSkills({
+        accountId: instanceId,
+        podIds: podIdsToSync,
+        mode,
+        skillNames: Array.isArray(skillSync?.skillNames) ? skillSync.skillNames : [],
+        gateway,
+      });
+      return {
+        instanceId,
+        podIds: podIdsToSync,
+        success: true,
+        path: syncedPath,
+      };
+    } catch (error) {
+      return {
+        instanceId,
+        podIds: podIdsToSync,
+        success: false,
+        error: error.message,
+      };
+    }
+  }));
+
+  const synced = items.filter((item) => item.success).length;
+  const failed = items.length - synced;
+  return {
+    attempted: items.length,
+    synced,
+    failed,
+    items,
+  };
 };
 
 // GET /api/skills/catalog?source=awesome
@@ -209,7 +261,7 @@ router.get('/gateway-credentials', auth, adminAuth, async (req, res) => {
     if (!gateway) {
       return res.status(404).json({ error: 'Gateway not found' });
     }
-    const entries = readGatewaySkillEntries(gateway.configPath);
+    const entries = await getGatewaySkillEntries({ gateway });
     return res.json({
       gatewayId: gateway._id?.toString(),
       entries,
@@ -234,11 +286,7 @@ router.patch('/gateway-credentials', auth, adminAuth, async (req, res) => {
     if (!gateway) {
       return res.status(404).json({ error: 'Gateway not found' });
     }
-    if (gateway.mode !== 'local') {
-      return res.status(400).json({ error: 'Gateway is not managed by this host' });
-    }
-    syncOpenClawSkillEnv({ skillEnv: entries, configPath: gateway.configPath });
-    const updated = readGatewaySkillEntries(gateway.configPath);
+    const updated = await syncGatewaySkillEnv({ gateway, entries });
     return res.json({ gatewayId: gateway._id?.toString(), entries: updated });
   } catch (error) {
     console.error('Error updating gateway credentials:', error);
@@ -357,7 +405,9 @@ router.delete('/pods/:podId/imported', auth, async (req, res) => {
       return res.status(404).json({ error: 'Skill not found' });
     }
 
-    return res.json({ success: true, assetId: asset._id });
+    const sync = await syncOpenClawInstallationsForPodSkillChange({ podId });
+
+    return res.json({ success: true, assetId: asset._id, sync });
   } catch (error) {
     console.error('Error uninstalling skill:', error);
     return res.status(500).json({ error: 'Failed to uninstall skill' });
@@ -428,11 +478,14 @@ router.post('/import', auth, async (req, res) => {
       createdBy: userId,
     });
 
+    const sync = await syncOpenClawInstallationsForPodSkillChange({ podId });
+
     return res.status(201).json({
       assetId: asset?._id,
       podId,
       name,
       scope: normalizedScope,
+      sync,
     });
   } catch (error) {
     console.error('Error importing skill:', error);

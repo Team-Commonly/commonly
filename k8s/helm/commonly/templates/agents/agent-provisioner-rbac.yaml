@@ -24,6 +24,10 @@ rules:
 - apiGroups: [""]
   resources: ["pods", "pods/log"]
   verbs: ["get", "list", "create", "update", "patch", "delete"]
+# Exec into gateway/runtime pods (for writing workspace files like HEARTBEAT.md)
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["get", "create"]
 # Service management for agent runtimes
 - apiGroups: [""]
   resources: ["services"]

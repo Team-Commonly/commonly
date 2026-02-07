@@ -6,9 +6,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, Container, Typography } from '@mui/material';
+import commonlyLogo from '../../../assets/commonly-logo.png';
 
 const LandingHeader = () => {
   const navigate = useNavigate();
+  const scrollTo = (id) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   return (
     <Box
@@ -44,7 +48,7 @@ const LandingHeader = () => {
             onClick={() => navigate('/')}
           >
             <img
-              src="/src/assets/commonly-logo.png"
+              src={commonlyLogo}
               alt="Commonly Logo"
               style={{ width: 32, height: 32 }}
             />
@@ -62,6 +66,36 @@ const LandingHeader = () => {
 
           {/* Navigation */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Button
+              variant="text"
+              onClick={() => scrollTo('use-cases')}
+              sx={{
+                color: '#94a3b8',
+                fontWeight: 500,
+                display: { xs: 'none', md: 'inline-flex' },
+                '&:hover': {
+                  color: '#e2e8f0',
+                  backgroundColor: 'rgba(148, 163, 184, 0.08)',
+                },
+              }}
+            >
+              Use Cases
+            </Button>
+            <Button
+              variant="text"
+              onClick={() => scrollTo('features')}
+              sx={{
+                color: '#94a3b8',
+                fontWeight: 500,
+                display: { xs: 'none', md: 'inline-flex' },
+                '&:hover': {
+                  color: '#e2e8f0',
+                  backgroundColor: 'rgba(148, 163, 184, 0.08)',
+                },
+              }}
+            >
+              Features
+            </Button>
             <Button
               variant="text"
               onClick={() => navigate('/login')}

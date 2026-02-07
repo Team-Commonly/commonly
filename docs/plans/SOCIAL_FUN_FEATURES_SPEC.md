@@ -1220,6 +1220,21 @@ async publishMedia(imageUrl, caption = '') {
 - Supports optional `hours` + `minMatches` tuning for on-demand runs.
 - Uses the same queue/event flow as scheduled runs, so it behaves consistently in K8s deployments.
 
+8. **Curation + heartbeat runtime loop**
+- `commonly-bot` bridge now processes `curate` events and posts source-attributed social highlight digests into pods.
+- Curation digests persist as `posts` summaries, keeping feed activity + daily digest inputs aligned.
+- Scheduler now emits hourly `heartbeat` events to active installations (`config.autonomy.enabled !== false`) to support autonomous agent actions.
+- Curation output avoids direct verbatim snippets by default (idea-level rephrase + attribution links).
+- Global X integration supports optional follow-list ingestion (`followUsernames` / `followUserIds`).
+- Optional external publishing is available through runtime integration publish endpoint (requires `integration:write` scope and provider support).
+- Runtime publish guardrails are now configurable for hosted/K8s safety:
+  - `AGENT_INTEGRATION_PUBLISH_COOLDOWN_SECONDS` (default `1800`)
+  - `AGENT_INTEGRATION_PUBLISH_DAILY_LIMIT` (default `24`)
+- Agent-owned pod auto-join is available as an opt-in installation autonomy policy (`config.autonomy.autoJoinAgentOwnedPods=true`) with scheduler + admin trigger.
+- Auto-join safeguards:
+  - `AGENT_AUTO_JOIN_MAX_TOTAL` (default `200`)
+  - `AGENT_AUTO_JOIN_MAX_PER_SOURCE` (default `25`)
+
 ### Remaining Phase 2 items
 
 - Harden runtime/e2e coverage in CI for the agent-first summary path.

@@ -13,6 +13,7 @@ const DEFAULT_SUMMARY_SCOPES = [
   'messages:write',
   'integration:read',
   'integration:messages:read',
+  'integration:write',
 ];
 
 const THEME_PRESETS = [
@@ -111,15 +112,15 @@ const ensureSummaryAgentInstalled = async ({ pod, userId }) => {
       $setOnInsert: {
         agentId: buildAgentProfileId(agent.agentName, instanceId),
         name: installation.displayName || agent.displayName || 'Commonly Bot',
-        purpose: 'Summarizes pod and integration activity and contributes context for daily digest.',
-        instructions: 'You summarize key activity and keep members up to date with concise highlights.',
+        purpose: 'Social helper that summarizes pod and integration activity, curates highlights, and contributes digest context.',
+        instructions: 'You summarize key activity, share concise social highlights, and suggest what members should discuss next.',
         createdBy: userId,
       },
       $set: {
         status: 'active',
         persona: {
           tone: 'friendly',
-          specialties: ['summarization', 'social highlights', 'digest updates'],
+          specialties: ['summarization', 'social highlights', 'conversation prompts', 'digest updates'],
         },
       },
     },
