@@ -15,6 +15,7 @@ import {
     Timeline as ActivityIcon,
     Apps as AppsIcon,
     AutoAwesome as SkillsIcon,
+    AdminPanelSettings as AdminIcon,
 } from '@mui/icons-material';
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
@@ -181,6 +182,19 @@ const Dashboard = () => {
                     </ListItemIcon>
                     <ListItemText primary="Activity" />
                 </ListItem>
+
+                {currentUser?.role === 'admin' && (
+                    <ListItem
+                        button
+                        onClick={() => handleNavigation('/admin/integrations/global')}
+                        selected={location.pathname === '/admin/integrations/global'}
+                    >
+                        <ListItemIcon>
+                            <AdminIcon />
+                        </ListItemIcon>
+                        <ListItemText primary="Global Integrations" />
+                    </ListItem>
+                )}
 
                 <Divider sx={{ my: 2 }} />
                 

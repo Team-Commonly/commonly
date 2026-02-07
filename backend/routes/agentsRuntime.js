@@ -7,6 +7,9 @@ const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
 const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
+const SocialPolicyService = require('../services/socialPolicyService');
+const registry = require('../integrations');
+const Activity = require('../models/Activity');
 const User = require('../models/User');
 const Post = require('../models/Post');
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -15,6 +18,26 @@ const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 const Integration = require('../models/Integration');
 
 const router = express.Router();
+const parseNonNegativeInt = (value, fallback) => {
+  const parsed = parseInt(value, 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.max(0, parsed);
+};
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = parseInt(value, 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.max(1, parsed);
+};
+
+const INTEGRATION_PUBLISH_COOLDOWN_SECONDS = parseNonNegativeInt(
+  process.env.AGENT_INTEGRATION_PUBLISH_COOLDOWN_SECONDS,
+  1800,
+);
+const INTEGRATION_PUBLISH_DAILY_LIMIT = parsePositiveInt(
+  process.env.AGENT_INTEGRATION_PUBLISH_DAILY_LIMIT,
+  24,
+);
 
 const ensurePodMatch = (installationOrList, podId) => {
   if (Array.isArray(installationOrList)) {
@@ -548,12 +571,24 @@ router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req, res) => {
       return res.status(403).json({ message: 'Missing integration:read scope' });
     }
 
-    // Fetch integrations for this pod where agentAccessEnabled = true
-    const integrations = await Integration.find({
+    // Fetch pod-scoped integrations where agent access is enabled.
+    const podIntegrations = await Integration.find({
       podId,
       'config.agentAccessEnabled': true,
       status: 'connected',
     }).select('type config').lean();
+
+    // Also include globally shared integrations (ex: global X tokens from admin UI).
+    const globalIntegrations = await Integration.find({
+      'config.agentAccessEnabled': true,
+      'config.globalAgentAccess': true,
+      status: 'connected',
+      isActive: true,
+    }).select('type config').lean();
+
+    const integrations = [...podIntegrations, ...globalIntegrations].filter((integration, index, list) => (
+      index === list.findIndex((item) => item._id?.toString() === integration._id?.toString())
+    ));
 
     // Return sanitized integration data
     return res.json({
@@ -651,6 +686,183 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
   } catch (error) {
     console.error('Error fetching messages for agent:', error);
     return res.status(500).json({ message: error.message || 'Failed to fetch messages' });
+  }
+});
+
+/**
+ * GET /pods/:podId/social-policy (agent runtime token auth)
+ * Returns effective global social publish policy.
+ */
+router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req, res) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    const policy = await SocialPolicyService.getPolicy();
+    return res.json({ policy });
+  } catch (error) {
+    console.error('Error fetching social policy for agent:', error);
+    return res.status(500).json({ message: 'Failed to fetch social policy' });
+  }
+});
+
+/**
+ * POST /pods/:podId/integrations/:integrationId/publish (agent runtime token auth)
+ * Publish curated content to an external integration (X/Instagram).
+ */
+router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth, async (req, res) => {
+  try {
+    const { podId, integrationId } = req.params;
+    const {
+      text,
+      caption,
+      imageUrl,
+      hashtags,
+      sourceUrl,
+    } = req.body || {};
+
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+
+    // Verify agent is installed in this pod
+    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+
+    // Verify integration write scope
+    if (!hasAnyScope(installation, ['integration:write', 'integrations:write'])) {
+      return res.status(403).json({ message: 'Missing integration:write scope' });
+    }
+
+    const integration = await Integration.findOne({
+      _id: integrationId,
+      podId,
+      'config.agentAccessEnabled': true,
+      status: 'connected',
+      isActive: true,
+    }).lean();
+
+    if (!integration) {
+      return res.status(404).json({ message: 'Integration not found or agent access disabled' });
+    }
+
+    const socialPolicy = await SocialPolicyService.getPolicy();
+    if (!socialPolicy.publishEnabled) {
+      return res.status(403).json({ message: 'Global social publishing is disabled by policy' });
+    }
+
+    const hasSourceUrl = Boolean(String(sourceUrl || '').trim());
+    if (socialPolicy.strictAttribution && !hasSourceUrl) {
+      return res.status(400).json({ message: 'sourceUrl is required by strict attribution policy' });
+    }
+
+    const baseText = String(text || '').trim();
+    const baseCaption = String(caption || '').trim();
+    const publishPayload = {
+      text: baseText,
+      caption: baseCaption,
+      imageUrl,
+      hashtags: Array.isArray(hashtags) ? hashtags : [],
+      sourceUrl: hasSourceUrl ? String(sourceUrl).trim() : undefined,
+    };
+    if (socialPolicy.socialMode === 'repost') {
+      if (!publishPayload.sourceUrl) {
+        return res.status(400).json({ message: 'sourceUrl is required for repost mode' });
+      }
+      // Enforce link-first posting in repost mode.
+      const repostPrefix = 'Shared via Commonly';
+      publishPayload.text = repostPrefix;
+      publishPayload.caption = repostPrefix;
+    }
+
+    const now = new Date();
+    const lastPublishAt = integration.config?.lastAgentPublishAt
+      ? new Date(integration.config.lastAgentPublishAt)
+      : null;
+    if (INTEGRATION_PUBLISH_COOLDOWN_SECONDS > 0 && lastPublishAt && !Number.isNaN(lastPublishAt.valueOf())) {
+      const elapsedSeconds = Math.floor((now.getTime() - lastPublishAt.getTime()) / 1000);
+      if (elapsedSeconds < INTEGRATION_PUBLISH_COOLDOWN_SECONDS) {
+        return res.status(429).json({
+          message: 'Publish cooldown active for this integration',
+          retryAfterSeconds: INTEGRATION_PUBLISH_COOLDOWN_SECONDS - elapsedSeconds,
+        });
+      }
+    }
+
+    const windowStartRaw = integration.config?.agentPublishWindowStart;
+    const windowStart = windowStartRaw ? new Date(windowStartRaw) : null;
+    const hasValidWindow = windowStart && !Number.isNaN(windowStart.valueOf())
+      && (now.getTime() - windowStart.getTime()) < (24 * 60 * 60 * 1000);
+    const publishWindowStart = hasValidWindow ? windowStart : now;
+    const publishWindowCount = hasValidWindow
+      ? Number(integration.config?.agentPublishWindowCount || 0)
+      : 0;
+    if (publishWindowCount >= INTEGRATION_PUBLISH_DAILY_LIMIT) {
+      return res.status(429).json({
+        message: 'Daily publish limit reached for this integration',
+        limit: INTEGRATION_PUBLISH_DAILY_LIMIT,
+      });
+    }
+
+    const provider = registry.get(integration.type, integration);
+    if (typeof provider.publishPost !== 'function') {
+      return res.status(400).json({ message: `Integration type ${integration.type} does not support publishing` });
+    }
+
+    const result = await provider.publishPost(publishPayload);
+
+    await Integration.updateOne(
+      { _id: integrationId },
+      {
+        $set: {
+          'config.lastAgentPublishAt': now,
+          'config.lastAgentPublishBy': `${installation.agentName}:${installation.instanceId || 'default'}`,
+          'config.agentPublishWindowStart': publishWindowStart,
+          'config.agentPublishWindowCount': publishWindowCount + 1,
+        },
+      },
+    );
+
+    try {
+      const actorName = req.agentUser?.botMetadata?.displayName
+        || req.agentUser?.username
+        || installation.agentName;
+      await Activity.create({
+        type: 'agent_action',
+        actor: {
+          id: req.agentUser?._id || null,
+          name: actorName,
+          type: 'agent',
+          verified: true,
+        },
+        action: 'integration_publish',
+        content: `Published content to ${integration.type} integration.`,
+        podId,
+        sourceType: 'event',
+        sourceId: result?.externalId || undefined,
+        agentMetadata: {
+          agentName: installation.agentName,
+          sources: result?.url ? [{ title: `${integration.type} post`, url: result.url }] : [],
+          confidence: socialPolicy.socialMode === 'rewrite' ? 0.8 : 1.0,
+        },
+      });
+    } catch (activityError) {
+      console.warn('Failed to log integration publish activity:', activityError.message);
+    }
+
+    return res.json({ success: true, result });
+  } catch (error) {
+    console.error('Error publishing via integration for agent:', error);
+    return res.status(500).json({ message: error.message || 'Failed to publish via integration' });
   }
 });
 

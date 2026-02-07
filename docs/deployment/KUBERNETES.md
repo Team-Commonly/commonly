@@ -116,16 +116,27 @@ Commonly uses two Helm values files:
 - `./k8s/helm/commonly/values.yaml` for the default pool (production).
 - `./k8s/helm/commonly/values-dev.yaml` for the dev pool.
 
-Backend build + rollout:
+Backend + frontend build + rollout:
 
 ```bash
-gcloud builds submit --config cloudbuild.backend.yaml .
+BACKEND_TAG=$(date +%Y%m%d%H%M%S)
+FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
+
+gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
 
 # Production pool
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:latest -n commonly
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
 
 # Dev pool
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:latest -n commonly-dev
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+
+kubectl rollout status deployment/backend -n commonly
+kubectl rollout status deployment/frontend -n commonly
+kubectl rollout status deployment/backend -n commonly-dev
+kubectl rollout status deployment/frontend -n commonly-dev
 ```
 
 Helm upgrade:
@@ -142,7 +153,19 @@ kubectl rollout restart deployment/clawdbot-gateway -n commonly
 kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
 ```
 
+Gateway rollout strategy note:
+- `clawdbot-gateway` should use deployment strategy `Recreate`.
+- Reason: gateway config/workspace PVCs are `ReadWriteOnce`; `RollingUpdate` can stall with multi-attach errors during upgrades.
+
 ## Important Configuration Notes
+
+### Agent Provisioning RBAC (K8s)
+
+When `AGENT_PROVISIONER_K8S=1`, backend provisioning needs namespace RBAC for:
+- `deployments`, `configmaps`, `pods`, `pods/log`, `services`, `persistentvolumeclaims`, `secrets`
+- `pods/exec` (required for writing OpenClaw workspace files like `HEARTBEAT.md` in gateway pods)
+
+If `pods/exec` is missing, provisioning can still update ConfigMaps/tokens, but heartbeat file updates will fail.
 
 ### CORS Configuration
 
@@ -258,22 +281,21 @@ To upgrade an existing deployment:
 
 ```bash
 # Rebuild and push new images (Cloud Build)
-gcloud builds submit --config cloudbuild.backend.yaml .
+BACKEND_TAG=$(date +%Y%m%d%H%M%S)
+FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
+gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
 
-# Upgrade with Helm
-helm upgrade commonly ./k8s/helm/commonly \
-  -f ./k8s/helm/commonly/values.yaml \
-  --namespace default
+# Roll out to both namespaces
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
 
-helm upgrade commonly-dev ./k8s/helm/commonly \
-  -f ./k8s/helm/commonly/values-dev.yaml \
-  --namespace commonly-dev
-
-# Or force rollout
-kubectl rollout restart deployment backend -n default
-kubectl rollout restart deployment frontend -n default
-kubectl rollout restart deployment backend -n commonly-dev
-kubectl rollout restart deployment frontend -n commonly-dev
+kubectl rollout status deployment/backend -n commonly
+kubectl rollout status deployment/frontend -n commonly
+kubectl rollout status deployment/backend -n commonly-dev
+kubectl rollout status deployment/frontend -n commonly-dev
 ```
 
 ## Production Considerations

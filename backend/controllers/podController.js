@@ -7,7 +7,7 @@ const Integration = require('../models/Integration');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
 const AgentIdentityService = require('../services/agentIdentityService');
-const _User = require('../models/User');
+const User = require('../models/User');
 // Add PGPod at the top level if it's available
 let PGPod;
 let PGMessage;
@@ -24,11 +24,20 @@ const DEFAULT_POD_AGENT_SCOPES = [
   'messages:write',
   'integration:read',
   'integration:messages:read',
+  'integration:write',
 ];
 
 const buildDefaultAgentProfileId = (agentName, instanceId = 'default') => (
   `${agentName.toLowerCase()}:${instanceId || 'default'}`
 );
+
+const isGlobalAdminRequest = async (req) => {
+  if (req.user?.role === 'admin') return true;
+  const userId = req.userId || req.user?.id || req.user?._id;
+  if (!userId) return false;
+  const user = await User.findById(userId).select('role').lean();
+  return Boolean(user && user.role === 'admin');
+};
 
 const ensureDefaultAgentRegistryEntry = async (agentName) => {
   const normalized = String(agentName || '').trim().toLowerCase();
@@ -113,15 +122,15 @@ const installDefaultAgentForPod = async ({ pod, userId }) => {
       $setOnInsert: {
         agentId: buildDefaultAgentProfileId(agent.agentName, instanceId),
         name: installation.displayName || agent.displayName || 'Commonly Bot',
-        purpose: 'Summarizes pod and integration activity and contributes context for daily digest.',
-        instructions: 'You summarize key pod activity, highlight important updates, and keep context concise.',
+        purpose: 'Social helper that summarizes pod activity, surfaces interesting external signals, and contributes daily digest context.',
+        instructions: 'You act as a friendly social helper: summarize key activity, suggest timely conversation starters, and keep updates concise and useful.',
         createdBy: userId,
       },
       $set: {
         status: 'active',
         persona: {
           tone: 'friendly',
-          specialties: ['summarization', 'community updates', 'digest highlights'],
+          specialties: ['summarization', 'community updates', 'conversation starters', 'digest highlights'],
         },
       },
     },
@@ -466,8 +475,12 @@ exports.deletePod = async (req, res) => {
       return res.status(404).json({ msg: 'Pod not found' });
     }
 
-    // Check if user is the creator
-    if (pod.createdBy.toString() !== req.userId) {
+    const requesterId = req.userId || req.user?.id || req.user?._id;
+    const isCreator = pod.createdBy.toString() === requesterId?.toString();
+    const isGlobalAdmin = await isGlobalAdminRequest(req);
+
+    // Check if user is the creator or global admin
+    if (!isCreator && !isGlobalAdmin) {
       return res.status(401).json({ msg: 'Not authorized to delete this pod' });
     }
 

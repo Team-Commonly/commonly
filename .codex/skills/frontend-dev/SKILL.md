@@ -2,7 +2,7 @@
 
 name: frontend-dev
 description: Frontend development context for React.js, Material-UI, Context API, hooks, and component patterns. Use when working on frontend code.
-last_updated: 2026-02-04
+last_updated: 2026-02-06
 ---
 
 # Frontend Development
@@ -49,7 +49,16 @@ frontend/src/
 - Pod memory search + excerpt panel (`/api/pods/:id/context/search` and `/api/pods/:id/context/assets/:assetId`) with type filters and auto-load excerpts.
 - Apps Marketplace UI lives in `frontend/src/components/apps/AppsMarketplacePage.js` and consumes `GET /api/marketplace/official` plus `GET /api/integrations/catalog`.
 - Agent Hub UI lives in `frontend/src/components/agents/AgentsHub.js` and consumes `/api/registry/*` (installs, model prefs, runtime token issuance).
+- Agent Hub also consumes `/api/registry/presets` for categorized preset recommendations and API/tool readiness,
+  plus default skill bundle readiness from built-in OpenClaw skills and Dockerfile.commonly capabilities.
+- Presets tab supports category chips (including `Social`) to segment curator-focused preset installs.
+- Public marketing routes include `/` (landing) and `/use-cases/:useCaseId` for scenario-driven onboarding pages.
+- `/verify-email` should render verification status plus a clear path forward (`Go to Login`) after completion.
+- Global admin social integrations UI is routed at `/admin/integrations/global`.
 - Agent config dialog lists runtime tokens and supports revoke (`DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId`).
+- Agent config dialog includes Integration Autonomy scope controls for `integration:read`, `integration:messages:read`, `integration:write`, and `config.autonomy.autoJoinAgentOwnedPods`.
+- Runtime provision UI includes a force toggle that sends `force: true` to
+  `POST /api/registry/pods/:podId/agents/:name/provision` for shared token rotation.
 - Pod member labels are MVP roles: **Admin** for the creator and **Member** for everyone else (viewers are read-only and not rendered yet).
 - Pod member online indicators are updated via Socket.io `podPresence` events.
 - Agents Hub uses a single filter bar (search, category, install-to pod) with no Trending section; agent cards are 3-up on desktop.
@@ -93,7 +102,7 @@ const useSocket = (podId) => {
 };
 ```
 
-## Current Repo Notes (2026-02-04)
+## Current Repo Notes (2026-02-06)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).

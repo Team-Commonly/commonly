@@ -58,12 +58,20 @@ describe('agent runtime tokens', () => {
     const installation = {
       agentName: 'commonly-bot',
       podId: 'pod-1',
+      instanceId: 'default',
+      displayName: 'Commonly Bot',
       status: 'active',
       runtimeTokens: [],
       save: jest.fn().mockResolvedValue(true),
     };
+    const agentUser = {
+      agentRuntimeTokens: [],
+      save: jest.fn().mockResolvedValue(true),
+    };
 
     AgentInstallation.findOne.mockResolvedValue(installation);
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
 
     const res = await request(app)
       .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
@@ -71,8 +79,48 @@ describe('agent runtime tokens', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.token).toMatch(/^cm_agent_/);
+    expect(agentUser.agentRuntimeTokens.length).toBe(1);
     expect(installation.runtimeTokens.length).toBe(1);
     expect(installation.save).toHaveBeenCalled();
+    expect(agentUser.save).toHaveBeenCalled();
+  });
+
+  it('lists shared runtime tokens from agent user', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1',
+        createdBy: 'user-1',
+        members: ['user-1'],
+      }),
+    });
+
+    AgentInstallation.findOne.mockResolvedValue({
+      agentName: 'commonly-bot',
+      podId: 'pod-1',
+      instanceId: 'default',
+      status: 'active',
+    });
+    User.findOne.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          agentRuntimeTokens: [
+            {
+              _id: 'token-1',
+              label: 'Local dev',
+              createdAt: new Date('2026-01-01T00:00:00Z'),
+              lastUsedAt: null,
+            },
+          ],
+        }),
+      }),
+    });
+
+    const res = await request(app)
+      .get('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens');
+
+    expect(res.status).toBe(200);
+    expect(res.body.tokens).toHaveLength(1);
+    expect(res.body.tokens[0].label).toBe('Local dev');
   });
 
   it('issues a user token for an installed agent', async () => {
@@ -107,6 +155,7 @@ describe('agent runtime tokens', () => {
     expect(res.status).toBe(200);
     expect(res.body.token).toBe('cm_token_123');
     expect(res.body.scopes).toEqual(['agent:events:read', 'agent:messages:write']);
+    expect(res.body.scopeMode).toBe('scoped');
     expect(agentUser.generateApiToken).toHaveBeenCalled();
     expect(agentUser.save).toHaveBeenCalled();
   });
@@ -141,6 +190,40 @@ describe('agent runtime tokens', () => {
     expect(res.status).toBe(200);
     expect(res.body.hasToken).toBe(true);
     expect(res.body.scopes).toEqual(['agent:context:read']);
+    expect(res.body.scopeMode).toBe('scoped');
+  });
+
+  it('returns full-access mode when user token has no explicit scopes', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1',
+        createdBy: 'user-1',
+        members: ['user-1'],
+      }),
+    });
+
+    AgentInstallation.findOne.mockResolvedValue({
+      agentName: 'clawd-bot',
+      podId: 'pod-1',
+      status: 'active',
+    });
+
+    User.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        username: 'clawd-bot',
+        apiToken: 'cm_token_123',
+        apiTokenCreatedAt: new Date('2026-01-01T00:00:00Z'),
+        apiTokenScopes: [],
+      }),
+    });
+
+    const res = await request(app)
+      .get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.hasToken).toBe(true);
+    expect(res.body.scopes).toEqual([]);
+    expect(res.body.scopeMode).toBe('all');
   });
 
   it('revokes user token for an installed agent', async () => {

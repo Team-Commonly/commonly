@@ -139,6 +139,62 @@ function createInstagramProvider(integration) {
       }
       return { ok: true };
     },
+
+    async publishPost({ caption, imageUrl, hashtags = [], sourceUrl } = {}) {
+      const accessToken = config.accessToken;
+      if (!accessToken || !config.igUserId) {
+        throw new Error('Missing Instagram access configuration');
+      }
+      if (!imageUrl) {
+        throw new Error('imageUrl is required for Instagram publishing');
+      }
+
+      const normalizedTags = Array.isArray(hashtags)
+        ? hashtags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 8)
+        : [];
+      const baseCaption = String(caption || '').trim();
+      const sourceLine = sourceUrl ? `\n\nSource: ${String(sourceUrl).trim()}` : '';
+      const tagsLine = normalizedTags.length ? `\n\n${normalizedTags.join(' ')}` : '';
+      let finalCaption = `${baseCaption}${tagsLine}${sourceLine}`.trim();
+      if (finalCaption.length > 2200) {
+        finalCaption = `${finalCaption.slice(0, 2197)}...`;
+      }
+
+      const createRes = await axios.post(
+        `${apiBase}/${config.igUserId}/media`,
+        null,
+        {
+          params: {
+            image_url: String(imageUrl).trim(),
+            caption: finalCaption,
+            access_token: accessToken,
+          },
+        },
+      );
+
+      const creationId = createRes?.data?.id;
+      if (!creationId) {
+        throw new Error('Failed to create Instagram media container');
+      }
+
+      const publishRes = await axios.post(
+        `${apiBase}/${config.igUserId}/media_publish`,
+        null,
+        {
+          params: {
+            creation_id: creationId,
+            access_token: accessToken,
+          },
+        },
+      );
+
+      return {
+        success: true,
+        provider: 'instagram',
+        externalId: publishRes?.data?.id || null,
+        caption: finalCaption,
+      };
+    },
   };
 }
 

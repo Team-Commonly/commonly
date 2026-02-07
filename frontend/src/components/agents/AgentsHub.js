@@ -85,6 +85,44 @@ const agentUserTokenScopes = [
   { id: 'agent:messages:write', label: 'Post pod messages' },
 ];
 
+const installationScopeOptions = [
+  ...agentUserTokenScopes,
+  { id: 'integration:read', label: 'Read integration list/tokens' },
+  { id: 'integration:messages:read', label: 'Read integration messages' },
+  { id: 'integration:write', label: 'Publish to integrations' },
+];
+
+const installationScopeAliases = {
+  'integrations:read': 'integration:read',
+  'integrations:messages:read': 'integration:messages:read',
+  'integrations:write': 'integration:write',
+};
+
+const normalizeInstallationScope = (scope) => {
+  const raw = String(scope || '').trim();
+  if (!raw) return '';
+  return installationScopeAliases[raw] || raw;
+};
+
+const getPresetSkillStatus = (skill) => {
+  switch (skill?.setupStatus) {
+    case 'ready':
+      return { label: 'Ready', color: 'success' };
+    case 'needs-package-install':
+      return { label: 'Needs package install', color: 'warning' };
+    case 'needs-api-env':
+      return { label: 'Needs API env', color: 'warning' };
+    case 'missing-skill':
+      return { label: 'Missing skill', color: 'default' };
+    default:
+      return { label: 'Unknown', color: 'default' };
+  }
+};
+
+const TAB_DISCOVER = 0;
+const TAB_PRESETS = 1;
+const TAB_INSTALLED = 2;
+
 const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const theme = useTheme();
   const location = useLocation();
@@ -95,6 +133,14 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [category, setCategory] = useState('all');
   const [agents, setAgents] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [presets, setPresets] = useState([]);
+  const [presetCategory, setPresetCategory] = useState('all');
+  const [presetCapabilities, setPresetCapabilities] = useState(null);
+  const [presetRuntimeSkills, setPresetRuntimeSkills] = useState(null);
+  const [presetDockerCapabilities, setPresetDockerCapabilities] = useState(null);
+  const [presetsLoading, setPresetsLoading] = useState(false);
+  const [presetsError, setPresetsError] = useState('');
+  const [presetInstallLoadingId, setPresetInstallLoadingId] = useState('');
   const [installedAgents, setInstalledAgents] = useState([]);
   const [userPods, setUserPods] = useState([]);
   const queryPodId = useMemo(() => {
@@ -124,6 +170,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [toolPolicyAllowed, setToolPolicyAllowed] = useState('commonly');
   const [toolPolicyBlocked, setToolPolicyBlocked] = useState('');
   const [toolPolicyRequireApproval, setToolPolicyRequireApproval] = useState('');
+  const [configSelectedScopes, setConfigSelectedScopes] = useState([]);
+  const [configExtraScopes, setConfigExtraScopes] = useState([]);
+  const [configAutoJoinAgentOwnedPods, setConfigAutoJoinAgentOwnedPods] = useState(false);
   const [configHeartbeatEnabled, setConfigHeartbeatEnabled] = useState(true);
   const [configHeartbeatInterval, setConfigHeartbeatInterval] = useState(60);
   const [configHeartbeatChecklist, setConfigHeartbeatChecklist] = useState('');
@@ -148,6 +197,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [provisionResult, setProvisionResult] = useState(null);
   const [provisionError, setProvisionError] = useState('');
   const [provisionIncludeUserToken, setProvisionIncludeUserToken] = useState(true);
+  const [provisionForceReprovision, setProvisionForceReprovision] = useState(false);
   const [runtimeGatewayMode, setRuntimeGatewayMode] = useState('shared');
   const [runtimeGatewayId, setRuntimeGatewayId] = useState('');
   const [runtimeGatewayList, setRuntimeGatewayList] = useState([]);
@@ -175,7 +225,11 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const runtimeLogsScrollRef = useRef({ top: 0, atBottom: true });
   const [userTokenValue, setUserTokenValue] = useState('');
   const [userTokenScopes, setUserTokenScopes] = useState([]);
-  const [userTokenMeta, setUserTokenMeta] = useState({ hasToken: false, createdAt: null });
+  const [userTokenMeta, setUserTokenMeta] = useState({
+    hasToken: false,
+    createdAt: null,
+    scopeMode: 'none',
+  });
   const [userTokenLoading, setUserTokenLoading] = useState(false);
   const [userTokenRevoking, setUserTokenRevoking] = useState(false);
   const [skillsCatalogOpen, setSkillsCatalogOpen] = useState(false);
@@ -196,6 +250,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [licenseState, setLicenseState] = useState({ title: '', text: '', path: '' });
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
   const [installAgent, setInstallAgent] = useState(null);
+  const [installPresetContext, setInstallPresetContext] = useState(null);
   const [installPodIds, setInstallPodIds] = useState([]);
   const [installSaving, setInstallSaving] = useState(false);
   const [installInstanceName, setInstallInstanceName] = useState('');
@@ -242,6 +297,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [adminAutonomyMinMatches, setAdminAutonomyMinMatches] = useState(4);
   const [adminAutonomyLoading, setAdminAutonomyLoading] = useState(false);
   const [adminAutonomyResult, setAdminAutonomyResult] = useState(null);
+  const [adminReprovisionLoading, setAdminReprovisionLoading] = useState(false);
+  const [adminReprovisionResult, setAdminReprovisionResult] = useState(null);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
@@ -250,6 +307,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
   const resolveRuntimeGatewayId = () => (
     runtimeGatewayMode === 'custom' && isGlobalAdmin ? runtimeGatewayId : ''
+  );
+  const resolveInstallGatewayId = () => (
+    installGatewayMode === 'custom' && isGlobalAdmin ? installGatewayId : ''
   );
 
   const currentUserId = currentUser?._id || currentUser?.id || null;
@@ -270,7 +330,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     return creatorId?.toString?.() === currentUserId.toString();
   };
 
-  const adminTabIndex = isGlobalAdmin ? 2 : -1;
+  const adminTabIndex = isGlobalAdmin ? 3 : -1;
 
   const formatDateTime = (value) => {
     if (!value) return '—';
@@ -342,6 +402,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   useEffect(() => {
     fetchAgents();
     fetchTemplates();
+    fetchAgentPresets();
   }, [category, searchQuery]);
 
   // Fetch installed agents for selected pod
@@ -396,6 +457,29 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     } catch (err) {
       console.error('Error fetching agent templates:', err);
       setTemplates([]);
+    }
+  };
+
+  const fetchAgentPresets = async () => {
+    setPresetsLoading(true);
+    setPresetsError('');
+    try {
+      const response = await axios.get('/api/registry/presets', {
+        headers: getAuthHeaders(),
+      });
+      setPresets(response.data?.presets || []);
+      setPresetCapabilities(response.data?.capabilities || null);
+      setPresetRuntimeSkills(response.data?.runtimeSkills || null);
+      setPresetDockerCapabilities(response.data?.dockerCapabilities || null);
+    } catch (err) {
+      console.error('Error fetching agent presets:', err);
+      setPresets([]);
+      setPresetCapabilities(null);
+      setPresetRuntimeSkills(null);
+      setPresetDockerCapabilities(null);
+      setPresetsError(err.response?.data?.error || 'Failed to load presets');
+    } finally {
+      setPresetsLoading(false);
     }
   };
 
@@ -471,8 +555,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   };
 
   useEffect(() => {
-    if (!isGlobalAdmin && activeTab > 1) {
-      setActiveTab(0);
+    if (!isGlobalAdmin && activeTab > TAB_INSTALLED) {
+      setActiveTab(TAB_DISCOVER);
     }
   }, [isGlobalAdmin, activeTab]);
 
@@ -491,12 +575,13 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     return () => clearTimeout(handle);
   }, [isGlobalAdmin, activeTab, adminTabIndex, adminSearch]);
 
-  const openInstallDialog = (agent) => {
+  const openInstallDialog = (agent, options = {}) => {
     const defaultPodId = selectedPodId
       || accessiblePods[0]?._id
       || userPods[0]?._id
       || null;
     setInstallAgent(agent);
+    setInstallPresetContext(options.presetContext || null);
     setInstallInstanceName(agent?.displayName || agent?.name || '');
     setInstallInstanceId('');
     setInstallPodIds(defaultPodId ? [defaultPodId] : []);
@@ -506,6 +591,40 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setInstallLlmMode('default');
     setInstallLlmKeys({ google: '', anthropic: '', openai: '' });
     setInstallDialogOpen(true);
+  };
+
+  const handleInstallPreset = async (preset) => {
+    if (!preset?.agentName) return;
+    setPresetInstallLoadingId(preset.id);
+    try {
+      const response = await axios.get(`/api/registry/agents/${preset.agentName}`, {
+        headers: getAuthHeaders(),
+      });
+      const agent = {
+        name: response.data?.name || preset.agentName,
+        displayName: response.data?.displayName || preset.title,
+        description: response.data?.description || preset.description,
+        version: response.data?.version || '',
+        verified: response.data?.verified,
+        categories: response.data?.categories || [],
+        stats: response.data?.stats || {},
+        iconUrl: response.data?.iconUrl || '',
+      };
+      openInstallDialog(agent, {
+        presetContext: {
+          id: preset.id,
+          title: preset.title,
+          defaultSkills: (preset.defaultSkills || []).map((skill) => skill.id).filter(Boolean),
+          installHints: preset.installHints || {},
+        },
+      });
+      setInstallInstanceName(`${preset.title}`);
+    } catch (err) {
+      console.error('Error loading preset agent type:', err);
+      alert(err.response?.data?.error || 'Failed to load preset agent type');
+    } finally {
+      setPresetInstallLoadingId('');
+    }
   };
 
   const openAdminTokensDialog = (installation) => {
@@ -615,9 +734,35 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
+  const handleForceReprovisionAll = async () => {
+    if (!isGlobalAdmin) return;
+    setAdminReprovisionLoading(true);
+    setAdminReprovisionResult(null);
+    setAdminError('');
+    try {
+      const response = await axios.post(
+        '/api/registry/admin/installations/reprovision-all',
+        {},
+        { headers: getAuthHeaders() },
+      );
+      setAdminReprovisionResult({
+        attempted: response.data?.attempted || 0,
+        succeeded: response.data?.succeeded || 0,
+        failed: response.data?.failed || 0,
+      });
+      fetchAdminInstallations();
+    } catch (err) {
+      console.error('Error running bulk reprovision:', err);
+      setAdminError(err?.response?.data?.error || 'Failed to reprovision all agent runtimes.');
+    } finally {
+      setAdminReprovisionLoading(false);
+    }
+  };
+
   const closeInstallDialog = () => {
     setInstallDialogOpen(false);
     setInstallAgent(null);
+    setInstallPresetContext(null);
     setInstallPodIds([]);
     setInstallInstanceName('');
     setInstallInstanceId('');
@@ -850,7 +995,13 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         headers: getAuthHeaders(),
       });
       const requiredScopes = agentDetails.data?.manifest?.context?.required || [];
-      const installScopes = requiredScopes.length > 0 ? requiredScopes : ['context:read'];
+      const presetScopes = Array.isArray(installPresetContext?.installHints?.scopes)
+        ? installPresetContext.installHints.scopes
+        : [];
+      const installScopes = Array.from(new Set([
+        ...(requiredScopes.length > 0 ? requiredScopes : ['context:read']),
+        ...presetScopes,
+      ]));
       let resolvedInstanceId = installInstanceId?.trim() || '';
       if (resolvedInstanceId) {
         resolvedInstanceId = resolvedInstanceId
@@ -864,21 +1015,39 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       }
 
       const authProfiles = buildInstallAuthProfiles();
-      const installConfig = authProfiles ? { runtime: { authProfiles } } : undefined;
 
       const results = await Promise.allSettled(
         installPodIds.map((podId) => (
-          axios.post('/api/registry/install', {
-            agentName,
-            podId,
-            scopes: installScopes,
-            instanceId: resolvedInstanceId || undefined,
-            displayName: installInstanceName || agentDetails.data?.displayName || agentName,
-            gatewayId: selectedGatewayId || undefined,
-            config: installConfig,
-          }, {
-            headers: getAuthHeaders(),
-          })
+          (() => {
+            const config = {};
+            if (authProfiles) {
+              config.runtime = { authProfiles };
+            }
+            const presetSkills = Array.isArray(installPresetContext?.defaultSkills)
+              ? installPresetContext.defaultSkills
+              : [];
+            if (agentName.toLowerCase() === 'openclaw') {
+              if (presetSkills.length > 0) {
+                config.skillSync = {
+                  mode: 'selected',
+                  allPods: false,
+                  podIds: [podId],
+                  skillNames: presetSkills,
+                };
+              }
+            }
+            return axios.post('/api/registry/install', {
+              agentName,
+              podId,
+              scopes: installScopes,
+              instanceId: resolvedInstanceId || undefined,
+              displayName: installInstanceName || agentDetails.data?.displayName || agentName,
+              gatewayId: selectedGatewayId || undefined,
+              config: Object.keys(config).length ? config : undefined,
+            }, {
+              headers: getAuthHeaders(),
+            });
+          })()
         )),
       );
 
@@ -1058,7 +1227,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const toolPolicyHelper = 'Common: commonly (all), commonly_search, commonly_context, commonly_write.';
 
   const DEFAULT_HEARTBEAT_CHECKLIST = [
-    '- Use the `commonly` skill to fetch pod context (`/api/pods/:id/context`), last 20 chat messages, and 10 most recent posts.',
+    '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.',
+    '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`): context via `/api/agents/runtime/pods/:podId/context` with runtime token, or `/api/pods/:podId/context` with user token.',
+    '- Fetch last 20 chat messages and 10 recent posts via user-token routes: `/api/messages/:podId?limit=20` and `/api/posts?podId=:podId&limit=10`.',
     '- If there is something new, post a concise update to the pod chat and reply to relevant posts/threads.',
     '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
     '- If nothing new, reply HEARTBEAT_OK.',
@@ -1182,20 +1353,44 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const filteredAgents = category === 'all'
     ? allAgents
     : allAgents.filter((agent) => (agent.categories || []).includes(category));
+  const presetCategories = useMemo(() => {
+    const ids = Array.from(
+      new Set(
+        (presets || [])
+          .map((preset) => String(preset?.category || '').trim())
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+    return ['all', ...ids];
+  }, [presets]);
+  const filteredPresets = useMemo(() => {
+    if (presetCategory === 'all') return presets;
+    return (presets || []).filter((preset) => String(preset?.category || '') === presetCategory);
+  }, [presets, presetCategory]);
 
-  const openConfigDialog = (agent) => {
-    const resolved = resolveInstalledAgent(agent);
-    if (!resolved.instanceId && isInstalled(agent?.name)) {
-      alert('Multiple installations found. Open the Installed tab to configure the correct instance.');
-      return;
+  useEffect(() => {
+    if (!presetCategories.includes(presetCategory)) {
+      setPresetCategory('all');
     }
+  }, [presetCategories, presetCategory]);
+
+  const applyConfigDialogState = (resolved) => {
     setConfigAgent(resolved);
     setConfigModel(resolved?.profile?.modelPreferences?.preferred || 'gemini-2.5-pro');
     const persona = resolved?.profile?.persona || {};
     const toolPolicy = resolved?.profile?.toolPolicy || {};
     const heartbeatConfig = resolved?.config?.heartbeat || null;
     const heartbeatChecklist = resolved?.config?.heartbeatChecklist || '';
+    const autonomyConfig = resolved?.config?.autonomy || {};
     const skillSyncConfig = resolved?.config?.skillSync || {};
+    const currentScopes = Array.isArray(resolved?.scopes) ? resolved.scopes : [];
+    const normalizedCurrentScopes = Array.from(
+      new Set(currentScopes.map(normalizeInstallationScope).filter(Boolean)),
+    );
+    const knownScopeIds = new Set(installationScopeOptions.map((scope) => scope.id));
+    setConfigSelectedScopes(normalizedCurrentScopes.filter((scope) => knownScopeIds.has(scope)));
+    setConfigExtraScopes(normalizedCurrentScopes.filter((scope) => !knownScopeIds.has(scope)));
+    setConfigAutoJoinAgentOwnedPods(Boolean(autonomyConfig.autoJoinAgentOwnedPods));
     setConfigInstructions(resolved?.profile?.instructions || '');
     setConfigPersonaTone(persona.tone || 'friendly');
     setConfigPersonaSpecialties(formatCommaList(persona.specialties || []));
@@ -1224,11 +1419,35 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setRuntimeTokenLabel('Local dev');
     setUserTokenValue('');
     setUserTokenScopes([]);
-    setUserTokenMeta({ hasToken: false, createdAt: null });
+    setUserTokenMeta({ hasToken: false, createdAt: null, scopeMode: 'none' });
+    setProvisionForceReprovision(false);
     setConfigOpen(true);
+  };
+
+  const openConfigDialog = async (agent) => {
+    const resolved = resolveInstalledAgent(agent);
+    if (!resolved.instanceId && isInstalled(agent?.name)) {
+      alert('Multiple installations found. Open the Installed tab to configure the correct instance.');
+      return;
+    }
+    applyConfigDialogState(resolved);
     // Fetch Clawdbot gateway status if opening clawdbot-bridge config
     if (agent?.name === 'clawdbot-bridge') {
       fetchClawdbotStatus();
+    }
+    if (!selectedPodId || !resolved?.name) return;
+    try {
+      const instanceId = resolved.instanceId || 'default';
+      const response = await axios.get(
+        `/api/registry/pods/${selectedPodId}/agents/${resolved.name}?instanceId=${encodeURIComponent(instanceId)}`,
+        { headers: getAuthHeaders() },
+      );
+      const latest = response.data?.agent || null;
+      if (latest) {
+        applyConfigDialogState(latest);
+      }
+    } catch (error) {
+      console.warn('Failed to refresh latest installation config:', error);
     }
   };
 
@@ -1408,7 +1627,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setRuntimeTokenValue('');
     setUserTokenValue('');
     setUserTokenScopes([]);
-    setUserTokenMeta({ hasToken: false, createdAt: null });
+    setUserTokenMeta({ hasToken: false, createdAt: null, scopeMode: 'none' });
     setProvisionLoading(false);
     setProvisionResult(null);
     setProvisionError('');
@@ -1571,12 +1790,13 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         setUserTokenMeta({
           hasToken: !!response.data?.hasToken,
           createdAt: response.data?.createdAt || null,
+          scopeMode: response.data?.scopeMode || ((response.data?.scopes || []).length > 0 ? 'scoped' : 'all'),
         });
         setUserTokenScopes(response.data?.scopes || []);
       } catch (err) {
         console.error('Error fetching user token metadata:', err);
         alert(err.response?.data?.error || 'Failed to load user token');
-        setUserTokenMeta({ hasToken: false, createdAt: null });
+        setUserTokenMeta({ hasToken: false, createdAt: null, scopeMode: 'none' });
         setUserTokenScopes([]);
       } finally {
         setUserTokenLoading(false);
@@ -1627,6 +1847,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         instanceId,
         includeUserToken: provisionIncludeUserToken,
         label: 'Provisioned runtime',
+        force: provisionForceReprovision,
       };
       if (gatewayId) {
         payload.gatewayId = gatewayId;
@@ -1851,6 +2072,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       setUserTokenMeta({
         hasToken: true,
         createdAt: response.data?.createdAt || null,
+        scopeMode: response.data?.scopeMode || (userTokenScopes.length > 0 ? 'scoped' : 'all'),
       });
     } catch (err) {
       console.error('Error issuing agent user token:', err);
@@ -1870,7 +2092,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         { headers: getAuthHeaders() },
       );
       setUserTokenValue('');
-      setUserTokenMeta({ hasToken: false, createdAt: null });
+      setUserTokenMeta({ hasToken: false, createdAt: null, scopeMode: 'none' });
       setUserTokenScopes([]);
     } catch (err) {
       console.error('Error revoking agent user token:', err);
@@ -1888,6 +2110,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       console.warn('Clipboard copy failed:', err);
     }
   };
+
+  const userTokenIsFullAccess = userTokenMeta.hasToken && userTokenMeta.scopeMode === 'all';
 
   const handleCopyInstallGatewayToken = async () => {
     if (!installGatewayToken) return;
@@ -1947,11 +2171,18 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       const instanceId = configAgent.instanceId || 'default';
       const isOpenClaw = (configAgent.name || configAgent.agentName) === 'openclaw';
       const authProfiles = buildConfigAuthProfiles();
+      const scopes = Array.from(new Set([
+        ...configExtraScopes,
+        ...configSelectedScopes.map(normalizeInstallationScope).filter(Boolean),
+      ]));
       await axios.patch(`/api/registry/pods/${selectedPodId}/agents/${configAgent.name}`, {
         config: {
           heartbeat: {
             enabled: configHeartbeatEnabled,
             everyMinutes: clampNumber(configHeartbeatInterval, 10),
+          },
+          autonomy: {
+            autoJoinAgentOwnedPods: configAutoJoinAgentOwnedPods,
           },
           heartbeatChecklist: configHeartbeatChecklist || '',
           runtime: {
@@ -1969,6 +2200,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             }
             : {}),
         },
+        scopes,
         modelPreferences: { preferred: configModel },
         instanceId,
         instructions: configInstructions,
@@ -2067,7 +2299,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           <Button
             variant="contained"
             size="small"
-            onClick={() => setActiveTab(1)}
+            onClick={() => setActiveTab(TAB_INSTALLED)}
             disabled={!selectedPodId}
           >
             Manage Installed
@@ -2168,6 +2400,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={activeTab} onChange={(e, v) => setActiveTab(v)}>
           <Tab label="Discover" />
+          <Tab label={`Presets ${presets.length > 0 ? `(${presets.length})` : ''}`} />
           <Tab label={`Installed ${installedAgents.length > 0 ? `(${installedAgents.length})` : ''}`} />
           {isGlobalAdmin && (
             <Tab label={`Admin ${adminTotal > 0 ? `(${adminTotal})` : ''}`} />
@@ -2182,7 +2415,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       )}
 
       {/* Discover Tab */}
-      {activeTab === 0 && (
+      {activeTab === TAB_DISCOVER && (
         <>
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -2228,7 +2461,184 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       )}
 
       {/* Installed Tab */}
-      {activeTab === 1 && (
+      {activeTab === TAB_PRESETS && (
+        <Box>
+          {presetsError && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {presetsError}
+            </Alert>
+          )}
+          {presetCapabilities && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Default Gateway Capability Snapshot
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Chip
+                  size="small"
+                  color={presetCapabilities.pluginStatus === 'detected' ? 'success' : 'default'}
+                  label={`Plugins: ${presetCapabilities.pluginStatus}`}
+                />
+                <Chip size="small" label={`Gemini ${presetCapabilities.llmProviders?.google ? 'configured' : 'missing'}`} />
+                <Chip size="small" label={`OpenAI ${presetCapabilities.llmProviders?.openai ? 'configured' : 'missing'}`} />
+                <Chip size="small" label={`Anthropic ${presetCapabilities.llmProviders?.anthropic ? 'configured' : 'missing'}`} />
+                <Chip size="small" label={`LiteLLM ${presetCapabilities.llmProviders?.litellm ? 'configured' : 'missing'}`} />
+              </Stack>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+                <Chip
+                  size="small"
+                  label={`Built-in skills ${presetRuntimeSkills?.status || 'unknown'}${
+                    presetRuntimeSkills?.skills?.length ? ` (${presetRuntimeSkills.skills.length})` : ''
+                  }`}
+                  variant="outlined"
+                />
+                <Chip
+                  size="small"
+                  label={`Dockerfile.commonly ${presetDockerCapabilities?.status || 'unknown'}`}
+                  variant="outlined"
+                />
+              </Stack>
+            </Paper>
+          )}
+          {presetCategories.length > 1 && (
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+              {presetCategories.map((cat) => (
+                <Chip
+                  key={cat}
+                  label={cat === 'all' ? 'All Presets' : cat}
+                  color={presetCategory === cat ? 'primary' : 'default'}
+                  variant={presetCategory === cat ? 'filled' : 'outlined'}
+                  onClick={() => setPresetCategory(cat)}
+                />
+              ))}
+            </Stack>
+          )}
+          <Grid container spacing={2}>
+            {presetsLoading
+              ? [1, 2, 3, 4].map((id) => (
+                  <Grid item xs={12} md={6} key={id}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle1">Loading preset...</Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))
+              : filteredPresets.map((preset) => (
+                  <Grid item xs={12} md={6} key={preset.id}>
+                    <Card variant="outlined" sx={{ height: '100%' }}>
+                      <CardContent>
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap" useFlexGap>
+                          <Typography variant="h6">{preset.title}</Typography>
+                          <Chip size="small" label={preset.category} />
+                          <Chip
+                            size="small"
+                            color={preset.readiness?.ready ? 'success' : 'warning'}
+                            label={preset.readiness?.ready ? 'Ready' : 'Needs setup'}
+                          />
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                          {preset.description}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                          Usage: {preset.targetUsage}
+                        </Typography>
+
+                        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Required Tools</Typography>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+                          {(preset.requiredTools || []).map((tool) => (
+                            <Chip
+                              key={tool.id}
+                              size="small"
+                              color={tool.available ? 'success' : 'default'}
+                              variant={tool.available ? 'filled' : 'outlined'}
+                              label={`${tool.label}${tool.available ? '' : ' (missing)'}`}
+                            />
+                          ))}
+                        </Stack>
+
+                        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>API Setup</Typography>
+                        <Stack spacing={0.5}>
+                          {(preset.apiRequirements || []).map((requirement) => (
+                            <Typography key={requirement.key} variant="caption" color="text.secondary">
+                              {requirement.configured ? 'Configured' : 'Missing'}: `{requirement.key}` - {requirement.purpose}
+                            </Typography>
+                          ))}
+                        </Stack>
+                        <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }}>Default Skills</Typography>
+                        <Stack spacing={1}>
+                          {(preset.defaultSkills || []).map((skill) => {
+                            const status = getPresetSkillStatus(skill);
+                            return (
+                              <Box key={skill.id} sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1.5, p: 1 }}>
+                                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                  <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                                    {skill.id}
+                                  </Typography>
+                                  <Chip size="small" color={status.color} label={status.label} />
+                                </Stack>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                  {skill.reason}
+                                </Typography>
+                                {(skill.binStatus || []).length > 0 && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                    Bins: {(skill.binStatus || [])
+                                      .map((entry) => `${entry.bin}${entry.installed ? '' : ' (missing)'}`)
+                                      .join(', ')}
+                                  </Typography>
+                                )}
+                                {(skill.envStatus || []).length > 0 && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                                    Env: {(skill.envStatus || [])
+                                      .map((entry) => `${entry.key}${entry.configured ? '' : ' (missing)'}`)
+                                      .join(', ')}
+                                  </Typography>
+                                )}
+                              </Box>
+                            );
+                          })}
+                        </Stack>
+                        <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }}>
+                          Recommended Env/API Variables
+                        </Typography>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                          {(preset.recommendedEnv || []).map((entry) => (
+                            <Chip
+                              key={entry.key}
+                              size="small"
+                              color={entry.configured ? 'success' : 'default'}
+                              variant={entry.configured ? 'filled' : 'outlined'}
+                              label={`${entry.key}${entry.configured ? '' : ' (missing)'}`}
+                              title={entry.purpose || ''}
+                            />
+                          ))}
+                        </Stack>
+                      </CardContent>
+                      <CardActions sx={{ px: 2, pb: 2, pt: 0 }}>
+                        <Button
+                          variant="contained"
+                          onClick={() => handleInstallPreset(preset)}
+                          disabled={presetInstallLoadingId === preset.id}
+                        >
+                          {presetInstallLoadingId === preset.id ? 'Preparing...' : 'Install Preset'}
+                        </Button>
+                        <Button variant="text" size="small" onClick={() => setActiveTab(TAB_DISCOVER)}>
+                          Browse Agent
+                        </Button>
+                      </CardActions>
+                    </Card>
+                  </Grid>
+                ))}
+          </Grid>
+          {!presetsLoading && filteredPresets.length === 0 && !presetsError && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              No presets available for this category.
+            </Alert>
+          )}
+        </Box>
+      )}
+
+      {activeTab === TAB_INSTALLED && (
         <Box>
           {!currentPodId ? (
             <Alert severity="info">Select a pod to view installed agents</Alert>
@@ -2240,7 +2650,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               <Typography color="text.secondary" sx={{ mb: 3 }}>
                 Browse the catalog and install agents to get started
               </Typography>
-              <Button variant="contained" onClick={() => setActiveTab(0)}>
+              <Button variant="contained" onClick={() => setActiveTab(TAB_DISCOVER)}>
                 Browse Agents
               </Button>
             </Box>
@@ -2316,6 +2726,39 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               <Alert severity="success">
                 Themed autonomy run complete. Scanned {adminAutonomyResult.scannedPosts} posts, created{' '}
                 {adminAutonomyResult.createdPods} pod(s), triggered {adminAutonomyResult.triggeredPods} pod(s).
+              </Alert>
+            )}
+          </Paper>
+
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              mb: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            <Typography variant="subtitle1">Runtime Reprovision</Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+              <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+                Force reprovision all active agent installations and rotate shared runtime tokens per agent instance.
+              </Typography>
+              <Button
+                variant="contained"
+                color="warning"
+                startIcon={<RefreshIcon />}
+                onClick={handleForceReprovisionAll}
+                disabled={adminReprovisionLoading}
+              >
+                {adminReprovisionLoading ? 'Running...' : 'Force Reprovision All'}
+              </Button>
+            </Stack>
+            {adminReprovisionResult && (
+              <Alert severity={adminReprovisionResult.failed ? 'warning' : 'success'}>
+                Reprovision complete. Attempted {adminReprovisionResult.attempted}, succeeded{' '}
+                {adminReprovisionResult.succeeded}, failed {adminReprovisionResult.failed}.
               </Alert>
             )}
           </Paper>
@@ -2567,7 +3010,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             minRows={4}
             value={configSkillEnvJson}
             onChange={(event) => setConfigSkillEnvJson(event.target.value)}
-            placeholder={`{\n  \"notion\": { \"env\": { \"NOTION_API_KEY\": \"...\" } },\n  \"tavily\": { \"apiKey\": \"...\" }\n}`}
+            placeholder={`{\n  "notion": { "env": { "NOTION_API_KEY": "..." } },\n  "tavily": { "apiKey": "..." }\n}`}
             sx={{ mb: 2 }}
           />
           {configSkillEnvError && (
@@ -2671,6 +3114,52 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             helperText="Tools that should request human approval."
             sx={{ mb: 2 }}
           />
+
+          <Divider sx={{ my: 3 }} />
+
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Integration Autonomy
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+            Configure installation scopes for runtime reads/writes.
+          </Typography>
+          <FormGroup sx={{ mb: 1 }}>
+            {installationScopeOptions.map((scope) => (
+              <FormControlLabel
+                key={scope.id}
+                control={(
+                  <Checkbox
+                    checked={configSelectedScopes.includes(scope.id)}
+                    onChange={(e) => {
+                      setConfigSelectedScopes((prev) => {
+                        if (e.target.checked) return Array.from(new Set([...prev, scope.id]));
+                        return prev.filter((item) => item !== scope.id);
+                      });
+                    }}
+                  />
+                )}
+                label={`${scope.label} (${scope.id})`}
+              />
+            ))}
+          </FormGroup>
+          {configExtraScopes.length > 0 && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+              Preserving legacy scopes: {configExtraScopes.join(', ')}
+            </Typography>
+          )}
+          <FormControlLabel
+            control={(
+              <Checkbox
+                checked={configAutoJoinAgentOwnedPods}
+                onChange={(e) => setConfigAutoJoinAgentOwnedPods(e.target.checked)}
+              />
+            )}
+            label="Allow auto-join into pods owned by bot users"
+            sx={{ mb: 2 }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            Auto-join applies only to active installations and uses scheduler/admin autonomy flows.
+          </Typography>
 
           <Divider sx={{ my: 3 }} />
 
@@ -2911,6 +3400,16 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                 label="Include bot user token (recommended for OpenClaw)"
                 sx={{ mb: 2 }}
               />
+              <FormControlLabel
+                control={(
+                  <Checkbox
+                    checked={provisionForceReprovision}
+                    onChange={(event) => setProvisionForceReprovision(event.target.checked)}
+                  />
+                )}
+                label="Force reprovision (rotate runtime token)"
+                sx={{ mb: 2 }}
+              />
               {String(configAgent?.name || configAgent?.agentName || '').toLowerCase() === 'commonly-bot' && !isGlobalAdmin && (
                 <Alert severity="info" sx={{ mb: 2 }}>
                   Provisioning commonly-bot is restricted to global admins.
@@ -3131,6 +3630,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               {userTokenMeta.hasToken && (
                 <Alert severity="info" sx={{ mb: 2 }}>
                   Token issued {userTokenMeta.createdAt ? new Date(userTokenMeta.createdAt).toLocaleString() : 'recently'}.
+                  {' '}
+                  {userTokenIsFullAccess ? 'Mode: Full access (all API permissions).' : 'Mode: Scoped permissions.'}
+                  {' '}
                   Revoke to rotate.
                 </Alert>
               )}
@@ -3648,6 +4150,17 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                 type="password"
                 sx={{ mb: 2 }}
               />
+            </>
+          )}
+          {(installAgent?.agentName || installAgent?.name || '').toLowerCase() === 'openclaw' && (
+            <>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Workspace skill sync
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                This installation syncs imported pod skills into the agent workspace.
+              </Typography>
             </>
           )}
           {accessiblePods.length === 0 && userPods.length === 0 ? (

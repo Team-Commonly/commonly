@@ -353,7 +353,12 @@ const Pod = () => {
                             </Box>
                         </Grid>
                     ) : (
-                        filteredPods.map(pod => (
+                        filteredPods.map(pod => {
+                            const canDeletePod = Boolean(currentUser && (
+                                currentUser.role === 'admin'
+                                || (pod.createdBy && pod.createdBy._id === currentUser._id)
+                            ));
+                            return (
                             <Grid item xs={12} sm={6} md={4} key={pod._id}>
                                 <Card className="pod-card">
                                     <CardContent sx={{ p: 2, pb: 1.5 }}>
@@ -399,12 +404,12 @@ const Pod = () => {
                                         <Button 
                                             variant="contained" 
                                             color="primary"
-                                            fullWidth={!(currentUser && pod.createdBy && pod.createdBy._id === currentUser._id)}
+                                            fullWidth={!canDeletePod}
                                             onClick={() => handleJoinRoom(pod._id)}
                                         >
                                             {isMember(pod) ? 'Open Chat' : 'Join Room'}
                                         </Button>
-                                        {currentUser && pod.createdBy && pod.createdBy._id === currentUser._id && (
+                                        {canDeletePod && (
                                             <Button
                                                 variant="text"
                                                 color="error"
@@ -416,7 +421,8 @@ const Pod = () => {
                                     </CardActions>
                                 </Card>
                             </Grid>
-                        ))
+                            );
+                        })
                     )}
                 </Grid>
             )}

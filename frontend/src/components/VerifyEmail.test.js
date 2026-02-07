@@ -37,11 +37,14 @@ test('verifies email and shows success message', async () => {
   await renderComponent('t1');
   expect(axios.get).toHaveBeenCalledWith('/api/auth/verify-email?token=t1');
   expect(container.textContent).toContain('verified');
+  const loginLink = container.querySelector('a[href="/login"]');
+  expect(loginLink).not.toBeNull();
 });
 
 test('shows error when verification fails', async () => {
   axios.get.mockRejectedValueOnce({ response: { data: { error: 'bad' } } });
   await renderComponent('t2');
   expect(container.textContent).toContain('bad');
+  const loginLink = container.querySelector('a[href="/login"]');
+  expect(loginLink).not.toBeNull();
 });
-

@@ -81,7 +81,9 @@ describe('admin agent installations', () => {
     AgentInstallation.find.mockReturnValue({
       sort: jest.fn().mockReturnValue({
         skip: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([installation]),
+          limit: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([installation]),
+          }),
         }),
       }),
     });

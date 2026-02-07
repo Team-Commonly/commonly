@@ -14,7 +14,11 @@ import {
   Tooltip,
   Divider,
   Switch,
-  FormControlLabel
+  FormControlLabel,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -37,6 +41,11 @@ const GlobalIntegrations = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [socialPolicy, setSocialPolicy] = useState({
+    socialMode: 'repost',
+    publishEnabled: false,
+    strictAttribution: true,
+  });
 
   // X (Twitter) state
   const [xConfig, setXConfig] = useState({
@@ -44,6 +53,8 @@ const GlobalIntegrations = () => {
     accessToken: '',
     username: '',
     userId: '',
+    followUsernames: '',
+    followUserIds: '',
     status: 'disconnected'
   });
 
@@ -71,7 +82,7 @@ const GlobalIntegrations = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      const { x, instagram } = response.data;
+      const { x, instagram, socialPolicy: nextPolicy } = response.data;
 
       if (x) {
         setXConfig({
@@ -79,6 +90,8 @@ const GlobalIntegrations = () => {
           accessToken: x.config?.accessToken || '',
           username: x.config?.username || '',
           userId: x.config?.userId || '',
+          followUsernames: Array.isArray(x.config?.followUsernames) ? x.config.followUsernames.join(', ') : '',
+          followUserIds: Array.isArray(x.config?.followUserIds) ? x.config.followUserIds.join(', ') : '',
           status: x.status
         });
       }
@@ -92,11 +105,44 @@ const GlobalIntegrations = () => {
           status: instagram.status
         });
       }
+      if (nextPolicy) {
+        setSocialPolicy({
+          socialMode: nextPolicy.socialMode || 'repost',
+          publishEnabled: Boolean(nextPolicy.publishEnabled),
+          strictAttribution: nextPolicy.strictAttribution !== false,
+        });
+      }
     } catch (err) {
       console.error('Failed to fetch integrations:', err);
       setError(err.response?.data?.error || 'Failed to load integrations');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSavePolicy = async () => {
+    try {
+      setSaving(true);
+      setError('');
+      setSuccess('');
+      const token = localStorage.getItem('token');
+      await axios.post('/api/admin/integrations/global/policy',
+        {
+          socialMode: socialPolicy.socialMode,
+          publishEnabled: socialPolicy.publishEnabled,
+          strictAttribution: socialPolicy.strictAttribution,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      setSuccess('Global social publishing policy saved.');
+      await fetchIntegrations();
+    } catch (err) {
+      console.error('Failed to save social policy:', err);
+      setError(err.response?.data?.error || 'Failed to save social policy');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -112,7 +158,9 @@ const GlobalIntegrations = () => {
           enabled: xConfig.enabled,
           accessToken: xConfig.accessToken,
           username: xConfig.username,
-          userId: xConfig.userId
+          userId: xConfig.userId,
+          followUsernames: xConfig.followUsernames,
+          followUserIds: xConfig.followUserIds,
         },
         {
           headers: { Authorization: `Bearer ${token}` }
@@ -263,6 +311,26 @@ const GlobalIntegrations = () => {
                   helperText="OAuth 2.0 Bearer token"
                 />
 
+                <TextField
+                  label="Follow Usernames (optional)"
+                  placeholder="sama, paulgraham, levelsio"
+                  value={xConfig.followUsernames}
+                  onChange={(e) => setXConfig({ ...xConfig, followUsernames: e.target.value })}
+                  fullWidth
+                  size="small"
+                  helperText="Comma-separated usernames to watch in addition to the main account"
+                />
+
+                <TextField
+                  label="Follow User IDs (optional)"
+                  placeholder="123456,789012"
+                  value={xConfig.followUserIds}
+                  onChange={(e) => setXConfig({ ...xConfig, followUserIds: e.target.value })}
+                  fullWidth
+                  size="small"
+                  helperText="Optional comma-separated user IDs for direct ingestion"
+                />
+
                 <Box display="flex" gap={1} mt={1}>
                   <Button
                     variant="contained"
@@ -383,6 +451,77 @@ const GlobalIntegrations = () => {
           </Card>
         </Grid>
       </Grid>
+
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Global Social Publishing Policy
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            These settings apply to all agent external publishes from runtime endpoints.
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="social-mode-label">Social Mode</InputLabel>
+                <Select
+                  labelId="social-mode-label"
+                  value={socialPolicy.socialMode}
+                  label="Social Mode"
+                  onChange={(event) => setSocialPolicy({
+                    ...socialPolicy,
+                    socialMode: event.target.value,
+                  })}
+                >
+                  <MenuItem value="repost">Repost</MenuItem>
+                  <MenuItem value="rewrite">Rewrite</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={socialPolicy.publishEnabled}
+                    onChange={(event) => setSocialPolicy({
+                      ...socialPolicy,
+                      publishEnabled: event.target.checked,
+                    })}
+                  />
+                )}
+                label="Enable external publish"
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={socialPolicy.strictAttribution}
+                    onChange={(event) => setSocialPolicy({
+                      ...socialPolicy,
+                      strictAttribution: event.target.checked,
+                    })}
+                  />
+                )}
+                label="Strict attribution (require source URL)"
+              />
+            </Grid>
+          </Grid>
+          <Box display="flex" gap={1} mt={2}>
+            <Button
+              variant="contained"
+              startIcon={<SaveIcon />}
+              onClick={handleSavePolicy}
+              disabled={saving}
+            >
+              Save Policy
+            </Button>
+          </Box>
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Repost mode is link-first and avoids AI rewrite text for external channels.
+          </Alert>
+        </CardContent>
+      </Card>
 
       {/* Status Summary */}
       <Card sx={{ mt: 3 }}>

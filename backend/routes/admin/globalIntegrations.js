@@ -3,10 +3,55 @@ const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
 const Integration = require('../../models/Integration');
 const Pod = require('../../models/Pod');
-const User = require('../../models/User');
 const registry = require('../../integrations');
+const SocialPolicyService = require('../../services/socialPolicyService');
+let PGPod = null;
+if (process.env.PG_HOST) {
+  // eslint-disable-next-line global-require
+  PGPod = require('../../models/pg/Pod');
+}
 
 const router = express.Router();
+const getUserId = (req) => req.userId || req.user?.id || req.user?.userId || null;
+
+const ensureGlobalPodPostgresSync = async ({ pod, userId }) => {
+  if (!PGPod || !pod?._id || !userId) return;
+  const podId = String(pod._id);
+  try {
+    const existing = await PGPod.findById(podId);
+    if (!existing) {
+      await PGPod.create(
+        pod.name || 'Global Social Feed',
+        pod.description || "Commonly's curated social media feeds",
+        pod.type || 'chat',
+        userId,
+        podId,
+      );
+      return;
+    }
+    await PGPod.addMember(podId, userId);
+  } catch (error) {
+    console.warn('[global-integrations] PostgreSQL pod sync failed:', error.message);
+  }
+};
+
+const ensureGlobalSocialFeedPod = async (userId) => {
+  let globalPod = await Pod.findOne({ name: 'Global Social Feed' });
+
+  if (!globalPod) {
+    globalPod = await Pod.create({
+      name: 'Global Social Feed',
+      description: 'Commonly\'s curated social media feeds',
+      type: 'chat',
+      members: [userId],
+      createdBy: userId,
+      tags: ['social', 'global', 'feeds'],
+    });
+  }
+
+  await ensureGlobalPodPostgresSync({ pod: globalPod, userId });
+  return globalPod;
+};
 
 /**
  * Get global integrations (X and Instagram)
@@ -14,19 +59,12 @@ const router = express.Router();
  */
 router.get('/', auth, adminAuth, async (req, res) => {
   try {
-    // Find or create global pod
-    let globalPod = await Pod.findOne({ name: 'Global Social Feed' });
-
-    if (!globalPod) {
-      globalPod = await Pod.create({
-        name: 'Global Social Feed',
-        description: 'Commonly\'s curated social media feeds',
-        type: 'chat',
-        members: [req.user.userId],
-        createdBy: req.user.userId,
-        tags: ['social', 'global', 'feeds']
-      });
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
+    // Find or create global pod
+    const globalPod = await ensureGlobalSocialFeedPod(userId);
 
     // Fetch X and Instagram integrations
     const xIntegration = await Integration.findOne({
@@ -42,6 +80,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
     res.json({
       x: xIntegration || null,
       instagram: instagramIntegration || null,
+      socialPolicy: await SocialPolicyService.getPolicy(),
       globalPodId: globalPod._id
     });
   } catch (error) {
@@ -51,31 +90,65 @@ router.get('/', auth, adminAuth, async (req, res) => {
 });
 
 /**
+ * Save global social publish policy
+ * POST /api/admin/integrations/global/policy
+ */
+router.post('/policy', auth, adminAuth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const policy = await SocialPolicyService.setPolicy(req.body || {}, userId);
+    return res.json({ success: true, policy });
+  } catch (error) {
+    console.error('Error saving global social policy:', error);
+    return res.status(500).json({ error: 'Failed to save social policy' });
+  }
+});
+
+/**
  * Save X global integration
  * POST /api/admin/integrations/global/x
  */
 router.post('/x', auth, adminAuth, async (req, res) => {
   try {
-    const { enabled, accessToken, username, userId } = req.body;
+    const requesterId = getUserId(req);
+    if (!requesterId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const {
+      enabled,
+      accessToken,
+      username,
+      userId,
+      followUsernames,
+      followUserIds,
+    } = req.body;
 
     // Validate required fields
     if (!username || !userId || !accessToken) {
       return res.status(400).json({ error: 'Username, userId, and accessToken are required' });
     }
 
-    // Find or create global pod
-    let globalPod = await Pod.findOne({ name: 'Global Social Feed' });
+    const normalizeList = (value) => {
+      if (Array.isArray(value)) {
+        return value.map((item) => String(item || '').trim().replace(/^@/, '')).filter(Boolean);
+      }
+      if (typeof value === 'string') {
+        return value
+          .split(',')
+          .map((item) => item.trim().replace(/^@/, ''))
+          .filter(Boolean);
+      }
+      return [];
+    };
 
-    if (!globalPod) {
-      globalPod = await Pod.create({
-        name: 'Global Social Feed',
-        description: 'Commonly\'s curated social media feeds',
-        type: 'chat',
-        members: [req.user.userId],
-        createdBy: req.user.userId,
-        tags: ['social', 'global', 'feeds']
-      });
-    }
+    const normalizedFollowUsernames = Array.from(new Set(normalizeList(followUsernames)));
+    const normalizedFollowUserIds = Array.from(new Set(normalizeList(followUserIds)));
+
+    // Find or create global pod
+    const globalPod = await ensureGlobalSocialFeedPod(requesterId);
 
     // Find or create X integration
     let xIntegration = await Integration.findOne({
@@ -90,10 +163,14 @@ router.post('/x', auth, adminAuth, async (req, res) => {
         accessToken,
         username,
         userId,
+        followUsernames: normalizedFollowUsernames,
+        followUserIds: normalizedFollowUserIds,
         category: 'Social',
         maxResults: 50,
         exclude: 'retweets,replies',
-        apiBase: process.env.X_API_BASE_URL || 'https://api.x.com/2'
+        apiBase: process.env.X_API_BASE_URL || 'https://api.x.com/2',
+        agentAccessEnabled: true,
+        globalAgentAccess: true,
       };
       xIntegration.status = enabled ? 'connected' : 'disconnected';
       xIntegration.isActive = enabled;
@@ -109,12 +186,16 @@ router.post('/x', auth, adminAuth, async (req, res) => {
           accessToken,
           username,
           userId,
+          followUsernames: normalizedFollowUsernames,
+          followUserIds: normalizedFollowUserIds,
           category: 'Social',
           maxResults: 50,
           exclude: 'retweets,replies',
-          apiBase: process.env.X_API_BASE_URL || 'https://api.x.com/2'
+          apiBase: process.env.X_API_BASE_URL || 'https://api.x.com/2',
+          agentAccessEnabled: true,
+          globalAgentAccess: true,
         },
-        createdBy: req.user.userId
+        createdBy: requesterId
       });
     }
 
@@ -134,6 +215,10 @@ router.post('/x', auth, adminAuth, async (req, res) => {
  */
 router.post('/instagram', auth, adminAuth, async (req, res) => {
   try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     const { enabled, accessToken, username, igUserId } = req.body;
 
     // Validate required fields
@@ -142,18 +227,7 @@ router.post('/instagram', auth, adminAuth, async (req, res) => {
     }
 
     // Find or create global pod
-    let globalPod = await Pod.findOne({ name: 'Global Social Feed' });
-
-    if (!globalPod) {
-      globalPod = await Pod.create({
-        name: 'Global Social Feed',
-        description: 'Commonly\'s curated social media feeds',
-        type: 'chat',
-        members: [req.user.userId],
-        createdBy: req.user.userId,
-        tags: ['social', 'global', 'feeds']
-      });
-    }
+    const globalPod = await ensureGlobalSocialFeedPod(userId);
 
     // Find or create Instagram integration
     let instagramIntegration = await Integration.findOne({
@@ -169,7 +243,9 @@ router.post('/instagram', auth, adminAuth, async (req, res) => {
         username,
         igUserId,
         category: 'Social',
-        apiBase: process.env.INSTAGRAM_GRAPH_API_BASE || 'https://graph.facebook.com/v19.0'
+        apiBase: process.env.INSTAGRAM_GRAPH_API_BASE || 'https://graph.facebook.com/v19.0',
+        agentAccessEnabled: true,
+        globalAgentAccess: true,
       };
       instagramIntegration.status = enabled ? 'connected' : 'disconnected';
       instagramIntegration.isActive = enabled;
@@ -186,9 +262,11 @@ router.post('/instagram', auth, adminAuth, async (req, res) => {
           username,
           igUserId,
           category: 'Social',
-          apiBase: process.env.INSTAGRAM_GRAPH_API_BASE || 'https://graph.facebook.com/v19.0'
+          apiBase: process.env.INSTAGRAM_GRAPH_API_BASE || 'https://graph.facebook.com/v19.0',
+          agentAccessEnabled: true,
+          globalAgentAccess: true,
         },
-        createdBy: req.user.userId
+        createdBy: userId
       });
     }
 
@@ -222,7 +300,7 @@ router.post('/x/test', auth, adminAuth, async (req, res) => {
       return res.status(404).json({ error: 'X integration not found' });
     }
 
-    const provider = registry.createProvider(xIntegration);
+    const provider = registry.get(xIntegration.type, xIntegration);
     await provider.validateConfig();
 
     res.json({ success: true, message: 'X connection successful' });
@@ -252,7 +330,7 @@ router.post('/instagram/test', auth, adminAuth, async (req, res) => {
       return res.status(404).json({ error: 'Instagram integration not found' });
     }
 
-    const provider = registry.createProvider(instagramIntegration);
+    const provider = registry.get(instagramIntegration.type, instagramIntegration);
     await provider.validateConfig();
 
     res.json({ success: true, message: 'Instagram connection successful' });

@@ -5,6 +5,7 @@ import { createTheme } from '@mui/material/styles';
 import Login from './components/Login';
 import Register from './components/Register';
 import LandingPage from './components/landing/LandingPage';
+import UseCasePage from './components/landing/UseCasePage';
 import VerifyEmail from './components/VerifyEmail';
 import PostFeed from './components/PostFeed';
 import Thread from './components/Thread';
@@ -24,6 +25,7 @@ import AgentsHub from './components/agents/AgentsHub';
 import ActivityFeedPage from './components/activity/ActivityFeedPage';
 import SkillsCatalogPage from './components/skills/SkillsCatalogPage';
 import AppsMarketplacePage from './components/apps/AppsMarketplacePage';
+import GlobalIntegrations from './components/admin/GlobalIntegrations';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
@@ -201,6 +203,7 @@ function App() {
                 <div className="App">
                   <Routes>
                     <Route path="/" element={<LandingPage />} />
+                    <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/verify-email" element={<VerifyEmail />} />
@@ -214,6 +217,11 @@ function App() {
                       <Route path="/agents" element={<AgentsHub />} />
                       <Route path="/skills" element={<SkillsCatalogPage />} />
                       <Route path="/activity" element={<ActivityFeedPage />} />
+                      <Route path="/admin/integrations/global" element={
+                        <ProtectedRoute requireAdmin={true}>
+                          <GlobalIntegrations />
+                        </ProtectedRoute>
+                      } />
                       <Route path="/pods" element={<PodRedirect />} />
                       <Route path="/pods/:podType" element={<Pod />} />
                       <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />

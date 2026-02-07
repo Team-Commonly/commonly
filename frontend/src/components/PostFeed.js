@@ -6,7 +6,6 @@ import {
     Typography, Avatar, Box, Button, Container, IconButton, Menu, MenuItem, Chip,
     Paper, TextField, Divider, CircularProgress, Skeleton, Autocomplete
 } from '@mui/material';
-import { formatDistanceToNow } from 'date-fns';
 import { 
     ChatBubbleOutline, 
     FavoriteBorder, 
@@ -21,6 +20,7 @@ import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { normalizeUploadUrl } from '../utils/apiBaseUrl';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
+import { formatDistanceToNowSafe } from '../utils/dateUtils';
 import EmojiPicker from 'emoji-picker-react';
 import './PostFeed.css'; // Import the CSS file
 
@@ -757,7 +757,7 @@ const PostFeed = () => {
                                             {post.content?.slice(0, 80)}
                                         </Typography>
                                         <Typography variant="caption" color="text.secondary">
-                                            {post.userId?.username || 'Unknown'} · {formatDistanceToNow(new Date(post.createdAt))} ago
+                                            {post.userId?.username || 'Unknown'} · {formatDistanceToNowSafe(post.createdAt)} ago
                                         </Typography>
                                     </div>
                                 ))}
@@ -834,7 +834,7 @@ const PostFeed = () => {
                                         </Typography>
                                         {post.createdAt && (
                                             <Typography variant="caption" color="text.secondary">
-                                                · {formatDistanceToNow(new Date(post.createdAt))} ago
+                                                · {formatDistanceToNowSafe(post.createdAt)} ago
                                             </Typography>
                                         )}
                                     </Box>

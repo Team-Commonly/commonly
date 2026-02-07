@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Paper, Box, Typography, CircularProgress, Chip, Divider, IconButton, Tooltip, Card, CardContent, Collapse, Alert } from '@mui/material';
-import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -13,6 +12,7 @@ import LaunchIcon from '@mui/icons-material/Launch';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
+import { formatDistanceToNowSafe, getTimeMs } from '../utils/dateUtils';
 
 const WhatsHappening = () => {
   const navigate = useNavigate();
@@ -198,8 +198,8 @@ const WhatsHappening = () => {
               {summary.title}
             </Typography>
           </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 1, flexShrink: 0 }}>
-            {formatDistanceToNow(new Date(summary.createdAt), { addSuffix: true })}
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 1, flexShrink: 0 }}>
+            {formatDistanceToNowSafe(summary.createdAt, { addSuffix: true })}
           </Typography>
         </Box>
         
@@ -317,7 +317,7 @@ const WhatsHappening = () => {
 
     const isExpanded = expandedSections[sectionKey];
     const sortedRooms = rooms
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .sort((a, b) => getTimeMs(b.createdAt) - getTimeMs(a.createdAt))
       .slice(0, 5); // Show only top 5 most recent
 
     return (
@@ -420,7 +420,7 @@ const WhatsHappening = () => {
                           {podName}
                         </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ ml: 1, flexShrink: 0 }}>
-                          {formatDistanceToNow(new Date(roomSummary.createdAt), { addSuffix: true })}
+                          {formatDistanceToNowSafe(roomSummary.createdAt, { addSuffix: true })}
                         </Typography>
                       </Box>
                       

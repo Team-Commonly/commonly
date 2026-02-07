@@ -3,6 +3,21 @@ import type { SkillEntry, SkillSnapshot } from "./types.js";
 import { resolveSkillConfig } from "./config.js";
 import { resolveSkillKey } from "./frontmatter.js";
 
+const API_KEY_ENV_FALLBACKS: Record<string, string> = {
+  tavily: "TAVILY_API_KEY",
+};
+
+function resolvePrimaryEnvForEntry(params: {
+  skillName: string;
+  metadataPrimaryEnv?: string;
+}): string | undefined {
+  const fromMetadata = params.metadataPrimaryEnv?.trim();
+  if (fromMetadata) {
+    return fromMetadata;
+  }
+  return API_KEY_ENV_FALLBACKS[params.skillName]?.trim() || undefined;
+}
+
 export function applySkillEnvOverrides(params: { skills: SkillEntry[]; config?: OpenClawConfig }) {
   const { skills, config } = params;
   const updates: Array<{ key: string; prev: string | undefined }> = [];
@@ -24,7 +39,10 @@ export function applySkillEnvOverrides(params: { skills: SkillEntry[]; config?: 
       }
     }
 
-    const primaryEnv = entry.metadata?.primaryEnv;
+    const primaryEnv = resolvePrimaryEnvForEntry({
+      skillName: entry.skill.name,
+      metadataPrimaryEnv: entry.metadata?.primaryEnv,
+    });
     if (primaryEnv && skillConfig.apiKey && !process.env[primaryEnv]) {
       updates.push({ key: primaryEnv, prev: process.env[primaryEnv] });
       process.env[primaryEnv] = skillConfig.apiKey;
@@ -68,12 +86,16 @@ export function applySkillEnvOverridesFromSnapshot(params: {
       }
     }
 
-    if (skill.primaryEnv && skillConfig.apiKey && !process.env[skill.primaryEnv]) {
+    const primaryEnv = resolvePrimaryEnvForEntry({
+      skillName: skill.name,
+      metadataPrimaryEnv: skill.primaryEnv,
+    });
+    if (primaryEnv && skillConfig.apiKey && !process.env[primaryEnv]) {
       updates.push({
-        key: skill.primaryEnv,
-        prev: process.env[skill.primaryEnv],
+        key: primaryEnv,
+        prev: process.env[primaryEnv],
       });
-      process.env[skill.primaryEnv] = skillConfig.apiKey;
+      process.env[primaryEnv] = skillConfig.apiKey;
     }
   }
 

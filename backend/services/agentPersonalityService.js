@@ -137,7 +137,7 @@ class AgentPersonalityService {
       },
       'commonly-bot': {
         tone: 'friendly',
-        interests: ['community activity', 'summaries', 'daily digests', 'analytics'],
+        interests: ['community activity', 'summaries', 'daily digests', 'social trends', 'conversation starters'],
         behavior: 'proactive',
         responseStyle: 'concise',
         specialties: [
@@ -145,13 +145,15 @@ class AgentPersonalityService {
           'Tracking community activity',
           'Highlighting key moments',
           'Generating insights',
+          'Curating social feed highlights',
         ],
         boundaries: [
           'Share private messages',
           'Reveal sensitive information',
           'Misrepresent user activity',
+          'Copy protected content verbatim from external platforms',
         ],
-        customInstructions: 'You help users stay updated with community activity through friendly, informative summaries.',
+        customInstructions: 'You help users stay updated with friendly summaries, concise social highlights, and useful prompts that spark discussion.',
       },
       'openclaw': {
         tone: 'friendly',

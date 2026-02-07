@@ -9,17 +9,19 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(),
+  find: jest.fn(),
 }));
 
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {},
   AgentInstallation: {
     findOne: jest.fn(),
+    find: jest.fn(),
   },
 }));
 
 jest.mock('../../../models/AgentProfile', () => ({
-  updateOne: jest.fn(),
+  updateMany: jest.fn(),
 }));
 
 const Pod = require('../../../models/Pod');
@@ -37,10 +39,12 @@ describe('registry tool policy update', () => {
   });
 
   it('updates tool policy on agent profile', async () => {
-    Pod.findById.mockResolvedValue({
-      _id: 'pod-1',
-      createdBy: 'user-1',
-      members: ['user-1'],
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1',
+        createdBy: 'user-1',
+        members: ['user-1'],
+      }),
     });
     AgentInstallation.findOne.mockResolvedValue({
       agentName: 'openclaw',
@@ -49,6 +53,15 @@ describe('registry tool policy update', () => {
       status: 'active',
       save: jest.fn().mockResolvedValue(true),
     });
+    AgentInstallation.find.mockResolvedValue([
+      {
+        agentName: 'openclaw',
+        podId: 'pod-1',
+        instanceId: 'default',
+        status: 'active',
+        save: jest.fn().mockResolvedValue(true),
+      },
+    ]);
 
     const res = await request(app)
       .patch('/api/registry/pods/pod-1/agents/openclaw')
@@ -61,8 +74,11 @@ describe('registry tool policy update', () => {
       });
 
     expect(res.status).toBe(200);
-    expect(AgentProfile.updateOne).toHaveBeenCalledWith(
-      { agentId: 'openclaw:default', podId: 'pod-1' },
+    expect(AgentProfile.updateMany).toHaveBeenCalledWith(
+      {
+        agentId: 'openclaw:default',
+        podId: { $in: ['pod-1'] },
+      },
       expect.objectContaining({
         toolPolicy: {
           allowed: ['commonly', 'commonly_search'],
