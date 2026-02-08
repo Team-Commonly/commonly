@@ -71,9 +71,12 @@ const resolveGatewayConfigMapName = (gateway) => {
 const DEFAULT_HEARTBEAT_CONTENT = [
   '# HEARTBEAT.md',
   '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.',
-  '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`): context via `/api/agents/runtime/pods/:podId/context` with runtime token, or `/api/pods/:podId/context` with user token.',
-  '- Fetch last 20 chat messages and 10 recent posts via user-token routes: `/api/messages/:podId?limit=20` and `/api/posts?podId=:podId&limit=10`.',
-  '- If there is something new, post a concise update to the pod chat and reply to relevant posts/threads.',
+  '- Prefer Commonly tools from that skill (`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`) before raw HTTP.',
+  '- Resolve `podId` from the incoming event context (usually `To: commonly:<podId>`). Do not use placeholder pod ids.',
+  '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.',
+  '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.',
+  '- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
+  '- Do not post housekeeping-only status updates (for example: "no new posts" or "most recent post is ..."). If no meaningful new signal exists, reply HEARTBEAT_OK.',
   '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
   '- If nothing new, reply HEARTBEAT_OK.',
   '',
@@ -216,6 +219,7 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
   const agentPath = `${workspacePath}/${accountId}`;
   const agentsPath = `${agentPath}/AGENTS.md`;
   const heartbeatPath = `${agentPath}/HEARTBEAT.md`;
+  const commonlySkillPath = `${agentPath}/skills/commonly/SKILL.md`;
   const script = [
     'set -eu',
     `if [ -f "${agentsPath}" ]; then`,
@@ -224,10 +228,90 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
     `fi`,
     `if [ -f "${heartbeatPath}" ]; then`,
     `  sed -i "s|/home/node/.clawdbot/skills/commonly/SKILL.md|./skills/commonly/SKILL.md|g" "${heartbeatPath}" || true`,
+    `  sed -i "s|via user-token routes: \`/api/messages/:podId?limit=20\` and \`/api/posts?podId=:podId&limit=10\`.|using runtime-token routes: \`/api/agents/runtime/pods/:podId/messages?limit=20\` and \`/api/posts?podId=:podId&limit=10\`.|g" "${heartbeatPath}" || true`,
+    `  sed -i "s|If \\\`commonly\\\` skill is missing, use HTTP APIs directly (do not run \\\`commonly --help\\\`): context via \\\`/api/agents/runtime/pods/:podId/context\\\` with runtime token, or \\\`/api/pods/:podId/context\\\` with user token.|If \\\`commonly\\\` skill is missing, use HTTP APIs directly (do not run \\\`commonly --help\\\`) with runtime token: context via \\\`/api/agents/runtime/pods/:podId/context\\\`.|g" "${heartbeatPath}" || true`,
+    `  if ! grep -q "Resolve \\\`podId\\\` from the incoming event context" "${heartbeatPath}"; then`,
+    `    sed -i "/read and follow \\\`\\.\\/skills\\/commonly\\/SKILL.md\\\` in this agent workspace\\./a - Resolve \\\`podId\\\` from the incoming event context (usually \\\`To: commonly:<podId>\\\`). Do not use placeholder pod ids." "${heartbeatPath}" || true`,
+    '  fi',
+    'fi',
+    `if [ -f "${commonlySkillPath}" ]; then`,
+    `  sed -i "s|## Recent Messages (user token)|## Recent Messages (runtime token)|g" "${commonlySkillPath}" || true`,
+    '  sed -i "s|/api/messages/${POD_ID}?limit=${LIMIT:-20}|/api/agents/runtime/pods/${POD_ID}/messages?limit=${LIMIT:-20}|g" "' + commonlySkillPath + '" || true',
+    '  sed -i "s|${OPENCLAW_USER_TOKEN:-$COMMONLY_USER_TOKEN}|${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}|g" "' + commonlySkillPath + '" || true',
+    `  if grep -q "User token: \\\`OPENCLAW_USER_TOKEN\\\` or \\\`COMMONLY_USER_TOKEN\\\`" "${commonlySkillPath}"; then`,
+    `    sed -i "s|- Runtime token: \\\`OPENCLAW_RUNTIME_TOKEN\\\` or \\\`COMMONLY_API_TOKEN\\\` (\\\`cm_agent_...\\\`)|- Runtime token: \\\`OPENCLAW_RUNTIME_TOKEN\\\` or \\\`COMMONLY_API_TOKEN\\\` (\\\`cm_agent_...\\\`)\\n- \\\`POD_ID\\\` from the current heartbeat\\/mention event (use the pod id shown in inbound context, usually from \\\`To: commonly:<podId>\\\`)|g" "${commonlySkillPath}" || true`,
+    `    sed -i "/User token: \\\`OPENCLAW_USER_TOKEN\\\` or \\\`COMMONLY_USER_TOKEN\\\` (\\\`cm_...\\\`)/d" "${commonlySkillPath}" || true`,
+    '  fi',
+    `  if ! grep -q "commonly_read_context" "${commonlySkillPath}"; then`,
+    `    cat >> "${commonlySkillPath}" <<'EOF'`,
+    '',
+    '## Preferred: Commonly Tools (no manual token handling)',
+    '',
+    '- `commonly_read_context` (pod context + summaries)',
+    '- `commonly_search` (pod memory/assets)',
+    '- `commonly_get_summaries` (recent summary digest)',
+    '- `commonly_post_message` (pod chat)',
+    '- `commonly_post_thread_comment` (thread reply)',
+    '- `commonly_write_memory` (persist memory back to Commonly)',
+    '',
+    'Use `podId` from event context (usually `To: commonly:<podId>`).',
+    '',
+    'EOF',
+    '  fi',
+    `  if ! grep -q "Resolve per-agent tokens from gateway config" "${commonlySkillPath}"; then`,
+    `    cat >> "${commonlySkillPath}" <<'EOF'`,
+    '',
+    '## Optional HTTP fallback (only if tools are unavailable)',
+    '',
+    '```bash',
+    '# Resolve per-agent tokens from gateway config using current workspace account id.',
+    'ACCOUNT_ID="${ACCOUNT_ID:-$(basename "$PWD")}"',
+    'COMMONLY_API_TOKEN="${COMMONLY_API_TOKEN:-$(node -e \'const fs=require("fs");const c=JSON.parse(fs.readFileSync("/config/moltbot.json","utf8"));const id=process.env.ACCOUNT_ID||"";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.runtimeToken)||"");\')}"',
+    'COMMONLY_USER_TOKEN="${COMMONLY_USER_TOKEN:-$(node -e \'const fs=require("fs");const c=JSON.parse(fs.readFileSync("/config/moltbot.json","utf8"));const id=process.env.ACCOUNT_ID||"";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.userToken)||"");\')}"',
+    '```',
+    '',
+    'EOF',
+    '  fi',
     'fi',
     `echo "${agentPath}"`,
   ].join('\n');
 
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    command: ['sh', '-lc', script],
+  });
+  return result.stdout.trim() || agentPath;
+};
+
+const ensureWorkspaceMemoryFiles = async (accountId, { gateway } = {}) => {
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
+  const workspacePath = '/workspace';
+  const agentPath = `${workspacePath}/${accountId}`;
+  const memoryDir = `${agentPath}/memory`;
+  const longTermMemoryPath = `${agentPath}/MEMORY.md`;
+  const today = new Date().toISOString().slice(0, 10);
+  const dailyPath = `${memoryDir}/${today}.md`;
+  const memoryTemplate = [
+    '# MEMORY.md',
+    '',
+    'Long-term memory for this agent.',
+    '- Keep durable preferences, decisions, and recurring context here.',
+    '- Do not store secrets unless explicitly required.',
+    '',
+  ].join('\n');
+  const encodedMemory = Buffer.from(memoryTemplate, 'utf8').toString('base64');
+  const script = [
+    'set -eu',
+    `mkdir -p "${memoryDir}"`,
+    `if [ ! -f "${longTermMemoryPath}" ]; then`,
+    `  printf '%s' '${encodedMemory}' | base64 -d > "${longTermMemoryPath}"`,
+    'fi',
+    `if [ ! -f "${dailyPath}" ]; then`,
+    `  printf '# ${today}\\n\\n' > "${dailyPath}"`,
+    'fi',
+    `echo "${agentPath}"`,
+  ].join('\n');
   const result = await execInPod({
     podName,
     containerName: 'clawdbot-gateway',
@@ -908,6 +992,11 @@ const provisionOpenClawAccount = async ({
   } catch (error) {
     console.warn('[k8s-provisioner] Failed to normalize workspace docs:', error.message);
   }
+  try {
+    await ensureWorkspaceMemoryFiles(accountId, { gateway });
+  } catch (error) {
+    console.warn('[k8s-provisioner] Failed to ensure workspace memory files:', error.message);
+  }
 
   return {
     configMap: configMapName,
@@ -1164,33 +1253,9 @@ const provisionAgentRuntime = async ({
       instanceId,
     });
     deploymentName = `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    await cleanupLegacyInternalDeployment(deploymentName);
   } else {
     throw new Error(`Provisioning not supported for runtime: ${runtimeType}`);
-  }
-
-  if (runtimeType === 'internal') {
-    // Create or update Deployment only for internal runtimes.
-    const deployment = buildAgentDeploymentManifest({
-      runtimeType,
-      accountId,
-      agentName,
-      instanceId,
-    });
-
-    try {
-      await k8sAppsApi.readNamespacedDeployment(deployment.metadata.name, NAMESPACE);
-      // Deployment exists, update it
-      await k8sAppsApi.replaceNamespacedDeployment(deployment.metadata.name, NAMESPACE, deployment);
-      console.log(`[k8s-provisioner] Updated Deployment ${deployment.metadata.name}`);
-    } catch (error) {
-      if (error.response && error.response.statusCode === 404) {
-        // Create new Deployment
-        await k8sAppsApi.createNamespacedDeployment(NAMESPACE, deployment);
-        console.log(`[k8s-provisioner] Created Deployment ${deployment.metadata.name}`);
-      } else {
-        throw new Error(`Failed to create/update Deployment: ${error.message}`);
-      }
-    }
   }
 
   return {
@@ -1209,6 +1274,18 @@ const resolveRuntimeDeploymentName = (runtimeType, instanceId, gateway) => {
   return `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
 };
 
+const cleanupLegacyInternalDeployment = async (deploymentName) => {
+  if (!deploymentName) return;
+  try {
+    await k8sAppsApi.deleteNamespacedDeployment(deploymentName, NAMESPACE);
+    console.log(`[k8s-provisioner] Removed legacy internal deployment: ${deploymentName}`);
+  } catch (error) {
+    if (error?.response?.statusCode !== 404) {
+      console.warn(`[k8s-provisioner] Failed to remove legacy internal deployment ${deploymentName}:`, error.message);
+    }
+  }
+};
+
 /**
  * Start agent runtime (scale to 1 replica)
  */
@@ -1216,6 +1293,9 @@ const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   if (runtimeType === 'moltbot') {
     const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
     return { started: true, deployment: deploymentName, sharedGateway: true };
+  }
+  if (runtimeType === 'internal') {
+    return { started: true, managedExternally: true, reason: 'internal runtime is config-only on k8s' };
   }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
@@ -1242,6 +1322,9 @@ const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
     const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
     return { stopped: true, deployment: deploymentName, sharedGateway: true };
   }
+  if (runtimeType === 'internal') {
+    return { stopped: true, managedExternally: true, reason: 'internal runtime is config-only on k8s' };
+  }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
   try {
@@ -1263,6 +1346,9 @@ const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
  * Restart agent runtime (trigger rolling restart)
  */
 const restartAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+  if (runtimeType === 'internal') {
+    return { restarted: true, managedExternally: true, reason: 'internal runtime is config-only on k8s' };
+  }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
   try {
@@ -1314,6 +1400,16 @@ const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
     } catch (error) {
       return { status: 'not_found', deployment: deploymentName, sharedGateway: true };
     }
+  }
+  if (runtimeType === 'internal') {
+    return {
+      status: 'managed-externally',
+      deployment: null,
+      replicas: 0,
+      availableReplicas: 0,
+      readyReplicas: 0,
+      reason: 'internal runtime is config-only on k8s',
+    };
   }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
@@ -1417,6 +1513,12 @@ const getAgentRuntimeLogs = async (
     const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
     const filterTokens = options.filterTokens || [];
     return getDeploymentLogs({ deploymentName, lines, filterTokens });
+  }
+  if (runtimeType === 'internal') {
+    return {
+      logs: 'No deployment logs: internal runtime is config-only on k8s.',
+      status: 'managed-externally',
+    };
   }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 

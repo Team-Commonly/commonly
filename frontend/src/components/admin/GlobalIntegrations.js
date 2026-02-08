@@ -29,6 +29,7 @@ import {
   Instagram as InstagramIcon
 } from '@mui/icons-material';
 import axios from 'axios';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const XIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -37,8 +38,12 @@ const XIcon = () => (
 );
 
 const GlobalIntegrations = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [connectingX, setConnectingX] = useState(false);
+  const [loadingXFollowing, setLoadingXFollowing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [socialPolicy, setSocialPolicy] = useState({
@@ -55,6 +60,9 @@ const GlobalIntegrations = () => {
     userId: '',
     followUsernames: '',
     followUserIds: '',
+    followFromAuthenticatedUser: false,
+    followingWhitelistUserIds: '',
+    followingMaxUsers: 5,
     status: 'disconnected'
   });
 
@@ -71,6 +79,23 @@ const GlobalIntegrations = () => {
   useEffect(() => {
     fetchIntegrations();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || '');
+    const oauthStatus = params.get('xOAuth');
+    const detail = params.get('detail');
+    if (!oauthStatus) return;
+
+    if (oauthStatus === 'success') {
+      setSuccess(detail ? `X OAuth connected (${detail})` : 'X OAuth connected successfully');
+      setError('');
+      fetchIntegrations();
+    } else {
+      setError(detail || 'X OAuth connection failed');
+      setSuccess('');
+    }
+    navigate('/admin/integrations/global', { replace: true });
+  }, [location.search, navigate]);
 
   const fetchIntegrations = async () => {
     try {
@@ -92,6 +117,13 @@ const GlobalIntegrations = () => {
           userId: x.config?.userId || '',
           followUsernames: Array.isArray(x.config?.followUsernames) ? x.config.followUsernames.join(', ') : '',
           followUserIds: Array.isArray(x.config?.followUserIds) ? x.config.followUserIds.join(', ') : '',
+          followFromAuthenticatedUser: x.config?.followFromAuthenticatedUser === true,
+          followingWhitelistUserIds: Array.isArray(x.config?.followingWhitelistUserIds)
+            ? x.config.followingWhitelistUserIds.join(', ')
+            : '',
+          followingMaxUsers: Number.isFinite(Number(x.config?.followingMaxUsers))
+            ? Number(x.config.followingMaxUsers)
+            : 5,
           status: x.status
         });
       }
@@ -161,6 +193,9 @@ const GlobalIntegrations = () => {
           userId: xConfig.userId,
           followUsernames: xConfig.followUsernames,
           followUserIds: xConfig.followUserIds,
+          followFromAuthenticatedUser: xConfig.followFromAuthenticatedUser,
+          followingWhitelistUserIds: xConfig.followingWhitelistUserIds,
+          followingMaxUsers: xConfig.followingMaxUsers,
         },
         {
           headers: { Authorization: `Bearer ${token}` }
@@ -218,6 +253,58 @@ const GlobalIntegrations = () => {
       setSuccess(`${type === 'x' ? 'X' : 'Instagram'} connection test successful!`);
     } catch (err) {
       setError(err.response?.data?.error || `Failed to test ${type} connection`);
+    }
+  };
+
+  const handleConnectXOAuth = async () => {
+    try {
+      setConnectingX(true);
+      setError('');
+      setSuccess('');
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        '/api/admin/integrations/global/x/oauth/start',
+        { redirectPath: '/admin/integrations/global' },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const authorizeUrl = response?.data?.authorizeUrl;
+      if (!authorizeUrl) {
+        throw new Error('Missing X OAuth URL');
+      }
+      window.location.assign(authorizeUrl);
+    } catch (err) {
+      console.error('Failed to start X OAuth:', err);
+      setError(err.response?.data?.error || err.message || 'Failed to start X OAuth');
+      setConnectingX(false);
+    }
+  };
+
+  const handleLoadXFollowingAsWhitelist = async () => {
+    try {
+      setLoadingXFollowing(true);
+      setError('');
+      const token = localStorage.getItem('token');
+      const limit = Number.isFinite(Number(xConfig.followingMaxUsers))
+        ? Math.min(Math.max(Math.trunc(Number(xConfig.followingMaxUsers)), 1), 100)
+        : 5;
+      const response = await axios.get(`/api/admin/integrations/global/x/following?limit=${limit}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const users = Array.isArray(response?.data?.users) ? response.data.users : [];
+      const ids = users.map((user) => String(user?.id || '').trim()).filter(Boolean);
+      setXConfig((prev) => ({
+        ...prev,
+        followFromAuthenticatedUser: true,
+        followingWhitelistUserIds: ids.join(', '),
+      }));
+      setSuccess(ids.length
+        ? `Loaded ${ids.length} following account IDs into whitelist`
+        : 'No following accounts returned from X');
+    } catch (err) {
+      console.error('Failed to load X following list:', err);
+      setError(err.response?.data?.error || 'Failed to load following list from X');
+    } finally {
+      setLoadingXFollowing(false);
     }
   };
 
@@ -279,7 +366,17 @@ const GlobalIntegrations = () => {
 
               <Divider sx={{ mb: 2 }} />
 
-              <Box display="flex" flexDirection="column" gap={2}>
+                <Box display="flex" flexDirection="column" gap={2}>
+                <Button
+                  variant="outlined"
+                  startIcon={<TwitterIcon />}
+                  onClick={handleConnectXOAuth}
+                  disabled={saving || connectingX}
+                  fullWidth
+                >
+                  {connectingX ? 'Redirecting to X OAuth...' : 'Connect with X OAuth'}
+                </Button>
+
                 <TextField
                   label="Username"
                   placeholder="CommonlyHQ"
@@ -331,6 +428,51 @@ const GlobalIntegrations = () => {
                   helperText="Optional comma-separated user IDs for direct ingestion"
                 />
 
+                <FormControlLabel
+                  control={(
+                    <Switch
+                      checked={xConfig.followFromAuthenticatedUser}
+                      onChange={(e) => setXConfig({
+                        ...xConfig,
+                        followFromAuthenticatedUser: e.target.checked,
+                      })}
+                    />
+                  )}
+                  label="Watch authenticated user's following list"
+                />
+
+                <TextField
+                  label="Following Max Users"
+                  type="number"
+                  value={xConfig.followingMaxUsers}
+                  onChange={(e) => setXConfig({
+                    ...xConfig,
+                    followingMaxUsers: e.target.value,
+                  })}
+                  fullWidth
+                  size="small"
+                  helperText="Cost control: only inspect this many followed accounts per sync (1-100, recommended 5-20)"
+                />
+
+                <TextField
+                  label="Following Whitelist User IDs (optional)"
+                  placeholder="44196397, 783214, ..."
+                  value={xConfig.followingWhitelistUserIds}
+                  onChange={(e) => setXConfig({ ...xConfig, followingWhitelistUserIds: e.target.value })}
+                  fullWidth
+                  size="small"
+                  helperText="If set, only these IDs from your following list are ingested"
+                />
+
+                <Button
+                  variant="outlined"
+                  onClick={handleLoadXFollowingAsWhitelist}
+                  disabled={saving || loadingXFollowing || xConfig.status !== 'connected'}
+                  fullWidth
+                >
+                  {loadingXFollowing ? 'Loading following list...' : 'Load OAuth Following IDs Into Whitelist'}
+                </Button>
+
                 <Box display="flex" gap={1} mt={1}>
                   <Button
                     variant="contained"
@@ -354,7 +496,7 @@ const GlobalIntegrations = () => {
 
               <Alert severity="info" sx={{ mt: 2 }}>
                 <Typography variant="caption">
-                  Get your X API credentials from <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener noreferrer">X Developer Portal</a>
+                  Prefer OAuth connect above for user-context tokens. Manual token entry is fallback only.
                 </Typography>
               </Alert>
             </CardContent>

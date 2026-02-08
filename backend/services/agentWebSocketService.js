@@ -104,8 +104,10 @@ class AgentWebSocketService {
 
         try {
           await AgentEventService.acknowledge(eventId, socket.agentName, socket.instanceId);
+          console.log(`[agent-ws] Ack received from ${socket.agentKey} for event ${eventId}`);
           socket.emit('ack:success', { eventId });
         } catch (err) {
+          console.warn(`[agent-ws] Ack failed from ${socket.agentKey} for event ${eventId}: ${err.message}`);
           socket.emit('ack:error', { eventId, error: err.message });
         }
       });
@@ -303,6 +305,11 @@ class AgentWebSocketService {
     if (event.podId) {
       this.agentNamespace.to(`pod:${event.podId}`).emit('event', event);
     }
+
+    console.log(
+      `[agent-ws] Event pushed id=${event?._id || 'n/a'} type=${event?.type || 'n/a'} `
+      + `agent=${agentKey} pod=${event?.podId || 'n/a'} trigger=${event?.payload?.trigger || 'n/a'}`,
+    );
 
     return true;
   }

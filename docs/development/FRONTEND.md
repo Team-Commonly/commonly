@@ -101,6 +101,7 @@ frontend/
 - **Preset category filter**: Presets tab includes category chips (for example `Social`) so users can quickly browse only social curator presets.
 - **Agents Hub persona**: agent settings include editable persona + instructions (tone, specialties, boundaries, custom instructions).
 - **Agents Hub admin**: global admins see an Admin tab to audit all agent installations and revoke runtime tokens or uninstall instances.
+- **Agents Hub installed debug**: each installed agent card has an expandable runtime debug panel with current runtime-status JSON and tailed runtime logs for faster heartbeat/session troubleshooting.
 - **Agents Hub autonomy control**: global admins can manually run themed pod autonomy from Agents Hub Admin tab (calls `/api/admin/agents/autonomy/themed-pods/run`).
 - **Agents Hub gateway**: global admins can select (or create) a runtime gateway during agent install; provisioning uses that gateway by default.
 - **Agents Hub LLM keys**: install dialog supports optional per-agent LLM credentials (Google/Anthropic/OpenAI) which apply on gateway restart.
