@@ -201,6 +201,20 @@ async function syncExternalFeeds() {
       if (syncResult.meta?.username) {
         updateSet['config.username'] = syncResult.meta.username;
       }
+      if (syncResult.meta?.lastExternalIdsByUser && typeof syncResult.meta.lastExternalIdsByUser === 'object') {
+        const watchedUserIds = Array.isArray(syncResult.meta?.watchedUserIds)
+          ? syncResult.meta.watchedUserIds.map((id) => String(id || '').trim()).filter(Boolean)
+          : [];
+        const pruned = Object.entries(syncResult.meta.lastExternalIdsByUser).reduce((acc, [key, value]) => {
+          const userId = String(key || '').trim();
+          const sinceValue = String(value || '').trim();
+          if (!userId || !sinceValue) return acc;
+          if (watchedUserIds.length && !watchedUserIds.includes(userId)) return acc;
+          acc[userId] = sinceValue;
+          return acc;
+        }, {});
+        updateSet['config.lastExternalIdsByUser'] = pruned;
+      }
       if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedAccessToken) {
         updateSet['config.accessToken'] = syncResult.meta.refreshedAccessToken;
       }

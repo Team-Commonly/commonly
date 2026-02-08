@@ -266,8 +266,12 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
     const windowMinutes = Math.max(5, Math.min(240, parseInt(req.body?.windowMinutes, 10) || 60));
     const installations = await getActiveSummaryInstallationsForPod(podId);
     if (!installations.length) {
-      return res.status(409).json({
-        error: 'No active commonly-bot installation found for this pod',
+      const fallbackSummary = await ChatSummarizerService.summarizePodMessages(podId);
+      return res.json({
+        message: 'Summary refreshed successfully (fallback mode)',
+        summary: fallbackSummary || null,
+        queued: false,
+        fallback: true,
       });
     }
 

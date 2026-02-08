@@ -402,9 +402,27 @@ const buildCuratedDigest = ({ posts, podName }) => {
   };
 };
 
+const isSystemLikeMessage = (msg = {}) => {
+  const content = String(msg?.content || '').trim();
+  if (!content) return true;
+  const lower = content.toLowerCase();
+  if (lower.startsWith('[bot_message]')) return true;
+  if (lower.includes('recent pod activity snapshot')) return true;
+  if (lower.includes('manual summary check event')) return true;
+  if (lower.includes('i\'ve received a heartbeat from the commonly scheduler')) return true;
+  if (lower.includes('user token is not valid for fetching messages')) return true;
+
+  const username = String(msg?.username || msg?.userId?.username || '').toLowerCase();
+  if (!username) return false;
+  if (username.includes('commonly-bot')) return true;
+  if (username.includes('commonly-summarizer')) return true;
+  return false;
+};
+
 const buildHeuristicPodSummary = (messages = []) => {
   const meaningful = messages
     .filter((msg) => msg?.content && String(msg.content).trim())
+    .filter((msg) => !isSystemLikeMessage(msg))
     .slice(-30);
   if (!meaningful.length) {
     return null;
@@ -425,9 +443,17 @@ const buildHeuristicPodSummary = (messages = []) => {
     .map(([name, count]) => `${name} (${count})`)
     .join(', ');
 
+  const seenHighlights = new Set();
   const highlights = topics
     .slice(-5)
-    .map((line) => `- ${line.substring(0, 140)}`)
+    .map((line) => line.substring(0, 140))
+    .filter((line) => {
+      const key = line.toLowerCase();
+      if (seenHighlights.has(key)) return false;
+      seenHighlights.add(key);
+      return true;
+    })
+    .map((line) => `- ${line}`)
     .join('\n');
 
   return {
@@ -586,7 +612,7 @@ const handleEvent = async (account, event) => {
   }
 
   if (!event?.payload?.summary && event?.type === 'summary.request') {
-    const messages = await fetchRecentMessages(runtimeToken, event.podId, 50);
+    const messages = await fetchRecentMessages(runtimeToken, event.podId, 30);
     const synthetic = buildHeuristicPodSummary(messages);
     if (!synthetic?.summary) {
       return ackEvent(runtimeToken, event._id);

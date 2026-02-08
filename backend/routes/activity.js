@@ -18,13 +18,16 @@ const ActivityService = require('../services/activityService');
  */
 router.get('/feed', auth, async (req, res) => {
   try {
-    const { limit = 20, before, filter } = req.query;
-    const userId = req.user._id;
+    const {
+      limit = 20, before, filter, mode = 'updates',
+    } = req.query;
+    const userId = req.userId || req.user?.id;
 
     const result = await ActivityService.getUserFeed(userId, {
       limit: parseInt(limit, 10),
       before,
       filter,
+      mode,
     });
 
     res.json(result);
@@ -41,13 +44,16 @@ router.get('/feed', auth, async (req, res) => {
 router.get('/pods/:podId', auth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const { limit = 20, before, filter } = req.query;
-    const userId = req.user._id;
+    const {
+      limit = 20, before, filter, mode = 'updates',
+    } = req.query;
+    const userId = req.userId || req.user?.id;
 
     const result = await ActivityService.getPodFeed(podId, userId, {
       limit: parseInt(limit, 10),
       before,
       filter,
+      mode,
     });
 
     res.json(result);
@@ -66,7 +72,7 @@ router.get('/pods/:podId', auth, async (req, res) => {
  */
 router.get('/approvals', auth, async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.userId || req.user?.id;
     const approvals = await ActivityService.getPendingApprovals(userId);
 
     res.json({
@@ -87,13 +93,56 @@ router.get('/approvals', auth, async (req, res) => {
 });
 
 /**
+ * GET /api/activity/unread-count
+ * Get unread activity count for current user
+ */
+router.get('/unread-count', auth, async (req, res) => {
+  try {
+    const {
+      filter, mode = 'updates',
+    } = req.query;
+    const userId = req.userId || req.user?.id;
+    const result = await ActivityService.getUnreadCount(userId, { filter, mode });
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching unread activity count:', error);
+    res.status(500).json({ error: 'Failed to fetch unread count' });
+  }
+});
+
+/**
+ * POST /api/activity/mark-read
+ * Mark one activity as read or all current activities as read
+ */
+router.post('/mark-read', auth, async (req, res) => {
+  try {
+    const { activityId, all = false } = req.body || {};
+    const userId = req.userId || req.user?.id;
+    if (!all && !activityId) {
+      return res.status(400).json({ error: 'activityId is required when all=false' });
+    }
+    const result = await ActivityService.markRead(userId, {
+      activityId: activityId ? String(activityId) : null,
+      all: Boolean(all),
+    });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || 'Failed to mark read' });
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('Error marking activity as read:', error);
+    return res.status(500).json({ error: 'Failed to mark activity as read' });
+  }
+});
+
+/**
  * POST /api/activity/:activityId/like
  * Like an activity
  */
 router.post('/:activityId/like', auth, async (req, res) => {
   try {
     const { activityId } = req.params;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?.id;
 
     const result = await ActivityService.toggleLike(activityId, userId);
     res.json(result);
@@ -111,7 +160,7 @@ router.post('/:activityId/reply', auth, async (req, res) => {
   try {
     const { activityId } = req.params;
     const { content } = req.body;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?.id;
 
     if (!content) {
       return res.status(400).json({ error: 'Content is required' });
@@ -133,7 +182,7 @@ router.post('/:activityId/approve', auth, async (req, res) => {
   try {
     const { activityId } = req.params;
     const { notes } = req.body;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?.id;
 
     const result = await ActivityService.approveActivity(activityId, userId, notes);
 
@@ -156,7 +205,7 @@ router.post('/:activityId/reject', auth, async (req, res) => {
   try {
     const { activityId } = req.params;
     const { notes } = req.body;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?.id;
 
     const result = await ActivityService.rejectActivity(activityId, userId, notes);
 
@@ -178,7 +227,7 @@ router.post('/:activityId/reject', auth, async (req, res) => {
 router.post('/seed/:podId', auth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?.id;
 
     const result = await ActivityService.seedPodActivities(podId, userId);
 
@@ -202,7 +251,7 @@ router.post('/create', auth, async (req, res) => {
     const {
       type, action, content, podId, target, agentMetadata,
     } = req.body;
-    const userId = req.user._id;
+    const userId = req.userId || req.user?.id;
 
     if (!type || !action || !podId) {
       return res.status(400).json({ error: 'type, action, and podId are required' });

@@ -27,6 +27,7 @@ backend:
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: "dev"
+    frontendUrl: "https://app-dev.commonly.me"
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
@@ -110,7 +111,18 @@ agents:
         effect: "NoSchedule"
 
   commonlyBot:
-    enabled: false  # Enable manually when needed
+    enabled: true
+    image:
+      repository: gcr.io/commonly-test/commonly-bot
+      tag: "20260207231536"
+      pullPolicy: Always
+    nodeSelector:
+      pool: dev
+    tolerations:
+      - key: "pool"
+        operator: "Equal"
+        value: "dev"
+        effect: "NoSchedule"
 
 rbac:
   create: true

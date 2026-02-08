@@ -11,6 +11,7 @@ const Pod = require('../models/Pod');
 const User = require('../models/User');
 const Activity = require('../models/Activity');
 const Summary = require('../models/Summary');
+const Post = require('../models/Post');
 
 // Try to load PostgreSQL models if available
 let PGMessage;
@@ -35,9 +36,18 @@ class ActivityService {
    * Get activity feed for a user across all their pods
    */
   static async getUserFeed(userId, options = {}) {
-    const { limit = 20, before, filter } = options;
+    const {
+      limit = 20, before, filter, mode = 'updates',
+    } = options;
 
     try {
+      const user = await User.findById(userId)
+        .select('_id username following followers followedThreads')
+        .lean();
+      if (!user) {
+        return { activities: [], hasMore: false, quick: null };
+      }
+
       // Get user's pods
       const pods = await Pod.find({
         $or: [
@@ -52,20 +62,23 @@ class ActivityService {
       const podIds = pods.map((p) => p._id);
       const podMap = new Map(pods.map((p) => [p._id.toString(), p]));
 
-      if (podIds.length === 0) {
-        return { activities: [], hasMore: false };
-      }
-
       // Aggregate activities from different sources
-      const activities = await ActivityService.aggregateActivities(podIds, podMap, userId, {
+      const activities = await ActivityService.aggregateActivities(podIds, podMap, user, {
         limit,
         before,
         filter,
+        mode,
       });
+      const readState = user.activityFeed || {};
+      const withReadState = ActivityService.annotateReadState(activities, readState);
+
+      const quick = await ActivityService.getQuickOverview(user, pods);
 
       return {
-        activities,
-        hasMore: activities.length === limit,
+        activities: withReadState,
+        hasMore: withReadState.length === limit,
+        quick,
+        unreadCount: withReadState.filter((item) => !item.read).length,
       };
     } catch (error) {
       console.error('Error in getUserFeed:', error);
@@ -77,9 +90,18 @@ class ActivityService {
    * Get activity feed for a specific pod
    */
   static async getPodFeed(podId, userId, options = {}) {
-    const { limit = 20, before, filter } = options;
+    const {
+      limit = 20, before, filter, mode = 'updates',
+    } = options;
 
     try {
+      const user = await User.findById(userId)
+        .select('_id username following followers followedThreads')
+        .lean();
+      if (!user) {
+        throw new Error('Access denied');
+      }
+
       // Verify user has access to pod
       const pod = await Pod.findById(podId).lean();
       if (!pod) {
@@ -96,15 +118,17 @@ class ActivityService {
       }
 
       const podMap = new Map([[podId.toString(), pod]]);
-      const activities = await ActivityService.aggregateActivities([podId], podMap, userId, {
+      const activities = await ActivityService.aggregateActivities([podId], podMap, user, {
         limit,
         before,
         filter,
+        mode,
       });
+      const withReadState = ActivityService.annotateReadState(activities, user.activityFeed || {});
 
       return {
-        activities,
-        hasMore: activities.length === limit,
+        activities: withReadState,
+        hasMore: withReadState.length === limit,
       };
     } catch (error) {
       console.error('Error in getPodFeed:', error);
@@ -115,13 +139,18 @@ class ActivityService {
   /**
    * Aggregate activities from multiple sources
    */
-  static async aggregateActivities(podIds, podMap, userId, options = {}) {
-    const { limit = 20, before, filter } = options;
+  static async aggregateActivities(podIds, podMap, user, options = {}) {
+    const {
+      limit = 20, before, filter, mode = 'updates',
+    } = options;
     const allActivities = [];
 
     try {
+      const followingIds = new Set((user.following || []).map((id) => id.toString()));
+      const username = user.username || '';
+
       // 1. Get stored activities (skills, approvals, agent actions)
-      const storedActivities = await ActivityService.getStoredActivities(podIds, podMap, {
+      const storedActivities = await ActivityService.getStoredActivities(podIds, podMap, user, {
         limit,
         before,
         filter,
@@ -134,6 +163,8 @@ class ActivityService {
           limit,
           before,
           filter,
+          username,
+          followingIds,
         });
         allActivities.push(...messages);
       }
@@ -147,6 +178,18 @@ class ActivityService {
         allActivities.push(...summaries);
       }
 
+      // 4. Get followed thread updates
+      if (!filter || ['all', 'threads', 'following', 'mentions'].includes(filter)) {
+        const threadUpdates = await ActivityService.getFollowedThreadActivities(user, {
+          limit,
+          before,
+          podMap,
+          followingIds,
+          username,
+        });
+        allActivities.push(...threadUpdates);
+      }
+
       // Deduplicate by id
       const seen = new Set();
       const uniqueActivities = allActivities.filter((a) => {
@@ -157,8 +200,12 @@ class ActivityService {
 
       // Sort by timestamp and limit
       uniqueActivities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      const filtered = uniqueActivities.filter((activity) => ActivityService.matchesModeAndFilter(activity, {
+        mode,
+        filter,
+      }));
 
-      return uniqueActivities.slice(0, limit);
+      return filtered.slice(0, limit);
     } catch (error) {
       console.error('Error aggregating activities:', error);
       return [];
@@ -168,15 +215,24 @@ class ActivityService {
   /**
    * Get activities from Activity model
    */
-  static async getStoredActivities(podIds, podMap, options = {}) {
+  static async getStoredActivities(podIds, podMap, user, options = {}) {
     const { limit = 20, before, filter } = options;
     const activities = [];
 
     try {
-      const query = {
-        podId: { $in: podIds },
-        deleted: { $ne: true },
-      };
+      const query = { deleted: { $ne: true } };
+      const scopeFilters = [];
+      if (podIds.length > 0) {
+        scopeFilters.push({ podId: { $in: podIds } });
+      }
+      scopeFilters.push({
+        visibility: 'private',
+        $or: [
+          { 'actor.id': user._id },
+          { 'involves.id': user._id },
+        ],
+      });
+      query.$or = scopeFilters;
 
       if (before) {
         query.createdAt = { $lt: new Date(before) };
@@ -226,6 +282,15 @@ class ActivityService {
             content: r.content,
             timestamp: r.createdAt,
           })),
+          flags: ActivityService.computeFlags({
+            actor: activity.actor,
+            type: activity.type,
+            action: activity.action,
+            content: activity.content,
+            target: activity.target,
+            username: user.username,
+            followingIds: new Set((user.following || []).map((id) => id.toString())),
+          }),
         });
       });
     } catch (error) {
@@ -239,7 +304,9 @@ class ActivityService {
    * Get message activities
    */
   static async getMessageActivities(podIds, podMap, options = {}) {
-    const { limit = 20, before, filter } = options;
+    const {
+      limit = 20, before, filter, username, followingIds = new Set(),
+    } = options;
     const activities = [];
 
     try {
@@ -273,8 +340,8 @@ class ActivityService {
 
       // Transform to activity format
       messages.forEach((msg) => {
-        const username = msg.username || msg.userId?.username || 'Unknown';
-        const isAgent = ActivityService.isAgentUsername(username);
+        const authorName = msg.username || msg.userId?.username || 'Unknown';
+        const isAgent = ActivityService.isAgentUsername(authorName);
 
         // Apply filter
         if (filter === 'humans' && isAgent) return;
@@ -287,9 +354,9 @@ class ActivityService {
           type: 'message',
           actor: {
             id: msg.userId?._id?.toString() || msg.user_id,
-            name: username,
+            name: authorName,
             type: isAgent ? 'agent' : 'human',
-            verified: username === 'commonly-ai-agent' || username === 'commonly-bot',
+            verified: authorName === 'commonly-ai-agent' || authorName === 'commonly-bot',
             profilePicture: msg.profile_picture || msg.userId?.profilePicture,
           },
           action: 'message',
@@ -300,6 +367,17 @@ class ActivityService {
           reactions: { likes: 0, liked: false },
           replyCount: 0,
           replies: [],
+          flags: ActivityService.computeFlags({
+            actor: {
+              id: msg.userId?._id?.toString() || msg.user_id,
+              type: isAgent ? 'agent' : 'human',
+            },
+            type: 'message',
+            action: 'message',
+            content: msg.content || msg.text || '',
+            username,
+            followingIds,
+          }),
         });
       });
     } catch (error) {
@@ -359,6 +437,12 @@ class ActivityService {
           agentMetadata: {
             sources: summary.metadata?.sources || [],
           },
+          flags: {
+            isAgentAction: true,
+            isMention: false,
+            isFollowing: false,
+            isThreadUpdate: false,
+          },
         });
       });
     } catch (error) {
@@ -366,6 +450,221 @@ class ActivityService {
     }
 
     return activities;
+  }
+
+  static computeFlags({
+    actor, type, action, content, target, username, followingIds = new Set(),
+  }) {
+    const actorId = actor?.id ? String(actor.id) : '';
+    const lowerContent = `${content || ''} ${target?.description || ''}`.toLowerCase();
+    const lowerUsername = (username || '').toLowerCase();
+    const mentionNeedle = lowerUsername ? `@${lowerUsername}` : '';
+
+    return {
+      isAgentAction: actor?.type === 'agent' || actor?.type === 'system' || type === 'agent_action',
+      isMention: Boolean(mentionNeedle && lowerContent.includes(mentionNeedle)),
+      isFollowing: Boolean(actorId && followingIds.has(actorId)),
+      isThreadUpdate: action === 'thread_comment' || action === 'thread_followed' || type === 'thread_update',
+    };
+  }
+
+  static annotateReadState(activities = [], readState = {}) {
+    const lastViewedAt = readState?.lastViewedAt ? new Date(readState.lastViewedAt) : new Date(0);
+    const readItemIds = new Set((readState?.readItemIds || []).map((id) => String(id)));
+    return activities.map((activity) => {
+      const activityTime = activity?.timestamp ? new Date(activity.timestamp) : new Date(0);
+      const isExplicitlyRead = readItemIds.has(String(activity.id));
+      const read = isExplicitlyRead || activityTime <= lastViewedAt;
+      return { ...activity, read };
+    });
+  }
+
+  static async markRead(userId, options = {}) {
+    const { activityId = null, all = false } = options;
+    const user = await User.findById(userId).select('_id activityFeed');
+    if (!user) return { success: false, error: 'User not found' };
+
+    if (!user.activityFeed) {
+      user.activityFeed = { lastViewedAt: new Date(0), readItemIds: [] };
+    }
+
+    if (all) {
+      user.activityFeed.lastViewedAt = new Date();
+      user.activityFeed.readItemIds = [];
+    } else if (activityId) {
+      const next = new Set((user.activityFeed.readItemIds || []).map((id) => String(id)));
+      next.add(String(activityId));
+      user.activityFeed.readItemIds = Array.from(next).slice(-500);
+    }
+
+    await user.save();
+    return {
+      success: true,
+      lastViewedAt: user.activityFeed.lastViewedAt,
+      readItemIds: user.activityFeed.readItemIds || [],
+    };
+  }
+
+  static async getUnreadCount(userId, options = {}) {
+    const activitiesResult = await ActivityService.getUserFeed(userId, {
+      ...options,
+      limit: 100,
+    });
+    const unreadCount = (activitiesResult.activities || []).filter((item) => !item.read).length;
+    return { unreadCount };
+  }
+
+  static matchesModeAndFilter(activity, { mode = 'updates', filter = 'all' } = {}) {
+    const flags = activity.flags || {};
+    const isAgent = flags.isAgentAction || activity.actor?.type === 'agent' || activity.actor?.type === 'system';
+
+    if (mode === 'actions') {
+      if (filter === 'agents') return isAgent;
+      if (filter === 'humans') return !isAgent;
+      if (filter === 'skills') return activity.type === 'skill_created' || activity.type === 'summary';
+      return isAgent || activity.type === 'agent_action' || activity.type === 'skill_created';
+    }
+
+    if (filter === 'mentions') return flags.isMention;
+    if (filter === 'following') return flags.isFollowing || activity.action === 'user_followed';
+    if (filter === 'threads') return flags.isThreadUpdate;
+    if (filter === 'pods') return Boolean(activity.pod?.id);
+    if (filter === 'humans') return !isAgent;
+    if (filter === 'agents') return isAgent;
+    return true;
+  }
+
+  static async getFollowedThreadActivities(user, options = {}) {
+    const {
+      before, podMap = new Map(), followingIds = new Set(), username, limit = 20,
+    } = options;
+
+    const followedThreads = Array.isArray(user.followedThreads) ? user.followedThreads : [];
+    if (!followedThreads.length) return [];
+
+    const threadMap = new Map(
+      followedThreads.map((thread) => [String(thread.postId), thread.followedAt || new Date(0)]),
+    );
+    const postIds = Array.from(threadMap.keys());
+
+    const posts = await Post.find({ _id: { $in: postIds } })
+      .select('_id podId userId content comments createdAt')
+      .populate('userId', 'username profilePicture')
+      .populate('podId', 'name type')
+      .populate('comments.userId', 'username profilePicture')
+      .lean();
+
+    const activities = [];
+    posts.forEach((post) => {
+      const followedAt = threadMap.get(String(post._id)) || new Date(0);
+      const relevantComments = (post.comments || [])
+        .filter((comment) => {
+          const createdAt = comment.createdAt ? new Date(comment.createdAt) : null;
+          if (!createdAt) return false;
+          if (before && createdAt >= new Date(before)) return false;
+          if (createdAt <= followedAt) return false;
+          return String(comment.userId?._id || comment.userId) !== String(user._id);
+        })
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      if (!relevantComments.length) return;
+
+      const latest = relevantComments[0];
+      const pod = post.podId?._id
+        ? { id: String(post.podId._id), name: post.podId.name }
+        : podMap.get(String(post.podId));
+      const actor = {
+        id: latest.userId?._id?.toString() || latest.userId?.toString() || 'unknown',
+        name: latest.userId?.username || 'User',
+        type: ActivityService.isAgentUsername(latest.userId?.username) ? 'agent' : 'human',
+        verified: ActivityService.isAgentUsername(latest.userId?.username),
+        profilePicture: latest.userId?.profilePicture,
+      };
+
+      activities.push({
+        id: `thread_${post._id}_${latest._id || latest.createdAt}`,
+        type: 'thread_update',
+        actor,
+        action: 'thread_comment',
+        content: latest.text,
+        preview: latest.text?.substring(0, 200),
+        timestamp: latest.createdAt,
+        pod: pod || null,
+        target: {
+          title: `Thread update: ${(post.content || '').slice(0, 80)}`,
+          description:
+            `${relevantComments.length} new repl${relevantComments.length === 1 ? 'y' : 'ies'} `
+            + 'since you followed',
+          url: `/thread/${post._id}`,
+        },
+        reactions: { likes: 0, liked: false },
+        replyCount: 0,
+        replies: [],
+        flags: ActivityService.computeFlags({
+          actor,
+          type: 'thread_update',
+          action: 'thread_comment',
+          content: latest.text,
+          target: { description: post.content },
+          username,
+          followingIds,
+        }),
+      });
+    });
+
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return activities.slice(0, limit);
+  }
+
+  static async getQuickOverview(user, pods = []) {
+    const recentPods = (pods || [])
+      .slice()
+      .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+      .slice(0, 6)
+      .map((pod) => ({
+        id: pod._id.toString(),
+        name: pod.name,
+        type: pod.type,
+        updatedAt: pod.updatedAt || pod.createdAt,
+        membersCount: Array.isArray(pod.members) ? pod.members.length : 0,
+      }));
+
+    const followedThreads = Array.isArray(user.followedThreads) ? user.followedThreads : [];
+    const followedIds = followedThreads.map((thread) => thread.postId).filter(Boolean);
+    let followedThreadItems = [];
+    if (followedIds.length > 0) {
+      const followedAtMap = new Map(
+        followedThreads.map((thread) => [String(thread.postId), thread.followedAt || new Date(0)]),
+      );
+      const posts = await Post.find({ _id: { $in: followedIds } })
+        .select('_id content comments createdAt')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      followedThreadItems = posts.slice(0, 6).map((post) => {
+        const followedAt = followedAtMap.get(String(post._id)) || new Date(0);
+        const newReplies = (post.comments || []).filter((comment) => (
+          comment.createdAt && new Date(comment.createdAt) > followedAt
+            && String(comment.userId) !== String(user._id)
+        )).length;
+        return {
+          postId: post._id.toString(),
+          preview: (post.content || '').slice(0, 120),
+          followedAt,
+          newReplies,
+          url: `/thread/${post._id}`,
+        };
+      });
+    }
+
+    return {
+      social: {
+        followers: Array.isArray(user.followers) ? user.followers.length : 0,
+        following: Array.isArray(user.following) ? user.following.length : 0,
+      },
+      recentPods,
+      followedThreads: followedThreadItems,
+    };
   }
 
   /**
@@ -671,7 +970,10 @@ class ActivityService {
           },
           action: 'message',
           content:
-            'Sprint Planning Summary\n\n- 12 stories planned for this sprint\n- Focus areas: Authentication, API performance\n- Blockers discussed: CI/CD pipeline issues\n\nAction items assigned to 5 team members.',
+            'Sprint Planning Summary\n\n- 12 stories planned for this sprint\n'
+            + '- Focus areas: Authentication, API performance\n'
+            + '- Blockers discussed: CI/CD pipeline issues\n\n'
+            + 'Action items assigned to 5 team members.',
           podId,
           reactions: { likes: 12 },
           replyCount: 3,

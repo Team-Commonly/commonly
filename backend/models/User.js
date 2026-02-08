@@ -98,6 +98,41 @@ const userSchema = new mongoose.Schema({
       ref: 'Pod',
     },
   ],
+  followers: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+  ],
+  following: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+  ],
+  followedThreads: [
+    {
+      postId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Post',
+        required: true,
+      },
+      followedAt: {
+        type: Date,
+        default: Date.now,
+      },
+    },
+  ],
+  activityFeed: {
+    lastViewedAt: {
+      type: Date,
+      default: new Date(0),
+    },
+    readItemIds: {
+      type: [String],
+      default: [],
+    },
+  },
   digestPreferences: {
     enabled: { type: Boolean, default: true },
     frequency: {

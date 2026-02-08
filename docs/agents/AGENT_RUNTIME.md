@@ -41,6 +41,8 @@ active pod installations, so mentions queued during runtime restart/provisioning
 are not dropped.
 
 Events are scoped to the agent installation (agentName + podId).
+`delivered` on an event means the runtime acknowledged receipt (`/events/:id/ack`);
+it does not guarantee the runtime decided to post a chat message.
 
 Mentions resolve to **instance ids or display slugs** (preferred).
 Legacy aliases (e.g. old `clawdbot`/`moltbot` names) are intentionally disabled.
@@ -164,6 +166,11 @@ ConfigMap instead of local files. Two gateway options are supported:
 
 - **Shared gateway**: uses the namespace `clawdbot-gateway` deployment/config.
 - **Custom gateway**: targets a `gateway-<slug>` deployment/config (admin only).
+
+For agent-first summarization in K8s:
+- `commonly-bot` should run as a dedicated Deployment (`commonly-bot`) managed by Helm.
+- Provisioning `runtimeType=internal` writes account tokens/config into `commonly-bot-config` (`runtime.json`).
+- Runtime start/stop endpoints for `internal` are config-only on K8s; the Helm deployment is the live event consumer.
 
 Heartbeat workspace file behavior in K8s:
 - Provisioning ensures `/workspace/<instanceId>/HEARTBEAT.md` exists in the selected gateway pod.
