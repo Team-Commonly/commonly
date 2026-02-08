@@ -477,6 +477,8 @@ class SchedulerService {
                   summary,
                   integrationId: integration._id.toString(),
                   source: integration.type,
+                  trigger: 'scheduled-hourly',
+                  silent: true,
                 },
               })
             )),
@@ -542,6 +544,7 @@ class SchedulerService {
             trigger,
             windowMinutes,
             includeDigest: true,
+            silent: true,
           },
         })
       )),
