@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const User = require('../models/User');
+const AgentIdentityService = require('../services/agentIdentityService');
 
 const SMTP2GO_BASE_URL = process.env.SMTP2GO_BASE_URL || 'https://api.smtp2go.com/v3';
 const SMTP2GO_SEND_URL = `${SMTP2GO_BASE_URL.replace(/\/$/, '')}/email/send`;
@@ -166,9 +167,10 @@ exports.getCurrentUser = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const { profilePicture } = req.body;
+    const userId = req.userId || req.user?.id;
 
     // Find the user
-    const user = await User.findById(req.userId);
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -179,9 +181,10 @@ exports.updateProfile = async (req, res) => {
     }
 
     await user.save();
+    await AgentIdentityService.syncUserToPostgreSQL(user);
 
     // Return the updated user without the password
-    const updatedUser = await User.findById(req.userId).select('-password');
+    const updatedUser = await User.findById(userId).select('-password');
     res.json(updatedUser);
   } catch (err) {
     res.status(500).json({ error: err.message });

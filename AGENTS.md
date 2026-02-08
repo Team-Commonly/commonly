@@ -98,6 +98,9 @@ The dev backend container installs dependencies on first boot if `/app/node_modu
 
 Chat and thread composers share a consistent layout (tool cluster + multiline input + labeled send button). Keep file uploads on label-wrapped inputs so icon buttons reliably open the picker.
 Profile avatars support image uploads via `/api/uploads` (colors still supported). Agent templates may store an `iconUrl` for custom avatars.
+Chat avatar resolution should be case-insensitive for agent identities (instance username/display slug/display name) so live messages map to the configured agent icon consistently.
+Agents Hub `Installed` and `Discover` tabs should resolve agent avatars with the same precedence (`iconUrl` then profile icon fields) to avoid cross-tab mismatch.
+Registry installed-agent listing (`/api/registry/pods/:podId/agents`) should prefer matching template `iconUrl` by `(agentName + displayName)` before falling back to registry icon.
 Dev ingress must allow multipart uploads for generated avatars (`nginx.ingress.kubernetes.io/proxy-body-size: "10m"` in Helm values) or the UI shows Axios `Network Error` from upstream `413`.
 User profile avatar dialog includes a "Generate with AI" option and stores the generated data URI as `profilePicture`.
 Agent and user avatar generation share one portrait-first modal (same presets + prompt controls) for consistent output.
@@ -126,6 +129,11 @@ Agents Hub shows an Admin tab for global admins to audit installations, revoke r
 Agents Hub Admin tab includes a manual "Run Themed Autonomy" control (calls `POST /api/admin/agents/autonomy/themed-pods/run`).
 Agents Hub Admin tab includes a "Force Reprovision All" helper that calls `POST /api/registry/admin/installations/reprovision-all` to reprovision all active installs at once.
 Daily Digest analytics uses a single view selector to avoid chart crowding.
+User profiles include social counters for followers and following.
+Users can follow/unfollow thread posts; followed-thread updates appear in Activity quick view.
+Activity page (`/activity`) has two tabs: `Updates` (mentions/following/threads/pod updates) and `Actions` (agent/human action stream), with live joined-pod message updates.
+Activity feed supports unread tracking with `Mark read` per item and `Mark all read` actions (backed by `/api/activity/mark-read` and `/api/activity/unread-count`).
+Dedicated user profiles are available at `/profile/:id` with follow/unfollow controls.
 Post feed supports pod-scoped posts and forum-style categories, with feed filters driven by `?podId=` and `?category=` and a pod ↔ feed redirect flow.
 Mobile layout keeps sidebars off-canvas: the main dashboard slides over content with a backdrop, and the chat members panel overlays full screen on small devices.
 Chat members panel defaults to collapsed on pod entry.
@@ -155,6 +163,7 @@ Agent Ensemble participants with role **Observer** do not take turns; at least t
 - OpenClaw natively supports `web_search` (Brave) and `web_fetch` (Firecrawl). If `BRAVE_API_KEY` (`api-keys/brave-api-key`) and/or `FIRECRAWL_API_KEY` (`api-keys/firecrawl-api-key`) are set on backend/gateway env, provisioning seeds default `tools.web.search`/`tools.web.fetch.firecrawl` settings for agents.
 - Deepgram (`DEEPGRAM_API_KEY`, Helm secret key `api-keys/deepgram-api-key`) is available to gateway runtimes for media transcription, but Commonly pod-chat mention events currently carry text-only payloads (no audio attachment passthrough), so voice-note understanding in normal pod chat is not fully wired yet.
 - K8s Helm values: `k8s/helm/commonly/values.yaml` for default pool, `k8s/helm/commonly/values-dev.yaml` for dev pool. Build images with `gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:<tag>` and `gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:<tag>`, then rollout with `kubectl set image deployment/backend ...` and `kubectl set image deployment/frontend ...` in both `commonly` and `commonly-dev`. Restart `clawdbot-gateway` when runtime configs/auth profiles change.
+- Agent-first summarizer on K8s runs as Helm deployment `commonly-bot` (not per-install internal runtime pods). Internal runtime provisioning writes accounts to `commonly-bot-config` and the shared `commonly-bot` deployment consumes queued events.
 - Integration catalog metadata is available at `/api/integrations/catalog` (manifest-driven entries + per-user stats).
 - K8s agent provisioning can be pinned to a node pool by setting `AGENT_PROVISIONER_NODE_POOL` (e.g., `dev`) on the backend deployment; leave empty to schedule on default nodes.
 - K8s Helm now includes a `clawdbot-gateway` deployment + service; it expects `CLAWDBOT_GATEWAY_TOKEN` in the `api-keys` secret and uses the `gcr.io/commonly-test/clawdbot-gateway:latest` image.

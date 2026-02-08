@@ -310,17 +310,17 @@ class AgentIdentityService {
         : user.username;
 
       if (checkResult.rows.length > 0) {
-        // Update existing record if it's a bot (to sync display name)
-        if (user.isBot) {
-          const updateQuery = `
-            UPDATE users SET username = $2, updated_at = $3 WHERE _id = $1
-          `;
-          await pool.query(updateQuery, [
-            user._id.toString(),
-            displayUsername,
-            new Date(),
-          ]);
-        }
+        const updateQuery = `
+          UPDATE users
+          SET username = $2, profile_picture = $3, updated_at = $4
+          WHERE _id = $1
+        `;
+        await pool.query(updateQuery, [
+          user._id.toString(),
+          displayUsername,
+          user.profilePicture || null,
+          new Date(),
+        ]);
         return;
       }
 
