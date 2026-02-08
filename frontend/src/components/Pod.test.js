@@ -338,3 +338,33 @@ test('global admin sees delete button for a pod they did not create', async () =
 
   expect(screen.getAllByText('Delete').length).toBeGreaterThan(0);
 });
+
+test('joined filter only shows pods where the user is a member', async () => {
+  const joinedPod = {
+    ...mockPod,
+    _id: 'joined-1',
+    name: 'Joined Room',
+    members: ['u1']
+  };
+  const discoverPod = {
+    ...mockPod,
+    _id: 'discover-1',
+    name: 'Discover Room',
+    members: ['another-user']
+  };
+  axios.get.mockResolvedValueOnce({ data: [joinedPod, discoverPod] });
+
+  renderPodWithRouter(<Pod />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Joined Room')).toBeInTheDocument();
+    expect(screen.getByText('Discover Room')).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByText('Joined'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Joined Room')).toBeInTheDocument();
+    expect(screen.queryByText('Discover Room')).not.toBeInTheDocument();
+  });
+});
