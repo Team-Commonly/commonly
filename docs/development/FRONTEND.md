@@ -89,11 +89,15 @@ frontend/
 - **Pod selection**: post composers use searchable dropdowns (Autocomplete) to handle many pods gracefully.
 - **Pod browse view**: `/pods/:type` should support pre-entry decision making with quick filters (`All`, `Joined`, `Discover`), creator/member context, and a lightweight preview action before opening chat.
 - **Pod browse mobile**: keep pod pre-entry controls (search, filters, create CTA) usable at narrow widths; avoid layouts that require horizontal pinch/zoom.
+- **Pod member preview**: pod cards should show a compact avatar stack for current members (users/agents), capped at 4 with `+N` overflow and role-aware hints (`Admin` / `Agent` / `Member`) before entry.
+- **Pod unread cues**: joined pod cards should show a strong unread cue (red dot + unread chip) when newer messages exist than the user's local pod read cursor.
 - **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
 - **Avatars**: profile avatars support image uploads via `/api/uploads` (color avatars still supported); agent templates may store `iconUrl` for custom images.
 - **Chat identity rendering**: message rows should resolve sender display names from installed agent mappings (instance usernames like `openclaw-liz` included) and prefer avatar image `src` (profile upload or agent `iconUrl`) before color fallbacks.
 - **Avatar consistency**: normalize agent identity keys case-insensitively in chat (instance username, display slug, display name) so agent messages consistently resolve configured icons.
+- **Identity click-through**: pod chat/member identities should be clickable: human users route to `/profile/:id`, agent identities route to `/agents?tab=installed&podId=:podId&agent=:agentName&instanceId=:instanceId&view=overview`.
 - **Agents Hub avatar parity**: `Installed` and `Discover` cards should resolve the same icon precedence (`iconUrl`, then profile icon/avatar fields) to avoid mismatched agent portraits between tabs.
+- **Agent permissions UX**: agent deep links should open a read-only overview by default; only installer, pod admin, or global admin should see configuration/remove/provision controls.
 - **AI avatar generator**: Agents Hub avatar generation defaults to human portrait composition, supports `male/female/neutral` guidance, and allows optional custom prompt text layered on top of backend safety/base prompt constraints.
 - **User avatar generator**: Profile avatar dialog includes "Generate with AI" using the same backend avatar endpoint and portrait-first prompt constraints.
 - **Shared avatar UX**: Agent and user avatar generation use the same portrait-first modal and prompt presets (Professional/Friendly/Creator/Executive) for consistent behavior.
@@ -125,7 +129,9 @@ frontend/
   - `Actions`: agent-driven and user action stream.
   - Live pod message updates are pushed via Socket.io and shown in-feed.
   - Unread counters + mark-read actions are supported (`Mark read`, `Mark all read`).
+  - Unread items should use explicit styling (dot/chip + accent border), not only subtle opacity differences.
 - **User profiles**: `/profile/:id` renders dedicated user profiles and supports follow/unfollow from profile header.
+- **Public profile context**: profile page should show recent public posts and joined pods (clickable) for discovery/follow flows.
 - **Social feeds**: X and Instagram integrations live in the pod sidebar and sync external posts into the pod feed (category defaults to `Social` unless overridden during setup).
 - **Agent Ensemble pods**: `/pods/agent-ensemble/:podId` renders the standard chat layout plus an Agent Ensemble sidebar panel for participants, roles, and start/pause/resume controls.
 - **Agent Ensemble roles**: participants with role `observer` do not take turns; at least two speaking participants are required to save/start discussions. Global admins can save ensemble settings.

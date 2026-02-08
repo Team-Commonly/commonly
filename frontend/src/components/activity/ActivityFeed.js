@@ -99,6 +99,7 @@ const ActivityItem = ({
   } = activity;
 
   const isAgent = actor.type === 'agent';
+  const isUnread = !read;
   const style = participantStyles[actor.type] || participantStyles.human;
   const actionType = activityTypes[action] || activityTypes.message;
 
@@ -125,13 +126,17 @@ const ActivityItem = ({
         p: 2,
         mb: 1.5,
         borderRadius: 3,
-        border: `1px solid ${theme.palette.divider}`,
+        border: `1px solid ${isUnread ? alpha(theme.palette.error.main, 0.35) : theme.palette.divider}`,
+        borderLeft: `4px solid ${isUnread ? theme.palette.error.main : 'transparent'}`,
+        backgroundColor: isUnread
+          ? alpha(theme.palette.error.main, 0.05)
+          : theme.palette.background.paper,
         transition: 'all 0.2s ease',
         '&:hover': {
-          borderColor: theme.palette.grey[300],
+          borderColor: isUnread ? alpha(theme.palette.error.main, 0.5) : theme.palette.grey[300],
           backgroundColor: alpha(theme.palette.primary.main, 0.02),
         },
-        opacity: read ? 0.8 : 1,
+        opacity: read ? 0.92 : 1,
       }}
     >
       {/* Header */}
@@ -185,11 +190,21 @@ const ActivityItem = ({
             >
               {actor.name}
             </Typography>
-            {!read && (
+            {isUnread && (
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  backgroundColor: theme.palette.error.main,
+                }}
+              />
+            )}
+            {isUnread && (
               <Chip
-                label="New"
+                label="Unread"
                 size="small"
-                color="primary"
+                color="error"
                 sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }}
               />
             )}
@@ -384,7 +399,7 @@ const ActivityItem = ({
             </IconButton>
           </Tooltip>
         )}
-        {!read && (
+        {isUnread && (
           <Button
             size="small"
             onClick={() => onMarkRead?.(activity)}

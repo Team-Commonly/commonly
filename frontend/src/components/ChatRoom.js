@@ -1,5 +1,5 @@
 /* eslint-disable max-len */
-import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, TextField, IconButton, Alert,
@@ -35,6 +35,7 @@ import { useSocket } from '../context/SocketContext';
 import { useLayout } from '../context/LayoutContext';
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { AgentAvatar, AgentBadge, isAgentUsername } from './common/AgentIndicator';
+import { markPodReadFromMessages } from '../utils/podReadState';
 import AgentEnsemblePanel from './agents/AgentEnsemblePanel';
 import axios from 'axios';
 import getApiBaseUrl, { normalizeUploadUrl } from '../utils/apiBaseUrl';
@@ -416,6 +417,76 @@ const ChatRoom = () => {
         const result = mentionableItems.filter((item) => item.labelLower.includes(query));
         return result.slice(0, 8);
     }, [mentionOpen, mentionQuery, mentionableItems]);
+
+    const isCustomAvatarValue = useCallback((value) => Boolean(getAvatarSrc(value)), []);
+
+    const pickPreferredAvatarValue = useCallback((...candidates) => {
+        const normalized = candidates
+            .map((value) => (typeof value === 'string' ? value.trim() : value))
+            .filter(Boolean);
+        const custom = normalized.find((value) => isCustomAvatarValue(value));
+        return custom || normalized[0] || null;
+    }, [isCustomAvatarValue]);
+
+    const resolvePodAgentByIdentity = useCallback((identity) => {
+        const normalizedIdentity = normalizeIdentityKey(identity);
+        if (!normalizedIdentity) return null;
+        return (podAgents || []).find((agent) => {
+            const display = agent.profile?.displayName || agent.displayName || agent.name;
+            const instanceId = agent.instanceId || 'default';
+            const username = buildAgentUsername(agent.name, instanceId);
+            const displaySlug = display
+                .toString()
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9-]/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            const keys = [
+                username,
+                agent.name,
+                display,
+                displaySlug,
+                instanceId,
+                `${agent.name}-${instanceId}`,
+            ];
+            return keys.some((key) => normalizeIdentityKey(key) === normalizedIdentity);
+        }) || null;
+    }, [podAgents]);
+
+    const messageAvatarByUserId = useMemo(() => {
+        const map = new Map();
+        (messages || []).forEach((msg) => {
+            const sender = msg?.userId;
+            if (!sender || typeof sender !== 'object') return;
+            const senderId = sender._id?.toString?.() || null;
+            if (!senderId) return;
+            const avatarCandidate = sender.profilePicture || msg.profile_picture || msg.profilePicture || null;
+            if (!avatarCandidate) return;
+            const existing = map.get(senderId) || null;
+            map.set(senderId, pickPreferredAvatarValue(avatarCandidate, existing));
+        });
+        return map;
+    }, [messages, pickPreferredAvatarValue]);
+
+    const navigateToAgentInstallPage = useCallback((identity) => {
+        const matchedAgent = resolvePodAgentByIdentity(identity);
+        const params = new URLSearchParams();
+        if (roomId) params.set('podId', roomId);
+        params.set('tab', 'installed');
+        params.set('view', 'overview');
+        if (matchedAgent?.name) params.set('agent', matchedAgent.name);
+        if (matchedAgent?.instanceId) params.set('instanceId', matchedAgent.instanceId);
+        navigate(`/agents?${params.toString()}`);
+    }, [navigate, resolvePodAgentByIdentity, roomId]);
+
+    const navigateToUserProfile = useCallback((userId) => {
+        if (userId) {
+            navigate(`/profile/${userId}`);
+            return;
+        }
+        navigate('/profile');
+    }, [navigate]);
     
     // Fetch pod details and messages
     useEffect(() => {
@@ -1462,6 +1533,15 @@ const ChatRoom = () => {
         if (!initialScrollDoneRef.current) return;
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
+
+    useEffect(() => {
+        if (!currentUser?._id || !roomId || !messages.length) return;
+        markPodReadFromMessages({
+            userId: currentUser._id,
+            podId: roomId,
+            messages,
+        });
+    }, [currentUser?._id, roomId, messages]);
     
     const handleFileSelect = (event) => {
         const file = event.target.files[0];
@@ -2082,37 +2162,60 @@ const ChatRoom = () => {
                         )}
                         {room?.members?.map(member => {
                             const normalizedMemberKey = normalizeIdentityKey(member.username);
-                            const memberIsAgent = agentDisplayMap.has(normalizedMemberKey) || isAgentUsername(member.username);
+                            const matchedAgent = resolvePodAgentByIdentity(member.username);
+                            const memberIsAgent = Boolean(matchedAgent) || agentDisplayMap.has(normalizedMemberKey) || isAgentUsername(member.username);
                             const isOnline = onlineMemberIds.includes(member._id)
                                 || member._id === currentUser?._id;
                             const isCreator = member._id === room?.createdBy?._id;
                             const canRemove = isPodAdmin && !memberIsAgent && !isCreator && member._id !== currentUser?._id;
                             const agentDisplayName = memberIsAgent ? (agentDisplayMap.get(normalizedMemberKey) || member.username) : member.username;
+                            const memberId = member._id?.toString?.() || null;
+                            const resolvedHumanAvatar = pickPreferredAvatarValue(
+                                memberId && currentUser?._id?.toString?.() === memberId ? currentUser?.profilePicture : null,
+                                memberId ? messageAvatarByUserId.get(memberId) : null,
+                                member.profilePicture,
+                            );
+                            const resolvedAgentAvatar = pickPreferredAvatarValue(
+                                agentAvatarMap.get(normalizedMemberKey),
+                                matchedAgent?.profile?.iconUrl,
+                                matchedAgent?.profile?.avatarUrl,
+                                matchedAgent?.iconUrl,
+                                member.profilePicture,
+                            );
+                            const openMemberDestination = () => {
+                                if (memberIsAgent) {
+                                    navigateToAgentInstallPage(member.username);
+                                    return;
+                                }
+                                navigateToUserProfile(member._id);
+                            };
                             return (
                                 <div key={member._id} className="sidebar-member">
-                                    {memberIsAgent ? (
-                                        <AgentAvatar
-                                            username={member.username}
-                                            src={getAvatarSrc(member.profilePicture)}
-                                            size={32}
-                                            showBadge={true}
-                                        />
-                                    ) : (
-                                        <Avatar
-                                            className="sidebar-member-avatar"
-                                            src={getAvatarSrc(member.profilePicture)}
-                                            sx={{ bgcolor: getAvatarColor(member.profilePicture || 'default'), width: 32, height: 32 }}
-                                        >
-                                            {member.username?.charAt(0).toUpperCase()}
-                                        </Avatar>
-                                    )}
-                                    <div className="sidebar-member-info">
-                                        <div className="sidebar-member-name">
-                                            {agentDisplayName}
-                                            {memberIsAgent && <AgentBadge username={member.username} size="small" showLabel={false} />}
-                                        </div>
-                                        <div className="sidebar-member-role">
-                                            {memberIsAgent ? 'Agent' : (member._id === room?.createdBy?._id ? 'Admin' : 'Member')}
+                                    <div className="sidebar-member-link" onClick={openMemberDestination}>
+                                        {memberIsAgent ? (
+                                            <AgentAvatar
+                                                username={member.username}
+                                                src={getAvatarSrc(resolvedAgentAvatar)}
+                                                size={32}
+                                                showBadge={true}
+                                            />
+                                        ) : (
+                                            <Avatar
+                                                className="sidebar-member-avatar"
+                                                src={getAvatarSrc(resolvedHumanAvatar)}
+                                                sx={{ bgcolor: getAvatarColor(resolvedHumanAvatar || 'default'), width: 32, height: 32 }}
+                                            >
+                                                {member.username?.charAt(0).toUpperCase()}
+                                            </Avatar>
+                                        )}
+                                        <div className="sidebar-member-info">
+                                            <div className="sidebar-member-name">
+                                                {agentDisplayName}
+                                                {memberIsAgent && <AgentBadge username={member.username} size="small" showLabel={false} />}
+                                            </div>
+                                            <div className="sidebar-member-role">
+                                                {memberIsAgent ? 'Agent' : (member._id === room?.createdBy?._id ? 'Admin' : 'Member')}
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="sidebar-member-actions">
@@ -2172,6 +2275,9 @@ const ChatRoom = () => {
                                     const canRemoveAgent = currentUser?.role === 'admin'
                                         || room?.createdBy?._id === currentUser?._id
                                         || (agent.installedBy && agent.installedBy === currentUser?._id);
+                                    const openAgentDestination = () => navigateToAgentInstallPage(
+                                        buildAgentUsername(agent.name, agent.instanceId || 'default'),
+                                    );
                                     return (
                                         <Box
                                             key={agent.name}
@@ -2186,7 +2292,7 @@ const ChatRoom = () => {
                                                 backgroundColor: 'rgba(30, 41, 59, 0.7)'
                                             }}
                                         >
-                                            <Box sx={{ minWidth: 0 }}>
+                                            <Box sx={{ minWidth: 0, cursor: 'pointer' }} onClick={openAgentDestination}>
                                                 <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#e2e8f0' }}>
                                                     {agent.profile?.displayName || agent.name}
                                                 </Typography>
@@ -3334,16 +3440,38 @@ const ChatRoom = () => {
                                             'Unknown User';
                                         const normalizedUsername = normalizeIdentityKey(username);
                                         const mappedDisplayName = agentDisplayMap.get(normalizedUsername);
-                                        const isAgentMessage = Boolean(mappedDisplayName) || isAgentUsername(username);
+                                        const matchedAgent = resolvePodAgentByIdentity(username);
+                                        const isAgentMessage = Boolean(matchedAgent) || Boolean(mappedDisplayName) || isAgentUsername(username);
                                         const displayName = mappedDisplayName || username;
+                                        const messageSenderId = (msg.userId && typeof msg.userId === 'object' && msg.userId._id)
+                                            || msg.user_id
+                                            || (typeof msg.userId === 'string' ? msg.userId : null)
+                                            || null;
+                                        const handleOpenSender = () => {
+                                            if (isAgentMessage) {
+                                                navigateToAgentInstallPage(username);
+                                                return;
+                                            }
+                                            navigateToUserProfile(messageSenderId);
+                                        };
                                         
                                         // Get profile picture with multiple fallbacks
-                                        const profilePicture = 
-                                            agentAvatarMap.get(normalizedUsername) ||
-                                            (msg.userId && typeof msg.userId === 'object' && msg.userId.profilePicture) ||
-                                            msg.profile_picture || 
-                                            msg.profilePicture ||  // Handle camelCase from socket messages
-                                            null;
+                                        const senderProfilePicture = (msg.userId && typeof msg.userId === 'object' && msg.userId.profilePicture)
+                                            || msg.profile_picture
+                                            || msg.profilePicture
+                                            || null;
+                                        const humanMessageAvatar = pickPreferredAvatarValue(
+                                            messageSenderId && currentUser?._id?.toString?.() === String(messageSenderId) ? currentUser?.profilePicture : null,
+                                            senderProfilePicture,
+                                        );
+                                        const agentMessageAvatar = pickPreferredAvatarValue(
+                                            agentAvatarMap.get(normalizedUsername),
+                                            matchedAgent?.profile?.iconUrl,
+                                            matchedAgent?.profile?.avatarUrl,
+                                            matchedAgent?.iconUrl,
+                                            senderProfilePicture,
+                                        );
+                                        const resolvedMessageAvatar = isAgentMessage ? agentMessageAvatar : humanMessageAvatar;
                                         
                                         // Get message content with fallbacks
                                         const messageContent = msg.content || msg.text || '';
@@ -3370,25 +3498,27 @@ const ChatRoom = () => {
                                                     className="message-item received"
                                                 >
                                                     <ListItemAvatar className="message-avatar">
-                                                        {isAgentMessage ? (
-                                                            <AgentAvatar
-                                                                username={username}
-                                                                src={getAvatarSrc(profilePicture)}
-                                                                size={40}
-                                                                showBadge={true}
-                                                            />
-                                                        ) : (
-                                                            <Avatar
-                                                                src={getAvatarSrc(profilePicture)}
-                                                                sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
-                                                            >
-                                                                {displayName.charAt(0).toUpperCase()}
-                                                            </Avatar>
-                                                        )}
+                                                        <div className="message-sender-link" onClick={handleOpenSender}>
+                                                            {isAgentMessage ? (
+                                                                <AgentAvatar
+                                                                    username={username}
+                                                                    src={getAvatarSrc(resolvedMessageAvatar)}
+                                                                    size={40}
+                                                                    showBadge={true}
+                                                                />
+                                                            ) : (
+                                                                <Avatar
+                                                                    src={getAvatarSrc(resolvedMessageAvatar)}
+                                                                    sx={{ bgcolor: getAvatarColor(resolvedMessageAvatar || 'default') }}
+                                                                >
+                                                                    {displayName.charAt(0).toUpperCase()}
+                                                                </Avatar>
+                                                            )}
+                                                        </div>
                                                     </ListItemAvatar>
 
                                                     <div className="message-content-wrapper">
-                                                        <div className="message-user">
+                                                        <div className="message-user message-user-link" onClick={handleOpenSender}>
                                                             {displayName}
                                                             <span className="bot-badge">BOT</span>
                                                         </div>
@@ -3430,25 +3560,27 @@ const ChatRoom = () => {
                                                 className={`message-item ${isCurrentUser ? 'sent' : 'received'}`}
                                             >
                                                 <ListItemAvatar className="message-avatar">
-                                                    {isAgentMessage ? (
-                                                        <AgentAvatar
-                                                            username={username}
-                                                            src={getAvatarSrc(profilePicture)}
-                                                            size={40}
-                                                            showBadge={true}
-                                                        />
-                                                    ) : (
-                                                        <Avatar
-                                                            src={getAvatarSrc(profilePicture)}
-                                                            sx={{ bgcolor: getAvatarColor(profilePicture || 'default') }}
-                                                        >
-                                                            {displayName.charAt(0).toUpperCase()}
-                                                        </Avatar>
-                                                    )}
+                                                    <div className="message-sender-link" onClick={handleOpenSender}>
+                                                        {isAgentMessage ? (
+                                                            <AgentAvatar
+                                                                username={username}
+                                                                src={getAvatarSrc(resolvedMessageAvatar)}
+                                                                size={40}
+                                                                showBadge={true}
+                                                            />
+                                                        ) : (
+                                                            <Avatar
+                                                                src={getAvatarSrc(resolvedMessageAvatar)}
+                                                                sx={{ bgcolor: getAvatarColor(resolvedMessageAvatar || 'default') }}
+                                                            >
+                                                                {displayName.charAt(0).toUpperCase()}
+                                                            </Avatar>
+                                                        )}
+                                                    </div>
                                                 </ListItemAvatar>
 
                                                 <div className="message-content-wrapper">
-                                                    <div className="message-user">
+                                                    <div className="message-user message-user-link" onClick={handleOpenSender}>
                                                         {displayName}
                                                         {isAgentMessage && <AgentBadge username={username} size="small" />}
                                                     </div>

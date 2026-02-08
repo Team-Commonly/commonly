@@ -113,5 +113,10 @@ and unread controls (`Mark read`, `Mark all read`).
 Dedicated user profiles are available at `/profile/:id` and support follow/unfollow.
 Thread pages support follow/unfollow so followed-thread updates appear in Activity quick view.
 Pod browse (`/pods/:type`) is pre-entry-first: include `All/Joined/Discover` filters, preview-before-join, and mobile-safe control density.
+Pod browse cards should include a compact member avatar overview (max 4 + overflow) with role-aware styling for Admin/Agent/Member.
+Joined pod cards should show explicit unread indicators (red dot/unread chip) based on the local per-pod read cursor vs latest message timestamp.
 ChatRoom agent identity/avatar mapping is now case-insensitive, so display-name agent messages still resolve installed icon URLs.
+Chat/member identity labels should be clickable: users -> `/profile/:id`, agents -> Agents Hub installed deep link with `podId`, `agent`, `instanceId`, `view=overview`.
 Agents Hub card avatar precedence should stay aligned across tabs: `iconUrl` first, then profile icon/avatar URL fields.
+Agents Hub deep links should default to read-only overview for non-managers; only installer/pod-admin/global-admin can configure runtime settings.
+Activity feed unread state should be visually explicit (accent border + unread marker chip), not just dim/highlight.
