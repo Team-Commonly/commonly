@@ -33,6 +33,9 @@ const waitForSummaryByEventIds = async ({
   timeoutMs = 9000,
   intervalMs = 500,
 }) => {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) {
+    return null;
+  }
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const summary = await Summary.findOne({
@@ -275,7 +278,7 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
       });
     }
 
-    const events = await Promise.all(
+    const enqueueResults = await Promise.allSettled(
       installations.map((installation) => AgentEventService.enqueue({
         agentName: SUMMARY_AGENT,
         instanceId: installation.instanceId || 'default',
@@ -290,7 +293,33 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
       })),
     );
 
-    const eventIds = events.map((event) => event?._id?.toString()).filter(Boolean);
+    const enqueueErrors = enqueueResults
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason?.message || 'Unknown enqueue error');
+    if (enqueueErrors.length > 0) {
+      console.warn('Summary refresh enqueue failures:', {
+        podId,
+        failures: enqueueErrors,
+      });
+    }
+
+    const eventIds = enqueueResults
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => result.value?._id?.toString())
+      .filter(Boolean);
+
+    if (!eventIds.length) {
+      const fallbackSummary = await ChatSummarizerService.summarizePodMessages(podId);
+      const latestSummary = fallbackSummary || await ChatSummarizerService.getLatestPodSummary(podId);
+      return res.json({
+        message: 'Summary refresh could not enqueue agent events; fallback summary returned',
+        summary: latestSummary || null,
+        queued: false,
+        fallback: true,
+        warning: 'summary-enqueue-failed',
+      });
+    }
+
     const summary = await waitForSummaryByEventIds({
       podId,
       eventIds,
@@ -298,9 +327,10 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
 
     if (!summary) {
       const fallbackSummary = await ChatSummarizerService.summarizePodMessages(podId);
+      const latestSummary = fallbackSummary || await ChatSummarizerService.getLatestPodSummary(podId);
       return res.json({
         message: 'Summary request queued; fallback summary generated',
-        summary: fallbackSummary || null,
+        summary: latestSummary || null,
         queued: true,
         fallback: true,
       });
