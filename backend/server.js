@@ -38,6 +38,7 @@ const healthRoutes = require('./routes/health');
 const agentEnsembleRoutes = require('./routes/agentEnsemble');
 const globalIntegrationsRoutes = require('./routes/admin/globalIntegrations');
 const agentAutonomyAdminRoutes = require('./routes/admin/agentAutonomy');
+const agentEventsAdminRoutes = require('./routes/admin/agentEvents');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes;
 let pgMessageRoutes;
@@ -170,6 +171,7 @@ app.use('/api/gateways', gatewayRoutes); // Gateway registry (admin)
 app.use('/api/skills', skillsRoutes); // Skill catalogs + imports
 app.use('/api/admin/integrations/global', globalIntegrationsRoutes); // Admin global integrations
 app.use('/api/admin/agents/autonomy', agentAutonomyAdminRoutes); // Admin manual autonomy triggers
+app.use('/api/admin/agents/events', agentEventsAdminRoutes); // Admin agent event debug/queue visibility
 app.use('/api/dev', devRoutes); // Dev tooling (LLM status, etc.)
 app.use('/api/health', healthRoutes); // Health check endpoints
 app.use('/api/pods', agentEnsembleRoutes); // Agent Ensemble Pod endpoints

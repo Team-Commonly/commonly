@@ -12,7 +12,7 @@ import type { SandboxContext } from "./sandbox.js";
 import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
-import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
+import { normalizeMessageChannel, resolveGatewayMessageChannel } from "../utils/message-channel.js";
 import { createApplyPatchTool } from "./apply-patch.js";
 import {
   createExecTool,
@@ -51,6 +51,7 @@ import {
   resolveToolProfilePolicy,
   stripPluginOnlyAllowlist,
 } from "./tool-policy.js";
+import { normalizeAccountId } from "../routing/session-key.js";
 
 function isOpenAIProvider(provider?: string) {
   const normalized = provider?.trim().toLowerCase();
@@ -103,12 +104,110 @@ function resolveExecConfig(cfg: OpenClawConfig | undefined) {
   };
 }
 
+function normalizeString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function resolveCommonlyExecBaseEnv(params: {
+  config?: OpenClawConfig;
+  messageProvider?: string;
+  accountId?: string;
+}): Record<string, string> | undefined {
+  const channel = resolveGatewayMessageChannel(params.messageProvider);
+  const normalizedChannel = channel ?? normalizeMessageChannel(params.messageProvider);
+  if (normalizedChannel !== "commonly") {
+    return undefined;
+  }
+
+  const channels = params.config?.channels as Record<string, unknown> | undefined;
+  const commonly = channels?.commonly as
+    | {
+        baseUrl?: unknown;
+        runtimeToken?: unknown;
+        userToken?: unknown;
+        accounts?: Record<string, unknown>;
+      }
+    | undefined;
+  if (!commonly || typeof commonly !== "object") {
+    return undefined;
+  }
+
+  const accounts =
+    commonly.accounts && typeof commonly.accounts === "object"
+      ? (commonly.accounts as Record<string, unknown>)
+      : undefined;
+  const requestedAccountId = normalizeAccountId(params.accountId) ?? "default";
+
+  const resolveAccountConfig = (): { accountId: string; config: Record<string, unknown> } | undefined => {
+    if (!accounts || Object.keys(accounts).length === 0) {
+      return undefined;
+    }
+    const direct = accounts[requestedAccountId];
+    if (direct && typeof direct === "object") {
+      return { accountId: requestedAccountId, config: direct as Record<string, unknown> };
+    }
+    const normalizedMatch = Object.entries(accounts).find(
+      ([key]) => normalizeAccountId(key) === requestedAccountId,
+    );
+    if (normalizedMatch && typeof normalizedMatch[1] === "object") {
+      return { accountId: normalizedMatch[0], config: normalizedMatch[1] as Record<string, unknown> };
+    }
+    const fallbackDefault = accounts.default;
+    if (fallbackDefault && typeof fallbackDefault === "object") {
+      return { accountId: "default", config: fallbackDefault as Record<string, unknown> };
+    }
+    const first = Object.entries(accounts).find(([, value]) => typeof value === "object");
+    if (!first) {
+      return undefined;
+    }
+    return { accountId: first[0], config: first[1] as Record<string, unknown> };
+  };
+
+  const account = resolveAccountConfig();
+  const accountConfig = account?.config;
+  const runtimeToken =
+    normalizeString(accountConfig?.runtimeToken) ??
+    normalizeString(commonly.runtimeToken);
+  if (!runtimeToken) {
+    return undefined;
+  }
+  const userToken =
+    normalizeString(accountConfig?.userToken) ??
+    normalizeString(commonly.userToken);
+  const baseUrl =
+    normalizeString(accountConfig?.baseUrl) ??
+    normalizeString(commonly.baseUrl) ??
+    normalizeString(process.env.COMMONLY_API_URL) ??
+    normalizeString(process.env.COMMONLY_BASE_URL);
+
+  const resolvedAccountId = account ? normalizeAccountId(account.accountId) ?? requestedAccountId : requestedAccountId;
+  const env: Record<string, string> = {
+    OPENCLAW_RUNTIME_TOKEN: runtimeToken,
+    COMMONLY_API_TOKEN: runtimeToken,
+    ACCOUNT_ID: resolvedAccountId,
+  };
+  if (baseUrl) {
+    env.COMMONLY_API_URL = baseUrl;
+    env.COMMONLY_BASE_URL = baseUrl;
+  }
+  if (userToken) {
+    env.OPENCLAW_USER_TOKEN = userToken;
+    env.COMMONLY_USER_TOKEN = userToken;
+  }
+  return env;
+}
+
 export const __testing = {
   cleanToolSchemaForGemini,
   normalizeToolParams,
   patchToolSchemaForClaudeCompatibility,
   wrapToolParamNormalization,
   assertRequiredParams,
+  resolveCommonlyExecBaseEnv,
 } as const;
 
 export function createOpenClawCodingTools(options?: {
@@ -284,6 +383,11 @@ export function createOpenClawCodingTools(options?: {
     approvalRunningNoticeMs:
       options?.exec?.approvalRunningNoticeMs ?? execConfig.approvalRunningNoticeMs,
     notifyOnExit: options?.exec?.notifyOnExit ?? execConfig.notifyOnExit,
+    baseEnv: resolveCommonlyExecBaseEnv({
+      config: options?.config,
+      messageProvider: options?.messageProvider,
+      accountId: options?.agentAccountId,
+    }),
     sandbox: sandbox
       ? {
           containerName: sandbox.containerName,

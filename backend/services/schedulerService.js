@@ -6,6 +6,7 @@ const AgentEventService = require('./agentEventService');
 const PodAssetService = require('./podAssetService');
 const externalFeedService = require('./externalFeedService');
 const { AgentInstallation } = require('../models/AgentRegistry');
+const AgentEvent = require('../models/AgentEvent');
 const AgentEnsembleService = require('./agentEnsembleService');
 const PodCurationService = require('./podCurationService');
 const AgentAutoJoinService = require('./agentAutoJoinService');
@@ -53,6 +54,29 @@ class SchedulerService {
           await externalFeedService.syncExternalFeeds();
         } catch (error) {
           console.error('Error syncing external feeds:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
+
+    const agentEventGcJob = cron.schedule(
+      '*/10 * * * *',
+      async () => {
+        console.log('Running agent event garbage collection...');
+        try {
+          const result = await AgentEventService.garbageCollect();
+          if (result.totalDeleted > 0) {
+            console.log(
+              `Agent event GC removed ${result.totalDeleted} event(s) `
+              + `(pending=${result.deletedPending}, delivered=${result.deletedDelivered}, `
+              + `failed=${result.deletedFailed})`,
+            );
+          }
+        } catch (error) {
+          console.error('Error in scheduled agent event GC:', error);
         }
       },
       {
@@ -121,7 +145,8 @@ class SchedulerService {
             minMatches: 4,
           });
           console.log(
-            `Themed pod autonomy complete. Created: ${result.createdPods?.length || 0}, Triggered: ${result.triggeredPods?.length || 0}`,
+            `Themed pod autonomy complete. Created: ${result.createdPods?.length || 0}, `
+            + `Triggered: ${result.triggeredPods?.length || 0}`,
           );
         } catch (error) {
           console.error('Error in themed pod autonomy scheduler:', error);
@@ -153,11 +178,14 @@ class SchedulerService {
     );
 
     const agentHeartbeatJob = cron.schedule(
-      '30 * * * *',
+      '*/10 * * * *',
       async () => {
         console.log('Dispatching agent heartbeat events...');
         try {
-          const result = await SchedulerService.dispatchAgentHeartbeats({ trigger: 'scheduled-hourly' });
+          const result = await SchedulerService.dispatchAgentHeartbeats({
+            trigger: 'scheduled-interval',
+            respectIntervals: true,
+          });
           console.log(`Agent heartbeats enqueued: ${result.enqueued}`);
         } catch (error) {
           console.error('Error dispatching agent heartbeats:', error);
@@ -172,6 +200,7 @@ class SchedulerService {
     this.jobs = [
       summarizerJob,
       externalFeedJob,
+      agentEventGcJob,
       dailyDigestJob,
       cleanupJob,
       ensembleJob,
@@ -186,10 +215,13 @@ class SchedulerService {
     console.log('- Summarizer runs every hour');
     console.log('- Cleanup runs daily at 2 AM UTC');
     console.log('- External feeds sync every 10 minutes');
+    console.log('- Agent event GC runs every 10 minutes');
     console.log('- Themed pod autonomy runs every 2 hours');
     console.log('- Agent auto-join (agent-owned pods) runs every 2 hours');
-    console.log('- Agent heartbeats run every hour at :30');
-
+    console.log('- Agent heartbeats run every 10 minutes with per-agent intervals');
+    console.log(
+      '- Stale agent events are garbage-collected every 10 minutes',
+    );
     // Run initial summarizer after a short delay
     setTimeout(() => {
       SchedulerService.runSummarizer().catch((error) => {
@@ -204,6 +236,12 @@ class SchedulerService {
     }, 7000);
 
     setTimeout(() => {
+      AgentEventService.garbageCollect().catch((error) => {
+        console.error('Error in initial agent event GC:', error);
+      });
+    }, 8000);
+
+    setTimeout(() => {
       PodCurationService.runThemedPodAutonomy({
         hours: 12,
         minMatches: 4,
@@ -213,7 +251,10 @@ class SchedulerService {
     }, 9000);
 
     setTimeout(() => {
-      SchedulerService.dispatchAgentHeartbeats({ trigger: 'startup' }).catch((error) => {
+      SchedulerService.dispatchAgentHeartbeats({
+        trigger: 'startup',
+        respectIntervals: true,
+      }).catch((error) => {
         console.error('Error in initial heartbeat dispatch:', error);
       });
     }, 11000);
@@ -523,38 +564,93 @@ class SchedulerService {
     };
   }
 
-  static async dispatchAgentHeartbeats({ trigger = 'scheduled-hourly' } = {}) {
+  static resolveHeartbeatIntervalMinutes(installation) {
+    const parsed = Number(installation?.config?.heartbeat?.everyMinutes);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 60;
+    return Math.max(1, Math.min(1440, Math.trunc(parsed)));
+  }
+
+  static async dispatchAgentHeartbeats({
+    trigger = 'scheduled-hourly',
+    respectIntervals = false,
+    now = new Date(),
+  } = {}) {
     const installations = await AgentInstallation.find({
       status: 'active',
-    }).select('agentName instanceId podId config.autonomy').lean();
+    }).select('agentName instanceId podId config.autonomy config.heartbeat.everyMinutes').lean();
 
     if (!installations.length) {
-      return { scanned: 0, enqueued: 0 };
+      return { scanned: 0, enqueued: 0, skippedByInterval: 0 };
     }
 
-    const enqueuedFlags = await Promise.all(
+    const lastHeartbeatByKey = new Map();
+    if (respectIntervals) {
+      const latestHeartbeats = await AgentEvent.aggregate([
+        { $match: { type: 'heartbeat' } },
+        {
+          $group: {
+            _id: {
+              agentName: '$agentName',
+              instanceId: '$instanceId',
+              podId: '$podId',
+            },
+            lastCreatedAt: { $max: '$createdAt' },
+          },
+        },
+      ]);
+      latestHeartbeats.forEach((row) => {
+        const key = `${row?._id?.agentName || ''}:${row?._id?.instanceId || 'default'}:${row?._id?.podId || ''}`;
+        if (key && row?.lastCreatedAt) {
+          lastHeartbeatByKey.set(key, new Date(row.lastCreatedAt));
+        }
+      });
+    }
+
+    const enqueueResults = await Promise.all(
       installations.map(async (installation) => {
         const autonomyEnabled = installation?.config?.autonomy?.enabled;
-        if (autonomyEnabled === false) return 0;
+        if (autonomyEnabled === false) return { enqueued: 0, skippedByInterval: 0 };
+        const {
+          agentName,
+          podId,
+          instanceId = 'default',
+        } = installation || {};
+
+        if (respectIntervals) {
+          const key = `${agentName}:${instanceId}:${podId}`;
+          const lastCreatedAt = lastHeartbeatByKey.get(key);
+          const intervalMinutes = this.resolveHeartbeatIntervalMinutes(installation);
+          if (lastCreatedAt) {
+            const ageMs = now.getTime() - lastCreatedAt.getTime();
+            if (ageMs < intervalMinutes * 60 * 1000) {
+              return { enqueued: 0, skippedByInterval: 1 };
+            }
+          }
+        }
 
         await AgentEventService.enqueue({
-          agentName: installation.agentName,
-          instanceId: installation.instanceId || 'default',
-          podId: installation.podId,
+          agentName,
+          instanceId,
+          podId,
           type: 'heartbeat',
           payload: {
             trigger,
             generatedAt: new Date().toISOString(),
           },
         });
-        return 1;
+        return { enqueued: 1, skippedByInterval: 0 };
       }),
     );
-    const enqueued = enqueuedFlags.reduce((sum, value) => sum + (value || 0), 0);
+    const enqueued = enqueueResults.reduce((sum, value) => sum + (value?.enqueued || 0), 0);
+    const skippedByInterval = enqueueResults.reduce(
+      (sum, value) => sum + (value?.skippedByInterval || 0),
+      0,
+    );
 
     return {
       scanned: installations.length,
       enqueued,
+      skippedByInterval,
     };
   }
 }
