@@ -245,6 +245,8 @@ const normalizeInstanceId = (raw) => {
   return normalized || 'default';
 };
 
+const normalizeDisplayName = (value) => String(value || '').trim().toLowerCase();
+
 const buildRuntimeLogFilters = ({ runtimeType, agentName, instanceId }) => {
   if (runtimeType !== 'moltbot') return [];
   const normalizedInstance = normalizeInstanceId(instanceId);
@@ -2087,6 +2089,35 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
       agentName: { $in: installations.map((i) => i.agentName) },
     }).select('agentName iconUrl').lean();
     const iconMap = new Map(registryEntries.map((entry) => [entry.agentName, entry.iconUrl || '']));
+    const installationDisplayNames = Array.from(new Set(
+      installations.map((i) => i.displayName).filter(Boolean),
+    ));
+    const templateCandidates = await AgentTemplate.find({
+      agentName: { $in: installations.map((i) => i.agentName) },
+      displayName: { $in: installationDisplayNames },
+      $or: [
+        { visibility: 'public' },
+        { createdBy: userId },
+        { createdBy: { $in: installations.map((i) => i.installedBy).filter(Boolean) } },
+      ],
+    }).select('agentName displayName iconUrl createdBy visibility').lean();
+    const getTemplateIcon = (installation) => {
+      const displayName = normalizeDisplayName(installation.displayName);
+      if (!displayName) return '';
+      const matches = templateCandidates.filter((template) => (
+        template.agentName === installation.agentName
+        && normalizeDisplayName(template.displayName) === displayName
+        && template.iconUrl
+      ));
+      if (matches.length === 0) return '';
+      const installedBy = installation.installedBy?.toString?.() || String(installation.installedBy || '');
+      const exactOwner = matches.find((template) => String(template.createdBy || '') === installedBy);
+      if (exactOwner) return exactOwner.iconUrl;
+      const currentUserTemplate = matches.find((template) => String(template.createdBy || '') === String(userId));
+      if (currentUserTemplate) return currentUserTemplate.iconUrl;
+      const publicTemplate = matches.find((template) => template.visibility === 'public');
+      return (publicTemplate || matches[0]).iconUrl || '';
+    };
 
     // Get agent profiles for more details
     const profiles = await AgentProfile.find({
@@ -2099,9 +2130,10 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
         const profile = profiles.find(
           (p) => p.agentName === i.agentName && p.instanceId === (i.instanceId || 'default'),
         );
+        const templateIcon = getTemplateIcon(i);
         return buildAgentInstallationPayload(i, {
           profile,
-          iconUrl: iconMap.get(i.agentName) || '',
+          iconUrl: templateIcon || iconMap.get(i.agentName) || '',
         });
       }),
     });
@@ -2145,19 +2177,35 @@ router.get('/pods/:podId/agents/:name', auth, async (req, res) => {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
-    const [registryEntry, profile] = await Promise.all([
+    const [registryEntry, profile, templateCandidates] = await Promise.all([
       AgentRegistry.findOne({ agentName: installation.agentName }).select('iconUrl').lean(),
       AgentProfile.findOne({
         podId,
         agentName: installation.agentName,
         instanceId: installation.instanceId || 'default',
       }).lean(),
+      AgentTemplate.find({
+        agentName: installation.agentName,
+        displayName: installation.displayName,
+        $or: [
+          { visibility: 'public' },
+          { createdBy: userId },
+          { createdBy: installation.installedBy },
+        ],
+      }).select('iconUrl createdBy visibility').lean(),
     ]);
+    const installedBy = installation.installedBy?.toString?.() || String(installation.installedBy || '');
+    const templateIcon = (
+      templateCandidates.find((template) => String(template.createdBy || '') === installedBy)
+      || templateCandidates.find((template) => String(template.createdBy || '') === String(userId))
+      || templateCandidates.find((template) => template.visibility === 'public')
+      || templateCandidates[0]
+    )?.iconUrl || '';
 
     return res.json({
       agent: buildAgentInstallationPayload(installation, {
         profile,
-        iconUrl: registryEntry?.iconUrl || '',
+        iconUrl: templateIcon || registryEntry?.iconUrl || '',
       }),
     });
   } catch (error) {

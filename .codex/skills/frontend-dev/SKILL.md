@@ -2,7 +2,7 @@
 
 name: frontend-dev
 description: Frontend development context for React.js, Material-UI, Context API, hooks, and component patterns. Use when working on frontend code.
-last_updated: 2026-02-06
+last_updated: 2026-02-08
 ---
 
 # Frontend Development
@@ -102,9 +102,15 @@ const useSocket = (podId) => {
 };
 ```
 
-## Current Repo Notes (2026-02-06)
+## Current Repo Notes (2026-02-08)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.
+Activity page (`/activity`) is social-first with `Updates` + `Actions` tabs, live pod message updates,
+and unread controls (`Mark read`, `Mark all read`).
+Dedicated user profiles are available at `/profile/:id` and support follow/unfollow.
+Thread pages support follow/unfollow so followed-thread updates appear in Activity quick view.
+ChatRoom agent identity/avatar mapping is now case-insensitive, so display-name agent messages still resolve installed icon URLs.
+Agents Hub card avatar precedence should stay aligned across tabs: `iconUrl` first, then profile icon/avatar URL fields.

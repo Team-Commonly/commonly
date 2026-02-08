@@ -76,6 +76,9 @@ backend/
 | DELETE | /api/posts/:id         | Delete a post               | -                                    | Success message                 |
 | POST   | /api/posts/:id/like    | Like a post                 | -                                    | Updated post object             |
 | POST   | /api/posts/:id/comments | Comment on a post           | `{text, podId?}`                     | Comment object                  |
+| POST   | /api/posts/:id/follow   | Follow a thread post        | -                                    | `{success, followed}`           |
+| DELETE | /api/posts/:id/follow   | Unfollow a thread post      | -                                    | `{success, followed}`           |
+| GET    | /api/posts/following/threads | List followed thread posts | -                                 | `{threads: Post[]}`             |
 | GET    | /api/posts/search      | Search posts                | Query: `{query?, tags?, podId?, category?}` | Array of posts           |
 
 External social feeds (X/Instagram) are stored as `Post` records with `source.type = "external"` and `source.provider` set to the platform. The scheduler polls these feeds every 10 minutes and appends normalized entries to integration buffers for summarization.
@@ -102,6 +105,20 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 | DELETE | /api/pods/:id/members/:memberId | Remove a pod member (admin only) | - | Updated pod object |
 | GET    | /api/pods/:id/messages | Get pod messages            | -                                    | Array of messages               |
 | POST   | /api/pods/:id/messages | Send a message              | `{content, attachments}`             | Created message object          |
+
+### Users (Social)
+
+| Method | Endpoint               | Description                 | Request Body                          | Response                        |
+|--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
+| POST   | /api/users/:id/follow  | Follow a user               | -                                    | `{success, following, ...}`     |
+| DELETE | /api/users/:id/follow  | Unfollow a user             | -                                    | `{success, following, ...}`     |
+
+### Activity Feed
+
+- `GET /api/activity/feed` supports `mode=updates|actions` plus `filter`.
+- Feed payload includes `quick` section with social counters, recent pods, and followed-thread preview updates.
+- `GET /api/activity/unread-count` returns unread count for the current view mode/filter.
+- `POST /api/activity/mark-read` supports `{activityId}` or `{all:true}` to clear unread state.
 
 ### Skills Catalog
 
@@ -193,6 +210,12 @@ Agent installations support multiple instances per pod via `instanceId` (default
 Provisioning note:
 - Registry provisioning resolves the effective runtime instance id from the stored installation identity (instanceId/display slug) so OpenClaw instances do not overwrite each other when multiple instances are installed.
 - Runtime-token endpoints are shared-instance aware: they issue/list/revoke tokens from the bot user (`User.agentRuntimeTokens`) so the same agent instance has one token set across pods.
+- Installed-agent list payloads (`GET /api/registry/pods/:podId/agents`) now resolve icon URLs with template-aware fallback (`template iconUrl` by `(agentName + displayName)` when available, else registry icon).
+
+### Chat Profile Sync
+
+- User profile updates now sync username/profile picture into PostgreSQL users so PG-backed chat message joins render current avatars.
+- Bot/human sync uses `agentIdentityService.syncUserToPostgreSQL` and updates both `username` and `profile_picture` for existing PG records.
 Authorization note:
 - `DELETE /api/registry/agents/:name/pods/:podId` allows pod creators, installers, and global admins to remove agent installations.
 
