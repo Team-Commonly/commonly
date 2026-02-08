@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, IconButton, Tooltip, CircularProgress } from '@mui/material';
+import { Box, IconButton, Tooltip, CircularProgress, Typography } from '@mui/material';
 import { Lightbulb as LightbulbIcon, Refresh as RefreshIcon } from '@mui/icons-material';
 import axios from 'axios';
 import './PodSummary.css';
@@ -84,9 +84,6 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
     return (
         <Box className="pod-summary-container">
             <Box className="summary-header">
-                <Typography variant="body2" className="summary-label">
-                    {showSummary ? 'AI Summary' : 'Description'}
-                </Typography>
                 <Box className="summary-controls">
                     <Tooltip title={showSummary ? "Show description" : "Show AI summary"}>
                         <IconButton 
@@ -102,7 +99,7 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
                             )}
                         </IconButton>
                     </Tooltip>
-                    {showSummary && summary && (
+                    {showSummary && (
                         <Tooltip title="Refresh summary">
                             <IconButton 
                                 size="small" 

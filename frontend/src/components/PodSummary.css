@@ -372,7 +372,7 @@
 .summary-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     margin-bottom: 8px;
 }
 
@@ -456,4 +456,16 @@
 .no-activity {
     color: #a8b3c8 !important;
     font-style: italic !important;
-} 
+}
+
+/* Override legacy absolute-positioned text styles from earlier PodSummary variants. */
+.pod-summary-container .summary-content .description-text,
+.pod-summary-container .summary-content .ai-summary-text {
+    position: static !important;
+    inset: auto !important;
+    width: auto !important;
+    min-height: 0 !important;
+    z-index: auto !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
