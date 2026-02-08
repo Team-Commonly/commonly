@@ -269,7 +269,7 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
     const windowMinutes = Math.max(5, Math.min(240, parseInt(req.body?.windowMinutes, 10) || 60));
     const installations = await getActiveSummaryInstallationsForPod(podId);
     if (!installations.length) {
-      const fallbackSummary = await ChatSummarizerService.summarizePodMessages(podId);
+      const fallbackSummary = await chatSummarizerService.summarizePodMessages(podId);
       return res.json({
         message: 'Summary refreshed successfully (fallback mode)',
         summary: fallbackSummary || null,
@@ -309,7 +309,7 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
       .filter(Boolean);
 
     if (!eventIds.length) {
-      const fallbackSummary = await ChatSummarizerService.summarizePodMessages(podId);
+      const fallbackSummary = await chatSummarizerService.summarizePodMessages(podId);
       const latestSummary = fallbackSummary || await ChatSummarizerService.getLatestPodSummary(podId);
       return res.json({
         message: 'Summary refresh could not enqueue agent events; fallback summary returned',
@@ -326,7 +326,7 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
     });
 
     if (!summary) {
-      const fallbackSummary = await ChatSummarizerService.summarizePodMessages(podId);
+      const fallbackSummary = await chatSummarizerService.summarizePodMessages(podId);
       const latestSummary = fallbackSummary || await ChatSummarizerService.getLatestPodSummary(podId);
       return res.json({
         message: 'Summary request queued; fallback summary generated',
