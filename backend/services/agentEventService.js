@@ -17,6 +17,62 @@ const getWebSocketService = () => {
 };
 
 class AgentEventService {
+  static logEventLifecycle(action, details = {}) {
+    const parts = [
+      `[agent-event] ${action}`,
+      `agent=${details.agentName || 'unknown'}`,
+      `instance=${details.instanceId || 'default'}`,
+      `pod=${details.podId || 'n/a'}`,
+      `type=${details.type || 'n/a'}`,
+      `id=${details.eventId || 'n/a'}`,
+    ];
+    if (details.trigger) parts.push(`trigger=${details.trigger}`);
+    if (details.status) parts.push(`status=${details.status}`);
+    if (typeof details.attempts === 'number') parts.push(`attempts=${details.attempts}`);
+    if (details.error) parts.push(`error="${details.error}"`);
+    console.log(parts.join(' '));
+  }
+
+  static async garbageCollect({
+    stalePendingMinutes = Number(process.env.AGENT_EVENT_STALE_PENDING_MINUTES || 30),
+    deliveredRetentionHours = Number(process.env.AGENT_EVENT_DELIVERED_RETENTION_HOURS || 168),
+    failedRetentionHours = Number(process.env.AGENT_EVENT_FAILED_RETENTION_HOURS || 168),
+  } = {}) {
+    const now = Date.now();
+    const stalePendingThreshold = new Date(now - (Math.max(stalePendingMinutes, 1) * 60 * 1000));
+    const deliveredThreshold = new Date(now - (Math.max(deliveredRetentionHours, 1) * 60 * 60 * 1000));
+    const failedThreshold = new Date(now - (Math.max(failedRetentionHours, 1) * 60 * 60 * 1000));
+
+    const [pendingResult, deliveredResult, failedResult] = await Promise.all([
+      AgentEvent.deleteMany({
+        status: 'pending',
+        createdAt: { $lt: stalePendingThreshold },
+      }),
+      AgentEvent.deleteMany({
+        status: 'delivered',
+        createdAt: { $lt: deliveredThreshold },
+      }),
+      AgentEvent.deleteMany({
+        status: 'failed',
+        createdAt: { $lt: failedThreshold },
+      }),
+    ]);
+
+    const deletedPending = pendingResult?.deletedCount || 0;
+    const deletedDelivered = deliveredResult?.deletedCount || 0;
+    const deletedFailed = failedResult?.deletedCount || 0;
+
+    return {
+      deletedPending,
+      deletedDelivered,
+      deletedFailed,
+      totalDeleted: deletedPending + deletedDelivered + deletedFailed,
+      stalePendingMinutes: Math.max(stalePendingMinutes, 1),
+      deliveredRetentionHours: Math.max(deliveredRetentionHours, 1),
+      failedRetentionHours: Math.max(failedRetentionHours, 1),
+    };
+  }
+
   static hasIntegrationReadScope(installation) {
     const scopes = installation?.scopes || [];
     return scopes.includes('integration:read') || scopes.includes('integrations:read');
@@ -97,6 +153,16 @@ class AgentEventService {
       type,
       payload: eventPayload,
     });
+    this.logEventLifecycle('enqueued', {
+      eventId: event._id?.toString?.(),
+      agentName: event.agentName,
+      instanceId: event.instanceId,
+      podId: event.podId?.toString?.(),
+      type: event.type,
+      trigger: event.payload?.trigger,
+      status: event.status,
+      attempts: event.attempts,
+    });
 
     // Push event via WebSocket if agent is connected
     const wsService = getWebSocketService();
@@ -138,17 +204,42 @@ class AgentEventService {
   }
 
   static async acknowledge(eventId, agentName, instanceId = 'default') {
-    return AgentEvent.updateOne(
+    const result = await AgentEvent.findOneAndUpdate(
       { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
       { $set: { status: 'delivered', deliveredAt: new Date() }, $inc: { attempts: 1 } },
+      { new: true },
     );
+    this.logEventLifecycle('acknowledged', {
+      eventId: eventId?.toString?.() || eventId,
+      agentName: agentName.toLowerCase(),
+      instanceId,
+      podId: result?.podId?.toString?.(),
+      type: result?.type,
+      trigger: result?.payload?.trigger,
+      status: result?.status || 'delivered',
+      attempts: result?.attempts,
+    });
+    return result;
   }
 
   static async recordFailure(eventId, agentName, instanceId, errorMessage) {
-    return AgentEvent.updateOne(
+    const result = await AgentEvent.findOneAndUpdate(
       { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
       { $set: { status: 'failed', error: errorMessage }, $inc: { attempts: 1 } },
+      { new: true },
     );
+    this.logEventLifecycle('failed', {
+      eventId: eventId?.toString?.() || eventId,
+      agentName: agentName.toLowerCase(),
+      instanceId,
+      podId: result?.podId?.toString?.(),
+      type: result?.type,
+      trigger: result?.payload?.trigger,
+      status: result?.status || 'failed',
+      attempts: result?.attempts,
+      error: errorMessage,
+    });
+    return result;
   }
 }
 

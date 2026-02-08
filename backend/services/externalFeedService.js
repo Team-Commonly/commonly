@@ -46,7 +46,7 @@ async function persistExternalPosts({ integration, messages }) {
 
   const existingIds = new Set(existingPosts.map((post) => post.source?.externalId));
   const category = integration.config?.category || DEFAULT_CATEGORY;
-  const createdBy = integration.createdBy;
+  const { createdBy } = integration;
 
   const creations = messages
     .filter((message) => message.externalId && !existingIds.has(String(message.externalId)))
@@ -73,6 +73,52 @@ async function persistExternalPosts({ integration, messages }) {
   if (!creations.length) return { created: 0 };
   await Post.insertMany(creations);
   return { created: creations.length };
+}
+
+function dedupeBatchByExternalId(messages = []) {
+  const seen = new Set();
+  return messages.filter((message) => {
+    const externalId = message?.externalId ? String(message.externalId) : '';
+    if (!externalId) return false;
+    if (seen.has(externalId)) return false;
+    seen.add(externalId);
+    return true;
+  });
+}
+
+async function filterAlreadySeenMessages({ integration, messages }) {
+  if (!integration || !messages?.length) return [];
+
+  const candidateMessages = dedupeBatchByExternalId(messages);
+  if (!candidateMessages.length) return [];
+
+  const bufferedIds = new Set(
+    (integration.config?.messageBuffer || [])
+      .map((entry) => String(entry?.messageId || '').trim())
+      .filter(Boolean),
+  );
+  const unseenFromBuffer = candidateMessages.filter(
+    (message) => !bufferedIds.has(String(message.externalId)),
+  );
+  if (!unseenFromBuffer.length) return [];
+
+  const externalIds = unseenFromBuffer.map((message) => String(message.externalId));
+  const existingPosts = await Post.find({
+    podId: integration.podId,
+    'source.provider': integration.type,
+    'source.externalId': { $in: externalIds },
+  })
+    .select('source.externalId')
+    .lean();
+  const existingPostIds = new Set(
+    existingPosts
+      .map((post) => String(post?.source?.externalId || '').trim())
+      .filter(Boolean),
+  );
+
+  return unseenFromBuffer.filter(
+    (message) => !existingPostIds.has(String(message.externalId)),
+  );
 }
 
 async function appendIntegrationBuffer(integrationId, messages, maxBufferSize = 1000) {
@@ -111,7 +157,10 @@ async function syncExternalFeeds() {
       const sinceTimestamp = integration.config?.lastExternalTimestamp;
       const syncResult = await provider.syncRecent({ sinceId, sinceTimestamp });
 
-      const messages = syncResult.messages || [];
+      const messages = await filterAlreadySeenMessages({
+        integration,
+        messages: syncResult.messages || [],
+      });
       if (!messages.length) {
         return {
           integrationId: integration._id,
@@ -151,6 +200,27 @@ async function syncExternalFeeds() {
       }
       if (syncResult.meta?.username) {
         updateSet['config.username'] = syncResult.meta.username;
+      }
+      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedAccessToken) {
+        updateSet['config.accessToken'] = syncResult.meta.refreshedAccessToken;
+      }
+      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedRefreshToken) {
+        updateSet['config.refreshToken'] = syncResult.meta.refreshedRefreshToken;
+      }
+      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedTokenType) {
+        updateSet['config.tokenType'] = syncResult.meta.refreshedTokenType;
+      }
+      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedScope) {
+        updateSet['config.oauthScopes'] = String(syncResult.meta.refreshedScope)
+          .split(/\s+/)
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+      }
+      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedExpiresIn) {
+        const seconds = Number(syncResult.meta.refreshedExpiresIn);
+        if (Number.isFinite(seconds) && seconds > 0) {
+          updateSet['config.tokenExpiresAt'] = new Date(Date.now() + (seconds * 1000));
+        }
       }
 
       await Integration.findByIdAndUpdate(integration._id, { $set: updateSet });

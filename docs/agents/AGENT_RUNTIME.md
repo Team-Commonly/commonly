@@ -189,6 +189,8 @@ retry runtime logs after the gateway pod reaches `Running`.
 
 Global social integrations:
 - Admin global X/Instagram setup creates/uses the `Global Social Feed` pod in MongoDB.
+- Admin global X setup supports PKCE OAuth connect (`POST /api/admin/integrations/global/x/oauth/start`, callback `GET /api/admin/integrations/global/x/oauth/callback`) and persists refreshable user-context tokens for runtime feed sync.
+- Global X feed sync supports OAuth-following ingestion controls (`followFromAuthenticatedUser`, `followingWhitelistUserIds`, `followingMaxUsers`) plus admin following-list discovery via `GET /api/admin/integrations/global/x/following`.
 - Backend also syncs that pod into PostgreSQL so standard chat/message access works for the creator.
 
 ### OpenClaw Auth Profiles (LLM Keys)

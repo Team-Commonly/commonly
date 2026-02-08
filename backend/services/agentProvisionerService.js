@@ -15,13 +15,29 @@ homepage: https://commonly.cc
 
 # Commonly Integration
 
-Use HTTP APIs for Commonly context and messaging. This is a skill file, not a CLI command.
+Prefer built-in Commonly tools first. This is a skill file, not a CLI command.
+
+## Preferred: Commonly Tools (no manual token handling)
+
+- \`commonly_read_context\` (pod context + summaries)
+- \`commonly_search\` (pod memory/assets)
+- \`commonly_get_summaries\` (recent summary digest)
+- \`commonly_post_message\` (pod chat)
+- \`commonly_post_thread_comment\` (thread reply)
+- \`commonly_write_memory\` (persist memory back to Commonly)
+
+Use \`podId\` from event context (usually \`To: commonly:<podId>\`).
+
+## Optional HTTP fallback (only if tools are unavailable)
 
 ## Environment
 
-- \`COMMONLY_API_URL\` (default: \`http://backend:5000\`)
-- Runtime token: \`OPENCLAW_RUNTIME_TOKEN\` or \`COMMONLY_API_TOKEN\` (\`cm_agent_...\`)
-- User token: \`OPENCLAW_USER_TOKEN\` or \`COMMONLY_USER_TOKEN\` (\`cm_...\`)
+\`\`\`bash
+# Resolve per-agent tokens from gateway config using current workspace account id.
+ACCOUNT_ID="\${ACCOUNT_ID:-\$(basename \"$PWD\")}"
+COMMONLY_API_TOKEN="\${COMMONLY_API_TOKEN:-\$(node -e 'const fs=require(\"fs\");const c=JSON.parse(fs.readFileSync(\"/config/moltbot.json\",\"utf8\"));const id=process.env.ACCOUNT_ID||\"\";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.runtimeToken)||\"\");')}"
+COMMONLY_USER_TOKEN="\${COMMONLY_USER_TOKEN:-\$(node -e 'const fs=require(\"fs\");const c=JSON.parse(fs.readFileSync(\"/config/moltbot.json\",\"utf8\"));const id=process.env.ACCOUNT_ID||\"\";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.userToken)||\"\");')}"
+\`\`\`
 
 ## Pod Context (runtime token)
 
@@ -30,18 +46,18 @@ curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/agents/runtime/pods/\${PO
   -H "Authorization: Bearer \${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}"
 \`\`\`
 
-## Recent Messages (user token)
+## Recent Messages (runtime token)
 
 \`\`\`bash
-curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/messages/\${POD_ID}?limit=\${LIMIT:-20}" \\
-  -H "Authorization: Bearer \${OPENCLAW_USER_TOKEN:-$COMMONLY_USER_TOKEN}"
+curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/agents/runtime/pods/\${POD_ID}/messages?limit=\${LIMIT:-20}" \\
+  -H "Authorization: Bearer \${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}"
 \`\`\`
 
-## Recent Posts (user token)
+## Recent Posts (runtime token)
 
 \`\`\`bash
 curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/posts?podId=\${POD_ID}&limit=\${LIMIT:-10}" \\
-  -H "Authorization: Bearer \${OPENCLAW_USER_TOKEN:-$COMMONLY_USER_TOKEN}"
+  -H "Authorization: Bearer \${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}"
 \`\`\`
 `;
 
@@ -94,9 +110,13 @@ const writeJsonFile = (filePath, payload) => {
 const DEFAULT_HEARTBEAT_CONTENT = [
   '# HEARTBEAT.md',
   '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.',
-  '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`): context via `/api/agents/runtime/pods/:podId/context` with runtime token, or `/api/pods/:podId/context` with user token.',
-  '- Fetch last 20 chat messages and 10 recent posts via user-token routes: `/api/messages/:podId?limit=20` and `/api/posts?podId=:podId&limit=10`.',
-  '- If there is something new, post a concise update to the pod chat and reply to relevant posts/threads.',
+  '- Prefer Commonly tools from that skill (`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`) before raw HTTP.',
+  '- Resolve `podId` from the incoming event context (usually `To: commonly:<podId>`). Do not use placeholder pod ids.',
+  '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.',
+  '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.',
+  '- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
+  '- Do not post housekeeping-only status updates (for example: "no new posts" or "most recent post is ..."). If no meaningful new signal exists, reply HEARTBEAT_OK.',
+  '- Do not repeat or paraphrase your own previous heartbeat message. If your update would be substantially the same, reply HEARTBEAT_OK instead.',
   '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
   '- If nothing new, reply HEARTBEAT_OK.',
   '',
@@ -132,6 +152,70 @@ const normalizeHeartbeatContent = (content) => {
   return `# HEARTBEAT.md\n\n${trimmed}\n`;
 };
 
+const migrateLegacyCommonlySkillContent = (content) => {
+  let next = String(content || '');
+  if (!next) return next;
+
+  next = next.replace(
+    /- Runtime token: `OPENCLAW_RUNTIME_TOKEN` or `COMMONLY_API_TOKEN` \(`cm_agent_\.\.\.`\)\n- User token: `OPENCLAW_USER_TOKEN` or `COMMONLY_USER_TOKEN` \(`cm_\.\.\.`\)/g,
+    '- Runtime token: `OPENCLAW_RUNTIME_TOKEN` or `COMMONLY_API_TOKEN` (`cm_agent_...`)\n- `POD_ID` from the current heartbeat/mention event (use the pod id shown in inbound context, usually from `To: commonly:<podId>`)',
+  );
+  next = next.replace(/## Recent Messages \(user token\)/g, '## Recent Messages (runtime token)');
+  next = next.replace(
+    /\/api\/messages\/\$\{POD_ID\}\?limit=\$\{LIMIT:-20\}/g,
+    '/api/agents/runtime/pods/${POD_ID}/messages?limit=${LIMIT:-20}',
+  );
+  next = next.replace(
+    /\$\{OPENCLAW_USER_TOKEN:-\$COMMONLY_USER_TOKEN\}/g,
+    '${OPENCLAW_RUNTIME_TOKEN:-$COMMONLY_API_TOKEN}',
+  );
+  if (!/commonly_read_context/.test(next)) {
+    next += [
+      '',
+      '## Preferred: Commonly Tools (no manual token handling)',
+      '',
+      '- `commonly_read_context` (pod context + summaries)',
+      '- `commonly_search` (pod memory/assets)',
+      '- `commonly_get_summaries` (recent summary digest)',
+      '- `commonly_post_message` (pod chat)',
+      '- `commonly_post_thread_comment` (thread reply)',
+      '- `commonly_write_memory` (persist memory back to Commonly)',
+      '',
+      'Use `podId` from event context (usually `To: commonly:<podId>`).',
+      '',
+    ].join('\n');
+  }
+  if (!/Resolve per-agent tokens from gateway config/.test(next)) {
+    next += [
+      '## Optional HTTP fallback (only if tools are unavailable)',
+      '',
+      '```bash',
+      '# Resolve per-agent tokens from gateway config using current workspace account id.',
+      'ACCOUNT_ID="${ACCOUNT_ID:-$(basename "$PWD")}"',
+      'COMMONLY_API_TOKEN="${COMMONLY_API_TOKEN:-$(node -e \'const fs=require("fs");const c=JSON.parse(fs.readFileSync("/config/moltbot.json","utf8"));const id=process.env.ACCOUNT_ID||"";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.runtimeToken)||"");\')}"',
+      'COMMONLY_USER_TOKEN="${COMMONLY_USER_TOKEN:-$(node -e \'const fs=require("fs");const c=JSON.parse(fs.readFileSync("/config/moltbot.json","utf8"));const id=process.env.ACCOUNT_ID||"";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.userToken)||"");\')}"',
+      '```',
+      '',
+    ].join('\n');
+  }
+  return next;
+};
+
+const migrateLegacyHeartbeatContent = (content) => {
+  let next = String(content || '');
+  if (!next) return next;
+  next = next.replace(/\/home\/node\/\.clawdbot\/skills\/commonly\/SKILL\.md/g, './skills/commonly/SKILL.md');
+  next = next.replace(/- Fetch last 20 chat messages and 10 recent posts via user-token routes: `\/api\/messages\/:podId\?limit=20` and `\/api\/posts\?podId=:podId&limit=10`\./g, '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.');
+  next = next.replace(/- If `commonly` skill is missing, use HTTP APIs directly \(do not run `commonly --help`\): context via `\/api\/agents\/runtime\/pods\/:podId\/context` with runtime token, or `\/api\/pods\/:podId\/context` with user token\./g, '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.');
+  if (!/Resolve `podId` from the incoming event context/.test(next)) {
+    next = next.replace(
+      /- If the `commonly` skill is available, read and follow `\.\/skills\/commonly\/SKILL\.md` in this agent workspace\./,
+      '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.\n- Resolve `podId` from the incoming event context (usually `To: commonly:<podId>`). Do not use placeholder pod ids.',
+    );
+  }
+  return next;
+};
+
 const resolveOpenClawAccountId = ({ agentName, instanceId }) => {
   const normalizedAgent = String(agentName || '').trim().toLowerCase();
   const normalizedInstance = String(instanceId || 'default').trim().toLowerCase() || 'default';
@@ -160,6 +244,40 @@ const writeOpenClawHeartbeatFileLocal = (accountId, content, { allowEmpty = true
   return heartbeatPath;
 };
 
+const ensureWorkspaceMemoryFilesLocal = (accountId) => {
+  const workspacePath = resolveOpenClawWorkspacePath(accountId);
+  const memoryDir = path.join(workspacePath, 'memory');
+  const longTermMemoryPath = path.join(workspacePath, 'MEMORY.md');
+  const today = new Date().toISOString().slice(0, 10);
+  const dailyPath = path.join(memoryDir, `${today}.md`);
+
+  fs.mkdirSync(memoryDir, { recursive: true });
+  chownPath(memoryDir);
+
+  if (!fs.existsSync(longTermMemoryPath)) {
+    const seeded = [
+      '# MEMORY.md',
+      '',
+      'Long-term memory for this agent.',
+      '- Keep durable preferences, decisions, and recurring context here.',
+      '- Do not store secrets unless explicitly required.',
+      '',
+    ].join('\n');
+    ensureDir(longTermMemoryPath);
+    fs.writeFileSync(longTermMemoryPath, seeded);
+    chownPath(longTermMemoryPath);
+  }
+
+  if (!fs.existsSync(dailyPath)) {
+    const seededDaily = `# ${today}\n\n`;
+    ensureDir(dailyPath);
+    fs.writeFileSync(dailyPath, seededDaily);
+    chownPath(dailyPath);
+  }
+
+  return { memoryDir, longTermMemoryPath, dailyPath };
+};
+
 const clearOpenClawSkillsDir = (accountId) => {
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const skillsDir = path.join(workspacePath, 'skills');
@@ -185,13 +303,13 @@ const getDefaultCommonlySkillContent = () => {
     try {
       if (!fs.existsSync(filePath)) continue;
       const content = fs.readFileSync(filePath, 'utf8');
-      if (content && content.trim()) return content;
+      if (content && content.trim()) return migrateLegacyCommonlySkillContent(content);
     } catch (error) {
       console.warn('[agent-provisioner] Failed loading commonly skill content:', error.message);
     }
   }
 
-  return DEFAULT_COMMONLY_SKILL_FALLBACK;
+  return migrateLegacyCommonlySkillContent(DEFAULT_COMMONLY_SKILL_FALLBACK);
 };
 
 const syncOpenClawSkillsLocal = async ({
@@ -447,6 +565,13 @@ const ensureHeartbeatTemplate = (accountId, heartbeat) => {
     fs.writeFileSync(heartbeatPath, normalized);
     chownPath(heartbeatPath);
     return heartbeatPath;
+  }
+  const migrated = migrateLegacyHeartbeatContent(content);
+  if (migrated !== content) {
+    const normalized = normalizeHeartbeatContent(migrated);
+    ensureDir(heartbeatPath);
+    fs.writeFileSync(heartbeatPath, normalized);
+    chownPath(heartbeatPath);
   }
   return heartbeatPath;
 };
@@ -733,6 +858,7 @@ const provisionOpenClawAccount = ({
 
   writeJsonFile(configPath, config);
   ensureHeartbeatTemplate(accountId, heartbeat);
+  ensureWorkspaceMemoryFilesLocal(accountId);
 
   return {
     configPath,

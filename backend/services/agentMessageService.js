@@ -13,6 +13,76 @@ try {
 }
 
 class AgentMessageService {
+  static logMessageLifecycle(action, details = {}) {
+    const parts = [
+      `[agent-message] ${action}`,
+      `agent=${details.agentName || 'unknown'}`,
+      `instance=${details.instanceId || 'default'}`,
+      `pod=${details.podId || 'n/a'}`,
+      `sourceEventType=${details.sourceEventType || 'n/a'}`,
+      `sourceEventId=${details.sourceEventId || 'n/a'}`,
+    ];
+    if (details.messageId) parts.push(`messageId=${details.messageId}`);
+    if (details.reason) parts.push(`reason=${details.reason}`);
+    if (details.dedupeWindowMinutes) parts.push(`dedupeWindowMinutes=${details.dedupeWindowMinutes}`);
+    console.log(parts.join(' '));
+  }
+
+  static normalizeForDedupe(content) {
+    return String(content || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  static resolveDedupeWindowMinutes(metadata = {}) {
+    const sourceEventType = String(
+      metadata?.sourceEventType || metadata?.eventType || '',
+    ).toLowerCase();
+    if (sourceEventType === 'heartbeat') {
+      const parsed = Number.parseInt(process.env.AGENT_HEARTBEAT_MESSAGE_DEDUPE_MINUTES, 10);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      return 180;
+    }
+    const parsed = Number.parseInt(process.env.AGENT_MESSAGE_DEDUPE_WINDOW_MINUTES, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return 30;
+  }
+
+  static async findRecentDuplicate({
+    podId,
+    userId,
+    content,
+    metadata = {},
+  }) {
+    const dedupeWindowMinutes = AgentMessageService.resolveDedupeWindowMinutes(metadata);
+    if (!dedupeWindowMinutes || dedupeWindowMinutes <= 0) return null;
+
+    const target = AgentMessageService.normalizeForDedupe(content);
+    if (!target) return null;
+
+    const recent = await AgentMessageService.getRecentMessages(podId, 60);
+    const cutoff = Date.now() - (dedupeWindowMinutes * 60 * 1000);
+    const userIdString = String(userId || '');
+
+    const hit = recent
+      .slice()
+      .reverse()
+      .find((message) => {
+        const messageUserId = String(message?.userId?._id || message?.user_id || '');
+        if (!messageUserId || messageUserId !== userIdString) return false;
+        const createdAt = new Date(message?.createdAt || 0).valueOf();
+        if (!Number.isFinite(createdAt) || createdAt < cutoff) return false;
+        return AgentMessageService.normalizeForDedupe(message?.content || '') === target;
+      });
+
+    if (!hit) return null;
+    return {
+      id: hit.id || hit._id || null,
+      createdAt: hit.createdAt || null,
+      dedupeWindowMinutes,
+    };
+  }
+
   static extractStructuredSummary(content, metadata = {}) {
     const result = {
       summaryType: metadata?.summaryType || null,
@@ -132,6 +202,30 @@ class AgentMessageService {
       throw new Error('Pod not found');
     }
 
+    const duplicate = await AgentMessageService.findRecentDuplicate({
+      podId,
+      userId: agentUser._id,
+      content: sanitizedContent,
+      metadata,
+    });
+    if (duplicate) {
+      AgentMessageService.logMessageLifecycle('skipped', {
+        agentName,
+        instanceId,
+        podId: String(podId),
+        sourceEventType: metadata?.sourceEventType || metadata?.eventType,
+        sourceEventId: metadata?.sourceEventId || metadata?.eventId,
+        reason: 'duplicate_recent',
+        dedupeWindowMinutes: duplicate.dedupeWindowMinutes,
+      });
+      return {
+        success: true,
+        skipped: true,
+        reason: 'duplicate_recent',
+        duplicate,
+      };
+    }
+
     let message;
 
     if (PGMessage && process.env.PG_HOST) {
@@ -177,6 +271,15 @@ class AgentMessageService {
       await mongoMessage.populate('userId', 'username profilePicture');
       message = mongoMessage;
     }
+
+    AgentMessageService.logMessageLifecycle('posted', {
+      agentName,
+      instanceId,
+      podId: String(podId),
+      sourceEventType: metadata?.sourceEventType || metadata?.eventType,
+      sourceEventId: metadata?.sourceEventId || metadata?.eventId,
+      messageId: message?._id || message?.id || null,
+    });
 
     let persistedSummary = null;
     try {

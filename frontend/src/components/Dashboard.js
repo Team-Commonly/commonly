@@ -184,16 +184,29 @@ const Dashboard = () => {
                 </ListItem>
 
                 {currentUser?.role === 'admin' && (
-                    <ListItem
-                        button
-                        onClick={() => handleNavigation('/admin/integrations/global')}
-                        selected={location.pathname === '/admin/integrations/global'}
-                    >
-                        <ListItemIcon>
-                            <AdminIcon />
-                        </ListItemIcon>
-                        <ListItemText primary="Global Integrations" />
-                    </ListItem>
+                    <>
+                        <ListItem
+                            button
+                            onClick={() => handleNavigation('/admin/integrations/global')}
+                            selected={location.pathname === '/admin/integrations/global'}
+                        >
+                            <ListItemIcon>
+                                <AdminIcon />
+                            </ListItemIcon>
+                            <ListItemText primary="Global Integrations" />
+                        </ListItem>
+
+                        <ListItem
+                            button
+                            onClick={() => handleNavigation('/admin/agents/events')}
+                            selected={location.pathname === '/admin/agents/events'}
+                        >
+                            <ListItemIcon>
+                                <AdminIcon />
+                            </ListItemIcon>
+                            <ListItemText primary="Agent Events Debug" />
+                        </ListItem>
+                    </>
                 )}
 
                 <Divider sx={{ my: 2 }} />
