@@ -199,6 +199,8 @@ const buildAgentUsername = (agentName, instanceId) => {
     return `${normalized}-${instance}`;
 };
 
+const normalizeIdentityKey = (value) => String(value || '').trim().toLowerCase();
+
 const ChatRoom = () => {
     const { currentUser } = useAuth();
     const { socket, connected, pgAvailable, joinPod, leavePod, sendMessage } = useSocket();
@@ -313,6 +315,13 @@ const ChatRoom = () => {
         const displayMap = new Map();
         const mentionMap = new Map();
         const avatarMap = new Map();
+        const register = (key, display, mention, avatar) => {
+            const normalizedKey = normalizeIdentityKey(key);
+            if (!normalizedKey) return;
+            if (display) displayMap.set(normalizedKey, display);
+            if (mention) mentionMap.set(normalizedKey, mention);
+            if (avatar) avatarMap.set(normalizedKey, avatar);
+        };
         (podAgents || []).forEach((agent) => {
             const username = buildAgentUsername(agent.name, agent.instanceId);
             const display = agent.profile?.displayName || agent.displayName || agent.name;
@@ -328,21 +337,13 @@ const ChatRoom = () => {
             const mentionValue = instanceId !== 'default'
                 ? instanceId
                 : (displaySlug || agent.name);
-            if (username) {
-                displayMap.set(username, display);
-                mentionMap.set(username, mentionValue);
-                avatarMap.set(username, avatar);
-            }
-            // Also map by instanceId and displaySlug for better resolution
+            register(username, display, mentionValue, avatar);
+            register(agent.name, display, mentionValue, avatar);
+            register(display, display, mentionValue, avatar);
+            register(displaySlug, display, mentionValue, avatar);
             if (instanceId && instanceId !== 'default') {
-                displayMap.set(instanceId, display);
-                displayMap.set(`${agent.name}-${instanceId}`, display);
-                avatarMap.set(instanceId, avatar);
-                avatarMap.set(`${agent.name}-${instanceId}`, avatar);
-            }
-            if (displaySlug && displaySlug !== agent.name) {
-                displayMap.set(displaySlug, display);
-                avatarMap.set(displaySlug, avatar);
+                register(instanceId, display, mentionValue, avatar);
+                register(`${agent.name}-${instanceId}`, display, mentionValue, avatar);
             }
         });
         return { agentDisplayMap: displayMap, agentMentionMap: mentionMap, agentAvatarMap: avatarMap };
@@ -357,9 +358,10 @@ const ChatRoom = () => {
             const key = member.username.toLowerCase();
             if (seen.has(key)) return;
             seen.add(key);
-            const memberIsAgent = agentDisplayMap.has(member.username) || isAgentUsername(member.username);
-            const agentLabel = memberIsAgent ? (agentDisplayMap.get(member.username) || member.username) : member.username;
-            const mentionValue = memberIsAgent ? (agentMentionMap.get(member.username) || member.username) : member.username;
+            const normalizedMemberKey = normalizeIdentityKey(member.username);
+            const memberIsAgent = agentDisplayMap.has(normalizedMemberKey) || isAgentUsername(member.username);
+            const agentLabel = memberIsAgent ? (agentDisplayMap.get(normalizedMemberKey) || member.username) : member.username;
+            const mentionValue = memberIsAgent ? (agentMentionMap.get(normalizedMemberKey) || member.username) : member.username;
             const labelSearch = memberIsAgent
                 ? `${agentLabel} ${mentionValue} ${member.username}`.toLowerCase()
                 : key;
@@ -399,7 +401,7 @@ const ChatRoom = () => {
                 label: display,
                 labelLower: labelSearch,
                 subtitle: `Agent • @${mentionValue}`,
-                avatar: agent?.profile?.iconUrl || agent?.profile?.avatarUrl || '',
+                avatar: agent?.profile?.iconUrl || agent?.profile?.avatarUrl || agent?.iconUrl || '',
                 isAgent: true,
                 value: mentionValue,
             });
@@ -2079,24 +2081,26 @@ const ChatRoom = () => {
                             </Alert>
                         )}
                         {room?.members?.map(member => {
-                            const memberIsAgent = agentDisplayMap.has(member.username) || isAgentUsername(member.username);
+                            const normalizedMemberKey = normalizeIdentityKey(member.username);
+                            const memberIsAgent = agentDisplayMap.has(normalizedMemberKey) || isAgentUsername(member.username);
                             const isOnline = onlineMemberIds.includes(member._id)
                                 || member._id === currentUser?._id;
                             const isCreator = member._id === room?.createdBy?._id;
                             const canRemove = isPodAdmin && !memberIsAgent && !isCreator && member._id !== currentUser?._id;
-                            const agentDisplayName = memberIsAgent ? (agentDisplayMap.get(member.username) || member.username) : member.username;
+                            const agentDisplayName = memberIsAgent ? (agentDisplayMap.get(normalizedMemberKey) || member.username) : member.username;
                             return (
                                 <div key={member._id} className="sidebar-member">
                                     {memberIsAgent ? (
                                         <AgentAvatar
                                             username={member.username}
-                                            src={member.profilePicture}
+                                            src={getAvatarSrc(member.profilePicture)}
                                             size={32}
                                             showBadge={true}
                                         />
                                     ) : (
                                         <Avatar
                                             className="sidebar-member-avatar"
+                                            src={getAvatarSrc(member.profilePicture)}
                                             sx={{ bgcolor: getAvatarColor(member.profilePicture || 'default'), width: 32, height: 32 }}
                                         >
                                             {member.username?.charAt(0).toUpperCase()}
@@ -3328,13 +3332,14 @@ const ChatRoom = () => {
                                             (msg.userId && typeof msg.userId === 'object' && msg.userId.username) ||
                                             msg.username || 
                                             'Unknown User';
-                                        const mappedDisplayName = agentDisplayMap.get(username);
+                                        const normalizedUsername = normalizeIdentityKey(username);
+                                        const mappedDisplayName = agentDisplayMap.get(normalizedUsername);
                                         const isAgentMessage = Boolean(mappedDisplayName) || isAgentUsername(username);
                                         const displayName = mappedDisplayName || username;
                                         
                                         // Get profile picture with multiple fallbacks
                                         const profilePicture = 
-                                            agentAvatarMap.get(username) ||
+                                            agentAvatarMap.get(normalizedUsername) ||
                                             (msg.userId && typeof msg.userId === 'object' && msg.userId.profilePicture) ||
                                             msg.profile_picture || 
                                             msg.profilePicture ||  // Handle camelCase from socket messages
