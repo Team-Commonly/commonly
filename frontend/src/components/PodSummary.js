@@ -65,11 +65,7 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
         e.stopPropagation();
         
         if (!showSummary) {
-            if (!summary) {
-                await refreshSummary();
-            } else {
-                setShowSummary(true);
-            }
+            await refreshSummary();
         } else {
             setShowSummary(false);
         }
