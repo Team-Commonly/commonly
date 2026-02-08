@@ -24,6 +24,7 @@ jest.mock('../../../config/socket', () => ({
 describe('AgentMessageService summary persistence', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue([]);
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue({
       _id: 'agent-user-1',
       username: 'commonly-bot',
@@ -42,6 +43,12 @@ describe('AgentMessageService summary persistence', () => {
         populate: jest.fn().mockResolvedValue(this),
       };
     });
+  });
+
+  afterEach(() => {
+    if (AgentMessageService.getRecentMessages.mockRestore) {
+      AgentMessageService.getRecentMessages.mockRestore();
+    }
   });
 
   it('persists summary from BOT_MESSAGE content', async () => {
@@ -76,5 +83,30 @@ describe('AgentMessageService summary persistence', () => {
 
     expect(Summary.create).not.toHaveBeenCalled();
     expect(result.summary).toEqual({ id: 'sum-existing', type: 'chats' });
+  });
+
+  it('skips duplicate recent heartbeat-style messages from the same agent', async () => {
+    jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue([
+      {
+        id: 'msg-existing',
+        content: 'Same heartbeat update text',
+        createdAt: new Date(Date.now() - 60 * 1000).toISOString(),
+        userId: { _id: 'agent-user-1' },
+      },
+    ]);
+
+    const result = await AgentMessageService.postMessage({
+      agentName: 'socialpulse',
+      instanceId: 'default',
+      podId: 'pod-1',
+      content: 'Same heartbeat update text',
+      metadata: { sourceEventType: 'heartbeat' },
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe('duplicate_recent');
+    expect(Message).not.toHaveBeenCalled();
+
+    AgentMessageService.getRecentMessages.mockRestore();
   });
 });

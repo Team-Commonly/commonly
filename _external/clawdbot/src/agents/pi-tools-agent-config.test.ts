@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import "./test-helpers/fast-coding-tools.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { SandboxDockerConfig } from "./sandbox.js";
-import { createOpenClawCodingTools } from "./pi-tools.js";
+import { __testing, createOpenClawCodingTools } from "./pi-tools.js";
 
 describe("Agent-specific tool filtering", () => {
   it("should apply global tool policy when no agent-specific policy exists", () => {
@@ -518,5 +518,58 @@ describe("Agent-specific tool filtering", () => {
     });
 
     expect(result?.details.status).toBe("completed");
+  });
+
+  it("resolves per-account Commonly env for exec fallback", () => {
+    const cfg: OpenClawConfig = {
+      channels: {
+        commonly: {
+          baseUrl: "http://backend:5000",
+          accounts: {
+            tom: {
+              runtimeToken: "cm_agent_tom",
+              userToken: "cm_tom",
+            },
+          },
+        },
+      },
+    };
+
+    const env = __testing.resolveCommonlyExecBaseEnv({
+      config: cfg,
+      messageProvider: "commonly",
+      accountId: "tom",
+    });
+
+    expect(env).toMatchObject({
+      OPENCLAW_RUNTIME_TOKEN: "cm_agent_tom",
+      COMMONLY_API_TOKEN: "cm_agent_tom",
+      OPENCLAW_USER_TOKEN: "cm_tom",
+      COMMONLY_USER_TOKEN: "cm_tom",
+      ACCOUNT_ID: "tom",
+      COMMONLY_API_URL: "http://backend:5000",
+      COMMONLY_BASE_URL: "http://backend:5000",
+    });
+  });
+
+  it("returns undefined Commonly exec env when channel is not commonly", () => {
+    const cfg: OpenClawConfig = {
+      channels: {
+        commonly: {
+          accounts: {
+            tom: {
+              runtimeToken: "cm_agent_tom",
+            },
+          },
+        },
+      },
+    };
+    expect(
+      __testing.resolveCommonlyExecBaseEnv({
+        config: cfg,
+        messageProvider: "discord",
+        accountId: "tom",
+      }),
+    ).toBeUndefined();
   });
 });

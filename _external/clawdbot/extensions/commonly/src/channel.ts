@@ -97,6 +97,19 @@ const formatEnsembleTurnBody = (event: CommonlyEvent): string => {
   return lines.join("\n");
 };
 
+export const resolveInboundBody = (event: CommonlyEvent): string => {
+  if (event.type === "ensemble.turn") {
+    return formatEnsembleTurnBody(event);
+  }
+  if (event.type === "heartbeat") {
+    return (
+      event.payload?.content?.trim() ||
+      "System heartbeat from Commonly scheduler. Check pod context and act only if useful."
+    );
+  }
+  return event.payload?.content?.trim() || "";
+};
+
 const sanitizeOutboundText = (text: string | undefined): string => {
   if (!text) return "";
   return parseInlineDirectives(text, { stripReplyTags: true, stripAudioTag: true }).text;
@@ -302,6 +315,11 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
         if (ctx.abortSignal.aborted) return;
         const podId = event.podId;
         if (!podId) return;
+        const eventId = event._id || "n/a";
+        const eventTrigger = event.payload?.trigger || "n/a";
+        ctx.log?.info?.(
+          `[${connectionKey}] event received id=${eventId} type=${event.type} pod=${podId} trigger=${eventTrigger}`,
+        );
 
         ctx.setStatus({
           accountId: connectionKey,
@@ -313,20 +331,23 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
           const summaryText = buildSummaryMessage(event.payload?.summary);
           if (summaryText) {
             await client.postMessage(podId, summaryText);
+            ctx.log?.info?.(
+              `[${connectionKey}] summary.request posted id=${eventId} pod=${podId} chars=${summaryText.length}`,
+            );
           }
           if (event._id) {
             await client.ackEvent(event._id);
+            ctx.log?.info?.(`[${connectionKey}] summary.request acked id=${eventId}`);
           }
           return;
         }
 
-        let rawContent = event.payload?.content?.trim() || "";
-        if (event.type === "ensemble.turn") {
-          rawContent = formatEnsembleTurnBody(event);
-        }
+        const rawContent = resolveInboundBody(event);
         if (!rawContent) {
+          ctx.log?.info?.(`[${connectionKey}] event skipped (empty body) id=${eventId} type=${event.type}`);
           if (event._id) {
             await client.ackEvent(event._id);
+            ctx.log?.info?.(`[${connectionKey}] empty-body acked id=${eventId}`);
           }
           return;
         }
@@ -400,11 +421,27 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
               const text = scrubNoReplyAndRepeats(sanitizeOutboundText(payload.text ?? ""));
               const mediaUrl = payload.mediaUrl;
               const message = [text.trim(), mediaUrl?.trim() || ""].filter(Boolean).join("\n");
-              if (!message) return;
+              if (!message) {
+                ctx.log?.info?.(
+                  `[${connectionKey}] outbound skipped (empty) id=${eventId} type=${event.type}`,
+                );
+                return;
+              }
               if (threadId) {
                 await client.postThreadComment(String(threadId), message);
+                ctx.log?.info?.(
+                  `[${connectionKey}] thread comment posted id=${eventId} pod=${podId} thread=${threadId} chars=${message.length}`,
+                );
               } else {
-                const posted = await client.postMessage(podId, message);
+                const posted = await client.postMessage(podId, message, {
+                  sourceEventType: event.type,
+                  sourceEventId: event._id,
+                  heartbeatTrigger: event.payload?.trigger,
+                });
+                ctx.log?.info?.(
+                  `[${connectionKey}] message posted id=${eventId} pod=${podId} chars=${message.length} `
+                  + `postedId=${String(posted?.id || "n/a")}`,
+                );
                 if (event.type === "ensemble.turn" && !ensembleResponseSent) {
                   const ensembleId = event.payload?.ensembleId;
                   if (ensembleId) {
@@ -414,6 +451,9 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
                       ensembleId,
                       message,
                       posted?.id ? String(posted.id) : undefined,
+                    );
+                    ctx.log?.info?.(
+                      `[${connectionKey}] ensemble response reported id=${eventId} ensemble=${ensembleId}`,
                     );
                   }
                 }
@@ -431,6 +471,7 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
 
         if (event._id) {
           await client.ackEvent(event._id);
+          ctx.log?.info?.(`[${connectionKey}] event acked id=${eventId} type=${event.type}`);
         }
       });
 
