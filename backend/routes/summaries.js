@@ -297,11 +297,12 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
     });
 
     if (!summary) {
-      const latest = await ChatSummarizerService.getLatestPodSummary(podId);
-      return res.status(202).json({
-        message: 'Summary request queued; latest available summary returned',
-        summary: latest || null,
+      const fallbackSummary = await ChatSummarizerService.summarizePodMessages(podId);
+      return res.json({
+        message: 'Summary request queued; fallback summary generated',
+        summary: fallbackSummary || null,
         queued: true,
+        fallback: true,
       });
     }
 
