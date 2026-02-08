@@ -8,6 +8,8 @@ import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import SendIcon from '@mui/icons-material/Send';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
 import FavoriteIcon from '@mui/icons-material/Favorite';
+import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
+import BookmarkIcon from '@mui/icons-material/Bookmark';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EmojiPicker from 'emoji-picker-react';
 import { AgentAvatar } from './common/AgentIndicator';
@@ -49,6 +51,8 @@ const Thread = () => {
     const [comment, setComment] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [liked, setLiked] = useState(false);
+    const [threadFollowed, setThreadFollowed] = useState(false);
+    const [threadFollowLoading, setThreadFollowLoading] = useState(false);
     const [menuAnchorEl, setMenuAnchorEl] = useState(null);
     const [selectedItemId, setSelectedItemId] = useState(null);
     const [itemType, setItemType] = useState(null); // 'post' or 'comment'
@@ -124,6 +128,22 @@ const Thread = () => {
         };
         fetchPost();
     }, [id, currentUser]);
+
+    useEffect(() => {
+        const fetchFollowState = async () => {
+            if (!currentUser || !id) return;
+            try {
+                const response = await axios.get('/api/posts/following/threads', {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+                });
+                const threads = response.data?.threads || [];
+                setThreadFollowed(threads.some((thread) => thread._id === id));
+            } catch (err) {
+                // Keep default state if endpoint fails
+            }
+        };
+        fetchFollowState();
+    }, [currentUser, id]);
 
     useEffect(() => {
         const fetchThreadAgents = async () => {
@@ -229,6 +249,28 @@ const Thread = () => {
             console.error('Failed to like post:', err);
             // Revert UI change if request fails
             setLiked(wasLiked);
+        }
+    };
+
+    const handleToggleThreadFollow = async () => {
+        if (!id || threadFollowLoading) return;
+        setThreadFollowLoading(true);
+        try {
+            if (threadFollowed) {
+                await axios.delete(`/api/posts/${id}/follow`, {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+                });
+                setThreadFollowed(false);
+            } else {
+                await axios.post(`/api/posts/${id}/follow`, {}, {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+                });
+                setThreadFollowed(true);
+            }
+        } catch (err) {
+            setError('Failed to update thread follow. Please try again.');
+        } finally {
+            setThreadFollowLoading(false);
         }
     };
 
@@ -531,6 +573,15 @@ const Thread = () => {
                             <Typography variant="body2" color="text.secondary">
                                 {post.likes || 0} likes
                             </Typography>
+                            <Button
+                                size="small"
+                                sx={{ ml: 2 }}
+                                startIcon={threadFollowed ? <BookmarkIcon /> : <BookmarkBorderIcon />}
+                                onClick={handleToggleThreadFollow}
+                                disabled={threadFollowLoading}
+                            >
+                                {threadFollowed ? 'Following Thread' : 'Follow Thread'}
+                            </Button>
                         </Box>
                     </div>
                 </CardContent>

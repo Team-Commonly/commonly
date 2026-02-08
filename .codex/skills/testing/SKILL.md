@@ -2,7 +2,7 @@
 
 name: testing
 description: Testing and code quality context for Jest, React Testing Library, ESLint, and test patterns. Use when writing tests or fixing linting issues.
-last_updated: 2026-02-04
+last_updated: 2026-02-08
 ---
 
 # Testing & Quality
@@ -217,9 +217,13 @@ module.exports = {
 };
 ```
 
-## Current Repo Notes (2026-02-04)
+## Current Repo Notes (2026-02-08)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.
+Social/activity route coverage now includes:
+- `backend/__tests__/unit/routes/users.social.test.js` (user follow/unfollow routes)
+- `backend/__tests__/unit/routes/activity.read.test.js` (unread count + mark-read routes)
+- `backend/__tests__/unit/routes/posts.test.js` extended for thread follow routes.

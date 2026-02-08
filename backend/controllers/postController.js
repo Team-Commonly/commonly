@@ -1,6 +1,7 @@
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const User = require('../models/User');
+const Activity = require('../models/Activity');
 const AgentMentionService = require('../services/agentMentionService');
 
 exports.createPost = async (req, res) => {
@@ -13,7 +14,7 @@ exports.createPost = async (req, res) => {
     source,
   } = req.body;
   try {
-    let resolvedPodId = podId || null;
+    const resolvedPodId = podId || null;
     if (resolvedPodId) {
       const pod = await Pod.findById(resolvedPodId).select('_id members').lean();
       const isMember = pod?.members?.some(
@@ -167,6 +168,8 @@ exports.addComment = async (req, res) => {
       return res.status(404).json({ error: 'Post not found' });
     }
 
+    const commentingUser = await User.findById(req.userId).select('_id username').lean();
+
     // Create the comment object
     const comment = {
       userId: req.userId,
@@ -205,7 +208,7 @@ exports.addComment = async (req, res) => {
 
       const mentionPodId = await resolveMentionPod();
       if (mentionPodId) {
-        let username = req.user?.username;
+        let username = req.user?.username || commentingUser?.username;
         if (!username) {
           const user = await User.findById(req.userId).select('username').lean();
           username = user?.username;
@@ -233,6 +236,39 @@ exports.addComment = async (req, res) => {
       }
     } catch (mentionError) {
       console.warn('Failed to enqueue thread mentions:', mentionError.message);
+    }
+
+    try {
+      const displayPodId = requestPodId || post.podId || null;
+      await Activity.create({
+        type: 'pod_event',
+        actor: {
+          id: req.userId,
+          name: commentingUser?.username || req.user?.username || 'User',
+          type: 'human',
+          verified: false,
+        },
+        action: 'thread_comment',
+        content: `New reply on thread: ${(post.content || '').slice(0, 120)}`,
+        podId: displayPodId || undefined,
+        sourceType: 'event',
+        sourceId: post._id.toString(),
+        visibility: 'pod',
+        target: {
+          title: `Thread reply by @${commentingUser?.username || 'user'}`,
+          description: text.slice(0, 180),
+          url: `/thread/${post._id}`,
+        },
+        involves: [
+          {
+            id: post.userId,
+            name: 'thread-owner',
+            type: 'human',
+          },
+        ],
+      });
+    } catch (activityError) {
+      console.warn('Failed to create thread comment activity:', activityError.message);
     }
 
     res.status(201).json(newComment);
@@ -331,5 +367,118 @@ exports.deleteComment = async (req, res) => {
     res.json({ message: 'Comment deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+exports.followThread = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id).select('_id content');
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const user = await User.findById(req.userId).select('_id username followedThreads');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const alreadyFollowing = (user.followedThreads || []).some(
+      (thread) => String(thread.postId) === String(post._id),
+    );
+
+    if (!alreadyFollowing) {
+      user.followedThreads = [
+        ...(user.followedThreads || []),
+        { postId: post._id, followedAt: new Date() },
+      ];
+      await user.save();
+    }
+
+    try {
+      await Activity.create({
+        type: 'pod_event',
+        actor: {
+          id: user._id,
+          name: user.username,
+          type: 'human',
+          verified: false,
+        },
+        action: 'thread_followed',
+        content: `${user.username} followed a thread`,
+        sourceType: 'event',
+        sourceId: post._id.toString(),
+        visibility: 'private',
+        target: {
+          title: 'Followed thread',
+          description: (post.content || '').slice(0, 180),
+          url: `/thread/${post._id}`,
+        },
+        involves: [{ id: user._id, name: user.username, type: 'human' }],
+      });
+    } catch (activityError) {
+      console.warn('Failed to create thread follow activity:', activityError.message);
+    }
+
+    return res.json({
+      success: true,
+      followed: true,
+      postId: post._id.toString(),
+      followedThreadsCount: user.followedThreads?.length || 0,
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+};
+
+exports.unfollowThread = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id).select('_id');
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const user = await User.findById(req.userId).select('_id followedThreads');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    user.followedThreads = (user.followedThreads || []).filter(
+      (thread) => String(thread.postId) !== String(post._id),
+    );
+    await user.save();
+
+    return res.json({
+      success: true,
+      followed: false,
+      postId: post._id.toString(),
+      followedThreadsCount: user.followedThreads?.length || 0,
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+};
+
+exports.getFollowedThreads = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select('followedThreads');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const followedThreads = user.followedThreads || [];
+    if (!followedThreads.length) {
+      return res.json({ threads: [] });
+    }
+
+    const postIds = followedThreads.map((thread) => thread.postId);
+    const followedAtMap = new Map(
+      followedThreads.map((thread) => [String(thread.postId), thread.followedAt || null]),
+    );
+
+    const posts = await Post.find({ _id: { $in: postIds } })
+      .populate('userId', 'username profilePicture')
+      .populate('comments.userId', 'username profilePicture')
+      .populate('podId', 'name type')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const normalized = posts.map((post) => ({
+      ...post,
+      followedAt: followedAtMap.get(String(post._id)) || null,
+    }));
+
+    return res.json({ threads: normalized });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 };

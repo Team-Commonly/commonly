@@ -1,0 +1,89 @@
+{{- if and .Values.agents.commonlyBot.enabled .Values.backend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: commonly-bot
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: commonly-bot
+    component: agent-runtime
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: commonly-bot
+      component: agent-runtime
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.labels" . | nindent 8 }}
+        app: commonly-bot
+        component: agent-runtime
+    spec:
+      serviceAccountName: {{ .Values.rbac.serviceAccount.name }}
+      {{- if .Values.agents.commonlyBot.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.agents.commonlyBot.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.agents.commonlyBot.tolerations }}
+      tolerations:
+        {{- toYaml .Values.agents.commonlyBot.tolerations | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: commonly-bot
+        image: "{{ .Values.agents.commonlyBot.image.repository }}:{{ .Values.agents.commonlyBot.image.tag }}"
+        imagePullPolicy: {{ .Values.agents.commonlyBot.image.pullPolicy }}
+        command: ["node", "/app/commonly-bot/index.js"]
+        env:
+        - name: NODE_ENV
+          value: {{ .Values.backend.env.nodeEnv | quote }}
+        - name: COMMONLY_BASE_URL
+          value: {{ .Values.backend.env.commonlyApiUrl | default (printf "http://backend.%s.svc.cluster.local:5000" (include "commonly.namespace" .)) | quote }}
+        - name: COMMONLY_AGENT_CONFIG_PATH
+          value: /app/config/runtime.json
+        - name: COMMONLY_AGENT_POLL_MS
+          value: {{ .Values.agents.commonlyBot.env.pollIntervalMs | quote }}
+        - name: LITELLM_BASE_URL
+          value: http://litellm:4000
+        - name: LITELLM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: litellm-master-key
+              optional: true
+        - name: COMMONLY_SOCIAL_REPHRASE_ENABLED
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: commonly-social-rephrase-enabled
+              optional: true
+        - name: COMMONLY_SOCIAL_POST_TO_FEED
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: commonly-social-post-to-feed
+              optional: true
+        - name: COMMONLY_SOCIAL_IMAGE_ENABLED
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: commonly-social-image-enabled
+              optional: true
+        - name: COMMONLY_SOCIAL_PUBLISH_EXTERNAL
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: commonly-social-publish-external
+              optional: true
+        resources:
+          {{- toYaml .Values.agents.commonlyBot.resources | nindent 10 }}
+        volumeMounts:
+        - name: commonly-bot-config
+          mountPath: /app/config
+          readOnly: true
+      volumes:
+      - name: commonly-bot-config
+        configMap:
+          name: commonly-bot-config
+{{- end }}

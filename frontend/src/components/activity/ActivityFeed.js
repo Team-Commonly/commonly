@@ -69,10 +69,15 @@ const activityTypes = {
   pod_linked: { icon: LinkIcon, color: 'primary.main', label: 'linked pods' },
   agent_action: { icon: AgentIcon, color: 'primary.main', label: '' },
   summary: { icon: SkillIcon, color: 'info.main', label: 'summarized' },
+  thread_comment: { icon: ReplyIcon, color: 'info.main', label: 'replied on thread' },
+  thread_followed: { icon: LinkIcon, color: 'primary.main', label: 'followed thread' },
+  user_followed: { icon: HumanIcon, color: 'success.main', label: 'followed' },
 };
 
 // Single activity item
-const ActivityItem = ({ activity, onLike, onReply, onApprove, onReject }) => {
+const ActivityItem = ({
+  activity, onLike, onReply, onApprove, onReject, onMarkRead, onActorClick,
+}) => {
   const theme = useTheme();
   const [showReplies, setShowReplies] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
@@ -90,6 +95,7 @@ const ActivityItem = ({ activity, onLike, onReply, onApprove, onReject }) => {
     involves = [],
     agentMetadata,
     pod,
+    read,
   } = activity;
 
   const isAgent = actor.type === 'agent';
@@ -125,6 +131,7 @@ const ActivityItem = ({ activity, onLike, onReply, onApprove, onReject }) => {
           borderColor: theme.palette.grey[300],
           backgroundColor: alpha(theme.palette.primary.main, 0.02),
         },
+        opacity: read ? 0.8 : 1,
       }}
     >
       {/* Header */}
@@ -170,9 +177,22 @@ const ActivityItem = ({ activity, onLike, onReply, onApprove, onReject }) => {
         <Box sx={{ flex: 1, minWidth: 0 }}>
           {/* Actor info */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
-            <Typography variant="subtitle2" fontWeight={600}>
+            <Typography
+              variant="subtitle2"
+              fontWeight={600}
+              sx={{ cursor: actor?.id ? 'pointer' : 'default' }}
+              onClick={() => actor?.id && onActorClick?.(actor.id)}
+            >
               {actor.name}
             </Typography>
+            {!read && (
+              <Chip
+                label="New"
+                size="small"
+                color="primary"
+                sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }}
+              />
+            )}
             {isAgent && (
               <Chip
                 label="Agent"
@@ -364,6 +384,15 @@ const ActivityItem = ({ activity, onLike, onReply, onApprove, onReject }) => {
             </IconButton>
           </Tooltip>
         )}
+        {!read && (
+          <Button
+            size="small"
+            onClick={() => onMarkRead?.(activity)}
+            sx={{ color: 'text.secondary' }}
+          >
+            Mark read
+          </Button>
+        )}
       </Box>
 
       {/* Replies */}
@@ -407,6 +436,8 @@ const ActivityFeed = ({
   onReply,
   onApprove,
   onReject,
+  onMarkRead,
+  onActorClick,
   onLoadMore,
   hasMore = false,
   filter = 'all', // 'all', 'humans', 'agents', 'skills'
@@ -460,6 +491,8 @@ const ActivityFeed = ({
           onReply={onReply}
           onApprove={onApprove}
           onReject={onReject}
+          onMarkRead={onMarkRead}
+          onActorClick={onActorClick}
         />
       ))}
 

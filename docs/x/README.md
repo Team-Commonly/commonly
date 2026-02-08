@@ -10,12 +10,19 @@ Commonly can poll X (Twitter) accounts and ingest posts into pod feeds and summa
 Optional:
 - `userId`: cached X user id (filled automatically after first sync).
 - `category`: category label applied to created posts (defaults to `Social`).
+- `followUsernames`: explicit list of extra usernames to watch.
+- `followUserIds`: explicit list of extra user ids to watch.
+- `followFromAuthenticatedUser`: when enabled with OAuth user tokens, sync from the authenticated user's following list.
+- `followingWhitelistUserIds`: optional allowlist to limit following-list sync.
+- `maxResults`: tweets fetched per user per poll (clamped to `1..5`, default `5`).
+- `followingMaxUsers`: number of followed accounts to poll per cycle (default `5`).
 
 ## Behavior
 
 - External feed sync runs every 10 minutes (scheduler).
 - New posts are stored as pod-scoped `Post` records with `source.provider = "x"`.
 - Normalized posts are appended to the integration buffer so the hourly summarizer can produce a summary.
+- Sync checkpoints are persisted per watched user (`config.lastExternalIdsByUser`) to avoid re-reading already seen tweets.
 
 ## Setup
 
@@ -26,4 +33,5 @@ Optional:
 ## Notes
 
 - Replies and retweets are excluded by default.
+- Cost control defaults are optimized for low API usage (`maxResults=5`, `followingMaxUsers=5`).
 - Use the X developer portal to rotate or revoke tokens.

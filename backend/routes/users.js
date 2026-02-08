@@ -6,6 +6,8 @@ const {
   getCurrentProfile,
   updateProfile,
   getUserById,
+  followUser,
+  unfollowUser,
 } = require('../controllers/userController');
 
 // @route   GET api/users/profile
@@ -22,5 +24,15 @@ router.put('/profile', auth, updateProfile);
 // @desc    Get user by ID
 // @access  Private
 router.get('/:id', auth, getUserById);
+
+// @route   POST api/users/:id/follow
+// @desc    Follow user by ID
+// @access  Private
+router.post('/:id/follow', auth, followUser);
+
+// @route   DELETE api/users/:id/follow
+// @desc    Unfollow user by ID
+// @access  Private
+router.delete('/:id/follow', auth, unfollowUser);
 
 module.exports = router;

@@ -8,6 +8,9 @@ const {
   likePost,
   deletePost,
   deleteComment,
+  followThread,
+  unfollowThread,
+  getFollowedThreads,
 } = require('../controllers/postController');
 const { _authenticate } = require('../middleware/authMiddleware');
 
@@ -31,6 +34,11 @@ router.get('/', getPosts);
 // @access  Public
 router.get('/search', searchPosts);
 
+// @route   GET api/posts/following/threads
+// @desc    Get current user's followed threads
+// @access  Private
+router.get('/following/threads', auth, getFollowedThreads);
+
 // @route   GET api/posts/:id
 // @desc    Get post by ID
 // @access  Public
@@ -40,6 +48,16 @@ router.get('/:id', getPostById);
 // @desc    Add comment to post
 // @access  Private
 router.post('/:id/comments', auth, addComment);
+
+// @route   POST api/posts/:id/follow
+// @desc    Follow a thread post
+// @access  Private
+router.post('/:id/follow', auth, followThread);
+
+// @route   DELETE api/posts/:id/follow
+// @desc    Unfollow a thread post
+// @access  Private
+router.delete('/:id/follow', auth, unfollowThread);
 
 // @route   POST api/posts/:id/like
 // @desc    Like a post

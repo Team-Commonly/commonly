@@ -8,20 +8,31 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(false);
     const [showSummary, setShowSummary] = useState(false);
+    const [summaryError, setSummaryError] = useState('');
+
+    const normalizeSummary = (payload) => {
+        if (!payload) return null;
+        if (payload.summary && typeof payload.summary === 'object') return payload.summary;
+        if (typeof payload === 'object' && (payload.content || payload._id)) return payload;
+        return null;
+    };
 
     const fetchSummary = async () => {
         try {
             setLoading(true);
+            setSummaryError('');
             const token = localStorage.getItem('token');
             const response = await axios.get(`/api/summaries/pod/${podId}`, {
                 headers: {
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'x-auth-token': token
                 }
             });
-            setSummary(response.data);
+            setSummary(normalizeSummary(response.data));
         } catch (error) {
             console.error('Error fetching pod summary:', error);
             setSummary(null);
+            setSummaryError(error?.response?.data?.error || 'Could not load summary');
         } finally {
             setLoading(false);
         }
@@ -30,16 +41,19 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
     const refreshSummary = async () => {
         try {
             setLoading(true);
+            setSummaryError('');
             const token = localStorage.getItem('token');
             const response = await axios.post(`/api/summaries/pod/${podId}/refresh`, {}, {
                 headers: {
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'x-auth-token': token
                 }
             });
-            setSummary(response.data.summary);
+            setSummary(normalizeSummary(response.data));
             setShowSummary(true);
         } catch (error) {
             console.error('Error refreshing pod summary:', error);
+            setSummaryError(error?.response?.data?.error || 'Could not refresh summary');
             await fetchSummary();
         } finally {
             setLoading(false);
@@ -110,13 +124,27 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
             <Box className="summary-content">
                 {showSummary ? (
                     summary ? (
-                        <Typography variant="body2" className="ai-summary-text">
-                            {summary.content}
-                        </Typography>
+                        <>
+                            <Typography variant="body2" className="ai-summary-text">
+                                {summary.content || 'No recent activity to summarize'}
+                            </Typography>
+                            {summaryError ? (
+                                <Typography variant="caption" color="error" className="no-activity">
+                                    {summaryError}
+                                </Typography>
+                            ) : null}
+                        </>
                     ) : (
-                        <Typography variant="body2" color="text.secondary" className="no-activity">
-                            No recent activity to summarize
-                        </Typography>
+                        <>
+                            <Typography variant="body2" color="text.secondary" className="no-activity">
+                                No recent activity to summarize
+                            </Typography>
+                            {summaryError ? (
+                                <Typography variant="caption" color="error" className="no-activity">
+                                    {summaryError}
+                                </Typography>
+                            ) : null}
+                        </>
                     )
                 ) : (
                     <Typography variant="body2" color="text.secondary" className="description-text">

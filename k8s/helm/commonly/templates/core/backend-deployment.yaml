@@ -99,12 +99,17 @@ spec:
             secretKeyRef:
               name: api-keys
               key: session-secret
+        {{- if .Values.backend.env.frontendUrl }}
+        - name: FRONTEND_URL
+          value: {{ .Values.backend.env.frontendUrl | quote }}
+        {{- else }}
         - name: FRONTEND_URL
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: FRONTEND_URL
               optional: true
+        {{- end }}
 
         # Email Configuration (SMTP2GO)
         - name: SMTP2GO_API_KEY

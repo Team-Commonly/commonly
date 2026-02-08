@@ -89,6 +89,30 @@ async function fetchXFollowing({
   return Array.isArray(response?.data?.data) ? response.data.data : [];
 }
 
+const compareTweetIds = (left, right) => {
+  const a = String(left || '').trim();
+  const b = String(right || '').trim();
+  if (!a && !b) return 0;
+  if (!a) return -1;
+  if (!b) return 1;
+  if (a.length !== b.length) return a.length - b.length;
+  if (a === b) return 0;
+  return a > b ? 1 : -1;
+};
+
+const pickNewestTweetId = (tweets = []) => {
+  if (!Array.isArray(tweets) || !tweets.length) return null;
+  let newest = null;
+  tweets.forEach((tweet) => {
+    const id = String(tweet?.id || '').trim();
+    if (!id) return;
+    if (!newest || compareTweetIds(id, newest) > 0) {
+      newest = id;
+    }
+  });
+  return newest;
+};
+
 async function refreshXAccessToken({ refreshToken }) {
   const {
     clientId,
@@ -176,6 +200,14 @@ function createXProvider(integration) {
     async syncRecent({ sinceId, sinceTimestamp } = {}) {
       let { accessToken } = config;
       let { refreshToken } = config;
+      const previousSinceByUser = (config.lastExternalIdsByUser && typeof config.lastExternalIdsByUser === 'object')
+        ? Object.entries(config.lastExternalIdsByUser).reduce((acc, [key, value]) => {
+          const normalizedKey = String(key || '').trim();
+          const normalizedValue = String(value || '').trim();
+          if (normalizedKey && normalizedValue) acc[normalizedKey] = normalizedValue;
+          return acc;
+        }, {})
+        : {};
       const parsedMaxResults = Number(config.maxResults);
       const effectiveMaxResults = Number.isFinite(parsedMaxResults)
         ? Math.min(Math.max(Math.trunc(parsedMaxResults), 1), 5)
@@ -261,6 +293,11 @@ function createXProvider(integration) {
       if (!uniqueUsers.length) {
         throw new Error('Missing X userId/username');
       }
+      const shouldUsePerUserSince = (
+        followUserIds.length > 0
+        || followUsernames.length > 0
+        || followFromAuthenticatedUser
+      );
 
       let tokenRefreshed = false;
       let refreshMeta = null;
@@ -268,12 +305,13 @@ function createXProvider(integration) {
       try {
         tweetsByUser = await Promise.all(
           uniqueUsers.map(async (user) => {
+            const userKey = String(user?.id || '').trim();
             const tweets = await fetchXTweets({
               apiBase,
               accessToken,
               userId: user.id,
-              sinceId: followUserIds.length || followUsernames.length || followFromAuthenticatedUser
-                ? undefined
+              sinceId: shouldUsePerUserSince
+                ? previousSinceByUser[userKey]
                 : sinceId,
               maxResults: effectiveMaxResults,
               exclude,
@@ -294,12 +332,13 @@ function createXProvider(integration) {
           };
           tweetsByUser = await Promise.all(
             uniqueUsers.map(async (user) => {
+              const userKey = String(user?.id || '').trim();
               const tweets = await fetchXTweets({
                 apiBase,
                 accessToken,
                 userId: user.id,
-                sinceId: followUserIds.length || followUsernames.length || followFromAuthenticatedUser
-                  ? undefined
+                sinceId: shouldUsePerUserSince
+                  ? previousSinceByUser[userKey]
                   : sinceId,
                 maxResults: effectiveMaxResults,
                 exclude,
@@ -324,6 +363,15 @@ function createXProvider(integration) {
           return ts > sinceDate;
         })
         .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      const lastExternalIdsByUser = { ...previousSinceByUser };
+      tweetsByUser.forEach(({ user, tweets }) => {
+        const userKey = String(user?.id || '').trim();
+        if (!userKey) return;
+        const newestId = pickNewestTweetId(tweets);
+        if (newestId) {
+          lastExternalIdsByUser[userKey] = newestId;
+        }
+      });
 
       return {
         success: true,
@@ -334,7 +382,9 @@ function createXProvider(integration) {
           userId: uniqueUsers[0]?.id,
           username: uniqueUsers[0]?.username || sanitizedUsername,
           watchedUsers: uniqueUsers.length,
+          watchedUserIds: uniqueUsers.map((user) => String(user?.id || '')).filter(Boolean),
           watchedViaFollowing: followFromAuthenticatedUser,
+          lastExternalIdsByUser,
           tokenRefreshed,
           refreshedAccessToken: tokenRefreshed ? accessToken : undefined,
           refreshedRefreshToken: tokenRefreshed ? refreshToken : undefined,

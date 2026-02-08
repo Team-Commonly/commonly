@@ -27,19 +27,34 @@ import {
   SmartToy as AgentsIcon,
   AutoAwesome as SkillsIcon,
   Refresh as RefreshIcon,
+  NotificationsActive as NotificationsIcon,
+  DynamicFeed as UpdatesIcon,
+  Bolt as ActionsIcon,
+  AlternateEmail as MentionsIcon,
+  Forum as ThreadsIcon,
+  Favorite as FollowingIcon,
+  Chat as PodsIcon,
 } from '@mui/icons-material';
 import ActivityFeed from './ActivityFeed';
 import axios from 'axios';
+import { useSocket } from '../../context/SocketContext';
+import { useAuth } from '../../context/AuthContext';
 
 const ActivityFeedPage = () => {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [mode, setMode] = useState('updates');
   const [filter, setFilter] = useState('all');
   const [hasMore, setHasMore] = useState(true);
   const [userPods, setUserPods] = useState([]);
+  const [quick, setQuick] = useState(null);
+  const [liveUpdates, setLiveUpdates] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [selectedPodId, setSelectedPodId] = useState('all');
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const { socket, connected } = useSocket();
+  const { currentUser } = useAuth();
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
@@ -63,7 +78,23 @@ const ActivityFeedPage = () => {
 
   useEffect(() => {
     fetchActivities();
-  }, [filter, selectedPodId]);
+  }, [mode, filter, selectedPodId]);
+
+  useEffect(() => {
+    fetchUnreadCount();
+  }, [mode, filter]);
+
+  const fetchUnreadCount = async () => {
+    try {
+      const response = await axios.get('/api/activity/unread-count', {
+        headers: getAuthHeaders(),
+        params: { mode, filter },
+      });
+      setUnreadCount(response.data?.unreadCount || 0);
+    } catch (err) {
+      // keep current value
+    }
+  };
 
   const fetchActivities = async () => {
     setLoading(true);
@@ -72,6 +103,7 @@ const ActivityFeedPage = () => {
       if (filter !== 'all') {
         params.filter = filter;
       }
+      params.mode = mode;
 
       let url = '/api/activity/feed';
       if (selectedPodId !== 'all') {
@@ -86,6 +118,13 @@ const ActivityFeedPage = () => {
       const fetchedActivities = response.data.activities || [];
       setActivities(fetchedActivities);
       setHasMore(response.data.hasMore || false);
+      setQuick(response.data.quick || null);
+      setLiveUpdates(0);
+      setUnreadCount(
+        response.data.unreadCount !== undefined
+          ? response.data.unreadCount
+          : fetchedActivities.filter((item) => !item.read).length,
+      );
       setError(fetchedActivities.length === 0 ? 'No activity yet' : null);
     } catch (err) {
       console.error('Error fetching activities:', err);
@@ -93,6 +132,88 @@ const ActivityFeedPage = () => {
       setActivities([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!socket || !connected || !Array.isArray(userPods) || userPods.length === 0) return undefined;
+    userPods.forEach((pod) => socket.emit('joinPod', pod._id));
+
+    const handleNewMessage = (message) => {
+      const pod = userPods.find((item) => item._id === (message.podId || message.pod_id));
+      const actorName = message.username || message.userId?.username || 'User';
+      const isAgent = actorName.toLowerCase().includes('bot') || actorName === 'commonly-ai-agent';
+
+      const activity = {
+        id: `live_${message._id || message.id || Date.now()}`,
+        type: 'message',
+        actor: {
+          id: message.userId?._id || message.userId || message.user_id,
+          name: actorName,
+          type: isAgent ? 'agent' : 'human',
+          verified: isAgent,
+          profilePicture: message.profilePicture || message.profile_picture || message.userId?.profilePicture,
+        },
+        action: 'message',
+        content: message.content || message.text || '',
+        preview: (message.content || message.text || '').slice(0, 200),
+        timestamp: message.createdAt || message.created_at || new Date().toISOString(),
+        pod: pod ? { id: pod._id, name: pod.name } : null,
+        reactions: { likes: 0, liked: false },
+        replyCount: 0,
+        replies: [],
+        flags: {
+          isAgentAction: isAgent,
+          isMention: Boolean(
+            currentUser?.username
+            && (message.content || '').toLowerCase().includes(`@${currentUser.username.toLowerCase()}`),
+          ),
+          isFollowing: false,
+          isThreadUpdate: false,
+        },
+      };
+
+      setActivities((prev) => [activity, ...prev.filter((item) => item.id !== activity.id)].slice(0, 50));
+      setLiveUpdates((count) => count + 1);
+      setUnreadCount((count) => count + 1);
+    };
+
+    socket.on('newMessage', handleNewMessage);
+    return () => {
+      socket.off('newMessage', handleNewMessage);
+      userPods.forEach((pod) => socket.emit('leavePod', pod._id));
+    };
+  }, [socket, connected, userPods, currentUser]);
+
+  const handleMarkRead = async (activity) => {
+    if (!activity?.id) return;
+    try {
+      await axios.post(
+        '/api/activity/mark-read',
+        { activityId: activity.id },
+        { headers: getAuthHeaders() }
+      );
+      setActivities((prev) => prev.map((item) => (
+        item.id === activity.id ? { ...item, read: true } : item
+      )));
+      setUnreadCount((count) => Math.max(0, count - 1));
+    } catch (err) {
+      setSnackbar({ open: true, message: 'Failed to mark as read', severity: 'error' });
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await axios.post(
+        '/api/activity/mark-read',
+        { all: true },
+        { headers: getAuthHeaders() }
+      );
+      setActivities((prev) => prev.map((item) => ({ ...item, read: true })));
+      setUnreadCount(0);
+      setSnackbar({ open: true, message: 'All caught up', severity: 'success' });
+    } catch (err) {
+      setSnackbar({ open: true, message: 'Failed to mark all as read', severity: 'error' });
     }
   };
 
@@ -218,6 +339,7 @@ const ActivityFeedPage = () => {
       if (filter !== 'all') {
         params.filter = filter;
       }
+      params.mode = mode;
 
       let url = '/api/activity/feed';
       if (selectedPodId !== 'all') {
@@ -273,7 +395,7 @@ const ActivityFeedPage = () => {
             Activity
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            See what&apos;s happening across your pods
+            Real-time social updates across your pods, threads, and follows
           </Typography>
         </Box>
 
@@ -298,18 +420,86 @@ const ActivityFeedPage = () => {
             variant="outlined"
             size="small"
             startIcon={<RefreshIcon />}
-            onClick={fetchActivities}
+            onClick={() => {
+              fetchActivities();
+              fetchUnreadCount();
+            }}
           >
             Refresh
+          </Button>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={handleMarkAllRead}
+          >
+            Mark all read ({unreadCount})
           </Button>
         </Box>
       </Box>
 
-      {/* Filter tabs */}
+      {liveUpdates > 0 && (
+        <Alert severity="info" sx={{ mb: 2 }} icon={<NotificationsIcon />}>
+          {liveUpdates} new live update{liveUpdates === 1 ? '' : 's'} received
+        </Alert>
+      )}
+
+      {quick && (
+        <Paper elevation={0} sx={{ mb: 3, borderRadius: 2, p: 2, border: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>Quick View</Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 1.5 }}>
+            <Button size="small" variant="outlined" disableElevation>
+              Followers: {quick.social?.followers || 0}
+            </Button>
+            <Button size="small" variant="outlined" disableElevation>
+              Following: {quick.social?.following || 0}
+            </Button>
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+            Recent Joined/Active Pods
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {(quick.recentPods || []).slice(0, 4).map((pod) => (
+              <Button
+                key={pod.id}
+                size="small"
+                onClick={() => setSelectedPodId(pod.id)}
+                variant={selectedPodId === pod.id ? 'contained' : 'outlined'}
+              >
+                {pod.name}
+              </Button>
+            ))}
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, mb: 0.5 }}>
+            Followed Threads
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+            {(quick.followedThreads || []).slice(0, 3).map((thread) => (
+              <Typography
+                key={thread.postId}
+                variant="body2"
+                sx={{ cursor: 'pointer' }}
+                onClick={() => { window.location.href = thread.url; }}
+              >
+                {thread.preview || 'Thread'} {thread.newReplies > 0 ? `• ${thread.newReplies} new replies` : ''}
+              </Typography>
+            ))}
+            {(quick.followedThreads || []).length === 0 && (
+              <Typography variant="body2" color="text.secondary">
+                No followed threads yet.
+              </Typography>
+            )}
+          </Box>
+        </Paper>
+      )}
+
+      {/* Mode tabs */}
       <Paper elevation={0} sx={{ mb: 3, borderRadius: 2 }}>
         <Tabs
-          value={filter}
-          onChange={(e, v) => setFilter(v)}
+          value={mode}
+          onChange={(e, v) => {
+            setMode(v);
+            setFilter('all');
+          }}
           variant="fullWidth"
           sx={{
             '& .MuiTab-root': {
@@ -319,10 +509,48 @@ const ActivityFeedPage = () => {
             },
           }}
         >
+          <Tab icon={<UpdatesIcon />} iconPosition="start" label="Updates" value="updates" />
+          <Tab icon={<ActionsIcon />} iconPosition="start" label="Actions" value="actions" />
+        </Tabs>
+      </Paper>
+
+      {/* Filter tabs */}
+      <Paper elevation={0} sx={{ mb: 3, borderRadius: 2 }}>
+        <Tabs
+          value={filter}
+          onChange={(e, v) => setFilter(v)}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          sx={{
+            '& .MuiTab-root': {
+              minHeight: 44,
+              textTransform: 'none',
+              fontWeight: 500,
+            },
+          }}
+        >
           <Tab icon={<AllIcon />} iconPosition="start" label="All" value="all" />
-          <Tab icon={<HumansIcon />} iconPosition="start" label="Humans" value="humans" />
-          <Tab icon={<AgentsIcon />} iconPosition="start" label="Agents" value="agents" />
-          <Tab icon={<SkillsIcon />} iconPosition="start" label="Skills" value="skills" />
+          {mode === 'updates' && (
+            <Tab icon={<MentionsIcon />} iconPosition="start" label="Mentions" value="mentions" />
+          )}
+          {mode === 'updates' && (
+            <Tab icon={<FollowingIcon />} iconPosition="start" label="Following" value="following" />
+          )}
+          {mode === 'updates' && (
+            <Tab icon={<ThreadsIcon />} iconPosition="start" label="Threads" value="threads" />
+          )}
+          {mode === 'updates' && (
+            <Tab icon={<PodsIcon />} iconPosition="start" label="Pods" value="pods" />
+          )}
+          {mode === 'actions' && (
+            <Tab icon={<AgentsIcon />} iconPosition="start" label="Agents" value="agents" />
+          )}
+          {mode === 'actions' && (
+            <Tab icon={<HumansIcon />} iconPosition="start" label="Humans" value="humans" />
+          )}
+          {mode === 'actions' && (
+            <Tab icon={<SkillsIcon />} iconPosition="start" label="Skills" value="skills" />
+          )}
         </Tabs>
       </Paper>
 
@@ -351,6 +579,8 @@ const ActivityFeedPage = () => {
         onReply={handleReply}
         onApprove={handleApprove}
         onReject={handleReject}
+        onMarkRead={handleMarkRead}
+        onActorClick={(actorId) => { window.location.href = `/profile/${actorId}`; }}
         onLoadMore={handleLoadMore}
         hasMore={hasMore}
       />
