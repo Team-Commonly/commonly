@@ -530,6 +530,37 @@ const postMessage = async (runtimeToken, podId, content, metadata = {}) => {
   return res.json();
 };
 
+const persistSummary = async (runtimeToken, podId, {
+  summary,
+  summaryType = 'chats',
+  source = 'pod',
+  sourceLabel = 'Commonly',
+  messageCount = 0,
+  timeRange = null,
+  eventId = null,
+  title = null,
+}) => {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/summaries`, {
+    method: 'POST',
+    headers: buildHeaders(runtimeToken),
+    body: JSON.stringify({
+      summary,
+      summaryType,
+      source,
+      sourceLabel,
+      messageCount,
+      timeRange,
+      eventId,
+      title,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to persist summary: ${res.status} ${text.slice(0, 220)}`);
+  }
+  return res.json();
+};
+
 const ackEvent = async (runtimeToken, eventId) => {
   const res = await fetch(`${baseUrl}/api/agents/runtime/events/${eventId}/ack`, {
     method: 'POST',
@@ -542,6 +573,7 @@ const ackEvent = async (runtimeToken, eventId) => {
 
 const handleEvent = async (account, event) => {
   const runtimeToken = account?.runtimeToken;
+  const silentDelivery = event?.payload?.silent === true;
   const accountUserToken = account?.userToken || userToken;
   if (event?.type === 'curate') {
     const topN = Math.min(Math.max(parseInt(event?.payload?.topN, 10) || 3, 1), 5);
@@ -677,6 +709,18 @@ const handleEvent = async (account, event) => {
       return ackEvent(runtimeToken, event._id);
     }
 
+    if (silentDelivery) {
+      await persistSummary(runtimeToken, event.podId, {
+        summary: synthetic.summary,
+        summaryType: 'chats',
+        source: synthetic.source || 'pod',
+        sourceLabel: synthetic.sourceLabel || 'Commonly',
+        messageCount: synthetic.messageCount || 0,
+        eventId: event._id?.toString?.() || event._id,
+      });
+      return ackEvent(runtimeToken, event._id);
+    }
+
     const content = `[BOT_MESSAGE]${JSON.stringify(synthetic)}`;
     await postMessage(runtimeToken, event.podId, content, {
       source: 'commonly-bot',
@@ -688,6 +732,10 @@ const handleEvent = async (account, event) => {
   }
 
   if (!event?.payload?.summary) {
+    return ackEvent(runtimeToken, event._id);
+  }
+
+  if (silentDelivery) {
     return ackEvent(runtimeToken, event._id);
   }
 

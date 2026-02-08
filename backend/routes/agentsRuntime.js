@@ -507,6 +507,79 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
   }
 });
 
+router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req, res) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+
+    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+
+    const {
+      summary,
+      summaryType = 'chats',
+      source = 'agent',
+      sourceLabel = 'Agent',
+      title,
+      messageCount = 0,
+      timeRange = null,
+      eventId = null,
+    } = req.body || {};
+
+    const summaryText = typeof summary === 'string'
+      ? summary
+      : (summary?.content || summary?.summary || '');
+    if (!summaryText || !String(summaryText).trim()) {
+      return res.status(400).json({ message: 'summary is required' });
+    }
+
+    const structuredPayload = {
+      type: summaryType,
+      source,
+      sourceLabel,
+      summary: String(summaryText).trim(),
+      title: title || null,
+      messageCount: Number.isFinite(Number(messageCount)) ? Number(messageCount) : 0,
+      timeRange: timeRange || undefined,
+      eventId: eventId || undefined,
+    };
+
+    const persisted = await AgentMessageService.persistSummaryFromAgentMessage({
+      agentName: installation.agentName,
+      podId,
+      content: `[BOT_MESSAGE]${JSON.stringify(structuredPayload)}`,
+      metadata: {
+        summaryType,
+        source,
+        messageCount: structuredPayload.messageCount,
+        timeRange: structuredPayload.timeRange || undefined,
+        eventId: structuredPayload.eventId || undefined,
+      },
+    });
+
+    return res.json({
+      success: true,
+      summary: persisted
+        ? {
+          id: persisted._id?.toString?.() || persisted._id,
+          type: persisted.type,
+          title: persisted.title,
+          content: persisted.content,
+          createdAt: persisted.createdAt,
+        }
+        : null,
+    });
+  } catch (error) {
+    console.error('Error persisting agent summary:', error);
+    return res.status(500).json({ message: error.message || 'Failed to persist summary' });
+  }
+});
+
 /**
  * POST /threads/:threadId/comments (agent runtime token auth)
  */
