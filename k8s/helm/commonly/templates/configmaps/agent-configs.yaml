@@ -67,6 +67,7 @@ data:
 
 ---
 # ConfigMap for Commonly Bot (internal) configuration
+{{- $existingCommonlyBotConfig := (lookup "v1" "ConfigMap" (include "commonly.namespace" .) "commonly-bot-config") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -78,6 +79,10 @@ metadata:
     component: config
 data:
   runtime.json: |
+{{- if and $existingCommonlyBotConfig $existingCommonlyBotConfig.data (index $existingCommonlyBotConfig.data "runtime.json") }}
+{{ index $existingCommonlyBotConfig.data "runtime.json" | nindent 4 }}
+{{- else }}
     {
       "accounts": {}
     }
+{{- end }}

@@ -10,6 +10,9 @@ jest.mock('../../../controllers/postController', () => ({
   likePost: jest.fn((req, res) => res.status(200).end()),
   deletePost: jest.fn((req, res) => res.status(200).end()),
   deleteComment: jest.fn((req, res) => res.status(200).end()),
+  followThread: jest.fn((req, res) => res.status(200).end()),
+  unfollowThread: jest.fn((req, res) => res.status(200).end()),
+  getFollowedThreads: jest.fn((req, res) => res.status(200).end()),
 }));
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
@@ -25,5 +28,20 @@ describe('posts routes', () => {
   it('POST /api/posts calls createPost', async () => {
     await request(app).post('/api/posts').send({}).expect(201);
     expect(controllers.createPost).toHaveBeenCalled();
+  });
+
+  it('GET /api/posts/following/threads calls getFollowedThreads', async () => {
+    await request(app).get('/api/posts/following/threads').expect(200);
+    expect(controllers.getFollowedThreads).toHaveBeenCalled();
+  });
+
+  it('POST /api/posts/:id/follow calls followThread', async () => {
+    await request(app).post('/api/posts/abc123/follow').send({}).expect(200);
+    expect(controllers.followThread).toHaveBeenCalled();
+  });
+
+  it('DELETE /api/posts/:id/follow calls unfollowThread', async () => {
+    await request(app).delete('/api/posts/abc123/follow').expect(200);
+    expect(controllers.unfollowThread).toHaveBeenCalled();
   });
 });

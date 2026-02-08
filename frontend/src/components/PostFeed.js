@@ -392,6 +392,22 @@ const PostFeed = () => {
         return value._id || null;
     };
 
+    const getPostAuthor = (post) => {
+        const user = post?.userId;
+        if (!user || typeof user !== 'object') {
+            return {
+                id: null,
+                username: 'Unknown',
+                profilePicture: null,
+            };
+        }
+        return {
+            id: user._id || null,
+            username: user.username || 'Unknown',
+            profilePicture: user.profilePicture || null,
+        };
+    };
+
     const getPostPodName = (post) => {
         if (!post?.podId) return null;
         if (typeof post.podId === 'object') return post.podId.name || null;
@@ -803,7 +819,10 @@ const PostFeed = () => {
                     No posts yet!
                 </Typography>
             ) : (
-                filteredPosts.map(post => (
+                filteredPosts.map((post) => {
+                    const author = getPostAuthor(post);
+                    const postContent = typeof post?.content === 'string' ? post.content : '';
+                    return (
                     <Paper 
                         key={post._id} 
                         sx={{ 
@@ -817,20 +836,20 @@ const PostFeed = () => {
                     >
                         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
                             <Avatar sx={{ 
-                                bgcolor: getAvatarColor(post.userId.profilePicture),
+                                bgcolor: getAvatarColor(author.profilePicture),
                                 width: 32,
                                 height: 32,
                                 fontSize: '0.9rem'
                             }}
-                            src={getAvatarSrc(post.userId.profilePicture)}
+                            src={getAvatarSrc(author.profilePicture)}
                             >
-                                {post.userId.username.charAt(0).toUpperCase()}
+                                {author.username.charAt(0).toUpperCase()}
                             </Avatar>
                             <Box sx={{ flex: 1 }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                         <Typography variant="body1" sx={{ fontWeight: 600, fontSize: '0.9rem' }}>
-                                            {post.userId.username}
+                                            {author.username}
                                         </Typography>
                                         {post.createdAt && (
                                             <Typography variant="caption" color="text.secondary">
@@ -838,7 +857,7 @@ const PostFeed = () => {
                                             </Typography>
                                         )}
                                     </Box>
-                                    {currentUser && (currentUser._id === post.userId._id) && (
+                                    {currentUser && author.id && (currentUser._id === author.id) && (
                                         <IconButton 
                                             size="small" 
                                             onClick={(e) => {
@@ -901,7 +920,7 @@ const PostFeed = () => {
                                         lineHeight: 1.28
                                     }}
                                 >
-                                    {post.content.split(/(#\w+)/g).map((part, index) => {
+                                    {postContent.split(/(#\w+)/g).map((part, index) => {
                                         if (part.startsWith('#')) {
                                             return (
                                                 <Typography
@@ -989,7 +1008,8 @@ const PostFeed = () => {
                             </Box>
                         </Box>
                     </Paper>
-                ))
+                    );
+                })
             )}
             
             {/* Post Options Menu */}
