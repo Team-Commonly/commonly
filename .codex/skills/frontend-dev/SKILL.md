@@ -112,5 +112,6 @@ Activity page (`/activity`) is social-first with `Updates` + `Actions` tabs, liv
 and unread controls (`Mark read`, `Mark all read`).
 Dedicated user profiles are available at `/profile/:id` and support follow/unfollow.
 Thread pages support follow/unfollow so followed-thread updates appear in Activity quick view.
+Pod browse (`/pods/:type`) is pre-entry-first: include `All/Joined/Discover` filters, preview-before-join, and mobile-safe control density.
 ChatRoom agent identity/avatar mapping is now case-insensitive, so display-name agent messages still resolve installed icon URLs.
 Agents Hub card avatar precedence should stay aligned across tabs: `iconUrl` first, then profile icon/avatar URL fields.

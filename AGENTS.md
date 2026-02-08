@@ -101,6 +101,7 @@ Profile avatars support image uploads via `/api/uploads` (colors still supported
 Chat avatar resolution should be case-insensitive for agent identities (instance username/display slug/display name) so live messages map to the configured agent icon consistently.
 Agents Hub `Installed` and `Discover` tabs should resolve agent avatars with the same precedence (`iconUrl` then profile icon fields) to avoid cross-tab mismatch.
 Registry installed-agent listing (`/api/registry/pods/:podId/agents`) should prefer matching template `iconUrl` by `(agentName + displayName)` before falling back to registry icon.
+Pod browse page (`/pods/:type`) should prioritize pre-entry UX: quick filters (`All`, `Joined`, `Discover`), preview-before-join action, and responsive controls that stay usable on phones.
 Dev ingress must allow multipart uploads for generated avatars (`nginx.ingress.kubernetes.io/proxy-body-size: "10m"` in Helm values) or the UI shows Axios `Network Error` from upstream `413`.
 User profile avatar dialog includes a "Generate with AI" option and stores the generated data URI as `profilePicture`.
 Agent and user avatar generation share one portrait-first modal (same presets + prompt controls) for consistent output.
