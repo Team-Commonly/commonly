@@ -5,16 +5,17 @@ import {
     Container, Typography, Box, Grid, Card, CardContent, CardActions, 
     Button, TextField, Dialog, DialogTitle, DialogContent, DialogActions,
     FormControl, InputLabel, Select, MenuItem, CircularProgress, Tabs, Tab,
-    AppBar, Toolbar, Avatar
+    AppBar, Toolbar, Avatar, Chip
 } from '@mui/material';
 import { 
     Add as AddIcon, 
     Search as SearchIcon,
-    People as PeopleIcon 
+    People as PeopleIcon,
+    Launch as LaunchIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { getAvatarColor } from '../utils/avatarUtils';
+import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import PodSummary from './PodSummary';
 import './Pod.css';
 
@@ -31,6 +32,8 @@ const Pod = () => {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [membershipFilter, setMembershipFilter] = useState('all');
+    const [previewPod, setPreviewPod] = useState(null);
     const navigate = useNavigate();
     const { podType } = useParams();
     
@@ -82,7 +85,6 @@ const Pod = () => {
             try {
                 setLoading(true);
                 const currentPodType = getPodType();
-                console.log('Fetching pods for type:', currentPodType);
                 
                 const response = await axios.get(`/api/pods/${currentPodType}`);
                 
@@ -106,6 +108,16 @@ const Pod = () => {
         
         fetchPods();
     }, [tabValue, podType, getPodType]);
+
+    // Check if user is a member of a pod
+    const isMember = useCallback((pod) => {
+        if (!currentUser) return false;
+        return pod.members && pod.members.some(member =>
+            typeof member === 'object'
+                ? member._id === currentUser._id
+                : member === currentUser._id
+        );
+    }, [currentUser]);
     
     // Filter pods based on search query and tab value
     const filteredPods = React.useMemo(() => {
@@ -115,12 +127,32 @@ const Pod = () => {
             const podTypeMatch = pod.type === currentPodType;
             
             // Filter by search query
-            const searchMatch = pod.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                               pod.description.toLowerCase().includes(searchQuery.toLowerCase());
+            const podName = `${pod.name || ''}`.toLowerCase();
+            const podDescription = `${pod.description || ''}`.toLowerCase();
+            const normalizedQuery = searchQuery.toLowerCase();
+            const searchMatch = podName.includes(normalizedQuery) || podDescription.includes(normalizedQuery);
+            const joined = isMember(pod);
+            const membershipMatch = membershipFilter === 'all'
+                || (membershipFilter === 'joined' && joined)
+                || (membershipFilter === 'discover' && !joined);
             
-            return podTypeMatch && searchMatch;
+            return podTypeMatch && searchMatch && membershipMatch;
         });
-    }, [pods, searchQuery, getPodType]);
+    }, [pods, searchQuery, getPodType, membershipFilter, isMember]);
+
+    const sortedPods = React.useMemo(() => {
+        return [...filteredPods].sort((a, b) => {
+            const aJoined = isMember(a);
+            const bJoined = isMember(b);
+            if (aJoined !== bJoined) return aJoined ? -1 : 1;
+            return (b.members?.length || 0) - (a.members?.length || 0);
+        });
+    }, [filteredPods, isMember]);
+
+    const joinedCount = React.useMemo(
+        () => pods.filter((pod) => isMember(pod)).length,
+        [pods, isMember]
+    );
     
     // Handle creating a new room
     const handleCreateRoom = async () => {
@@ -204,16 +236,6 @@ const Pod = () => {
         }
     };
     
-    // Check if user is a member of a pod
-    const isMember = (pod) => {
-        if (!currentUser) return false;
-        return pod.members && pod.members.some(member => 
-            typeof member === 'object' 
-                ? member._id === currentUser._id 
-                : member === currentUser._id
-        );
-    };
-    
     // Handle joining a room
     const handleJoinRoom = async (podId) => {
         try {
@@ -266,9 +288,19 @@ const Pod = () => {
         >
             <AppBar position="static" color="default" className="pod-app-bar">
                 <Toolbar sx={{ flexWrap: { xs: 'wrap', sm: 'nowrap' }, gap: 1.5 }}>
-                    <Typography variant="h6" className="pod-title">
-                        Pods
-                    </Typography>
+                    <Box className="pod-header-title-wrap">
+                        <Typography variant="h6" className="pod-title">
+                            Pods
+                        </Typography>
+                        <Typography variant="body2" className="pod-subtitle">
+                            Browse, preview, and join conversations before entering.
+                        </Typography>
+                    </Box>
+                    <Box className="pod-stat-chips">
+                        <Chip label={`${pods.length} total`} size="small" className="pod-stat-chip" />
+                        <Chip label={`${joinedCount} joined`} size="small" className="pod-stat-chip" />
+                        <Chip label={`${filteredPods.length} shown`} size="small" className="pod-stat-chip" />
+                    </Box>
                     <Box sx={{ flexGrow: 1 }} />
                     <Box className="pod-search" sx={{ width: { xs: '100%', sm: 260 } }}>
                         <TextField
@@ -312,6 +344,32 @@ const Pod = () => {
                     <Tab label="Games" className="pod-tab" />
                     <Tab label="Ensemble" className="pod-tab" />
                 </Tabs>
+                <Box className="pod-membership-filter-row">
+                    <Button
+                        size="small"
+                        variant={membershipFilter === 'all' ? 'contained' : 'outlined'}
+                        className="pod-filter-button"
+                        onClick={() => setMembershipFilter('all')}
+                    >
+                        All
+                    </Button>
+                    <Button
+                        size="small"
+                        variant={membershipFilter === 'joined' ? 'contained' : 'outlined'}
+                        className="pod-filter-button"
+                        onClick={() => setMembershipFilter('joined')}
+                    >
+                        Joined
+                    </Button>
+                    <Button
+                        size="small"
+                        variant={membershipFilter === 'discover' ? 'contained' : 'outlined'}
+                        className="pod-filter-button"
+                        onClick={() => setMembershipFilter('discover')}
+                    >
+                        Discover
+                    </Button>
+                </Box>
             </AppBar>
             
             {loading ? (
@@ -329,7 +387,7 @@ const Pod = () => {
                     className="pod-grid"
                     sx={{ justifyContent: { xs: 'center', sm: 'flex-start' } }}
                 >
-                    {filteredPods.length === 0 ? (
+                    {sortedPods.length === 0 ? (
                         <Grid item xs={12}>
                             <Box className="pod-empty">
                                 <PeopleIcon sx={{ fontSize: 60, mb: 2 }} />
@@ -353,15 +411,27 @@ const Pod = () => {
                             </Box>
                         </Grid>
                     ) : (
-                        filteredPods.map(pod => {
+                        sortedPods.map(pod => {
                             const canDeletePod = Boolean(currentUser && (
                                 currentUser.role === 'admin'
                                 || (pod.createdBy && pod.createdBy._id === currentUser._id)
                             ));
+                            const joined = isMember(pod);
+                            const creatorAvatarSrc = getAvatarSrc(pod.createdBy?.profilePicture);
                             return (
                             <Grid item xs={12} sm={6} md={4} key={pod._id}>
                                 <Card className="pod-card">
                                     <CardContent sx={{ p: 2, pb: 1.5 }}>
+                                        <Box className="pod-card-meta">
+                                            <Chip
+                                                size="small"
+                                                className="pod-card-type-chip"
+                                                label={(pod.type || getPodType()).replace('-', ' ')}
+                                            />
+                                            {joined ? (
+                                                <Chip size="small" className="pod-card-joined-chip" label="Joined" />
+                                            ) : null}
+                                        </Box>
                                         <Typography variant="h5" component="div" className="pod-card-title">
                                             {pod.name}
                                         </Typography>
@@ -378,6 +448,7 @@ const Pod = () => {
                                         <Box className="pod-card-creator">
                                             <Avatar 
                                                 className="pod-creator-avatar"
+                                                    src={creatorAvatarSrc || undefined}
                                                     sx={{ 
                                                         bgcolor: getAvatarColor(pod.createdBy?.profilePicture || 'default'),
                                                         color: 'white',
@@ -401,13 +472,21 @@ const Pod = () => {
                                         </Box>
                                     </CardContent>
                                     <CardActions className="pod-card-actions" sx={{ px: 2, py: 1.5 }}>
+                                        <Button
+                                            variant="outlined"
+                                            color="inherit"
+                                            onClick={() => setPreviewPod(pod)}
+                                            startIcon={<LaunchIcon />}
+                                        >
+                                            Preview
+                                        </Button>
                                         <Button 
                                             variant="contained" 
                                             color="primary"
                                             fullWidth={!canDeletePod}
                                             onClick={() => handleJoinRoom(pod._id)}
                                         >
-                                            {isMember(pod) ? 'Open Chat' : 'Join Room'}
+                                            {joined ? 'Open Chat' : 'Join Room'}
                                         </Button>
                                         {canDeletePod && (
                                             <Button
@@ -466,7 +545,7 @@ const Pod = () => {
                         <InputLabel>Pod Type</InputLabel>
                         <Select
                             value={tabValue}
-                            onChange={(e) => setTabValue(e.target.value)}
+                            onChange={(e) => setTabValue(Number(e.target.value))}
                         >
                             <MenuItem value={0}>Chat</MenuItem>
                             <MenuItem value={1}>Study</MenuItem>
@@ -486,6 +565,51 @@ const Pod = () => {
                         disabled={!roomName.trim()}
                     >
                         Create Pod
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog
+                open={Boolean(previewPod)}
+                onClose={() => setPreviewPod(null)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>{previewPod?.name || 'Pod Preview'}</DialogTitle>
+                <DialogContent>
+                    <Box className="pod-preview-body">
+                        <Typography variant="body2" color="textSecondary">
+                            {previewPod?.description || 'No description yet.'}
+                        </Typography>
+                        <Box className="pod-preview-meta">
+                            <Chip
+                                size="small"
+                                label={`Type: ${(previewPod?.type || '').replace('-', ' ') || getPodType()}`}
+                            />
+                            <Chip
+                                size="small"
+                                icon={<PeopleIcon />}
+                                label={`${previewPod?.members?.length || 0} members`}
+                            />
+                            <Chip
+                                size="small"
+                                label={`Creator: @${previewPod?.createdBy?.username || 'unknown'}`}
+                            />
+                        </Box>
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setPreviewPod(null)}>Close</Button>
+                    <Button
+                        color="primary"
+                        variant="contained"
+                        onClick={() => {
+                            if (!previewPod?._id) return;
+                            handleJoinRoom(previewPod._id);
+                            setPreviewPod(null);
+                        }}
+                    >
+                        {previewPod && isMember(previewPod) ? 'Open from Preview' : 'Join from Preview'}
                     </Button>
                 </DialogActions>
             </Dialog>
