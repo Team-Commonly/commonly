@@ -621,8 +621,12 @@ class SchedulerService {
           const lastCreatedAt = lastHeartbeatByKey.get(key);
           const intervalMinutes = this.resolveHeartbeatIntervalMinutes(installation);
           if (lastCreatedAt) {
-            const ageMs = now.getTime() - lastCreatedAt.getTime();
-            if (ageMs < intervalMinutes * 60 * 1000) {
+            // Compare using whole-minute buckets so cron ticks (every 10m at :00)
+            // don't miss by 1-59s when last heartbeat was recorded at :01..:59.
+            const nowMinutes = Math.floor(now.getTime() / 60000);
+            const lastMinutes = Math.floor(lastCreatedAt.getTime() / 60000);
+            const ageMinutes = nowMinutes - lastMinutes;
+            if (ageMinutes < intervalMinutes) {
               return { enqueued: 0, skippedByInterval: 1 };
             }
           }
