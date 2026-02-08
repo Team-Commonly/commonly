@@ -428,20 +428,11 @@ const buildHeuristicPodSummary = (messages = []) => {
     return null;
   }
 
-  const byUser = new Map();
   const topics = [];
   meaningful.forEach((msg) => {
-    const user = msg.username || msg.userId?.username || 'unknown';
-    byUser.set(user, (byUser.get(user) || 0) + 1);
     const text = String(msg.content || '').trim();
     if (text) topics.push(text);
   });
-
-  const topUsers = Array.from(byUser.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([name, count]) => `${name} (${count})`)
-    .join(', ');
 
   const seenHighlights = new Set();
   const highlights = topics
@@ -462,7 +453,7 @@ const buildHeuristicPodSummary = (messages = []) => {
     sourceLabel: 'Commonly',
     channel: 'pod-chat',
     messageCount: meaningful.length,
-    summary: `Recent pod activity snapshot:\n\nTop contributors: ${topUsers || 'n/a'}\n\nRecent highlights:\n${highlights}`,
+    summary: `Recent pod activity snapshot:\n\nRecent highlights:\n${highlights}`,
   };
 };
 
@@ -490,7 +481,7 @@ const buildLlmPodSummary = async ({ messages = [], podName = 'this pod' } = {}) 
     '- avoid repeating near-duplicate points',
     '- if mostly status/noise, say so briefly',
     'Return JSON only:',
-    '{"summary":"...", "highlights":["...","..."], "contributors":["name (count)"]}',
+    '{"summary":"...", "highlights":["...","..."]}',
     '',
     'Messages:',
     transcript,
@@ -507,12 +498,6 @@ const buildLlmPodSummary = async ({ messages = [], podName = 'this pod' } = {}) 
     const highlights = Array.isArray(parsed.highlights)
       ? parsed.highlights.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 5)
       : [];
-    const contributors = Array.isArray(parsed.contributors)
-      ? parsed.contributors.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 4)
-      : [];
-    const contributorLine = contributors.length
-      ? `Top contributors: ${contributors.join(', ')}`
-      : null;
     const highlightText = highlights.length
       ? highlights.map((line) => `- ${line}`).join('\n')
       : '- No major developments in this window.';
@@ -524,7 +509,6 @@ const buildLlmPodSummary = async ({ messages = [], podName = 'this pod' } = {}) 
       messageCount: meaningful.length,
       summary: [
         String(parsed.summary).trim(),
-        contributorLine,
         'Highlights:',
         highlightText,
       ].filter(Boolean).join('\n\n'),
