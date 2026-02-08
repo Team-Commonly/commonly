@@ -289,6 +289,7 @@ router.post('/pod/:podId/refresh', auth, async (req, res) => {
           trigger: 'manual-pod-refresh',
           windowMinutes,
           includeDigest: true,
+          silent: true,
         },
       })),
     );
