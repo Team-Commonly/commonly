@@ -160,6 +160,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
   transition: transform 0.3s, box-shadow 0.3s;
   border-radius: 16px !important;
   overflow: hidden;
@@ -181,6 +182,12 @@
   margin-bottom: 8px;
 }
 
+.pod-card-meta-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .pod-card-type-chip {
   text-transform: capitalize;
   background: rgba(30, 41, 59, 0.75) !important;
@@ -192,6 +199,29 @@
   background: rgba(20, 184, 166, 0.2) !important;
   color: #99f6e4 !important;
   border: 1px solid rgba(45, 212, 191, 0.4) !important;
+}
+
+.pod-card-unread {
+  border-color: rgba(248, 113, 113, 0.6) !important;
+  box-shadow: 0 12px 34px rgba(8, 12, 24, 0.52), 0 0 0 1px rgba(248, 113, 113, 0.28);
+}
+
+.pod-card-unread::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.pod-card-unread-chip {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #fecaca !important;
+  border: 1px solid rgba(248, 113, 113, 0.52) !important;
 }
 
 .pod-card:hover {
@@ -226,6 +256,59 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.pod-members-preview {
+  margin-top: 14px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+}
+
+.pod-members-stack {
+  display: flex;
+  align-items: center;
+}
+
+.pod-member-avatar {
+  width: 30px !important;
+  height: 30px !important;
+  font-size: 0.8rem !important;
+  border: 2px solid rgba(15, 23, 42, 0.96) !important;
+  margin-left: -8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+}
+
+.pod-member-avatar:first-child {
+  margin-left: 0;
+}
+
+.pod-member-avatar-admin {
+  outline: 1px solid rgba(250, 204, 21, 0.6);
+}
+
+.pod-member-avatar-agent {
+  outline: 1px solid rgba(45, 212, 191, 0.55);
+}
+
+.pod-member-avatar-member {
+  outline: 1px solid rgba(147, 197, 253, 0.45);
+}
+
+.pod-member-avatar-overflow {
+  margin-left: -8px;
+  background: rgba(30, 41, 59, 0.95) !important;
+  color: #cbd5e1 !important;
+  font-weight: 700 !important;
+}
+
+.pod-member-role-summary {
+  display: block;
+  margin-top: 8px !important;
+  color: #93c5fd !important;
+  font-size: 0.75rem !important;
 }
 
 .pod-card-footer {
@@ -439,6 +522,12 @@
 
   .pod-card-title {
     font-size: 1.1rem !important;
+  }
+
+  .pod-member-avatar {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 0.72rem !important;
   }
   
   .pod-card-description {
