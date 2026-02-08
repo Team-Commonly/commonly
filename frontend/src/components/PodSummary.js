@@ -55,6 +55,8 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
             console.error('Error refreshing pod summary:', error);
             setSummaryError(error?.response?.data?.error || 'Could not refresh summary');
             await fetchSummary();
+            // Keep toggle behavior predictable: show summary view even when refresh fails.
+            setShowSummary(true);
         } finally {
             setLoading(false);
         }
