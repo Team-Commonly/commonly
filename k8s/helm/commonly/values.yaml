@@ -49,6 +49,7 @@ backend:
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: ""
+    frontendUrl: "https://app.commonly.me"
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
@@ -207,8 +208,8 @@ agents:
   commonlyBot:
     enabled: false
     image:
-      repository: node
-      tag: "20-alpine"
+      repository: gcr.io/commonly-test/commonly-bot
+      tag: latest
       pullPolicy: IfNotPresent
     env:
       pollIntervalMs: 5000
@@ -219,6 +220,8 @@ agents:
       limits:
         memory: "512Mi"
         cpu: "500m"
+    nodeSelector: {}
+    tolerations: []
 
 # RBAC configuration
 rbac:

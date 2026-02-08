@@ -77,6 +77,7 @@ const DEFAULT_HEARTBEAT_CONTENT = [
   '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.',
   '- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
   '- Do not post housekeeping-only status updates (for example: "no new posts" or "most recent post is ..."). If no meaningful new signal exists, reply HEARTBEAT_OK.',
+  '- Do not repeat or paraphrase your own previous heartbeat message. If your update would be substantially the same, reply HEARTBEAT_OK instead.',
   '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
   '- If nothing new, reply HEARTBEAT_OK.',
   '',
@@ -232,6 +233,9 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
     `  sed -i "s|If \\\`commonly\\\` skill is missing, use HTTP APIs directly (do not run \\\`commonly --help\\\`): context via \\\`/api/agents/runtime/pods/:podId/context\\\` with runtime token, or \\\`/api/pods/:podId/context\\\` with user token.|If \\\`commonly\\\` skill is missing, use HTTP APIs directly (do not run \\\`commonly --help\\\`) with runtime token: context via \\\`/api/agents/runtime/pods/:podId/context\\\`.|g" "${heartbeatPath}" || true`,
     `  if ! grep -q "Resolve \\\`podId\\\` from the incoming event context" "${heartbeatPath}"; then`,
     `    sed -i "/read and follow \\\`\\.\\/skills\\/commonly\\/SKILL.md\\\` in this agent workspace\\./a - Resolve \\\`podId\\\` from the incoming event context (usually \\\`To: commonly:<podId>\\\`). Do not use placeholder pod ids." "${heartbeatPath}" || true`,
+    '  fi',
+    `  if ! grep -q "Do not repeat or paraphrase your own previous heartbeat message" "${heartbeatPath}"; then`,
+    `    sed -i "/Do not post housekeeping-only status updates/a - Do not repeat or paraphrase your own previous heartbeat message. If your update would be substantially the same, reply HEARTBEAT_OK instead." "${heartbeatPath}" || true`,
     '  fi',
     'fi',
     `if [ -f "${commonlySkillPath}" ]; then`,
@@ -983,17 +987,26 @@ const provisionOpenClawAccount = async ({
   await writeConfigMap(configMapName, configKey, config);
 
   try {
-    await ensureHeartbeatTemplate(accountId, heartbeat, { gateway });
+    const heartbeatPath = await ensureHeartbeatTemplate(accountId, heartbeat, { gateway });
+    if (heartbeatPath) {
+      console.log(`[k8s-provisioner] ensured heartbeat template for ${accountId}: ${heartbeatPath}`);
+    }
   } catch (error) {
     console.warn('[k8s-provisioner] Failed to ensure HEARTBEAT.md template:', error.message);
   }
   try {
-    await normalizeWorkspaceDocs(accountId, { gateway });
+    const normalizedPath = await normalizeWorkspaceDocs(accountId, { gateway });
+    if (normalizedPath) {
+      console.log(`[k8s-provisioner] normalized workspace docs for ${accountId}: ${normalizedPath}`);
+    }
   } catch (error) {
     console.warn('[k8s-provisioner] Failed to normalize workspace docs:', error.message);
   }
   try {
-    await ensureWorkspaceMemoryFiles(accountId, { gateway });
+    const memoryPath = await ensureWorkspaceMemoryFiles(accountId, { gateway });
+    if (memoryPath) {
+      console.log(`[k8s-provisioner] ensured memory files for ${accountId}: ${memoryPath}`);
+    }
   } catch (error) {
     console.warn('[k8s-provisioner] Failed to ensure workspace memory files:', error.message);
   }

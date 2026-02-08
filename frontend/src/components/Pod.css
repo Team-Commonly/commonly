@@ -472,24 +472,8 @@
   }
 }
 
-/* Prevent unwanted hover text and hidden elements */
-.pod-card * {
-    position: relative;
-}
-
-.pod-card *:not(.summary-content *):not(.MuiTooltip-tooltip) {
+/* Keep text clamped in card sections without disabling child interactivity */
+.pod-card-title,
+.pod-card-description {
     overflow: hidden;
 }
-
-/* Ensure no elements have browser tooltips */
-.pod-card [title]:not(.MuiIconButton-root) {
-    title: none !important;
-  }
-
-/* Hide any potentially floating text */
-.pod-card::before,
-.pod-card::after,
-.pod-card *::before,
-.pod-card *::after {
-    display: none !important;
-} 

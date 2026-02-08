@@ -212,6 +212,7 @@ function App() {
                       <Route path="/feed" element={<PostFeed />} />
                       <Route path="/thread/:id" element={<Thread />} />
                       <Route path="/profile" element={<UserProfile />} />
+                      <Route path="/profile/:id" element={<UserProfile />} />
                       <Route path="/dashboard" element={<Dashboard />} />
                       <Route path="/digest" element={<DailyDigest />} />
                       <Route path="/apps" element={<AppsMarketplacePage />} />

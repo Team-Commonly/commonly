@@ -35,14 +35,17 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { avatarOptions, getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { blurActiveElement } from '../utils/focusUtils';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import AppsManagement from './AppsManagement';
 import AvatarGenerator from './agents/AvatarGenerator';
 
 const UserProfile = () => {
     const { refreshAvatars } = useAppContext();
+    const { currentUser } = useAuth();
     const navigate = useNavigate();
+    const { id: profileId } = useParams();
     const [user, setUser] = useState(null);
     const [userStats, setUserStats] = useState({ postCount: 0, commentCount: 0 });
     const [error, setError] = useState('');
@@ -57,20 +60,22 @@ const UserProfile = () => {
     const [apiTokenCreatedAt, setApiTokenCreatedAt] = useState(null);
     const [isGeneratingToken, setIsGeneratingToken] = useState(false);
     const [isRevokingToken, setIsRevokingToken] = useState(false);
+    const [isFollowLoading, setIsFollowLoading] = useState(false);
     const [showToken, setShowToken] = useState(false);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
 
     useEffect(() => {
         const fetchUserData = async () => {
             try {
+                const profilePath = profileId ? `/api/users/${profileId}` : '/api/users/profile';
                 const [userRes, postsRes, tokenRes] = await Promise.all([
-                    axios.get('/api/auth/profile', {
+                    axios.get(profilePath, {
                         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                     }),
                     axios.get('/api/posts'),
-                    axios.get('/api/auth/api-token', {
+                    !profileId ? axios.get('/api/auth/api-token', {
                         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-                    }).catch(() => ({ data: { hasToken: false } }))
+                    }).catch(() => ({ data: { hasToken: false } })) : Promise.resolve({ data: { hasToken: false } })
                 ]);
 
                 setUser(userRes.data);
@@ -101,7 +106,7 @@ const UserProfile = () => {
             }
         };
         fetchUserData();
-    }, []);
+    }, [profileId]);
 
     const handleOpenAvatarDialog = () => {
         setOpenAvatarDialog(true);
@@ -152,7 +157,7 @@ const UserProfile = () => {
                 nextProfilePicture = uploadRes.data?.url || selectedAvatar;
             }
             const response = await axios.put(
-                '/api/auth/profile',
+                '/api/users/profile',
                 { profilePicture: nextProfilePicture },
                 { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
             );
@@ -165,6 +170,40 @@ const UserProfile = () => {
             setError('Failed to update profile. Please try again.');
         } finally {
             setIsUpdating(false);
+        }
+    };
+
+    const handleToggleFollow = async () => {
+        if (!user?._id || isFollowLoading) return;
+        setIsFollowLoading(true);
+        try {
+            if (user.isFollowing) {
+                const response = await axios.delete(`/api/users/${user._id}/follow`, {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                });
+                setUser((prev) => ({
+                    ...prev,
+                    isFollowing: false,
+                    followersCount: response.data?.target?.followersCount ?? Math.max((prev.followersCount || 1) - 1, 0),
+                }));
+            } else {
+                const response = await axios.post(`/api/users/${user._id}/follow`, {}, {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                });
+                setUser((prev) => ({
+                    ...prev,
+                    isFollowing: true,
+                    followersCount: response.data?.target?.followersCount ?? ((prev.followersCount || 0) + 1),
+                }));
+            }
+        } catch (err) {
+            setSnackbar({
+                open: true,
+                message: 'Failed to update follow status',
+                severity: 'error'
+            });
+        } finally {
+            setIsFollowLoading(false);
         }
     };
 
@@ -241,6 +280,7 @@ const UserProfile = () => {
     if (!user) return (
         <Typography sx={{ p: 2 }}>Loading...</Typography>
     );
+    const isOwnProfile = !profileId || (currentUser && currentUser._id === user._id);
     const isSelectedAvatarColor = avatarOptions.some((avatar) => avatar.id === selectedAvatar);
 
     return (
@@ -262,21 +302,23 @@ const UserProfile = () => {
                                     >
                                         {user.username.charAt(0).toUpperCase()}
                                     </Avatar>
-                                    <IconButton 
-                                        sx={{ 
-                                            position: 'absolute', 
-                                            bottom: 0, 
-                                            right: -4,
-                                            bgcolor: 'background.paper',
-                                            border: '1px solid',
-                                            borderColor: 'divider',
-                                            '&:hover': { bgcolor: 'background.default' }
-                                        }}
-                                        onClick={handleOpenAvatarDialog}
-                                        size="small"
-                                    >
-                                        <EditIcon fontSize="small" />
-                                    </IconButton>
+                                    {isOwnProfile && (
+                                        <IconButton 
+                                            sx={{ 
+                                                position: 'absolute', 
+                                                bottom: 0, 
+                                                right: -4,
+                                                bgcolor: 'background.paper',
+                                                border: '1px solid',
+                                                borderColor: 'divider',
+                                                '&:hover': { bgcolor: 'background.default' }
+                                            }}
+                                            onClick={handleOpenAvatarDialog}
+                                            size="small"
+                                        >
+                                            <EditIcon fontSize="small" />
+                                        </IconButton>
+                                    )}
                                 </Box>
                                 <Box>
                                     <Typography variant="h4" gutterBottom>
@@ -288,12 +330,24 @@ const UserProfile = () => {
                                     <Typography variant="caption" color="text.secondary">
                                         Member since {formatDistanceToNow(new Date(user.createdAt))} ago
                                     </Typography>
+                                    {!isOwnProfile && (
+                                        <Box sx={{ mt: 1 }}>
+                                            <Button
+                                                size="small"
+                                                variant={user.isFollowing ? 'outlined' : 'contained'}
+                                                onClick={handleToggleFollow}
+                                                disabled={isFollowLoading}
+                                            >
+                                                {user.isFollowing ? 'Unfollow' : 'Follow'}
+                                            </Button>
+                                        </Box>
+                                    )}
                                 </Box>
                             </Box>
                         </Grid>
                         <Grid item xs={12} md={8}>
                             <Grid container spacing={2}>
-                                <Grid item xs={12} sm={4}>
+                                <Grid item xs={6} sm={3}>
                                     <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
                                         <Typography variant="overline" color="text.secondary">
                                             Posts
@@ -303,7 +357,7 @@ const UserProfile = () => {
                                         </Typography>
                                     </Paper>
                                 </Grid>
-                                <Grid item xs={12} sm={4}>
+                                <Grid item xs={6} sm={3}>
                                     <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
                                         <Typography variant="overline" color="text.secondary">
                                             Comments
@@ -313,13 +367,23 @@ const UserProfile = () => {
                                         </Typography>
                                     </Paper>
                                 </Grid>
-                                <Grid item xs={12} sm={4}>
+                                <Grid item xs={6} sm={3}>
                                     <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
                                         <Typography variant="overline" color="text.secondary">
-                                            Joined
+                                            Followers
                                         </Typography>
-                                        <Typography variant="h4" sx={{ fontSize: '1.4rem' }}>
-                                            {new Date(user.createdAt).toLocaleDateString()}
+                                        <Typography variant="h4" sx={{ fontSize: '1.7rem' }}>
+                                            {user.followersCount || 0}
+                                        </Typography>
+                                    </Paper>
+                                </Grid>
+                                <Grid item xs={6} sm={3}>
+                                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
+                                        <Typography variant="overline" color="text.secondary">
+                                            Following
+                                        </Typography>
+                                        <Typography variant="h4" sx={{ fontSize: '1.7rem' }}>
+                                            {user.followingCount || 0}
                                         </Typography>
                                     </Paper>
                                 </Grid>
@@ -344,7 +408,7 @@ const UserProfile = () => {
                             </Box>
                         </Grid>
                         <Grid item xs={12} md={6}>
-                            {user.role === 'admin' && (
+                            {isOwnProfile && user.role === 'admin' && (
                                 <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1, flexWrap: 'wrap' }}>
                                     <Button
                                         variant="outlined"
@@ -368,6 +432,7 @@ const UserProfile = () => {
             </Card>
 
             {/* Profile Tabs */}
+            {isOwnProfile ? (
             <Card>
                 <Tabs 
                     value={currentTab} 
@@ -503,8 +568,21 @@ const UserProfile = () => {
 
                 </CardContent>
             </Card>
+            ) : (
+            <Card>
+                <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                        Profile Overview
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                        This is a public profile view. Follow this user to get activity updates.
+                    </Typography>
+                </CardContent>
+            </Card>
+            )}
 
             {/* Avatar Selection Dialog */}
+            {isOwnProfile && (
             <Dialog 
                 open={openAvatarDialog} 
                 onClose={handleCloseAvatarDialog}
@@ -574,7 +652,9 @@ const UserProfile = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
+            )}
 
+            {isOwnProfile && (
             <AvatarGenerator
                 open={avatarGeneratorOpen}
                 onClose={() => setAvatarGeneratorOpen(false)}
@@ -582,6 +662,7 @@ const UserProfile = () => {
                 agentName={user.username || 'user'}
                 targetType="user"
             />
+            )}
 
             {/* Snackbar for notifications */}
             <Snackbar
