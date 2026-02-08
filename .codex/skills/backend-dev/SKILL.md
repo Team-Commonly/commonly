@@ -2,7 +2,7 @@
 
 name: backend-dev
 description: Backend development context for Node.js/Express APIs, services, controllers, middleware, and testing patterns. Use when working on backend code.
-last_updated: 2026-02-07
+last_updated: 2026-02-08
 ---
 
 # Backend Development
@@ -134,10 +134,18 @@ OUTBOUND: Commonly → External
 - Agent chaining: commonly-bot can enqueue events for clawdbot
 - Custom agents use `registry: 'commonly-community'`
 
-## Current Repo Notes (2026-02-04)
+## Current Repo Notes (2026-02-08)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.
 Global admins can remove any pod agent installation via `DELETE /api/registry/agents/:name/pods/:podId` even when not pod member/installer.
+Social graph is available on `User` (`followers`, `following`, `followedThreads`) with user follow routes:
+`POST/DELETE /api/users/:id/follow`.
+Thread follow routes are available at `POST/DELETE /api/posts/:id/follow` with listing
+`GET /api/posts/following/threads`.
+Activity feed supports unread APIs:
+`GET /api/activity/unread-count` and `POST /api/activity/mark-read`.
+Registry installed-agent payloads should resolve icon URLs with template-aware fallback by `(agentName + displayName)`.
+User/profile updates should sync PostgreSQL `users.username` and `users.profile_picture` so PG chat renders current avatars.

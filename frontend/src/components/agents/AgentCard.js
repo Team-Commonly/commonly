@@ -30,6 +30,7 @@ import {
   Chat as ChatIcon,
   Extension as ExtensionIcon,
 } from '@mui/icons-material';
+import { normalizeUploadUrl } from '../../utils/apiBaseUrl';
 
 // Agent type colors
 const agentTypeColors = {
@@ -83,7 +84,8 @@ const AgentCard = ({
   const installs = agent.installs || agent.stats?.installs || 0;
   const capabilities = agent.capabilities || agent.manifest?.capabilities?.map(c => c.name) || [];
   const stats = agent.stats || {};
-  const iconUrl = agent.iconUrl || null;
+  const iconUrl = agent.iconUrl || agent.profile?.iconUrl || agent.profile?.avatarUrl || null;
+  const iconSrc = iconUrl ? normalizeUploadUrl(iconUrl) : undefined;
 
   const typeColor = agentTypeColors[type] || agentTypeColors.default;
   const typeIcon = agentTypeIcons[type] || agentTypeIcons.default;
@@ -119,7 +121,7 @@ const AgentCard = ({
             fontSize: '1.25rem',
             mr: 1.5,
           }}
-          src={iconUrl || undefined}
+          src={iconSrc}
         >
           {typeIcon}
         </Avatar>
@@ -211,7 +213,7 @@ const AgentCard = ({
                 fontSize: '2rem',
                 boxShadow: `0 0 20px ${alpha(typeColor, 0.2)}`,
               }}
-              src={iconUrl || undefined}
+              src={iconSrc}
             >
               {typeIcon}
             </Avatar>
@@ -354,7 +356,7 @@ const AgentCard = ({
               color: typeColor,
               fontSize: '1.5rem',
             }}
-            src={iconUrl || undefined}
+            src={iconSrc}
           >
             {typeIcon}
           </Avatar>
