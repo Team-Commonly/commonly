@@ -7,11 +7,12 @@
 
 class LiteLLMClient {
   constructor(config = {}) {
-    this.baseUrl = config.baseUrl || process.env.LITELLM_BASE_URL || 'http://litellm:4000';
+    this.baseUrl = config.baseUrl || process.env.LITELLM_BASE_URL || '';
     this.apiKey = config.apiKey || process.env.LITELLM_API_KEY || process.env.LITELLM_MASTER_KEY;
     this.defaultModel = config.model || process.env.AGENT_MODEL || 'gemini-2.5-flash';
     this.defaultTemperature = config.temperature || 0.7;
     this.defaultMaxTokens = config.maxTokens || 1024;
+    this.geminiApiKey = config.geminiApiKey || process.env.GEMINI_API_KEY || '';
   }
 
   /**
@@ -33,6 +34,10 @@ class LiteLLMClient {
     const temperature = options.temperature ?? this.defaultTemperature;
     const maxTokens = options.maxTokens || this.defaultMaxTokens;
 
+    if (!this.baseUrl && this.geminiApiKey) {
+      return this.chatCompletionGemini(messages, { model, temperature, maxTokens });
+    }
+
     const body = {
       model,
       messages,
@@ -45,18 +50,89 @@ class LiteLLMClient {
     if (options.toolChoice) body.tool_choice = options.toolChoice;
     if (options.stop) body.stop = options.stop;
 
-    const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+    try {
+      const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        if (this.geminiApiKey) {
+          return this.chatCompletionGemini(messages, { model, temperature, maxTokens });
+        }
+        throw new Error(`LiteLLM request failed: ${res.status} ${text.slice(0, 200)}`);
+      }
+
+      return res.json();
+    } catch (error) {
+      if (this.geminiApiKey) {
+        return this.chatCompletionGemini(messages, { model, temperature, maxTokens });
+      }
+      throw error;
+    }
+  }
+
+  async chatCompletionGemini(messages, options = {}) {
+    const model = options.model || this.defaultModel;
+    const temperature = options.temperature ?? this.defaultTemperature;
+    const maxTokens = options.maxTokens || this.defaultMaxTokens;
+
+    const systemPrompt = messages
+      .filter((msg) => msg?.role === 'system')
+      .map((msg) => String(msg.content || '').trim())
+      .filter(Boolean)
+      .join('\n\n');
+
+    const contents = messages
+      .filter((msg) => msg?.role !== 'system')
+      .map((msg) => ({
+        role: msg?.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: String(msg?.content || '') }],
+      }));
+
+    const geminiBody = {
+      contents: contents.length ? contents : [{ role: 'user', parts: [{ text: '' }] }],
+      generationConfig: {
+        temperature,
+        maxOutputTokens: maxTokens,
+      },
+    };
+
+    if (systemPrompt) {
+      geminiBody.systemInstruction = {
+        parts: [{ text: systemPrompt }],
+      };
+    }
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(this.geminiApiKey)}`;
+    const res = await fetch(endpoint, {
       method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(geminiBody),
     });
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`LiteLLM request failed: ${res.status} ${text.slice(0, 200)}`);
+      throw new Error(`Gemini request failed: ${res.status} ${text.slice(0, 200)}`);
     }
 
-    return res.json();
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts
+      ?.map((part) => String(part?.text || ''))
+      .join('')
+      .trim() || '';
+
+    return {
+      choices: [
+        {
+          message: {
+            content: text,
+          },
+        },
+      ],
+    };
   }
 
   /**
