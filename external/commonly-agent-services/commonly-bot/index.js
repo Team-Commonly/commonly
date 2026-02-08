@@ -466,6 +466,74 @@ const buildHeuristicPodSummary = (messages = []) => {
   };
 };
 
+const buildLlmPodSummary = async ({ messages = [], podName = 'this pod' } = {}) => {
+  if (!llmClient?.baseUrl) return null;
+  const meaningful = messages
+    .filter((msg) => msg?.content && String(msg.content).trim())
+    .filter((msg) => !isSystemLikeMessage(msg))
+    .slice(-40);
+
+  if (!meaningful.length) return null;
+
+  const transcript = meaningful.map((msg) => {
+    const author = msg.username || msg.userId?.username || 'unknown';
+    const text = String(msg.content || '').replace(/\s+/g, ' ').trim();
+    return `${author}: ${text}`;
+  }).join('\n');
+
+  const prompt = [
+    `You are summarizing recent pod chat activity for "${podName}".`,
+    'Write an intelligent, concise summary for humans.',
+    'Requirements:',
+    '- high signal only, no fluff',
+    '- include concrete developments/decisions/blockers',
+    '- avoid repeating near-duplicate points',
+    '- if mostly status/noise, say so briefly',
+    'Return JSON only:',
+    '{"summary":"...", "highlights":["...","..."], "contributors":["name (count)"]}',
+    '',
+    'Messages:',
+    transcript,
+  ].join('\n');
+
+  try {
+    const raw = await llmClient.chat(
+      'You produce terse operational summaries for team chat.',
+      prompt,
+      { model: SOCIAL_REPHRASE_MODEL, temperature: 0.2, maxTokens: 380 },
+    );
+    const parsed = parseJsonBlock(raw);
+    if (!parsed?.summary) return null;
+    const highlights = Array.isArray(parsed.highlights)
+      ? parsed.highlights.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 5)
+      : [];
+    const contributors = Array.isArray(parsed.contributors)
+      ? parsed.contributors.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 4)
+      : [];
+    const contributorLine = contributors.length
+      ? `Top contributors: ${contributors.join(', ')}`
+      : null;
+    const highlightText = highlights.length
+      ? highlights.map((line) => `- ${line}`).join('\n')
+      : '- No major developments in this window.';
+    return {
+      type: 'chat-summary',
+      source: 'pod',
+      sourceLabel: 'Commonly',
+      channel: 'pod-chat',
+      messageCount: meaningful.length,
+      summary: [
+        String(parsed.summary).trim(),
+        contributorLine,
+        'Highlights:',
+        highlightText,
+      ].filter(Boolean).join('\n\n'),
+    };
+  } catch {
+    return null;
+  }
+};
+
 const postMessage = async (runtimeToken, podId, content, metadata = {}) => {
   const res = await fetch(`${baseUrl}/api/agents/runtime/pods/${podId}/messages`, {
     method: 'POST',
@@ -613,7 +681,14 @@ const handleEvent = async (account, event) => {
 
   if (!event?.payload?.summary && event?.type === 'summary.request') {
     const messages = await fetchRecentMessages(runtimeToken, event.podId, 30);
-    const synthetic = buildHeuristicPodSummary(messages);
+    const context = await fetch(`${baseUrl}/api/agents/runtime/pods/${event.podId}/context`, {
+      headers: buildHeaders(runtimeToken),
+    }).then((res) => (res.ok ? res.json() : null)).catch(() => null);
+
+    const synthetic = await buildLlmPodSummary({
+      messages,
+      podName: context?.pod?.name || 'this pod',
+    }) || buildHeuristicPodSummary(messages);
     if (!synthetic?.summary) {
       return ackEvent(runtimeToken, event._id);
     }
