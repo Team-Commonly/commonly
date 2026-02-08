@@ -5,7 +5,7 @@ import {
     Container, Typography, Box, Grid, Card, CardContent, CardActions, 
     Button, TextField, Dialog, DialogTitle, DialogContent, DialogActions,
     FormControl, InputLabel, Select, MenuItem, CircularProgress, Tabs, Tab,
-    AppBar, Toolbar, Avatar, Chip
+    AppBar, Toolbar, Avatar, Chip, Tooltip
 } from '@mui/material';
 import { 
     Add as AddIcon, 
@@ -16,8 +16,23 @@ import {
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
+import {
+    readPodLastReadAt,
+    resolveLatestMessageTimestampMs,
+} from '../utils/podReadState';
 import PodSummary from './PodSummary';
 import './Pod.css';
+
+const isLikelyAgentUsername = (username) => {
+    const normalized = String(username || '').trim().toLowerCase();
+    if (!normalized) return false;
+    return normalized.includes('-bot')
+        || normalized.endsWith('bot')
+        || normalized.includes('openclaw')
+        || normalized.includes('clawdbot')
+        || normalized.includes('moltbot')
+        || normalized.includes('agent');
+};
 
 const Pod = () => {
     const { currentUser } = useAuth();
@@ -34,6 +49,7 @@ const Pod = () => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [membershipFilter, setMembershipFilter] = useState('all');
     const [previewPod, setPreviewPod] = useState(null);
+    const [unreadByPod, setUnreadByPod] = useState({});
     const navigate = useNavigate();
     const { podType } = useParams();
     
@@ -153,6 +169,78 @@ const Pod = () => {
         () => pods.filter((pod) => isMember(pod)).length,
         [pods, isMember]
     );
+
+    useEffect(() => {
+        const fetchUnreadState = async () => {
+            if (!currentUser?._id) {
+                setUnreadByPod({});
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setUnreadByPod({});
+                return;
+            }
+            const joinedPods = pods.filter((pod) => isMember(pod));
+            if (!joinedPods.length) {
+                setUnreadByPod({});
+                return;
+            }
+
+            const authHeaders = {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            };
+            const nextEntries = await Promise.all(joinedPods.map(async (pod) => {
+                try {
+                    const response = await axios.get(`/api/messages/${pod._id}?limit=1`, authHeaders);
+                    const latestTs = resolveLatestMessageTimestampMs(response.data || []);
+                    const readTs = readPodLastReadAt(currentUser._id, pod._id);
+                    const hasUnread = Boolean(latestTs && (!readTs || latestTs > readTs));
+                    return [pod._id, hasUnread];
+                } catch (error) {
+                    return [pod._id, false];
+                }
+            }));
+            setUnreadByPod(Object.fromEntries(nextEntries));
+        };
+
+        fetchUnreadState();
+    }, [pods, isMember, currentUser?._id]);
+
+    const getMemberRole = useCallback((pod, member) => {
+        if (!member || typeof member !== 'object') return 'Member';
+        if (member._id && pod?.createdBy?._id && member._id === pod.createdBy._id) return 'Admin';
+        if (member.isBot || isLikelyAgentUsername(member.username)) return 'Agent';
+        return 'Member';
+    }, []);
+
+    const getPodPreviewMembers = useCallback((pod) => {
+        const members = Array.isArray(pod?.members)
+            ? pod.members.filter((member) => member && typeof member === 'object' && member.username)
+            : [];
+        const ranked = members.slice().sort((a, b) => {
+            const rank = (member) => {
+                const role = getMemberRole(pod, member);
+                if (role === 'Admin') return 0;
+                if (role === 'Agent') return 1;
+                return 2;
+            };
+            return rank(a) - rank(b);
+        });
+        const visibleMembers = ranked.slice(0, 4).map((member) => ({
+            ...member,
+            role: getMemberRole(pod, member),
+        }));
+        const overflowCount = Math.max(ranked.length - visibleMembers.length, 0);
+        const roleCounts = ranked.reduce((acc, member) => {
+            const role = getMemberRole(pod, member);
+            acc[role] = (acc[role] || 0) + 1;
+            return acc;
+        }, {});
+        return { visibleMembers, overflowCount, roleCounts };
+    }, [getMemberRole]);
     
     // Handle creating a new room
     const handleCreateRoom = async () => {
@@ -417,10 +505,17 @@ const Pod = () => {
                                 || (pod.createdBy && pod.createdBy._id === currentUser._id)
                             ));
                             const joined = isMember(pod);
+                            const hasUnread = joined && Boolean(unreadByPod[pod._id]);
                             const creatorAvatarSrc = getAvatarSrc(pod.createdBy?.profilePicture);
+                            const { visibleMembers, overflowCount, roleCounts } = getPodPreviewMembers(pod);
+                            const roleSummary = [
+                                roleCounts.Admin ? `${roleCounts.Admin} admin` : null,
+                                roleCounts.Agent ? `${roleCounts.Agent} agent${roleCounts.Agent > 1 ? 's' : ''}` : null,
+                                roleCounts.Member ? `${roleCounts.Member} member${roleCounts.Member > 1 ? 's' : ''}` : null,
+                            ].filter(Boolean).join(' • ');
                             return (
                             <Grid item xs={12} sm={6} md={4} key={pod._id}>
-                                <Card className="pod-card">
+                                <Card className={`pod-card ${hasUnread ? 'pod-card-unread' : ''}`}>
                                     <CardContent sx={{ p: 2, pb: 1.5 }}>
                                         <Box className="pod-card-meta">
                                             <Chip
@@ -428,9 +523,18 @@ const Pod = () => {
                                                 className="pod-card-type-chip"
                                                 label={(pod.type || getPodType()).replace('-', ' ')}
                                             />
-                                            {joined ? (
-                                                <Chip size="small" className="pod-card-joined-chip" label="Joined" />
-                                            ) : null}
+                                            <Box className="pod-card-meta-status">
+                                                {hasUnread ? (
+                                                    <Chip
+                                                        size="small"
+                                                        className="pod-card-unread-chip"
+                                                        label="New messages"
+                                                    />
+                                                ) : null}
+                                                {joined ? (
+                                                    <Chip size="small" className="pod-card-joined-chip" label="Joined" />
+                                                ) : null}
+                                            </Box>
                                         </Box>
                                         <Typography variant="h5" component="div" className="pod-card-title">
                                             {pod.name}
@@ -443,6 +547,40 @@ const Pod = () => {
                                             podType={getPodType()} 
                                             originalDescription={pod.description}
                                         />
+                                        <Box className="pod-members-preview">
+                                            <Box className="pod-members-stack">
+                                                {visibleMembers.map((member, index) => {
+                                                    const avatarSrc = getAvatarSrc(member.profilePicture);
+                                                    const roleClass = member.role.toLowerCase();
+                                                    return (
+                                                        <Tooltip
+                                                            key={`${pod._id}-${member._id || member.username}`}
+                                                            title={`${member.role} • @${member.username}`}
+                                                            arrow
+                                                        >
+                                                            <Avatar
+                                                                className={`pod-member-avatar pod-member-avatar-${roleClass}`}
+                                                                src={avatarSrc || undefined}
+                                                                sx={{
+                                                                    bgcolor: getAvatarColor(member.profilePicture || 'default'),
+                                                                    zIndex: 10 - index,
+                                                                }}
+                                                            >
+                                                                {member.username?.charAt(0).toUpperCase()}
+                                                            </Avatar>
+                                                        </Tooltip>
+                                                    );
+                                                })}
+                                                {overflowCount > 0 && (
+                                                    <Avatar className="pod-member-avatar pod-member-avatar-overflow">
+                                                        +{overflowCount}
+                                                    </Avatar>
+                                                )}
+                                            </Box>
+                                            <Typography variant="caption" className="pod-member-role-summary">
+                                                {roleSummary || 'No members yet'}
+                                            </Typography>
+                                        </Box>
                                         
                                         <Box className="pod-card-footer">
                                         <Box className="pod-card-creator">

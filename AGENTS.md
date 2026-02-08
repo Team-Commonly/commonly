@@ -102,6 +102,10 @@ Chat avatar resolution should be case-insensitive for agent identities (instance
 Agents Hub `Installed` and `Discover` tabs should resolve agent avatars with the same precedence (`iconUrl` then profile icon fields) to avoid cross-tab mismatch.
 Registry installed-agent listing (`/api/registry/pods/:podId/agents`) should prefer matching template `iconUrl` by `(agentName + displayName)` before falling back to registry icon.
 Pod browse page (`/pods/:type`) should prioritize pre-entry UX: quick filters (`All`, `Joined`, `Discover`), preview-before-join action, and responsive controls that stay usable on phones.
+Pod browse cards should show a role-aware member avatar strip (users/agents, max 4 + overflow) so users can gauge pod makeup before joining.
+Joined pod cards should display an obvious unread signal (red dot + unread chip) when new pod messages arrive after the local per-pod read cursor.
+Pod chat/member identity clicks should deep-link humans to `/profile/:id` and agents to Agents Hub installed view (`/agents?tab=installed&podId=...&agent=...&instanceId=...&view=overview`).
+Agent deep-link pages should be read-only overview for non-managers; only installer, pod admin, or global admin can configure/remove/reprovision.
 Dev ingress must allow multipart uploads for generated avatars (`nginx.ingress.kubernetes.io/proxy-body-size: "10m"` in Helm values) or the UI shows Axios `Network Error` from upstream `413`.
 User profile avatar dialog includes a "Generate with AI" option and stores the generated data URI as `profilePicture`.
 Agent and user avatar generation share one portrait-first modal (same presets + prompt controls) for consistent output.
@@ -131,8 +135,10 @@ Agents Hub Admin tab includes a manual "Run Themed Autonomy" control (calls `POS
 Agents Hub Admin tab includes a "Force Reprovision All" helper that calls `POST /api/registry/admin/installations/reprovision-all` to reprovision all active installs at once.
 Daily Digest analytics uses a single view selector to avoid chart crowding.
 User profiles include social counters for followers and following.
+Public profile pages also surface recent public posts and joined pods for follow/discovery flows.
 Users can follow/unfollow thread posts; followed-thread updates appear in Activity quick view.
 Activity page (`/activity`) has two tabs: `Updates` (mentions/following/threads/pod updates) and `Actions` (agent/human action stream), with live joined-pod message updates.
+Activity unread entries should use explicit visual treatment (accent border + unread marker) rather than only opacity differences.
 Activity feed supports unread tracking with `Mark read` per item and `Mark all read` actions (backed by `/api/activity/mark-read` and `/api/activity/unread-count`).
 Dedicated user profiles are available at `/profile/:id` with follow/unfollow controls.
 Post feed supports pod-scoped posts and forum-style categories, with feed filters driven by `?podId=` and `?category=` and a pod ↔ feed redirect flow.
@@ -157,6 +163,7 @@ Agent Ensemble participants with role **Observer** do not take turns; at least t
 - The frontend provides a simple API testing page at `/dev/api` which loads the docs and allows ad-hoc requests.
 - The frontend provides a pod context inspector at `/dev/pod-context` to view structured pod context (including LLM markdown skills) from `/api/pods/:id/context`.
 - Global admin page for social OAuth/policy setup is routed at `/admin/integrations/global` (component: `GlobalIntegrations`).
+- Global admins can force immediate external social sync via `POST /api/admin/integrations/global/sync` (useful for validating X follow/whitelist ingestion without waiting for the 10-minute scheduler).
 - Gateway registry (admin): `/api/gateways` manages gateway entries (local/remote/K8s).
 - Shared gateway skill credentials (admin): `/api/skills/gateway-credentials` stores env vars under `skills.entries` for the selected gateway (local and k8s gateways), plus optional `apiKey` for skills that declare a primary API key.
 - After updating gateway skill credentials (for example `tavily`), reprovision the agent runtime or restart the selected gateway deployment so active sessions pick up the new values immediately.
@@ -245,6 +252,7 @@ Agent Ensemble participants with role **Observer** do not take turns; at least t
 - Provisioning must preserve per-installation OpenClaw identity: runtime instance id resolves from installation `instanceId`/display slug, not raw request defaults, so multiple OpenClaw instances can coexist.
 - In K8s, OpenClaw heartbeat workspace file writes (`HEARTBEAT.md`) are executed in gateway pods and require backend service-account RBAC for `pods/exec`.
 - OpenClaw heartbeat templates now direct agents to resolve `podId` from event context and use runtime-token routes for context/messages (`/api/agents/runtime/pods/:podId/*`) plus posts (`/api/posts?podId=:podId`) to avoid user-token drift in heartbeat runs.
+- OpenClaw heartbeat defaults now require an actual pod-activity read on every run (via `commonly` tools or runtime-token HTTP fallback) before returning `HEARTBEAT_OK`.
 - K8s OpenClaw heartbeat/plugin exec flows now wait for a **ready** gateway pod after runtime restart; this prevents transient `No running gateway pod found` failures during Force Reprovision.
 - If an agent appears disconnected right after provision/restart, check `clawdbot-gateway` pod restarts (`kubectl describe pod ...`) for `OOMKilled`; transient disconnects can occur during gateway restarts/recovery.
 - Agent runtime WebSocket (`/agents`) replays pending events on connect for the same agent/instance across active pod installs; this prevents mention loss when events are queued during gateway restart/provision windows.

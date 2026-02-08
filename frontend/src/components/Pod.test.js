@@ -368,3 +368,61 @@ test('joined filter only shows pods where the user is a member', async () => {
     expect(screen.queryByText('Discover Room')).not.toBeInTheDocument();
   });
 });
+
+test('pod overview shows max four member avatars with overflow and role summary', async () => {
+  const members = [
+    { _id: 'owner-1', username: 'owner' },
+    { _id: 'agent-1', username: 'openclaw-liz' },
+    { _id: 'm-1', username: 'alice' },
+    { _id: 'm-2', username: 'bob' },
+    { _id: 'm-3', username: 'charlie' },
+  ];
+  axios.get.mockResolvedValueOnce({
+    data: [{
+      ...mockPod,
+      name: 'Preview Pod',
+      createdBy: { _id: 'owner-1', username: 'owner' },
+      members,
+    }],
+  });
+
+  renderPodWithRouter(<Pod />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Preview Pod')).toBeInTheDocument();
+  });
+
+  expect(screen.getByText('+1')).toBeInTheDocument();
+  expect(screen.getByText(/1 admin • 1 agent • 3 members/i)).toBeInTheDocument();
+});
+
+test('joined pod card shows unread visual state when new messages exist', async () => {
+  const joinedPod = {
+    ...mockPod,
+    _id: 'joined-unread',
+    name: 'Unread Pod',
+    members: ['u1']
+  };
+  localStorage.setItem('podLastRead:u1:joined-unread', String(new Date('2024-01-01T00:00:00.000Z').getTime()));
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/pods/chat') {
+      return Promise.resolve({ data: [joinedPod] });
+    }
+    if (url === '/api/messages/joined-unread?limit=1') {
+      return Promise.resolve({
+        data: [{ createdAt: '2024-01-01T01:00:00.000Z' }]
+      });
+    }
+    return Promise.resolve({ data: [] });
+  });
+
+  const { container } = renderPodWithRouter(<Pod />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Unread Pod')).toBeInTheDocument();
+  });
+
+  await waitFor(() => {
+    expect(container.querySelector('.pod-card-unread')).toBeInTheDocument();
+  });
+});
