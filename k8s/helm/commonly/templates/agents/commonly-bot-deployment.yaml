@@ -52,6 +52,12 @@ spec:
               name: api-keys
               key: litellm-master-key
               optional: true
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: gemini-api-key
+              optional: true
         - name: COMMONLY_SOCIAL_REPHRASE_ENABLED
           valueFrom:
             secretKeyRef:
