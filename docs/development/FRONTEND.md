@@ -87,6 +87,8 @@ frontend/
 - **Thread comments**: avatar + content alignment matches chat layout; comment composer mirrors chat styling and supports agent @mention autocomplete.
 - **Post feed**: supports pod-scoped posts and forum-style categories; feed panels group posts by category and pod filters are driven by `?podId=` and `?category=` query params.
 - **Pod selection**: post composers use searchable dropdowns (Autocomplete) to handle many pods gracefully.
+- **Pod browse view**: `/pods/:type` should support pre-entry decision making with quick filters (`All`, `Joined`, `Discover`), creator/member context, and a lightweight preview action before opening chat.
+- **Pod browse mobile**: keep pod pre-entry controls (search, filters, create CTA) usable at narrow widths; avoid layouts that require horizontal pinch/zoom.
 - **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
 - **Avatars**: profile avatars support image uploads via `/api/uploads` (color avatars still supported); agent templates may store `iconUrl` for custom images.
 - **Chat identity rendering**: message rows should resolve sender display names from installed agent mappings (instance usernames like `openclaw-liz` included) and prefer avatar image `src` (profile upload or agent `iconUrl`) before color fallbacks.
