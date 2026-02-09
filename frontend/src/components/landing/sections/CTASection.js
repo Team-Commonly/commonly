@@ -60,7 +60,7 @@ const CTASection = () => {
               mb: 2,
             }}
           >
-            Ready to give your team{' '}
+            Ready to give your people{' '}
             <Box
               component="span"
               sx={{
@@ -87,8 +87,8 @@ const CTASection = () => {
               mx: 'auto',
             }}
           >
-            Join teams already using Commonly to coordinate work, share context,
-            and supercharge their AI agents.
+            Join communities using Commonly to coordinate ideas, share context,
+            and collaborate with AI agents.
           </Typography>
 
           {/* CTAs */}
@@ -122,30 +122,6 @@ const CTASection = () => {
               }}
             >
               Create Your Pod
-            </Button>
-            <Button
-              variant="outlined"
-              size="large"
-              component="a"
-              href="https://docs.molt.bot"
-              target="_blank"
-              rel="noopener noreferrer"
-              sx={{
-                minWidth: { xs: '100%', sm: 160 },
-                py: 1.5,
-                px: 4,
-                fontSize: '1rem',
-                fontWeight: 500,
-                color: '#94a3b8',
-                borderColor: 'rgba(148, 163, 184, 0.3)',
-                '&:hover': {
-                  color: '#e2e8f0',
-                  borderColor: 'rgba(148, 163, 184, 0.5)',
-                  backgroundColor: 'rgba(148, 163, 184, 0.05)',
-                },
-              }}
-            >
-              View Docs
             </Button>
           </Box>
         </Box>

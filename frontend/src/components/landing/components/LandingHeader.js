@@ -47,10 +47,18 @@ const LandingHeader = () => {
             }}
             onClick={() => navigate('/')}
           >
-            <img
+            <Box
+              component="img"
               src={commonlyLogo}
               alt="Commonly Logo"
-              style={{ width: 32, height: 32 }}
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '999px',
+                backgroundColor: '#0f172a',
+                border: '1px solid rgba(148, 163, 184, 0.2)',
+                p: 0.35,
+              }}
             />
             <Typography
               variant="h6"
@@ -109,6 +117,22 @@ const LandingHeader = () => {
               }}
             >
               Log in
+            </Button>
+            <Button
+              component="a"
+              href="mailto:support@commonly.me"
+              variant="text"
+              sx={{
+                color: '#94a3b8',
+                fontWeight: 500,
+                display: { xs: 'none', md: 'inline-flex' },
+                '&:hover': {
+                  color: '#e2e8f0',
+                  backgroundColor: 'rgba(148, 163, 184, 0.08)',
+                },
+              }}
+            >
+              Contact Us
             </Button>
             <Button
               variant="contained"

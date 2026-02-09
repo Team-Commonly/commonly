@@ -13,6 +13,7 @@ jest.mock('axios', () => ({
 }));
 jest.mock('../context/AppContext', () => ({ useAppContext: jest.fn() }));
 jest.mock('../context/AuthContext', () => ({ useAuth: jest.fn() }));
+jest.mock('./admin/AdminUsers', () => () => null);
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
   useParams: () => ({ id: 'u' }),

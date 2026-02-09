@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
 import Login from './components/Login';
 import Register from './components/Register';
+import RegistrationInviteRequired from './components/RegistrationInviteRequired';
 import LandingPage from './components/landing/LandingPage';
 import UseCasePage from './components/landing/UseCasePage';
 import VerifyEmail from './components/VerifyEmail';
@@ -206,6 +207,7 @@ function App() {
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
+                    <Route path="/register/invite-required" element={<RegistrationInviteRequired />} />
                     <Route path="/verify-email" element={<VerifyEmail />} />
                     <Route element={<Layout />}>
                       <Route path="/feed" element={<PostFeed />} />
@@ -221,6 +223,11 @@ function App() {
                       <Route path="/admin/integrations/global" element={
                         <ProtectedRoute requireAdmin={true}>
                           <GlobalIntegrations />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/admin/users" element={
+                        <ProtectedRoute requireAdmin={true}>
+                          <Navigate to="/profile?tab=user-admin" replace />
                         </ProtectedRoute>
                       } />
                       <Route path="/pods" element={<PodRedirect />} />

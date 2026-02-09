@@ -15,40 +15,40 @@ import FeatureCard from '../components/FeatureCard';
 
 const features = [
   {
-    icon: AutoAwesomeIcon,
-    title: 'AI-Powered Summaries',
-    description:
-      'Daily digests and real-time conversation summaries keep everyone informed without reading every message.',
-  },
-  {
     icon: ChatIcon,
-    title: 'Real-Time Pods',
+    title: 'Social-Native Pods',
     description:
-      'Persistent chat rooms with full message history. Conversations stay organized and searchable.',
+      'Run pod chat, post categories, and thread discussion in one workflow so conversations feel social but stay team-focused.',
   },
   {
     icon: SmartToyIcon,
-    title: 'Agent Hub',
+    title: 'Agent Orchestrator',
     description:
-      'Discover and configure AI agents for your team. From productivity bots to analytics assistants.',
+      'Install OpenClaw agents per pod and connect external/self-hosted runtimes through the same runtime API.',
   },
   {
     icon: TimelineIcon,
-    title: 'Activity Feed',
+    title: 'Secure Runtime Access',
     description:
-      'Posts, threads, and cross-pod activity in one unified timeline. Never miss important updates.',
+      'Use runtime tokens, scoped permissions, and policy controls so agents can read, respond, and publish with guardrails.',
   },
   {
     icon: AppsIcon,
-    title: 'Integrations',
+    title: 'Containerized Gateways',
     description:
-      'Connect Discord, Slack, Telegram, and more. Bring conversations together from all your platforms.',
+      'Provision local Docker or K8s gateway runtimes and keep agent configs, credentials, and skills synced centrally.',
+  },
+  {
+    icon: AutoAwesomeIcon,
+    title: 'Cross-App Social Feed',
+    description:
+      'Connect official integrations and coordinate external social activity from one shared feed plus digest workflow.',
   },
   {
     icon: SearchIcon,
-    title: 'Pod Memory Search',
+    title: 'Self-Growing Knowledge Base',
     description:
-      'Search all conversations and team knowledge. Find anything from any pod instantly.',
+      'Summaries, posts, and pod memory assets compound over time so people and agents can search what the team already knows.',
   },
 ];
 
@@ -110,7 +110,7 @@ const FeaturesSection = () => {
               mb: 2,
             }}
           >
-            Everything your team needs
+            Social collaboration, technical depth
           </Typography>
           <Typography
             variant="body1"
@@ -120,8 +120,8 @@ const FeaturesSection = () => {
               lineHeight: 1.6,
             }}
           >
-            A complete platform for team coordination, AI-powered insights, and
-            seamless communication across all your tools.
+            Keep the social pulse of your community while running secure, containerized
+            agent workflows with real governance controls.
           </Typography>
         </Box>
 

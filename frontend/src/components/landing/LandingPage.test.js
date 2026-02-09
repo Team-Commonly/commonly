@@ -20,6 +20,26 @@ jest.mock('../../context/AuthContext', () => ({
   useAuth: jest.fn(),
 }));
 
+// MUI Tabs relies on layout APIs that are flaky in jsdom.
+jest.mock('@mui/material/Tabs', () => {
+  const React = require('react');
+  return function MockTabs({ children }) {
+    return <div data-testid="mock-tabs">{children}</div>;
+  };
+});
+
+jest.mock('@mui/material/Tab', () => {
+  const React = require('react');
+  return function MockTab({ label, icon }) {
+    return (
+      <button type="button">
+        {icon}
+        {label}
+      </button>
+    );
+  };
+});
+
 const renderLandingPage = () => {
   return render(
     <MemoryRouter>
@@ -42,8 +62,7 @@ describe('LandingPage', () => {
       renderLandingPage();
 
       // Check for main headline
-      expect(screen.getByText(/A shared home for/i)).toBeInTheDocument();
-      expect(screen.getByText(/team context/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: /social workspace to chat, build, and live with ai agents/i })).toBeInTheDocument();
     });
 
     it('renders the header with logo', () => {
@@ -55,7 +74,7 @@ describe('LandingPage', () => {
     it('renders Get Started and Log in buttons in header', () => {
       renderLandingPage();
 
-      expect(screen.getByRole('button', { name: /get started/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^get started$/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
     });
 
@@ -69,12 +88,12 @@ describe('LandingPage', () => {
     it('renders all feature cards', () => {
       renderLandingPage();
 
-      expect(screen.getByText('AI-Powered Summaries')).toBeInTheDocument();
-      expect(screen.getByText('Real-Time Pods')).toBeInTheDocument();
-      expect(screen.getByText('Agent Hub')).toBeInTheDocument();
-      expect(screen.getByText('Activity Feed')).toBeInTheDocument();
-      expect(screen.getByText('Integrations')).toBeInTheDocument();
-      expect(screen.getByText('Pod Memory Search')).toBeInTheDocument();
+      expect(screen.getByText('Social-Native Pods')).toBeInTheDocument();
+      expect(screen.getByText('Agent Orchestrator')).toBeInTheDocument();
+      expect(screen.getByText('Secure Runtime Access')).toBeInTheDocument();
+      expect(screen.getByText('Containerized Gateways')).toBeInTheDocument();
+      expect(screen.getByText('Cross-App Social Feed')).toBeInTheDocument();
+      expect(screen.getByText('Self-Growing Knowledge Base')).toBeInTheDocument();
     });
 
     it('renders integration badges', () => {
@@ -83,16 +102,16 @@ describe('LandingPage', () => {
       expect(screen.getByText('Discord')).toBeInTheDocument();
       expect(screen.getByText('Slack')).toBeInTheDocument();
       expect(screen.getByText('Telegram')).toBeInTheDocument();
-      expect(screen.getByText('WhatsApp')).toBeInTheDocument();
-      expect(screen.getByText('GitHub')).toBeInTheDocument();
+      expect(screen.getByText('GroupMe')).toBeInTheDocument();
+      expect(screen.getByText('X')).toBeInTheDocument();
+      expect(screen.getByText('Instagram')).toBeInTheDocument();
     });
 
     it('renders the CTA section', () => {
       renderLandingPage();
 
-      expect(screen.getByText(/Ready to give your team/i)).toBeInTheDocument();
+      expect(screen.getByText(/Ready to give your people/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /create your pod/i })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /view docs/i })).toBeInTheDocument();
     });
 
     it('renders the footer', () => {
@@ -139,13 +158,6 @@ describe('LandingPage', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/register');
     });
 
-    it('has correct href for View Docs link', () => {
-      renderLandingPage();
-
-      const viewDocsLink = screen.getByRole('link', { name: /view docs/i });
-      expect(viewDocsLink).toHaveAttribute('href', 'https://docs.molt.bot');
-      expect(viewDocsLink).toHaveAttribute('target', '_blank');
-    });
   });
 
   describe('Authentication', () => {
@@ -181,7 +193,7 @@ describe('LandingPage', () => {
 
       renderLandingPage();
 
-      expect(screen.getByText(/A shared home for/i)).toBeInTheDocument();
+      expect(screen.getByText(/social workspace to chat/i)).toBeInTheDocument();
     });
   });
 
@@ -191,7 +203,7 @@ describe('LandingPage', () => {
       const scrollIntoViewMock = jest.fn();
       const originalGetElementById = document.getElementById;
       document.getElementById = jest.fn((id) => {
-        if (id === 'features') {
+        if (id === 'use-cases') {
           return { scrollIntoView: scrollIntoViewMock };
         }
         return originalGetElementById.call(document, id);

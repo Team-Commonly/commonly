@@ -71,7 +71,7 @@ const buildTokenHeaders = ({ clientId, clientSecret }) => {
 const getDefaultXScopes = () => (
   String(
     process.env.X_OAUTH_SCOPES
-    || 'tweet.read users.read offline.access tweet.write',
+    || 'tweet.read users.read follows.read offline.access tweet.write',
   )
     .split(/\s+/)
     .map((scope) => scope.trim())

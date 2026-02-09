@@ -5,6 +5,10 @@ jest.mock('../../../models/Integration', () => ({
   findOne: jest.fn(),
   create: jest.fn(),
 }));
+jest.mock('../../../models/OAuthState', () => ({
+  create: jest.fn(),
+  findOneAndUpdate: jest.fn(),
+}));
 
 jest.mock('../../../models/Pod', () => ({
   findOne: jest.fn(),
@@ -28,6 +32,7 @@ jest.mock('axios', () => ({
 
 const axios = require('axios');
 const Integration = require('../../../models/Integration');
+const OAuthState = require('../../../models/OAuthState');
 const Pod = require('../../../models/Pod');
 const registry = require('../../../integrations');
 const externalFeedService = require('../../../services/externalFeedService');
@@ -51,6 +56,34 @@ describe('admin global integrations route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Pod.findOne.mockResolvedValue({ _id: 'pod-global', name: 'Global Social Feed' });
+  });
+
+  it('uses follows.read in default OAuth scopes for X OAuth start', async () => {
+    const handler = getRouteHandler('/x/oauth/start', 'post');
+    const originalClientId = process.env.X_OAUTH_CLIENT_ID;
+    process.env.X_OAUTH_CLIENT_ID = 'test-client-id';
+    OAuthState.create.mockResolvedValueOnce({});
+
+    const req = {
+      userId: 'admin-1',
+      body: {},
+    };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(OAuthState.create).toHaveBeenCalledTimes(1);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.success).toBe(true);
+    const authorizeUrl = new URL(payload.authorizeUrl);
+    const scopeParam = authorizeUrl.searchParams.get('scope');
+    expect(scopeParam).toEqual(expect.stringContaining('follows.read'));
+
+    if (originalClientId === undefined) {
+      delete process.env.X_OAUTH_CLIENT_ID;
+    } else {
+      process.env.X_OAUTH_CLIENT_ID = originalClientId;
+    }
   });
 
   it('tests X integration via registry.get(type, integration)', async () => {
