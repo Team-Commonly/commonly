@@ -60,6 +60,7 @@ type HeartbeatDeps = OutboundSendDeps &
     runtime?: RuntimeEnv;
     getQueueSize?: (lane?: string) => number;
     nowMs?: () => number;
+    waitMs?: (ms: number) => Promise<void>;
   };
 
 const log = createSubsystemLogger("gateway/heartbeat");
@@ -95,6 +96,28 @@ const EXEC_EVENT_PROMPT =
   "An async command you ran earlier has completed. The result is shown in the system messages above. " +
   "Please relay the command output to the user in a helpful way. If the command succeeded, share the relevant output. " +
   "If it failed, explain what went wrong.";
+const HEARTBEAT_RATE_LIMIT_RETRY_MS = 60_000;
+const HEARTBEAT_MAX_RATE_LIMIT_RETRIES = 1;
+const HEARTBEAT_MEMORY_WRITE_MIN_INTERVAL_MS = 10 * 60_000;
+const HEARTBEAT_MEMORY_PREVIEW_MAX_CHARS = 280;
+
+const defaultWaitMs = async (ms: number) => {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, Math.max(0, ms));
+    timer.unref?.();
+  });
+};
+
+function isRateLimitedError(message: string) {
+  const normalized = String(message || "").toLowerCase();
+  return (
+    normalized.includes("resource_exhausted") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("quota exceeded") ||
+    normalized.includes("http 429")
+  );
+}
 
 function resolveActiveHoursTimezone(cfg: OpenClawConfig, raw?: string): string {
   const trimmed = raw?.trim();
@@ -473,6 +496,68 @@ function normalizeHeartbeatReply(
   return { shouldSkip: false, text: finalText, hasMedia };
 }
 
+function isoDateForTs(ts: number): string {
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+function redactSensitiveText(input: string): string {
+  if (!input) {
+    return "";
+  }
+  return input
+    .replace(/\bcm_agent_[a-zA-Z0-9]{20,}\b/g, "[REDACTED_AGENT_TOKEN]")
+    .replace(/\bcm_[a-zA-Z0-9]{20,}\b/g, "[REDACTED_USER_TOKEN]")
+    .replace(/\bAIza[0-9A-Za-z\-_]{20,}\b/g, "[REDACTED_GOOGLE_KEY]")
+    .replace(/\bsk-[A-Za-z0-9\-_]{20,}\b/g, "[REDACTED_API_KEY]")
+    .replace(/Bearer\s+[A-Za-z0-9\-_\.]{20,}/gi, "Bearer [REDACTED]");
+}
+
+async function appendHeartbeatMemoryNote(params: {
+  workspaceDir: string;
+  storePath: string;
+  sessionKey: string;
+  startedAt: number;
+  note: string;
+}) {
+  const safeNote = redactSensitiveText(params.note).trim();
+  if (!safeNote) {
+    return;
+  }
+  const store = loadSessionStore(params.storePath);
+  const entry = store[params.sessionKey];
+  const lastAt =
+    typeof entry?.lastHeartbeatMemoryAt === "number" ? entry.lastHeartbeatMemoryAt : undefined;
+  if (
+    typeof lastAt === "number" &&
+    params.startedAt - lastAt < HEARTBEAT_MEMORY_WRITE_MIN_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  const memoryDir = path.join(params.workspaceDir, "memory");
+  const dailyPath = path.join(memoryDir, `${isoDateForTs(params.startedAt)}.md`);
+  await fs.mkdir(memoryDir, { recursive: true });
+  const existing = await fs.readFile(dailyPath, "utf-8").catch(() => "");
+  const header = `# ${isoDateForTs(params.startedAt)}`;
+  const line = `- ${new Date(params.startedAt).toISOString()} heartbeat: ${safeNote}\n`;
+  if (!existing.trim()) {
+    await fs.writeFile(dailyPath, `${header}\n\n${line}`, "utf-8");
+  } else {
+    await fs.appendFile(dailyPath, line, "utf-8");
+  }
+
+  await updateSessionStore(params.storePath, (nextStore) => {
+    const nextEntry = nextStore[params.sessionKey];
+    if (!nextEntry) {
+      return;
+    }
+    nextStore[params.sessionKey] = {
+      ...nextEntry,
+      lastHeartbeatMemoryAt: params.startedAt,
+    };
+  });
+}
+
 export async function runHeartbeatOnce(opts: {
   cfg?: OpenClawConfig;
   agentId?: string;
@@ -594,7 +679,28 @@ export async function runHeartbeatOnce(opts: {
   };
 
   try {
-    const replyResult = await getReplyFromConfig(ctx, { isHeartbeat: true }, cfg);
+    const waitMs = opts.deps?.waitMs ?? defaultWaitMs;
+    let replyResult: ReplyPayload | ReplyPayload[] | undefined;
+    for (let attempt = 0; attempt <= HEARTBEAT_MAX_RATE_LIMIT_RETRIES; attempt += 1) {
+      try {
+        replyResult = await getReplyFromConfig(ctx, { isHeartbeat: true }, cfg);
+        break;
+      } catch (error) {
+        const reason = formatErrorMessage(error);
+        const shouldRetry = isRateLimitedError(reason) && attempt < HEARTBEAT_MAX_RATE_LIMIT_RETRIES;
+        if (!shouldRetry) {
+          throw error;
+        }
+        log.warn("heartbeat rate-limited; waiting before retry", {
+          agentId,
+          sessionKey,
+          waitMs: HEARTBEAT_RATE_LIMIT_RETRY_MS,
+          attempt: attempt + 1,
+          reason,
+        });
+        await waitMs(HEARTBEAT_RATE_LIMIT_RETRY_MS);
+      }
+    }
     const replyPayload = resolveHeartbeatReplyPayload(replyResult);
     const includeReasoning = heartbeat?.includeReasoning === true;
     const reasoningPayloads = includeReasoning
@@ -780,6 +886,17 @@ export async function runHeartbeatOnce(opts: {
       }
     }
 
+    const previewForMemory = redactSensitiveText(normalized.text || "")
+      .slice(0, HEARTBEAT_MEMORY_PREVIEW_MAX_CHARS)
+      .trim();
+    await appendHeartbeatMemoryNote({
+      workspaceDir,
+      storePath,
+      sessionKey,
+      startedAt,
+      note: previewForMemory ? `sent "${previewForMemory}"` : "sent",
+    });
+
     emitHeartbeatEvent({
       status: "sent",
       to: delivery.to,
@@ -792,6 +909,13 @@ export async function runHeartbeatOnce(opts: {
     return { status: "ran", durationMs: Date.now() - startedAt };
   } catch (err) {
     const reason = formatErrorMessage(err);
+    await appendHeartbeatMemoryNote({
+      workspaceDir,
+      storePath,
+      sessionKey,
+      startedAt,
+      note: `failed (${redactSensitiveText(reason).slice(0, HEARTBEAT_MEMORY_PREVIEW_MAX_CHARS)})`,
+    });
     emitHeartbeatEvent({
       status: "failed",
       reason,

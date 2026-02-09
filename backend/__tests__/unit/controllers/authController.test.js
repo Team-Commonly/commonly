@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
+const WaitlistRequest = require('../../../models/WaitlistRequest');
 const authController = require('../../../controllers/authController');
 const {
   setupMongoDb,
@@ -44,6 +45,11 @@ describe('Auth Controller Tests', () => {
   });
 
   describe('register', () => {
+    afterEach(() => {
+      delete process.env.REGISTRATION_INVITE_ONLY;
+      delete process.env.REGISTRATION_INVITE_CODES;
+    });
+
     it('should register a new user successfully', async () => {
       // Create a mock for bcrypt
       bcrypt.hash.mockResolvedValueOnce('hashedPassword');
@@ -78,7 +84,12 @@ describe('Auth Controller Tests', () => {
       await authController.register(req, res);
 
       // Verify mocks were called correctly
-      expect(User.findOne).toHaveBeenCalledWith({ email: 'test@example.com' });
+      expect(User.findOne).toHaveBeenCalledWith({
+        $or: [
+          { email: 'test@example.com' },
+          { username: 'testuser' },
+        ],
+      });
       expect(saveMock).toHaveBeenCalled();
 
       // Verify response
@@ -123,6 +134,97 @@ describe('Auth Controller Tests', () => {
           error: expect.stringContaining('User already exists'),
         }),
       );
+    });
+
+    it('should not register a user with an existing username', async () => {
+      const existingUser = {
+        _id: 'existingUserId',
+        username: 'existinguser',
+        email: 'existing@example.com',
+        password: 'hashedPassword',
+      };
+
+      User.findOne = jest.fn().mockResolvedValueOnce(existingUser);
+
+      const req = {
+        body: {
+          username: 'existinguser',
+          email: 'new@example.com',
+          password: 'Password123!',
+        },
+      };
+
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      await authController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('Username already exists'),
+        }),
+      );
+    });
+
+    it('should block registration when invite-only mode is enabled and code is missing', async () => {
+      process.env.REGISTRATION_INVITE_ONLY = '1';
+      process.env.REGISTRATION_INVITE_CODES = 'alpha-123';
+
+      const req = {
+        body: {
+          username: 'testuser',
+          email: 'test@example.com',
+          password: 'Password123!',
+        },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      await authController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'INVITATION_REQUIRED',
+        }),
+      );
+    });
+
+    it('should register when invite-only mode is enabled and code is valid', async () => {
+      process.env.REGISTRATION_INVITE_ONLY = '1';
+      process.env.REGISTRATION_INVITE_CODES = 'alpha-123,beta-456';
+
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      const saveMock = jest.fn().mockResolvedValueOnce({
+        _id: 'mockedUserId',
+        username: 'testuser',
+        email: 'test@example.com',
+      });
+      User.prototype.save = saveMock;
+
+      const req = {
+        body: {
+          username: 'testuser',
+          email: 'test@example.com',
+          password: 'Password123!',
+          invitationCode: 'beta-456',
+        },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      await authController.register(req, res);
+
+      expect(saveMock).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(201);
     });
   });
 
@@ -494,6 +596,51 @@ describe('Auth Controller Tests', () => {
           error: expect.stringContaining('User not found'),
         }),
       );
+    });
+  });
+
+  describe('requestWaitlist', () => {
+    it('submits a new waitlist request', async () => {
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      WaitlistRequest.findOne = jest.fn().mockResolvedValueOnce(null);
+      WaitlistRequest.create = jest.fn().mockResolvedValueOnce({ _id: 'w1' });
+
+      const req = {
+        body: {
+          email: 'new@example.com',
+          name: 'New User',
+          note: 'Need access for community pod',
+        },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      await authController.requestWaitlist(req, res);
+
+      expect(WaitlistRequest.create).toHaveBeenCalledWith(expect.objectContaining({
+        email: 'new@example.com',
+        status: 'pending',
+      }));
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it('returns conflict when email is already registered', async () => {
+      User.findOne = jest.fn().mockResolvedValueOnce({ _id: 'u1', email: 'new@example.com' });
+
+      const req = { body: { email: 'new@example.com' } };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      await authController.requestWaitlist(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'ALREADY_REGISTERED',
+      }));
     });
   });
 });

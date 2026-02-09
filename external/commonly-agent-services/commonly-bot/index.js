@@ -16,6 +16,7 @@ const llmClient = new LiteLLMClient({
   temperature: 0.55,
   maxTokens: 400,
 });
+const canUseLlm = () => Boolean(llmClient?.baseUrl || llmClient?.geminiApiKey);
 
 const loadConfigAccounts = () => {
   if (!configPath) return [];
@@ -198,7 +199,7 @@ const parseJsonBlock = (raw) => {
 };
 
 const rephraseSocialPost = async ({ post, podName }) => {
-  if (!ENABLE_SOCIAL_REPHRASE || !llmClient?.baseUrl) return null;
+  if (!ENABLE_SOCIAL_REPHRASE || !canUseLlm()) return null;
   const sourceText = String(post?.content || '').trim();
   if (!sourceText) return null;
 
@@ -419,7 +420,7 @@ const isSystemLikeMessage = (msg = {}) => {
   return false;
 };
 
-const buildHeuristicPodSummary = (messages = []) => {
+const buildHeuristicPodSummary = (messages = [], { podName = 'this pod' } = {}) => {
   const meaningful = messages
     .filter((msg) => msg?.content && String(msg.content).trim())
     .filter((msg) => !isSystemLikeMessage(msg))
@@ -436,7 +437,7 @@ const buildHeuristicPodSummary = (messages = []) => {
 
   const seenHighlights = new Set();
   const highlights = topics
-    .slice(-5)
+    .slice(-4)
     .map((line) => line.substring(0, 140))
     .filter((line) => {
       const key = line.toLowerCase();
@@ -446,6 +447,9 @@ const buildHeuristicPodSummary = (messages = []) => {
     })
     .map((line) => `- ${line}`)
     .join('\n');
+  const lead = meaningful.length >= 8
+    ? `Quick conversational recap from ${podName}:`
+    : `A quick update from ${podName}:`;
 
   return {
     type: 'chat-summary',
@@ -453,12 +457,12 @@ const buildHeuristicPodSummary = (messages = []) => {
     sourceLabel: 'Commonly',
     channel: 'pod-chat',
     messageCount: meaningful.length,
-    summary: `Recent pod activity snapshot:\n\nRecent highlights:\n${highlights}`,
+    summary: `${lead}\n\n${highlights}`,
   };
 };
 
 const buildLlmPodSummary = async ({ messages = [], podName = 'this pod' } = {}) => {
-  if (!llmClient?.baseUrl) return null;
+  if (!canUseLlm()) return null;
   const meaningful = messages
     .filter((msg) => msg?.content && String(msg.content).trim())
     .filter((msg) => !isSystemLikeMessage(msg))
@@ -494,7 +498,20 @@ const buildLlmPodSummary = async ({ messages = [], podName = 'this pod' } = {}) 
       { model: SOCIAL_REPHRASE_MODEL, temperature: 0.2, maxTokens: 380 },
     );
     const parsed = parseJsonBlock(raw);
-    if (!parsed?.summary) return null;
+    if (!parsed?.summary) {
+      const plain = String(raw || '').trim();
+      if (plain) {
+        return {
+          type: 'chat-summary',
+          source: 'pod',
+          sourceLabel: 'Commonly',
+          channel: 'pod-chat',
+          messageCount: meaningful.length,
+          summary: plain.substring(0, 700),
+        };
+      }
+      return null;
+    }
     const highlights = Array.isArray(parsed.highlights)
       ? parsed.highlights.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 5)
       : [];
@@ -704,7 +721,9 @@ const handleEvent = async (account, event) => {
     const synthetic = await buildLlmPodSummary({
       messages,
       podName: context?.pod?.name || 'this pod',
-    }) || buildHeuristicPodSummary(messages);
+    }) || buildHeuristicPodSummary(messages, {
+      podName: context?.pod?.name || 'this pod',
+    });
     if (!synthetic?.summary) {
       return ackEvent(runtimeToken, event._id);
     }

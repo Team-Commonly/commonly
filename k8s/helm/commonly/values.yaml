@@ -46,6 +46,7 @@ backend:
     periodSeconds: 5
   env:
     nodeEnv: development
+    registrationInviteOnly: "1"
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: ""

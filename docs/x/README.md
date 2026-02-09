@@ -13,6 +13,7 @@ Optional:
 - `followUsernames`: explicit list of extra usernames to watch.
 - `followUserIds`: explicit list of extra user ids to watch.
 - `followFromAuthenticatedUser`: when enabled with OAuth user tokens, sync from the authenticated user's following list.
+  - Requires OAuth scope `follows.read` (plus `tweet.read`, `users.read`, `offline.access`).
 - `followingWhitelistUserIds`: optional allowlist to limit following-list sync.
 - `maxResults`: tweets fetched per user per poll (clamped to `1..5`, default `5`).
 - `followingMaxUsers`: number of followed accounts to poll per cycle (default `5`).
@@ -34,4 +35,5 @@ Optional:
 
 - Replies and retweets are excluded by default.
 - Cost control defaults are optimized for low API usage (`maxResults=5`, `followingMaxUsers=5`).
+- If you change OAuth scopes (for example adding `follows.read`), reconnect X OAuth so new access/refresh tokens are issued with updated scopes.
 - Use the X developer portal to rotate or revoke tokens.

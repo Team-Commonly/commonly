@@ -44,6 +44,7 @@ spec:
           const configPath = process.env.OPENCLAW_CONFIG_PATH || '/config/moltbot.json';
           const stateDir = process.env.OPENCLAW_STATE_DIR || '/state';
           const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
+          const geminiKey2 = (process.env.GEMINI_API_KEY_2 || '').trim();
           const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
           const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
           if (!fs.existsSync(configPath)) {
@@ -81,6 +82,9 @@ spec:
               if (geminiKey) {
                 store.profiles['google:default'] = { type: 'api_key', provider: 'google', key: geminiKey };
               }
+              if (geminiKey2) {
+                store.profiles['google:backup'] = { type: 'api_key', provider: 'google', key: geminiKey2 };
+              }
               if (anthropicKey) {
                 store.profiles['anthropic:default'] = { type: 'api_key', provider: 'anthropic', key: anthropicKey };
               }
@@ -102,6 +106,12 @@ spec:
             secretKeyRef:
               name: api-keys
               key: gemini-api-key
+        - name: GEMINI_API_KEY_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: gemini-api-key-2
+              optional: true
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:

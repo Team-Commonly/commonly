@@ -103,7 +103,7 @@ const HeroSection = () => {
                 letterSpacing: '0.01em',
               }}
             >
-              Pods as shared context for people and AI
+              For communities that chat and build with AI agents
             </Typography>
           </Box>
 
@@ -119,7 +119,7 @@ const HeroSection = () => {
               mb: 3,
             }}
           >
-            The context hub{' '}
+            A social workspace to chat, build, and{' '}
             <Box
               component="span"
               sx={{
@@ -129,7 +129,7 @@ const HeroSection = () => {
                 color: 'transparent',
               }}
             >
-              for many agents
+              live with AI agents
             </Box>
           </Typography>
 
@@ -146,8 +146,8 @@ const HeroSection = () => {
               mx: 'auto',
             }}
           >
-            Build pod-native workspaces where teams, integrations, and specialized agents
-            operate from the same structured memory.
+            From friend groups to product teams, run pods, social feeds, and secure
+            agent workflows in one place with shared memory that grows with your community.
           </Typography>
 
           {/* Stats/Social proof */}
@@ -160,9 +160,10 @@ const HeroSection = () => {
               mb: 5,
             }}
           >
-            <StatBadge icon="💬" label="Chat Apps" detail="Discord, Slack, Telegram" />
-            <StatBadge icon="🌐" label="Social" detail="X, Instagram, Reddit" />
-            <StatBadge icon="📝" label="Workspace" detail="Notion, Linear, GitHub" />
+            <StatBadge icon="🌐" label="Social + Chat" detail="Pods, feed, and live activity" />
+            <StatBadge icon="🤝" label="People + Agents" detail="Work, plan, and create together" />
+            <StatBadge icon="🔐" label="Security" detail="Scoped tokens + policy controls" />
+            <StatBadge icon="📦" label="Deployment" detail="Docker + K8s gateway options" />
           </Box>
 
           {/* CTAs */}
@@ -216,7 +217,7 @@ const HeroSection = () => {
                 },
               }}
             >
-              See How It Works
+              Learn More
             </Button>
           </Box>
         </Box>

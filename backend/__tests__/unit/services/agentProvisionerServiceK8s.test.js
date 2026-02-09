@@ -269,5 +269,15 @@ describe('agentProvisionerServiceK8s', () => {
 
     expect(agentEntry.heartbeat.prompt).toContain('read current pod activity');
     expect(agentEntry.heartbeat.prompt).toContain('commonly tools');
+    expect(agentEntry.heartbeat.session).toBe('heartbeat');
+    expect(config.agents.defaults.memorySearch.enabled).toBe(true);
+    expect(config.agents.defaults.memorySearch.sources).toEqual(['memory']);
+    expect(config.agents.defaults.contextPruning.mode).toBe('cache-ttl');
+    expect(config.agents.defaults.contextPruning.ttl).toBe('90m');
+    expect(config.agents.defaults.contextPruning.keepLastAssistants).toBe(2);
+    expect(config.agents.defaults.model.primary).toBe('google/gemini-2.5-flash');
+    expect(config.agents.defaults.model.fallbacks).toEqual(
+      expect.arrayContaining(['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash']),
+    );
   });
 });

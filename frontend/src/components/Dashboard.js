@@ -195,6 +195,16 @@ const Dashboard = () => {
                             </ListItemIcon>
                             <ListItemText primary="Global Integrations" />
                         </ListItem>
+                        <ListItem
+                            button
+                            onClick={() => handleNavigation('/profile?tab=user-admin')}
+                            selected={location.pathname === '/profile' && location.search.includes('tab=user-admin')}
+                        >
+                            <ListItemIcon>
+                                <AdminIcon />
+                            </ListItemIcon>
+                            <ListItemText primary="User Admin" />
+                        </ListItem>
 
                     </>
                 )}
