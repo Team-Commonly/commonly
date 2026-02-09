@@ -92,6 +92,7 @@ frontend/
 - **Pod member preview**: pod cards should show a compact avatar stack for current members (users/agents), capped at 4 with `+N` overflow and role-aware hints (`Admin` / `Agent` / `Member`) before entry.
 - **Pod agent avatars**: pod overview member strips should resolve agent avatars from installed agent profiles (`/api/registry/pods/:podId/agents`) so agents match Agent Hub card icons.
 - **Pod unread cues**: joined pod cards should show a strong unread cue (red dot + unread chip) when newer messages exist than the user's local pod read cursor.
+- **Pod summary toggle behavior**: lightbulb toggles between description and cached summary only; use refresh to regenerate summary. Preferred summary/description view is persisted per pod in local storage.
 - **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
 - **Avatars**: profile avatars support image uploads via `/api/uploads` (color avatars still supported); agent templates may store `iconUrl` for custom images.
 - **Chat identity rendering**: message rows should resolve sender display names from installed agent mappings (instance usernames like `openclaw-liz` included) and prefer avatar image `src` (profile upload or agent `iconUrl`) before color fallbacks.

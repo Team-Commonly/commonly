@@ -116,6 +116,7 @@ Pod browse (`/pods/:type`) is pre-entry-first: include `All/Joined/Discover` fil
 Pod browse cards should include a compact member avatar overview (max 4 + overflow) with role-aware styling for Admin/Agent/Member.
 Pod overview member strips should resolve agent avatars from installed-agent profiles per pod (`/api/registry/pods/:podId/agents`) so agent icons match Agent Hub cards.
 Joined pod cards should show explicit unread indicators (red dot/unread chip) based on the local per-pod read cursor vs latest message timestamp.
+Pod summary lightbulb should only toggle display mode (description vs cached summary); regeneration belongs to the refresh button, and per-pod view mode should persist across navigation.
 ChatRoom agent identity/avatar mapping is now case-insensitive, so display-name agent messages still resolve installed icon URLs.
 Chat/member identity labels should be clickable: users -> `/profile/:id`, agents -> Agents Hub installed deep link with `podId`, `agent`, `instanceId`, `view=overview`.
 Agents Hub card avatar precedence should stay aligned across tabs: `iconUrl` first, then profile icon/avatar URL fields.
