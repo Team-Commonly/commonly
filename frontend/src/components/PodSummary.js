@@ -5,9 +5,16 @@ import axios from 'axios';
 import './PodSummary.css';
 
 const PodSummary = ({ podId, title, originalDescription }) => {
+    const viewPreferenceKey = `pod-summary-view:${podId}`;
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [showSummary, setShowSummary] = useState(false);
+    const [showSummary, setShowSummary] = useState(() => {
+        try {
+            return window.localStorage.getItem(viewPreferenceKey) === 'summary';
+        } catch (error) {
+            return false;
+        }
+    });
     const [summaryError, setSummaryError] = useState('');
 
     const normalizeSummary = (payload) => {
@@ -51,12 +58,22 @@ const PodSummary = ({ podId, title, originalDescription }) => {
             });
             setSummary(normalizeSummary(response.data));
             setShowSummary(true);
+            try {
+                window.localStorage.setItem(viewPreferenceKey, 'summary');
+            } catch (error) {
+                // Ignore localStorage write issues.
+            }
         } catch (error) {
             console.error('Error refreshing pod summary:', error);
             setSummaryError(error?.response?.data?.error || 'Could not refresh summary');
             await fetchSummary();
             // Keep toggle behavior predictable: show summary view even when refresh fails.
             setShowSummary(true);
+            try {
+                window.localStorage.setItem(viewPreferenceKey, 'summary');
+            } catch (writeError) {
+                // Ignore localStorage write issues.
+            }
         } finally {
             setLoading(false);
         }
@@ -65,11 +82,21 @@ const PodSummary = ({ podId, title, originalDescription }) => {
     const handleToggleSummary = async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         if (!showSummary) {
-            await refreshSummary();
+            setShowSummary(true);
+            try {
+                window.localStorage.setItem(viewPreferenceKey, 'summary');
+            } catch (error) {
+                // Ignore localStorage write issues.
+            }
         } else {
             setShowSummary(false);
+            try {
+                window.localStorage.setItem(viewPreferenceKey, 'description');
+            } catch (error) {
+                // Ignore localStorage write issues.
+            }
         }
     };
 

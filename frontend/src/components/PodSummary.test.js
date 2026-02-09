@@ -25,7 +25,7 @@ describe('PodSummary', () => {
     localStorage.clear();
   });
 
-  test('shows summary view even when refresh fails', async () => {
+  test('toggle switches to existing summary without forcing refresh', async () => {
     render(
       <PodSummary
         podId="pod-1"
@@ -53,20 +53,46 @@ describe('PodSummary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show AI summary' }));
 
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(
-        '/api/summaries/pod/pod-1/refresh',
-        {},
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer test-token',
-          }),
-        }),
-      );
+      expect(axios.post).not.toHaveBeenCalled();
+      expect(screen.getByText('Existing summary content')).toBeInTheDocument();
+      expect(screen.queryByText('Original description')).not.toBeInTheDocument();
     });
+  });
+
+  test('preserves summary view preference across remounts', async () => {
+    const { unmount } = render(
+      <PodSummary
+        podId="pod-1"
+        title="Pod 1"
+        originalDescription="Original description"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Show AI summary' })).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show AI summary' }));
 
     await waitFor(() => {
       expect(screen.getByText('Existing summary content')).toBeInTheDocument();
-      expect(screen.queryByText('Original description')).not.toBeInTheDocument();
+    });
+
+    unmount();
+
+    render(
+      <PodSummary
+        podId="pod-1"
+        title="Pod 1"
+        originalDescription="Original description"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Existing summary content')).toBeInTheDocument();
     });
   });
 });
