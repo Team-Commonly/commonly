@@ -2,20 +2,125 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const User = require('../models/User');
+const InvitationCode = require('../models/InvitationCode');
+const WaitlistRequest = require('../models/WaitlistRequest');
 const AgentIdentityService = require('../services/agentIdentityService');
 
 const SMTP2GO_BASE_URL = process.env.SMTP2GO_BASE_URL || 'https://api.smtp2go.com/v3';
 const SMTP2GO_SEND_URL = `${SMTP2GO_BASE_URL.replace(/\/$/, '')}/email/send`;
 
+const parseBooleanEnv = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return null;
+};
+
+const isInviteOnlyRegistrationEnabled = () => {
+  const explicitValue = parseBooleanEnv(process.env.REGISTRATION_INVITE_ONLY);
+  if (explicitValue !== null) return explicitValue;
+  return process.env.NODE_ENV === 'production';
+};
+
+const getInvitationCodes = () => (process.env.REGISTRATION_INVITE_CODES || '')
+  .split(',')
+  .map((code) => code.trim())
+  .filter(Boolean);
+
+const normalizeInviteCode = (code) => String(code || '').trim();
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
+const isEnvInvitationCodeValid = (code) => {
+  const normalized = normalizeInviteCode(code);
+  if (!normalized) return false;
+  return getInvitationCodes().includes(normalized);
+};
+
+const consumeDbInvitationCode = async (code) => {
+  const now = new Date();
+  const normalized = normalizeInviteCode(code).toUpperCase();
+  if (!normalized) return null;
+
+  return InvitationCode.findOneAndUpdate(
+    {
+      code: normalized,
+      isActive: true,
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+      $expr: { $lt: ['$useCount', '$maxUses'] },
+    },
+    {
+      $inc: { useCount: 1 },
+      $set: { lastUsedAt: now },
+    },
+    { new: true },
+  );
+};
+
+const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
 // 📌 Register User
 exports.register = async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const {
+      username,
+      email,
+      password,
+      invitationCode,
+    } = req.body;
 
-    // Check if user already exists
-    let user = await User.findOne({ email });
-    if (user) {
-      return res.status(400).json({ error: 'User already exists' });
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedUsername = String(username || '').trim();
+    const rawPassword = String(password || '');
+
+    if (!normalizedUsername || !normalizedEmail || !rawPassword) {
+      return res.status(400).json({ error: 'Username, email, and password are required.' });
+    }
+
+    // Check if email or username already exists
+    const existingUser = await User.findOne({
+      $or: [
+        { email: normalizedEmail },
+        { username: normalizedUsername },
+      ],
+    });
+    if (existingUser) {
+      if (String(existingUser.email || '').toLowerCase() === normalizedEmail) {
+        return res.status(400).json({ error: 'User already exists' });
+      }
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    if (isInviteOnlyRegistrationEnabled()) {
+      const normalizedInvitation = normalizeInviteCode(invitationCode);
+      if (!normalizedInvitation) {
+        const codes = getInvitationCodes();
+        const activeDbCodeExists = await InvitationCode.exists({
+          isActive: true,
+          $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+        });
+        if (!codes.length && !activeDbCodeExists) {
+          return res.status(503).json({
+            error: 'Registration is currently invite-only and invitation codes are not configured.',
+            code: 'INVITATION_CONFIG_MISSING',
+          });
+        }
+        return res.status(403).json({
+          error: 'Invitation code is required before registration.',
+          code: 'INVITATION_REQUIRED',
+        });
+      }
+
+      const envCodeValid = isEnvInvitationCodeValid(normalizedInvitation);
+      if (!envCodeValid) {
+        const consumed = await consumeDbInvitationCode(normalizedInvitation);
+        if (!consumed) {
+          return res.status(403).json({
+            error: 'Invalid invitation code.',
+            code: 'INVITATION_INVALID',
+          });
+        }
+      }
     }
 
     const hasEmailConfig = Boolean(process.env.SMTP2GO_API_KEY)
@@ -24,10 +129,10 @@ exports.register = async (req, res) => {
     const shouldAutoVerify = !hasEmailConfig && process.env.NODE_ENV !== 'production';
 
     // Create new user instance
-    user = new User({
-      username,
-      email,
-      password,
+    const user = new User({
+      username: normalizedUsername,
+      email: normalizedEmail,
+      password: rawPassword,
       verified: shouldAutoVerify,
     });
 
@@ -78,7 +183,84 @@ exports.register = async (req, res) => {
       });
   } catch (err) {
     console.error(err.message);
+    if (err?.code === 11000) {
+      const key = Object.keys(err.keyPattern || {})[0] || '';
+      if (key === 'username') {
+        return res.status(400).json({ error: 'Username already exists' });
+      }
+      if (key === 'email') {
+        return res.status(400).json({ error: 'User already exists' });
+      }
+      return res.status(400).json({ error: 'Duplicate user record.' });
+    }
     return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+exports.getRegistrationPolicy = async (_req, res) => {
+  try {
+    const inviteOnly = isInviteOnlyRegistrationEnabled();
+    const activeDbCodeExists = await InvitationCode.exists({
+      isActive: true,
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+    });
+    const hasInvitationCodes = getInvitationCodes().length > 0 || Boolean(activeDbCodeExists);
+    return res.json({
+      inviteOnly,
+      invitationRequired: inviteOnly,
+      hasInvitationCodes,
+      registrationOpen: !inviteOnly || hasInvitationCodes,
+    });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+exports.requestWaitlist = async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const name = String(req.body?.name || '').trim();
+    const organization = String(req.body?.organization || '').trim();
+    const useCase = String(req.body?.useCase || '').trim();
+    const note = String(req.body?.note || '').trim();
+
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ error: 'A valid email is required.' });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({
+        error: 'This email is already registered.',
+        code: 'ALREADY_REGISTERED',
+      });
+    }
+
+    const existingPending = await WaitlistRequest.findOne({ email, status: 'pending' });
+    if (existingPending) {
+      return res.status(200).json({
+        message: 'Your waitlist request is already pending review.',
+        requestId: existingPending._id,
+      });
+    }
+
+    const created = await WaitlistRequest.create({
+      email,
+      name,
+      organization,
+      useCase,
+      note,
+      status: 'pending',
+    });
+
+    return res.status(201).json({
+      message: 'Waitlist request submitted. A global admin can review and send an invitation code by email.',
+      requestId: created._id,
+    });
+  } catch (err) {
+    console.error('Failed to submit waitlist request:', err);
+    return res.status(500).json({ error: 'Failed to submit waitlist request' });
   }
 };
 

@@ -330,6 +330,7 @@ It requires:
 - `CLAWDBOT_GATEWAY_TOKEN` in the `api-keys` secret
 - Image: `gcr.io/commonly-test/clawdbot-gateway:latest`
 - `GEMINI_API_KEY` in the `api-keys` secret (for default OpenClaw model auth)
+- Optional `gemini-api-key-2` in the `api-keys` secret (seeds `google:backup` auth profile for rate-limit failover)
 - Deployment strategy: `Recreate` (required because gateway config/workspace PVCs are `ReadWriteOnce`; rolling updates can deadlock on volume multi-attach)
 
 Gateway pods seed `auth-profiles.json` for each account on startup so new agents

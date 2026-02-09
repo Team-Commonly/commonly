@@ -7,7 +7,14 @@ const axios = require('axios').default;
 
 jest.mock('axios', () => ({
   __esModule: true,
-  default: { post: jest.fn() }
+  default: {
+    get: jest.fn(),
+    post: jest.fn(),
+    defaults: {},
+    interceptors: {
+      request: { use: jest.fn() },
+    },
+  }
 }));
 
 let container;
@@ -42,17 +49,20 @@ async function renderAndSubmit() {
 }
 
 test('shows success message on registration', async () => {
+  axios.get.mockResolvedValueOnce({ data: { inviteOnly: false } });
   axios.post.mockResolvedValueOnce({ data: { message: 'ok' } });
   await renderAndSubmit();
   expect(axios.post).toHaveBeenCalledWith('/api/auth/register', {
     username: 'u',
     email: 'e',
-    password: 'p'
+    password: 'p',
+    invitationCode: '',
   });
   expect(container.textContent).toContain('ok');
 });
 
 test('shows error when registration fails', async () => {
+  axios.get.mockResolvedValueOnce({ data: { inviteOnly: false } });
   axios.post.mockRejectedValueOnce({ response: { data: { error: 'fail' } } });
   await renderAndSubmit();
   expect(container.textContent).toContain('fail');

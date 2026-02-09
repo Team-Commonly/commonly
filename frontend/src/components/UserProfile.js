@@ -37,14 +37,16 @@ import { avatarOptions, getAvatarColor, getAvatarSrc } from '../utils/avatarUtil
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { blurActiveElement } from '../utils/focusUtils';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import AppsManagement from './AppsManagement';
 import AvatarGenerator from './agents/AvatarGenerator';
+import AdminUsers from './admin/AdminUsers';
 
 const UserProfile = () => {
     const { refreshAvatars } = useAppContext();
     const { currentUser } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
     const { id: profileId } = useParams();
     const [user, setUser] = useState(null);
     const [userStats, setUserStats] = useState({ postCount: 0, commentCount: 0 });
@@ -55,7 +57,7 @@ const UserProfile = () => {
     const [avatarPreview, setAvatarPreview] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
     const [avatarGeneratorOpen, setAvatarGeneratorOpen] = useState(false);
-    const [currentTab, setCurrentTab] = useState(0);
+    const [currentTab, setCurrentTab] = useState('overview');
     const [apiToken, setApiToken] = useState(null);
     const [apiTokenCreatedAt, setApiTokenCreatedAt] = useState(null);
     const [isGeneratingToken, setIsGeneratingToken] = useState(false);
@@ -130,6 +132,14 @@ const UserProfile = () => {
         };
         fetchUserData();
     }, [profileId]);
+
+    useEffect(() => {
+        const queryTab = new URLSearchParams(location.search).get('tab');
+        if (!queryTab) return;
+        if (['overview', 'apps', 'api-token', 'user-admin'].includes(queryTab)) {
+            setCurrentTab(queryTab);
+        }
+    }, [location.search]);
 
     const handleOpenAvatarDialog = () => {
         setOpenAvatarDialog(true);
@@ -297,6 +307,14 @@ const UserProfile = () => {
         setSnackbar({ ...snackbar, open: false });
     };
 
+    const canManageUsers = Boolean((!profileId || (currentUser && currentUser._id === user?._id)) && user?.role === 'admin');
+
+    useEffect(() => {
+        if (user && !canManageUsers && currentTab === 'user-admin') {
+            setCurrentTab('overview');
+        }
+    }, [user, canManageUsers, currentTab]);
+
     if (error) return (
         <Typography color="error" sx={{ p: 2 }}>{error}</Typography>
     );
@@ -462,21 +480,31 @@ const UserProfile = () => {
                     onChange={(e, newValue) => setCurrentTab(newValue)}
                     sx={{ borderBottom: 1, borderColor: 'divider' }}
                 >
-                    <Tab label="Overview" />
+                    <Tab value="overview" label="Overview" />
                     <Tab 
+                        value="apps"
                         label="Apps" 
                         icon={<AppsIcon />} 
                         iconPosition="start"
                     />
                     <Tab
+                        value="api-token"
                         label="API Token"
                         icon={<KeyIcon />}
                         iconPosition="start"
                     />
+                    {canManageUsers && (
+                        <Tab
+                            value="user-admin"
+                            label="User Admin"
+                            icon={<AdminPanelSettingsIcon />}
+                            iconPosition="start"
+                        />
+                    )}
                 </Tabs>
                 
                 <CardContent>
-                    {currentTab === 0 && (
+                    {currentTab === 'overview' && (
                         <Box>
                             <Typography variant="h6" gutterBottom>
                                 Account Overview
@@ -487,9 +515,9 @@ const UserProfile = () => {
                         </Box>
                     )}
                     
-                    {currentTab === 1 && <AppsManagement />}
+                    {currentTab === 'apps' && <AppsManagement />}
                     
-                    {currentTab === 2 && (
+                    {currentTab === 'api-token' && (
                         <Box>
                             <Typography variant="h6" gutterBottom>
                                 API Token Management
@@ -588,6 +616,7 @@ const UserProfile = () => {
                             </Paper>
                         </Box>
                     )}
+                    {currentTab === 'user-admin' && canManageUsers && <AdminUsers embedded />}
 
                 </CardContent>
             </Card>

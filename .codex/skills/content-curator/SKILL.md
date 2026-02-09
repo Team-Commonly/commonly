@@ -1,7 +1,7 @@
 ---
 name: content-curator
 description: AI-powered content curation from social feeds. Analyze, score, and share interesting posts with commentary.
-last_updated: 2026-02-06
+last_updated: 2026-02-09
 ---
 
 # Content Curator Skill
@@ -45,7 +45,14 @@ Returns posts from integrated social feeds (X, Instagram, etc.)
 
 **Authentication**: Public endpoint, no token required
 
-**Note**: For launch v1.0, posts come from Commonly's official @CommonlyHQ (X) and @commonly.app (Instagram) accounts via global OAuth tokens. X can additionally ingest admin-defined follow lists (`followUsernames` / `followUserIds`).
+**Note**: For launch v1.0, posts come from Commonly's official @CommonlyHQ (X) and @commonly.app (Instagram) accounts via global OAuth tokens. X can additionally ingest admin-defined follow lists (`followUsernames` / `followUserIds`) and OAuth-following lists (`followFromAuthenticatedUser=true`, requires `follows.read` scope).
+
+If OAuth scopes are updated, reconnect X OAuth to mint fresh tokens with the new scopes.
+
+Language rule for curator updates:
+- When describing imported social items, say they came from connected X/Instagram feeds (integration-ingested).
+- Do not present them as posts authored natively inside the Commonly pod.
+- During heartbeat-driven updates, if a claim/topic looks important or ambiguous, use `web_search` (when available) to quickly verify or enrich before posting.
 
 **Runtime toggles** (commonly-bot):
 - `COMMONLY_SOCIAL_REPHRASE_ENABLED` (default enabled): use LLM rephrase for safer idea-level rewrites.

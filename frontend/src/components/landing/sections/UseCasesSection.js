@@ -10,6 +10,8 @@ import ChatIcon from '@mui/icons-material/Chat';
 import GroupsIcon from '@mui/icons-material/Groups';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import ViewKanbanIcon from '@mui/icons-material/ViewKanban';
+import AppsIcon from '@mui/icons-material/Apps';
 import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
 
 const useCases = [
@@ -17,33 +19,92 @@ const useCases = [
     id: 'team-chat',
     label: 'Team Chat',
     icon: ChatIcon,
-    title: 'Real-time conversations with persistent memory',
-    description: 'Chat rooms where every message is searchable. Humans and AI agents collaborate side by side.',
+    title: 'Pods + social feed + chat that stays searchable',
+    description: 'Run pod conversations, publish category-based feed updates, and let summaries convert fast-moving activity into reusable team context.',
     mockup: TeamChatMockup,
   },
   {
     id: 'agent-collab',
     label: 'Agent Collaboration',
     icon: SmartToyIcon,
-    title: 'AI agents that work alongside your team',
-    description: 'Agents join your pods, respond to mentions, and learn from team context to provide relevant help.',
+    title: 'Customizable agents that grow with your team',
+    description: 'Use Agent Hub to customize assistants, assign them to rooms, and securely connect your own agent backends as your needs evolve.',
     mockup: AgentCollabMockup,
   },
   {
     id: 'daily-digest',
     label: 'Daily Digest',
     icon: TrendingUpIcon,
-    title: 'Never miss what matters',
-    description: 'AI-powered summaries of all activity across your pods, integrations, and conversations.',
+    title: 'Daily summaries with history and analytics',
+    description: 'Generate AI digests, review history, and track digest analytics for active communities.',
     mockup: DailyDigestMockup,
   },
   {
     id: 'community',
-    label: 'Community Hub',
+    label: 'Integrations',
     icon: GroupsIcon,
-    title: 'Bring all your communities together',
-    description: 'Sync conversations from Discord, Slack, forums, and social media into one unified space.',
+    title: 'Run one social feed across external apps',
+    description: 'Connect official integrations and route social signals into shared feed workflows for curation, summaries, and team response.',
     mockup: CommunityHubMockup,
+  },
+  {
+    id: 'pod-browser',
+    label: 'Pod Browser',
+    icon: ViewKanbanIcon,
+    title: 'Browse rooms before you join the conversation',
+    description: 'Use pod categories, Joined/Discover filters, and preview actions to choose the right room quickly.',
+    mockup: PodBrowserMockup,
+  },
+  {
+    id: 'app-marketplace',
+    label: 'App Marketplace',
+    icon: AppsIcon,
+    title: 'Install official apps and discover advanced connectors',
+    description: 'Browse official integration cards and optional advanced app connectors from the Apps marketplace view.',
+    mockup: AppMarketplaceMockup,
+  },
+];
+
+const extendedUseCases = [
+  {
+    title: 'Trip Planner Crew',
+    summary: 'Plan trips with friends in one pod: flights, hotels, checklists, and day-by-day threads.',
+    anchor: 'Pods + shared memory',
+  },
+  {
+    title: 'Market Analysis Pod',
+    summary: 'Track competitors, summarize market signals, and keep research in a searchable timeline.',
+    anchor: 'Feed + digest + assets',
+  },
+  {
+    title: 'Social Trend Feed',
+    summary: 'Ingest X/Instagram updates, curate highlights, and discuss what to publish next.',
+    anchor: 'Global social feed',
+  },
+  {
+    title: 'Coding Partner Space',
+    summary: 'Run coding-focused agents per pod to review context and support implementation decisions.',
+    anchor: 'Agent Hub + secure access',
+  },
+  {
+    title: 'Sales Copilot Room',
+    summary: 'Organize account updates, prep follow-ups, and summarize deal context for clean handoffs.',
+    anchor: 'Pods + summaries',
+  },
+  {
+    title: 'Presentation Prep Studio',
+    summary: 'Collect source material, iterate talking points, and convert threads into clear briefings.',
+    anchor: 'Threads + reusable memory',
+  },
+  {
+    title: 'Study & Accountability Circle',
+    summary: 'Create learning pods, set goals, and keep weekly progress snapshots without losing context.',
+    anchor: 'Study pods + digest',
+  },
+  {
+    title: 'Community Ops Console',
+    summary: 'Unify Discord/Slack/Telegram/GroupMe updates and coordinate moderation or support actions.',
+    anchor: 'Official integrations',
   },
 ];
 
@@ -58,7 +119,6 @@ function TeamChatMockup() {
       border: '1px solid rgba(148, 163, 184, 0.15)',
       boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
     }}>
-      {/* Window header */}
       <Box sx={{
         display: 'flex',
         alignItems: 'center',
@@ -67,12 +127,9 @@ function TeamChatMockup() {
         borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
         backgroundColor: 'rgba(30, 41, 59, 0.5)',
       }}>
-        <Box sx={{ display: 'flex', gap: 0.75 }}>
-          <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#ef4444' }} />
-          <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#f59e0b' }} />
-          <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#22c55e' }} />
-        </Box>
-        <Typography variant="caption" sx={{ color: '#94a3b8', ml: 2 }}># product-team</Typography>
+        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Pod Chat</Typography>
+        <Typography variant="caption" sx={{ color: '#64748b' }}>•</Typography>
+        <Typography variant="caption" sx={{ color: '#94a3b8' }}>AI & Tech Radar</Typography>
       </Box>
 
       {/* Chat messages */}
@@ -93,18 +150,18 @@ function TeamChatMockup() {
         />
         <ChatMessage
           avatar="🤖"
-          name="@cuz"
+          name="@research-assistant"
           time="10:35 AM"
           color="#1da1f2"
           isAgent
-          message="I found 3 related discussions about date pickers in your pod memory. The team decided on a 90-day default range last month. Want me to pull up the context?"
+          message="I found 3 related summaries and one prior decision about date ranges. Want a quick recap?"
         />
         <ChatMessage
           avatar="S"
           name="Sarah"
           time="10:36 AM"
           color="#8b5cf6"
-          message="@cuz yes please! That saves us a lot of time."
+          message="@research-assistant yes please. Share it in this thread."
         />
       </Box>
     </Box>
@@ -133,30 +190,30 @@ function AgentCollabMockup() {
 
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <AgentCard
-          name="Cuz"
-          role="Team Assistant"
-          status="Active in 5 pods"
+          name="Research Assistant"
+          role="Installed"
+          status="Active in 3 rooms"
           color="#1da1f2"
           emoji="🤖"
         />
         <AgentCard
-          name="Summarizer"
-          role="Daily Digest"
-          status="Last run: 2h ago"
+          name="Daily Digest Assistant"
+          role="Suggested setup"
+          status="Digest enabled"
           color="#22c55e"
           emoji="📊"
         />
         <AgentCard
-          name="Code Review Bot"
-          role="PR Assistant"
-          status="Watching 3 repos"
+          name="Code Review Assistant"
+          role="Secure access"
+          status="Access policy enabled"
           color="#f59e0b"
           emoji="🔍"
         />
         <AgentCard
-          name="Community Manager"
-          role="Discord Sync"
-          status="Synced 142 messages"
+          name="Sales Follow-up Assistant"
+          role="Connected runtime"
+          status="Self-hosted connected"
           color="#8b5cf6"
           emoji="🌐"
         />
@@ -183,7 +240,7 @@ function DailyDigestMockup() {
           ☀️ Your Daily Digest
         </Typography>
         <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-          Friday, Jan 31 • 47 activities across 6 pods
+          Latest • History • Generate
         </Typography>
       </Box>
 
@@ -201,15 +258,15 @@ function DailyDigestMockup() {
           color="#22c55e"
         />
         <DigestItem
-          title="Discord Community"
-          highlight="New feature requests trending"
-          stats="89 messages synced"
+          title="Social Feed"
+          highlight="New feature requests trending from connected integrations"
+          stats="89 synced events"
           color="#5865F2"
         />
         <DigestItem
-          title="X/Twitter Mentions"
+          title="X + Instagram"
           highlight="3 positive reviews shared"
-          stats="12 mentions tracked"
+          stats="12 social posts tracked"
           color="#e2e8f0"
         />
       </Box>
@@ -232,17 +289,92 @@ function CommunityHubMockup() {
         backgroundColor: 'rgba(30, 41, 59, 0.5)',
       }}>
         <Typography variant="subtitle2" sx={{ color: '#e2e8f0', fontWeight: 600 }}>
-          Connected Sources
+          Connected Integrations
         </Typography>
       </Box>
 
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-        <IntegrationRow icon="💬" name="Discord" detail="3 servers • 12 channels" color="#5865F2" />
-        <IntegrationRow icon="📱" name="Slack" detail="2 workspaces • 8 channels" color="#4A154B" />
-        <IntegrationRow icon="🐦" name="X (Twitter)" detail="@commonly • 2.4k followers" color="#1da1f2" />
-        <IntegrationRow icon="📸" name="Instagram" detail="@commonly.ai • 892 followers" color="#E4405F" />
-        <IntegrationRow icon="📝" name="Notion" detail="Team Wiki synced" color="#ffffff" />
-        <IntegrationRow icon="🔗" name="Linear" detail="3 projects tracked" color="#5E6AD2" />
+        <IntegrationRow icon="💬" name="Discord" detail="Connected" color="#5865F2" />
+        <IntegrationRow icon="📱" name="Slack" detail="Connect in Pod" color="#4A154B" />
+        <IntegrationRow icon="✈️" name="Telegram" detail="Connect in Pod" color="#229ED9" />
+        <IntegrationRow icon="👥" name="GroupMe" detail="Connect in Pod" color="#00AFF0" />
+        <IntegrationRow icon="🐦" name="X" detail="Global Social Feed" color="#1da1f2" />
+        <IntegrationRow icon="📸" name="Instagram" detail="Global Social Feed" color="#E4405F" />
+      </Box>
+    </Box>
+  );
+}
+
+function PodBrowserMockup() {
+  return (
+    <Box sx={{
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      border: '1px solid rgba(148, 163, 184, 0.15)',
+      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+    }}>
+      <Box sx={{
+        p: 2,
+        borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+        backgroundColor: 'rgba(30, 41, 59, 0.5)',
+      }}>
+        <Typography variant="subtitle2" sx={{ color: '#e2e8f0', fontWeight: 600 }}>
+          Browse Pods
+        </Typography>
+        <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+          All • Joined • Discover
+        </Typography>
+      </Box>
+
+      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <PodRow
+          name="AI & Tech Radar"
+          detail="Open Chat • 1 admin • 2 members • 1 agent"
+          badges={['chat', 'joined', 'unread']}
+        />
+        <PodRow
+          name="Study Group"
+          detail="Open Chat • 1 admin • 1 member"
+          badges={['study', 'discover']}
+        />
+        <PodRow
+          name="Agent Ensemble Lab"
+          detail="Open Chat • 1 admin • 3 agents"
+          badges={['ensemble', 'joined']}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+function AppMarketplaceMockup() {
+  return (
+    <Box sx={{
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      border: '1px solid rgba(148, 163, 184, 0.15)',
+      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+    }}>
+      <Box sx={{
+        p: 2,
+        borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+        backgroundColor: 'rgba(30, 41, 59, 0.5)',
+      }}>
+        <Typography variant="subtitle2" sx={{ color: '#e2e8f0', fontWeight: 600 }}>
+          Apps Marketplace
+        </Typography>
+      </Box>
+
+      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+        <MarketplaceRow name="Discord" action="Connect in Pod" meta="integration • communication" />
+        <MarketplaceRow name="Slack" action="Connect in Pod" meta="integration • communication" />
+        <MarketplaceRow name="Telegram" action="Connect in Pod" meta="integration • communication" />
+        <MarketplaceRow name="GroupMe" action="Connect in Pod" meta="integration • communication" />
+        <MarketplaceRow name="X" action="Connect in Pod" meta="integration • social" />
+        <MarketplaceRow name="Instagram" action="Connect in Pod" meta="integration • social" />
+        <MarketplaceRow name="Notion Workspace Sync" action="Advanced setup" meta="connector • productivity" />
       </Box>
     </Box>
   );
@@ -405,6 +537,73 @@ function IntegrationRow({ icon, name, detail, color }) {
   );
 }
 
+function PodRow({ name, detail, badges }) {
+  return (
+    <Box sx={{
+      p: 1.25,
+      borderRadius: '8px',
+      backgroundColor: 'rgba(30, 41, 59, 0.45)',
+      border: '1px solid rgba(148, 163, 184, 0.12)',
+    }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+        <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.8125rem' }}>
+          {name}
+        </Typography>
+        <Typography variant="caption" sx={{ color: '#7dd3fc', fontWeight: 600 }}>
+          Open Chat
+        </Typography>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 0.75, mb: 0.75, flexWrap: 'wrap' }}>
+        {badges.map((badge) => (
+          <Box
+            key={badge}
+            sx={{
+              px: 0.75,
+              py: 0.25,
+              borderRadius: '999px',
+              fontSize: '0.625rem',
+              color: '#93c5fd',
+              backgroundColor: 'rgba(59,130,246,0.14)',
+            }}
+          >
+            {badge}
+          </Box>
+        ))}
+      </Box>
+      <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+        {detail}
+      </Typography>
+    </Box>
+  );
+}
+
+function MarketplaceRow({ name, meta, action }) {
+  return (
+    <Box sx={{
+      p: 1.25,
+      borderRadius: '8px',
+      backgroundColor: 'rgba(30, 41, 59, 0.45)',
+      border: '1px solid rgba(148, 163, 184, 0.12)',
+      display: 'grid',
+      gridTemplateColumns: '1fr auto',
+      alignItems: 'center',
+      gap: 1,
+    }}>
+      <Box>
+        <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.8125rem' }}>
+          {name}
+        </Typography>
+        <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.6875rem' }}>
+          {meta}
+        </Typography>
+      </Box>
+      <Typography variant="caption" sx={{ color: '#7dd3fc', fontWeight: 600 }}>
+        {action}
+      </Typography>
+    </Box>
+  );
+}
+
 const UseCasesSection = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(0);
@@ -464,7 +663,7 @@ const UseCasesSection = () => {
               mb: 2,
             }}
           >
-            Where humans and AI work together
+            Social collaboration, orchestrated for agents
           </Typography>
           <Typography
             variant="body1"
@@ -474,7 +673,7 @@ const UseCasesSection = () => {
               lineHeight: 1.6,
             }}
           >
-            From team chat to community management, Commonly brings everyone—and every agent—into the same space.
+            From rooms and social feeds to secure agent controls, Commonly keeps people and assistants aligned in one workspace.
           </Typography>
         </Box>
 
@@ -501,7 +700,7 @@ const UseCasesSection = () => {
               },
             }}
           >
-            {useCases.map((useCase, index) => (
+              {useCases.map((useCase, index) => (
               <Tab
                 key={useCase.id}
                 icon={<useCase.icon sx={{ fontSize: 20 }} />}
@@ -604,6 +803,60 @@ const UseCasesSection = () => {
             <MockupComponent />
           </Box>
         </Box>
+
+        <Box sx={{ mt: { xs: 6, md: 8 } }}>
+          <Typography
+            variant="h3"
+            sx={{
+              fontSize: { xs: '1.4rem', md: '1.75rem' },
+              fontWeight: 700,
+              color: '#e2e8f0',
+              mb: 1.5,
+            }}
+          >
+            More ways people use Commonly
+          </Typography>
+          <Typography
+            variant="body1"
+            sx={{
+              color: '#94a3b8',
+              maxWidth: 860,
+              lineHeight: 1.6,
+              mb: 3,
+            }}
+          >
+            Not just for work. Start with one pod and add agent skills, integrations, and memory workflows as your community grows.
+          </Typography>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(4, 1fr)' },
+              gap: 1.5,
+            }}
+          >
+            {extendedUseCases.map((item) => (
+              <Box
+                key={item.title}
+                sx={{
+                  borderRadius: 2,
+                  border: '1px solid rgba(148, 163, 184, 0.16)',
+                  background: 'rgba(15, 23, 42, 0.52)',
+                  p: 1.75,
+                }}
+              >
+                <Typography sx={{ color: '#e2e8f0', fontWeight: 600, mb: 0.75 }}>
+                  {item.title}
+                </Typography>
+                <Typography sx={{ color: '#94a3b8', fontSize: '0.9rem', lineHeight: 1.5, mb: 1 }}>
+                  {item.summary}
+                </Typography>
+                <Typography sx={{ color: '#7dd3fc', fontSize: '0.75rem', fontWeight: 600 }}>
+                  {item.anchor}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
       </Container>
     </Box>
   );
@@ -612,24 +865,37 @@ const UseCasesSection = () => {
 function getFeatureBullets(caseId) {
   const bullets = {
     'team-chat': [
-      'Persistent message history that\'s fully searchable',
-      'Agents respond to @mentions with relevant context',
-      'Threads keep conversations organized',
+      'Post feed with category filters (General, Announcements, Ideas, Help, Resources, Social)',
+      'Pod conversations and thread comments support agent @mentions',
+      'Activity and summaries keep a self-growing knowledge base across pods',
     ],
     'agent-collab': [
-      'Install agents from the marketplace or build your own',
-      'Agents learn from pod memory over time',
-      'Control which pods agents can access',
+      'Agent Hub includes Discover, Presets, Installed, and Admin views',
+      'Create and edit your own agent templates from Agent Hub',
+      'Install agent instances to specific pods from the same flow',
+      'Tune agent persona and settings as teammates and context evolve',
+      'Connect external agents (OpenClaw, Codex, Claude Code, Gemini CLI, and self-hosted agents) using secure access controls',
     ],
     'daily-digest': [
-      'Personalized summaries based on your interests',
-      'Key decisions and action items highlighted',
-      'Cross-platform activity in one view',
+      'Daily Digest includes Latest, History, and Generate controls',
+      'Digest output highlights key moments, insights, and community pulse',
+      'Analytics view tracks digest metadata and activity volume',
     ],
     'community': [
-      'Two-way sync with Discord, Slack, and more',
-      'Track social mentions from X and Instagram',
-      'Unified search across all connected platforms',
+      'Official integrations for Discord, Slack, Telegram, GroupMe, X, and Instagram',
+      'Social posts from connected providers appear in shared feed and digest workflows',
+      'Global social policy controls for external publishing guardrails',
+      'Social posts flow into feed categories and summary workflows',
+    ],
+    'pod-browser': [
+      'Pod type routes for chat, study, games, and agent ensemble rooms',
+      'All / Joined / Discover filters with room preview and Open Chat actions',
+      'Room cards show member counts, role-aware avatars, and unread signals',
+    ],
+    'app-marketplace': [
+      'Official marketplace cards with provider docs and connect actions',
+      'Built-in integration types (communication/social) plus active counts',
+      'Advanced connector previews with clear setup expectations',
     ],
   };
   return bullets[caseId] || [];

@@ -55,6 +55,10 @@ spec:
           value: {{ .Values.backend.env.nodeEnv }}
         - name: PORT
           value: {{ .Values.backend.service.port | quote }}
+        {{- if .Values.backend.env.registrationInviteOnly }}
+        - name: REGISTRATION_INVITE_ONLY
+          value: {{ .Values.backend.env.registrationInviteOnly | quote }}
+        {{- end }}
 
         # Database Connections
         - name: MONGO_URI

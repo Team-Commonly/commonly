@@ -10,12 +10,24 @@ const {
   verifyEmail,
   updateProfile,
   getProfile,
+  getRegistrationPolicy,
+  requestWaitlist,
 } = require('../controllers/authController');
 
 // @route   POST api/auth/register
 // @desc    Register user
 // @access  Public
 router.post('/register', register);
+
+// @route   GET api/auth/registration-policy
+// @desc    Public registration policy (invite-only/open)
+// @access  Public
+router.get('/registration-policy', getRegistrationPolicy);
+
+// @route   POST api/auth/waitlist
+// @desc    Submit waitlist request for invite-only registration
+// @access  Public
+router.post('/waitlist', requestWaitlist);
 
 // @route   POST api/auth/login
 // @desc    Login user
