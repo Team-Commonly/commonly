@@ -1572,6 +1572,59 @@ const getAgentRuntimeLogs = async (
   }
 };
 
+const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) => {
+  if (runtimeType !== 'moltbot') {
+    return {
+      cleared: false,
+      reason: 'Session clearing is only supported for OpenClaw runtimes.',
+      runtimeType,
+    };
+  }
+
+  const accountId = String(options.accountId || instanceId || '').trim();
+  if (!accountId) {
+    throw new Error('accountId is required to clear runtime sessions');
+  }
+
+  const podName = await resolveGatewayPodNameWithRetry(options.gateway);
+  const targets = [
+    `/state/agents/${accountId}/sessions`,
+    `/state/agents/${accountId}/sessions.json`,
+    `/state/agents/${accountId}/sessions.jsonl`,
+  ];
+
+  const script = [
+    'set -eu',
+    'removed=""',
+    ...targets.map((target) => [
+      `if [ -e "${target}" ]; then`,
+      `  rm -rf "${target}"`,
+      `  removed="${target}\\n$removed"`,
+      'fi',
+    ].join('\n')),
+    'printf "%s" "$removed"',
+  ].join('\n');
+
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    command: ['sh', '-lc', script],
+  });
+
+  const removed = String(result.stdout || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return {
+    cleared: true,
+    accountId,
+    removed,
+    pod: podName,
+    deployment: resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway),
+  };
+};
+
 module.exports = {
   provisionAgentRuntime,
   startAgentRuntime,
@@ -1579,6 +1632,7 @@ module.exports = {
   restartAgentRuntime,
   getAgentRuntimeStatus,
   getAgentRuntimeLogs,
+  clearAgentRuntimeSessions,
   resolveOpenClawAccountId,
   writeOpenClawHeartbeatFile,
   ensureHeartbeatTemplate,

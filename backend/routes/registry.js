@@ -29,12 +29,14 @@ const {
   restartAgentRuntime,
   getAgentRuntimeStatus,
   getAgentRuntimeLogs,
+  clearAgentRuntimeSessions,
   isK8sMode,
   listOpenClawPlugins,
   listOpenClawBundledSkills,
   installOpenClawPlugin,
   writeOpenClawHeartbeatFile,
   syncOpenClawSkills,
+  resolveOpenClawAccountId,
 } = require('../services/agentProvisionerService');
 const { hash, randomSecret } = require('../utils/secret');
 
@@ -3416,6 +3418,92 @@ router.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req, res) 
       return res.status(error.status).json({ error: error.message });
     }
     return res.status(500).json({ error: 'Failed to restart runtime' });
+  }
+});
+
+/**
+ * POST /api/registry/pods/:podId/agents/:name/runtime-clear-sessions
+ */
+router.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { instanceId, gatewayId, restart = true } = req.body || {};
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const normalizedInstanceId = normalizeInstanceId(instanceId || 'default');
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { installation, instanceId: resolvedInstanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: normalizedInstanceId,
+    });
+    const effectiveInstanceId = resolvedInstanceId || normalizedInstanceId;
+
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
+    const runtimeType = typeConfig?.runtime;
+    if (!runtimeType) {
+      return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+    if (runtimeType !== 'moltbot') {
+      return res.status(400).json({ error: 'Session clearing is only supported for OpenClaw runtimes' });
+    }
+
+    const configPayload = normalizeConfigMap(installation?.config) || {};
+    const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+    let gateway = null;
+    if (gatewayId) {
+      gateway = await resolveGatewayForRequest({ gatewayId, userId });
+    } else if (configuredGatewayId) {
+      gateway = await resolveGatewayForInstallation({ gatewayId: configuredGatewayId });
+    }
+
+    const accountId = resolveOpenClawAccountId({
+      agentName: name,
+      instanceId: effectiveInstanceId,
+    });
+
+    const cleared = await clearAgentRuntimeSessions(runtimeType, effectiveInstanceId, {
+      gateway,
+      accountId,
+    });
+
+    let restarted = null;
+    if (restart) {
+      restarted = await restartAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
+    }
+
+    return res.json({
+      runtimeType,
+      accountId,
+      cleared,
+      restarted,
+      gatewayId: gateway?._id || null,
+      gatewaySlug: gateway?.slug || null,
+    });
+  } catch (error) {
+    console.error('Error clearing runtime sessions:', error);
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'Failed to clear runtime sessions' });
   }
 });
 

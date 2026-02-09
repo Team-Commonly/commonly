@@ -244,6 +244,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [editTemplateAvatarPreview, setEditTemplateAvatarPreview] = useState('');
   const [editTemplateSaving, setEditTemplateSaving] = useState(false);
   const [runtimeStatusError, setRuntimeStatusError] = useState('');
+  const [runtimeSessionResetResult, setRuntimeSessionResetResult] = useState(null);
   const [runtimeLogsOpen, setRuntimeLogsOpen] = useState(false);
   const [runtimeLogsLoading, setRuntimeLogsLoading] = useState(false);
   const [runtimeLogsContent, setRuntimeLogsContent] = useState('');
@@ -1820,6 +1821,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setRuntimeStatus(null);
     setRuntimeStatusLoading(false);
     setRuntimeStatusError('');
+    setRuntimeSessionResetResult(null);
     setRuntimeLogsOpen(false);
     setRuntimeLogsLoading(false);
     setRuntimeLogsContent('');
@@ -2068,6 +2070,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     if (!selectedPodId || !configAgent) return;
     setRuntimeStatusLoading(true);
     setRuntimeStatusError('');
+    setRuntimeSessionResetResult(null);
     try {
       const instanceId = configAgent.instanceId || 'default';
       const gatewayId = resolveRuntimeGatewayId();
@@ -2092,6 +2095,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const handleStartRuntime = async () => {
     if (!selectedPodId || !configAgent) return;
     setRuntimeStatusLoading(true);
+    setRuntimeSessionResetResult(null);
     try {
       const instanceId = configAgent.instanceId || 'default';
       const gatewayId = resolveRuntimeGatewayId();
@@ -2116,6 +2120,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const handleStopRuntime = async () => {
     if (!selectedPodId || !configAgent) return;
     setRuntimeStatusLoading(true);
+    setRuntimeSessionResetResult(null);
     try {
       const instanceId = configAgent.instanceId || 'default';
       const gatewayId = resolveRuntimeGatewayId();
@@ -2140,6 +2145,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const handleRestartRuntime = async () => {
     if (!selectedPodId || !configAgent) return;
     setRuntimeStatusLoading(true);
+    setRuntimeSessionResetResult(null);
     try {
       const instanceId = configAgent.instanceId || 'default';
       const gatewayId = resolveRuntimeGatewayId();
@@ -2156,6 +2162,35 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     } catch (err) {
       console.error('Error restarting runtime:', err);
       setRuntimeStatusError(err.response?.data?.error || 'Failed to restart runtime');
+    } finally {
+      setRuntimeStatusLoading(false);
+    }
+  };
+
+  const handleClearRuntimeSessions = async () => {
+    if (!selectedPodId || !configAgent) return;
+    const confirmed = window.confirm('Clear all runtime session state for this agent instance and restart runtime?');
+    if (!confirmed) return;
+    setRuntimeStatusLoading(true);
+    setRuntimeStatusError('');
+    setRuntimeSessionResetResult(null);
+    try {
+      const instanceId = configAgent.instanceId || 'default';
+      const gatewayId = resolveRuntimeGatewayId();
+      const payload = { instanceId, restart: true };
+      if (gatewayId) {
+        payload.gatewayId = gatewayId;
+      }
+      const response = await axios.post(
+        `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/runtime-clear-sessions`,
+        payload,
+        { headers: getAuthHeaders() },
+      );
+      setRuntimeSessionResetResult(response.data || null);
+      await fetchRuntimeStatus();
+    } catch (err) {
+      console.error('Error clearing runtime sessions:', err);
+      setRuntimeStatusError(err.response?.data?.error || 'Failed to clear runtime sessions');
     } finally {
       setRuntimeStatusLoading(false);
     }
@@ -3862,6 +3897,14 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                 </Button>
                 <Button
                   variant="outlined"
+                  color="warning"
+                  onClick={handleClearRuntimeSessions}
+                  disabled={runtimeStatusLoading}
+                >
+                  Clear Session State
+                </Button>
+                <Button
+                  variant="outlined"
                   onClick={() => {
                     setRuntimeLogsOpen(true);
                     fetchRuntimeLogs();
@@ -3887,6 +3930,14 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                       || (runtimeGatewayMode === 'custom' ? 'Custom gateway' : 'Shared gateway');
                     return gatewayLabel ? ` • Gateway ${gatewayLabel}` : '';
                   })()}
+                </Alert>
+              )}
+              {runtimeSessionResetResult?.cleared && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  Cleared session state for account {runtimeSessionResetResult.accountId || 'unknown'}.
+                  {runtimeSessionResetResult.restarted?.restarted
+                    ? ' Runtime restarted.'
+                    : ''}
                 </Alert>
               )}
 
