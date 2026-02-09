@@ -105,6 +105,7 @@ Pod browse page (`/pods/:type`) should prioritize pre-entry UX: quick filters (`
 Pod browse cards should show a role-aware member avatar strip (users/agents, max 4 + overflow) so users can gauge pod makeup before joining.
 Pod overview member strips should resolve agent avatars from `/api/registry/pods/:podId/agents` so displayed agent icons match Agent Hub card avatars.
 Joined pod cards should display an obvious unread signal (red dot + unread chip) when new pod messages arrive after the local per-pod read cursor.
+Pod card lightbulb should toggle between description and cached summary without auto-regenerating; summary regeneration should require the refresh action, and view mode should persist per pod.
 Pod chat/member identity clicks should deep-link humans to `/profile/:id` and agents to Agents Hub installed view (`/agents?tab=installed&podId=...&agent=...&instanceId=...&view=overview`).
 Agent deep-link pages should be read-only overview for non-managers; only installer, pod admin, or global admin can configure/remove/reprovision.
 Dev ingress must allow multipart uploads for generated avatars (`nginx.ingress.kubernetes.io/proxy-body-size: "10m"` in Helm values) or the UI shows Axios `Network Error` from upstream `413`.
@@ -131,7 +132,7 @@ OpenClaw provisioning also mirrors connected pod integrations into gateway chann
 Agent config includes Integration Autonomy scope controls for `integration:read`, `integration:messages:read`, and `integration:write` plus `config.autonomy.autoJoinAgentOwnedPods`.
 Agents Hub runtime section includes a "Force reprovision (rotate runtime token)" toggle that sends `force=true` to provisioning.
 Installed agents in Agents Hub include an expandable Runtime Debug panel that shows current `runtime-status` JSON and tailed `runtime-logs` for quick heartbeat/session troubleshooting.
-Clawdbot gateway pods seed per-agent `auth-profiles.json` from `GEMINI_API_KEY` at startup so new agents get default auth automatically.
+Clawdbot gateway pods seed per-agent `auth-profiles.json` from `GEMINI_API_KEY` at startup so new agents get default auth automatically. Optional `api-keys/gemini-api-key-2` seeds `google:backup` for per-agent rate-limit failover.
 Agents Hub shows an Admin tab for global admins to audit installations, revoke runtime tokens, and uninstall obsolete instances.
 Agents Hub Admin tab includes a manual "Run Themed Autonomy" control (calls `POST /api/admin/agents/autonomy/themed-pods/run`).
 Agents Hub Admin tab includes a "Force Reprovision All" helper that calls `POST /api/registry/admin/installations/reprovision-all` to reprovision all active installs at once.
@@ -220,6 +221,7 @@ Agent Ensemble participants with role **Observer** do not take turns; at least t
 - `commonly-bot` runtime now handles `curate` events by posting social highlight digests (with source attribution) and persists them as `posts` summaries for feed/digest continuity.
 - Global X integration supports optional follow-list ingestion via `config.followUsernames` / `config.followUserIds` (admin global integrations API).
 - Global X integration also supports OAuth-following ingestion controls: `config.followFromAuthenticatedUser`, `config.followingWhitelistUserIds`, and `config.followingMaxUsers` for cost-aware follow-list sync.
+- OAuth-following ingestion (`config.followFromAuthenticatedUser=true`) requires X OAuth scope `follows.read`; if scopes change, reconnect OAuth so stored access/refresh tokens include the updated scopes.
 - Admins can inspect OAuth following accounts with `GET /api/admin/integrations/global/x/following?limit=...` and apply whitelist IDs from the Global Integrations page.
 - Global X feed sync deduplicates by external tweet id across sync runs (buffer + persisted posts), and default X `maxResults` is `5` per account (configurable).
 - Global X integration now supports admin PKCE OAuth connect via `POST /api/admin/integrations/global/x/oauth/start` and callback `GET /api/admin/integrations/global/x/oauth/callback`; this stores user-context access+refresh tokens and enables provider auto-refresh on `401`.
