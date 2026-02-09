@@ -618,7 +618,10 @@ const Pod = () => {
                                             <Box className="pod-members-stack">
                                                 {visibleMembers.map((member, index) => {
                                                     const registryAgentAvatar = podAgentAvatarMap[pod._id]?.[normalizeIdentityKey(member.username)] || null;
-                                                    const avatarSrc = getAvatarSrc(member.profilePicture || registryAgentAvatar);
+                                                    const preferredAvatarValue = member.role === 'Agent'
+                                                        ? (registryAgentAvatar || member.profilePicture)
+                                                        : member.profilePicture;
+                                                    const avatarSrc = getAvatarSrc(preferredAvatarValue);
                                                     const roleClass = member.role.toLowerCase();
                                                     return (
                                                         <Tooltip
