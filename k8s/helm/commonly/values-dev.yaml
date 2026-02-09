@@ -24,6 +24,7 @@ backend:
       effect: "NoSchedule"
   env:
     nodeEnv: development
+    registrationInviteOnly: "1"
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: "dev"

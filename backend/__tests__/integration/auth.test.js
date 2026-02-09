@@ -44,6 +44,8 @@ describe('Auth Routes Integration Tests', () => {
   afterEach(async () => {
     await clearMongoDb();
     jest.clearAllMocks();
+    delete process.env.REGISTRATION_INVITE_ONLY;
+    delete process.env.REGISTRATION_INVITE_CODES;
   });
 
   describe('POST /api/auth/register', () => {
@@ -92,6 +94,26 @@ describe('Auth Routes Integration Tests', () => {
       expect(response.body.error).toContain('User already exists');
     });
 
+    it('should return 400 for existing username', async () => {
+      const existingUser = new User({
+        username: 'existinguser',
+        email: 'existing@example.com',
+        password: 'Password123!',
+      });
+      await existingUser.save();
+
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send({
+          username: 'existinguser',
+          email: 'different@example.com',
+          password: 'Password123!',
+        })
+        .expect(400);
+
+      expect(response.body.error).toContain('Username already exists');
+    });
+
     it('should validate required fields', async () => {
       // Missing username
       const missingUsername = {
@@ -102,7 +124,7 @@ describe('Auth Routes Integration Tests', () => {
       await request(app)
         .post('/api/auth/register')
         .send(missingUsername)
-        .expect(500); // Mongoose validation error
+        .expect(400);
 
       // Missing email
       const missingEmail = {
@@ -113,7 +135,7 @@ describe('Auth Routes Integration Tests', () => {
       await request(app)
         .post('/api/auth/register')
         .send(missingEmail)
-        .expect(500); // Mongoose validation error
+        .expect(400);
 
       // Missing password
       const missingPassword = {
@@ -124,7 +146,58 @@ describe('Auth Routes Integration Tests', () => {
       await request(app)
         .post('/api/auth/register')
         .send(missingPassword)
-        .expect(500); // Mongoose validation error
+        .expect(400);
+    });
+
+    it('should reject registration without invite code when invite-only mode is enabled', async () => {
+      process.env.REGISTRATION_INVITE_ONLY = '1';
+      process.env.REGISTRATION_INVITE_CODES = 'alpha-123';
+
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send({
+          username: 'testuser',
+          email: 'test@example.com',
+          password: 'Password123!',
+        })
+        .expect(403);
+
+      expect(response.body.code).toBe('INVITATION_REQUIRED');
+    });
+
+    it('should register when invite code is valid in invite-only mode', async () => {
+      process.env.REGISTRATION_INVITE_ONLY = '1';
+      process.env.REGISTRATION_INVITE_CODES = 'alpha-123';
+
+      const response = await request(app)
+        .post('/api/auth/register')
+        .send({
+          username: 'testuser',
+          email: 'test@example.com',
+          password: 'Password123!',
+          invitationCode: 'alpha-123',
+        })
+        .expect(201);
+
+      expect(response.body.message).toContain('User registered successfully');
+    });
+  });
+
+  describe('GET /api/auth/registration-policy', () => {
+    it('should return invite-only policy state', async () => {
+      process.env.REGISTRATION_INVITE_ONLY = '1';
+      process.env.REGISTRATION_INVITE_CODES = 'alpha-123';
+
+      const response = await request(app)
+        .get('/api/auth/registration-policy')
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        inviteOnly: true,
+        invitationRequired: true,
+        hasInvitationCodes: true,
+        registrationOpen: true,
+      });
     });
   });
 

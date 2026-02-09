@@ -1,23 +1,62 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from '../utils/axiosConfig';
 import { Box, TextField, Button, Typography, Container, Paper } from '@mui/material';
-import { Link } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import commonlyLogo from '../assets/commonly-logo.png';
 
 const Register = () => {
+  const [searchParams] = useSearchParams();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [invitationCode, setInvitationCode] = useState(searchParams.get('invite') || '');
   const [message, setMessage] = useState('');
+  const [isError, setIsError] = useState(false);
+  const [policy, setPolicy] = useState({
+    loaded: false,
+    inviteOnly: false,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    axios.get('/api/auth/registration-policy')
+      .then((res) => {
+        if (!isMounted) return;
+        setPolicy({
+          loaded: true,
+          inviteOnly: Boolean(res.data?.inviteOnly),
+        });
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setPolicy({ loaded: true, inviteOnly: false });
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const hasInviteFromUrl = useMemo(() => Boolean(searchParams.get('invite')), [searchParams]);
+
+  if (policy.loaded && policy.inviteOnly && !hasInviteFromUrl) {
+    return <Navigate to="/register/invite-required" replace />;
+  }
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
+    setIsError(false);
 
     try {
-      const res = await axios.post(`/api/auth/register`, { username, email, password });
+      const res = await axios.post(`/api/auth/register`, {
+        username,
+        email,
+        password,
+        invitationCode: invitationCode.trim(),
+      });
       setMessage(res.data.message);
     } catch (err) {
+      setIsError(true);
       setMessage(err.response?.data?.error || "Registration failed.");
     }
   };
@@ -99,6 +138,28 @@ const Register = () => {
               Create your account to join or launch a pod.
             </Typography>
             <form onSubmit={onSubmit} className="auth-form">
+              {policy.inviteOnly && (
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Invitation Code"
+                  value={invitationCode}
+                  onChange={(e) => setInvitationCode(e.target.value)}
+                  required
+                  helperText="Registration is invite-only. Enter a valid invitation code."
+                  InputLabelProps={{ style: { color: 'rgba(226, 232, 240, 0.9)' } }}
+                  FormHelperTextProps={{ style: { color: 'rgba(148, 163, 184, 0.85)' } }}
+                  sx={{
+                    input: { color: '#f8fafc' },
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      '& fieldset': { borderColor: 'rgba(148, 163, 184, 0.3)' },
+                      '&:hover fieldset': { borderColor: 'rgba(148, 163, 184, 0.5)' },
+                      '&.Mui-focused fieldset': { borderColor: '#60a5fa' },
+                    },
+                  }}
+                />
+              )}
               <TextField
                 fullWidth
                 margin="normal"
@@ -171,7 +232,7 @@ const Register = () => {
               </Button>
               {message && (
                 <Typography
-                  color={message.toLowerCase().includes('fail') ? 'error' : 'success'}
+                  color={isError ? 'error' : 'success'}
                   align="center"
                   sx={{ mt: 2 }}
                 >

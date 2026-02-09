@@ -19,7 +19,14 @@ const axios = require('axios').default;
 
 jest.mock('axios', () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn() }
+  default: {
+    get: jest.fn(),
+    post: jest.fn(),
+    defaults: {},
+    interceptors: {
+      request: { use: jest.fn() },
+    },
+  }
 }));
 
 jest.mock('../context/AuthContext', () => ({ useAuth: jest.fn() }));
@@ -33,6 +40,7 @@ jest.mock('react-router-dom', () => ({
   useSearchParams: jest.fn(),
   useLocation: jest.fn(),
   useOutletContext: jest.fn(),
+  Navigate: () => <div>Navigate</div>,
   Outlet: () => <div>Outlet</div>,
   Link: ({ children }) => <a href="#">{children}</a>
 }));
@@ -95,6 +103,7 @@ test('Login renders and submits', async () => {
 });
 
 test('Register renders and submits', async () => {
+  axios.get.mockResolvedValueOnce({ data: { inviteOnly: false } });
   axios.post.mockResolvedValue({ data: { message: 'ok' } });
   await TestUtils.act(async () => { root.render(<Register />); });
   const form = container.querySelector('form');
@@ -135,4 +144,3 @@ test('UserProfile renders', async () => {
   await TestUtils.act(async () => Promise.resolve());
   expect(axios.get).toHaveBeenCalled();
 });
-

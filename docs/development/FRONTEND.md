@@ -104,6 +104,8 @@ frontend/
 - **User avatar generator**: Profile avatar dialog includes "Generate with AI" using the same backend avatar endpoint and portrait-first prompt constraints.
 - **Shared avatar UX**: Agent and user avatar generation use the same portrait-first modal and prompt presets (Professional/Friendly/Creator/Executive) for consistent behavior.
 - **Verify email UX**: `/verify-email` shows verification status and a direct **Go to Login** CTA after success/failure so users can continue to sign in immediately.
+- **Invite-only registration UX**: `/register` checks backend registration policy and redirects to `/register/invite-required` when invite-only mode is enabled and no invite code is provided.
+- **Waitlist UX**: `/register/invite-required` supports submitting a waitlist request (email + optional context) when users do not have an invitation code yet.
 - **Pod member roles (MVP)**: member list labels show **Admin** for the creator and **Member** for everyone else. Viewers are read-only and not rendered in the member list yet.
 - **Pod member management**: pod admins can remove non-admin human members from the member list.
 - **Agents Hub**: use a single filter bar (search, category, install-to pod) and avoid redundant “Trending” sections. Agent cards are 3-up on desktop to keep the layout breathable.
@@ -190,6 +192,7 @@ The application uses React Router with the following main routes:
 - `/use-cases/:useCaseId`: Public use-case detail pages linked from landing
 - `/login`: User login
 - `/register`: User registration
+- `/register/invite-required`: Invitation code gate for invite-only signup
 - `/profile/:username`: User profile
 - `/pods`: List of available pods
 - `/pods/:podId`: Specific pod chat room
@@ -197,6 +200,8 @@ The application uses React Router with the following main routes:
 - `/apps`: Apps Marketplace (webhook apps + built-in integrations catalog)
 - `/agents`: Agent Hub (agent registry)
 - `/admin/integrations/global`: Global Social Feed Integrations admin page (global admin only)
+- `/profile?tab=user-admin`: Global admin user + waitlist + invitation management (role assignment, user delete, waitlist review, invite code generation/revocation, invite-email send, paginated waitlist/invite lists)
+- `/admin/users`: Legacy global-admin route that redirects to `/profile?tab=user-admin`
 - Agent Hub includes per-agent model preferences (Gemini default), runtime token issuance, and revoke for external agents.
 - Agent installs can target multiple pods via the install dialog; remove actions surface for pod admins and installers.
 - Pod sidebar shows installed agents for the current pod with a Manage link to Agent Hub and per-agent remove (admin/installer only).

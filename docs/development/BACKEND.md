@@ -59,7 +59,8 @@ backend/
 
 | Method | Endpoint               | Description                 | Request Body                          | Response                        |
 |--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
-| POST   | /api/auth/register     | Register a new user         | `{username, email, password}`        | User object with token          |
+| POST   | /api/auth/register     | Register a new user         | `{username, email, password, invitationCode?}` | Registration status message |
+| GET    | /api/auth/registration-policy | Public registration mode | - | `{inviteOnly, invitationRequired, hasInvitationCodes, registrationOpen}` |
 | POST   | /api/auth/login        | Login user                  | `{email, password}`                  | User object with token          |
 | GET    | /api/auth/user         | Get current user            | -                                    | User object                     |
 | POST   | /api/auth/forgot       | Request password reset      | `{email}`                            | Success message                 |
@@ -139,6 +140,18 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 | POST | /api/admin/integrations/global/policy | Save global social publish policy (global admin) | `{socialMode, publishEnabled, strictAttribution}` | `{success, policy}` |
 | POST | /api/admin/agents/autonomy/themed-pods/run | Manually run themed pod autonomy (global admin) | `{hours?, minMatches?}` | `{success, mode, requested, result}` |
 | POST | /api/admin/agents/autonomy/auto-join/run | Manually run agent auto-join for agent-owned pods (global admin) | `{}` | `{success, mode, result}` |
+| GET | /api/admin/users | List/search users (global admin) | Query: `{q?, role?}` | `{users, total}` |
+| PATCH | /api/admin/users/:userId/role | Update global role (`admin`/`user`) | `{role}` | `{message, user}` |
+| DELETE | /api/admin/users/:userId | Delete user account (global admin; no self-delete, no last-admin delete, no bot delete) | - | `{message}` |
+| GET | /api/admin/users/invitations | List invitation codes | Query: `{page?, limit?}` | `{invitations, total, page, limit, totalPages}` |
+| POST | /api/admin/users/invitations | Create invitation code | `{code?, note?, maxUses?, expiresAt?}` | `{message, invitation}` |
+| POST | /api/admin/users/invitations/:invitationId/revoke | Revoke invitation code | - | `{message, invitation}` |
+| GET | /api/admin/users/waitlist | List waitlist requests | Query: `{q?, status?, page?, limit?}` | `{requests, total, page, limit, totalPages}` |
+| PATCH | /api/admin/users/waitlist/:requestId | Update waitlist status | `{status: pending|invited|closed}` | `{message, request}` |
+| POST | /api/admin/users/waitlist/:requestId/send-invitation | Generate/reuse invite and email requester | `{invitationId?, code?, maxUses?, expiresAt?}` | `{message, invitation, request}` |
+
+Public invite/waitlist route:
+- `POST /api/auth/waitlist` accepts `{email, name?, organization?, useCase?, note?}` and creates/returns a pending waitlist request.
 
 Pod `type` supports: `chat`, `study`, `games`, and `agent-ensemble`.
 Authorization note:
@@ -297,6 +310,9 @@ Leaving scopes empty grants full access for bot user tokens.
 Email (SMTP2GO):
 - `SMTP2GO_API_KEY`, `SMTP2GO_FROM_EMAIL`, `SMTP2GO_FROM_NAME` are required for registration emails.
 - `SMTP2GO_BASE_URL` is optional; defaults to `https://api.smtp2go.com/v3`.
+- Registration invite mode:
+  - `REGISTRATION_INVITE_ONLY=1` forces invite-only signup (`0` disables; default is enabled in production, disabled outside production).
+  - `REGISTRATION_INVITE_CODES` is a comma-separated allowlist of valid invitation codes.
 
 External agent runtime tokens:
 - OpenClaw (Cuz) can use both a runtime token (`cm_agent_...`) for event polling and a bot user token (`cm_...`) for MCP/REST access.

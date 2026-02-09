@@ -119,8 +119,10 @@ const DEFAULT_HEARTBEAT_CONTENT = [
   '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.',
   '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.',
   '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.',
+  '- If you detect a materially new topic, verify or enrich it with `web_search` when available before posting. Keep sources concise and relevant.',
   '- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
   '- If there are new non-bot chat messages since your last heartbeat and you have not replied yet, send one concise conversational reply.',
+  '- When discussing X/Instagram items, describe them as connected feed or integration-ingested posts. Do not imply they were authored directly in the pod.',
   '- Do not post housekeeping-only status updates (for example: "no new posts" or "most recent post is ..."). If no meaningful new signal exists, reply HEARTBEAT_OK.',
   '- Do not repeat or paraphrase your own previous heartbeat message. If your update would be substantially the same, reply HEARTBEAT_OK instead.',
   '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
@@ -132,6 +134,8 @@ const DEFAULT_HEARTBEAT_PROMPT = [
   'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.',
   'Resolve podId from the incoming event context.',
   'Before replying, read current pod activity via commonly tools (preferred) or the runtime-token HTTP fallback in HEARTBEAT.md (context/messages/posts).',
+  'When new claims or topics appear, use web_search (if available) to quickly verify/enrich before posting.',
+  'Use precise sourcing language: connected integration/feed content, not native pod-authored posts.',
   'If pod context or reads are unavailable for this run, reply HEARTBEAT_OK (do not post diagnostics).',
   'If checks succeed and there is no meaningful new signal, reply HEARTBEAT_OK.',
 ].join(' ');
@@ -244,6 +248,12 @@ const migrateLegacyHeartbeatContent = (content) => {
       '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.\n- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.',
     );
   }
+  if (!/verify or enrich it with `web_search` when available/.test(next)) {
+    next = next.replace(
+      /- Heartbeat check is incomplete unless you actually read pod activity each run \(tools or runtime HTTP fallback\)\. Do not return HEARTBEAT_OK without performing those reads first\./,
+      '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.\n- If you detect a materially new topic, verify or enrich it with `web_search` when available before posting. Keep sources concise and relevant.',
+    );
+  }
   if (!/If there is no pod\/channel context for this run/.test(next)) {
     next = next.replace(
       /- Resolve `podId` from the incoming event context \(usually `To: commonly:<podId>`\)\. Do not use placeholder pod ids\./,
@@ -254,6 +264,12 @@ const migrateLegacyHeartbeatContent = (content) => {
     next = next.replace(
       /- Prefer Commonly tools from that skill \(`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`\) before raw HTTP\./,
       '- Prefer Commonly tools from that skill (`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`) before raw HTTP.\n- Do not run token-diagnostic shell checks (`env`, `curl` auth probes) as heartbeat output. Use Commonly tools first.',
+    );
+  }
+  if (!/describe them as connected feed or integration-ingested posts/.test(next)) {
+    next = next.replace(
+      /- If there are new non-bot chat messages since your last heartbeat and you have not replied yet, send one concise conversational reply\./,
+      '- If there are new non-bot chat messages since your last heartbeat and you have not replied yet, send one concise conversational reply.\n- When discussing X/Instagram items, describe them as connected feed or integration-ingested posts. Do not imply they were authored directly in the pod.',
     );
   }
   return next;
@@ -784,6 +800,51 @@ const applyOpenClawWebToolDefaults = (config) => {
   }
 };
 
+const applyOpenClawMemoryDefaults = (config) => {
+  config.agents = config.agents || {};
+  config.agents.defaults = config.agents.defaults || {};
+  config.agents.defaults.memorySearch = config.agents.defaults.memorySearch || {};
+  if (config.agents.defaults.memorySearch.enabled === undefined) {
+    config.agents.defaults.memorySearch.enabled = true;
+  }
+  if (!Array.isArray(config.agents.defaults.memorySearch.sources)) {
+    config.agents.defaults.memorySearch.sources = ['memory'];
+  }
+};
+
+const applyOpenClawContextDefaults = (config) => {
+  config.agents = config.agents || {};
+  config.agents.defaults = config.agents.defaults || {};
+  config.agents.defaults.contextPruning = config.agents.defaults.contextPruning || {};
+  if (!config.agents.defaults.contextPruning.mode) {
+    config.agents.defaults.contextPruning.mode = 'cache-ttl';
+  }
+  if (!config.agents.defaults.contextPruning.ttl) {
+    config.agents.defaults.contextPruning.ttl = '90m';
+  }
+  if (typeof config.agents.defaults.contextPruning.keepLastAssistants !== 'number') {
+    config.agents.defaults.contextPruning.keepLastAssistants = 2;
+  }
+};
+
+const applyOpenClawModelDefaults = (config) => {
+  config.agents = config.agents || {};
+  config.agents.defaults = config.agents.defaults || {};
+  config.agents.defaults.model = config.agents.defaults.model || {};
+  if (!config.agents.defaults.model.primary) {
+    config.agents.defaults.model.primary = 'google/gemini-2.5-flash';
+  }
+  const existingFallbacks = Array.isArray(config.agents.defaults.model.fallbacks)
+    ? config.agents.defaults.model.fallbacks
+    : [];
+  const mergedFallbacks = [
+    'google/gemini-2.5-flash-lite',
+    'google/gemini-2.0-flash',
+    ...existingFallbacks,
+  ].filter(Boolean);
+  config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
+};
+
 const provisionOpenClawAccount = ({
   accountId,
   runtimeToken,
@@ -839,6 +900,9 @@ const provisionOpenClawAccount = ({
   };
   applyOpenClawIntegrationChannels(config, integrationChannels);
   applyOpenClawWebToolDefaults(config);
+  applyOpenClawMemoryDefaults(config);
+  applyOpenClawContextDefaults(config);
+  applyOpenClawModelDefaults(config);
 
   config.agents = config.agents || {};
   config.agents.list = Array.isArray(config.agents.list) ? config.agents.list : [];
@@ -852,11 +916,12 @@ const provisionOpenClawAccount = ({
     if (!payload || payload.enabled === false) return null;
     const minutes = Number(payload.everyMinutes || payload.every || payload.intervalMinutes);
     const every = Number.isFinite(minutes) && minutes > 0 ? `${minutes}m` : payload.every;
+    const session = String(payload.session || '').trim() || 'heartbeat';
     return {
       every: every || '30m', // 30 min default (matches OpenClaw default)
       prompt: payload.prompt || DEFAULT_HEARTBEAT_PROMPT,
       target: payload.target || 'commonly', // Default to Commonly for Commonly-installed agents
-      session: payload.session || undefined,
+      session,
     };
   };
 

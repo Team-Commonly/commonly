@@ -15,66 +15,129 @@ import commonlyLogo from '../../assets/commonly-logo.png';
 const USE_CASES = {
   'team-chat': {
     eyebrow: 'Team Chat',
-    title: 'Move from scattered chat to shared pod memory',
+    title: 'Run pod conversations with searchable shared context',
     summary:
-      'Run daily team communication in pods where decisions, context, and action items stay searchable and reusable.',
+      'Use pods, feed categories, and activity summaries together so your team builds a self-growing knowledge base from daily collaboration.',
     problems: [
-      'Context gets lost across channels and threads',
-      'New teammates cannot reconstruct why decisions were made',
-      'Important follow-ups disappear in high-volume chat',
+      'Important updates get split between chat, posts, and side channels',
+      'Teams lose track of decisions when conversations move quickly',
+      'Follow-ups are easy to miss without a shared activity stream',
     ],
     outcomes: [
-      'Persistent, searchable pod timelines',
-      'Agent mentions that pull relevant prior context',
-      'Clear handoff between chat, posts, and activity feed',
+      'Pod chat and feed workflows in one place',
+      'Agent mentions in chat and threads for faster context lookups',
+      'Hourly summaries and activity views that accumulate reusable knowledge',
+    ],
+    exampleFlow: [
+      'You post a planning update in pod chat.',
+      'A teammate mentions an agent to pull last week’s related summary.',
+      'The decision is captured in-thread and appears in your next digest.',
     ],
   },
   'agent-collab': {
     eyebrow: 'Agent Collaboration',
-    title: 'Deploy pod-native agents with explicit boundaries',
+    title: 'Orchestrate secure, customizable multi-agent workflows',
     summary:
-      'Install multiple agents per pod with scoped permissions so each agent helps in the right place without leaking context.',
+      'Use Agent Hub to create templates, deploy agent instances to pods, and connect containerized or self-hosted agents with scoped access.',
     problems: [
-      'Single-assistant tools cannot model team boundaries',
-      'Agent behavior is inconsistent across environments',
-      'No central place to manage skills, runtime, and tool policy',
+      'Teams need more than one assistant with different responsibilities',
+      'Runtime setup and configuration often lives outside daily workflows',
+      'Security and publish guardrails are hard to enforce across many agent runtimes',
     ],
     outcomes: [
-      'Agents Hub install and runtime controls',
-      'Per-pod configuration, persona, and scope policies',
-      'Structured event flow for mentions, summaries, and curation',
+      'Discover, Presets, Installed, and Admin tabs in Agent Hub',
+      'Create/edit template-based agents and install them per pod',
+      'Runtime tokens + scoped integration permissions for controlled access',
+      'Support OpenClaw plus external/self-hosted CLI-style agents via secure agent APIs',
+    ],
+    exampleFlow: [
+      'You install a coding partner agent to one pod and a curator agent to another.',
+      'Each agent gets scoped runtime access based on pod needs.',
+      'Agents respond in-context without mixing identities or permissions.',
     ],
   },
   'daily-digest': {
     eyebrow: 'Daily Digest',
-    title: 'Turn high-volume activity into actionable daily narrative',
+    title: 'Convert noisy activity into digestible updates',
     summary:
-      'Use agent-driven summarization to convert chat, feed, and integration activity into focused daily digests.',
+      'Generate AI digests from recent activity, review history, and track digest analytics in one workflow.',
     problems: [
       'Too many updates to review manually',
-      'Cross-tool status is fragmented across products',
-      'Leaders lack a compact view of momentum and blockers',
+      'Teams need a quick readout before jumping into detailed threads',
+      'It is difficult to maintain continuity across daily check-ins',
     ],
     outcomes: [
-      'Pod summaries persisted as reusable context assets',
-      'Daily digest continuity across feed and message workflows',
-      'Admin controls for refresh and runtime orchestration',
+      'Latest, History, and Generate digest controls',
+      'Structured highlights, notable moments, and key insights',
+      'Digest analytics for activity volume and trend visibility',
+    ],
+    exampleFlow: [
+      'Messages and social updates accumulate through the day.',
+      'You generate a digest before standup or check-in.',
+      'Everyone starts with the same concise context and clear action points.',
     ],
   },
   community: {
-    eyebrow: 'Community Hub',
-    title: 'Operate social and community workflows from one platform',
+    eyebrow: 'Integrations',
+    title: 'Operate one social feed across connected apps',
     summary:
-      'Ingest external community signals, curate highlights, and trigger pod discussions from a unified social context pipeline.',
+      'Connect official providers, aggregate external social activity into Commonly feeds, and coordinate team response from one workspace.',
     problems: [
-      'Signals are split across Discord, Slack, X, Instagram, and forums',
-      'Teams cannot track trends and responses in one place',
-      'Reposting and curation need governance controls',
+      'Community signals are spread across multiple provider dashboards',
+      'Manual copying between channels and internal discussion is slow',
+      'External publishing needs clear policy controls',
     ],
     outcomes: [
-      'Global social integrations with policy-aware publishing',
-      'Curation loops that create feed activity and pod discussion',
-      'Auditable agent actions for social operations',
+      'Official integration cards for Discord, Slack, Telegram, GroupMe, X, and Instagram',
+      'Global social feed configuration for X and Instagram ingestion',
+      'Policy controls for external publishing behavior and attribution',
+    ],
+    exampleFlow: [
+      'Connected social feeds bring external posts into Commonly.',
+      'Your team curates and discusses what matters in one pod.',
+      'Publishing follows admin guardrails and attribution policy.',
+    ],
+  },
+  'pod-browser': {
+    eyebrow: 'Pod Browser',
+    title: 'Find the right room before entering chat',
+    summary:
+      'Browse pods by category, preview room details, and jump into conversations with Open Chat from a single index view.',
+    problems: [
+      'Users waste time jumping into the wrong room',
+      'Teams need a quick view of joined vs discoverable pods',
+      'Unread activity is easy to miss without room-level indicators',
+    ],
+    outcomes: [
+      'Category routes for Chat, Study, Games, and Ensemble pods',
+      'All, Joined, and Discover filters for faster room triage',
+      'Room cards with membership counts, badges, and direct Open Chat actions',
+    ],
+    exampleFlow: [
+      'A new member opens pod browser and checks Discover.',
+      'They preview room type and activity before joining.',
+      'Open Chat drops them into the right space with context ready.',
+    ],
+  },
+  'app-marketplace': {
+    eyebrow: 'App Marketplace',
+    title: 'Install official apps and discover advanced connectors',
+    summary:
+      'Use the Apps marketplace to connect official integrations, review capability tags, and discover optional advanced connectors.',
+    problems: [
+      'Teams cannot easily see which providers are officially supported',
+      'Setup paths are unclear when integrations live in different admin screens',
+      'Advanced connector discovery is fragmented without a shared catalog view',
+    ],
+    outcomes: [
+      'Official Marketplace cards for Discord, Slack, Telegram, GroupMe, X, and Instagram',
+      'Connect in Pod calls-to-action with direct docs links',
+      'Advanced connector preview block with setup requirements made explicit',
+    ],
+    exampleFlow: [
+      'You open Apps marketplace and select the provider your pod needs.',
+      'Connect in Pod links setup directly to pod context.',
+      'You add optional advanced connectors for specialized workflows later.',
     ],
   },
 };
@@ -156,6 +219,27 @@ const UseCasePage = () => {
               ))}
             </Stack>
           </Box>
+        </Box>
+
+        <Box
+          sx={{
+            p: 3,
+            border: '1px solid rgba(148,163,184,0.18)',
+            borderRadius: 3,
+            background: 'rgba(15,23,42,0.48)',
+            mb: 5,
+          }}
+        >
+          <Typography sx={{ mb: 1.5, fontWeight: 700 }}>
+            Example flow
+          </Typography>
+          <Stack spacing={1.1}>
+            {useCase.exampleFlow.map((step, index) => (
+              <Typography key={step} sx={{ color: '#cbd5e1' }}>
+                {index + 1}. {step}
+              </Typography>
+            ))}
+          </Stack>
         </Box>
 
         <Divider sx={{ borderColor: 'rgba(148,163,184,0.18)', mb: 4 }} />
