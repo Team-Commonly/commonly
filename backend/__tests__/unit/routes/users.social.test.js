@@ -5,6 +5,7 @@ jest.mock('../../../controllers/userController', () => ({
   getCurrentProfile: jest.fn((req, res) => res.status(200).end()),
   updateProfile: jest.fn((req, res) => res.status(200).end()),
   getUserById: jest.fn((req, res) => res.status(200).end()),
+  getUserPublicActivity: jest.fn((req, res) => res.status(200).end()),
   followUser: jest.fn((req, res) => res.status(200).end()),
   unfollowUser: jest.fn((req, res) => res.status(200).end()),
 }));
@@ -27,5 +28,10 @@ describe('users social routes', () => {
   it('DELETE /api/users/:id/follow calls unfollowUser', async () => {
     await request(app).delete('/api/users/user123/follow').expect(200);
     expect(controllers.unfollowUser).toHaveBeenCalled();
+  });
+
+  it('GET /api/users/:id/public-activity calls getUserPublicActivity', async () => {
+    await request(app).get('/api/users/user123/public-activity').expect(200);
+    expect(controllers.getUserPublicActivity).toHaveBeenCalled();
   });
 });

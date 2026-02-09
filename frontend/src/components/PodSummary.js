@@ -4,7 +4,7 @@ import { Lightbulb as LightbulbIcon, Refresh as RefreshIcon } from '@mui/icons-m
 import axios from 'axios';
 import './PodSummary.css';
 
-const PodSummary = ({ podId, podName, podType, originalDescription }) => {
+const PodSummary = ({ podId, title, originalDescription }) => {
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(false);
     const [showSummary, setShowSummary] = useState(false);
@@ -85,7 +85,12 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
 
     return (
         <Box className="pod-summary-container">
-            <Box className="summary-header">
+            <Box className="summary-title-row">
+                {title ? (
+                    <Typography variant="h5" component="div" className="pod-card-title">
+                        {title}
+                    </Typography>
+                ) : <Box />}
                 <Box className="summary-controls">
                     <Tooltip title={showSummary ? "Show description" : "Show AI summary"}>
                         <IconButton 
@@ -93,6 +98,7 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
                             onClick={handleToggleSummary}
                             disabled={loading}
                             className={`summary-toggle ${showSummary ? 'active' : ''}`}
+                            aria-label={showSummary ? 'Show description' : 'Show AI summary'}
                         >
                             {loading ? (
                                 <CircularProgress size={14} />
@@ -108,14 +114,14 @@ const PodSummary = ({ podId, podName, podType, originalDescription }) => {
                                 onClick={handleRefresh}
                                 disabled={loading}
                                 className="refresh-btn"
+                                aria-label="Refresh summary"
                             >
                                 <RefreshIcon />
                             </IconButton>
                         </Tooltip>
                     )}
                 </Box>
-            </Box>
-            
+            </Box>        
             <Box className="summary-content">
                 {showSummary ? (
                     summary ? (

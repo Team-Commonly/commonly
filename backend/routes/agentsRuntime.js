@@ -60,6 +60,42 @@ const hasAnyScope = (installation, acceptedScopes = []) => {
   return acceptedScopes.some((scope) => scopes.includes(scope));
 };
 
+const mapBufferedIntegrationMessages = (integration, {
+  limit = 100,
+  before,
+  after,
+} = {}) => {
+  const buffer = Array.isArray(integration?.config?.messageBuffer)
+    ? integration.config.messageBuffer
+    : [];
+  let messages = buffer
+    .map((entry) => ({
+      id: entry?.messageId ? String(entry.messageId) : null,
+      content: String(entry?.content || ''),
+      author: String(entry?.authorName || ''),
+      authorId: entry?.authorId ? String(entry.authorId) : null,
+      timestamp: entry?.timestamp || null,
+      metadata: entry?.metadata || {},
+    }))
+    .filter((entry) => entry.id && entry.timestamp);
+
+  if (before) {
+    const beforeDate = new Date(before);
+    if (!Number.isNaN(beforeDate.valueOf())) {
+      messages = messages.filter((entry) => new Date(entry.timestamp) < beforeDate);
+    }
+  }
+  if (after) {
+    const afterDate = new Date(after);
+    if (!Number.isNaN(afterDate.valueOf())) {
+      messages = messages.filter((entry) => new Date(entry.timestamp) > afterDate);
+    }
+  }
+
+  messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  return messages.slice(0, limit);
+};
+
 const requireBotUser = async (req, res) => {
   const userId = req.userId || req.user?.id;
   const user = await User.findById(userId).lean();
@@ -176,7 +212,8 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
     if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
       return res.status(403).json({ message: 'Agent token does not match bot user' });
     }
-    await AgentEventService.acknowledge(req.params.id, resolvedAgentName, instanceId);
+    const delivery = req.body?.result || req.body?.delivery || null;
+    await AgentEventService.acknowledge(req.params.id, resolvedAgentName, instanceId, delivery);
 
     return res.json({ success: true });
   } catch (error) {
@@ -199,10 +236,12 @@ router.post('/events/:id/ack', agentRuntimeAuth, async (req, res) => {
     if (!agentName) {
       return res.status(403).json({ message: 'Agent token not authorized for events' });
     }
+    const delivery = req.body?.result || req.body?.delivery || null;
     await AgentEventService.acknowledge(
       req.params.id,
       agentName,
       instanceId,
+      delivery,
     );
     return res.json({ success: true });
   } catch (error) {
@@ -716,15 +755,20 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
     // Fetch integration
     const integration = await Integration.findOne({
       _id: integrationId,
-      podId,
       'config.agentAccessEnabled': true,
+      status: 'connected',
+      isActive: true,
+      $or: [
+        { podId },
+        { 'config.globalAgentAccess': true },
+      ],
     }).lean();
 
     if (!integration) {
       return res.status(404).json({ message: 'Integration not found or agent access disabled' });
     }
 
-    // Fetch messages from Discord/GroupMe API
+    // Fetch messages from provider API or normalized integration buffer.
     let messages = [];
 
     if (integration.type === 'discord') {
@@ -751,6 +795,8 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
         before,
         after,
       });
+    } else if (integration.type === 'x' || integration.type === 'instagram') {
+      messages = mapBufferedIntegrationMessages(integration, { limit, before, after });
     } else {
       return res.status(400).json({ message: `Integration type ${integration.type} does not support message fetching` });
     }

@@ -63,6 +63,8 @@ const UserProfile = () => {
     const [isFollowLoading, setIsFollowLoading] = useState(false);
     const [showToken, setShowToken] = useState(false);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+    const [publicActivity, setPublicActivity] = useState({ recentPublicPosts: [], joinedPods: [] });
+    const [publicActivityLoading, setPublicActivityLoading] = useState(false);
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -80,6 +82,27 @@ const UserProfile = () => {
 
                 setUser(userRes.data);
                 setSelectedAvatar(userRes.data.profilePicture || 'default');
+
+                const resolvedUserId = userRes.data?._id;
+                if (resolvedUserId) {
+                    setPublicActivityLoading(true);
+                    try {
+                        const activityRes = await axios.get(`/api/users/${resolvedUserId}/public-activity`, {
+                            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                        });
+                        setPublicActivity({
+                            recentPublicPosts: activityRes.data?.recentPublicPosts || [],
+                            joinedPods: activityRes.data?.joinedPods || [],
+                        });
+                    } catch (activityError) {
+                        setPublicActivity({ recentPublicPosts: [], joinedPods: [] });
+                    } finally {
+                        setPublicActivityLoading(false);
+                    }
+                } else {
+                    setPublicActivity({ recentPublicPosts: [], joinedPods: [] });
+                    setPublicActivityLoading(false);
+                }
 
                 // Set API token info
                 if (tokenRes.data.hasToken) {
@@ -577,6 +600,58 @@ const UserProfile = () => {
                     <Typography variant="body2" color="text.secondary">
                         This is a public profile view. Follow this user to get activity updates.
                     </Typography>
+                    <Divider sx={{ my: 2 }} />
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} md={6}>
+                            <Typography variant="subtitle1" sx={{ mb: 1.25, fontWeight: 600 }}>
+                                Recent Public Posts
+                            </Typography>
+                            {publicActivityLoading ? (
+                                <Typography variant="body2" color="text.secondary">Loading…</Typography>
+                            ) : publicActivity.recentPublicPosts.length === 0 ? (
+                                <Typography variant="body2" color="text.secondary">No public posts yet.</Typography>
+                            ) : (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    {publicActivity.recentPublicPosts.map((post) => (
+                                        <Paper
+                                            key={post.id}
+                                            variant="outlined"
+                                            sx={{ p: 1.25, borderRadius: 2, cursor: 'pointer' }}
+                                            onClick={() => navigate(`/thread/${post.id}`)}
+                                        >
+                                            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                                {(post.content || '').slice(0, 120) || '(No text)'}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                {post.category || 'General'} • {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
+                                            </Typography>
+                                        </Paper>
+                                    ))}
+                                </Box>
+                            )}
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <Typography variant="subtitle1" sx={{ mb: 1.25, fontWeight: 600 }}>
+                                Public Joined Pods
+                            </Typography>
+                            {publicActivityLoading ? (
+                                <Typography variant="body2" color="text.secondary">Loading…</Typography>
+                            ) : publicActivity.joinedPods.length === 0 ? (
+                                <Typography variant="body2" color="text.secondary">No joined pods to show.</Typography>
+                            ) : (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                    {publicActivity.joinedPods.map((pod) => (
+                                        <Chip
+                                            key={pod.id}
+                                            clickable
+                                            label={`${pod.name} (${pod.membersCount || 0})`}
+                                            onClick={() => navigate(`/pods/${pod.type || 'chat'}/${pod.id}`)}
+                                        />
+                                    ))}
+                                </Box>
+                            )}
+                        </Grid>
+                    </Grid>
                 </CardContent>
             </Card>
             )}
