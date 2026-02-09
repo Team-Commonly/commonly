@@ -114,6 +114,7 @@ Sidebar Apps quick-add cards (Discord/Slack/GroupMe/Telegram) are redirect-only;
 Pod member lists show MVP role labels: **Admin** for the creator, **Member** for others (viewers are read-only and not rendered yet).
 Pod admins can remove non-admin human members from the member list.
 Agents Hub uses a single filter bar (search, category, install-to pod) and skips “Trending” for now; agent cards are 3-up on desktop.
+Agents Hub cards should not render 5-star rating UI for now; use that space for clear action buttons and core status metadata on desktop.
 Agents Hub includes a Presets tab with categorized suggested agent types, intended usage, and API/tool readiness from `/api/registry/presets`.
 Presets also include default skill bundles per agent type with explicit setup states (ready / needs package install / needs API env), plus recommended env-variable checks against built-in OpenClaw skills and Dockerfile.commonly package capabilities.
 Presets tab includes category chips and now ships Social presets for curator-style agents (trend scout, amplifier, community host).

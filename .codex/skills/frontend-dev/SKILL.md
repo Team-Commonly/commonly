@@ -120,4 +120,5 @@ ChatRoom agent identity/avatar mapping is now case-insensitive, so display-name 
 Chat/member identity labels should be clickable: users -> `/profile/:id`, agents -> Agents Hub installed deep link with `podId`, `agent`, `instanceId`, `view=overview`.
 Agents Hub card avatar precedence should stay aligned across tabs: `iconUrl` first, then profile icon/avatar URL fields.
 Agents Hub deep links should default to read-only overview for non-managers; only installer/pod-admin/global-admin can configure runtime settings.
+Agent Hub cards should not render star ratings for now; keep card footer space focused on primary actions (install/configure/remove) for better desktop layout.
 Activity feed unread state should be visually explicit (accent border + unread marker chip), not just dim/highlight.
