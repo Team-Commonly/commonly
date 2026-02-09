@@ -19,6 +19,9 @@ jest.mock('../../../services/socialPolicyService', () => ({
   getPolicy: jest.fn(),
   setPolicy: jest.fn(),
 }));
+jest.mock('../../../services/externalFeedService', () => ({
+  syncExternalFeeds: jest.fn(),
+}));
 jest.mock('axios', () => ({
   get: jest.fn(),
 }));
@@ -27,6 +30,7 @@ const axios = require('axios');
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
 const registry = require('../../../integrations');
+const externalFeedService = require('../../../services/externalFeedService');
 const router = require('../../../routes/admin/globalIntegrations');
 
 function getRouteHandler(path, method) {
@@ -173,6 +177,25 @@ describe('admin global integrations route', () => {
         { id: '11', username: 'openai', name: 'OpenAI' },
         { id: '22', username: 'github', name: 'GitHub' },
       ],
+    });
+  });
+
+  it('triggers external feed sync from admin endpoint', async () => {
+    const handler = getRouteHandler('/sync', 'post');
+    const req = { userId: 'admin-1' };
+    const res = createRes();
+    const syncResults = [
+      { integrationId: 'x-1', success: true, messageCount: 3, createdPosts: 3 },
+    ];
+    externalFeedService.syncExternalFeeds.mockResolvedValueOnce(syncResults);
+
+    await handler(req, res);
+
+    expect(externalFeedService.syncExternalFeeds).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      count: 1,
+      results: syncResults,
     });
   });
 });

@@ -196,16 +196,6 @@ const Dashboard = () => {
                             <ListItemText primary="Global Integrations" />
                         </ListItem>
 
-                        <ListItem
-                            button
-                            onClick={() => handleNavigation('/admin/agents/events')}
-                            selected={location.pathname === '/admin/agents/events'}
-                        >
-                            <ListItemIcon>
-                                <AdminIcon />
-                            </ListItemIcon>
-                            <ListItemText primary="Agent Events Debug" />
-                        </ListItem>
                     </>
                 )}
 

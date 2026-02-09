@@ -4,6 +4,7 @@ import TestUtils from 'react-dom/test-utils';
 import { MemoryRouter } from 'react-router-dom';
 import UserProfile from './UserProfile';
 import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 const axios = require('axios').default;
 
 jest.mock('axios', () => ({
@@ -11,6 +12,11 @@ jest.mock('axios', () => ({
   default: { get: jest.fn(), put: jest.fn() }
 }));
 jest.mock('../context/AppContext', () => ({ useAppContext: jest.fn() }));
+jest.mock('../context/AuthContext', () => ({ useAuth: jest.fn() }));
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useParams: () => ({ id: 'u' }),
+}));
 
 let container;
 let root;
@@ -22,6 +28,7 @@ beforeEach(() => {
   root = ReactDOM.createRoot(container);
   localStorage.setItem('token', 't');
   useAppContext.mockReturnValue({ refreshAvatars: jest.fn() });
+  useAuth.mockReturnValue({ currentUser: { _id: 'viewer', username: 'viewer' } });
 });
 
 afterEach(() => {
@@ -33,8 +40,10 @@ afterEach(() => {
 
 async function renderProfile() {
   axios.get
-    .mockResolvedValueOnce({ data: { _id: 'u', username: 'user', email: 'e@example.com', createdAt: '2023-01-01' } })
-    .mockResolvedValueOnce({ data: [] });
+    .mockResolvedValueOnce({ data: { _id: 'u', username: 'user', email: 'e@example.com', createdAt: '2023-01-01', profilePicture: 'default' } })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: { hasToken: false } })
+    .mockResolvedValueOnce({ data: { recentPublicPosts: [], joinedPods: [] } });
   await TestUtils.act(async () => {
     root.render(
       <MemoryRouter>
@@ -47,7 +56,7 @@ async function renderProfile() {
 
 test('displays user info after fetch', async () => {
   await renderProfile();
-  expect(axios.get).toHaveBeenCalledWith('/api/auth/profile', { headers: { Authorization: 'Bearer t' } });
+  expect(axios.get).toHaveBeenCalledWith('/api/users/u', { headers: { Authorization: 'Bearer t' } });
   expect(container.textContent).toContain('user');
 });
 

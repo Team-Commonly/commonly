@@ -34,12 +34,27 @@ const AgentEventSchema = new mongoose.Schema(
     },
     deliveredAt: Date,
     error: String,
+    delivery: {
+      outcome: {
+        type: String,
+        enum: ['acknowledged', 'posted', 'no_action', 'skipped', 'error'],
+      },
+      reason: String,
+      messageId: String,
+      details: mongoose.Schema.Types.Mixed,
+      updatedAt: Date,
+    },
   },
   {
     timestamps: true,
   },
 );
 
-AgentEventSchema.index({ agentName: 1, instanceId: 1, status: 1, createdAt: 1 });
+AgentEventSchema.index({
+  agentName: 1,
+  instanceId: 1,
+  status: 1,
+  createdAt: 1,
+});
 
 module.exports = mongoose.model('AgentEvent', AgentEventSchema);

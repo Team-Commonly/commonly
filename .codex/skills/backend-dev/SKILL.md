@@ -143,6 +143,7 @@ OpenClaw agent config can sync imported pod skills into workspace `skills/` and 
 Global admins can remove any pod agent installation via `DELETE /api/registry/agents/:name/pods/:podId` even when not pod member/installer.
 Social graph is available on `User` (`followers`, `following`, `followedThreads`) with user follow routes:
 `POST/DELETE /api/users/:id/follow`.
+Public profile context endpoint: `GET /api/users/:id/public-activity` returns recent global posts and joined pods for profile discovery.
 Thread follow routes are available at `POST/DELETE /api/posts/:id/follow` with listing
 `GET /api/posts/following/threads`.
 Activity feed supports unread APIs:

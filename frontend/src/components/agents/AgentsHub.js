@@ -62,6 +62,7 @@ import {
 import AgentCard from './AgentCard';
 import ClawdbotConfigPanel from './ClawdbotConfigPanel';
 import AvatarGenerator from './AvatarGenerator';
+import AgentEventsDebugPage from '../admin/AgentEventsDebugPage';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useLocation } from 'react-router-dom';
@@ -126,6 +127,8 @@ const getPresetSkillStatus = (skill) => {
 const TAB_DISCOVER = 0;
 const TAB_PRESETS = 1;
 const TAB_INSTALLED = 2;
+const ADMIN_VIEW_INSTALLATIONS = 'installations';
+const ADMIN_VIEW_EVENTS = 'events';
 
 const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const theme = useTheme();
@@ -134,6 +137,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const isGlobalAdmin = currentUser?.role === 'admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState(0);
+  const [adminView, setAdminView] = useState(ADMIN_VIEW_INSTALLATIONS);
   const [category, setCategory] = useState('all');
   const [agents, setAgents] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -153,12 +157,32 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     const params = new URLSearchParams(location.search);
     return params.get('podId');
   }, [location.search]);
+  const queryAgentName = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('agent') || '';
+  }, [location.search]);
+  const queryInstanceId = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('instanceId') || 'default';
+  }, [location.search]);
+  const queryView = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('view') || 'overview';
+  }, [location.search]);
+  const queryTab = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('tab') || '';
+  }, [location.search]);
   const [selectedPodId, setSelectedPodId] = useState(propPodId || queryPodId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [seeding, setSeeding] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [configAgent, setConfigAgent] = useState(null);
+  const [agentOverviewOpen, setAgentOverviewOpen] = useState(false);
+  const [agentOverview, setAgentOverview] = useState(null);
+  const [agentOverviewLoading, setAgentOverviewLoading] = useState(false);
+  const [agentOverviewError, setAgentOverviewError] = useState('');
   const [configModel, setConfigModel] = useState('gemini-2.5-pro');
   const [configInstructions, setConfigInstructions] = useState('');
   const [configPersonaTone, setConfigPersonaTone] = useState('friendly');
@@ -229,6 +253,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [runtimeLogsFilter, setRuntimeLogsFilter] = useState('');
   const runtimeLogsInputRef = useRef(null);
   const runtimeLogsScrollRef = useRef({ top: 0, atBottom: true });
+  const deepLinkHandledRef = useRef('');
   const [userTokenValue, setUserTokenValue] = useState('');
   const [userTokenScopes, setUserTokenScopes] = useState([]);
   const [userTokenMeta, setUserTokenMeta] = useState({
@@ -383,6 +408,12 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   }, [propPodId, queryPodId]);
 
+  useEffect(() => {
+    if (queryTab === 'installed') {
+      setActiveTab(TAB_INSTALLED);
+    }
+  }, [queryTab]);
+
   // Fetch user's pods for pod selector
   useEffect(() => {
     const fetchUserPods = async () => {
@@ -417,6 +448,29 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       fetchInstalledAgents();
     }
   }, [selectedPodId]);
+
+  useEffect(() => {
+    if (!queryAgentName || !selectedPodId || !installedAgents.length) return;
+    const deepLinkKey = `${selectedPodId}:${queryAgentName}:${queryInstanceId}:${queryView}`;
+    if (deepLinkHandledRef.current === deepLinkKey) return;
+
+    const normalizedTargetName = String(queryAgentName).trim().toLowerCase();
+    const normalizedTargetInstance = String(queryInstanceId || 'default').trim().toLowerCase();
+    const matched = installedAgents.find((agent) => (
+      String(agent.name || '').trim().toLowerCase() === normalizedTargetName
+      && String(agent.instanceId || 'default').trim().toLowerCase() === normalizedTargetInstance
+    )) || installedAgents.find((agent) => String(agent.name || '').trim().toLowerCase() === normalizedTargetName);
+
+    if (!matched) return;
+
+    deepLinkHandledRef.current = deepLinkKey;
+    setActiveTab(TAB_INSTALLED);
+    if (queryView === 'configure' && canManageInstalledAgent(matched)) {
+      openConfigDialog(matched);
+    } else {
+      openAgentOverviewDialog(matched);
+    }
+  }, [queryAgentName, queryInstanceId, queryView, selectedPodId, installedAgents]);
 
   const fetchAgents = async () => {
     setLoading(true);
@@ -1425,6 +1479,19 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const selectedPod = (accessiblePods.length > 0 ? accessiblePods : userPods)
     .find((pod) => pod._id === selectedPodId) || null;
   const canRemoveInSelectedPod = selectedPod ? isPodAdmin(selectedPod) : false;
+  const canManageInstalledAgent = (agent) => {
+    if (!agent) return false;
+    if (isGlobalAdmin || canRemoveInSelectedPod) return true;
+    const installerId = String(agent.installedBy?._id || agent.installedBy || '');
+    return Boolean(currentUserId && installerId && installerId === String(currentUserId));
+  };
+
+  const closeAgentOverviewDialog = () => {
+    setAgentOverviewOpen(false);
+    setAgentOverview(null);
+    setAgentOverviewError('');
+    setAgentOverviewLoading(false);
+  };
   const allAgents = [
     ...agents,
     ...templates.map((template) => ({
@@ -1542,6 +1609,31 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       }
     } catch (error) {
       console.warn('Failed to refresh latest installation config:', error);
+    }
+  };
+
+  const openAgentOverviewDialog = async (agent) => {
+    const resolved = resolveInstalledAgent(agent);
+    setAgentOverviewOpen(true);
+    setAgentOverview(resolved);
+    setAgentOverviewError('');
+
+    if (!selectedPodId || !resolved?.name) return;
+    setAgentOverviewLoading(true);
+    try {
+      const instanceId = resolved.instanceId || 'default';
+      const response = await axios.get(
+        `/api/registry/pods/${selectedPodId}/agents/${resolved.name}?instanceId=${encodeURIComponent(instanceId)}`,
+        { headers: getAuthHeaders() },
+      );
+      const latest = response.data?.agent || null;
+      if (latest) {
+        setAgentOverview(latest);
+      }
+    } catch (error) {
+      setAgentOverviewError(error?.response?.data?.error || 'Failed to load latest agent details');
+    } finally {
+      setAgentOverviewLoading(false);
     }
   };
 
@@ -2755,7 +2847,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             </Box>
           ) : (
             <Grid container spacing={3}>
-              {installedAgents.map((agent) => (
+              {installedAgents.map((agent) => {
+                const canManage = canManageInstalledAgent(agent);
+                return (
                 <Grid item xs={12} sm={6} md={4} lg={4} key={`${agent.name}-${agent.instanceId || 'default'}`}>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, height: '100%' }}>
                     <AgentCard
@@ -2771,9 +2865,11 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                         agentName: agent.name,
                       }}
                       installed
-                      onConfigure={openConfigDialog}
+                      onConfigure={(target) => (canManage ? openConfigDialog(target) : openAgentOverviewDialog(target))}
                       onRemove={handleRemove}
-                      canRemove={canRemoveInSelectedPod || agent.installedBy === currentUserId}
+                      canConfigure={true}
+                      installedActionLabel={canManage ? 'Configure' : 'View'}
+                      canRemove={canManage}
                     />
                     <Accordion
                       disableGutters
@@ -2877,7 +2973,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                     </Accordion>
                   </Box>
                 </Grid>
-              ))}
+                );
+              })}
             </Grid>
           )}
         </Box>
@@ -2885,239 +2982,314 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
       {isGlobalAdmin && activeTab === adminTabIndex && (
         <Box>
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 2,
-              mb: 2,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
-          >
-            <Typography variant="subtitle1">Themed Pod Autonomy</Typography>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
-              <TextField
-                size="small"
-                type="number"
-                label="Hours"
-                value={adminAutonomyHours}
-                onChange={(e) => setAdminAutonomyHours(e.target.value)}
-                inputProps={{ min: 1, max: 168 }}
-                sx={{ width: { xs: '100%', sm: 140 } }}
-              />
-              <TextField
-                size="small"
-                type="number"
-                label="Min Matches"
-                value={adminAutonomyMinMatches}
-                onChange={(e) => setAdminAutonomyMinMatches(e.target.value)}
-                inputProps={{ min: 1, max: 50 }}
-                sx={{ width: { xs: '100%', sm: 160 } }}
-              />
-              <Button
-                variant="contained"
-                startIcon={<RefreshIcon />}
-                onClick={handleRunThemedAutonomy}
-                disabled={adminAutonomyLoading}
-              >
-                {adminAutonomyLoading ? 'Running...' : 'Run Now'}
-              </Button>
-            </Stack>
-            {adminAutonomyResult && (
-              <Alert severity="success">
-                Themed autonomy run complete. Scanned {adminAutonomyResult.scannedPosts} posts, created{' '}
-                {adminAutonomyResult.createdPods} pod(s), triggered {adminAutonomyResult.triggeredPods} pod(s).
-              </Alert>
-            )}
-          </Paper>
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+            <Tabs
+              value={adminView}
+              onChange={(event, value) => setAdminView(value)}
+            >
+              <Tab value={ADMIN_VIEW_INSTALLATIONS} label={`Installations (${adminTotal || 0})`} />
+              <Tab value={ADMIN_VIEW_EVENTS} label="Events Debug" />
+            </Tabs>
+          </Box>
 
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 2,
-              mb: 2,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
-          >
-            <Typography variant="subtitle1">Runtime Reprovision</Typography>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
-              <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
-                Force reprovision all active agent installations and rotate shared runtime tokens per agent instance.
-              </Typography>
-              <Button
-                variant="contained"
-                color="warning"
-                startIcon={<RefreshIcon />}
-                onClick={handleForceReprovisionAll}
-                disabled={adminReprovisionLoading}
-              >
-                {adminReprovisionLoading ? 'Running...' : 'Force Reprovision All'}
-              </Button>
-            </Stack>
-            {adminReprovisionResult && (
-              <Alert severity={adminReprovisionResult.failed ? 'warning' : 'success'}>
-                Reprovision complete. Attempted {adminReprovisionResult.attempted}, succeeded{' '}
-                {adminReprovisionResult.succeeded}, failed {adminReprovisionResult.failed}.
-              </Alert>
-            )}
-          </Paper>
-
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 2,
-              mb: 3,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
-          >
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
-              <TextField
-                size="small"
-                placeholder="Search agent, instance, or pod..."
-                value={adminSearch}
-                onChange={(e) => setAdminSearch(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                }}
-                sx={{ minWidth: { xs: '100%', sm: 320 } }}
-              />
-              <FormControlLabel
-                control={(
-                  <Checkbox
-                    checked={adminShowAll}
-                    onChange={(e) => setAdminShowAll(e.target.checked)}
-                  />
-                )}
-                label="Include uninstalled"
-              />
-              <Box sx={{ flexGrow: 1 }} />
-              <Button
+          {adminView === ADMIN_VIEW_INSTALLATIONS && (
+            <>
+              <Paper
                 variant="outlined"
-                startIcon={<RefreshIcon />}
-                onClick={fetchAdminInstallations}
-                disabled={adminLoading}
+                sx={{
+                  p: 2,
+                  mb: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                }}
               >
-                Refresh
-              </Button>
-            </Stack>
-            <Typography variant="caption" color="text.secondary">
-              {adminTotal} total installations
-            </Typography>
-          </Paper>
+                <Typography variant="subtitle1">Themed Pod Autonomy</Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Hours"
+                    value={adminAutonomyHours}
+                    onChange={(e) => setAdminAutonomyHours(e.target.value)}
+                    inputProps={{ min: 1, max: 168 }}
+                    sx={{ width: { xs: '100%', sm: 140 } }}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Min Matches"
+                    value={adminAutonomyMinMatches}
+                    onChange={(e) => setAdminAutonomyMinMatches(e.target.value)}
+                    inputProps={{ min: 1, max: 50 }}
+                    sx={{ width: { xs: '100%', sm: 160 } }}
+                  />
+                  <Button
+                    variant="contained"
+                    startIcon={<RefreshIcon />}
+                    onClick={handleRunThemedAutonomy}
+                    disabled={adminAutonomyLoading}
+                  >
+                    {adminAutonomyLoading ? 'Running...' : 'Run Now'}
+                  </Button>
+                </Stack>
+                {adminAutonomyResult && (
+                  <Alert severity="success">
+                    Themed autonomy run complete. Scanned {adminAutonomyResult.scannedPosts} posts, created{' '}
+                    {adminAutonomyResult.createdPods} pod(s), triggered {adminAutonomyResult.triggeredPods} pod(s).
+                  </Alert>
+                )}
+              </Paper>
 
-          {adminError && (
-            <Alert severity="warning" sx={{ mb: 3 }}>
-              {adminError}
-            </Alert>
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  mb: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                }}
+              >
+                <Typography variant="subtitle1">Runtime Reprovision</Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+                    Force reprovision all active agent installations and rotate shared runtime tokens per agent instance.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    startIcon={<RefreshIcon />}
+                    onClick={handleForceReprovisionAll}
+                    disabled={adminReprovisionLoading}
+                  >
+                    {adminReprovisionLoading ? 'Running...' : 'Force Reprovision All'}
+                  </Button>
+                </Stack>
+                {adminReprovisionResult && (
+                  <Alert severity={adminReprovisionResult.failed ? 'warning' : 'success'}>
+                    Reprovision complete. Attempted {adminReprovisionResult.attempted}, succeeded{' '}
+                    {adminReprovisionResult.succeeded}, failed {adminReprovisionResult.failed}.
+                  </Alert>
+                )}
+              </Paper>
+
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  mb: 3,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                }}
+              >
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+                  <TextField
+                    size="small"
+                    placeholder="Search agent, instance, or pod..."
+                    value={adminSearch}
+                    onChange={(e) => setAdminSearch(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" />
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{ minWidth: { xs: '100%', sm: 320 } }}
+                  />
+                  <FormControlLabel
+                    control={(
+                      <Checkbox
+                        checked={adminShowAll}
+                        onChange={(e) => setAdminShowAll(e.target.checked)}
+                      />
+                    )}
+                    label="Include uninstalled"
+                  />
+                  <Box sx={{ flexGrow: 1 }} />
+                  <Button
+                    variant="outlined"
+                    startIcon={<RefreshIcon />}
+                    onClick={fetchAdminInstallations}
+                    disabled={adminLoading}
+                  >
+                    Refresh
+                  </Button>
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  {adminTotal} total installations
+                </Typography>
+              </Paper>
+
+              {adminError && (
+                <Alert severity="warning" sx={{ mb: 3 }}>
+                  {adminError}
+                </Alert>
+              )}
+
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Agent</TableCell>
+                      <TableCell>Instance</TableCell>
+                      <TableCell>Pod</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Tokens</TableCell>
+                      <TableCell>Last Used</TableCell>
+                      <TableCell>Installed By</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {adminLoading && (
+                      <TableRow>
+                        <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                          <CircularProgress size={24} />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {!adminLoading && adminInstallations.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                          <Typography color="text.secondary">No installations found.</Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {!adminLoading && adminInstallations.map((install) => (
+                      <TableRow key={install.id}>
+                        <TableCell>
+                          <Typography variant="subtitle2">
+                            {install.displayName || install.agentName}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {install.agentName}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {install.instanceId || 'default'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {install.pod?.name || 'Unknown pod'}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {install.pod?.id || '—'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{renderAdminStatusChip(install.status)}</TableCell>
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2">
+                              {(install.runtimeTokens || []).length}
+                            </Typography>
+                            <Button
+                              size="small"
+                              variant="text"
+                              onClick={() => openAdminTokensDialog(install)}
+                            >
+                              Manage
+                            </Button>
+                          </Stack>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {formatDateTime(install.usage?.lastUsedAt)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {install.installedBy?.username || 'Unknown'}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {install.installedBy?.email || '—'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            onClick={() => openAdminUninstallDialog(install)}
+                            disabled={install.status === 'uninstalled'}
+                          >
+                            Uninstall
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
           )}
 
-          <TableContainer component={Paper} variant="outlined">
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Agent</TableCell>
-                  <TableCell>Instance</TableCell>
-                  <TableCell>Pod</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Tokens</TableCell>
-                  <TableCell>Last Used</TableCell>
-                  <TableCell>Installed By</TableCell>
-                  <TableCell align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {adminLoading && (
-                  <TableRow>
-                    <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
-                      <CircularProgress size={24} />
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!adminLoading && adminInstallations.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
-                      <Typography color="text.secondary">No installations found.</Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!adminLoading && adminInstallations.map((install) => (
-                  <TableRow key={install.id}>
-                    <TableCell>
-                      <Typography variant="subtitle2">
-                        {install.displayName || install.agentName}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {install.agentName}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {install.instanceId || 'default'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {install.pod?.name || 'Unknown pod'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {install.pod?.id || '—'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{renderAdminStatusChip(install.status)}</TableCell>
-                    <TableCell>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Typography variant="body2">
-                          {(install.runtimeTokens || []).length}
-                        </Typography>
-                        <Button
-                          size="small"
-                          variant="text"
-                          onClick={() => openAdminTokensDialog(install)}
-                        >
-                          Manage
-                        </Button>
-                      </Stack>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {formatDateTime(install.usage?.lastUsedAt)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {install.installedBy?.username || 'Unknown'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {install.installedBy?.email || '—'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Button
-                        size="small"
-                        color="error"
-                        variant="outlined"
-                        onClick={() => openAdminUninstallDialog(install)}
-                        disabled={install.status === 'uninstalled'}
-                      >
-                        Uninstall
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          {adminView === ADMIN_VIEW_EVENTS && (
+            <AgentEventsDebugPage embedded />
+          )}
         </Box>
       )}
+
+      <Dialog open={agentOverviewOpen} onClose={closeAgentOverviewDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          Agent Overview
+          {agentOverview?.displayName ? ` • ${agentOverview.displayName}` : ''}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          {agentOverviewError && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {agentOverviewError}
+            </Alert>
+          )}
+          {agentOverviewLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+              <CircularProgress size={22} />
+            </Box>
+          )}
+          {agentOverview && (
+            <Stack spacing={1.5}>
+              <Chip size="small" variant="outlined" label={`Instance: ${agentOverview.instanceId || 'default'}`} />
+              <Typography variant="body2" color="text.secondary">
+                {agentOverview.profile?.purpose || agentOverview.description || 'No description provided.'}
+              </Typography>
+              <Typography variant="subtitle2">Usage</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {(agentOverview.usage?.messagesProcessed || 0).toLocaleString()} messages processed • {(agentOverview.usage?.podsJoined || 0).toLocaleString()} pods joined
+              </Typography>
+              <Typography variant="subtitle2">Instructions</Typography>
+              <TextField
+                fullWidth
+                multiline
+                minRows={5}
+                maxRows={10}
+                value={agentOverview.profile?.instructions || 'No custom instructions configured.'}
+                InputProps={{ readOnly: true }}
+              />
+              <Typography variant="caption" color="text.secondary">
+                Only the installer, pod admin, or a global admin can change configuration or runtime controls.
+              </Typography>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeAgentOverviewDialog}>Close</Button>
+          {agentOverview && canManageInstalledAgent(agentOverview) && (
+            <Button
+              variant="contained"
+              onClick={() => {
+                closeAgentOverviewDialog();
+                openConfigDialog(agentOverview);
+              }}
+            >
+              Open Configuration
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={configOpen} onClose={closeConfigDialog} fullWidth maxWidth={configAgent?.name === 'clawdbot-bridge' ? 'sm' : 'xs'}>
         <DialogTitle>

@@ -32,7 +32,7 @@ const ageMinutes = (value) => {
   return Math.max(0, Math.floor((Date.now() - ts) / 60000));
 };
 
-const AgentEventsDebugPage = () => {
+const AgentEventsDebugPage = ({ embedded = false }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -62,7 +62,11 @@ const AgentEventsDebugPage = () => {
 
   const queue = data?.queue || {};
   const stalePendingCount = Number(queue.stalePendingCount || 0);
+  const deliveredByOutcome = queue?.deliveredByOutcome || {};
   const heartbeatInstallations = useMemo(() => data?.heartbeatInstallations || [], [data]);
+  const failedByAgent = useMemo(() => data?.failedByAgent || [], [data]);
+  const failedEvents = useMemo(() => data?.failedEvents || [], [data]);
+  const recentDeliveredHeartbeats = useMemo(() => data?.recentDeliveredHeartbeats || [], [data]);
 
   if (loading) {
     return (
@@ -75,7 +79,7 @@ const AgentEventsDebugPage = () => {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h4">Agent Events Debug</Typography>
+        {!embedded && <Typography variant="h4">Agent Events Debug</Typography>}
         <Button
           variant="contained"
           startIcon={<RefreshIcon />}
@@ -109,6 +113,23 @@ const AgentEventsDebugPage = () => {
 
       <Card sx={{ mb: 2 }}>
         <CardContent>
+          <Typography variant="h6" gutterBottom>Delivered Outcomes</Typography>
+          <Typography variant="body2" color="text.secondary">
+            posted: {deliveredByOutcome.posted || 0}
+            {' | '}
+            no_action: {deliveredByOutcome.no_action || 0}
+            {' | '}
+            skipped: {deliveredByOutcome.skipped || 0}
+            {' | '}
+            acknowledged-only: {deliveredByOutcome.acknowledged || 0}
+            {' | '}
+            error: {deliveredByOutcome.error || 0}
+          </Typography>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ mb: 2 }}>
+        <CardContent>
           <Typography variant="h6" gutterBottom>Pending By Agent</Typography>
           <TableContainer>
             <Table size="small">
@@ -133,6 +154,41 @@ const AgentEventsDebugPage = () => {
                 ))}
                 {(data?.pendingByAgent || []).length === 0 && (
                   <TableRow><TableCell colSpan={5}>No pending events</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ mb: 2 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>Failed By Agent</Typography>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Agent</TableCell>
+                  <TableCell>Instance</TableCell>
+                  <TableCell>Count</TableCell>
+                  <TableCell>Newest</TableCell>
+                  <TableCell>Last Error</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {failedByAgent.map((row) => (
+                  <TableRow key={`${row.agentName}:${row.instanceId}`}>
+                    <TableCell>{row.agentName}</TableCell>
+                    <TableCell>{row.instanceId}</TableCell>
+                    <TableCell>{row.count}</TableCell>
+                    <TableCell>{formatDate(row.newestCreatedAt)}</TableCell>
+                    <TableCell sx={{ maxWidth: 520, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {row.newestError || '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {failedByAgent.length === 0 && (
+                  <TableRow><TableCell colSpan={5}>No failed events</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -205,6 +261,80 @@ const AgentEventsDebugPage = () => {
                 ))}
                 {(data?.pendingEvents || []).length === 0 && (
                   <TableRow><TableCell colSpan={6}>No pending events</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ mt: 2 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>Recent Delivered Heartbeats</Typography>
+          <TableContainer sx={{ mb: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Created</TableCell>
+                  <TableCell>Agent</TableCell>
+                  <TableCell>Instance</TableCell>
+                  <TableCell>Pod</TableCell>
+                  <TableCell>Outcome</TableCell>
+                  <TableCell>Reason</TableCell>
+                  <TableCell>Message</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {recentDeliveredHeartbeats.map((event) => (
+                  <TableRow key={event.id}>
+                    <TableCell>{formatDate(event.createdAt)}</TableCell>
+                    <TableCell>{event.agentName}</TableCell>
+                    <TableCell>{event.instanceId}</TableCell>
+                    <TableCell>{event.podId}</TableCell>
+                    <TableCell>{event.delivery?.outcome || 'acknowledged'}</TableCell>
+                    <TableCell sx={{ maxWidth: 420, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {event.delivery?.reason || '—'}
+                    </TableCell>
+                    <TableCell>{event.delivery?.messageId || '—'}</TableCell>
+                  </TableRow>
+                ))}
+                {recentDeliveredHeartbeats.length === 0 && (
+                  <TableRow><TableCell colSpan={7}>No delivered heartbeat events</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <Typography variant="h6" gutterBottom>Recent Failed Events</Typography>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Created</TableCell>
+                  <TableCell>Agent</TableCell>
+                  <TableCell>Instance</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell>Pod</TableCell>
+                  <TableCell>Attempts</TableCell>
+                  <TableCell>Error</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {failedEvents.map((event) => (
+                  <TableRow key={event.id}>
+                    <TableCell>{formatDate(event.createdAt)}</TableCell>
+                    <TableCell>{event.agentName}</TableCell>
+                    <TableCell>{event.instanceId}</TableCell>
+                    <TableCell>{event.type}</TableCell>
+                    <TableCell>{event.podId}</TableCell>
+                    <TableCell>{event.attempts}</TableCell>
+                    <TableCell sx={{ maxWidth: 640, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {event.error || '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {failedEvents.length === 0 && (
+                  <TableRow><TableCell colSpan={7}>No failed events</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

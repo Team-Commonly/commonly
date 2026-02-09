@@ -6,6 +6,7 @@ const {
   getCurrentProfile,
   updateProfile,
   getUserById,
+  getUserPublicActivity,
   followUser,
   unfollowUser,
 } = require('../controllers/userController');
@@ -19,6 +20,11 @@ router.get('/profile', auth, getCurrentProfile);
 // @desc    Update user profile
 // @access  Private
 router.put('/profile', auth, updateProfile);
+
+// @route   GET api/users/:id/public-activity
+// @desc    Get user public activity summary (recent public posts + joined pods)
+// @access  Private
+router.get('/:id/public-activity', auth, getUserPublicActivity);
 
 // @route   GET api/users/:id
 // @desc    Get user by ID
