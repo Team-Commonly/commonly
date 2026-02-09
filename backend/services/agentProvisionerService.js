@@ -1281,6 +1281,44 @@ const writeOpenClawHeartbeatFile = async (accountId, content, options = {}) => {
   return writeOpenClawHeartbeatFileLocal(accountId, content, options);
 };
 
+const clearOpenClawSessionsLocal = ({ accountId }) => {
+  const normalizedAccountId = String(accountId || '').trim();
+  if (!normalizedAccountId) {
+    throw new Error('accountId is required');
+  }
+  const candidates = [
+    path.resolve(__dirname, '../../external/clawdbot-state/state/agents', normalizedAccountId),
+    path.resolve('/tmp/openclaw/state/agents', normalizedAccountId),
+  ];
+  const removed = [];
+  candidates.forEach((agentStateDir) => {
+    const targets = [
+      path.join(agentStateDir, 'sessions'),
+      path.join(agentStateDir, 'sessions.json'),
+      path.join(agentStateDir, 'sessions.jsonl'),
+    ];
+    targets.forEach((targetPath) => {
+      try {
+        if (!fs.existsSync(targetPath)) return;
+        const stat = fs.statSync(targetPath);
+        if (stat.isDirectory()) {
+          fs.rmSync(targetPath, { recursive: true, force: true });
+        } else {
+          fs.unlinkSync(targetPath);
+        }
+        removed.push(targetPath);
+      } catch (error) {
+        console.warn('[agent-provisioner] Failed to clear session path:', targetPath, error.message);
+      }
+    });
+  });
+  return {
+    cleared: true,
+    accountId: normalizedAccountId,
+    removed,
+  };
+};
+
 // Unified interface that routes to K8s or Docker implementation
 const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   if (isK8sMode()) {
@@ -1325,6 +1363,24 @@ const getAgentRuntimeLogs = async (runtimeType, instanceId, lines = 200, options
     return k8sProvisioner.getAgentRuntimeLogs(runtimeType, instanceId, lines, options);
   }
   return getDockerRuntimeLogs(runtimeType, lines);
+};
+
+const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) => {
+  if (runtimeType !== 'moltbot') {
+    return {
+      cleared: false,
+      reason: 'Session clearing is only supported for OpenClaw runtimes.',
+      runtimeType,
+    };
+  }
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.clearAgentRuntimeSessions(runtimeType, instanceId, options);
+  }
+  return clearOpenClawSessionsLocal({
+    accountId: options.accountId || instanceId,
+  });
 };
 
 const listOpenClawPlugins = async (options = {}) => {
@@ -1379,12 +1435,14 @@ module.exports = {
   listOpenClawPlugins,
   listOpenClawBundledSkills,
   installOpenClawPlugin,
+  clearAgentRuntimeSessions,
   writeOpenClawHeartbeatFile,
   ensureHeartbeatTemplate,
   syncOpenClawSkills,
   syncOpenClawSkillEnv,
   getGatewaySkillEntries,
   syncGatewaySkillEnv,
+  resolveOpenClawAccountId,
 
   // Mode detection
   isK8sMode,
