@@ -133,6 +133,7 @@ Clawdbot gateway pods seed per-agent `auth-profiles.json` from `GEMINI_API_KEY` 
 Agents Hub shows an Admin tab for global admins to audit installations, revoke runtime tokens, and uninstall obsolete instances.
 Agents Hub Admin tab includes a manual "Run Themed Autonomy" control (calls `POST /api/admin/agents/autonomy/themed-pods/run`).
 Agents Hub Admin tab includes a "Force Reprovision All" helper that calls `POST /api/registry/admin/installations/reprovision-all` to reprovision all active installs at once.
+Agents Hub Admin now includes an **Events Debug** sub-tab (moved from the old dashboard nav page) with heartbeat status, queue stats, pending tables, and failed-event error details by agent.
 Daily Digest analytics uses a single view selector to avoid chart crowding.
 User profiles include social counters for followers and following.
 Public profile pages also surface recent public posts and joined pods for follow/discovery flows.

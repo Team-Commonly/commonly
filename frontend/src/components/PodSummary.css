@@ -365,15 +365,16 @@
 
 /* Main container */
 .pod-summary-container {
-    margin-bottom: 16px;
+    margin-bottom: 10px;
 }
 
 /* Header with toggle */
-.summary-header {
+.summary-title-row {
     display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    margin-bottom: 8px;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px;
 }
 
 .summary-label {
@@ -388,6 +389,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    margin-top: 2px;
 }
 
 .summary-toggle {
@@ -427,10 +429,14 @@
 
 /* Content area */
 .summary-content {
-    min-height: 72px;
+    min-height: 56px;
     color: #e2e8f0;
     font-size: 0.95rem;
     line-height: 1.5;
+}
+
+.pod-summary-container .pod-card-title {
+    margin-bottom: 0 !important;
 }
 
 .ai-summary-text {

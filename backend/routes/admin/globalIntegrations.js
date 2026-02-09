@@ -8,6 +8,7 @@ const OAuthState = require('../../models/OAuthState');
 const Pod = require('../../models/Pod');
 const registry = require('../../integrations');
 const SocialPolicyService = require('../../services/socialPolicyService');
+const externalFeedService = require('../../services/externalFeedService');
 
 let PGPod = null;
 if (process.env.PG_HOST) {
@@ -617,6 +618,24 @@ router.post('/x/test', auth, adminAuth, async (req, res) => {
   } catch (error) {
     console.error('X connection test failed:', error);
     res.status(500).json({ error: error.message || 'Connection test failed' });
+  }
+});
+
+/**
+ * Trigger external social feed sync now (admin debug helper)
+ * POST /api/admin/integrations/global/sync
+ */
+router.post('/sync', auth, adminAuth, async (req, res) => {
+  try {
+    const results = await externalFeedService.syncExternalFeeds();
+    return res.json({
+      success: true,
+      count: Array.isArray(results) ? results.length : 0,
+      results: Array.isArray(results) ? results : [],
+    });
+  } catch (error) {
+    console.error('Manual external feed sync failed:', error);
+    return res.status(500).json({ error: error.message || 'Failed to sync external feeds' });
   }
 });
 

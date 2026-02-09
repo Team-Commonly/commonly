@@ -62,6 +62,8 @@ const AgentCard = ({
   onEdit,
   onViewProfile,
   canRemove = false,
+  canConfigure = true,
+  installedActionLabel = 'Configure',
   canEdit = false,
   loading = false,
 }) => {
@@ -293,10 +295,11 @@ const AgentCard = ({
               <Button
                 variant="outlined"
                 size="small"
+                disabled={!canConfigure}
                 onClick={() => onConfigure?.(agent)}
                 sx={{ flex: 1, minHeight: 36 }}
               >
-                Configure
+                {installedActionLabel}
               </Button>
               {canRemove && (
                 <Button
@@ -458,8 +461,8 @@ const AgentCard = ({
         </Box>
         {installed ? (
           <>
-            <Button size="small" onClick={() => onConfigure?.(agent)} sx={{ minHeight: 34 }}>
-              Configure
+            <Button size="small" disabled={!canConfigure} onClick={() => onConfigure?.(agent)} sx={{ minHeight: 34 }}>
+              {installedActionLabel}
             </Button>
             {canRemove && (
               <Button size="small" color="error" onClick={() => onRemove?.(agent)} sx={{ minHeight: 34 }}>

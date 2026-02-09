@@ -72,9 +72,12 @@ const DEFAULT_HEARTBEAT_CONTENT = [
   '# HEARTBEAT.md',
   '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.',
   '- Prefer Commonly tools from that skill (`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`) before raw HTTP.',
+  '- Do not run token-diagnostic shell checks (`env`, `curl` auth probes) as heartbeat output. Use Commonly tools first.',
   '- Resolve `podId` from the incoming event context (usually `To: commonly:<podId>`). Do not use placeholder pod ids.',
+  '- If there is no pod/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK.',
   '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.',
   '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.',
+  '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.',
   '- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
   '- Do not post housekeeping-only status updates (for example: "no new posts" or "most recent post is ..."). If no meaningful new signal exists, reply HEARTBEAT_OK.',
   '- Do not repeat or paraphrase your own previous heartbeat message. If your update would be substantially the same, reply HEARTBEAT_OK instead.',
@@ -82,6 +85,14 @@ const DEFAULT_HEARTBEAT_CONTENT = [
   '- If nothing new, reply HEARTBEAT_OK.',
   '',
 ].join('\n');
+
+const DEFAULT_HEARTBEAT_PROMPT = [
+  'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.',
+  'Resolve podId from the incoming event context.',
+  'Before replying, read current pod activity via commonly tools (preferred) or the runtime-token HTTP fallback in HEARTBEAT.md (context/messages/posts).',
+  'If pod context or reads are unavailable for this run, reply HEARTBEAT_OK (do not post diagnostics).',
+  'If checks succeed and there is no meaningful new signal, reply HEARTBEAT_OK.',
+].join(' ');
 
 const normalizeHeartbeatContent = (content) => {
   const trimmed = String(content || '').trim();
@@ -234,8 +245,17 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
     `  if ! grep -q "Resolve \\\`podId\\\` from the incoming event context" "${heartbeatPath}"; then`,
     `    sed -i "/read and follow \\\`\\.\\/skills\\/commonly\\/SKILL.md\\\` in this agent workspace\\./a - Resolve \\\`podId\\\` from the incoming event context (usually \\\`To: commonly:<podId>\\\`). Do not use placeholder pod ids." "${heartbeatPath}" || true`,
     '  fi',
+    `  if ! grep -q "If there is no pod/channel context for this run" "${heartbeatPath}"; then`,
+    `    sed -i "/Resolve \\\`podId\\\` from the incoming event context/a - If there is no pod\\/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK." "${heartbeatPath}" || true`,
+    '  fi',
+    `  if ! grep -q "Do not run token-diagnostic shell checks" "${heartbeatPath}"; then`,
+    `    sed -i "/Prefer Commonly tools from that skill/a - Do not run token-diagnostic shell checks (\\\`env\\\`, \\\`curl\\\` auth probes) as heartbeat output. Use Commonly tools first." "${heartbeatPath}" || true`,
+    '  fi',
     `  if ! grep -q "Do not repeat or paraphrase your own previous heartbeat message" "${heartbeatPath}"; then`,
     `    sed -i "/Do not post housekeeping-only status updates/a - Do not repeat or paraphrase your own previous heartbeat message. If your update would be substantially the same, reply HEARTBEAT_OK instead." "${heartbeatPath}" || true`,
+    '  fi',
+    `  if ! grep -q "Heartbeat check is incomplete unless you actually read pod activity each run" "${heartbeatPath}"; then`,
+    `    sed -i "/Fetch last 20 chat messages and 10 recent posts/a - Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first." "${heartbeatPath}" || true`,
     '  fi',
     'fi',
     `if [ -f "${commonlySkillPath}" ]; then`,
@@ -937,7 +957,7 @@ const provisionOpenClawAccount = async ({
     const every = Number.isFinite(minutes) && minutes > 0 ? `${minutes}m` : payload.every;
     return {
       every: every || '30m',
-      prompt: payload.prompt || undefined,
+      prompt: payload.prompt || DEFAULT_HEARTBEAT_PROMPT,
       target: payload.target || 'commonly',
       session: payload.session || undefined,
     };

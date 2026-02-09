@@ -643,6 +643,11 @@ class SchedulerService {
           payload: {
             trigger,
             generatedAt: new Date().toISOString(),
+            podId: String(podId),
+            content: [
+              `Scheduler heartbeat for pod ${String(podId)}.`,
+              'Read current pod activity and post only if there is meaningful new signal.',
+            ].join(' '),
           },
         });
         return { enqueued: 1, skippedByInterval: 0 };

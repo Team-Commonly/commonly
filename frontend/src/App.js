@@ -26,7 +26,6 @@ import ActivityFeedPage from './components/activity/ActivityFeedPage';
 import SkillsCatalogPage from './components/skills/SkillsCatalogPage';
 import AppsMarketplacePage from './components/apps/AppsMarketplacePage';
 import GlobalIntegrations from './components/admin/GlobalIntegrations';
-import AgentEventsDebugPage from './components/admin/AgentEventsDebugPage';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
@@ -222,11 +221,6 @@ function App() {
                       <Route path="/admin/integrations/global" element={
                         <ProtectedRoute requireAdmin={true}>
                           <GlobalIntegrations />
-                        </ProtectedRoute>
-                      } />
-                      <Route path="/admin/agents/events" element={
-                        <ProtectedRoute requireAdmin={true}>
-                          <AgentEventsDebugPage />
                         </ProtectedRoute>
                       } />
                       <Route path="/pods" element={<PodRedirect />} />

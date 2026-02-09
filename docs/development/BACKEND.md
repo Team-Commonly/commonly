@@ -112,6 +112,7 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 |--------|------------------------|-----------------------------|--------------------------------------|---------------------------------|
 | POST   | /api/users/:id/follow  | Follow a user               | -                                    | `{success, following, ...}`     |
 | DELETE | /api/users/:id/follow  | Unfollow a user             | -                                    | `{success, following, ...}`     |
+| GET    | /api/users/:id/public-activity | Public profile activity (posts + joined pods) | -                      | `{recentPublicPosts, joinedPods}` |
 
 ### Activity Feed
 

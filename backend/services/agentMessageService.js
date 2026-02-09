@@ -3,6 +3,7 @@ const Message = require('../models/Message');
 const Summary = require('../models/Summary');
 const AgentIdentityService = require('./agentIdentityService');
 const PodAssetService = require('./podAssetService');
+const AgentEventService = require('./agentEventService');
 
 let PGMessage;
 try {
@@ -280,6 +281,17 @@ class AgentMessageService {
       sourceEventId: metadata?.sourceEventId || metadata?.eventId,
       messageId: message?._id || message?.id || null,
     });
+
+    try {
+      const sourceEventId = metadata?.sourceEventId || metadata?.eventId;
+      if (sourceEventId) {
+        await AgentEventService.markPosted(sourceEventId, agentName, instanceId, {
+          messageId: message?._id || message?.id || null,
+        });
+      }
+    } catch (eventError) {
+      console.warn('Failed to update agent event delivery outcome:', eventError.message);
+    }
 
     let persistedSummary = null;
     try {
