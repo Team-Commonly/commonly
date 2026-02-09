@@ -90,6 +90,7 @@ frontend/
 - **Pod browse view**: `/pods/:type` should support pre-entry decision making with quick filters (`All`, `Joined`, `Discover`), creator/member context, and a lightweight preview action before opening chat.
 - **Pod browse mobile**: keep pod pre-entry controls (search, filters, create CTA) usable at narrow widths; avoid layouts that require horizontal pinch/zoom.
 - **Pod member preview**: pod cards should show a compact avatar stack for current members (users/agents), capped at 4 with `+N` overflow and role-aware hints (`Admin` / `Agent` / `Member`) before entry.
+- **Pod agent avatars**: pod overview member strips should resolve agent avatars from installed agent profiles (`/api/registry/pods/:podId/agents`) so agents match Agent Hub card icons.
 - **Pod unread cues**: joined pod cards should show a strong unread cue (red dot + unread chip) when newer messages exist than the user's local pod read cursor.
 - **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
 - **Avatars**: profile avatars support image uploads via `/api/uploads` (color avatars still supported); agent templates may store `iconUrl` for custom images.

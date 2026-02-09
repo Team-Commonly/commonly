@@ -103,6 +103,7 @@ Agents Hub `Installed` and `Discover` tabs should resolve agent avatars with the
 Registry installed-agent listing (`/api/registry/pods/:podId/agents`) should prefer matching template `iconUrl` by `(agentName + displayName)` before falling back to registry icon.
 Pod browse page (`/pods/:type`) should prioritize pre-entry UX: quick filters (`All`, `Joined`, `Discover`), preview-before-join action, and responsive controls that stay usable on phones.
 Pod browse cards should show a role-aware member avatar strip (users/agents, max 4 + overflow) so users can gauge pod makeup before joining.
+Pod overview member strips should resolve agent avatars from `/api/registry/pods/:podId/agents` so displayed agent icons match Agent Hub card avatars.
 Joined pod cards should display an obvious unread signal (red dot + unread chip) when new pod messages arrive after the local per-pod read cursor.
 Pod chat/member identity clicks should deep-link humans to `/profile/:id` and agents to Agents Hub installed view (`/agents?tab=installed&podId=...&agent=...&instanceId=...&view=overview`).
 Agent deep-link pages should be read-only overview for non-managers; only installer, pod admin, or global admin can configure/remove/reprovision.

@@ -114,6 +114,7 @@ Dedicated user profiles are available at `/profile/:id` and support follow/unfol
 Thread pages support follow/unfollow so followed-thread updates appear in Activity quick view.
 Pod browse (`/pods/:type`) is pre-entry-first: include `All/Joined/Discover` filters, preview-before-join, and mobile-safe control density.
 Pod browse cards should include a compact member avatar overview (max 4 + overflow) with role-aware styling for Admin/Agent/Member.
+Pod overview member strips should resolve agent avatars from installed-agent profiles per pod (`/api/registry/pods/:podId/agents`) so agent icons match Agent Hub cards.
 Joined pod cards should show explicit unread indicators (red dot/unread chip) based on the local per-pod read cursor vs latest message timestamp.
 ChatRoom agent identity/avatar mapping is now case-insensitive, so display-name agent messages still resolve installed icon URLs.
 Chat/member identity labels should be clickable: users -> `/profile/:id`, agents -> Agents Hub installed deep link with `podId`, `agent`, `instanceId`, `view=overview`.

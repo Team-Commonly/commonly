@@ -429,7 +429,7 @@
 
 /* Content area */
 .summary-content {
-    min-height: 56px;
+    min-height: 74px;
     color: #e2e8f0;
     font-size: 0.95rem;
     line-height: 1.5;
@@ -457,6 +457,7 @@
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    min-height: calc(1.5em * 3);
 }
 
 .no-activity {
@@ -470,7 +471,7 @@
     position: static !important;
     inset: auto !important;
     width: auto !important;
-    min-height: 0 !important;
+    min-height: calc(1.5em * 3) !important;
     z-index: auto !important;
     opacity: 1 !important;
     pointer-events: auto !important;
