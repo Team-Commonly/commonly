@@ -1,5 +1,7 @@
 const User = require('../models/User');
 const Activity = require('../models/Activity');
+const Post = require('../models/Post');
+const Pod = require('../models/Pod');
 const AgentIdentityService = require('../services/agentIdentityService');
 
 const toSocialProfile = (userDoc, viewerId = null) => {
@@ -73,6 +75,65 @@ exports.getUserById = async (req, res) => {
       return res.status(404).json({ msg: 'User not found' });
     }
     res.status(500).send('Server Error');
+  }
+};
+
+exports.getUserPublicActivity = async (req, res) => {
+  try {
+    const targetUserId = String(req.params.id || '').trim();
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'User id is required' });
+    }
+
+    const [user, recentPublicPosts, joinedPods] = await Promise.all([
+      User.findById(targetUserId).select('_id username'),
+      Post.find({ userId: targetUserId, podId: null })
+        .select('_id content category createdAt likes comments source')
+        .sort({ createdAt: -1 })
+        .limit(8)
+        .lean(),
+      Pod.find({ members: targetUserId })
+        .select('_id name type createdAt members createdBy')
+        .populate('createdBy', 'username profilePicture')
+        .sort({ updatedAt: -1 })
+        .limit(8)
+        .lean(),
+    ]);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.json({
+      userId: user._id.toString(),
+      username: user.username,
+      recentPublicPosts: (recentPublicPosts || []).map((post) => ({
+        id: post._id.toString(),
+        content: post.content || '',
+        category: post.category || 'General',
+        createdAt: post.createdAt,
+        likes: post.likes || 0,
+        commentCount: Array.isArray(post.comments) ? post.comments.length : 0,
+        sourceType: post.source?.type || 'user',
+      })),
+      joinedPods: (joinedPods || []).map((pod) => ({
+        id: pod._id.toString(),
+        name: pod.name || 'Untitled Pod',
+        type: pod.type || 'chat',
+        membersCount: Array.isArray(pod.members) ? pod.members.length : 0,
+        createdAt: pod.createdAt,
+        createdBy: pod.createdBy
+          ? {
+            id: pod.createdBy._id?.toString?.() || '',
+            username: pod.createdBy.username || '',
+            profilePicture: pod.createdBy.profilePicture || '',
+          }
+          : null,
+      })),
+    });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).send('Server Error');
   }
 };
 

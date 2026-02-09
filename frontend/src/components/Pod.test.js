@@ -31,10 +31,16 @@ jest.mock('@mui/material', () => {
 
       // Create appropriate DOM element based on component type
       let elementType = 'div';
-      let elementProps = { ref, className, style, 'data-testid': dataTestId };
+      let elementProps = {
+        ref,
+        className,
+        style,
+        'data-testid': dataTestId,
+        'aria-label': ariaLabel
+      };
       let content = children;
 
-      if (componentName === 'Button') {
+      if (componentName === 'Button' || componentName === 'IconButton') {
         elementType = 'button';
         elementProps.onClick = onClick;
         elementProps.role = 'button';
@@ -162,6 +168,7 @@ jest.mock('@mui/icons-material', () => {
     Close: () => mockReact.createElement('span', { 'data-testid': 'close-icon' }, '✕'),
     Check: () => mockReact.createElement('span', { 'data-testid': 'check-icon' }, '✓'),
     Delete: () => mockReact.createElement('span', { 'data-testid': 'delete-icon' }, '🗑'),
+    DeleteOutline: () => mockReact.createElement('span', { 'data-testid': 'delete-outline-icon' }, '🗑'),
     Edit: () => mockReact.createElement('span', { 'data-testid': 'edit-icon' }, '✏️'),
     Share: () => mockReact.createElement('span', { 'data-testid': 'share-icon' }, '📤'),
     Favorite: () => mockReact.createElement('span', { 'data-testid': 'favorite-icon' }, '❤️'),
@@ -336,7 +343,7 @@ test('global admin sees delete button for a pod they did not create', async () =
     expect(screen.getByText('Room')).toBeInTheDocument();
   });
 
-  expect(screen.getAllByText('Delete').length).toBeGreaterThan(0);
+  expect(screen.getByLabelText('Delete pod')).toBeInTheDocument();
 });
 
 test('joined filter only shows pods where the user is a member', async () => {

@@ -5,13 +5,14 @@ import {
     Container, Typography, Box, Grid, Card, CardContent, CardActions, 
     Button, TextField, Dialog, DialogTitle, DialogContent, DialogActions,
     FormControl, InputLabel, Select, MenuItem, CircularProgress, Tabs, Tab,
-    AppBar, Toolbar, Avatar, Chip, Tooltip
+    AppBar, Toolbar, Avatar, Chip, Tooltip, IconButton
 } from '@mui/material';
 import { 
     Add as AddIcon, 
     Search as SearchIcon,
     People as PeopleIcon,
-    Launch as LaunchIcon
+    Launch as LaunchIcon,
+    DeleteOutline as DeleteOutlineIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -506,7 +507,6 @@ const Pod = () => {
                             ));
                             const joined = isMember(pod);
                             const hasUnread = joined && Boolean(unreadByPod[pod._id]);
-                            const creatorAvatarSrc = getAvatarSrc(pod.createdBy?.profilePicture);
                             const { visibleMembers, overflowCount, roleCounts } = getPodPreviewMembers(pod);
                             const roleSummary = [
                                 roleCounts.Admin ? `${roleCounts.Admin} admin` : null,
@@ -536,15 +536,9 @@ const Pod = () => {
                                                 ) : null}
                                             </Box>
                                         </Box>
-                                        <Typography variant="h5" component="div" className="pod-card-title">
-                                            {pod.name}
-                                        </Typography>
-                                        
-                                        {/* AI Summary only - no redundant description */}
                                         <PodSummary 
                                             podId={pod._id} 
-                                            podName={pod.name} 
-                                            podType={getPodType()} 
+                                            title={pod.name}
                                             originalDescription={pod.description}
                                         />
                                         <Box className="pod-members-preview">
@@ -582,58 +576,36 @@ const Pod = () => {
                                             </Typography>
                                         </Box>
                                         
-                                        <Box className="pod-card-footer">
-                                        <Box className="pod-card-creator">
-                                            <Avatar 
-                                                className="pod-creator-avatar"
-                                                    src={creatorAvatarSrc || undefined}
-                                                    sx={{ 
-                                                        bgcolor: getAvatarColor(pod.createdBy?.profilePicture || 'default'),
-                                                        color: 'white',
-                                                        width: 28,
-                                                        height: 28,
-                                                        fontSize: '0.875rem'
-                                                    }}
-                                            >
-                                                {pod.createdBy?.username?.charAt(0).toUpperCase()}
-                                            </Avatar>
-                                                <Typography variant="body2" className="creator-text">
-                                                    @{pod.createdBy?.username}
-                                            </Typography>
-                                        </Box>
-                                        <Box className="pod-card-members">
-                                                <PeopleIcon />
-                                                <Typography variant="body2" className="member-count">
-                                                    {pod.members?.length || 0}
-                                            </Typography>
-                                            </Box>
-                                        </Box>
                                     </CardContent>
                                     <CardActions className="pod-card-actions" sx={{ px: 2, py: 1.5 }}>
-                                        <Button
-                                            variant="outlined"
-                                            color="inherit"
-                                            onClick={() => setPreviewPod(pod)}
-                                            startIcon={<LaunchIcon />}
-                                        >
-                                            Preview
-                                        </Button>
+                                        <Tooltip title="Preview" arrow>
+                                            <IconButton
+                                                aria-label="Preview pod"
+                                                className="pod-action-icon-button"
+                                                onClick={() => setPreviewPod(pod)}
+                                            >
+                                                <LaunchIcon fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
                                         <Button 
                                             variant="contained" 
                                             color="primary"
-                                            fullWidth={!canDeletePod}
+                                            fullWidth
+                                            className="pod-primary-action"
                                             onClick={() => handleJoinRoom(pod._id)}
                                         >
                                             {joined ? 'Open Chat' : 'Join Room'}
                                         </Button>
                                         {canDeletePod && (
-                                            <Button
-                                                variant="text"
-                                                color="error"
-                                                onClick={() => openDeleteDialog(pod)}
-                                            >
-                                                Delete
-                                            </Button>
+                                            <Tooltip title="Delete" arrow>
+                                                <IconButton
+                                                    aria-label="Delete pod"
+                                                    className="pod-action-icon-button pod-action-delete-button"
+                                                    onClick={() => openDeleteDialog(pod)}
+                                                >
+                                                    <DeleteOutlineIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
                                         )}
                                     </CardActions>
                                 </Card>

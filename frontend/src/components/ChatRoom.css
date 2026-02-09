@@ -295,6 +295,18 @@
   margin-left: 12px;
 }
 
+.sidebar-member-link {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.sidebar-member-link:hover .sidebar-member-name {
+  color: #93c5fd;
+}
+
 .sidebar-member-name {
   font-size: 14px;
   font-weight: 500;
@@ -620,6 +632,21 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 140px;
+}
+
+.message-user-link {
+  cursor: pointer;
+}
+
+.message-user-link:hover {
+  color: #bfdbfe;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.message-sender-link {
+  cursor: pointer;
+  border-radius: 999px;
 }
 
 .message-item.sent .message-user {

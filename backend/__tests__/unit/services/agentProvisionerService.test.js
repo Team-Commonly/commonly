@@ -253,6 +253,25 @@ describe('agentProvisionerService', () => {
       expect(agentEntry.heartbeat.every).toBe('30m');
     });
 
+    it('sets default heartbeat prompt that requires commonly reads before HEARTBEAT_OK', () => {
+      provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        heartbeat: { enabled: true },
+      });
+
+      const raw = fs.readFileSync(openclawConfigPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
+
+      expect(agentEntry.heartbeat.prompt).toContain('read current pod activity');
+      expect(agentEntry.heartbeat.prompt).toContain('commonly tools');
+    });
+
     it('respects custom heartbeat target', () => {
       provisionAgentRuntime({
         runtimeType: 'moltbot',

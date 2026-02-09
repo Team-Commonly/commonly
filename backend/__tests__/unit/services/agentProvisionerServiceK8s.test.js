@@ -248,4 +248,26 @@ describe('agentProvisionerServiceK8s', () => {
     const agentEntry = config.agents.list.find((agent) => agent.id === 'cuz');
     expect(agentEntry.workspace).toBe('/workspace/cuz');
   });
+
+  it('sets default heartbeat prompt that requires commonly reads before HEARTBEAT_OK', async () => {
+    await provisionAgentRuntime({
+      runtimeType: 'moltbot',
+      agentName: 'openclaw',
+      instanceId: 'cuz',
+      runtimeToken: 'cm_agent_test',
+      userToken: 'cm_user_test',
+      baseUrl: 'http://backend',
+      displayName: 'Cuz',
+      heartbeat: { enabled: true, everyMinutes: 10 },
+    });
+
+    const calls = k8s.__mock.replaceNamespacedConfigMap.mock.calls;
+    const configMapPayload = calls[calls.length - 1][2];
+    const raw = configMapPayload?.data?.['moltbot.json'];
+    const config = JSON.parse(raw);
+    const agentEntry = config.agents.list.find((agent) => agent.id === 'cuz');
+
+    expect(agentEntry.heartbeat.prompt).toContain('read current pod activity');
+    expect(agentEntry.heartbeat.prompt).toContain('commonly tools');
+  });
 });

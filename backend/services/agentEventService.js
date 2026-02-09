@@ -17,6 +17,23 @@ const getWebSocketService = () => {
 };
 
 class AgentEventService {
+  static normalizeDeliveryMeta(input = {}) {
+    if (!input || typeof input !== 'object') return null;
+    const allowedOutcomes = new Set(['acknowledged', 'posted', 'no_action', 'skipped', 'error']);
+    const rawOutcome = typeof input.outcome === 'string' ? input.outcome.trim().toLowerCase() : '';
+    const outcome = allowedOutcomes.has(rawOutcome) ? rawOutcome : 'acknowledged';
+    const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    const messageId = typeof input.messageId === 'string' ? input.messageId.trim() : '';
+    const details = input.details && typeof input.details === 'object' ? input.details : undefined;
+    return {
+      outcome,
+      reason: reason || undefined,
+      messageId: messageId || undefined,
+      details,
+      updatedAt: new Date(),
+    };
+  }
+
   static logEventLifecycle(action, details = {}) {
     const parts = [
       `[agent-event] ${action}`,
@@ -142,7 +159,10 @@ class AgentEventService {
         agentName,
         instanceId,
         podId,
-        payload,
+        payload: {
+          ...payload,
+          podId: String(podId),
+        },
       })
       : payload;
 
@@ -203,10 +223,18 @@ class AgentEventService {
       .lean();
   }
 
-  static async acknowledge(eventId, agentName, instanceId = 'default') {
+  static async acknowledge(eventId, agentName, instanceId = 'default', delivery = null) {
+    const normalizedDelivery = this.normalizeDeliveryMeta(delivery || {});
     const result = await AgentEvent.findOneAndUpdate(
       { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
-      { $set: { status: 'delivered', deliveredAt: new Date() }, $inc: { attempts: 1 } },
+      {
+        $set: {
+          status: 'delivered',
+          deliveredAt: new Date(),
+          ...(normalizedDelivery ? { delivery: normalizedDelivery } : {}),
+        },
+        $inc: { attempts: 1 },
+      },
       { new: true },
     );
     this.logEventLifecycle('acknowledged', {
@@ -218,8 +246,35 @@ class AgentEventService {
       trigger: result?.payload?.trigger,
       status: result?.status || 'delivered',
       attempts: result?.attempts,
+      error: result?.delivery?.reason && result?.delivery?.outcome === 'error'
+        ? result.delivery.reason
+        : undefined,
     });
     return result;
+  }
+
+  static async markPosted(eventId, agentName, instanceId = 'default', { messageId } = {}) {
+    if (!eventId) return null;
+    return AgentEvent.findOneAndUpdate(
+      {
+        _id: eventId,
+        agentName: agentName.toLowerCase(),
+        instanceId,
+      },
+      {
+        $set: {
+          status: 'delivered',
+          deliveredAt: new Date(),
+          delivery: {
+            outcome: 'posted',
+            reason: 'message_posted',
+            messageId: messageId ? String(messageId) : undefined,
+            updatedAt: new Date(),
+          },
+        },
+      },
+      { new: true },
+    );
   }
 
   static async recordFailure(eventId, agentName, instanceId, errorMessage) {

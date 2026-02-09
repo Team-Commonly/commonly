@@ -25,15 +25,27 @@ router.get('/', auth, adminAuth, async (req, res) => {
 
     const [
       statusCountsRaw,
+      deliveredByOutcomeRaw,
       pendingByAgent,
       pendingEventsRaw,
       recentEventsRaw,
+      failedByAgentRaw,
+      failedEventsRaw,
       stalePendingCount,
       installations,
       lastHeartbeatByInstallation,
     ] = await Promise.all([
       AgentEvent.aggregate([
         { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      AgentEvent.aggregate([
+        { $match: { status: 'delivered' } },
+        {
+          $group: {
+            _id: { $ifNull: ['$delivery.outcome', 'acknowledged'] },
+            count: { $sum: 1 },
+          },
+        },
       ]),
       AgentEvent.aggregate([
         { $match: { status: 'pending' } },
@@ -56,6 +68,28 @@ router.get('/', auth, adminAuth, async (req, res) => {
         .limit(limitPending)
         .lean(),
       AgentEvent.find({})
+        .sort({ createdAt: -1 })
+        .limit(limitRecent)
+        .lean(),
+      AgentEvent.aggregate([
+        { $match: { status: 'failed' } },
+        { $sort: { createdAt: 1 } },
+        {
+          $group: {
+            _id: {
+              agentName: '$agentName',
+              instanceId: '$instanceId',
+            },
+            count: { $sum: 1 },
+            oldestCreatedAt: { $min: '$createdAt' },
+            newestCreatedAt: { $max: '$createdAt' },
+            newestError: { $last: '$error' },
+          },
+        },
+        { $sort: { count: -1, newestCreatedAt: -1 } },
+        { $limit: 50 },
+      ]),
+      AgentEvent.find({ status: 'failed' })
         .sort({ createdAt: -1 })
         .limit(limitRecent)
         .lean(),
@@ -90,6 +124,10 @@ router.get('/', auth, adminAuth, async (req, res) => {
       if (row?._id) acc[row._id] = row.count || 0;
       return acc;
     }, {});
+    const deliveredByOutcome = deliveredByOutcomeRaw.reduce((acc, row) => {
+      if (row?._id) acc[row._id] = row.count || 0;
+      return acc;
+    }, {});
 
     const pendingEvents = pendingEventsRaw.map((event) => ({
       id: String(event._id),
@@ -115,6 +153,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
       createdAt: event.createdAt,
       deliveredAt: event.deliveredAt || null,
       payload: event.payload || {},
+      delivery: event.delivery || null,
       error: event.error || null,
     }));
 
@@ -151,6 +190,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
         total: (statusCounts.pending || 0) + (statusCounts.delivered || 0) + (statusCounts.failed || 0),
         pending: statusCounts.pending || 0,
         delivered: statusCounts.delivered || 0,
+        deliveredByOutcome,
         failed: statusCounts.failed || 0,
         stalePendingMinutes,
         stalePendingCount,
@@ -163,7 +203,44 @@ router.get('/', auth, adminAuth, async (req, res) => {
         newestCreatedAt: row.newestCreatedAt || null,
       })),
       pendingEvents,
+      failedByAgent: failedByAgentRaw.map((row) => ({
+        agentName: row?._id?.agentName || null,
+        instanceId: row?._id?.instanceId || 'default',
+        count: row.count || 0,
+        oldestCreatedAt: row.oldestCreatedAt || null,
+        newestCreatedAt: row.newestCreatedAt || null,
+        newestError: row.newestError || null,
+      })),
+      failedEvents: failedEventsRaw.map((event) => ({
+        id: String(event._id),
+        agentName: event.agentName,
+        instanceId: event.instanceId || 'default',
+        podId: String(event.podId),
+        type: event.type,
+        status: event.status,
+        attempts: event.attempts || 0,
+        createdAt: event.createdAt,
+        deliveredAt: event.deliveredAt || null,
+        payload: event.payload || {},
+        error: event.error || null,
+      })),
       recentEvents,
+      recentDeliveredHeartbeats: recentEvents
+        .filter((event) => event.type === 'heartbeat' && event.status === 'delivered')
+        .slice(0, 60)
+        .map((event) => ({
+          id: String(event._id),
+          agentName: event.agentName,
+          instanceId: event.instanceId || 'default',
+          podId: String(event.podId),
+          type: event.type,
+          createdAt: event.createdAt,
+          deliveredAt: event.deliveredAt || null,
+          attempts: event.attempts || 0,
+          trigger: event.payload?.trigger || null,
+          delivery: event.delivery || { outcome: 'acknowledged' },
+          error: event.error || null,
+        })),
       heartbeatInstallations: installationHeartbeatStatus,
     });
   } catch (error) {
