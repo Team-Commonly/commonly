@@ -34,7 +34,8 @@ Use \`podId\` from event context (usually \`To: commonly:<podId>\`).
 
 \`\`\`bash
 # Resolve per-agent tokens from gateway config using current workspace account id.
-ACCOUNT_ID="\${ACCOUNT_ID:-\$(basename \"$PWD\")}"
+ACCOUNT_ID="\${ACCOUNT_ID:-\${OPENCLAW_AGENT_ID:-\$(basename \"$PWD\")}}"
+export ACCOUNT_ID
 COMMONLY_API_TOKEN="\${COMMONLY_API_TOKEN:-\$(node -e 'const fs=require(\"fs\");const c=JSON.parse(fs.readFileSync(\"/config/moltbot.json\",\"utf8\"));const id=process.env.ACCOUNT_ID||\"\";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.runtimeToken)||\"\");')}"
 COMMONLY_USER_TOKEN="\${COMMONLY_USER_TOKEN:-\$(node -e 'const fs=require(\"fs\");const c=JSON.parse(fs.readFileSync(\"/config/moltbot.json\",\"utf8\"));const id=process.env.ACCOUNT_ID||\"\";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.userToken)||\"\");')}"
 \`\`\`
@@ -204,12 +205,23 @@ const migrateLegacyCommonlySkillContent = (content) => {
       '',
       '```bash',
       '# Resolve per-agent tokens from gateway config using current workspace account id.',
-      'ACCOUNT_ID="${ACCOUNT_ID:-$(basename "$PWD")}"',
+      'ACCOUNT_ID="${ACCOUNT_ID:-${OPENCLAW_AGENT_ID:-$(basename "$PWD")}}"',
+      'export ACCOUNT_ID',
       'COMMONLY_API_TOKEN="${COMMONLY_API_TOKEN:-$(node -e \'const fs=require("fs");const c=JSON.parse(fs.readFileSync("/config/moltbot.json","utf8"));const id=process.env.ACCOUNT_ID||"";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.runtimeToken)||"");\')}"',
       'COMMONLY_USER_TOKEN="${COMMONLY_USER_TOKEN:-$(node -e \'const fs=require("fs");const c=JSON.parse(fs.readFileSync("/config/moltbot.json","utf8"));const id=process.env.ACCOUNT_ID||"";process.stdout.write((c?.channels?.commonly?.accounts?.[id]?.userToken)||"");\')}"',
       '```',
       '',
     ].join('\n');
+  }
+  next = next.replace(
+    /ACCOUNT_ID="\$\{ACCOUNT_ID:-\$\(basename "\$PWD"\)\}"/g,
+    'ACCOUNT_ID="${ACCOUNT_ID:-${OPENCLAW_AGENT_ID:-$(basename "$PWD")}}"',
+  );
+  if (/ACCOUNT_ID="\$\{ACCOUNT_ID:-\$\{OPENCLAW_AGENT_ID:-\$\(basename "\$PWD"\)\}\}"/.test(next) && !/\nexport ACCOUNT_ID\n/.test(next)) {
+    next = next.replace(
+      'ACCOUNT_ID="${ACCOUNT_ID:-${OPENCLAW_AGENT_ID:-$(basename "$PWD")}}"',
+      'ACCOUNT_ID="${ACCOUNT_ID:-${OPENCLAW_AGENT_ID:-$(basename "$PWD")}}"\nexport ACCOUNT_ID',
+    );
   }
   return next;
 };

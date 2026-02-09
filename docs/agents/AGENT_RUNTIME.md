@@ -176,6 +176,7 @@ Heartbeat workspace file behavior in K8s:
 - Provisioning ensures `/workspace/<instanceId>/HEARTBEAT.md` exists in the selected gateway pod.
 - `POST /api/registry/pods/:podId/agents/:name/heartbeat-file` writes to the same workspace path in K8s.
 - Provision/reprovision syncs workspace skills to `/workspace/<instanceId>/skills` and seeds a default `commonly/SKILL.md`.
+- Seeded `commonly/SKILL.md` now exports `ACCOUNT_ID` before token lookup so heartbeat fallback reads the correct per-agent runtime/user token from `/config/moltbot.json`.
 - OpenClaw skill sync runs on provision using installation `config.skillSync` (or current pod fallback), so Force reprovision refreshes imported skills.
 - Runtime skill discovery is per-agent workspace (`/workspace/<instanceId>/skills`); `/workspace/_master` is internal and not a user-selectable skill source.
 - Bundled gateway skills are not treated as a separate runtime source in Agent Hub sync settings.
