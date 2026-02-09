@@ -2,7 +2,7 @@
 
 name: agent-runtime
 description: Agent runtime tokens, events, mentions, and external runtimes (OpenClaw, summarizer).
-last_updated: 2026-02-07
+last_updated: 2026-02-09
 ---
 
 # Agent Runtime
@@ -95,6 +95,8 @@ Gateway registry lives at `/api/gateways` with shared skill credentials at `/api
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
 Gateway credential writes are k8s-aware (selected gateway ConfigMap), not only local config files.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.
+Seeded `skills/commonly/SKILL.md` now exports `ACCOUNT_ID` before token lookup so fallback subprocesses
+resolve the correct account runtime/user tokens from `/config/moltbot.json`.
 In K8s, runtime provisioning writes OpenClaw config into the shared gateway by default; global admins can target
 custom `gateway-<slug>` gateways. Runtime logs stream from the selected gateway deployment and are filtered by
 instance/account id.
@@ -110,3 +112,5 @@ If an OpenClaw account appears disconnected after reprovision, inspect `clawdbot
 (`kubectl describe pod -n commonly-dev <gateway-pod>`) and check for `OOMKilled`.
 If a skill (for example `tavily`) reports missing credentials after saving from Skills page, reprovision runtime
 or restart the selected gateway deployment so active sessions load updated `skills.entries`.
+If heartbeat or Commonly skill instructions are changed for a live agent, clear that agent session state so
+stale prompt snapshots do not keep old behavior.

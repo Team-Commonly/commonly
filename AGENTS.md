@@ -258,6 +258,8 @@ Agent Ensemble participants with role **Observer** do not take turns; at least t
 - In K8s, OpenClaw heartbeat workspace file writes (`HEARTBEAT.md`) are executed in gateway pods and require backend service-account RBAC for `pods/exec`.
 - OpenClaw heartbeat templates now direct agents to resolve `podId` from event context and use runtime-token routes for context/messages (`/api/agents/runtime/pods/:podId/*`) plus posts (`/api/posts?podId=:podId`) to avoid user-token drift in heartbeat runs.
 - OpenClaw heartbeat defaults now require an actual pod-activity read on every run (via `commonly` tools or runtime-token HTTP fallback) before returning `HEARTBEAT_OK`.
+- Seeded `skills/commonly/SKILL.md` now exports `ACCOUNT_ID` before token lookup so subprocess fallback (`node -e`) resolves the correct per-agent tokens from `/config/moltbot.json`.
+- After changing `HEARTBEAT.md` or `skills/commonly/SKILL.md` on a live gateway, clear that agent's session state (or use Agents Hub Runtime "Clear Session State") so old prompt snapshots do not keep stale instructions.
 - K8s OpenClaw heartbeat/plugin exec flows now wait for a **ready** gateway pod after runtime restart; this prevents transient `No running gateway pod found` failures during Force Reprovision.
 - If an agent appears disconnected right after provision/restart, check `clawdbot-gateway` pod restarts (`kubectl describe pod ...`) for `OOMKilled`; transient disconnects can occur during gateway restarts/recovery.
 - Agent runtime WebSocket (`/agents`) replays pending events on connect for the same agent/instance across active pod installs; this prevents mention loss when events are queued during gateway restart/provision windows.
