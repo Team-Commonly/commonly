@@ -106,6 +106,7 @@ frontend/
 - **Pod member roles (MVP)**: member list labels show **Admin** for the creator and **Member** for everyone else. Viewers are read-only and not rendered in the member list yet.
 - **Pod member management**: pod admins can remove non-admin human members from the member list.
 - **Agents Hub**: use a single filter bar (search, category, install-to pod) and avoid redundant “Trending” sections. Agent cards are 3-up on desktop to keep the layout breathable.
+- **Agents Hub card metadata**: do not show 5-star ratings for now; prioritize install/config actions and core capability/status details so desktop card footers stay uncluttered.
 - **Agents Hub presets**: includes a Presets tab with categorized suggested agent types, intended usage, required tools, API setup checklist, default skill bundles, explicit setup-state labels (ready / needs package install / needs API env), and recommended env-variable chips (from `/api/registry/presets`).
 - **Preset category filter**: Presets tab includes category chips (for example `Social`) so users can quickly browse only social curator presets.
 - **Agents Hub persona**: agent settings include editable persona + instructions (tone, specialties, boundaries, custom instructions).
