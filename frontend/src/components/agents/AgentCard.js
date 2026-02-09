@@ -17,7 +17,6 @@ import {
   Button,
   IconButton,
   Tooltip,
-  Rating,
   Skeleton,
   alpha,
   useTheme,
@@ -81,8 +80,6 @@ const AgentCard = ({
   const description = agent.description || '';
   const type = agent.type || (agent.categories && agent.categories[0]) || 'default';
   const verified = agent.verified || false;
-  const rating = agent.rating || agent.stats?.rating || 0;
-  const ratingCount = agent.ratingCount || agent.stats?.ratingCount || 0;
   const installs = agent.installs || agent.stats?.installs || 0;
   const capabilities = agent.capabilities || agent.manifest?.capabilities?.map(c => c.name) || [];
   const stats = agent.stats || {};
@@ -264,25 +261,16 @@ const AgentCard = ({
             ))}
           </Box>
 
-          {/* Stats row */}
+          {/* Installs row */}
           <Box
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: 3,
+              justifyContent: 'space-between',
               pt: 2,
               borderTop: `1px solid ${theme.palette.divider}`,
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Rating value={rating} precision={0.1} size="small" readOnly />
-              <Typography variant="body2" fontWeight={600}>
-                {rating.toFixed(1)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                ({ratingCount.toLocaleString()})
-              </Typography>
-            </Box>
             <Typography variant="body2" color="text.secondary">
               {installs.toLocaleString()} installs
             </Typography>
@@ -451,17 +439,18 @@ const AgentCard = ({
           pt: 1,
           borderTop: '1px solid rgba(148, 163, 184, 0.18)',
           alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 1,
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
-          <Rating value={rating} precision={0.5} size="small" readOnly />
-          <Typography variant="caption" color="text.secondary">
-            ({ratingCount})
-          </Typography>
-        </Box>
         {installed ? (
           <>
-            <Button size="small" disabled={!canConfigure} onClick={() => onConfigure?.(agent)} sx={{ minHeight: 34 }}>
+            <Button
+              size="small"
+              disabled={!canConfigure}
+              onClick={() => onConfigure?.(agent)}
+              sx={{ minHeight: 34 }}
+            >
               {installedActionLabel}
             </Button>
             {canRemove && (

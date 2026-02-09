@@ -35,6 +35,21 @@ const isLikelyAgentUsername = (username) => {
         || normalized.includes('agent');
 };
 
+const normalizeIdentityKey = (value) => String(value || '').trim().toLowerCase();
+
+const normalizeAgentSegment = (value) => (
+    (value || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40)
+);
+
+const buildAgentUsername = (agentName, instanceId) => {
+    const normalized = normalizeAgentSegment(agentName);
+    const instance = normalizeAgentSegment(instanceId);
+    if (!instance || instance === 'default' || instance === normalized) {
+        return normalized || 'agent';
+    }
+    return `${normalized}-${instance}`;
+};
+
 const Pod = () => {
     const { currentUser } = useAuth();
     const [pods, setPods] = useState([]);
@@ -51,6 +66,7 @@ const Pod = () => {
     const [membershipFilter, setMembershipFilter] = useState('all');
     const [previewPod, setPreviewPod] = useState(null);
     const [unreadByPod, setUnreadByPod] = useState({});
+    const [podAgentAvatarMap, setPodAgentAvatarMap] = useState({});
     const navigate = useNavigate();
     const { podType } = useParams();
     
@@ -209,6 +225,63 @@ const Pod = () => {
 
         fetchUnreadState();
     }, [pods, isMember, currentUser?._id]);
+
+    useEffect(() => {
+        const fetchPodAgentAvatars = async () => {
+            const token = localStorage.getItem('token');
+            if (!token || !pods.length) {
+                setPodAgentAvatarMap({});
+                return;
+            }
+            const authHeaders = {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            };
+            const podMaps = await Promise.all(pods.map(async (pod) => {
+                try {
+                    const response = await axios.get(`/api/registry/pods/${pod._id}/agents`, authHeaders);
+                    const agents = response.data?.agents || [];
+                    const avatarMap = {};
+                    agents.forEach((agent) => {
+                        const avatar = agent?.profile?.iconUrl
+                            || agent?.profile?.avatarUrl
+                            || agent?.iconUrl
+                            || '';
+                        if (!avatar) return;
+                        const display = agent?.profile?.displayName || agent?.displayName || agent?.name || '';
+                        const instanceId = agent?.instanceId || 'default';
+                        const username = buildAgentUsername(agent?.name, instanceId);
+                        const displaySlug = display
+                            .toString()
+                            .trim()
+                            .toLowerCase()
+                            .replace(/[^a-z0-9-]/g, '-')
+                            .replace(/-+/g, '-')
+                            .replace(/^-+|-+$/g, '');
+                        const keys = [
+                            username,
+                            agent?.name,
+                            display,
+                            displaySlug,
+                            instanceId,
+                            `${agent?.name || ''}-${instanceId}`,
+                        ];
+                        keys.forEach((key) => {
+                            const normalized = normalizeIdentityKey(key);
+                            if (normalized) avatarMap[normalized] = avatar;
+                        });
+                    });
+                    return [pod._id, avatarMap];
+                } catch (error) {
+                    return [pod._id, {}];
+                }
+            }));
+            setPodAgentAvatarMap(Object.fromEntries(podMaps));
+        };
+
+        fetchPodAgentAvatars();
+    }, [pods]);
 
     const getMemberRole = useCallback((pod, member) => {
         if (!member || typeof member !== 'object') return 'Member';
@@ -544,7 +617,8 @@ const Pod = () => {
                                         <Box className="pod-members-preview">
                                             <Box className="pod-members-stack">
                                                 {visibleMembers.map((member, index) => {
-                                                    const avatarSrc = getAvatarSrc(member.profilePicture);
+                                                    const registryAgentAvatar = podAgentAvatarMap[pod._id]?.[normalizeIdentityKey(member.username)] || null;
+                                                    const avatarSrc = getAvatarSrc(member.profilePicture || registryAgentAvatar);
                                                     const roleClass = member.role.toLowerCase();
                                                     return (
                                                         <Tooltip
