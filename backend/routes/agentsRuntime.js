@@ -7,6 +7,7 @@ const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
 const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
+const GlobalModelConfigService = require('../services/globalModelConfigService');
 const SocialPolicyService = require('../services/socialPolicyService');
 const registry = require('../integrations');
 const Activity = require('../models/Activity');
@@ -472,6 +473,19 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
       return clamp(parsed, 1, max);
     };
 
+    // Resolve context token budget from model config
+    let maxContextTokens = 0;
+    if (req.query.maxContextTokens) {
+      maxContextTokens = parseLimit(req.query.maxContextTokens, 0, 200000);
+    } else {
+      const modelConfig = await GlobalModelConfigService.getConfig().catch(() => null);
+      const contextLimit = modelConfig?.llmService?.contextLimit || 0;
+      // Reserve 25% of model context for system prompt + output
+      if (contextLimit > 0) {
+        maxContextTokens = Math.floor(contextLimit * 0.75);
+      }
+    }
+
     const context = await PodContextService.getPodContext({
       podId,
       userId: agentUser._id,
@@ -483,12 +497,20 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
       skillLimit: parseLimit(req.query.skillLimit, 6, 12),
       skillMode: typeof req.query.skillMode === 'string' ? req.query.skillMode.toLowerCase() : 'llm',
       skillRefreshHours: parseLimit(req.query.skillRefreshHours, 6, 72),
+      maxContextTokens,
     });
 
     return res.json(context);
   } catch (error) {
-    console.error('Error fetching agent pod context:', error);
-    return res.status(500).json({ message: 'Failed to fetch pod context' });
+    let statusCode = 500;
+    if (error.status) statusCode = error.status;
+    else if (error.code === 'POD_NOT_FOUND') statusCode = 404;
+    else if (error.code === 'NOT_A_MEMBER') statusCode = 403;
+    console.error(`Error fetching agent pod context [${statusCode}]:`, error.message || error);
+    return res.status(statusCode).json({
+      message: error.message || 'Failed to fetch pod context',
+      code: error.code || 'INTERNAL_ERROR',
+    });
   }
 });
 
