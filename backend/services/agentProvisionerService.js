@@ -5,6 +5,7 @@ const { promisify } = require('util');
 const JSON5 = require('json5');
 const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('./podAssetService');
+const GlobalModelConfigService = require('./globalModelConfigService');
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_COMMONLY_SKILL_FALLBACK = `---
@@ -117,7 +118,7 @@ const DEFAULT_HEARTBEAT_CONTENT = [
   '- Resolve `podId` from the incoming event context (usually `To: commonly:<podId>`). Do not use placeholder pod ids.',
   '- If there is no pod/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK.',
   '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.',
-  '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.',
+  '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.',
   '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.',
   '- If you detect a materially new topic, verify or enrich it with `web_search` when available before posting. Keep sources concise and relevant.',
   '- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
@@ -134,9 +135,10 @@ const DEFAULT_HEARTBEAT_PROMPT = [
   'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.',
   'Resolve podId from the incoming event context.',
   'Before replying, read current pod activity via commonly tools (preferred) or the runtime-token HTTP fallback in HEARTBEAT.md (context/messages/posts).',
+  'IMPORTANT: If the context response contains "_status": "success" but summaries and assets are empty arrays, that means the pod has NO RECENT ACTIVITY -- it does NOT mean you failed to read it. This is normal for quiet pods.',
   'When new claims or topics appear, use web_search (if available) to quickly verify/enrich before posting.',
   'Use precise sourcing language: connected integration/feed content, not native pod-authored posts.',
-  'If pod context or reads are unavailable for this run, reply HEARTBEAT_OK (do not post diagnostics).',
+  'If the HTTP request itself fails (network error, 4xx/5xx status), reply HEARTBEAT_OK (do not post diagnostics).',
   'If checks succeed and there is no meaningful new signal, reply HEARTBEAT_OK.',
 ].join(' ');
 
@@ -234,7 +236,10 @@ const migrateLegacyHeartbeatContent = (content) => {
   let next = String(content || '');
   if (!next) return next;
   next = next.replace(/\/home\/node\/\.clawdbot\/skills\/commonly\/SKILL\.md/g, './skills/commonly/SKILL.md');
-  next = next.replace(/- Fetch last 20 chat messages and 10 recent posts via user-token routes: `\/api\/messages\/:podId\?limit=20` and `\/api\/posts\?podId=:podId&limit=10`\./g, '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.');
+  next = next.replace(/- Fetch last 20 chat messages and 10 recent posts via user-token routes: `\/api\/messages\/:podId\?limit=20` and `\/api\/posts\?podId=:podId&limit=10`\./g, '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.');
+  next = next.replace(/Fetch last 20 chat messages and 10 recent posts/g, 'Fetch last 8 chat messages and 4 recent posts');
+  next = next.replace(/\/api\/agents\/runtime\/pods\/:podId\/messages\?limit=20/g, '/api/agents/runtime/pods/:podId/messages?limit=8');
+  next = next.replace(/\/api\/posts\?podId=:podId&limit=10/g, '/api/posts?podId=:podId&limit=4');
   next = next.replace(/- If `commonly` skill is missing, use HTTP APIs directly \(do not run `commonly --help`\): context via `\/api\/agents\/runtime\/pods\/:podId\/context` with runtime token, or `\/api\/pods\/:podId\/context` with user token\./g, '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.');
   if (!/Resolve `podId` from the incoming event context/.test(next)) {
     next = next.replace(
@@ -245,9 +250,17 @@ const migrateLegacyHeartbeatContent = (content) => {
   if (!/Heartbeat check is incomplete unless you actually read pod activity each run/.test(next)) {
     next = next.replace(
       /- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `\/api\/agents\/runtime\/pods\/:podId\/messages\?limit=20` and `\/api\/posts\?podId=:podId&limit=10`\./,
-      '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.\n- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.',
+      '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.\n- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.',
     );
   }
+  next = next.replace(
+    /- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `\/api\/agents\/runtime\/pods\/:podId\/messages\?limit=20` and `\/api\/posts\?podId=:podId&limit=10`\./g,
+    '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.',
+  );
+  next = next.replace(
+    /- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `\/api\/agents\/runtime\/pods\/:podId\/messages\?limit=8` and `\/api\/posts\?podId=:podId&limit=4`\./g,
+    '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.',
+  );
   if (!/verify or enrich it with `web_search` when available/.test(next)) {
     next = next.replace(
       /- Heartbeat check is incomplete unless you actually read pod activity each run \(tools or runtime HTTP fallback\)\. Do not return HEARTBEAT_OK without performing those reads first\./,
@@ -827,25 +840,45 @@ const applyOpenClawContextDefaults = (config) => {
   }
 };
 
-const applyOpenClawModelDefaults = (config) => {
+const applyOpenClawModelDefaults = async (config) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
   config.agents.defaults.model = config.agents.defaults.model || {};
-  if (!config.agents.defaults.model.primary) {
-    config.agents.defaults.model.primary = 'google/gemini-2.5-flash';
+  let modelConfig = null;
+  try {
+    modelConfig = await GlobalModelConfigService.getConfig({ includeSecrets: false });
+  } catch (error) {
+    modelConfig = null;
+  }
+  const defaultPrimary = String(
+    modelConfig?.openclaw?.model
+    || modelConfig?.openclaw?.defaultModel
+    || '',
+  ).trim() || 'google/gemini-2.5-flash';
+  const hasPolicyPrimary = Boolean(String(
+    modelConfig?.openclaw?.model
+    || modelConfig?.openclaw?.defaultModel
+    || '',
+  ).trim());
+  const defaultFallbacks = Array.isArray(modelConfig?.openclaw?.fallbackModels)
+    ? modelConfig.openclaw.fallbackModels
+    : ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'];
+  if (hasPolicyPrimary) {
+    config.agents.defaults.model.primary = defaultPrimary;
+  } else if (!config.agents.defaults.model.primary) {
+    config.agents.defaults.model.primary = defaultPrimary;
   }
   const existingFallbacks = Array.isArray(config.agents.defaults.model.fallbacks)
     ? config.agents.defaults.model.fallbacks
     : [];
   const mergedFallbacks = [
-    'google/gemini-2.5-flash-lite',
-    'google/gemini-2.0-flash',
+    ...defaultFallbacks,
     ...existingFallbacks,
   ].filter(Boolean);
   config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
 };
 
-const provisionOpenClawAccount = ({
+const provisionOpenClawAccount = async ({
   accountId,
   runtimeToken,
   userToken,
@@ -902,7 +935,7 @@ const provisionOpenClawAccount = ({
   applyOpenClawWebToolDefaults(config);
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
-  applyOpenClawModelDefaults(config);
+  await applyOpenClawModelDefaults(config);
 
   config.agents = config.agents || {};
   config.agents.list = Array.isArray(config.agents.list) ? config.agents.list : [];
@@ -1036,7 +1069,7 @@ const provisionAgentRuntime = async ({
   // Docker mode (existing file-based logic)
   if (runtimeType === 'moltbot') {
     const accountId = resolveOpenClawAccountId({ agentName, instanceId });
-    const result = provisionOpenClawAccount({
+    const result = await provisionOpenClawAccount({
       accountId,
       runtimeToken,
       userToken,
@@ -1145,7 +1178,7 @@ const listOpenClawPluginsDocker = async () => {
     'plugins',
     'list',
     '--json',
-  ], { timeout: 30_000 });
+  ], { timeout: 30000 });
   let payload;
   try {
     payload = JSON.parse(result.stdout || '{}');
