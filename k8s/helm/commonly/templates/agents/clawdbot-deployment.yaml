@@ -43,8 +43,15 @@ spec:
           const path = require('path');
           const configPath = process.env.OPENCLAW_CONFIG_PATH || '/config/moltbot.json';
           const stateDir = process.env.OPENCLAW_STATE_DIR || '/state';
+          // Copy config from read-only ConfigMap to writable state dir
+          const stateConfigPath = path.join(stateDir, 'moltbot.json');
+          if (fs.existsSync(configPath)) {
+            fs.copyFileSync(configPath, stateConfigPath);
+            console.log('[auth-seed] copied config to writable path:', stateConfigPath);
+          }
           const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
           const geminiKey2 = (process.env.GEMINI_API_KEY_2 || '').trim();
+          const openrouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
           const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
           const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
           if (!fs.existsSync(configPath)) {
@@ -75,22 +82,25 @@ spec:
               return;
             }
             fs.mkdirSync(agentDir, { recursive: true });
-            const store = { version: 1, profiles: {} };
-            if (hasCustomProfiles) {
-              store.profiles = customProfiles;
-            } else {
-              if (geminiKey) {
-                store.profiles['google:default'] = { type: 'api_key', provider: 'google', key: geminiKey };
-              }
-              if (geminiKey2) {
-                store.profiles['google:backup'] = { type: 'api_key', provider: 'google', key: geminiKey2 };
-              }
-              if (anthropicKey) {
-                store.profiles['anthropic:default'] = { type: 'api_key', provider: 'anthropic', key: anthropicKey };
-              }
-              if (openaiKey) {
-                store.profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
-              }
+            const store = { version: 1, profiles: hasCustomProfiles ? { ...customProfiles } : {} };
+            if (geminiKey && !store.profiles['google:default']) {
+              store.profiles['google:default'] = { type: 'api_key', provider: 'google', key: geminiKey };
+            }
+            if (geminiKey2 && !store.profiles['google:backup']) {
+              store.profiles['google:backup'] = { type: 'api_key', provider: 'google', key: geminiKey2 };
+            }
+            if (openrouterKey && !store.profiles['openrouter:default']) {
+              store.profiles['openrouter:default'] = {
+                type: 'api_key',
+                provider: 'openrouter',
+                key: openrouterKey,
+              };
+            }
+            if (anthropicKey && !store.profiles['anthropic:default']) {
+              store.profiles['anthropic:default'] = { type: 'api_key', provider: 'anthropic', key: anthropicKey };
+            }
+            if (openaiKey && !store.profiles['openai:default']) {
+              store.profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
             }
             fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
             console.log('[auth-seed] wrote:', authPath, hasCustomProfiles ? 'custom profiles' : 'default keys');
@@ -117,6 +127,12 @@ spec:
             secretKeyRef:
               name: api-keys
               key: anthropic-api-key
+              optional: true
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openrouter-api-key
               optional: true
         - name: OPENAI_API_KEY
           valueFrom:
@@ -163,7 +179,7 @@ spec:
         - name: OPENCLAW_STATE_DIR
           value: /state
         - name: OPENCLAW_CONFIG_PATH
-          value: /config/moltbot.json
+          value: /state/moltbot.json
         - name: CLAWDBOT_WORKSPACE_DIR
           value: /workspace
         - name: CLAWDBOT_SKIP_BROWSER_CONTROL_SERVER
@@ -188,6 +204,12 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openai-api-key
+              optional: true
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openrouter-api-key
               optional: true
         - name: BRAVE_API_KEY
           valueFrom:
