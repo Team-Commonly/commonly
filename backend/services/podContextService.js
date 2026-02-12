@@ -4,6 +4,8 @@ const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('./podAssetService');
 const PodSkillService = require('./podSkillService');
 
+const CHARS_PER_TOKEN = 3; // Conservative estimate for JSON/markdown content
+
 const GENERIC_TAGS = new Set([
   'active',
   'activity',
@@ -250,6 +252,24 @@ class PodContextService {
     return new Set(tokens.map((token) => token.toLowerCase()));
   }
 
+  static estimateTokens(text) {
+    if (!text) return 0;
+    return Math.ceil(String(text).length / CHARS_PER_TOKEN);
+  }
+
+  static truncateToTokenBudget(items, budget, getContent) {
+    if (!budget || budget <= 0) return items;
+    let used = 0;
+    const result = [];
+    for (const item of items) {
+      const tokens = PodContextService.estimateTokens(getContent(item));
+      if (used + tokens > budget && result.length > 0) break;
+      result.push(item);
+      used += tokens;
+    }
+    return result;
+  }
+
   static async getPodContext({
     podId,
     userId,
@@ -261,6 +281,7 @@ class PodContextService {
     skillLimit = 6,
     skillMode = 'llm',
     skillRefreshHours = 6,
+    maxContextTokens = 0,
   }) {
     const pod = await PodContextService.loadPodForMember({ podId, userId });
 
@@ -407,21 +428,54 @@ class PodContextService {
 
     const skills = mergeSkills(importedSkillAssets, synthesizedSkills);
 
+    const hasActivity = summaries.length > 0 || assets.length > 0;
+
+    // Apply token budget if specified (e.g., from model context limit)
+    let finalSummaries = rankedSummaries;
+    let finalAssets = rankedAssets;
+    let finalSkills = skills;
+    let tokenEstimate = 0;
+
+    if (maxContextTokens > 0) {
+      const summaryBudget = Math.floor(maxContextTokens * 0.4);
+      const assetBudget = Math.floor(maxContextTokens * 0.35);
+      const skillBudget = Math.floor(maxContextTokens * 0.25);
+
+      finalSummaries = PodContextService.truncateToTokenBudget(
+        rankedSummaries, summaryBudget, (s) => s.content || '',
+      );
+      finalAssets = PodContextService.truncateToTokenBudget(
+        rankedAssets, assetBudget, (a) => a.content || a.title || '',
+      );
+      finalSkills = PodContextService.truncateToTokenBudget(
+        skills, skillBudget, (s) => s.content || s.title || '',
+      );
+
+      tokenEstimate = [
+        ...finalSummaries.map((s) => PodContextService.estimateTokens(s.content || '')),
+        ...finalAssets.map((a) => PodContextService.estimateTokens(a.content || a.title || '')),
+        ...finalSkills.map((s) => PodContextService.estimateTokens(s.content || s.title || '')),
+      ].reduce((sum, t) => sum + t, 0);
+    }
+
     return {
+      _status: 'success',
+      activityAvailable: hasActivity,
       pod: podDescriptor,
       task: task || null,
       stats: {
-        summaries: summaries.length,
-        assets: assets.length,
+        summaries: finalSummaries.length,
+        assets: finalAssets.length,
         tags: tagCounts.size,
-        skills: skills.length,
+        skills: finalSkills.length,
+        ...(maxContextTokens > 0 ? { tokenEstimate, tokenBudget: maxContextTokens } : {}),
       },
       skillModeUsed,
-      skillWarnings,
-      skills,
+      skillWarnings: skillWarnings.filter((w) => !w.includes('GEMINI_API_KEY')),
+      skills: finalSkills,
       tags,
-      summaries: rankedSummaries,
-      assets: rankedAssets,
+      summaries: finalSummaries,
+      assets: finalAssets,
     };
   }
 }
