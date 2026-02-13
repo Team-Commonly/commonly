@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const k8s = require('@kubernetes/client-node');
+const GlobalModelConfigService = require('./globalModelConfigService');
 
 const kc = new k8s.KubeConfig();
 kc.loadFromDefault();
@@ -37,40 +38,54 @@ const resolveBackendUrl = (namespace) => (
   || `http://backend.${namespace}.svc.cluster.local:5000`
 );
 
-const buildGatewayConfig = ({ backendUrl }) => ({
-  agents: {
-    defaults: {
-      model: { primary: 'google/gemini-2.5-flash' },
-      maxConcurrent: 4,
-      subagents: { maxConcurrent: 8 },
+const buildGatewayConfig = async ({ backendUrl }) => {
+  let modelConfig = null;
+  try {
+    modelConfig = await GlobalModelConfigService.getConfig({ includeSecrets: false });
+  } catch (error) {
+    modelConfig = null;
+  }
+  const defaultPrimary = String(
+    modelConfig?.openclaw?.model
+    || modelConfig?.openclaw?.defaultModel
+    || '',
+  ).trim() || 'google/gemini-2.5-flash';
+
+  return {
+    agents: {
+      defaults: {
+        model: { primary: defaultPrimary },
+        maxConcurrent: 4,
+        subagents: { maxConcurrent: 8 },
+      },
+      list: [],
     },
-    list: [],
-  },
-  commands: { native: 'auto', nativeSkills: 'auto' },
-  channels: {
-    commonly: {
-      enabled: true,
-      baseUrl: backendUrl,
-      accounts: {},
+    commands: { native: 'auto', nativeSkills: 'auto' },
+    channels: {
+      commonly: {
+        enabled: true,
+        baseUrl: backendUrl,
+        accounts: {},
+      },
     },
-  },
-  gateway: {
-    mode: 'local',
-    bind: 'lan',
-    auth: { mode: 'token' },
-    controlUi: { allowInsecureAuth: true },
-    http: { endpoints: { chatCompletions: { enabled: true } } },
-  },
-  messages: { ackReactionScope: 'group-mentions' },
-  bindings: [],
-  plugins: { entries: { commonly: { enabled: true } } },
-  skills: {
-    load: {
-      watch: true,
-      watchDebounceMs: 250,
+    gateway: {
+      mode: 'local',
+      bind: 'lan',
+      auth: { mode: 'token' },
+      controlUi: { allowInsecureAuth: true },
+      http: { endpoints: { chatCompletions: { enabled: true } } },
     },
-  },
-});
+    messages: { ackReactionScope: 'group-mentions' },
+    bindings: [],
+    plugins: { entries: { commonly: { enabled: true } } },
+    skills: {
+      load: {
+        watch: true,
+        watchDebounceMs: 250,
+      },
+    },
+  };
+};
 
 const createOrUpdateConfigMap = async ({ name, namespace, data }) => {
   const payload = {
@@ -109,7 +124,12 @@ const ensureSecret = async ({ name, namespace, token }) => {
   }
 };
 
-const ensureWorkspacePvc = async ({ name, namespace, storageClass, size }) => {
+const ensureWorkspacePvc = async ({
+  name,
+  namespace,
+  storageClass,
+  size,
+}) => {
   const pvc = {
     metadata: { name, namespace },
     spec: {
@@ -277,7 +297,7 @@ const provisionGateway = async ({ gateway, token }) => {
   if (!slug) throw new Error('gateway slug missing');
 
   const backendUrl = resolveBackendUrl(namespace);
-  const config = buildGatewayConfig({ backendUrl });
+  const config = await buildGatewayConfig({ backendUrl });
 
   const configMapName = resolveConfigMapName(slug);
   const serviceName = resolveServiceName(slug);

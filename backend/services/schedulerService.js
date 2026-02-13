@@ -10,6 +10,8 @@ const AgentEvent = require('../models/AgentEvent');
 const AgentEnsembleService = require('./agentEnsembleService');
 const PodCurationService = require('./podCurationService');
 const AgentAutoJoinService = require('./agentAutoJoinService');
+const Message = require('../models/Message');
+const Post = require('../models/Post');
 
 const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('./chatSummarizerService');
@@ -197,6 +199,30 @@ class SchedulerService {
       },
     );
 
+    const agentSessionResetJob = cron.schedule(
+      '0 * * * *',
+      async () => {
+        if (!AgentEventService.isSessionResetDue()) return;
+        console.log('Running scheduled OpenClaw session reset...');
+        try {
+          const result = await AgentEventService.clearOpenClawSessionsForActiveInstallations({
+            source: 'scheduled-session-reset',
+            restart: true,
+          });
+          console.log(
+            'OpenClaw session reset complete. '
+            + `Targeted=${result.targetedInstances}, Cleared=${result.clearedCount}, Failed=${result.failedCount}`,
+          );
+        } catch (error) {
+          console.error('Error in scheduled OpenClaw session reset:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -207,6 +233,7 @@ class SchedulerService {
       themedPodAutonomyJob,
       agentAutoJoinJob,
       agentHeartbeatJob,
+      agentSessionResetJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
@@ -219,6 +246,9 @@ class SchedulerService {
     console.log('- Themed pod autonomy runs every 2 hours');
     console.log('- Agent auto-join (agent-owned pods) runs every 2 hours');
     console.log('- Agent heartbeats run every 10 minutes with per-agent intervals');
+    console.log(
+      `- OpenClaw sessions reset every ${AgentEventService.getSessionResetIntervalHours()} hour(s)`,
+    );
     console.log(
       '- Stale agent events are garbage-collected every 10 minutes',
     );
@@ -258,6 +288,16 @@ class SchedulerService {
         console.error('Error in initial heartbeat dispatch:', error);
       });
     }, 11000);
+
+    setTimeout(() => {
+      if (!AgentEventService.isSessionResetDue()) return;
+      AgentEventService.clearOpenClawSessionsForActiveInstallations({
+        source: 'startup-session-reset',
+        restart: true,
+      }).catch((error) => {
+        console.error('Error in initial OpenClaw session reset:', error);
+      });
+    }, 12000);
 
     setTimeout(() => {
       AgentAutoJoinService.runAutoJoinAgentOwnedPods({
@@ -573,6 +613,68 @@ class SchedulerService {
     return Math.max(1, Math.min(1440, Math.trunc(parsed)));
   }
 
+  static resolveHeartbeatHintWindowMinutes() {
+    const parsed = Number(process.env.AGENT_HEARTBEAT_SIGNAL_WINDOW_MINUTES);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 120;
+    return Math.max(5, Math.min(1440, Math.trunc(parsed)));
+  }
+
+  static async buildHeartbeatActivityHint({ podId, now = new Date() } = {}) {
+    if (!podId) return null;
+    const lookbackMinutes = this.resolveHeartbeatHintWindowMinutes();
+    const since = new Date(now.getTime() - (lookbackMinutes * 60 * 1000));
+
+    const [messageStats, postStats] = await Promise.all([
+      Message.aggregate([
+        {
+          $match: {
+            podId,
+            createdAt: { $gte: since },
+            messageType: { $ne: 'system' },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            count: { $sum: 1 },
+            lastAt: { $max: '$createdAt' },
+          },
+        },
+      ]),
+      Post.aggregate([
+        {
+          $match: {
+            podId,
+            createdAt: { $gte: since },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            count: { $sum: 1 },
+            lastAt: { $max: '$createdAt' },
+          },
+        },
+      ]),
+    ]);
+
+    const messageCount = Number(messageStats?.[0]?.count || 0);
+    const postCount = Number(postStats?.[0]?.count || 0);
+    const totalSignals = messageCount + postCount;
+
+    return {
+      lookbackMinutes,
+      since: since.toISOString(),
+      messageCount,
+      postCount,
+      totalSignals,
+      hasRecentActivity: totalSignals > 0,
+      lastMessageAt: messageStats?.[0]?.lastAt ? new Date(messageStats[0].lastAt).toISOString() : null,
+      lastPostAt: postStats?.[0]?.lastAt ? new Date(postStats[0].lastAt).toISOString() : null,
+      generatedAt: now.toISOString(),
+    };
+  }
+
   static async dispatchAgentHeartbeats({
     trigger = 'scheduled-hourly',
     respectIntervals = false,
@@ -635,6 +737,8 @@ class SchedulerService {
           }
         }
 
+        const activityHint = await this.buildHeartbeatActivityHint({ podId, now });
+
         await AgentEventService.enqueue({
           agentName,
           instanceId,
@@ -644,8 +748,14 @@ class SchedulerService {
             trigger,
             generatedAt: new Date().toISOString(),
             podId: String(podId),
+            activityHint,
+            policy: {
+              noFetchWhenIdle: true,
+              silentOnReadFailure: true,
+            },
             content: [
               `Scheduler heartbeat for pod ${String(podId)}.`,
+              'Use payload.activityHint as pre-check: if hasRecentActivity=false, return HEARTBEAT_OK without extra narration.',
               'Read current pod activity and post only if there is meaningful new signal.',
             ].join(' '),
           },

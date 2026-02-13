@@ -1,6 +1,13 @@
 const AgentEvent = require('../models/AgentEvent');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const Integration = require('../models/Integration');
+const Gateway = require('../models/Gateway');
+const AgentIdentityService = require('./agentIdentityService');
+const {
+  clearAgentRuntimeSessions,
+  restartAgentRuntime,
+  resolveOpenClawAccountId,
+} = require('./agentProvisionerService');
 
 // Lazy-loaded to avoid circular dependency
 let agentWebSocketService = null;
@@ -17,6 +24,207 @@ const getWebSocketService = () => {
 };
 
 class AgentEventService {
+  static getContextOverflowRetryLimit() {
+    const parsed = Number.parseInt(process.env.AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return 1;
+    return parsed;
+  }
+
+  static shouldRestartAfterSessionClear() {
+    const raw = String(process.env.AGENT_CONTEXT_OVERFLOW_RESTART_AFTER_CLEAR || '1').trim().toLowerCase();
+    return raw !== '0' && raw !== 'false' && raw !== 'no';
+  }
+
+  static getSessionResetIntervalHours() {
+    const parsed = Number.parseInt(process.env.AGENT_RUNTIME_SESSION_RESET_HOURS, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 24;
+    return Math.max(1, Math.min(168, Math.trunc(parsed)));
+  }
+
+  static isSessionResetDue(now = new Date()) {
+    const intervalHours = this.getSessionResetIntervalHours();
+    const hourBucket = Math.floor(now.getTime() / (60 * 60 * 1000));
+    return hourBucket % intervalHours === 0;
+  }
+
+  static parseOverflowRetryCount(payload = {}) {
+    const parsed = Number.parseInt(payload?._contextOverflowRetryCount, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return parsed;
+  }
+
+  static detectContextOverflowText(value) {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    return /context overflow|prompt too large|context length|max(imum)? context|token limit|too many tokens/i
+      .test(text);
+  }
+
+  static shouldAttemptContextOverflowRecovery(delivery = {}) {
+    if (!delivery || delivery.outcome !== 'error') return false;
+    if (this.detectContextOverflowText(delivery.reason)) return true;
+    return this.detectContextOverflowText(delivery?.details?.message)
+      || this.detectContextOverflowText(delivery?.details?.error)
+      || this.detectContextOverflowText(delivery?.details?.description);
+  }
+
+  static buildContextOverflowRetryPayload(payload = {}, delivery = {}) {
+    const retryCount = this.parseOverflowRetryCount(payload) + 1;
+    return {
+      ...payload,
+      _contextOverflowRetryCount: retryCount,
+      _contextOverflowRecoveredAt: new Date().toISOString(),
+      _contextOverflowReason: delivery.reason || delivery?.details?.message || 'context overflow',
+      trigger: payload?.trigger ? `${payload.trigger}:context-overflow-retry` : 'context-overflow-retry',
+    };
+  }
+
+  static async resolveGatewayFromInstallation(installation) {
+    const gatewayId = installation?.config?.runtime?.gatewayId;
+    if (!gatewayId) return null;
+    const gateway = await Gateway.findById(gatewayId).lean();
+    if (!gateway) return null;
+    if (gateway.status && gateway.status !== 'active') return null;
+    return gateway;
+  }
+
+  static async recoverContextOverflow(event, delivery) {
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(event?.agentName);
+    if (typeConfig?.runtime !== 'moltbot') {
+      return { recovered: false, reason: 'runtime_not_openclaw' };
+    }
+
+    const retryLimit = this.getContextOverflowRetryLimit();
+    const retryCount = this.parseOverflowRetryCount(event?.payload);
+    if (retryCount >= retryLimit) {
+      return {
+        recovered: false,
+        reason: 'retry_limit_reached',
+        retryCount,
+        retryLimit,
+      };
+    }
+
+    const installation = await AgentInstallation.findOne({
+      agentName: event.agentName,
+      instanceId: event.instanceId || 'default',
+      podId: event.podId,
+      status: 'active',
+    }).select('config.runtime.gatewayId').lean();
+
+    const gateway = await this.resolveGatewayFromInstallation(installation);
+    const accountId = resolveOpenClawAccountId({
+      agentName: event.agentName,
+      instanceId: event.instanceId || 'default',
+    });
+
+    const cleared = await clearAgentRuntimeSessions('moltbot', event.instanceId || 'default', {
+      gateway,
+      accountId,
+    });
+    let restarted = null;
+    if (this.shouldRestartAfterSessionClear()) {
+      restarted = await restartAgentRuntime('moltbot', event.instanceId || 'default', { gateway });
+    }
+
+    const retryEvent = await this.enqueue({
+      agentName: event.agentName,
+      instanceId: event.instanceId || 'default',
+      podId: event.podId,
+      type: event.type,
+      payload: this.buildContextOverflowRetryPayload(event.payload || {}, delivery),
+    });
+
+    return {
+      recovered: true,
+      retryEventId: retryEvent?._id?.toString?.() || null,
+      retryCount: retryCount + 1,
+      retryLimit,
+      cleared,
+      restarted,
+    };
+  }
+
+  static async clearOpenClawSessionsForActiveInstallations({
+    source = 'scheduled',
+    restart = true,
+  } = {}) {
+    const installations = await AgentInstallation.find({
+      status: 'active',
+    }).select('agentName instanceId config.runtime.gatewayId').lean();
+
+    const byInstance = new Map();
+    installations.forEach((installation) => {
+      const typeConfig = AgentIdentityService.getAgentTypeConfig(installation?.agentName);
+      if (typeConfig?.runtime !== 'moltbot') return;
+      const agentName = String(installation.agentName || '').toLowerCase();
+      const instanceId = String(installation.instanceId || 'default');
+      const gatewayId = installation?.config?.runtime?.gatewayId
+        ? String(installation.config.runtime.gatewayId)
+        : '';
+      const key = `${agentName}:${instanceId}:${gatewayId}`;
+      if (!byInstance.has(key)) {
+        byInstance.set(key, {
+          agentName,
+          instanceId,
+          gatewayId: gatewayId || null,
+        });
+      }
+    });
+
+    const targets = Array.from(byInstance.values());
+    const processed = await Promise.all(targets.map(async (target) => {
+      const accountId = resolveOpenClawAccountId({
+        agentName: target.agentName,
+        instanceId: target.instanceId,
+      });
+
+      try {
+        const gateway = target.gatewayId
+          ? await Gateway.findById(target.gatewayId).lean()
+          : null;
+        const cleared = await clearAgentRuntimeSessions('moltbot', target.instanceId, {
+          gateway: gateway && (!gateway.status || gateway.status === 'active') ? gateway : null,
+          accountId,
+        });
+        let restarted = null;
+        if (restart) {
+          restarted = await restartAgentRuntime('moltbot', target.instanceId, {
+            gateway: gateway && (!gateway.status || gateway.status === 'active') ? gateway : null,
+          });
+        }
+        return {
+          ...target,
+          accountId,
+          source,
+          status: 'cleared',
+          cleared,
+          restarted,
+        };
+      } catch (error) {
+        return {
+          ...target,
+          accountId,
+          source,
+          status: 'failed',
+          error: error.message,
+        };
+      }
+    }));
+
+    const clearedCount = processed.filter((item) => item.status === 'cleared').length;
+    const failedCount = processed.filter((item) => item.status === 'failed').length;
+
+    return {
+      source,
+      scannedInstallations: installations.length,
+      targetedInstances: targets.length,
+      clearedCount,
+      failedCount,
+      processed,
+    };
+  }
+
   static normalizeDeliveryMeta(input = {}) {
     if (!input || typeof input !== 'object') return null;
     const allowedOutcomes = new Set(['acknowledged', 'posted', 'no_action', 'skipped', 'error']);
@@ -217,10 +425,24 @@ class AgentEventService {
       query.podId = podId;
     }
 
-    return AgentEvent.find(query)
+    const events = await AgentEvent.find(query)
       .sort({ createdAt: 1 })
       .limit(limit)
       .lean();
+
+    return (Array.isArray(events) ? events : []).map((event) => {
+      const messageId = event?.payload?.messageId;
+      if (messageId === undefined || messageId === null || typeof messageId === 'string') {
+        return event;
+      }
+      return {
+        ...event,
+        payload: {
+          ...event.payload,
+          messageId: String(messageId),
+        },
+      };
+    });
   }
 
   static async acknowledge(eventId, agentName, instanceId = 'default', delivery = null) {
@@ -250,6 +472,32 @@ class AgentEventService {
         ? result.delivery.reason
         : undefined,
     });
+    if (result && normalizedDelivery && this.shouldAttemptContextOverflowRecovery(normalizedDelivery)) {
+      try {
+        const recovery = await this.recoverContextOverflow(result, normalizedDelivery);
+        this.logEventLifecycle('context_overflow_recovery', {
+          eventId: eventId?.toString?.() || eventId,
+          agentName: agentName.toLowerCase(),
+          instanceId,
+          podId: result?.podId?.toString?.(),
+          type: result?.type,
+          trigger: result?.payload?.trigger,
+          status: recovery?.recovered ? 'recovered' : 'skipped',
+          error: recovery?.recovered ? undefined : recovery?.reason,
+        });
+      } catch (recoveryError) {
+        this.logEventLifecycle('context_overflow_recovery_failed', {
+          eventId: eventId?.toString?.() || eventId,
+          agentName: agentName.toLowerCase(),
+          instanceId,
+          podId: result?.podId?.toString?.(),
+          type: result?.type,
+          trigger: result?.payload?.trigger,
+          status: 'failed',
+          error: recoveryError.message,
+        });
+      }
+    }
     return result;
   }
 

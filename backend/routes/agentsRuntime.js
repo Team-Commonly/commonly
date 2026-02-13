@@ -57,7 +57,10 @@ const resolveInstallationForPod = (installations = [], fallback, podId) => {
 };
 
 const hasAnyScope = (installation, acceptedScopes = []) => {
-  const scopes = installation?.scopes || [];
+  const scopes = Array.isArray(installation?.scopes) ? installation.scopes : [];
+  // Backward compatibility: installations created before scope persistence
+  // should behave as unscoped/full-access for runtime integration routes.
+  if (scopes.length === 0) return true;
   return acceptedScopes.some((scope) => scopes.includes(scope));
 };
 
@@ -106,12 +109,17 @@ const requireBotUser = async (req, res) => {
   return { user };
 };
 
-const ensureBotInstallation = async (agentName, podId, instanceId = 'default') => {
+const ensureBotInstallation = async (
+  agentName,
+  podId,
+  statuses = ['active'],
+  instanceId = 'default',
+) => {
   const installation = await AgentInstallation.findOne({
     agentName: agentName.toLowerCase(),
     podId,
     instanceId,
-    status: 'active',
+    status: { $in: statuses },
   }).lean();
   return installation;
 };
@@ -273,7 +281,12 @@ router.get(
         return res.status(403).json({ message: 'Agent token does not match bot user' });
       }
 
-      const installation = await ensureBotInstallation(resolvedAgentName, podId, instanceId);
+      const installation = await ensureBotInstallation(
+        resolvedAgentName,
+        podId,
+        ['active', 'paused'],
+        instanceId,
+      );
       if (!installation) {
         return res.status(403).json({ message: 'Bot not installed in this pod' });
       }
@@ -329,7 +342,12 @@ router.get(
         return res.status(403).json({ message: 'Agent token does not match bot user' });
       }
 
-      const installation = await ensureBotInstallation(resolvedAgentName, podId, instanceId);
+      const installation = await ensureBotInstallation(
+        resolvedAgentName,
+        podId,
+        ['active', 'paused'],
+        instanceId,
+      );
       if (!installation) {
         return res.status(403).json({ message: 'Bot not installed in this pod' });
       }
@@ -365,7 +383,12 @@ router.post(
         return res.status(403).json({ message: 'Agent token does not match bot user' });
       }
 
-      const installation = await ensureBotInstallation(resolvedAgentName, podId, instanceId);
+      const installation = await ensureBotInstallation(
+        resolvedAgentName,
+        podId,
+        ['active'],
+        instanceId,
+      );
       if (!installation) {
         return res.status(403).json({ message: 'Bot not installed in this pod' });
       }
@@ -379,6 +402,7 @@ router.post(
         content,
         metadata,
         messageType,
+        installationConfig: installation.config || null,
       });
 
       return res.json(result);
@@ -426,7 +450,12 @@ router.post(
         return res.status(400).json({ message: 'podId is required for threads without a pod' });
       }
 
-      const installation = await ensureBotInstallation(resolvedAgentName, targetPodId, instanceId);
+      const installation = await ensureBotInstallation(
+        resolvedAgentName,
+        targetPodId,
+        ['active'],
+        instanceId,
+      );
       if (!installation) {
         return res.status(403).json({ message: 'Bot not installed in this pod' });
       }
@@ -559,6 +588,7 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
       content,
       metadata,
       messageType,
+      installationConfig: installation.config || null,
     });
 
     return res.json(result);

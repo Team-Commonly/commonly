@@ -1,8 +1,8 @@
 ---
+
 name: frontend-dev
 description: Frontend development context for React.js, Material-UI, Context API, hooks, and component patterns. Use when working on frontend code.
-last_updated: 2026-02-04
-
+last_updated: 2026-02-08
 ---
 
 # Frontend Development
@@ -49,7 +49,16 @@ frontend/src/
 - Pod memory search + excerpt panel (`/api/pods/:id/context/search` and `/api/pods/:id/context/assets/:assetId`) with type filters and auto-load excerpts.
 - Apps Marketplace UI lives in `frontend/src/components/apps/AppsMarketplacePage.js` and consumes `GET /api/marketplace/official` plus `GET /api/integrations/catalog`.
 - Agent Hub UI lives in `frontend/src/components/agents/AgentsHub.js` and consumes `/api/registry/*` (installs, model prefs, runtime token issuance).
+- Agent Hub also consumes `/api/registry/presets` for categorized preset recommendations and API/tool readiness,
+  plus default skill bundle readiness from built-in OpenClaw skills and Dockerfile.commonly capabilities.
+- Presets tab supports category chips (including `Social`) to segment curator-focused preset installs.
+- Public marketing routes include `/` (landing) and `/use-cases/:useCaseId` for scenario-driven onboarding pages.
+- `/verify-email` should render verification status plus a clear path forward (`Go to Login`) after completion.
+- Global admin social integrations UI is routed at `/admin/integrations/global`.
 - Agent config dialog lists runtime tokens and supports revoke (`DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId`).
+- Agent config dialog includes Integration Autonomy scope controls for `integration:read`, `integration:messages:read`, `integration:write`, and `config.autonomy.autoJoinAgentOwnedPods`.
+- Runtime provision UI includes a force toggle that sends `force: true` to
+  `POST /api/registry/pods/:podId/agents/:name/provision` for shared token rotation.
 - Pod member labels are MVP roles: **Admin** for the creator and **Member** for everyone else (viewers are read-only and not rendered yet).
 - Pod member online indicators are updated via Socket.io `podPresence` events.
 - Agents Hub uses a single filter bar (search, category, install-to pod) with no Trending section; agent cards are 3-up on desktop.
@@ -92,9 +101,25 @@ const useSocket = (podId) => {
   return { messages };
 };
 ```
-## Current Repo Notes (2026-02-04)
+
+## Current Repo Notes (2026-02-08)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.
+Activity page (`/activity`) is social-first with `Updates` + `Actions` tabs, live pod message updates,
+and unread controls (`Mark read`, `Mark all read`).
+Dedicated user profiles are available at `/profile/:id` and support follow/unfollow.
+Thread pages support follow/unfollow so followed-thread updates appear in Activity quick view.
+Pod browse (`/pods/:type`) is pre-entry-first: include `All/Joined/Discover` filters, preview-before-join, and mobile-safe control density.
+Pod browse cards should include a compact member avatar overview (max 4 + overflow) with role-aware styling for Admin/Agent/Member.
+Pod overview member strips should resolve agent avatars from installed-agent profiles per pod (`/api/registry/pods/:podId/agents`) so agent icons match Agent Hub cards.
+Joined pod cards should show explicit unread indicators (red dot/unread chip) based on the local per-pod read cursor vs latest message timestamp.
+Pod summary lightbulb should only toggle display mode (description vs cached summary); regeneration belongs to the refresh button, and per-pod view mode should persist across navigation.
+ChatRoom agent identity/avatar mapping is now case-insensitive, so display-name agent messages still resolve installed icon URLs.
+Chat/member identity labels should be clickable: users -> `/profile/:id`, agents -> Agents Hub installed deep link with `podId`, `agent`, `instanceId`, `view=overview`.
+Agents Hub card avatar precedence should stay aligned across tabs: `iconUrl` first, then profile icon/avatar URL fields.
+Agents Hub deep links should default to read-only overview for non-managers; only installer/pod-admin/global-admin can configure runtime settings.
+Agent Hub cards should not render star ratings for now; keep card footer space focused on primary actions (install/configure/remove) for better desktop layout.
+Activity feed unread state should be visually explicit (accent border + unread marker chip), not just dim/highlight.

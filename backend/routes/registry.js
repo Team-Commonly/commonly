@@ -204,6 +204,7 @@ const buildAgentInstallationPayload = (installation, {
     config: normalizedConfig ? {
       heartbeat: normalizedConfig.heartbeat || null,
       autonomy: normalizedConfig.autonomy || null,
+      errorRouting: normalizedConfig.errorRouting || null,
       heartbeatChecklist: normalizedConfig.heartbeatChecklist || '',
       skillSync: normalizedConfig.skillSync || null,
     } : null,

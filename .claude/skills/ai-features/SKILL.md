@@ -1,8 +1,8 @@
 ---
+
 name: ai-features
 description: AI overview and prompt engineering index. Use specific skills for routing, summarization, embeddings, or agent runtime.
 last_updated: 2026-02-04
-
 ---
 
 # AI & Prompt Engineering (Index)
@@ -17,6 +17,7 @@ Use the focused skills below instead of this overview for most work:
 References:
 - [AI_FEATURES.md](../../../docs/ai-features/AI_FEATURES.md)
 - [DAILY_DIGESTS.md](../../../docs/ai-features/DAILY_DIGESTS.md)
+
 ## Current Repo Notes (2026-02-04)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
