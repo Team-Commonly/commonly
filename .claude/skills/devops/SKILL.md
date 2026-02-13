@@ -1,7 +1,7 @@
 ---
 name: devops
 description: DevOps and infrastructure context for Docker, CI/CD, GitHub Actions, deployment, and monitoring. Use when working on containers, pipelines, or deployment.
-last_updated: 2026-02-04
+last_updated: 2026-02-07
 
 ---
 
@@ -48,6 +48,20 @@ docker-compose.dev.yml      # Development with hot reload
 # Production
 ./prod.sh deploy            # Build and deploy
 ./prod.sh logs              # View logs
+
+# GKE (both namespaces)
+BACKEND_TAG=$(date +%Y%m%d%H%M%S)
+FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
+gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
+kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+kubectl rollout status deployment/backend -n commonly
+kubectl rollout status deployment/frontend -n commonly
+kubectl rollout status deployment/backend -n commonly-dev
+kubectl rollout status deployment/frontend -n commonly-dev
 ```
 
 ## Docker Patterns
@@ -76,9 +90,17 @@ healthcheck:
   timeout: 10s
   retries: 3
 ```
-## Current Repo Notes (2026-02-04)
+## Current Repo Notes (2026-02-06)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
+For k8s gateways, these credential writes update the selected gateway ConfigMap; validate by reprovisioning or restarting the gateway deployment.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.
+K8s gateway rollouts should use `Recreate` for `clawdbot-gateway` because gateway PVCs are `ReadWriteOnce`; avoid `RollingUpdate` to prevent multi-attach deadlocks.
+OpenClaw plugin list/install routes support both Docker and K8s gateways and should resolve the installation gateway (`gatewayId`) when provided.
+Registry provisioning must use installation-derived instance identity for OpenClaw so multiple instance IDs can coexist without config overwrite.
+K8s Force Reprovision can briefly have zero running gateway pods during restart; heartbeat/plugin exec paths should wait for a ready gateway pod before failing.
+Runtime-token registry routes are shared-instance based (bot-user token storage), so token checks across pods should compare by `agentName + instanceId`, not per-installation token arrays.
+If agents appear disconnected after provisioning, check `clawdbot-gateway` pod last state for `OOMKilled` before debugging auth/config.
+Current ingress hosts: `app.commonly.me`, `api.commonly.me`, `app-dev.commonly.me`, `api-dev.commonly.me`.

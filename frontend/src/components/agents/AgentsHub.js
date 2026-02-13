@@ -203,6 +203,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [configSelectedScopes, setConfigSelectedScopes] = useState([]);
   const [configExtraScopes, setConfigExtraScopes] = useState([]);
   const [configAutoJoinAgentOwnedPods, setConfigAutoJoinAgentOwnedPods] = useState(false);
+  const [configOwnerDmErrorRouting, setConfigOwnerDmErrorRouting] = useState(false);
   const [configHeartbeatEnabled, setConfigHeartbeatEnabled] = useState(true);
   const [configHeartbeatInterval, setConfigHeartbeatInterval] = useState(60);
   const [configHeartbeatChecklist, setConfigHeartbeatChecklist] = useState('');
@@ -1546,6 +1547,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     const heartbeatConfig = resolved?.config?.heartbeat || null;
     const heartbeatChecklist = resolved?.config?.heartbeatChecklist || '';
     const autonomyConfig = resolved?.config?.autonomy || {};
+    const errorRoutingConfig = resolved?.config?.errorRouting || {};
     const skillSyncConfig = resolved?.config?.skillSync || {};
     const currentScopes = Array.isArray(resolved?.scopes) ? resolved.scopes : [];
     const normalizedCurrentScopes = Array.from(
@@ -1555,6 +1557,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigSelectedScopes(normalizedCurrentScopes.filter((scope) => knownScopeIds.has(scope)));
     setConfigExtraScopes(normalizedCurrentScopes.filter((scope) => !knownScopeIds.has(scope)));
     setConfigAutoJoinAgentOwnedPods(Boolean(autonomyConfig.autoJoinAgentOwnedPods));
+    setConfigOwnerDmErrorRouting(Boolean(errorRoutingConfig.ownerDm));
     setConfigInstructions(resolved?.profile?.instructions || '');
     setConfigPersonaTone(persona.tone || 'friendly');
     setConfigPersonaSpecialties(formatCommaList(persona.specialties || []));
@@ -1839,6 +1842,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setConfigAuthKeys({ google: '', anthropic: '', openai: '' });
     setConfigSkillEnvJson('');
     setConfigSkillEnvError('');
+    setConfigOwnerDmErrorRouting(false);
     setToolPolicyAllowed('commonly');
     setToolPolicyBlocked('');
     setToolPolicyRequireApproval('');
@@ -2411,6 +2415,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           },
           autonomy: {
             autoJoinAgentOwnedPods: configAutoJoinAgentOwnedPods,
+          },
+          errorRouting: {
+            ownerDm: configOwnerDmErrorRouting,
           },
           heartbeatChecklist: configHeartbeatChecklist || '',
           runtime: {
@@ -3570,6 +3577,20 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           />
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
             Auto-join applies only to active installations and uses scheduler/admin autonomy flows.
+          </Typography>
+          <FormControlLabel
+            control={(
+              <Checkbox
+                checked={configOwnerDmErrorRouting}
+                onChange={(e) => setConfigOwnerDmErrorRouting(e.target.checked)}
+              />
+            )}
+            label="Route error-like agent messages to installer debug DM"
+            sx={{ mb: 1 }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            Opt-in per installation. When enabled, detected error/debug outputs are moved to agent-admin DM and
+            source chat gets a short system notice.
           </Typography>
 
           <Divider sx={{ my: 3 }} />

@@ -1,10 +1,16 @@
 const Integration = require('../models/Integration');
 const Post = require('../models/Post');
+const { AgentInstallation } = require('../models/AgentRegistry');
 const registry = require('../integrations');
 const { normalizeBufferMessage } = require('../integrations/normalizeBufferMessage');
+const AgentEventService = require('./agentEventService');
 
 const FEED_TYPES = ['x', 'instagram'];
 const DEFAULT_CATEGORY = 'Social';
+
+function shouldPersistExternalFeedPosts() {
+  return process.env.EXTERNAL_FEED_PERSIST_POSTS === '1';
+}
 
 function getAttachmentUrl(attachments = []) {
   if (!Array.isArray(attachments) || attachments.length === 0) return '';
@@ -141,6 +147,73 @@ async function appendIntegrationBuffer(integrationId, messages, maxBufferSize = 
   );
 }
 
+function isCuratorInstallation(installation) {
+  const instanceId = String(installation?.instanceId || '').toLowerCase();
+  const displayName = String(installation?.displayName || '').toLowerCase();
+  const agentName = String(installation?.agentName || '').toLowerCase();
+  if (instanceId.includes('curator')) return true;
+  if (displayName.includes('curator')) return true;
+  return agentName.includes('curator');
+}
+
+async function enqueueCuratorEvents({ integration, messageCount }) {
+  if (!integration?.podId) {
+    return { enqueued: 0, reason: 'missing_pod' };
+  }
+
+  const installations = await AgentInstallation.find({
+    podId: integration.podId,
+    status: 'active',
+  }).select('agentName instanceId displayName config.autonomy').lean();
+
+  const eligibleInstallations = installations
+    .filter((installation) => installation?.config?.autonomy?.enabled !== false)
+    .filter((installation) => isCuratorInstallation(installation));
+
+  if (!eligibleInstallations.length) {
+    return { enqueued: 0, reason: 'no_curator_installations' };
+  }
+
+  const uniqueInstallations = Array.from(
+    new Map(
+      eligibleInstallations.map((installation) => {
+        const key = [
+          String(installation.agentName || '').toLowerCase(),
+          String(installation.instanceId || 'default'),
+        ].join(':');
+        return [key, installation];
+      }),
+    ).values(),
+  );
+
+  await Promise.all(
+    uniqueInstallations.map((installation) => (
+      AgentEventService.enqueue({
+        agentName: installation.agentName,
+        instanceId: installation.instanceId || 'default',
+        podId: integration.podId,
+        type: 'curate',
+        payload: {
+          source: 'external-feed-sync',
+          provider: integration.type,
+          integrationId: String(integration._id),
+          messageCount: Number(messageCount) || 0,
+          topN: 3,
+          limit: 40,
+        },
+      })
+    )),
+  );
+
+  return {
+    enqueued: uniqueInstallations.length,
+    targets: uniqueInstallations.map((installation) => ({
+      agentName: installation.agentName,
+      instanceId: installation.instanceId || 'default',
+    })),
+  };
+}
+
 async function syncExternalFeeds() {
   const integrations = await Integration.find({
     type: { $in: FEED_TYPES },
@@ -179,12 +252,18 @@ async function syncExternalFeeds() {
         return acc;
       }, null);
 
-      const { created } = await persistExternalPosts({ integration, messages });
+      const created = shouldPersistExternalFeedPosts()
+        ? (await persistExternalPosts({ integration, messages })).created
+        : 0;
       await appendIntegrationBuffer(
         integration._id,
         messages,
         integration.config?.maxBufferSize || 1000,
       );
+      const curatorDispatch = await enqueueCuratorEvents({
+        integration,
+        messageCount: messages.length,
+      });
 
       const updateSet = {
         lastSync: new Date(),
@@ -244,6 +323,8 @@ async function syncExternalFeeds() {
         success: true,
         messageCount: messages.length,
         createdPosts: created,
+        curatorEventsEnqueued: curatorDispatch.enqueued,
+        curatorTargets: curatorDispatch.targets || [],
         content: syncResult.content || 'Synced external feed',
       };
     }),
