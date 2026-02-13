@@ -170,16 +170,18 @@ const enqueueMentions = async ({
             enqueued.push(directMatch.agentName);
             return;
           }
-          await AgentEventService.enqueue({
-            agentName: directMatch.agentName,
-            instanceId: directMatch.instanceId || 'default',
-            podId,
-            type: eventType,
-            payload: {
-              messageId: message?._id || message?.id,
-              content,
-              userId,
-              username,
+              await AgentEventService.enqueue({
+                agentName: directMatch.agentName,
+                instanceId: directMatch.instanceId || 'default',
+                podId,
+                type: eventType,
+                payload: {
+                  messageId: message?._id || message?.id
+                    ? String(message?._id || message?.id)
+                    : undefined,
+                  content,
+                  userId,
+                  username,
               mentions: rawMentions,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
@@ -225,7 +227,9 @@ const enqueueMentions = async ({
                 podId,
                 type: eventType,
                 payload: {
-                  messageId: message?._id || message?.id,
+                  messageId: message?._id || message?.id
+                    ? String(message?._id || message?.id)
+                    : undefined,
                   content,
                   userId,
                   username,

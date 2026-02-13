@@ -25,9 +25,13 @@ jest.mock('../../../models/AgentRegistry', () => ({
 jest.mock('../../../models/AgentProfile', () => ({
   find: jest.fn(),
 }));
+jest.mock('../../../models/AgentTemplate', () => ({
+  find: jest.fn(),
+}));
 
 const Pod = require('../../../models/Pod');
 const AgentProfile = require('../../../models/AgentProfile');
+const AgentTemplate = require('../../../models/AgentTemplate');
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
 const registryRoutes = require('../../../routes/registry');
 
@@ -62,8 +66,11 @@ describe('registry list pod agents config payload', () => {
         config: new Map(Object.entries({
           heartbeat: { enabled: true, everyMinutes: 60 },
           autonomy: { autoJoinAgentOwnedPods: true },
+          errorRouting: { ownerDm: true },
           heartbeatChecklist: '- Check updates',
-          skillSync: { mode: 'all', allPods: true, podIds: [], skillNames: [] },
+          skillSync: {
+            mode: 'all', allPods: true, podIds: [], skillNames: [],
+          },
         })),
       },
     ]);
@@ -75,6 +82,11 @@ describe('registry list pod agents config payload', () => {
     AgentProfile.find.mockReturnValue({
       lean: jest.fn().mockResolvedValue([]),
     });
+    AgentTemplate.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      }),
+    });
 
     const res = await request(app).get('/api/registry/pods/pod-1/agents');
 
@@ -83,8 +95,11 @@ describe('registry list pod agents config payload', () => {
     expect(res.body.agents[0].config).toEqual({
       heartbeat: { enabled: true, everyMinutes: 60 },
       autonomy: { autoJoinAgentOwnedPods: true },
+      errorRouting: { ownerDm: true },
       heartbeatChecklist: '- Check updates',
-      skillSync: { mode: 'all', allPods: true, podIds: [], skillNames: [] },
+      skillSync: {
+        mode: 'all', allPods: true, podIds: [], skillNames: [],
+      },
     });
   });
 });

@@ -83,6 +83,7 @@ INSTAGRAM_GRAPH_API_BASE=https://graph.facebook.com/v19.0
 # ✅ Optional Model Gateway (LiteLLM)
 # ===========================
 OPENAI_API_KEY=
+OPENROUTER_API_KEY=
 LITELLM_MASTER_KEY=dev-litellm-key
 LITELLM_BASE_URL=http://litellm:4000
 LITELLM_API_KEY=dev-litellm-key

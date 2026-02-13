@@ -42,6 +42,7 @@ const GlobalIntegrations = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [applyingModelPolicy, setApplyingModelPolicy] = useState(false);
   const [connectingX, setConnectingX] = useState(false);
   const [loadingXFollowing, setLoadingXFollowing] = useState(false);
   const [error, setError] = useState('');
@@ -50,6 +51,21 @@ const GlobalIntegrations = () => {
     socialMode: 'repost',
     publishEnabled: false,
     strictAttribution: true,
+  });
+  const [modelPolicy, setModelPolicy] = useState({
+    llmService: {
+      provider: 'auto',
+      model: 'gemini-2.5-flash',
+      openrouter: {
+        baseUrl: 'https://openrouter.ai/api/v1',
+        model: '',
+      },
+    },
+    openclaw: {
+      provider: 'google',
+      model: 'google/gemini-2.5-flash',
+      fallbackModels: ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
+    },
   });
 
   // X (Twitter) state
@@ -107,7 +123,7 @@ const GlobalIntegrations = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      const { x, instagram, socialPolicy: nextPolicy } = response.data;
+      const { x, instagram, socialPolicy: nextPolicy, modelPolicy: nextModelPolicy } = response.data;
 
       if (x) {
         setXConfig({
@@ -144,11 +160,120 @@ const GlobalIntegrations = () => {
           strictAttribution: nextPolicy.strictAttribution !== false,
         });
       }
+      if (nextModelPolicy) {
+        setModelPolicy({
+          llmService: {
+            provider: nextModelPolicy?.llmService?.provider || 'auto',
+            model: nextModelPolicy?.llmService?.model
+              || nextModelPolicy?.llmService?.defaultModel
+              || 'gemini-2.5-flash',
+            openrouter: {
+              baseUrl: nextModelPolicy?.llmService?.openrouter?.baseUrl || 'https://openrouter.ai/api/v1',
+              model: nextModelPolicy?.llmService?.openrouter?.model || '',
+            },
+          },
+          openclaw: {
+            provider: nextModelPolicy?.openclaw?.provider || 'google',
+            model: nextModelPolicy?.openclaw?.model
+              || nextModelPolicy?.openclaw?.defaultModel
+              || 'google/gemini-2.5-flash',
+            fallbackModels: Array.isArray(nextModelPolicy?.openclaw?.fallbackModels)
+              ? nextModelPolicy.openclaw.fallbackModels
+              : ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
+          },
+        });
+      }
     } catch (err) {
       console.error('Failed to fetch integrations:', err);
       setError(err.response?.data?.error || 'Failed to load integrations');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveModelPolicy = async () => {
+    try {
+      setSaving(true);
+      setError('');
+      setSuccess('');
+      const token = localStorage.getItem('token');
+      const fallbackModels = String(modelPolicy?.openclaw?.fallbackModels || '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      await axios.post(
+        '/api/admin/integrations/global/model-policy',
+        {
+          llmService: {
+            provider: modelPolicy?.llmService?.provider || 'auto',
+            model: modelPolicy?.llmService?.model || '',
+            openrouter: {
+              baseUrl: modelPolicy?.llmService?.openrouter?.baseUrl || '',
+              model: modelPolicy?.llmService?.openrouter?.model || '',
+            },
+          },
+          openclaw: {
+            provider: modelPolicy?.openclaw?.provider || 'google',
+            model: modelPolicy?.openclaw?.model || '',
+            fallbackModels,
+          },
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setSuccess('Global model policy saved.');
+      await fetchIntegrations();
+    } catch (err) {
+      console.error('Failed to save global model policy:', err);
+      setError(err.response?.data?.error || 'Failed to save global model policy');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveAndApplyModelPolicy = async () => {
+    try {
+      setApplyingModelPolicy(true);
+      setError('');
+      setSuccess('');
+      const token = localStorage.getItem('token');
+      const fallbackModels = String(modelPolicy?.openclaw?.fallbackModels || '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+
+      await axios.post(
+        '/api/admin/integrations/global/model-policy',
+        {
+          llmService: {
+            provider: modelPolicy?.llmService?.provider || 'auto',
+            model: modelPolicy?.llmService?.model || '',
+            openrouter: {
+              baseUrl: modelPolicy?.llmService?.openrouter?.baseUrl || '',
+              model: modelPolicy?.llmService?.openrouter?.model || '',
+            },
+          },
+          openclaw: {
+            provider: modelPolicy?.openclaw?.provider || 'google',
+            model: modelPolicy?.openclaw?.model || '',
+            fallbackModels,
+          },
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      await axios.post(
+        '/api/registry/admin/installations/reprovision-all',
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      setSuccess('Global model policy saved and reprovision-all triggered.');
+      await fetchIntegrations();
+    } catch (err) {
+      console.error('Failed to save/apply global model policy:', err);
+      setError(err.response?.data?.error || 'Failed to save/apply global model policy');
+    } finally {
+      setApplyingModelPolicy(false);
     }
   };
 
@@ -593,6 +718,171 @@ const GlobalIntegrations = () => {
           </Card>
         </Grid>
       </Grid>
+
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Global Model Policy
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Set global defaults for backend LLM routing and OpenClaw gateway model defaults.
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="llm-provider-label">Backend LLM Provider</InputLabel>
+                <Select
+                  labelId="llm-provider-label"
+                  value={modelPolicy.llmService.provider}
+                  label="Backend LLM Provider"
+                  onChange={(event) => setModelPolicy({
+                    ...modelPolicy,
+                    llmService: {
+                      ...modelPolicy.llmService,
+                      provider: event.target.value,
+                    },
+                  })}
+                >
+                  <MenuItem value="auto">Auto (LiteLLM then Gemini)</MenuItem>
+                  <MenuItem value="gemini">Gemini only</MenuItem>
+                  <MenuItem value="litellm">LiteLLM preferred</MenuItem>
+                  <MenuItem value="openrouter">OpenRouter preferred</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                label="Backend Model"
+                value={modelPolicy.llmService.model}
+                onChange={(event) => setModelPolicy({
+                  ...modelPolicy,
+                  llmService: {
+                    ...modelPolicy.llmService,
+                    model: event.target.value,
+                  },
+                })}
+                fullWidth
+                size="small"
+                helperText="Used by llmService when callers do not pass a model."
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                label="OpenClaw Model"
+                value={modelPolicy.openclaw.model}
+                onChange={(event) => setModelPolicy({
+                  ...modelPolicy,
+                  openclaw: {
+                    ...modelPolicy.openclaw,
+                    model: event.target.value,
+                  },
+                })}
+                fullWidth
+                size="small"
+                helperText="Applied to gateway defaults on reprovision (overwrites global default primary)."
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="openclaw-provider-label">OpenClaw Provider</InputLabel>
+                <Select
+                  labelId="openclaw-provider-label"
+                  value={modelPolicy.openclaw.provider}
+                  label="OpenClaw Provider"
+                  onChange={(event) => setModelPolicy({
+                    ...modelPolicy,
+                    openclaw: {
+                      ...modelPolicy.openclaw,
+                      provider: event.target.value,
+                    },
+                  })}
+                >
+                  <MenuItem value="google">Google</MenuItem>
+                  <MenuItem value="openrouter">OpenRouter</MenuItem>
+                  <MenuItem value="openai">OpenAI</MenuItem>
+                  <MenuItem value="anthropic">Anthropic</MenuItem>
+                  <MenuItem value="custom">Custom</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                label="OpenRouter Base URL"
+                value={modelPolicy.llmService.openrouter.baseUrl}
+                onChange={(event) => setModelPolicy({
+                  ...modelPolicy,
+                  llmService: {
+                    ...modelPolicy.llmService,
+                    openrouter: {
+                      ...modelPolicy.llmService.openrouter,
+                      baseUrl: event.target.value,
+                    },
+                  },
+                })}
+                fullWidth
+                size="small"
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                label="OpenRouter Model"
+                value={modelPolicy.llmService.openrouter.model}
+                onChange={(event) => setModelPolicy({
+                  ...modelPolicy,
+                  llmService: {
+                    ...modelPolicy.llmService,
+                    openrouter: {
+                      ...modelPolicy.llmService.openrouter,
+                      model: event.target.value,
+                    },
+                  },
+                })}
+                fullWidth
+                size="small"
+                helperText="Example: openai/gpt-4.1-mini"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="OpenClaw Fallback Models"
+                value={Array.isArray(modelPolicy.openclaw.fallbackModels)
+                  ? modelPolicy.openclaw.fallbackModels.join(', ')
+                  : modelPolicy.openclaw.fallbackModels}
+                onChange={(event) => setModelPolicy({
+                  ...modelPolicy,
+                  openclaw: {
+                    ...modelPolicy.openclaw,
+                    fallbackModels: event.target.value,
+                  },
+                })}
+                fullWidth
+                size="small"
+                helperText="Comma-separated, in order. Example: google/gemini-2.5-flash-lite, google/gemini-2.0-flash"
+              />
+            </Grid>
+          </Grid>
+          <Box display="flex" gap={1} mt={2}>
+            <Button
+              variant="contained"
+              startIcon={<SaveIcon />}
+              onClick={handleSaveModelPolicy}
+              disabled={saving || applyingModelPolicy}
+            >
+              Save Model Policy
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={handleSaveAndApplyModelPolicy}
+              disabled={saving || applyingModelPolicy}
+            >
+              {applyingModelPolicy ? 'Applying...' : 'Save + Apply To All Agents'}
+            </Button>
+          </Box>
+          <Alert severity="info" sx={{ mt: 2 }}>
+            OpenRouter API key is sourced from Kubernetes secrets/env only (not editable in UI). Gemini continues using GEMINI_API_KEY.
+          </Alert>
+        </CardContent>
+      </Card>
 
       <Card sx={{ mt: 3 }}>
         <CardContent>

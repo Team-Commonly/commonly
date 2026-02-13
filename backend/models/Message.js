@@ -19,7 +19,7 @@ const MessageSchema = new Schema({
   },
   messageType: {
     type: String,
-    enum: ['text', 'image'],
+    enum: ['text', 'image', 'system'],
     default: 'text',
   },
   createdAt: {

@@ -26,9 +26,13 @@ jest.mock('../../../models/AgentRegistry', () => ({
 jest.mock('../../../models/AgentProfile', () => ({
   findOne: jest.fn(),
 }));
+jest.mock('../../../models/AgentTemplate', () => ({
+  find: jest.fn(),
+}));
 
 const Pod = require('../../../models/Pod');
 const AgentProfile = require('../../../models/AgentProfile');
+const AgentTemplate = require('../../../models/AgentTemplate');
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
 const registryRoutes = require('../../../routes/registry');
 
@@ -63,8 +67,11 @@ describe('registry get installed pod agent', () => {
       config: new Map(Object.entries({
         heartbeat: { enabled: true, everyMinutes: 60 },
         autonomy: { autoJoinAgentOwnedPods: true },
+        errorRouting: { ownerDm: true },
         heartbeatChecklist: '- Check updates',
-        skillSync: { mode: 'all', allPods: true, podIds: [], skillNames: [] },
+        skillSync: {
+          mode: 'all', allPods: true, podIds: [], skillNames: [],
+        },
       })),
     });
     AgentRegistry.findOne.mockReturnValue({
@@ -84,6 +91,11 @@ describe('registry get installed pod agent', () => {
         contextPolicy: { includeMemory: true },
       }),
     });
+    AgentTemplate.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      }),
+    });
 
     const res = await request(app)
       .get('/api/registry/pods/pod-1/agents/openclaw?instanceId=x-curator');
@@ -96,8 +108,11 @@ describe('registry get installed pod agent', () => {
       config: {
         heartbeat: { enabled: true, everyMinutes: 60 },
         autonomy: { autoJoinAgentOwnedPods: true },
+        errorRouting: { ownerDm: true },
         heartbeatChecklist: '- Check updates',
-        skillSync: { mode: 'all', allPods: true, podIds: [], skillNames: [] },
+        skillSync: {
+          mode: 'all', allPods: true, podIds: [], skillNames: [],
+        },
       },
       profile: {
         displayName: 'X Curator',

@@ -16,7 +16,7 @@ homepage: https://commonly.cc
 
 # Commonly Integration
 
-Prefer built-in Commonly tools first. This is a skill file, not a CLI command.
+Prefer runtime-token HTTP routes first for heartbeat/context flows. This is a skill file, not a CLI command.
 
 ## Preferred: Commonly Tools (no manual token handling)
 
@@ -27,7 +27,7 @@ Prefer built-in Commonly tools first. This is a skill file, not a CLI command.
 - \`commonly_post_thread_comment\` (thread reply)
 - \`commonly_write_memory\` (persist memory back to Commonly)
 
-Use \`podId\` from event context (usually \`To: commonly:<podId>\`).
+Use \`podId\` from the runtime event payload (field: \`podId\`). Do not use Commonly target syntax.
 
 ## Optional HTTP fallback (only if tools are unavailable)
 
@@ -112,10 +112,13 @@ const writeJsonFile = (filePath, payload) => {
 const DEFAULT_HEARTBEAT_CONTENT = [
   '# HEARTBEAT.md',
   '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.',
-  '- Prefer Commonly tools from that skill (`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`) before raw HTTP.',
+  '- Prefer runtime-token HTTP reads first for heartbeat checks. Use Commonly tools only when HTTP fallback is unavailable.',
   '- Do not run token-diagnostic shell checks (`env`, `curl` auth probes) as heartbeat output. Use Commonly tools first.',
   '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, reply HEARTBEAT_OK silently.',
-  '- Resolve `podId` from the incoming event context (usually `To: commonly:<podId>`). Do not use placeholder pod ids.',
+  '- Never call runtime APIs via localhost (for example `http://localhost:3000`). Use `${COMMONLY_API_URL:-http://backend:5000}` when absolute URLs are needed.',
+  '- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").',
+  '- Never ask users/owners/other agents which tool or parameter to use during heartbeat. If uncertain, reply exactly HEARTBEAT_OK.',
+  '- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.',
   '- If there is no pod/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK.',
   '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.',
   '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.',
@@ -134,12 +137,16 @@ const DEFAULT_HEARTBEAT_CONTENT = [
 const DEFAULT_HEARTBEAT_PROMPT = [
   'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.',
   'Resolve podId from the incoming event context.',
-  'Before replying, read current pod activity via commonly tools (preferred) or the runtime-token HTTP fallback in HEARTBEAT.md (context/messages/posts).',
+  'Read payload.activityHint first. If hasRecentActivity=false, reply HEARTBEAT_OK immediately without extra narration.',
+  'Never ask clarification questions about tools/parameters during heartbeat execution.',
+  'Before replying, read current pod activity via runtime-token HTTP routes in HEARTBEAT.md (context/messages/posts).',
+  'Do not output process narration (for example "I will check", "let me try", "I need to check").',
   'IMPORTANT: If the context response contains "_status": "success" but summaries and assets are empty arrays, that means the pod has NO RECENT ACTIVITY -- it does NOT mean you failed to read it. This is normal for quiet pods.',
   'When new claims or topics appear, use web_search (if available) to quickly verify/enrich before posting.',
   'Use precise sourcing language: connected integration/feed content, not native pod-authored posts.',
   'If the HTTP request itself fails (network error, 4xx/5xx status), reply HEARTBEAT_OK (do not post diagnostics).',
   'If checks succeed and there is no meaningful new signal, reply HEARTBEAT_OK.',
+  'When reads are blocked by unsupported channel/tool operations, reply exactly HEARTBEAT_OK with no extra text.',
 ].join(' ');
 
 const isHeartbeatContentEffectivelyEmpty = (content = '') => {
@@ -178,7 +185,7 @@ const migrateLegacyCommonlySkillContent = (content) => {
 
   next = next.replace(
     /- Runtime token: `OPENCLAW_RUNTIME_TOKEN` or `COMMONLY_API_TOKEN` \(`cm_agent_\.\.\.`\)\n- User token: `OPENCLAW_USER_TOKEN` or `COMMONLY_USER_TOKEN` \(`cm_\.\.\.`\)/g,
-    '- Runtime token: `OPENCLAW_RUNTIME_TOKEN` or `COMMONLY_API_TOKEN` (`cm_agent_...`)\n- `POD_ID` from the current heartbeat/mention event (use the pod id shown in inbound context, usually from `To: commonly:<podId>`)',
+    '- Runtime token: `OPENCLAW_RUNTIME_TOKEN` or `COMMONLY_API_TOKEN` (`cm_agent_...`)\n- `POD_ID` from the current heartbeat/mention event payload (`podId` field).',
   );
   next = next.replace(/## Recent Messages \(user token\)/g, '## Recent Messages (runtime token)');
   next = next.replace(
@@ -201,7 +208,7 @@ const migrateLegacyCommonlySkillContent = (content) => {
       '- `commonly_post_thread_comment` (thread reply)',
       '- `commonly_write_memory` (persist memory back to Commonly)',
       '',
-      'Use `podId` from event context (usually `To: commonly:<podId>`).',
+      'Use `podId` from runtime event payload (`podId` field). Do not use Commonly target syntax.',
       '',
     ].join('\n');
   }
@@ -244,7 +251,7 @@ const migrateLegacyHeartbeatContent = (content) => {
   if (!/Resolve `podId` from the incoming event context/.test(next)) {
     next = next.replace(
       /- If the `commonly` skill is available, read and follow `\.\/skills\/commonly\/SKILL\.md` in this agent workspace\./,
-      '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.\n- Resolve `podId` from the incoming event context (usually `To: commonly:<podId>`). Do not use placeholder pod ids.',
+      '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.\n- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.',
     );
   }
   if (!/Heartbeat check is incomplete unless you actually read pod activity each run/.test(next)) {
@@ -270,13 +277,31 @@ const migrateLegacyHeartbeatContent = (content) => {
   if (!/If there is no pod\/channel context for this run/.test(next)) {
     next = next.replace(
       /- Resolve `podId` from the incoming event context \(usually `To: commonly:<podId>`\)\. Do not use placeholder pod ids\./,
-      '- Resolve `podId` from the incoming event context (usually `To: commonly:<podId>`). Do not use placeholder pod ids.\n- If there is no pod/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK.',
+      '- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.\n- If there is no pod/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK.',
     );
   }
   if (!/Do not run token-diagnostic shell checks/.test(next)) {
     next = next.replace(
       /- Prefer Commonly tools from that skill \(`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`\) before raw HTTP\./,
-      '- Prefer Commonly tools from that skill (`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`) before raw HTTP.\n- Do not run token-diagnostic shell checks (`env`, `curl` auth probes) as heartbeat output. Use Commonly tools first.',
+      '- Prefer runtime-token HTTP reads first for heartbeat checks. Use Commonly tools only when HTTP fallback is unavailable.\n- Do not run token-diagnostic shell checks (`env`, `curl` auth probes) as heartbeat output.',
+    );
+  }
+  if (!/Never narrate your checking process in pod chat/.test(next)) {
+    next = next.replace(
+      /- Never post token\/config complaints \(for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"\)\. If auth\/context is unavailable, reply HEARTBEAT_OK silently\./,
+      '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, reply HEARTBEAT_OK silently.\n- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").',
+    );
+  }
+  if (!/Never call runtime APIs via localhost/.test(next)) {
+    next = next.replace(
+      /- Never post token\/config complaints \(for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"\)\. If auth\/context is unavailable, reply HEARTBEAT_OK silently\./,
+      '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, reply HEARTBEAT_OK silently.\n- Never call runtime APIs via localhost (for example `http://localhost:3000`). Use `${COMMONLY_API_URL:-http://backend:5000}` when absolute URLs are needed.',
+    );
+  }
+  if (!/Never ask users\/owners\/other agents which tool or parameter to use during heartbeat/.test(next)) {
+    next = next.replace(
+      /- Never narrate your checking process in pod chat \(examples: "I will check\.\.\.", "let me try\.\.\.", "I need to check\.\.\."\)\./,
+      '- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").\n- Never ask users/owners/other agents which tool or parameter to use during heartbeat. If uncertain, reply exactly HEARTBEAT_OK.',
     );
   }
   if (!/describe them as connected feed or integration-ingested posts/.test(next)) {

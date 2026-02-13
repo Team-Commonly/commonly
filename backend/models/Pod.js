@@ -13,7 +13,7 @@ const PodSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['chat', 'study', 'games', 'agent-ensemble'],
+      enum: ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin'],
       default: 'chat',
     },
     // Agent Ensemble Pod (AEP) configuration - only used when type === 'agent-ensemble'

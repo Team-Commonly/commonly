@@ -8,6 +8,7 @@ const OAuthState = require('../../models/OAuthState');
 const Pod = require('../../models/Pod');
 const registry = require('../../integrations');
 const SocialPolicyService = require('../../services/socialPolicyService');
+const GlobalModelConfigService = require('../../services/globalModelConfigService');
 const externalFeedService = require('../../services/externalFeedService');
 
 let PGPod = null;
@@ -432,11 +433,30 @@ router.get('/', auth, adminAuth, async (req, res) => {
       x: xIntegration || null,
       instagram: instagramIntegration || null,
       socialPolicy: await SocialPolicyService.getPolicy(),
+      modelPolicy: await GlobalModelConfigService.getConfig({ includeSecrets: false }),
       globalPodId: globalPod._id,
     });
   } catch (error) {
     console.error('Error fetching global integrations:', error);
     res.status(500).json({ error: 'Failed to fetch global integrations' });
+  }
+});
+
+/**
+ * Save global model policy (backend llm + openclaw defaults)
+ * POST /api/admin/integrations/global/model-policy
+ */
+router.post('/model-policy', auth, adminAuth, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const modelPolicy = await GlobalModelConfigService.setConfig(req.body || {}, userId);
+    return res.json({ success: true, modelPolicy });
+  } catch (error) {
+    console.error('Error saving global model policy:', error);
+    return res.status(500).json({ error: 'Failed to save model policy' });
   }
 });
 

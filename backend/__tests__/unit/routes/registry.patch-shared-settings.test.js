@@ -92,6 +92,7 @@ describe('registry shared agent settings', () => {
         config: {
           heartbeat: { enabled: true, everyMinutes: 60 },
           autonomy: { autoJoinAgentOwnedPods: true },
+          errorRouting: { ownerDm: true },
           heartbeatChecklist: '- Check latest activity',
         },
       });
@@ -103,6 +104,8 @@ describe('registry shared agent settings', () => {
     expect(secondaryInstall.scopes).toEqual(['integration:read', 'integration:messages:read']);
     expect(primaryInstall.config.get('heartbeat')).toEqual({ enabled: true, everyMinutes: 60 });
     expect(secondaryInstall.config.get('heartbeat')).toEqual({ enabled: true, everyMinutes: 60 });
+    expect(primaryInstall.config.get('errorRouting')).toEqual({ ownerDm: true });
+    expect(secondaryInstall.config.get('errorRouting')).toEqual({ ownerDm: true });
     expect(primaryInstall.config.get('heartbeatChecklist')).toBe('- Check latest activity');
     expect(secondaryInstall.config.get('heartbeatChecklist')).toBe('- Check latest activity');
     expect(res.body.updatedPods).toBe(2);

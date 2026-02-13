@@ -3554,6 +3554,24 @@ const ChatRoom = () => {
                                             );
                                         }
 
+                                        if (messageType === 'system') {
+                                            return (
+                                                <ListItem
+                                                    key={msg._id || msg.id || Date.now() + Math.random()}
+                                                    className="message-item system"
+                                                >
+                                                    <div className="message-content-wrapper system-message-wrapper">
+                                                        <div className="message-bubble system-message">
+                                                            <p className="message-text system-text">{messageContent}</p>
+                                                        </div>
+                                                        <div className="message-time system-time">
+                                                            {formatDistanceToNow(new Date(messageTime), { addSuffix: true })}
+                                                        </div>
+                                                    </div>
+                                                </ListItem>
+                                            );
+                                        }
+
                                         return (
                                             <ListItem
                                                 key={msg._id || msg.id || Date.now() + Math.random()}

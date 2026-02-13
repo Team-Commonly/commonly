@@ -64,16 +64,16 @@ describe('AgentMentionService', () => {
 
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(res.enqueued).toEqual([]);
-    expect(res.skipped).toEqual(['commonly-summarizer']);
+    expect(res.skipped).toEqual(['commonly-bot']);
   });
 
   test('enqueueMentions enqueues when installed', async () => {
     AgentInstallation.find.mockReturnValue({
       lean: jest.fn().mockResolvedValue([
         {
-          agentName: 'commonly-summarizer',
+          agentName: 'commonly-bot',
           instanceId: 'default',
-          displayName: 'Commonly Summarizer',
+          displayName: 'Commonly Bot',
         },
       ]),
     });
@@ -101,11 +101,47 @@ describe('AgentMentionService', () => {
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
     expect(AgentEventService.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        agentName: 'commonly-summarizer',
+        agentName: 'commonly-bot',
+        instanceId: 'default',
         podId: 'pod-1',
         type: 'summary.request',
       }),
     );
-    expect(res.enqueued).toEqual(['commonly-summarizer']);
+    expect(res.enqueued).toEqual(['commonly-bot']);
+  });
+
+  test('enqueueMentions normalizes numeric message ids to strings for agent events', async () => {
+    AgentInstallation.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        {
+          agentName: 'openclaw',
+          instanceId: 'liz',
+          displayName: 'Liz',
+        },
+      ]),
+    });
+    AgentProfile.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([]),
+    });
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'Hi @liz', id: 1800 },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentName: 'openclaw',
+        instanceId: 'liz',
+        type: 'chat.mention',
+        payload: expect.objectContaining({
+          messageId: '1800',
+        }),
+      }),
+    );
+    expect(res.enqueued).toEqual(['openclaw']);
   });
 });

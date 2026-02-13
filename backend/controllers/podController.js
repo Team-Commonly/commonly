@@ -16,7 +16,7 @@ if (process.env.PG_HOST) {
   PGMessage = require('../models/pg/Message');
 }
 
-const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble'];
+const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin'];
 const DEFAULT_POD_AGENT = process.env.DEFAULT_POD_AGENT_NAME || 'commonly-bot';
 const DEFAULT_POD_AGENT_SCOPES = [
   'context:read',
@@ -152,12 +152,20 @@ const installDefaultAgentForPod = async ({ pod, userId }) => {
 exports.getAllPods = async (req, res) => {
   try {
     const { type } = req.query;
-    const query = type ? { type } : {};
+    // Exclude agent-admin DM pods from default listing; only show when
+    // explicitly requested and the caller is a member.
+    const query = type ? { type } : { type: { $ne: 'agent-admin' } };
 
-    const pods = await Pod.find(query)
+    let pods = await Pod.find(query)
       .populate('createdBy', 'username profilePicture')
       .populate('members', 'username profilePicture')
       .sort({ updatedAt: -1 });
+
+    // When fetching agent-admin pods, restrict to pods the requester belongs to
+    if (type === 'agent-admin' && req.userId) {
+      const uid = String(req.userId);
+      pods = pods.filter((p) => p.members.some((m) => String(m._id || m) === uid));
+    }
 
     return res.json(pods);
   } catch (err) {
@@ -179,6 +187,12 @@ exports.getPodsByType = async (req, res) => {
       .populate('createdBy', 'username profilePicture')
       .populate('members', 'username profilePicture')
       .sort({ updatedAt: -1 });
+
+    if (type === 'agent-admin' && req.userId) {
+      const uid = String(req.userId);
+      const memberPods = pods.filter((p) => p.members.some((m) => String(m._id || m) === uid));
+      return res.json(memberPods);
+    }
 
     return res.json(pods);
   } catch (err) {

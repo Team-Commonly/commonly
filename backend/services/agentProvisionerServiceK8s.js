@@ -7,6 +7,7 @@ const k8s = require('@kubernetes/client-node');
 const stream = require('stream');
 const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('./podAssetService');
+const GlobalModelConfigService = require('./globalModelConfigService');
 
 // Initialize K8s client
 const kc = new k8s.KubeConfig();
@@ -71,13 +72,16 @@ const resolveGatewayConfigMapName = (gateway) => {
 const DEFAULT_HEARTBEAT_CONTENT = [
   '# HEARTBEAT.md',
   '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.',
-  '- Prefer Commonly tools from that skill (`commonly_read_context`, `commonly_search`, `commonly_get_summaries`, `commonly_post_message`) before raw HTTP.',
+  '- Prefer runtime-token HTTP reads first for heartbeat checks. Use Commonly tools only when HTTP fallback is unavailable.',
   '- Do not run token-diagnostic shell checks (`env`, `curl` auth probes) as heartbeat output. Use Commonly tools first.',
   '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, reply HEARTBEAT_OK silently.',
-  '- Resolve `podId` from the incoming event context (usually `To: commonly:<podId>`). Do not use placeholder pod ids.',
+  '- Never call runtime APIs via localhost (for example `http://localhost:3000`). Use `${COMMONLY_API_URL:-http://backend.commonly.svc.cluster.local:5000}` when absolute URLs are needed.',
+  '- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").',
+  '- Never ask users/owners/other agents which tool or parameter to use during heartbeat. If uncertain, reply exactly HEARTBEAT_OK.',
+  '- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.',
   '- If there is no pod/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK.',
   '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.',
-  '- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=20` and `/api/posts?podId=:podId&limit=10`.',
+  '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.',
   '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.',
   '- If you detect a materially new topic, verify or enrich it with `web_search` when available before posting. Keep sources concise and relevant.',
   '- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
@@ -93,11 +97,15 @@ const DEFAULT_HEARTBEAT_CONTENT = [
 const DEFAULT_HEARTBEAT_PROMPT = [
   'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.',
   'Resolve podId from the incoming event context.',
-  'Before replying, read current pod activity via commonly tools (preferred) or the runtime-token HTTP fallback in HEARTBEAT.md (context/messages/posts).',
+  'Read payload.activityHint first. If hasRecentActivity=false, reply HEARTBEAT_OK immediately without extra narration.',
+  'Never ask clarification questions about tools/parameters during heartbeat execution.',
+  'Before replying, read current pod activity via runtime-token HTTP routes in HEARTBEAT.md (context/messages/posts).',
+  'Do not output process narration (for example "I will check", "let me try", "I need to check").',
   'When new claims or topics appear, use web_search (if available) to quickly verify/enrich before posting.',
   'Use precise sourcing language: connected integration/feed content, not native pod-authored posts.',
   'If pod context or reads are unavailable for this run, reply HEARTBEAT_OK (do not post diagnostics).',
   'If checks succeed and there is no meaningful new signal, reply HEARTBEAT_OK.',
+  'When reads are blocked by unsupported channel/tool operations, reply exactly HEARTBEAT_OK with no extra text.',
 ].join(' ');
 
 const normalizeHeartbeatContent = (content) => {
@@ -252,22 +260,37 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
     `fi`,
     `if [ -f "${heartbeatPath}" ]; then`,
     `  sed -i "s|/home/node/.clawdbot/skills/commonly/SKILL.md|./skills/commonly/SKILL.md|g" "${heartbeatPath}" || true`,
-    `  sed -i "s|via user-token routes: \`/api/messages/:podId?limit=20\` and \`/api/posts?podId=:podId&limit=10\`.|using runtime-token routes: \`/api/agents/runtime/pods/:podId/messages?limit=20\` and \`/api/posts?podId=:podId&limit=10\`.|g" "${heartbeatPath}" || true`,
+    `  sed -i "s|^- Fetch last .*recent posts.*$|- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: \\\`/api/agents/runtime/pods/:podId/messages?limit=8\\\` and \\\`/api/posts?podId=:podId\\&limit=4\\\`.|g" "${heartbeatPath}" || true`,
+    `  sed -i "s|Fetch last 20 chat messages and 10 recent posts|Fetch last 8 chat messages and 4 recent posts|g" "${heartbeatPath}" || true`,
+    `  sed -i "s|/api/agents/runtime/pods/:podId/messages?limit=20|/api/agents/runtime/pods/:podId/messages?limit=8|g" "${heartbeatPath}" || true`,
+    `  sed -i "s|/api/posts?podId=:podId\\&limit=10|/api/posts?podId=:podId\\&limit=4|g" "${heartbeatPath}" || true`,
+    `  sed -i "s|via user-token routes: \`/api/messages/:podId?limit=20\` and \`/api/posts?podId=:podId\\&limit=10\`.|using runtime-token routes: \`/api/agents/runtime/pods/:podId/messages?limit=8\` and \`/api/posts?podId=:podId\\&limit=4\`.|g" "${heartbeatPath}" || true`,
     `  sed -i "s|If \\\`commonly\\\` skill is missing, use HTTP APIs directly (do not run \\\`commonly --help\\\`): context via \\\`/api/agents/runtime/pods/:podId/context\\\` with runtime token, or \\\`/api/pods/:podId/context\\\` with user token.|If \\\`commonly\\\` skill is missing, use HTTP APIs directly (do not run \\\`commonly --help\\\`) with runtime token: context via \\\`/api/agents/runtime/pods/:podId/context\\\`.|g" "${heartbeatPath}" || true`,
     `  if ! grep -q "Resolve \\\`podId\\\` from the incoming event context" "${heartbeatPath}"; then`,
-    `    sed -i "/read and follow \\\`\\.\\/skills\\/commonly\\/SKILL.md\\\` in this agent workspace\\./a - Resolve \\\`podId\\\` from the incoming event context (usually \\\`To: commonly:<podId>\\\`). Do not use placeholder pod ids." "${heartbeatPath}" || true`,
+    `    sed -i "/read and follow \\\`\\.\\/skills\\/commonly\\/SKILL.md\\\` in this agent workspace\\./a - Resolve \\\`podId\\\` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax." "${heartbeatPath}" || true`,
     '  fi',
     `  if ! grep -q "If there is no pod/channel context for this run" "${heartbeatPath}"; then`,
     `    sed -i "/Resolve \\\`podId\\\` from the incoming event context/a - If there is no pod\\/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK." "${heartbeatPath}" || true`,
     '  fi',
     `  if ! grep -q "Do not run token-diagnostic shell checks" "${heartbeatPath}"; then`,
-    `    sed -i "/Prefer Commonly tools from that skill/a - Do not run token-diagnostic shell checks (\\\`env\\\`, \\\`curl\\\` auth probes) as heartbeat output. Use Commonly tools first." "${heartbeatPath}" || true`,
+    `    sed -i "/Prefer runtime-token HTTP reads first for heartbeat checks/a - Do not run token-diagnostic shell checks (\\\`env\\\`, \\\`curl\\\` auth probes) as heartbeat output." "${heartbeatPath}" || true`,
     '  fi',
+    `  if ! grep -q "Never narrate your checking process in pod chat" "${heartbeatPath}"; then`,
+    `    sed -i "/Never post token\\/config complaints/a - Never narrate your checking process in pod chat (examples: \\"I will check...\\", \\"let me try...\\", \\"I need to check...\\")." "${heartbeatPath}" || true`,
+    '  fi',
+    `  if ! grep -q "Never call runtime APIs via localhost" "${heartbeatPath}"; then`,
+    `    sed -i "/Never post token\\/config complaints/a - Never call runtime APIs via localhost (for example \\\`http:\\/\\/localhost:3000\\\`). Use \\\`\\$\\{COMMONLY_API_URL:-http:\\/\\/backend.commonly.svc.cluster.local:5000\\}\\\` when absolute URLs are needed." "${heartbeatPath}" || true`,
+    '  fi',
+    `  if ! grep -q "Never ask users/owners/other agents which tool or parameter to use during heartbeat" "${heartbeatPath}"; then`,
+    `    sed -i "/Never narrate your checking process in pod chat/a - Never ask users\\/owners\\/other agents which tool or parameter to use during heartbeat. If uncertain, reply exactly HEARTBEAT_OK." "${heartbeatPath}" || true`,
+    '  fi',
+    `  sed -i "s|http://localhost:3000|\\\${COMMONLY_API_URL:-http://backend.commonly.svc.cluster.local:5000}|g" "${heartbeatPath}" || true`,
     `  if ! grep -q "Do not repeat or paraphrase your own previous heartbeat message" "${heartbeatPath}"; then`,
     `    sed -i "/Do not post housekeeping-only status updates/a - Do not repeat or paraphrase your own previous heartbeat message. If your update would be substantially the same, reply HEARTBEAT_OK instead." "${heartbeatPath}" || true`,
     '  fi',
+    `  sed -i "s|Fetch last 20 chat messages and 10 recent posts using runtime-token routes: \\\`/api/agents/runtime/pods/:podId/messages?limit=20\\\` and \\\`/api/posts?podId=:podId\\&limit=10\\\`.|Fetch last 8 chat messages and 4 recent posts using runtime-token routes: \\\`/api/agents/runtime/pods/:podId/messages?limit=8\\\` and \\\`/api/posts?podId=:podId\\&limit=4\\\`.|g" "${heartbeatPath}" || true`,
     `  if ! grep -q "Heartbeat check is incomplete unless you actually read pod activity each run" "${heartbeatPath}"; then`,
-    `    sed -i "/Fetch last 20 chat messages and 10 recent posts/a - Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first." "${heartbeatPath}" || true`,
+    `    sed -i "/Fetch last 8 chat messages and 4 recent posts/a - Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first." "${heartbeatPath}" || true`,
     '  fi',
     `  if ! grep -q "verify or enrich it with \\\`web_search\\\` when available" "${heartbeatPath}"; then`,
     `    sed -i "/Heartbeat check is incomplete unless you actually read pod activity each run/a - If you detect a materially new topic, verify or enrich it with \\\`web_search\\\` when available before posting. Keep sources concise and relevant." "${heartbeatPath}" || true`,
@@ -285,7 +308,7 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
     `    sed -i "/ACCOUNT_ID=\\"\\\${ACCOUNT_ID:-\\\${OPENCLAW_AGENT_ID:-\\\$(basename \\\\\\"\\\$PWD\\\\\\")\\\}}\\"/a export ACCOUNT_ID" "${commonlySkillPath}" || true`,
     '  fi',
     `  if grep -q "User token: \\\`OPENCLAW_USER_TOKEN\\\` or \\\`COMMONLY_USER_TOKEN\\\`" "${commonlySkillPath}"; then`,
-    `    sed -i "s|- Runtime token: \\\`OPENCLAW_RUNTIME_TOKEN\\\` or \\\`COMMONLY_API_TOKEN\\\` (\\\`cm_agent_...\\\`)|- Runtime token: \\\`OPENCLAW_RUNTIME_TOKEN\\\` or \\\`COMMONLY_API_TOKEN\\\` (\\\`cm_agent_...\\\`)\\n- \\\`POD_ID\\\` from the current heartbeat\\/mention event (use the pod id shown in inbound context, usually from \\\`To: commonly:<podId>\\\`)|g" "${commonlySkillPath}" || true`,
+    `    sed -i "s|- Runtime token: \\\`OPENCLAW_RUNTIME_TOKEN\\\` or \\\`COMMONLY_API_TOKEN\\\` (\\\`cm_agent_...\\\`)|- Runtime token: \\\`OPENCLAW_RUNTIME_TOKEN\\\` or \\\`COMMONLY_API_TOKEN\\\` (\\\`cm_agent_...\\\`)\\n- \\\`POD_ID\\\` from the current heartbeat\\/mention event payload (\\\`podId\\\` field).|g" "${commonlySkillPath}" || true`,
     `    sed -i "/User token: \\\`OPENCLAW_USER_TOKEN\\\` or \\\`COMMONLY_USER_TOKEN\\\` (\\\`cm_...\\\`)/d" "${commonlySkillPath}" || true`,
     '  fi',
     `  if ! grep -q "commonly_read_context" "${commonlySkillPath}"; then`,
@@ -300,7 +323,7 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
     '- `commonly_post_thread_comment` (thread reply)',
     '- `commonly_write_memory` (persist memory back to Commonly)',
     '',
-    'Use `podId` from event context (usually `To: commonly:<podId>`).',
+    'Use `podId` from runtime event payload (`podId` field). Do not use Commonly target syntax.',
     '',
     'EOF',
     '  fi',
@@ -919,19 +942,39 @@ const applyOpenClawContextDefaults = (config) => {
   }
 };
 
-const applyOpenClawModelDefaults = (config) => {
+const applyOpenClawModelDefaults = async (config) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
   config.agents.defaults.model = config.agents.defaults.model || {};
-  if (!config.agents.defaults.model.primary) {
-    config.agents.defaults.model.primary = 'google/gemini-2.5-flash';
+  let modelConfig = null;
+  try {
+    modelConfig = await GlobalModelConfigService.getConfig({ includeSecrets: false });
+  } catch (error) {
+    modelConfig = null;
+  }
+  const defaultPrimary = String(
+    modelConfig?.openclaw?.model
+    || modelConfig?.openclaw?.defaultModel
+    || '',
+  ).trim() || 'google/gemini-2.5-flash';
+  const hasPolicyPrimary = Boolean(String(
+    modelConfig?.openclaw?.model
+    || modelConfig?.openclaw?.defaultModel
+    || '',
+  ).trim());
+  const defaultFallbacks = Array.isArray(modelConfig?.openclaw?.fallbackModels)
+    ? modelConfig.openclaw.fallbackModels
+    : ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'];
+  if (hasPolicyPrimary) {
+    config.agents.defaults.model.primary = defaultPrimary;
+  } else if (!config.agents.defaults.model.primary) {
+    config.agents.defaults.model.primary = defaultPrimary;
   }
   const existingFallbacks = Array.isArray(config.agents.defaults.model.fallbacks)
     ? config.agents.defaults.model.fallbacks
     : [];
   const mergedFallbacks = [
-    'google/gemini-2.5-flash-lite',
-    'google/gemini-2.0-flash',
+    ...defaultFallbacks,
     ...existingFallbacks,
   ].filter(Boolean);
   config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
@@ -1006,7 +1049,7 @@ const provisionOpenClawAccount = async ({
   applyOpenClawWebToolDefaults(config);
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
-  applyOpenClawModelDefaults(config);
+  await applyOpenClawModelDefaults(config);
 
   applySkillEnvEntriesToConfig(config, skillEnv);
 

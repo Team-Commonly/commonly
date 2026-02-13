@@ -593,6 +593,11 @@ body {
   justify-content: flex-start;
 }
 
+.message-item.system {
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
 .message-avatar {
   position: relative;
   margin: 0 14px;
@@ -675,6 +680,11 @@ body {
   align-items: flex-start;
 }
 
+.system-message-wrapper {
+  align-items: center !important;
+  max-width: 100%;
+}
+
 .message-bubble {
   padding: 10px 14px;
   border-radius: 12px;
@@ -695,6 +705,13 @@ body {
   border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   color: #e2e8f0;
+}
+
+.message-bubble.system-message {
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px dashed rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  padding: 6px 12px;
 }
 
 .message-bubble.sent:after,
@@ -723,6 +740,18 @@ body {
 
 .message-received-time {
   text-align: left;
+}
+
+.message-text.system-text {
+  font-size: 12px !important;
+  font-style: italic;
+  color: #cbd5e1;
+}
+
+.message-time.system-time {
+  text-align: center;
+  margin-top: 3px;
+  font-size: 10px !important;
 }
 
 .message-image-container {

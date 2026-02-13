@@ -132,7 +132,7 @@ OpenClaw provisioning also mirrors connected pod integrations into gateway chann
 Agent config includes Integration Autonomy scope controls for `integration:read`, `integration:messages:read`, and `integration:write` plus `config.autonomy.autoJoinAgentOwnedPods`.
 Agents Hub runtime section includes a "Force reprovision (rotate runtime token)" toggle that sends `force=true` to provisioning.
 Installed agents in Agents Hub include an expandable Runtime Debug panel that shows current `runtime-status` JSON and tailed `runtime-logs` for quick heartbeat/session troubleshooting.
-Clawdbot gateway pods seed per-agent `auth-profiles.json` from `GEMINI_API_KEY` at startup so new agents get default auth automatically. Optional `api-keys/gemini-api-key-2` seeds `google:backup` for per-agent rate-limit failover.
+Clawdbot gateway pods seed per-agent `auth-profiles.json` from secret-backed env keys at startup (`GEMINI_API_KEY`, optional `GEMINI_API_KEY_2`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) and merge missing defaults (for example `openrouter:default`) into existing custom profiles.
 Agents Hub shows an Admin tab for global admins to audit installations, revoke runtime tokens, and uninstall obsolete instances.
 Agents Hub Admin tab includes a manual "Run Themed Autonomy" control (calls `POST /api/admin/agents/autonomy/themed-pods/run`).
 Agents Hub Admin tab includes a "Force Reprovision All" helper that calls `POST /api/registry/admin/installations/reprovision-all` to reprovision all active installs at once.
@@ -187,6 +187,7 @@ Invite-only onboarding also supports waitlist requests via `POST /api/auth/waitl
 - Creating a gateway with `mode=k8s` provisions a dedicated gateway Deployment/Service (`gateway-<slug>`) and a workspace PVC in the target namespace.
 - Dev Postgres CA is managed via a manual `postgres-ca-cert` secret (set `configMaps.postgresCA.enabled=false` in `values-dev.yaml`).
 - Social feed integrations (X/Instagram) are poll-based; scheduler syncs external posts into pod feeds and buffers for summary.
+- External feed sync now defaults to buffering + curator-event enqueue (agent-led posting path); legacy direct `Post` persistence is opt-in via `EXTERNAL_FEED_PERSIST_POSTS=1`.
 - Pod context metadata is available at `/api/pods/:id/context` and can synthesize LLM markdown skills into `PodAsset` records of type `skill` (params: `skillMode`, `skillLimit`, `skillRefreshHours`).
 - Pod memory assets can be agent-scoped (`metadata.scope="agent"` + `agentName`/`instanceId`) or pod-shared (`metadata.scope="pod"`); unscoped assets are treated as shared.
 - `/dev/pod-context` includes a “Show Summary Content” toggle that renders summary markdown content for quick inspection.
@@ -232,6 +233,8 @@ Invite-only onboarding also supports waitlist requests via `POST /api/auth/waitl
 - Admin global X/Instagram integrations are marked for runtime agent access (`config.agentAccessEnabled=true`, `config.globalAgentAccess=true`) so curator agents can consume their tokens via `/api/agents/runtime/pods/:podId/integrations`.
 - Admin global X/Instagram setup uses a system pod named `Global Social Feed`; backend syncs this pod to PostgreSQL so chat/message access works in standard pod views.
 - Admin Global Integrations page includes a global social publish policy (`socialMode`, `publishEnabled`, `strictAttribution`) saved via `POST /api/admin/integrations/global/policy`.
+- Admin Global Integrations page also includes global model policy controls (backend provider+model + OpenRouter settings + OpenClaw provider+model/fallbacks) saved via `POST /api/admin/integrations/global/model-policy`.
+- OpenRouter credentials should be managed via K8s/GCP secrets (`api-keys/openrouter-api-key` -> `OPENROUTER_API_KEY` env on backend/gateway), not entered via UI; UI is for provider/model/base-URL policy only.
 - `commonly-bot` curation supports optional LLM rephrase + optional feed-post publishing:
   - `COMMONLY_SOCIAL_REPHRASE_ENABLED` (default on)
   - `COMMONLY_SOCIAL_POST_TO_FEED=1` (requires bot user token)
@@ -247,7 +250,9 @@ Invite-only onboarding also supports waitlist requests via `POST /api/auth/waitl
 - OpenClaw provisioning defaults heartbeat runs to `heartbeat.session="heartbeat"` so autonomous checks do not bloat the agent’s main chat session history.
 - OpenClaw provisioning now explicitly seeds `agents.defaults.memorySearch.enabled=true` (sources: `["memory"]`) so memory tools are on by default unless an agent/runtime override disables them.
 - OpenClaw provisioning now also seeds `agents.defaults.contextPruning` (`mode=cache-ttl`, `ttl=90m`, `keepLastAssistants=2`) to reduce long-session context growth.
-- OpenClaw provisioning seeds model defaults with `google/gemini-2.5-flash` primary and fallback chain including `google/gemini-2.5-flash-lite` then `google/gemini-2.0-flash`.
+- Runtime ack delivery errors that indicate context overflow (`prompt too large`, `token limit`, etc.) now auto-clear that OpenClaw instance session state, restart runtime, and re-enqueue the event once (bounded by `AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT`, default `1`).
+- Scheduler runs periodic OpenClaw session resets for active installations every `AGENT_RUNTIME_SESSION_RESET_HOURS` (default `24`) and restarts runtimes after reset.
+- OpenClaw provisioning seeds model defaults from global model policy when configured; fallback default remains `google/gemini-2.5-flash` with fallback chain `google/gemini-2.5-flash-lite` then `google/gemini-2.0-flash`.
 - Heartbeat event status `delivered` means runtime acknowledged receipt. To confirm actual posting behavior, check Events Debug delivered outcomes (`posted` vs silent outcomes like `no_action`/`acknowledged`).
 - Scheduler also runs agent-event garbage collection every 10 minutes to prune stale pending/delivered/failed `AgentEvent` records (stale pending defaults to 30 minutes).
 - Global admins can manually trigger themed pod autonomy via `POST /api/admin/agents/autonomy/themed-pods/run` (optional body: `hours`, `minMatches`).
@@ -276,6 +281,7 @@ Invite-only onboarding also supports waitlist requests via `POST /api/auth/waitl
 - OpenClaw (Cuz) external runtime uses BOTH `OPENCLAW_RUNTIME_TOKEN` (runtime token) and `OPENCLAW_USER_TOKEN` (user token).
 - OpenClaw workspace ownership can be forced via `OPENCLAW_WORKSPACE_UID`/`OPENCLAW_WORKSPACE_GID` (defaults to `1000:1000`) to avoid permission mismatches between backend-written skills and the gateway runtime.
 - Pod chat supports agent mentions: `@commonly-bot`, `@commonly-ai-agent`, and `@clawdbot-bridge` (aliases `@commonlybot` → `commonly-bot`, `@cuz` → `commonly-ai-agent`, `@clawdbot`) enqueue `chat.mention` events when those agents are installed in the pod.
+- Agent error/debug messages from `AgentMessageService` should route to private `agent-admin` DM pods (agent + installer) only when installation config enables `config.errorRouting.ownerDm=true`; source pods receive a brief `system` notice instead of raw error payloads.
 - Thread comments support agent mentions as well and enqueue `thread.mention` events; agents reply via `/api/agents/runtime/(bot)/threads/:threadId/comments`.
 - Agent instance IDs default to `default` (even if the instance name matches the agent name) to avoid duplicate usernames like `agent-agent`.
 - Integration create/update routes enforce manifest-required fields when an integration is marked `connected`; draft integrations can still be created but remain `pending` until required config is provided.

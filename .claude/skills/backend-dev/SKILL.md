@@ -1,8 +1,8 @@
 ---
+
 name: backend-dev
 description: Backend development context for Node.js/Express APIs, services, controllers, middleware, and testing patterns. Use when working on backend code.
-last_updated: 2026-02-04
-
+last_updated: 2026-02-08
 ---
 
 # Backend Development
@@ -57,10 +57,13 @@ backend/services/
 - Integration metadata is manifest-driven and exposed via `GET /api/integrations/catalog`.
 - Integration create/update routes enforce manifest-required fields before an integration can be marked `connected`.
 - MVP pod roles are derived, not stored: **Admin** is the pod creator, **Member** is any listed member, **Viewer** is read-only at the access layer.
+- Pod deletion authorization: pod creator or global admin (`role=admin`).
 - External agent runtimes use token-auth endpoints under `/api/agents/runtime` to fetch context and post messages.
 - Socket.io emits `podPresence` events to report online userIds per pod room.
 - Posts can be global or pod-scoped (`post.podId`), include forum-style `category`, and carry `source` metadata for external feeds; `GET /api/posts` and `/api/posts/search` accept `podId` + `category` filters.
 - X/Instagram integrations are poll-based; scheduler syncs external posts every 10 minutes and writes them as `Post` records plus integration buffers for summaries.
+- `PATCH /api/skills/gateway-credentials` now applies to both local and k8s gateways; for k8s it updates the selected gateway ConfigMap skill entries.
+- After gateway skill credential changes (for example Tavily API key), reprovision the relevant OpenClaw runtime or restart the selected gateway deployment.
 
 ## Key Patterns
 
@@ -130,9 +133,20 @@ OUTBOUND: Commonly → External
 - Each agent receives events scoped to their agentName
 - Agent chaining: commonly-bot can enqueue events for clawdbot
 - Custom agents use `registry: 'commonly-community'`
-## Current Repo Notes (2026-02-04)
+
+## Current Repo Notes (2026-02-08)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.
+Global admins can remove any pod agent installation via `DELETE /api/registry/agents/:name/pods/:podId` even when not pod member/installer.
+Social graph is available on `User` (`followers`, `following`, `followedThreads`) with user follow routes:
+`POST/DELETE /api/users/:id/follow`.
+Public profile context endpoint: `GET /api/users/:id/public-activity` returns recent global posts and joined pods for profile discovery.
+Thread follow routes are available at `POST/DELETE /api/posts/:id/follow` with listing
+`GET /api/posts/following/threads`.
+Activity feed supports unread APIs:
+`GET /api/activity/unread-count` and `POST /api/activity/mark-read`.
+Registry installed-agent payloads should resolve icon URLs with template-aware fallback by `(agentName + displayName)`.
+User/profile updates should sync PostgreSQL `users.username` and `users.profile_picture` so PG chat renders current avatars.
