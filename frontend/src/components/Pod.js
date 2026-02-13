@@ -67,6 +67,7 @@ const Pod = () => {
     const [previewPod, setPreviewPod] = useState(null);
     const [unreadByPod, setUnreadByPod] = useState({});
     const [podAgentAvatarMap, setPodAgentAvatarMap] = useState({});
+    const [debugDmCount, setDebugDmCount] = useState(0);
     const navigate = useNavigate();
     const { podType } = useParams();
     
@@ -141,6 +142,28 @@ const Pod = () => {
         
         fetchPods();
     }, [tabValue, podType, getPodType]);
+
+    useEffect(() => {
+        const fetchDebugDmCount = async () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setDebugDmCount(0);
+                return;
+            }
+            try {
+                const response = await axios.get('/api/pods?type=agent-admin', {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                });
+                setDebugDmCount(Array.isArray(response.data) ? response.data.length : 0);
+            } catch (err) {
+                setDebugDmCount(0);
+            }
+        };
+
+        fetchDebugDmCount();
+    }, [currentUser?._id]);
 
     // Check if user is a member of a pod
     const isMember = useCallback((pod) => {
@@ -462,6 +485,14 @@ const Pod = () => {
                         <Chip label={`${pods.length} total`} size="small" className="pod-stat-chip" />
                         <Chip label={`${joinedCount} joined`} size="small" className="pod-stat-chip" />
                         <Chip label={`${filteredPods.length} shown`} size="small" className="pod-stat-chip" />
+                        <Chip
+                            label={`Debug DMs ${debugDmCount > 0 ? `(${debugDmCount})` : ''}`}
+                            size="small"
+                            className="pod-stat-chip"
+                            color={getPodType() === 'agent-admin' ? 'primary' : 'default'}
+                            onClick={() => navigate('/pods/agent-admin')}
+                            clickable
+                        />
                     </Box>
                     <Box sx={{ flexGrow: 1 }} />
                     <Box className="pod-search" sx={{ width: { xs: '100%', sm: 260 } }}>
@@ -485,6 +516,7 @@ const Pod = () => {
                             startIcon={<AddIcon />}
                             onClick={() => setOpenDialog(true)}
                             className="create-room-button"
+                            disabled={getPodType() === 'agent-admin'}
                         >
                             Create Room
                         </Button>
@@ -557,19 +589,23 @@ const Pod = () => {
                                     No pods found in this category
                                 </Typography>
                                 <Typography variant="body1" color="textSecondary" paragraph>
-                                    {getPodType() === 'agent-ensemble'
+                                    {getPodType() === 'agent-admin'
+                                        ? 'Debug DMs are created automatically when an agent error is routed.'
+                                        : getPodType() === 'agent-ensemble'
                                         ? 'Create a new agent ensemble pod to orchestrate multi-agent conversations.'
                                         : 'Create a new pod to start chatting with others!'}
                                 </Typography>
-                                <Button
-                                    variant="contained"
-                                    color="primary"
-                                    size="large"
-                                    startIcon={<AddIcon />}
-                                    onClick={() => setOpenDialog(true)}
-                                >
-                                    Create New Pod
-                                </Button>
+                                {getPodType() !== 'agent-admin' && (
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        size="large"
+                                        startIcon={<AddIcon />}
+                                        onClick={() => setOpenDialog(true)}
+                                    >
+                                        Create New Pod
+                                    </Button>
+                                )}
                             </Box>
                         </Grid>
                     ) : (

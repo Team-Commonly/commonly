@@ -23,6 +23,10 @@ jest.mock('../../../services/socialPolicyService', () => ({
   getPolicy: jest.fn(),
   setPolicy: jest.fn(),
 }));
+jest.mock('../../../services/globalModelConfigService', () => ({
+  getConfig: jest.fn(),
+  setConfig: jest.fn(),
+}));
 jest.mock('../../../services/externalFeedService', () => ({
   syncExternalFeeds: jest.fn(),
 }));
@@ -36,6 +40,7 @@ const OAuthState = require('../../../models/OAuthState');
 const Pod = require('../../../models/Pod');
 const registry = require('../../../integrations');
 const externalFeedService = require('../../../services/externalFeedService');
+const GlobalModelConfigService = require('../../../services/globalModelConfigService');
 const router = require('../../../routes/admin/globalIntegrations');
 
 function getRouteHandler(path, method) {
@@ -56,6 +61,18 @@ describe('admin global integrations route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Pod.findOne.mockResolvedValue({ _id: 'pod-global', name: 'Global Social Feed' });
+    GlobalModelConfigService.getConfig.mockResolvedValue({
+      llmService: {
+        provider: 'auto',
+        model: 'gemini-2.5-flash',
+        openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: '', apiKey: '' },
+      },
+      openclaw: {
+        provider: 'google',
+        model: 'google/gemini-2.5-flash',
+        fallbackModels: ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
+      },
+    });
   });
 
   it('uses follows.read in default OAuth scopes for X OAuth start', async () => {
@@ -218,7 +235,12 @@ describe('admin global integrations route', () => {
     const req = { userId: 'admin-1' };
     const res = createRes();
     const syncResults = [
-      { integrationId: 'x-1', success: true, messageCount: 3, createdPosts: 3 },
+      {
+        integrationId: 'x-1',
+        success: true,
+        messageCount: 3,
+        createdPosts: 3,
+      },
     ];
     externalFeedService.syncExternalFeeds.mockResolvedValueOnce(syncResults);
 
@@ -229,6 +251,59 @@ describe('admin global integrations route', () => {
       success: true,
       count: 1,
       results: syncResults,
+    });
+  });
+
+  it('saves global model policy', async () => {
+    const handler = getRouteHandler('/model-policy', 'post');
+    const req = {
+      userId: 'admin-1',
+      body: {
+        llmService: {
+          provider: 'openrouter',
+          model: 'openai/gpt-4.1-mini',
+          openrouter: {
+            apiKey: 'sk-or-test',
+          },
+        },
+        openclaw: {
+          provider: 'openrouter',
+          model: 'openai/gpt-4.1-mini',
+          fallbackModels: ['google/gemini-2.5-flash-lite'],
+        },
+      },
+    };
+    const res = createRes();
+    GlobalModelConfigService.setConfig.mockResolvedValueOnce({
+      llmService: {
+        provider: 'openrouter',
+        model: 'openai/gpt-4.1-mini',
+        openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: '', apiKey: '' },
+      },
+      openclaw: {
+        provider: 'openrouter',
+        model: 'openai/gpt-4.1-mini',
+        fallbackModels: ['google/gemini-2.5-flash-lite'],
+      },
+    });
+
+    await handler(req, res);
+
+    expect(GlobalModelConfigService.setConfig).toHaveBeenCalledWith(req.body, 'admin-1');
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      modelPolicy: {
+        llmService: {
+          provider: 'openrouter',
+          model: 'openai/gpt-4.1-mini',
+          openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: '', apiKey: '' },
+        },
+        openclaw: {
+          provider: 'openrouter',
+          model: 'openai/gpt-4.1-mini',
+          fallbackModels: ['google/gemini-2.5-flash-lite'],
+        },
+      },
     });
   });
 });

@@ -58,6 +58,12 @@ spec:
               name: api-keys
               key: gemini-api-key
               optional: true
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openrouter-api-key
+              optional: true
         - name: COMMONLY_SOCIAL_REPHRASE_ENABLED
           valueFrom:
             secretKeyRef:

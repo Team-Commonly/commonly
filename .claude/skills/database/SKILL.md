@@ -1,8 +1,8 @@
 ---
+
 name: database
 description: Database management context for MongoDB, PostgreSQL, dual-database architecture, and data synchronization. Use when working on database schemas, queries, or migrations.
 last_updated: 2026-02-04
-
 ---
 
 # Database Management
@@ -75,6 +75,7 @@ async function ensureUserInPostgres(mongoUserId) {
   }
 }
 ```
+
 ## Current Repo Notes (2026-02-04)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.

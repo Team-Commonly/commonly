@@ -147,6 +147,12 @@ spec:
             secretKeyRef:
               name: api-keys
               key: gemini-api-key
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openrouter-api-key
+              optional: true
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:

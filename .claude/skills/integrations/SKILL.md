@@ -1,8 +1,8 @@
 ---
+
 name: integrations
 description: Third-party integration context for Discord, Slack, GroupMe, Telegram, X, Instagram, OAuth2, webhooks, and external services. Use when working on chat app integrations or webhook handling.
 last_updated: 2026-02-04
-
 ---
 
 # Third-party Integrations
@@ -187,6 +187,7 @@ See [CLAWDBOT.md](../../../docs/agents/CLAWDBOT.md) for full configuration.
 ## Operational Notes
 
 - **Discord interactions endpoint** must be publicly reachable at `/api/discord/interactions`. If using Cloudflare Tunnel, the hostname must be added to the tunnel ingress (DNS-only changes will return Cloudflare 404s and Discord verification will fail).
+
 ## Current Repo Notes (2026-02-04)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.

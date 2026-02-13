@@ -182,3 +182,34 @@ test('renders agent display name for instance usernames in messages', async () =
   expect(container.textContent).toContain('Liz Assistant');
   expect(container.textContent).toContain('hello from agent');
 });
+
+test('renders system messages as lightweight notices', async () => {
+  axios.get
+    .mockResolvedValueOnce({
+      data: {
+        _id: '1',
+        name: 'Room',
+        members: [{ _id: 'u' }],
+        createdBy: { _id: 'u', username: 'me', profilePicture: null }
+      }
+    })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({
+      data: [{
+        _id: 'm-system',
+        content: '[Encountered an issue - details sent to debug DM]',
+        messageType: 'system',
+        userId: { _id: 'bot', username: 'commonly-bot', profilePicture: null },
+        createdAt: '2026-01-01T00:00:00.000Z'
+      }]
+    })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: { entries: [] } });
+
+  await TestUtils.act(async () => { root.render(<ChatRoom />); });
+  await TestUtils.act(async () => Promise.resolve());
+
+  expect(container.textContent).toContain('[Encountered an issue - details sent to debug DM]');
+  expect(container.querySelector('.system-message')).toBeTruthy();
+});
