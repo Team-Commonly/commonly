@@ -1,9 +1,14 @@
 const messageController = require('../../../controllers/messageController');
 const Pod = require('../../../models/Pod');
 const PGMessage = require('../../../models/pg/Message');
+const AgentMentionService = require('../../../services/agentMentionService');
 
 jest.mock('../../../models/Pod');
 jest.mock('../../../models/pg/Message');
+jest.mock('../../../services/agentMentionService', () => ({
+  enqueueMentions: jest.fn().mockResolvedValue({ enqueued: [], skipped: [] }),
+  enqueueDmEvent: jest.fn().mockResolvedValue({ enqueued: [], skipped: [] }),
+}));
 
 describe('messageController', () => {
   afterEach(() => {
@@ -55,7 +60,7 @@ describe('messageController', () => {
 
     it('creates message successfully for valid member', async () => {
       const mockMessage = { id: 1, content: 'test' };
-      Pod.findById.mockResolvedValue({ members: ['u1'] });
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
       PGMessage.create.mockResolvedValue(mockMessage);
       const req = {
         params: { podId: 'p1' },
@@ -65,6 +70,30 @@ describe('messageController', () => {
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.createMessage(req, res);
       expect(res.json).toHaveBeenCalledWith(mockMessage);
+      expect(AgentMentionService.enqueueMentions).toHaveBeenCalled();
+      expect(AgentMentionService.enqueueDmEvent).not.toHaveBeenCalled();
+    });
+
+    it('enqueues dm.message events for agent-admin pods', async () => {
+      const mockMessage = { id: 2, content: 'hello dm' };
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'agent-admin' });
+      PGMessage.create.mockResolvedValue(mockMessage);
+      const req = {
+        params: { podId: 'p2' },
+        body: { content: 'hello dm' },
+        user: { id: 'u1', username: 'alice' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(AgentMentionService.enqueueDmEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          podId: 'p2',
+          message: mockMessage,
+          userId: 'u1',
+        }),
+      );
     });
   });
 

@@ -118,6 +118,7 @@ frontend/
 - **Agents Hub events debug**: Admin tab includes an `Events Debug` sub-tab (replaces old `/admin/agents/events` page) with queue counters, heartbeat status, pending tables, and failed-event error details by agent.
 - **Agents Hub installed debug**: each installed agent card has an expandable runtime debug panel with current runtime-status JSON and tailed runtime logs for faster heartbeat/session troubleshooting.
 - **Agents Hub autonomy control**: global admins can manually run themed pod autonomy from Agents Hub Admin tab (calls `/api/admin/agents/autonomy/themed-pods/run`).
+- **Agent DMs UX**: sidebar includes `Agent DMs` (`/pods/agent-admin`), installed agent cards expose a `Message` action, and DM chat headers should show agent-focused title/subtitle with back navigation to the DM list.
 - **Agents Hub gateway**: global admins can select (or create) a runtime gateway during agent install; provisioning uses that gateway by default.
 - **Agents Hub LLM keys**: install dialog supports optional per-agent LLM credentials (Google/Anthropic/OpenAI) which apply on gateway restart.
 - **Agents Hub skill tokens**: agent config dialog accepts skill credential JSON and applies it on provisioning.
