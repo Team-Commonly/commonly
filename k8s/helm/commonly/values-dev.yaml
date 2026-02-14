@@ -29,6 +29,7 @@ backend:
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: "dev"
     frontendUrl: "https://app-dev.commonly.me"
+    backendUrl: "https://api-dev.commonly.me"
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""

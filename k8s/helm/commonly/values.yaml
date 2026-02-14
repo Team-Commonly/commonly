@@ -51,6 +51,7 @@ backend:
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: ""
     frontendUrl: "https://app.commonly.me"
+    backendUrl: "https://api.commonly.me"
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
