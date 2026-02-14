@@ -223,114 +223,143 @@ async function syncExternalFeeds() {
 
   if (!integrations.length) return [];
 
-  const results = await Promise.allSettled(
+  const results = await Promise.all(
     integrations.map(async (integration) => {
-      const provider = registry.get(integration.type, integration);
-      const sinceId = integration.config?.lastExternalId;
-      const sinceTimestamp = integration.config?.lastExternalTimestamp;
-      const syncResult = await provider.syncRecent({ sinceId, sinceTimestamp });
+      try {
+        const provider = registry.get(integration.type, integration);
+        const sinceId = integration.config?.lastExternalId;
+        const sinceTimestamp = integration.config?.lastExternalTimestamp;
+        const syncResult = await provider.syncRecent({ sinceId, sinceTimestamp });
 
-      const messages = await filterAlreadySeenMessages({
-        integration,
-        messages: syncResult.messages || [],
-      });
-      if (!messages.length) {
+        const updateSet = {
+          lastSync: new Date(),
+          status: 'connected',
+          errorMessage: null,
+          isActive: true,
+        };
+        if (syncResult.meta?.userId) {
+          updateSet['config.userId'] = syncResult.meta.userId;
+        }
+        if (syncResult.meta?.username) {
+          updateSet['config.username'] = syncResult.meta.username;
+        }
+        if (syncResult.meta?.lastExternalIdsByUser && typeof syncResult.meta.lastExternalIdsByUser === 'object') {
+          const watchedUserIds = Array.isArray(syncResult.meta?.watchedUserIds)
+            ? syncResult.meta.watchedUserIds.map((id) => String(id || '').trim()).filter(Boolean)
+            : [];
+          const pruned = Object.entries(syncResult.meta.lastExternalIdsByUser).reduce((acc, [key, value]) => {
+            const userId = String(key || '').trim();
+            const sinceValue = String(value || '').trim();
+            if (!userId || !sinceValue) return acc;
+            if (watchedUserIds.length && !watchedUserIds.includes(userId)) return acc;
+            acc[userId] = sinceValue;
+            return acc;
+          }, {});
+          updateSet['config.lastExternalIdsByUser'] = pruned;
+        }
+        if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedAccessToken) {
+          updateSet['config.accessToken'] = syncResult.meta.refreshedAccessToken;
+        }
+        if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedRefreshToken) {
+          updateSet['config.refreshToken'] = syncResult.meta.refreshedRefreshToken;
+        }
+        if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedTokenType) {
+          updateSet['config.tokenType'] = syncResult.meta.refreshedTokenType;
+        }
+        if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedScope) {
+          updateSet['config.oauthScopes'] = String(syncResult.meta.refreshedScope)
+            .split(/\s+/)
+            .map((entry) => entry.trim())
+            .filter(Boolean);
+        }
+        if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedExpiresIn) {
+          const seconds = Number(syncResult.meta.refreshedExpiresIn);
+          if (Number.isFinite(seconds) && seconds > 0) {
+            updateSet['config.tokenExpiresAt'] = new Date(Date.now() + (seconds * 1000));
+          }
+        }
+
+        const messages = await filterAlreadySeenMessages({
+          integration,
+          messages: syncResult.messages || [],
+        });
+        if (!messages.length) {
+          await Integration.findByIdAndUpdate(integration._id, { $set: updateSet });
+          return {
+            integrationId: integration._id,
+            success: true,
+            messageCount: 0,
+            content: syncResult.content || 'No new posts',
+          };
+        }
+
+        const newestTimestamp = getNewestTimestamp(messages);
+        const newestMessage = messages.reduce((acc, message) => {
+          if (!message.timestamp) return acc;
+          const ts = new Date(message.timestamp);
+          if (Number.isNaN(ts.valueOf())) return acc;
+          if (!acc || ts > new Date(acc.timestamp)) return message;
+          return acc;
+        }, null);
+
+        const created = shouldPersistExternalFeedPosts()
+          ? (await persistExternalPosts({ integration, messages })).created
+          : 0;
+        await appendIntegrationBuffer(
+          integration._id,
+          messages,
+          integration.config?.maxBufferSize || 1000,
+        );
+        const curatorDispatch = await enqueueCuratorEvents({
+          integration,
+          messageCount: messages.length,
+        });
+
+        if (newestMessage?.externalId) {
+          updateSet['config.lastExternalId'] = String(newestMessage.externalId);
+        }
+        if (newestTimestamp) {
+          updateSet['config.lastExternalTimestamp'] = newestTimestamp;
+        }
+
+        await Integration.findByIdAndUpdate(integration._id, { $set: updateSet });
+
         return {
           integrationId: integration._id,
           success: true,
+          messageCount: messages.length,
+          createdPosts: created,
+          curatorEventsEnqueued: curatorDispatch.enqueued,
+          curatorTargets: curatorDispatch.targets || [],
+          content: syncResult.content || 'Synced external feed',
+        };
+      } catch (error) {
+        const detail = error?.response?.data?.error_description
+          || error?.response?.data?.error
+          || error?.response?.data?.detail
+          || error?.response?.data?.title
+          || error?.message
+          || 'External feed sync failed';
+        try {
+          await Integration.findByIdAndUpdate(integration._id, {
+            $set: {
+              status: 'error',
+              errorMessage: detail,
+              lastSync: new Date(),
+            },
+          });
+        } catch (updateError) {
+          console.warn('Failed to persist integration sync error state:', updateError.message);
+        }
+        return {
+          integrationId: integration._id,
+          success: false,
           messageCount: 0,
-          content: 'No new posts',
+          content: detail,
         };
       }
-
-      const newestTimestamp = getNewestTimestamp(messages);
-      const newestMessage = messages.reduce((acc, message) => {
-        if (!message.timestamp) return acc;
-        const ts = new Date(message.timestamp);
-        if (Number.isNaN(ts.valueOf())) return acc;
-        if (!acc || ts > new Date(acc.timestamp)) return message;
-        return acc;
-      }, null);
-
-      const created = shouldPersistExternalFeedPosts()
-        ? (await persistExternalPosts({ integration, messages })).created
-        : 0;
-      await appendIntegrationBuffer(
-        integration._id,
-        messages,
-        integration.config?.maxBufferSize || 1000,
-      );
-      const curatorDispatch = await enqueueCuratorEvents({
-        integration,
-        messageCount: messages.length,
-      });
-
-      const updateSet = {
-        lastSync: new Date(),
-      };
-      if (newestMessage?.externalId) {
-        updateSet['config.lastExternalId'] = String(newestMessage.externalId);
-      }
-      if (newestTimestamp) {
-        updateSet['config.lastExternalTimestamp'] = newestTimestamp;
-      }
-      if (syncResult.meta?.userId) {
-        updateSet['config.userId'] = syncResult.meta.userId;
-      }
-      if (syncResult.meta?.username) {
-        updateSet['config.username'] = syncResult.meta.username;
-      }
-      if (syncResult.meta?.lastExternalIdsByUser && typeof syncResult.meta.lastExternalIdsByUser === 'object') {
-        const watchedUserIds = Array.isArray(syncResult.meta?.watchedUserIds)
-          ? syncResult.meta.watchedUserIds.map((id) => String(id || '').trim()).filter(Boolean)
-          : [];
-        const pruned = Object.entries(syncResult.meta.lastExternalIdsByUser).reduce((acc, [key, value]) => {
-          const userId = String(key || '').trim();
-          const sinceValue = String(value || '').trim();
-          if (!userId || !sinceValue) return acc;
-          if (watchedUserIds.length && !watchedUserIds.includes(userId)) return acc;
-          acc[userId] = sinceValue;
-          return acc;
-        }, {});
-        updateSet['config.lastExternalIdsByUser'] = pruned;
-      }
-      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedAccessToken) {
-        updateSet['config.accessToken'] = syncResult.meta.refreshedAccessToken;
-      }
-      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedRefreshToken) {
-        updateSet['config.refreshToken'] = syncResult.meta.refreshedRefreshToken;
-      }
-      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedTokenType) {
-        updateSet['config.tokenType'] = syncResult.meta.refreshedTokenType;
-      }
-      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedScope) {
-        updateSet['config.oauthScopes'] = String(syncResult.meta.refreshedScope)
-          .split(/\s+/)
-          .map((entry) => entry.trim())
-          .filter(Boolean);
-      }
-      if (syncResult.meta?.tokenRefreshed && syncResult.meta?.refreshedExpiresIn) {
-        const seconds = Number(syncResult.meta.refreshedExpiresIn);
-        if (Number.isFinite(seconds) && seconds > 0) {
-          updateSet['config.tokenExpiresAt'] = new Date(Date.now() + (seconds * 1000));
-        }
-      }
-
-      await Integration.findByIdAndUpdate(integration._id, { $set: updateSet });
-
-      return {
-        integrationId: integration._id,
-        success: true,
-        messageCount: messages.length,
-        createdPosts: created,
-        curatorEventsEnqueued: curatorDispatch.enqueued,
-        curatorTargets: curatorDispatch.targets || [],
-        content: syncResult.content || 'Synced external feed',
-      };
     }),
-  ).then((settled) => settled.map((result) => (
-    result.status === 'fulfilled' ? result.value : result.reason
-  )));
+  );
 
   return results;
 }
