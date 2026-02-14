@@ -229,6 +229,8 @@ Invite-only onboarding also supports waitlist requests via `POST /api/auth/waitl
 - Admins can inspect OAuth following accounts with `GET /api/admin/integrations/global/x/following?limit=...` and apply whitelist IDs from the Global Integrations page.
 - Global X feed sync deduplicates by external tweet id across sync runs (buffer + persisted posts), and default X `maxResults` is `5` per account (configurable).
 - Global X integration now supports admin PKCE OAuth connect via `POST /api/admin/integrations/global/x/oauth/start` and callback `GET /api/admin/integrations/global/x/oauth/callback`; this stores user-context access+refresh tokens and enables provider auto-refresh on `401`.
+- External feed sync now also performs proactive X OAuth refresh before token expiry (`X_OAUTH_REFRESH_BUFFER_SECONDS`, default 1800s) and persists refreshed tokens/scopes/expiry even when no new posts are returned.
+- If external feed sync hits OAuth refresh/API auth failures, integration status is marked `error` with `errorMessage`; scheduler skips non-`connected` feeds until reconnect/recovery.
 - X OAuth refresh requires backend env `X_OAUTH_CLIENT_ID` and `X_OAUTH_CLIENT_SECRET` (or aliases `X_CLIENT_ID` / `X_CLIENT_SECRET`) to be present in `api-keys`; if missing, follow-list ingestion with `followFromAuthenticatedUser=true` degrades and refresh on `401` fails.
 - X OAuth callback URL uses `BACKEND_URL` unless `X_OAUTH_REDIRECT_URI` is set; set `BACKEND_URL` correctly per environment (for example dev: `https://api-dev.commonly.me`) or X OAuth can fail with provider-side app access errors.
 - Global X/Instagram “Test connection” handlers must resolve providers with `registry.get(type, integration)` (not `registry.createProvider`).
