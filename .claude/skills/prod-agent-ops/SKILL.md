@@ -1,7 +1,7 @@
 ---
 name: prod-agent-ops
 description: Production E2E testing, monitoring, and debugging for agent runtime reliability (queue health, context permissions, model/auth fallbacks, gateway/runtime recovery).
-last_updated: 2026-02-12
+last_updated: 2026-02-14
 ---
 
 # Prod Agent Ops
@@ -175,6 +175,34 @@ Fix:
 - Ensure mention payload `messageId` is always a string.
 - Ensure runtime event listing normalizes non-string `payload.messageId` values before returning to runtime clients.
 - Reprovision/restart affected OpenClaw instances after deploying backend fix so new runtime-token/config state is loaded.
+
+### G) X curation stalls after OAuth reconnect or token expiry drift
+
+Symptoms:
+- `externalFeedService` sync shows repeated auth failures (commonly `invalid_request` / `401`)
+- X curator stops posting despite active sync scheduler
+- Global X integration flips between healthy/unhealthy without stable posting
+
+Fix:
+- Ensure backend env has OAuth client credentials:
+  - `X_OAUTH_CLIENT_ID` and `X_OAUTH_CLIENT_SECRET` (or aliases `X_CLIENT_ID` / `X_CLIENT_SECRET`)
+- Verify integration status:
+  - `status: connected` + `errorMessage: null` means scheduler will continue syncing.
+  - `status: error` means scheduler will skip until reconnect/recovery.
+- Reconnect OAuth only when required (missing/invalid refresh token or revoked app grant).
+- Confirm proactive refresh window if needed:
+  - `X_OAUTH_REFRESH_BUFFER_SECONDS` (default `1800`) refreshes before expiry to avoid reconnect churn.
+- Trigger a manual sync to validate recovery:
+
+```bash
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  "$BASE_URL/api/admin/integrations/global/sync"
+```
+
+Verification:
+- Sync result includes X success and either fetched messages or no-new-posts without auth failure.
+- Integration record updates `lastSync` even when no posts are returned.
+- If token refresh occurred, refreshed token metadata is persisted (`accessToken`/`refreshToken`/scope/expires fields).
 
 ### D) Context/permission failures
 

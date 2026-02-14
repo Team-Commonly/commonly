@@ -7,6 +7,7 @@ const socketConfig = require('../../../config/socket');
 const DMService = require('../../../services/dmService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const User = require('../../../models/User');
+const Pod = require('../../../models/Pod');
 
 jest.mock('../../../models/Message');
 jest.mock('../../../models/Summary', () => ({
@@ -41,6 +42,12 @@ jest.mock('../../../models/User', () => ({
     lean: jest.fn().mockResolvedValue([]),
   })),
 }));
+jest.mock('../../../models/Pod', () => ({
+  findById: jest.fn(() => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue({ type: 'chat' }),
+  })),
+}));
 
 describe('AgentMessageService summary persistence', () => {
   beforeEach(() => {
@@ -69,6 +76,10 @@ describe('AgentMessageService summary persistence', () => {
     User.find.mockReturnValue({
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([]),
+    });
+    Pod.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ type: 'chat' }),
     });
     process.env.AGENT_HEARTBEAT_HOUSEKEEPING_FALLBACK = '1';
   });
@@ -204,6 +215,34 @@ describe('AgentMessageService summary persistence', () => {
     expect(Message).toHaveBeenCalledTimes(1);
     expect(Message.mock.calls[0][0]).toEqual(expect.objectContaining({
       podId: 'pod-1',
+      messageType: 'text',
+    }));
+  });
+
+  it('does not re-route error content when already in an agent-admin DM pod', async () => {
+    DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
+    Pod.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ type: 'agent-admin' }),
+    });
+
+    const result = await AgentMessageService.postMessage({
+      agentName: 'commonly-bot',
+      instanceId: 'default',
+      podId: 'dm-pod-1',
+      content: 'ERROR: failed to fetch external feed (429 status response)',
+      metadata: { sourceEventId: 'evt-err-dm-1' },
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: true } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({ success: true }));
+    expect(result.routedToDM).toBeUndefined();
+    expect(DMService.resolveAgentOwner).not.toHaveBeenCalled();
+    expect(DMService.getOrCreateAgentDM).not.toHaveBeenCalled();
+    expect(Message).toHaveBeenCalledTimes(1);
+    expect(Message.mock.calls[0][0]).toEqual(expect.objectContaining({
+      podId: 'dm-pod-1',
       messageType: 'text',
     }));
   });

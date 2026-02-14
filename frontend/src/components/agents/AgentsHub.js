@@ -65,7 +65,7 @@ import AvatarGenerator from './AvatarGenerator';
 import AgentEventsDebugPage from '../admin/AgentEventsDebugPage';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const categories = [
   { id: 'all', label: 'All Agents' },
@@ -133,6 +133,7 @@ const ADMIN_VIEW_EVENTS = 'events';
 const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const theme = useTheme();
   const location = useLocation();
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const isGlobalAdmin = currentUser?.role === 'admin';
   const [searchQuery, setSearchQuery] = useState('');
@@ -1353,6 +1354,25 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     } catch (err) {
       console.error('Error removing agent:', err);
       alert(err.response?.data?.error || 'Failed to remove agent');
+    }
+  };
+
+  const handleMessageAgent = async (agent) => {
+    try {
+      const response = await axios.post('/api/agents/runtime/dm', {
+        agentName: agent?.name || agent?.agentName,
+        instanceId: agent?.instanceId || 'default',
+        podId: selectedPodId || undefined,
+      }, {
+        headers: getAuthHeaders(),
+      });
+      const dmPodId = response.data?.dmPod?._id;
+      if (!dmPodId) {
+        throw new Error('DM pod not returned');
+      }
+      navigate(`/pods/agent-admin/${dmPodId}`);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to open agent DM');
     }
   };
 
@@ -2679,6 +2699,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                       onInstall={openInstallDialog}
                       onConfigure={openConfigDialog}
                       onRemove={handleRemove}
+                      onMessage={handleMessageAgent}
                       canRemove={canRemoveAgent(agent)}
                       onEdit={agent.templateId && agent.createdBy === currentUserId ? openEditTemplateDialog : null}
                       canEdit={agent.templateId && agent.createdBy === currentUserId}
@@ -2911,6 +2932,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                       installed
                       onConfigure={(target) => (canManage ? openConfigDialog(target) : openAgentOverviewDialog(target))}
                       onRemove={handleRemove}
+                      onMessage={handleMessageAgent}
                       canConfigure={true}
                       installedActionLabel={canManage ? 'Configure' : 'View'}
                       canRemove={canManage}

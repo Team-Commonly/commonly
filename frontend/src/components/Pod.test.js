@@ -433,3 +433,29 @@ test('joined pod card shows unread visual state when new messages exist', async 
     expect(container.querySelector('.pod-card-unread')).toBeInTheDocument();
   });
 });
+
+test('agent-admin listing uses DM-specific header and empty state', async () => {
+  useParams.mockReturnValue({ podType: 'agent-admin' });
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/pods/agent-admin') {
+      return Promise.resolve({ data: [] });
+    }
+    if (url === '/api/pods?type=agent-admin') {
+      return Promise.resolve({ data: [] });
+    }
+    return Promise.resolve({ data: [] });
+  });
+
+  renderPodWithRouter(<Pod />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Agent DMs')).toBeInTheDocument();
+  });
+
+  expect(screen.getByText('Direct message conversations with your installed agents.')).toBeInTheDocument();
+  expect(screen.getByText('No agent DMs yet')).toBeInTheDocument();
+  expect(screen.getByText('Open a DM from the Agents page.')).toBeInTheDocument();
+  expect(screen.queryAllByRole('tab')).toHaveLength(0);
+  expect(screen.queryByText('Joined')).not.toBeInTheDocument();
+  expect(screen.queryByText('Discover')).not.toBeInTheDocument();
+});

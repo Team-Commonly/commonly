@@ -3359,26 +3359,37 @@ const ChatRoom = () => {
                     {!isMobile && (
                         <AppBar position="fixed" color="default" elevation={1} className="chat-room-header">
                             <Toolbar>
-                                <IconButton edge="start" color="inherit" onClick={() => navigate(`/pods/${podType}`)} sx={{ mr: 2 }}>
+                                <IconButton
+                                    edge="start"
+                                    color="inherit"
+                                    onClick={() => navigate(room?.type === 'agent-admin' ? '/pods/agent-admin' : `/pods/${podType}`)}
+                                    sx={{ mr: 2 }}
+                                >
                                     <ArrowBackIcon />
                                 </IconButton>
                                 <Box sx={{ flexGrow: 1 }}>
                                     <Typography variant="h6" component="div">
-                                        {room?.name || 'Chat Room'}
+                                        {room?.type === 'agent-admin'
+                                            ? String(room?.name || 'Direct Message').replace(/^DM:\s*/i, '')
+                                            : (room?.name || 'Chat Room')}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary">
-                                        {room?.members?.length || 0} members
+                                        {room?.type === 'agent-admin'
+                                            ? 'Direct Message'
+                                            : `${room?.members?.length || 0} members`}
                                     </Typography>
                                 </Box>
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    startIcon={<ArticleIcon />}
-                                    onClick={() => navigate(`/feed?podId=${roomId}`)}
-                                    sx={{ textTransform: 'none' }}
-                                >
-                                    Posts
-                                </Button>
+                                {room?.type !== 'agent-admin' && (
+                                    <Button
+                                        size="small"
+                                        variant="outlined"
+                                        startIcon={<ArticleIcon />}
+                                        onClick={() => navigate(`/feed?podId=${roomId}`)}
+                                        sx={{ textTransform: 'none' }}
+                                    >
+                                        Posts
+                                    </Button>
+                                )}
                             </Toolbar>
                         </AppBar>
                     )}

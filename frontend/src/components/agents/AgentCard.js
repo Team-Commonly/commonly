@@ -58,6 +58,7 @@ const AgentCard = ({
   onInstall,
   onConfigure,
   onRemove,
+  onMessage,
   onEdit,
   onViewProfile,
   canRemove = false,
@@ -283,6 +284,15 @@ const AgentCard = ({
               <Button
                 variant="outlined"
                 size="small"
+                startIcon={<ChatIcon />}
+                onClick={() => onMessage?.(agent)}
+                sx={{ minHeight: 36 }}
+              >
+                Message
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
                 disabled={!canConfigure}
                 onClick={() => onConfigure?.(agent)}
                 sx={{ flex: 1, minHeight: 36 }}
@@ -445,6 +455,14 @@ const AgentCard = ({
       >
         {installed ? (
           <>
+            <Button
+              size="small"
+              startIcon={<ChatIcon />}
+              onClick={() => onMessage?.(agent)}
+              sx={{ minHeight: 34 }}
+            >
+              Message
+            </Button>
             <Button
               size="small"
               disabled={!canConfigure}
