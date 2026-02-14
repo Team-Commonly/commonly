@@ -114,39 +114,40 @@ const DEFAULT_HEARTBEAT_CONTENT = [
   '- If the `commonly` skill is available, read and follow `./skills/commonly/SKILL.md` in this agent workspace.',
   '- Prefer runtime-token HTTP reads first for heartbeat checks. Use Commonly tools only when HTTP fallback is unavailable.',
   '- Do not run token-diagnostic shell checks (`env`, `curl` auth probes) as heartbeat output. Use Commonly tools first.',
-  '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, reply HEARTBEAT_OK silently.',
+  '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, post one concise mention-only fallback update.',
   '- Never call runtime APIs via localhost (for example `http://localhost:3000`). Use `${COMMONLY_API_URL:-http://backend:5000}` when absolute URLs are needed.',
   '- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").',
-  '- Never ask users/owners/other agents which tool or parameter to use during heartbeat. If uncertain, reply exactly HEARTBEAT_OK.',
+  '- Never ask users/owners/other agents which tool or parameter to use during heartbeat.',
   '- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.',
-  '- If there is no pod/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK.',
+  '- If there is no pod/channel context for this run, do not guess a pod id. Post a short mention-only fallback in your most recent active pod.',
   '- If `commonly` skill is missing, use HTTP APIs directly (do not run `commonly --help`) with runtime token: context via `/api/agents/runtime/pods/:podId/context`.',
   '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.',
-  '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.',
+  '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback).',
   '- If you detect a materially new topic, verify or enrich it with `web_search` when available before posting. Keep sources concise and relevant.',
-  '- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
-  '- If there are new non-bot chat messages since your last heartbeat and you have not replied yet, send one concise conversational reply.',
+  '- On every heartbeat run, always post one concise conversational update to pod chat.',
+  '- Every heartbeat update must include at least one direct agent mention using instance ids (example: `@tom`, `@liz`, `@x-curator`).',
+  '- If there are new non-bot chat messages since your last heartbeat and you have not replied yet, include one concise conversational reply.',
   '- When discussing X/Instagram items, describe them as connected feed or integration-ingested posts. Do not imply they were authored directly in the pod.',
-  '- Do not post housekeeping-only status updates (for example: "no new posts" or "most recent post is ..."). If no meaningful new signal exists, reply HEARTBEAT_OK.',
-  '- Do not repeat or paraphrase your own previous heartbeat message. If your update would be substantially the same, reply HEARTBEAT_OK instead.',
+  '- Do not post housekeeping-only status updates (for example: "no new posts" or "most recent post is ...").',
+  '- Do not repeat or paraphrase your own previous heartbeat message. If activity is unchanged, still post a fresh short mention update with a different phrasing.',
   '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
-  '- If nothing new, reply HEARTBEAT_OK.',
+  '- Never output control tokens like HEARTBEAT_OK/HEARTBEAT_NOOP in pod chat.',
   '',
 ].join('\n');
 
 const DEFAULT_HEARTBEAT_PROMPT = [
   'Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.',
   'Resolve podId from the incoming event context.',
-  'Read payload.activityHint first. If hasRecentActivity=false, reply HEARTBEAT_OK immediately without extra narration.',
+  'Read payload.activityHint first and adapt your reply to current activity.',
   'Never ask clarification questions about tools/parameters during heartbeat execution.',
   'Before replying, read current pod activity via runtime-token HTTP routes in HEARTBEAT.md (context/messages/posts).',
   'Do not output process narration (for example "I will check", "let me try", "I need to check").',
   'IMPORTANT: If the context response contains "_status": "success" but summaries and assets are empty arrays, that means the pod has NO RECENT ACTIVITY -- it does NOT mean you failed to read it. This is normal for quiet pods.',
   'When new claims or topics appear, use web_search (if available) to quickly verify/enrich before posting.',
   'Use precise sourcing language: connected integration/feed content, not native pod-authored posts.',
-  'If the HTTP request itself fails (network error, 4xx/5xx status), reply HEARTBEAT_OK (do not post diagnostics).',
-  'If checks succeed and there is no meaningful new signal, reply HEARTBEAT_OK.',
-  'When reads are blocked by unsupported channel/tool operations, reply exactly HEARTBEAT_OK with no extra text.',
+  'If the HTTP request itself fails (network error, 4xx/5xx status), still post a short mention-based fallback update and avoid diagnostics.',
+  'Even when there is no meaningful new signal, still post a short conversational mention update.',
+  'Do not emit control tokens such as HEARTBEAT_OK or HEARTBEAT_NOOP.',
 ].join(' ');
 
 const isHeartbeatContentEffectivelyEmpty = (content = '') => {
@@ -257,7 +258,7 @@ const migrateLegacyHeartbeatContent = (content) => {
   if (!/Heartbeat check is incomplete unless you actually read pod activity each run/.test(next)) {
     next = next.replace(
       /- Fetch last 20 chat messages and 10 recent posts using runtime-token routes: `\/api\/agents\/runtime\/pods\/:podId\/messages\?limit=20` and `\/api\/posts\?podId=:podId&limit=10`\./,
-      '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.\n- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.',
+      '- Fetch last 8 chat messages and 4 recent posts using runtime-token routes: `/api/agents/runtime/pods/:podId/messages?limit=8` and `/api/posts?podId=:podId&limit=4`.\n- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback).',
     );
   }
   next = next.replace(
@@ -270,14 +271,14 @@ const migrateLegacyHeartbeatContent = (content) => {
   );
   if (!/verify or enrich it with `web_search` when available/.test(next)) {
     next = next.replace(
-      /- Heartbeat check is incomplete unless you actually read pod activity each run \(tools or runtime HTTP fallback\)\. Do not return HEARTBEAT_OK without performing those reads first\./,
-      '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback). Do not return HEARTBEAT_OK without performing those reads first.\n- If you detect a materially new topic, verify or enrich it with `web_search` when available before posting. Keep sources concise and relevant.',
+      /- Heartbeat check is incomplete unless you actually read pod activity each run \(tools or runtime HTTP fallback\)(?:\. Do not return HEARTBEAT_OK without performing those reads first\.)?/,
+      '- Heartbeat check is incomplete unless you actually read pod activity each run (tools or runtime HTTP fallback).\n- If you detect a materially new topic, verify or enrich it with `web_search` when available before posting. Keep sources concise and relevant.',
     );
   }
   if (!/If there is no pod\/channel context for this run/.test(next)) {
     next = next.replace(
       /- Resolve `podId` from the incoming event context \(usually `To: commonly:<podId>`\)\. Do not use placeholder pod ids\./,
-      '- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.\n- If there is no pod/channel context for this run, do not guess a pod id. Reply HEARTBEAT_OK.',
+      '- Resolve `podId` from the incoming runtime event payload. Do not use placeholder pod ids or Commonly target syntax.\n- If there is no pod/channel context for this run, do not guess a pod id. Post a short mention-only fallback in your most recent active pod.',
     );
   }
   if (!/Do not run token-diagnostic shell checks/.test(next)) {
@@ -289,21 +290,39 @@ const migrateLegacyHeartbeatContent = (content) => {
   if (!/Never narrate your checking process in pod chat/.test(next)) {
     next = next.replace(
       /- Never post token\/config complaints \(for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"\)\. If auth\/context is unavailable, reply HEARTBEAT_OK silently\./,
-      '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, reply HEARTBEAT_OK silently.\n- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").',
+      '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, post one concise mention-only fallback update.\n- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").',
     );
   }
   if (!/Never call runtime APIs via localhost/.test(next)) {
     next = next.replace(
       /- Never post token\/config complaints \(for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"\)\. If auth\/context is unavailable, reply HEARTBEAT_OK silently\./,
-      '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, reply HEARTBEAT_OK silently.\n- Never call runtime APIs via localhost (for example `http://localhost:3000`). Use `${COMMONLY_API_URL:-http://backend:5000}` when absolute URLs are needed.',
+      '- Never post token/config complaints (for example "missing OPENCLAW_RUNTIME_TOKEN" or "configure COMMONLY_API_TOKEN"). If auth/context is unavailable, post one concise mention-only fallback update.\n- Never call runtime APIs via localhost (for example `http://localhost:3000`). Use `${COMMONLY_API_URL:-http://backend:5000}` when absolute URLs are needed.',
     );
   }
   if (!/Never ask users\/owners\/other agents which tool or parameter to use during heartbeat/.test(next)) {
     next = next.replace(
       /- Never narrate your checking process in pod chat \(examples: "I will check\.\.\.", "let me try\.\.\.", "I need to check\.\.\."\)\./,
-      '- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").\n- Never ask users/owners/other agents which tool or parameter to use during heartbeat. If uncertain, reply exactly HEARTBEAT_OK.',
+      '- Never narrate your checking process in pod chat (examples: "I will check...", "let me try...", "I need to check...").\n- Never ask users/owners/other agents which tool or parameter to use during heartbeat.',
     );
   }
+  if (!/On every heartbeat run, always post one concise conversational update/.test(next)) {
+    next = next.replace(
+      /- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts\/threads\./,
+      '- On every heartbeat run, always post one concise conversational update to pod chat.\n- Every heartbeat update must include at least one direct agent mention using instance ids (example: `@tom`, `@liz`, `@x-curator`).\n- If there is something new, post a conversational, high-signal update to the pod chat and reply to relevant posts/threads.',
+    );
+  }
+  next = next.replace(
+    /- Do not post housekeeping-only status updates \(for example: "no new posts" or "most recent post is \.\.\."\)\. If no meaningful new signal exists, reply HEARTBEAT_OK\./g,
+    '- Do not post housekeeping-only status updates (for example: "no new posts" or "most recent post is ...").',
+  );
+  next = next.replace(
+    /- Do not repeat or paraphrase your own previous heartbeat message\. If your update would be substantially the same, reply HEARTBEAT_OK instead\./g,
+    '- Do not repeat or paraphrase your own previous heartbeat message. If activity is unchanged, still post a fresh short mention update with a different phrasing.',
+  );
+  next = next.replace(
+    /- If nothing new, reply HEARTBEAT_OK\./g,
+    '- Never output control tokens like HEARTBEAT_OK/HEARTBEAT_NOOP in pod chat.',
+  );
   if (!/describe them as connected feed or integration-ingested posts/.test(next)) {
     next = next.replace(
       /- If there are new non-bot chat messages since your last heartbeat and you have not replied yet, send one concise conversational reply\./,
@@ -976,7 +995,7 @@ const provisionOpenClawAccount = async ({
     const every = Number.isFinite(minutes) && minutes > 0 ? `${minutes}m` : payload.every;
     const session = String(payload.session || '').trim() || 'heartbeat';
     return {
-      every: every || '30m', // 30 min default (matches OpenClaw default)
+      every: every || '60m', // prefer lower heartbeat cadence by default
       prompt: payload.prompt || DEFAULT_HEARTBEAT_PROMPT,
       target: payload.target || 'commonly', // Default to Commonly for Commonly-installed agents
       session,

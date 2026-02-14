@@ -259,6 +259,9 @@ function createXProvider(integration) {
         });
       }
 
+      let tokenRefreshed = false;
+      let refreshMeta = null;
+
       if (followFromAuthenticatedUser && config.userId) {
         try {
           const followingUsers = await fetchXFollowing({
@@ -277,8 +280,44 @@ function createXProvider(integration) {
             }
           });
         } catch (error) {
-          // Non-fatal: keep main-account and explicit follow sync working even if following lookup fails.
-          console.warn('[xProvider] failed to fetch following list:', error?.response?.data || error?.message || error);
+          const canRefresh = error?.response?.status === 401 && refreshToken;
+          if (canRefresh) {
+            try {
+              const refreshed = await refreshXAccessToken({ refreshToken });
+              accessToken = refreshed.access_token || accessToken;
+              refreshToken = refreshed.refresh_token || refreshToken;
+              tokenRefreshed = Boolean(refreshed.access_token);
+              refreshMeta = {
+                tokenType: refreshed.token_type || null,
+                expiresIn: refreshed.expires_in || null,
+                scope: refreshed.scope || null,
+              };
+              const followingUsers = await fetchXFollowing({
+                apiBase,
+                accessToken,
+                userId: config.userId,
+                maxResults: followingMaxUsers,
+              });
+              const whitelistSet = new Set(followingWhitelistUserIds.map(String));
+              const filteredFollowing = whitelistSet.size > 0
+                ? followingUsers.filter((user) => whitelistSet.has(String(user?.id || '')))
+                : followingUsers;
+              filteredFollowing.forEach((user) => {
+                if (user?.id) {
+                  resolvedUsers.push(user);
+                }
+              });
+            } catch (refreshError) {
+              // Non-fatal: keep main-account and explicit follow sync working even if following lookup fails.
+              console.warn(
+                '[xProvider] failed to fetch following list after token refresh:',
+                refreshError?.response?.data || refreshError?.message || refreshError,
+              );
+            }
+          } else {
+            // Non-fatal: keep main-account and explicit follow sync working even if following lookup fails.
+            console.warn('[xProvider] failed to fetch following list:', error?.response?.data || error?.message || error);
+          }
         }
       }
 
@@ -299,8 +338,6 @@ function createXProvider(integration) {
         || followFromAuthenticatedUser
       );
 
-      let tokenRefreshed = false;
-      let refreshMeta = null;
       let tweetsByUser;
       try {
         tweetsByUser = await Promise.all(

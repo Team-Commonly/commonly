@@ -114,6 +114,17 @@ spec:
               key: FRONTEND_URL
               optional: true
         {{- end }}
+        {{- if .Values.backend.env.backendUrl }}
+        - name: BACKEND_URL
+          value: {{ .Values.backend.env.backendUrl | quote }}
+        {{- else }}
+        - name: BACKEND_URL
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: BACKEND_URL
+              optional: true
+        {{- end }}
 
         # Email Configuration (SMTP2GO)
         - name: SMTP2GO_API_KEY
@@ -213,6 +224,18 @@ spec:
             secretKeyRef:
               name: api-keys
               key: github-client-secret
+              optional: true
+        - name: X_OAUTH_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: x-oauth-client-id
+              optional: true
+        - name: X_OAUTH_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: x-oauth-client-secret
               optional: true
 
         # Agent Runtime Configuration
