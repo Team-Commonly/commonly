@@ -150,4 +150,90 @@ describe('externalFeedService', () => {
       curatorEventsEnqueued: 0,
     }));
   });
+
+  test('persists refreshed OAuth tokens even when no new external posts are returned', async () => {
+    Integration.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: 'int-3',
+          type: 'x',
+          podId: 'pod-1',
+          status: 'connected',
+          isActive: true,
+          createdBy: 'user-1',
+          config: { messageBuffer: [], maxBufferSize: 1000 },
+        },
+      ]),
+    });
+    registry.get.mockReturnValue({
+      syncRecent: jest.fn().mockResolvedValue({
+        messages: [],
+        content: 'No new posts',
+        meta: {
+          tokenRefreshed: true,
+          refreshedAccessToken: 'new-access-token',
+          refreshedRefreshToken: 'new-refresh-token',
+          refreshedTokenType: 'bearer',
+          refreshedScope: 'tweet.read users.read offline.access',
+          refreshedExpiresIn: 7200,
+        },
+      }),
+    });
+
+    const results = await externalFeedService.syncExternalFeeds();
+
+    expect(results[0]).toEqual(expect.objectContaining({
+      success: true,
+      messageCount: 0,
+      content: 'No new posts',
+    }));
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+      'int-3',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          status: 'connected',
+          errorMessage: null,
+          'config.accessToken': 'new-access-token',
+          'config.refreshToken': 'new-refresh-token',
+          'config.tokenType': 'bearer',
+          'config.oauthScopes': ['tweet.read', 'users.read', 'offline.access'],
+        }),
+      }),
+    );
+  });
+
+  test('marks integration as error when sync fails', async () => {
+    Integration.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: 'int-4',
+          type: 'x',
+          podId: 'pod-1',
+          status: 'connected',
+          isActive: true,
+          createdBy: 'user-1',
+          config: { messageBuffer: [], maxBufferSize: 1000 },
+        },
+      ]),
+    });
+    registry.get.mockReturnValue({
+      syncRecent: jest.fn().mockRejectedValue(new Error('invalid_request')),
+    });
+
+    const results = await externalFeedService.syncExternalFeeds();
+
+    expect(results[0]).toEqual(expect.objectContaining({
+      integrationId: 'int-4',
+      success: false,
+    }));
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+      'int-4',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          status: 'error',
+          errorMessage: 'invalid_request',
+        }),
+      }),
+    );
+  });
 });
