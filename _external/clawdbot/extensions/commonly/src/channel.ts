@@ -217,6 +217,13 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
       return { channel: "commonly", messageId: `${podId}:${Date.now()}` };
     },
   },
+  messaging: {
+    normalizeTarget: (raw) => normalizePodId(raw).toLowerCase(),
+    targetResolver: {
+      looksLikeId: (raw) => /^[a-f0-9]{24}$/i.test(normalizePodId(raw)),
+      hint: "<podId>",
+    },
+  },
 
   status: {
     defaultRuntime: {

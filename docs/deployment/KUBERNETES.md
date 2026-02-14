@@ -53,6 +53,7 @@ kubectl create secret generic database-credentials \
 kubectl create secret generic api-keys \
   --namespace commonly \
   --from-literal=FRONTEND_URL='http://YOUR_IP.nip.io' \
+  --from-literal=BACKEND_URL='http://api.YOUR_IP.nip.io' \
   --from-literal=jwt-secret='YOUR_JWT_SECRET' \
   --from-literal=session-secret='YOUR_SESSION_SECRET' \
   --from-literal=SMTP2GO_API_KEY='YOUR_SMTP2GO_KEY' \
@@ -70,6 +71,8 @@ kubectl create secret generic api-keys \
   --from-literal=google-client-secret='' \
   --from-literal=github-client-id='' \
   --from-literal=github-client-secret='' \
+  --from-literal=x-oauth-client-id='' \
+  --from-literal=x-oauth-client-secret='' \
   --from-literal=clawdbot-gateway-token='' \
   --from-literal=commonly-bot-runtime-token='' \
   --from-literal=slack-bot-token='' \

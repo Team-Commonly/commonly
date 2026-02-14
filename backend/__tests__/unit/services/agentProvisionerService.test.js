@@ -235,7 +235,7 @@ describe('agentProvisionerService', () => {
       expect(agentEntry.heartbeat.target).toBe('commonly');
     });
 
-    it('sets default heartbeat interval to 30m', () => {
+    it('sets default heartbeat interval to 60m', () => {
       provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
@@ -250,7 +250,7 @@ describe('agentProvisionerService', () => {
       const parsed = JSON.parse(raw);
       const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
 
-      expect(agentEntry.heartbeat.every).toBe('30m');
+      expect(agentEntry.heartbeat.every).toBe('60m');
     });
 
     it('sets default heartbeat prompt that requires commonly reads before HEARTBEAT_OK', () => {

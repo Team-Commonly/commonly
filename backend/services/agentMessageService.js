@@ -5,6 +5,8 @@ const AgentIdentityService = require('./agentIdentityService');
 const PodAssetService = require('./podAssetService');
 const AgentEventService = require('./agentEventService');
 const DMService = require('./dmService');
+const { AgentInstallation } = require('../models/AgentRegistry');
+const User = require('../models/User');
 
 let PGMessage;
 try {
@@ -73,6 +75,8 @@ class AgentMessageService {
   static isHeartbeatHousekeepingContent(content) {
     const text = String(content || '').trim();
     if (!text) return false;
+    if (/^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(text)) return true;
+    if (/^no reply requested\.?$/i.test(text)) return true;
 
     const patterns = [
       /\bno meaningful new signals detected\b/i,
@@ -91,13 +95,299 @@ class AgentMessageService {
       /\blet me try (?:a )?different approach\b/i,
       /\blet me try (?:the )?direct http endpoint approach\b/i,
       /\blet me try (?:a )?simpler approach\b/i,
+      /\bchecking pod\b.*\bactivity\b.*\bheartbeat\b/i,
+      /\bfetching recent activity from the pod\b/i,
+      /\blooking at the last\b.*\bmessages?\b.*\brecent posts?\b/i,
+      /\bfound some recent activity\b/i,
+      /\brecent chat messages:\b/i,
+      /\brecent posts:\b/i,
+      /\bheartbeat check complete\b.*\bactive and engaged\b/i,
       /\blocalhost:3000\/api\/agents\/runtime\/pods\b/i,
       /\bmessages_failed\b/i,
       /\bcould you please specify which tool\b/i,
       /\bpayload\.activityHint\b.*\bcurrent pod activity\b.*\bHEARTBEAT_OK\b/i,
       /\bi(?:'|’)ll check if there(?:'|’)s been recent activity before deciding whether to post\b/i,
+      /\bno activity detected\b.*\breturn(?:ing)?\s+HEARTBEAT_OK\b/i,
+      /\bbased on the activity hint\b.*\bhasRecentActivity=false\b.*\bHEARTBEAT_OK\b/i,
+      /\bdefault heartbeat acknowledgment\b/i,
     ];
     return patterns.some((pattern) => pattern.test(text));
+  }
+
+  static shouldPostHeartbeatFallback() {
+    const raw = String(process.env.AGENT_HEARTBEAT_HOUSEKEEPING_FALLBACK || '').trim().toLowerCase();
+    if (!raw) return true;
+    if (['0', 'false', 'off', 'no'].includes(raw)) return false;
+    return true;
+  }
+
+  static normalizeMentionHandle(value) {
+    const normalized = String(value || '')
+      .trim()
+      .replace(/^@+/, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '')
+      .slice(0, 40);
+    return normalized;
+  }
+
+  static extractMentionHandles(content) {
+    const text = String(content || '');
+    const matches = text.match(/@([a-z0-9][a-z0-9-]{0,39})/gi) || [];
+    return Array.from(
+      new Set(
+        matches
+          .map((entry) => AgentMessageService.normalizeMentionHandle(entry))
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  static async resolveHeartbeatMentionHandles({
+    podId,
+    instanceId,
+    content,
+    metadata = {},
+  }) {
+    const explicit = Array.isArray(metadata?.mentionTargets)
+      ? metadata.mentionTargets
+      : [];
+    const mentions = new Set();
+    explicit.forEach((entry) => {
+      const handle = AgentMessageService.normalizeMentionHandle(entry);
+      if (handle) mentions.add(handle);
+    });
+    AgentMessageService.extractMentionHandles(content).forEach((handle) => mentions.add(handle));
+
+    if (mentions.size > 0) return Array.from(mentions).slice(0, 3);
+
+    try {
+      const activeInstalls = await AgentInstallation.find({
+        podId,
+        status: 'active',
+      }).select('instanceId').lean();
+      const selfHandle = AgentMessageService.normalizeMentionHandle(instanceId);
+      activeInstalls
+        .map((installation) => AgentMessageService.normalizeMentionHandle(installation?.instanceId))
+        .filter(Boolean)
+        .filter((handle) => !selfHandle || handle !== selfHandle)
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, 3)
+        .forEach((handle) => mentions.add(handle));
+    } catch (error) {
+      console.warn('Failed to resolve heartbeat mention targets:', error.message);
+    }
+
+    if (mentions.size > 0) return Array.from(mentions).slice(0, 3);
+    const self = AgentMessageService.normalizeMentionHandle(instanceId) || 'team';
+    return [self];
+  }
+
+  static buildHeartbeatFallbackContent({
+    mentionHandles = [],
+    sourceEventId,
+    recentActivitySignal = null,
+  }) {
+    const mentions = mentionHandles.length
+      ? mentionHandles.map((handle) => `@${handle}`).join(' ')
+      : '@team';
+    const suffix = sourceEventId ? ` (${String(sourceEventId).slice(-6)})` : '';
+    if (recentActivitySignal?.snippet) {
+      const author = recentActivitySignal.author ? ` from @${recentActivitySignal.author}` : '';
+      return `${mentions} heartbeat update: latest pod activity${author}: "${recentActivitySignal.snippet}". I will follow up if there is a new actionable change${suffix}.`;
+    }
+    return `${mentions} heartbeat check-in: no new meaningful pod activity in the latest scan, still monitoring pod and integration activity${suffix}.`;
+  }
+
+  static normalizeHeartbeatCoreText(content) {
+    return String(content || '')
+      .toLowerCase()
+      .replace(/@([a-z0-9][a-z0-9-]{0,39})/gi, ' ')
+      .replace(/[^a-z0-9\s+]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  static isLowValueHeartbeatContent(content) {
+    const raw = String(content || '').trim();
+    if (!raw) return true;
+    const core = AgentMessageService.normalizeHeartbeatCoreText(raw);
+    if (!core) return true;
+
+    const veryShortAckSet = new Set([
+      'ok',
+      'okay',
+      'k',
+      'kk',
+      'noted',
+      'done',
+      'yes',
+      'yep',
+      'sure',
+      'copy',
+      'roger',
+      'thanks',
+      'thx',
+      '+1',
+      'all good',
+      'looks good',
+      'will do',
+      'sounds good',
+      'on it',
+    ]);
+    if (veryShortAckSet.has(core)) return true;
+
+    const tokens = core.split(' ').filter(Boolean);
+    if (tokens.length <= 2 && tokens.every((token) => token.length <= 6)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  static summarizeHeartbeatSnippet(content) {
+    const text = String(content || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) return '';
+    const max = 140;
+    if (text.length <= max) return text;
+    return `${text.slice(0, max - 1).trim()}...`;
+  }
+
+  static isNonActionableHeartbeatSignalContent(content) {
+    const text = String(content || '').trim();
+    if (!text) return true;
+    if (text.startsWith('[BOT_MESSAGE]')) return true;
+
+    const patterns = [
+      /\bheartbeat update:\s*latest pod activity\b/i,
+      /\bheartbeat check(?:-in| complete)?\b/i,
+      /\bchecking pod\b.*\bactivity\b/i,
+      /\bfetching recent activity\b/i,
+      /\blooking at the last\b.*\bmessages?\b/i,
+      /\bno (?:new|significant|meaningful) (?:pod )?activity\b/i,
+      /\bwill check back in next cycle\b/i,
+      /\blooks like there(?:'|’)s been good activity in the pod\b/i,
+      /\bteam is actively discussing projects\b/i,
+      /\brecent chat messages:\b/i,
+      /\brecent posts:\b/i,
+      /\[timestamp\]/i,
+    ];
+    return patterns.some((pattern) => pattern.test(text));
+  }
+
+  static async findRecentActivityHeartbeatSignal({ podId, excludeUserId }) {
+    const recent = await AgentMessageService.getRecentMessages(podId, 50);
+    if (!Array.isArray(recent) || recent.length === 0) return null;
+
+    const userIds = Array.from(
+      new Set(
+        recent
+          .map((entry) => String(entry?.userId?._id || entry?.user_id || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    const botUserIds = new Set();
+    if (userIds.length > 0) {
+      try {
+        const users = await User.find({ _id: { $in: userIds } }).select('_id isBot').lean();
+        users
+          .filter((user) => user?.isBot === true)
+          .forEach((user) => botUserIds.add(String(user._id)));
+      } catch (error) {
+        console.warn('Failed to load users for heartbeat signal enrichment:', error.message);
+      }
+    }
+
+    const blockedActorHandles = new Set([
+      'commonlysummarizer',
+      'commonlybot',
+      'commonly-bot',
+      'commonly-summarizer',
+    ]);
+    const exclude = String(excludeUserId || '').trim();
+    const candidate = recent
+      .slice()
+      .reverse()
+      .find((entry) => {
+        const messageType = String(entry?.messageType || '').toLowerCase();
+        if (messageType === 'system') return false;
+        const content = String(entry?.content || '').trim();
+        if (!content) return false;
+        const messageUserId = String(entry?.userId?._id || entry?.user_id || '').trim();
+        if (exclude && messageUserId && messageUserId === exclude) return false;
+        if (messageUserId && botUserIds.has(messageUserId)) {
+          if (exclude && messageUserId === exclude) return false;
+          // Allow other agents when message is meaningful (non-ack) signal.
+        }
+        const username = String(entry?.userId?.username || entry?.username || '').trim();
+        const actorHandle = AgentMessageService.normalizeMentionHandle(username);
+        if (actorHandle && blockedActorHandles.has(actorHandle)) return false;
+        if (AgentMessageService.isLowValueHeartbeatContent(content)) return false;
+        if (AgentMessageService.isNonActionableHeartbeatSignalContent(content)) return false;
+        return true;
+      });
+
+    if (!candidate) return null;
+    return {
+      snippet: AgentMessageService.summarizeHeartbeatSnippet(candidate.content),
+      author: AgentMessageService.normalizeMentionHandle(
+        candidate?.userId?.username || candidate?.username || '',
+      ) || null,
+    };
+  }
+
+  static async postHeartbeatFallback({
+    agentName,
+    instanceId,
+    podId,
+    messageType,
+    metadata,
+    agentUser,
+    displayName,
+    sourceContent,
+  }) {
+    const mentionHandles = await AgentMessageService.resolveHeartbeatMentionHandles({
+      podId,
+      instanceId,
+      content: sourceContent,
+      metadata,
+    });
+    const recentActivitySignal = await AgentMessageService.findRecentActivityHeartbeatSignal({
+      podId,
+      excludeUserId: agentUser?._id,
+    });
+    const fallbackContent = AgentMessageService.buildHeartbeatFallbackContent({
+      mentionHandles,
+      sourceEventId: metadata?.sourceEventId || metadata?.eventId,
+      recentActivitySignal,
+    });
+    const posted = await AgentMessageService._postToTarget({
+      agentName,
+      instanceId,
+      podId,
+      content: fallbackContent,
+      messageType,
+      metadata: {
+        ...metadata,
+        heartbeatFallbackPosted: true,
+        heartbeatFallbackReason: metadata?.heartbeatFallbackReason || 'guardrail',
+      },
+      agentUser,
+      displayName,
+    });
+    return {
+      success: true,
+      message: posted.message,
+      summary: posted.summary
+        ? {
+          id: posted.summary._id?.toString?.() || posted.summary._id,
+          type: posted.summary.type,
+        }
+        : null,
+      fallbackPosted: true,
+    };
   }
 
   static isHeartbeatDiagnosticContent(content) {
@@ -107,6 +397,8 @@ class AgentMessageService {
     const patterns = [
       /\bcommonly pod service is (?:not running|still not running)\b/i,
       /\bunable to (?:get|read|fetch) (?:the )?pod activity\b/i,
+      /\bunable to access (?:the )?pod(?:'|’)s? recent activity(?: directly)?\b/i,
+      /\bcannot determine if there has been (?:any )?recent activity\b/i,
       /\bunable to retrieve any meaningful new signals?\b/i,
       /\bunable to access (?:the )?pod(?:'s)? activity data\b/i,
       /\brequired commonly tools are not available\b/i,
@@ -128,6 +420,10 @@ class AgentMessageService {
       /\bno activity hint in the payload to check for recent activity\b/i,
       /\bconnectivity or authentication problem\b/i,
       /\bmissing tokens?\b/i,
+      /\bpermission error\b.*\bpod context\b/i,
+      /\bunable to retrieve (?:the )?pod context\b.*\bmessage tool\b/i,
+      /\bnot a valid channel id\b/i,
+      /\bneed to use the correct tool\b/i,
       /\bpermission denied\b/i,
       /\bforbidden\b/i,
     ];
@@ -161,8 +457,8 @@ class AgentMessageService {
     ).toLowerCase();
     if (sourceEventType === 'heartbeat') {
       const parsed = Number.parseInt(process.env.AGENT_HEARTBEAT_MESSAGE_DEDUPE_MINUTES, 10);
-      if (Number.isFinite(parsed) && parsed > 0) return parsed;
-      return 180;
+      if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+      return 0;
     }
     const parsed = Number.parseInt(process.env.AGENT_MESSAGE_DEDUPE_WINDOW_MINUTES, 10);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
@@ -336,6 +632,8 @@ class AgentMessageService {
     const isHeartbeatDiagnostic = AgentMessageService.isHeartbeatDiagnosticContent(
       sanitizedContent,
     );
+    const isErrorContent = AgentMessageService.isErrorContent(sanitizedContent);
+    const routesErrorsToOwnerDM = AgentMessageService.shouldRouteErrorsToOwnerDM(installationConfig);
     const normalizedAgentName = String(agentName || '').trim().toLowerCase();
     const shouldTreatAsHeartbeatGuardrail = isHeartbeatEvent
       || (
@@ -344,6 +642,21 @@ class AgentMessageService {
       );
 
     if (shouldTreatAsHeartbeatGuardrail && isHeartbeatHousekeeping) {
+      if (isHeartbeatEvent && AgentMessageService.shouldPostHeartbeatFallback()) {
+        return AgentMessageService.postHeartbeatFallback({
+          agentName,
+          instanceId,
+          podId,
+          messageType,
+          metadata: {
+            ...metadata,
+            heartbeatFallbackReason: 'housekeeping',
+          },
+          agentUser,
+          displayName,
+          sourceContent: sanitizedContent,
+        });
+      }
       AgentMessageService.logMessageLifecycle('skipped', {
         agentName,
         instanceId,
@@ -356,13 +669,57 @@ class AgentMessageService {
     }
 
     if (
+      isHeartbeatEvent
+      && AgentMessageService.isLowValueHeartbeatContent(sanitizedContent)
+      && AgentMessageService.shouldPostHeartbeatFallback()
+    ) {
+      return AgentMessageService.postHeartbeatFallback({
+        agentName,
+        instanceId,
+        podId,
+        messageType,
+        metadata: {
+          ...metadata,
+          heartbeatFallbackReason: 'low_value',
+        },
+        agentUser,
+        displayName,
+        sourceContent: sanitizedContent,
+      });
+    }
+
+    if (
+      isHeartbeatEvent
+      && AgentMessageService.extractMentionHandles(sanitizedContent).length === 0
+      && AgentMessageService.shouldPostHeartbeatFallback()
+      && !(
+        routesErrorsToOwnerDM
+        && (isHeartbeatDiagnostic || isErrorContent)
+      )
+    ) {
+      return AgentMessageService.postHeartbeatFallback({
+        agentName,
+        instanceId,
+        podId,
+        messageType,
+        metadata: {
+          ...metadata,
+          heartbeatFallbackReason: 'missing_mentions',
+        },
+        agentUser,
+        displayName,
+        sourceContent: sanitizedContent,
+      });
+    }
+
+    if (
       shouldTreatAsHeartbeatGuardrail
       && (
         isHeartbeatDiagnostic
-        || AgentMessageService.isErrorContent(sanitizedContent)
+        || isErrorContent
       )
     ) {
-      if (AgentMessageService.shouldRouteErrorsToOwnerDM(installationConfig)) {
+      if (routesErrorsToOwnerDM) {
         try {
           const routed = await AgentMessageService.routeErrorToDM({
             agentName,
@@ -397,8 +754,8 @@ class AgentMessageService {
     // Route likely error/debug content to agent-admin DM (agent <-> installer),
     // then leave a short system notice in the original pod.
     if (
-      AgentMessageService.shouldRouteErrorsToOwnerDM(installationConfig)
-      && AgentMessageService.isErrorContent(sanitizedContent)
+      routesErrorsToOwnerDM
+      && isErrorContent
     ) {
       try {
         const shouldPostSourceNotice = normalizedAgentName !== 'openclaw';

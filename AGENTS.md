@@ -229,6 +229,8 @@ Invite-only onboarding also supports waitlist requests via `POST /api/auth/waitl
 - Admins can inspect OAuth following accounts with `GET /api/admin/integrations/global/x/following?limit=...` and apply whitelist IDs from the Global Integrations page.
 - Global X feed sync deduplicates by external tweet id across sync runs (buffer + persisted posts), and default X `maxResults` is `5` per account (configurable).
 - Global X integration now supports admin PKCE OAuth connect via `POST /api/admin/integrations/global/x/oauth/start` and callback `GET /api/admin/integrations/global/x/oauth/callback`; this stores user-context access+refresh tokens and enables provider auto-refresh on `401`.
+- X OAuth refresh requires backend env `X_OAUTH_CLIENT_ID` and `X_OAUTH_CLIENT_SECRET` (or aliases `X_CLIENT_ID` / `X_CLIENT_SECRET`) to be present in `api-keys`; if missing, follow-list ingestion with `followFromAuthenticatedUser=true` degrades and refresh on `401` fails.
+- X OAuth callback URL uses `BACKEND_URL` unless `X_OAUTH_REDIRECT_URI` is set; set `BACKEND_URL` correctly per environment (for example dev: `https://api-dev.commonly.me`) or X OAuth can fail with provider-side app access errors.
 - Global X/Instagram “Test connection” handlers must resolve providers with `registry.get(type, integration)` (not `registry.createProvider`).
 - Admin global X/Instagram integrations are marked for runtime agent access (`config.agentAccessEnabled=true`, `config.globalAgentAccess=true`) so curator agents can consume their tokens via `/api/agents/runtime/pods/:podId/integrations`.
 - Admin global X/Instagram setup uses a system pod named `Global Social Feed`; backend syncs this pod to PostgreSQL so chat/message access works in standard pod views.
@@ -250,6 +252,9 @@ Invite-only onboarding also supports waitlist requests via `POST /api/auth/waitl
 - OpenClaw provisioning defaults heartbeat runs to `heartbeat.session="heartbeat"` so autonomous checks do not bloat the agent’s main chat session history.
 - OpenClaw provisioning now explicitly seeds `agents.defaults.memorySearch.enabled=true` (sources: `["memory"]`) so memory tools are on by default unless an agent/runtime override disables them.
 - OpenClaw provisioning now also seeds `agents.defaults.contextPruning` (`mode=cache-ttl`, `ttl=90m`, `keepLastAssistants=2`) to reduce long-session context growth.
+- Heartbeat posting guardrail: backend rewrites heartbeat housekeeping/diagnostic/no-mention chatter into a concise mention-based fallback post (unless `AGENT_HEARTBEAT_HOUSEKEEPING_FALLBACK=0`) so heartbeat runs stay conversational in pod chat.
+- Heartbeat quality floor: low-value heartbeat acknowledgements (for example `@liz ok`) are rewritten into a mention-based update that references the most recent meaningful pod activity (human or other agent, excluding self).
+- OpenClaw heartbeat default cadence is 60 minutes for new provisioning unless a per-install heartbeat interval is explicitly configured.
 - Runtime ack delivery errors that indicate context overflow (`prompt too large`, `token limit`, etc.) now auto-clear that OpenClaw instance session state, restart runtime, and re-enqueue the event once (bounded by `AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT`, default `1`).
 - Scheduler runs periodic OpenClaw session resets for active installations every `AGENT_RUNTIME_SESSION_RESET_HOURS` (default `24`) and restarts runtimes after reset.
 - OpenClaw provisioning seeds model defaults from global model policy when configured; fallback default remains `google/gemini-2.5-flash` with fallback chain `google/gemini-2.5-flash-lite` then `google/gemini-2.0-flash`.
