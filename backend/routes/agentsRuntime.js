@@ -13,10 +13,12 @@ const registry = require('../integrations');
 const Activity = require('../models/Activity');
 const User = require('../models/User');
 const Post = require('../models/Post');
+const Pod = require('../models/Pod');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 
 const Integration = require('../models/Integration');
+const DMService = require('../services/dmService');
 
 const router = express.Router();
 const parseNonNegativeInt = (value, fallback) => {
@@ -143,14 +145,29 @@ router.get('/events', agentRuntimeAuth, async (req, res) => {
       return res.status(403).json({ message: 'Agent token not authorized for events' });
     }
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
-    const podIds = (req.agentInstallations || [])
+    const installationPodIds = (req.agentInstallations || [])
       .map((item) => item?.podId)
       .filter(Boolean);
+    const dmPods = await Pod.find({
+      type: 'agent-admin',
+      members: agentUser?._id,
+    }).select('_id').lean();
+    const dmPodIds = dmPods.map((pod) => pod._id);
+    const podIds = Array.from(
+      new Set(
+        [...installationPodIds, ...dmPodIds]
+          .filter(Boolean)
+          .map((id) => id.toString()),
+      ),
+    );
+    const fallbackPodId = podIds.length === 0 && installation?.podId
+      ? installation.podId
+      : undefined;
 
     const events = await AgentEventService.list({
       agentName,
       instanceId,
-      podId: installation?.podId,
+      podId: fallbackPodId,
       podIds,
       limit,
     });
@@ -188,7 +205,19 @@ router.get('/bot/events', auth, requireApiTokenScopes(['agent:events:read']), as
       status: 'active',
     }).lean();
 
-    const podIds = installations.map((i) => i.podId);
+    const installationPodIds = installations.map((i) => i.podId);
+    const dmPods = await Pod.find({
+      type: 'agent-admin',
+      members: user._id,
+    }).select('_id').lean();
+    const dmPodIds = dmPods.map((pod) => pod._id);
+    const podIds = Array.from(
+      new Set(
+        [...installationPodIds, ...dmPodIds]
+          .filter(Boolean)
+          .map((id) => id.toString()),
+      ),
+    );
 
     // List events across all installed pods
     const events = await AgentEventService.list({
@@ -202,6 +231,77 @@ router.get('/bot/events', auth, requireApiTokenScopes(['agent:events:read']), as
   } catch (error) {
     console.error('Error listing bot events:', error);
     return res.status(500).json({ message: 'Failed to list bot events' });
+  }
+});
+
+router.post('/dm', auth, async (req, res) => {
+  try {
+    const userId = req.userId || req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const {
+      agentName: rawAgentName,
+      instanceId: rawInstanceId,
+      podId: requestedPodId,
+    } = req.body || {};
+
+    const agentName = String(rawAgentName || '').trim().toLowerCase();
+    const instanceId = String(rawInstanceId || '').trim() || null;
+    if (!agentName) {
+      return res.status(400).json({ message: 'agentName is required' });
+    }
+
+    const installationQuery = {
+      agentName,
+      status: 'active',
+    };
+    if (instanceId) installationQuery.instanceId = instanceId;
+    if (requestedPodId) installationQuery.podId = requestedPodId;
+
+    const installations = await AgentInstallation.find(installationQuery)
+      .select('agentName instanceId podId installedBy')
+      .lean();
+
+    if (!installations.length) {
+      return res.status(404).json({ message: 'No active installation found for that agent' });
+    }
+
+    const candidatePodIds = installations
+      .map((installation) => installation.podId)
+      .filter(Boolean);
+    const accessiblePods = await Pod.find({
+      _id: { $in: candidatePodIds },
+      members: userId,
+    }).select('_id').lean();
+    const accessiblePodIdSet = new Set(
+      accessiblePods.map((pod) => pod._id.toString()),
+    );
+
+    const selectedInstallation = installations.find((installation) => (
+      String(installation.installedBy || '') === String(userId)
+      || accessiblePodIdSet.has(String(installation.podId))
+    ));
+
+    if (!selectedInstallation) {
+      return res.status(403).json({ message: 'Not authorized to message this agent' });
+    }
+
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(
+      selectedInstallation.agentName,
+      selectedInstallation.instanceId || 'default',
+    );
+
+    const dmPod = await DMService.getOrCreateAgentDM(agentUser._id, userId, {
+      agentName: selectedInstallation.agentName,
+      instanceId: selectedInstallation.instanceId || 'default',
+    });
+
+    return res.json({ dmPod });
+  } catch (error) {
+    console.error('Error creating/fetching agent DM:', error);
+    return res.status(500).json({ message: 'Failed to create/fetch agent DM' });
   }
 });
 

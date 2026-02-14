@@ -463,6 +463,8 @@ const Pod = () => {
         const podTypes = ['chat', 'study', 'games', 'agent-ensemble'];
         navigate(`/pods/${podTypes[newValue]}`);
     };
+
+    const isAgentAdminView = getPodType() === 'agent-admin';
     
     return (
         <Container
@@ -475,24 +477,27 @@ const Pod = () => {
                 <Toolbar sx={{ flexWrap: { xs: 'wrap', sm: 'nowrap' }, gap: 1.5 }}>
                     <Box className="pod-header-title-wrap">
                         <Typography variant="h6" className="pod-title">
-                            Pods
+                            {isAgentAdminView ? 'Agent DMs' : 'Pods'}
                         </Typography>
                         <Typography variant="body2" className="pod-subtitle">
-                            Browse, preview, and join conversations before entering.
+                            {isAgentAdminView
+                                ? 'Direct message conversations with your installed agents.'
+                                : 'Browse, preview, and join conversations before entering.'}
                         </Typography>
                     </Box>
                     <Box className="pod-stat-chips">
                         <Chip label={`${pods.length} total`} size="small" className="pod-stat-chip" />
                         <Chip label={`${joinedCount} joined`} size="small" className="pod-stat-chip" />
                         <Chip label={`${filteredPods.length} shown`} size="small" className="pod-stat-chip" />
-                        <Chip
-                            label={`Debug DMs ${debugDmCount > 0 ? `(${debugDmCount})` : ''}`}
-                            size="small"
-                            className="pod-stat-chip"
-                            color={getPodType() === 'agent-admin' ? 'primary' : 'default'}
-                            onClick={() => navigate('/pods/agent-admin')}
-                            clickable
-                        />
+                        {!isAgentAdminView && (
+                            <Chip
+                                label={`Debug DMs ${debugDmCount > 0 ? `(${debugDmCount})` : ''}`}
+                                size="small"
+                                className="pod-stat-chip"
+                                onClick={() => navigate('/pods/agent-admin')}
+                                clickable
+                            />
+                        )}
                     </Box>
                     <Box sx={{ flexGrow: 1 }} />
                     <Box className="pod-search" sx={{ width: { xs: '100%', sm: 260 } }}>
@@ -516,54 +521,58 @@ const Pod = () => {
                             startIcon={<AddIcon />}
                             onClick={() => setOpenDialog(true)}
                             className="create-room-button"
-                            disabled={getPodType() === 'agent-admin'}
+                            disabled={isAgentAdminView}
                         >
                             Create Room
                         </Button>
                     </Box>
                 </Toolbar>
-                
-                <Tabs
-                    value={tabValue}
-                    onChange={handleTabChange}
-                    indicatorColor="primary"
-                    textColor="primary"
-                    centered
-                    variant="scrollable"
-                    allowScrollButtonsMobile
-                    className="pod-tabs"
-                >
-                    <Tab label="Chat" className="pod-tab" />
-                    <Tab label="Study" className="pod-tab" />
-                    <Tab label="Games" className="pod-tab" />
-                    <Tab label="Ensemble" className="pod-tab" />
-                </Tabs>
-                <Box className="pod-membership-filter-row">
-                    <Button
-                        size="small"
-                        variant={membershipFilter === 'all' ? 'contained' : 'outlined'}
-                        className="pod-filter-button"
-                        onClick={() => setMembershipFilter('all')}
-                    >
-                        All
-                    </Button>
-                    <Button
-                        size="small"
-                        variant={membershipFilter === 'joined' ? 'contained' : 'outlined'}
-                        className="pod-filter-button"
-                        onClick={() => setMembershipFilter('joined')}
-                    >
-                        Joined
-                    </Button>
-                    <Button
-                        size="small"
-                        variant={membershipFilter === 'discover' ? 'contained' : 'outlined'}
-                        className="pod-filter-button"
-                        onClick={() => setMembershipFilter('discover')}
-                    >
-                        Discover
-                    </Button>
-                </Box>
+
+                {!isAgentAdminView && (
+                    <>
+                        <Tabs
+                            value={tabValue}
+                            onChange={handleTabChange}
+                            indicatorColor="primary"
+                            textColor="primary"
+                            centered
+                            variant="scrollable"
+                            allowScrollButtonsMobile
+                            className="pod-tabs"
+                        >
+                            <Tab label="Chat" className="pod-tab" />
+                            <Tab label="Study" className="pod-tab" />
+                            <Tab label="Games" className="pod-tab" />
+                            <Tab label="Ensemble" className="pod-tab" />
+                        </Tabs>
+                        <Box className="pod-membership-filter-row">
+                            <Button
+                                size="small"
+                                variant={membershipFilter === 'all' ? 'contained' : 'outlined'}
+                                className="pod-filter-button"
+                                onClick={() => setMembershipFilter('all')}
+                            >
+                                All
+                            </Button>
+                            <Button
+                                size="small"
+                                variant={membershipFilter === 'joined' ? 'contained' : 'outlined'}
+                                className="pod-filter-button"
+                                onClick={() => setMembershipFilter('joined')}
+                            >
+                                Joined
+                            </Button>
+                            <Button
+                                size="small"
+                                variant={membershipFilter === 'discover' ? 'contained' : 'outlined'}
+                                className="pod-filter-button"
+                                onClick={() => setMembershipFilter('discover')}
+                            >
+                                Discover
+                            </Button>
+                        </Box>
+                    </>
+                )}
             </AppBar>
             
             {loading ? (
@@ -586,16 +595,16 @@ const Pod = () => {
                             <Box className="pod-empty">
                                 <PeopleIcon sx={{ fontSize: 60, mb: 2 }} />
                                 <Typography variant="h5" gutterBottom>
-                                    No pods found in this category
+                                    {isAgentAdminView ? 'No agent DMs yet' : 'No pods found in this category'}
                                 </Typography>
                                 <Typography variant="body1" color="textSecondary" paragraph>
-                                    {getPodType() === 'agent-admin'
-                                        ? 'Debug DMs are created automatically when an agent error is routed.'
+                                    {isAgentAdminView
+                                        ? 'Open a DM from the Agents page.'
                                         : getPodType() === 'agent-ensemble'
                                         ? 'Create a new agent ensemble pod to orchestrate multi-agent conversations.'
                                         : 'Create a new pod to start chatting with others!'}
                                 </Typography>
-                                {getPodType() !== 'agent-admin' && (
+                                {!isAgentAdminView && (
                                     <Button
                                         variant="contained"
                                         color="primary"

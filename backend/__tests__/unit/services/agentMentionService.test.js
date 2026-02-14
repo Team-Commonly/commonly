@@ -5,6 +5,7 @@ jest.mock('../../../services/agentEventService', () => ({
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
     find: jest.fn(),
+    findOne: jest.fn(),
   },
 }));
 
@@ -14,6 +15,10 @@ jest.mock('../../../models/AgentProfile', () => ({
 
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(),
+}));
+
+jest.mock('../../../models/User', () => ({
+  find: jest.fn(),
 }));
 
 jest.mock('../../../services/chatSummarizerService', () => ({
@@ -29,6 +34,7 @@ const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentProfile = require('../../../models/AgentProfile');
 const Pod = require('../../../models/Pod');
 const chatSummarizerService = require('../../../services/chatSummarizerService');
+const User = require('../../../models/User');
 
 describe('AgentMentionService', () => {
   beforeEach(() => {
@@ -143,5 +149,73 @@ describe('AgentMentionService', () => {
       }),
     );
     expect(res.enqueued).toEqual(['openclaw']);
+  });
+
+  test('enqueueDmEvent enqueues dm.message for bot members in agent-admin pod', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-dm-1',
+        type: 'agent-admin',
+        members: ['user-1', 'agent-user-1'],
+      }),
+    });
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: 'agent-user-1',
+          username: 'openclaw-liz',
+          botMetadata: { agentName: 'openclaw', instanceId: 'liz' },
+        },
+      ]),
+    });
+    AgentInstallation.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'inst-1',
+        podId: 'pod-chat-1',
+        agentName: 'openclaw',
+        instanceId: 'liz',
+        status: 'active',
+      }),
+    });
+
+    const result = await AgentMentionService.enqueueDmEvent({
+      podId: 'pod-dm-1',
+      message: { id: 42, content: 'hello there' },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentName: 'openclaw',
+        instanceId: 'liz',
+        podId: 'pod-dm-1',
+        type: 'dm.message',
+        payload: expect.objectContaining({
+          messageId: '42',
+          source: 'dm',
+          dmPodId: 'pod-dm-1',
+          installationPodId: 'pod-chat-1',
+        }),
+      }),
+    );
+    expect(result.enqueued).toEqual(['openclaw']);
+  });
+
+  test('enqueueDmEvent skips non-agent-admin pods', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type: 'chat' }),
+    });
+
+    const result = await AgentMentionService.enqueueDmEvent({
+      podId: 'pod-1',
+      message: { content: 'hello' },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(result).toEqual({ enqueued: false, reason: 'not_dm_pod' });
   });
 });

@@ -23,6 +23,8 @@ jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
+jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { findOne: jest.fn(), find: jest.fn() } }));
 
 const Integration = require('../../../models/Integration');
@@ -117,4 +119,3 @@ describe('agentsRuntime integration messages route', () => {
     });
   });
 });
-

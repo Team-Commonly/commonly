@@ -12,6 +12,7 @@ import {
     ChevronLeft as ChevronLeftIcon,
     Email as EmailIcon,
     SmartToy as AgentsIcon,
+    Forum as ForumIcon,
     Timeline as ActivityIcon,
     Apps as AppsIcon,
     AutoAwesome as SkillsIcon,
@@ -131,12 +132,22 @@ const Dashboard = () => {
                 <ListItem
                     button
                     onClick={() => handleNavigation('/pods')}
-                    selected={location.pathname.startsWith('/pods')}
+                    selected={location.pathname.startsWith('/pods') && !location.pathname.includes('agent-admin')}
                 >
                     <ListItemIcon>
                         <ChatIcon />
                     </ListItemIcon>
                     <ListItemText primary="Pods" />
+                </ListItem>
+                <ListItem
+                    button
+                    onClick={() => handleNavigation('/pods/agent-admin')}
+                    selected={location.pathname === '/pods/agent-admin'}
+                >
+                    <ListItemIcon>
+                        <ForumIcon />
+                    </ListItemIcon>
+                    <ListItemText primary="Agent DMs" />
                 </ListItem>
 
                 <ListItem

@@ -531,6 +531,14 @@ io.on('connection', (socket) => {
             userId,
             username: mentionUsername,
           });
+          if (podInstance.type === 'agent-admin') {
+            await AgentMentionService.enqueueDmEvent({
+              podId,
+              message: formattedMessage,
+              userId,
+              username: mentionUsername,
+            });
+          }
         } catch (mentionError) {
           console.warn('Failed to enqueue agent mentions:', mentionError.message);
         }

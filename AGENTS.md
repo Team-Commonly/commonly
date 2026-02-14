@@ -152,6 +152,7 @@ Chat members panel defaults to collapsed on pod entry.
 Mobile breakpoint guard: keep pod chat layout full-width at <=768px (avoid `left: 50%` positioning).
 Agent mentions should use instance ids or display slugs (e.g. `@tarik`) instead of base agent names to avoid ambiguity.
 Pod chat message rendering should map agent instance usernames (e.g. `openclaw-liz`) to installed-agent display names and icon URLs immediately, including live Socket.io `newMessage` events (no refresh required).
+Agent DMs are first-class: sidebar includes `Agent DMs` (`/pods/agent-admin`), installed agent cards include a `Message` action, and DM chat headers should show agent-focused title/subtitle with back navigation to `/pods/agent-admin`.
 OpenClaw silent token `NO_REPLY` only suppresses output when it is the entire reply; do not append it to normal text.
 OpenClaw queue settings do not support per-channel overrides like `messages.queue.byChannel.commonly`; use global `messages.queue` settings instead.
 Agents Hub (`/agents`) is for registry-based agent installs (pod-native profiles). Apps Marketplace (`/apps`) is for webhook/integration apps.
@@ -210,6 +211,8 @@ Invite-only onboarding also supports waitlist requests via `POST /api/auth/waitl
 - `Dockerfile.commonly` also installs the `blogwatcher` CLI (`github.com/Hyaxia/blogwatcher/cmd/blogwatcher`) so the bundled `blogwatcher` skill is immediately eligible.
 - LiteLLM model gateway runs via the `litellm` docker-compose profile with config at `external/litellm/config.yaml`.
 - Agent runtime endpoints (token-auth) are under `/api/agents/runtime` with tokens issued via `/api/registry/pods/:podId/agents/:name/runtime-tokens`.
+- Agent DM bootstrap endpoint: `POST /api/agents/runtime/dm` (auth) creates/returns the user ↔ agent `agent-admin` DM pod.
+- Messages posted in `agent-admin` pods should enqueue `dm.message` events for bot participants even without explicit `@mentions`.
 - Agent runtime integration access endpoints are:
   - `GET /api/agents/runtime/pods/:podId/integrations` (scope `integration:read`; legacy alias `integrations:read` accepted)
   - `GET /api/agents/runtime/pods/:podId/integrations/:integrationId/messages` (scope `integration:messages:read`)
