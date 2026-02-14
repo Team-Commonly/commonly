@@ -5,6 +5,8 @@ const AgentIdentityService = require('../../../services/agentIdentityService');
 const PodAssetService = require('../../../services/podAssetService');
 const socketConfig = require('../../../config/socket');
 const DMService = require('../../../services/dmService');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
+const User = require('../../../models/User');
 
 jest.mock('../../../models/Message');
 jest.mock('../../../models/Summary', () => ({
@@ -24,6 +26,20 @@ jest.mock('../../../config/socket', () => ({
 jest.mock('../../../services/dmService', () => ({
   resolveAgentOwner: jest.fn(),
   getOrCreateAgentDM: jest.fn(),
+}));
+jest.mock('../../../models/AgentRegistry', () => ({
+  AgentInstallation: {
+    find: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    })),
+  },
+}));
+jest.mock('../../../models/User', () => ({
+  find: jest.fn(() => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  })),
 }));
 
 describe('AgentMessageService summary persistence', () => {
@@ -50,6 +66,11 @@ describe('AgentMessageService summary persistence', () => {
     });
     DMService.resolveAgentOwner.mockResolvedValue(null);
     DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    });
+    process.env.AGENT_HEARTBEAT_HOUSEKEEPING_FALLBACK = '1';
   });
 
   afterEach(() => {
@@ -92,11 +113,13 @@ describe('AgentMessageService summary persistence', () => {
     expect(result.summary).toEqual({ id: 'sum-existing', type: 'chats' });
   });
 
-  it('skips duplicate recent heartbeat-style messages from the same agent', async () => {
+  it('skips duplicate recent heartbeat-style messages when heartbeat dedupe is configured', async () => {
+    const previousHeartbeatDedupe = process.env.AGENT_HEARTBEAT_MESSAGE_DEDUPE_MINUTES;
+    process.env.AGENT_HEARTBEAT_MESSAGE_DEDUPE_MINUTES = '180';
     jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue([
       {
         id: 'msg-existing',
-        content: 'Same heartbeat update text',
+        content: '@liz Same heartbeat update text',
         createdAt: new Date(Date.now() - 60 * 1000).toISOString(),
         userId: { _id: 'agent-user-1' },
       },
@@ -106,7 +129,7 @@ describe('AgentMessageService summary persistence', () => {
       agentName: 'socialpulse',
       instanceId: 'default',
       podId: 'pod-1',
-      content: 'Same heartbeat update text',
+      content: '@liz Same heartbeat update text',
       metadata: { sourceEventType: 'heartbeat' },
     });
 
@@ -115,6 +138,11 @@ describe('AgentMessageService summary persistence', () => {
     expect(Message).not.toHaveBeenCalled();
 
     AgentMessageService.getRecentMessages.mockRestore();
+    if (typeof previousHeartbeatDedupe === 'undefined') {
+      delete process.env.AGENT_HEARTBEAT_MESSAGE_DEDUPE_MINUTES;
+    } else {
+      process.env.AGENT_HEARTBEAT_MESSAGE_DEDUPE_MINUTES = previousHeartbeatDedupe;
+    }
   });
 
   it('routes likely error content to agent-admin DM and posts system notice', async () => {
@@ -207,12 +235,236 @@ describe('AgentMessageService summary persistence', () => {
   });
 
   it('suppresses heartbeat housekeeping messages in pod chat', async () => {
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { instanceId: 'tom' },
+        { instanceId: 'liz' },
+      ]),
+    });
+
     const result = await AgentMessageService.postMessage({
       agentName: 'x-curator',
       instanceId: 'x-curator',
       podId: 'pod-1',
       content: 'No meaningful new signals detected for pod pod-1. Heartbeat check complete with no new activity to report.',
       metadata: { sourceEventType: 'heartbeat', sourceEventId: 'evt-hb-housekeeping' },
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      fallbackPosted: true,
+    }));
+    expect(Message).toHaveBeenCalledTimes(1);
+    expect(Message.mock.calls[0][0].content).toContain('@liz');
+    expect(Message.mock.calls[0][0].content).toContain('@tom');
+  });
+
+  it('suppresses bare HEARTBEAT_OK control-token messages in pod chat', async () => {
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { instanceId: 'tarik' },
+      ]),
+    });
+
+    const result = await AgentMessageService.postMessage({
+      agentName: 'tom',
+      instanceId: 'tom',
+      podId: 'pod-1',
+      content: 'HEARTBEAT_OK',
+      metadata: { sourceEventType: 'heartbeat', sourceEventId: 'evt-hb-token' },
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      fallbackPosted: true,
+    }));
+    expect(Message).toHaveBeenCalledTimes(1);
+    expect(Message.mock.calls[0][0].content).toContain('@tarik');
+  });
+
+  it('rewrites low-value heartbeat replies into meaningful fallback updates', async () => {
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { instanceId: 'liz' },
+      ]),
+    });
+    jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue([
+      {
+        id: 'msg-human-1',
+        content: 'We should prioritize reconnecting x-curator to fetch real X feed items.',
+        messageType: 'text',
+        userId: { _id: 'user-22', username: 'tarik-human' },
+      },
+    ]);
+
+    const result = await AgentMessageService.postMessage({
+      agentName: 'tom',
+      instanceId: 'tom',
+      podId: 'pod-1',
+      content: '@liz ok',
+      metadata: { sourceEventType: 'heartbeat', sourceEventId: 'evt-hb-low-value' },
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      fallbackPosted: true,
+    }));
+    expect(Message).toHaveBeenCalledTimes(1);
+    expect(Message.mock.calls[0][0].content).toContain('latest pod activity');
+    expect(Message.mock.calls[0][0].content).toContain('reconnecting x-curator');
+    expect(Message.mock.calls[0][0].metadata).toEqual(expect.objectContaining({
+      heartbeatFallbackPosted: true,
+      heartbeatFallbackReason: 'low_value',
+    }));
+  });
+
+  it('uses no-activity fallback wording when there is no meaningful recent signal', async () => {
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { instanceId: 'tarik' },
+      ]),
+    });
+    jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue([
+      {
+        id: 'msg-ack-1',
+        content: 'ok',
+        messageType: 'text',
+        userId: { _id: 'user-33', username: 'someone' },
+      },
+    ]);
+
+    const result = await AgentMessageService.postMessage({
+      agentName: 'tom',
+      instanceId: 'tom',
+      podId: 'pod-1',
+      content: '@tarik ok',
+      metadata: { sourceEventType: 'heartbeat', sourceEventId: 'evt-hb-low-value-no-signal' },
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      fallbackPosted: true,
+    }));
+    expect(Message).toHaveBeenCalledTimes(1);
+    expect(Message.mock.calls[0][0].content).toContain('no new meaningful pod activity in the latest scan');
+  });
+
+  it('can use meaningful activity from another agent as fallback signal', async () => {
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { instanceId: 'liz' },
+      ]),
+    });
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { _id: 'agent-liz-id', isBot: true },
+      ]),
+    });
+    jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue([
+      {
+        id: 'msg-agent-1',
+        content: 'New X post from @ign: Steam Deck OLED stock normalized and discounts are live.',
+        messageType: 'text',
+        userId: { _id: 'agent-liz-id', username: 'openclaw-liz' },
+      },
+    ]);
+
+    const result = await AgentMessageService.postMessage({
+      agentName: 'tom',
+      instanceId: 'tom',
+      podId: 'pod-1',
+      content: '@liz ok',
+      metadata: { sourceEventType: 'heartbeat', sourceEventId: 'evt-hb-low-value-agent-signal' },
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      fallbackPosted: true,
+    }));
+    expect(Message).toHaveBeenCalledTimes(1);
+    expect(Message.mock.calls[0][0].content).toContain('latest pod activity');
+    expect(Message.mock.calls[0][0].content).toContain('Steam Deck OLED stock normalized');
+  });
+
+  it('ignores summarizer payloads and prior heartbeat loop text when selecting fallback signal', async () => {
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { instanceId: 'liz' },
+      ]),
+    });
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { _id: 'summarizer-id', isBot: true },
+        { _id: 'agent-liz-id', isBot: true },
+      ]),
+    });
+    jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue([
+      {
+        id: 'msg-1',
+        content: '[BOT_MESSAGE]{"type":"chat-summary","summary":"..."}',
+        messageType: 'text',
+        userId: { _id: 'summarizer-id', username: 'Commonly Summarizer' },
+      },
+      {
+        id: 'msg-2',
+        content: '@liz heartbeat update: latest pod activity from @tom: "older fallback..."',
+        messageType: 'text',
+        userId: { _id: 'agent-liz-id', username: 'openclaw-liz' },
+      },
+      {
+        id: 'msg-3',
+        content: 'Meaningful update: Team decided to ship the API retry patch today.',
+        messageType: 'text',
+        userId: { _id: 'human-1', username: 'testuser' },
+      },
+    ]);
+
+    const result = await AgentMessageService.postMessage({
+      agentName: 'tom',
+      instanceId: 'tom',
+      podId: 'pod-1',
+      content: '@liz ok',
+      metadata: { sourceEventType: 'heartbeat', sourceEventId: 'evt-hb-loop-filter' },
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      fallbackPosted: true,
+    }));
+    expect(Message).toHaveBeenCalledTimes(1);
+    expect(Message.mock.calls[0][0].content).toContain('Meaningful update: Team decided to ship the API retry patch today.');
+    expect(Message.mock.calls[0][0].content).not.toContain('[BOT_MESSAGE]');
+    expect(Message.mock.calls[0][0].content).not.toContain('older fallback');
+  });
+
+  it('can disable heartbeat housekeeping fallback and keep suppression behavior', async () => {
+    process.env.AGENT_HEARTBEAT_HOUSEKEEPING_FALLBACK = '0';
+    const result = await AgentMessageService.postMessage({
+      agentName: 'tom',
+      instanceId: 'tom',
+      podId: 'pod-1',
+      content: 'HEARTBEAT_OK',
+      metadata: { sourceEventType: 'heartbeat', sourceEventId: 'evt-hb-token-off' },
       messageType: 'text',
       installationConfig: { errorRouting: { ownerDm: false } },
     });
@@ -226,6 +478,13 @@ describe('AgentMessageService summary persistence', () => {
   });
 
   it('suppresses heartbeat diagnostics in pod chat when owner DM routing is disabled', async () => {
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { instanceId: 'liz' },
+      ]),
+    });
+
     const result = await AgentMessageService.postMessage({
       agentName: 'tarik',
       instanceId: 'tarik',
@@ -238,11 +497,11 @@ describe('AgentMessageService summary persistence', () => {
 
     expect(result).toEqual(expect.objectContaining({
       success: true,
-      skipped: true,
-      reason: 'heartbeat_diagnostic_suppressed',
+      fallbackPosted: true,
     }));
     expect(DMService.resolveAgentOwner).not.toHaveBeenCalled();
-    expect(Message).not.toHaveBeenCalled();
+    expect(Message).toHaveBeenCalledTimes(1);
+    expect(Message.mock.calls[0][0].content).toContain('@liz');
   });
 
   it('routes heartbeat diagnostics to DM without posting source-pod notice when owner DM routing is enabled', async () => {
@@ -348,6 +607,34 @@ describe('AgentMessageService summary persistence', () => {
     expect(Message).not.toHaveBeenCalled();
   });
 
+  it('suppresses heartbeat progress narration templates and posts fallback instead', async () => {
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { instanceId: 'tarik' },
+      ]),
+    });
+    jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue([]);
+
+    const result = await AgentMessageService.postMessage({
+      agentName: 'liz',
+      instanceId: 'liz',
+      podId: 'pod-1',
+      content: '@tom @liz @x-curator Looking at the last 8 messages and 4 recent posts...',
+      metadata: { sourceEventType: 'heartbeat', sourceEventId: 'evt-hb-progress-template' },
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      fallbackPosted: true,
+    }));
+    expect(Message).toHaveBeenCalledTimes(1);
+    expect(Message.mock.calls[0][0].content).toContain('heartbeat check-in');
+    expect(Message.mock.calls[0][0].content).toContain('@x-curator');
+  });
+
   it('routes openclaw persistent pod-access diagnostics to DM when owner routing is enabled', async () => {
     DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
     DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
@@ -446,6 +733,44 @@ describe('AgentMessageService summary persistence', () => {
       success: true,
       skipped: true,
       reason: 'heartbeat_housekeeping',
+    }));
+    expect(Message).not.toHaveBeenCalled();
+  });
+
+  it('suppresses openclaw no-activity heartbeat chatter variants', async () => {
+    const result = await AgentMessageService.postMessage({
+      agentName: 'openclaw',
+      instanceId: 'tom',
+      podId: 'pod-1',
+      content: 'No activity detected on pod pod-1. Returning HEARTBEAT_OK.',
+      metadata: {},
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      skipped: true,
+      reason: 'heartbeat_housekeeping',
+    }));
+    expect(Message).not.toHaveBeenCalled();
+  });
+
+  it('suppresses openclaw tool-mismatch pod-context diagnostics variants', async () => {
+    const result = await AgentMessageService.postMessage({
+      agentName: 'openclaw',
+      instanceId: 'tarik',
+      podId: 'pod-1',
+      content: 'I encountered a permission error when trying to access the pod context. I need to use the correct tool because this is not a valid channel ID.',
+      metadata: {},
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      skipped: true,
+      reason: 'heartbeat_diagnostic_suppressed',
     }));
     expect(Message).not.toHaveBeenCalled();
   });

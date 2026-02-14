@@ -10,7 +10,7 @@ import {
   type GatewayClientMode,
   type GatewayClientName,
 } from "../../utils/message-channel.js";
-import { resolveMessageChannelSelection } from "./channel-selection.js";
+import { listConfiguredMessageChannels, resolveMessageChannelSelection } from "./channel-selection.js";
 import {
   deliverOutboundPayloads,
   type OutboundDeliveryResult,
@@ -106,10 +106,47 @@ function resolveGatewayOptions(opts?: MessageGatewayOptions) {
   };
 }
 
+async function resolveChannelAndTarget(params: {
+  cfg: OpenClawConfig;
+  channel?: string;
+  to?: string;
+}): Promise<{ channel: string; to: string }> {
+  const requestedChannel = params.channel?.trim() || "";
+  const requestedTo = params.to?.trim() || "";
+
+  if (!requestedChannel) {
+    return { channel: "", to: requestedTo };
+  }
+
+  const normalized = normalizeChannelId(requestedChannel);
+  if (normalized) {
+    return { channel: normalized, to: requestedTo };
+  }
+
+  const configuredChannels = await listConfiguredMessageChannels(params.cfg);
+  for (const configured of configuredChannels) {
+    const plugin = getChannelPlugin(configured);
+    const looksLikeId = plugin?.messaging?.targetResolver?.looksLikeId;
+    if (typeof looksLikeId === "function" && looksLikeId(requestedChannel)) {
+      return {
+        channel: configured,
+        to: requestedTo || requestedChannel,
+      };
+    }
+  }
+
+  return { channel: "", to: requestedTo };
+}
+
 export async function sendMessage(params: MessageSendParams): Promise<MessageSendResult> {
   const cfg = params.cfg ?? loadConfig();
-  const channel = params.channel?.trim()
-    ? normalizeChannelId(params.channel)
+  const resolved = await resolveChannelAndTarget({
+    cfg,
+    channel: params.channel,
+    to: params.to,
+  });
+  const channel = resolved.channel
+    ? resolved.channel
     : (await resolveMessageChannelSelection({ cfg })).channel;
   if (!channel) {
     throw new Error(`Unknown channel: ${params.channel}`);
@@ -150,7 +187,7 @@ export async function sendMessage(params: MessageSendParams): Promise<MessageSen
     const outboundChannel = channel;
     const resolvedTarget = resolveOutboundTarget({
       channel: outboundChannel,
-      to: params.to,
+      to: resolved.to,
       cfg,
       accountId: params.accountId,
       mode: "explicit",
@@ -180,7 +217,7 @@ export async function sendMessage(params: MessageSendParams): Promise<MessageSen
 
     return {
       channel,
-      to: params.to,
+      to: resolved.to,
       via: "direct",
       mediaUrl: primaryMediaUrl,
       mediaUrls: mirrorMediaUrls.length ? mirrorMediaUrls : undefined,
