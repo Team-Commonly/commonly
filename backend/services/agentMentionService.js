@@ -2,6 +2,7 @@ const AgentEventService = require('./agentEventService');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
 const Pod = require('../models/Pod');
+const User = require('../models/User');
 const chatSummarizerService = require('./chatSummarizerService');
 const ChatSummarizerService = chatSummarizerService.constructor;
 
@@ -256,8 +257,79 @@ const enqueueMentions = async ({
   return { enqueued, skipped };
 };
 
+/**
+ * Auto-enqueue a dm.message event for every user message in an agent-admin
+ * DM pod.  Unlike enqueueMentions, no @mention is required — in a 1:1 DM
+ * every message from the human should reach the agent.
+ */
+const enqueueDmEvent = async ({ podId, message, userId, username }) => {
+  const pod = await Pod.findById(podId).lean();
+  if (!pod || pod.type !== 'agent-admin') {
+    return { enqueued: false, reason: 'not_dm_pod' };
+  }
+
+  const senderIdStr = String(userId);
+  const otherMemberIds = (pod.members || [])
+    .map((m) => String(m._id || m))
+    .filter((id) => id !== senderIdStr);
+
+  if (otherMemberIds.length === 0) {
+    return { enqueued: false, reason: 'no_other_member' };
+  }
+
+  const agentMembers = await User.find({
+    _id: { $in: otherMemberIds },
+    isBot: true,
+  }).select('_id username botMetadata').lean();
+
+  if (agentMembers.length === 0) {
+    return { enqueued: false, reason: 'no_agent_user' };
+  }
+
+  const content = message?.content || message?.text || '';
+  const enqueued = [];
+
+  for (const agentUser of agentMembers) {
+    const agentName = agentUser.botMetadata?.agentName || agentUser.username;
+    const instanceId = agentUser.botMetadata?.instanceId || 'default';
+
+    // Find any active installation to confirm the agent is live
+    const installation = await AgentInstallation.findOne({
+      agentName: agentName.toLowerCase(),
+      instanceId,
+      status: 'active',
+    }).lean();
+
+    if (!installation) continue;
+
+    await AgentEventService.enqueue({
+      agentName: agentName.toLowerCase(),
+      instanceId,
+      podId,
+      type: 'dm.message',
+      payload: {
+        messageId: message?._id || message?.id
+          ? String(message?._id || message?.id)
+          : undefined,
+        content,
+        userId,
+        username,
+        source: 'dm',
+        messageType: message?.messageType || message?.message_type || 'text',
+        createdAt: message?.createdAt || message?.created_at || new Date(),
+        dmPodId: String(podId),
+        installationPodId: installation.podId?.toString(),
+      },
+    });
+    enqueued.push(agentName);
+  }
+
+  return { enqueued, skipped: [] };
+};
+
 module.exports = {
   extractMentions,
   enqueueMentions,
+  enqueueDmEvent,
   MENTION_ALIASES,
 };

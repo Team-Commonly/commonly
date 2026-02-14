@@ -110,6 +110,14 @@ exports.createMessage = async (req, res) => {
       userId,
       username,
     });
+    if (pod.type === 'agent-admin') {
+      await AgentMentionService.enqueueDmEvent({
+        podId,
+        message,
+        userId,
+        username,
+      });
+    }
 
     res.json(message);
   } catch (err) {

@@ -7,6 +7,7 @@ const AgentEventService = require('./agentEventService');
 const DMService = require('./dmService');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const User = require('../models/User');
+const Pod = require('../models/Pod');
 
 let PGMessage;
 try {
@@ -753,9 +754,13 @@ class AgentMessageService {
 
     // Route likely error/debug content to agent-admin DM (agent <-> installer),
     // then leave a short system notice in the original pod.
+    const sourcePod = (routesErrorsToOwnerDM && isErrorContent)
+      ? await Pod.findById(podId).select('type').lean()
+      : null;
     if (
       routesErrorsToOwnerDM
       && isErrorContent
+      && sourcePod?.type !== 'agent-admin'
     ) {
       try {
         const shouldPostSourceNotice = normalizedAgentName !== 'openclaw';
