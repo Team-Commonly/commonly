@@ -261,6 +261,48 @@ function createXProvider(integration) {
 
       let tokenRefreshed = false;
       let refreshMeta = null;
+      const proactiveRefreshThresholdSecondsRaw = Number(
+        process.env.X_OAUTH_REFRESH_BUFFER_SECONDS,
+      );
+      const proactiveRefreshThresholdSeconds = Number.isFinite(proactiveRefreshThresholdSecondsRaw)
+        ? Math.max(0, Math.trunc(proactiveRefreshThresholdSecondsRaw))
+        : 1800;
+
+      const tryRefreshToken = async ({ force = false } = {}) => {
+        if (!refreshToken) return false;
+
+        if (!force) {
+          const expiresAt = config?.tokenExpiresAt ? new Date(config.tokenExpiresAt) : null;
+          const expiresAtMs = expiresAt instanceof Date ? expiresAt.valueOf() : Number.NaN;
+          if (!Number.isNaN(expiresAtMs)) {
+            const refreshAtMs = expiresAtMs - (proactiveRefreshThresholdSeconds * 1000);
+            if (Date.now() < refreshAtMs) {
+              return false;
+            }
+          } else {
+            // Skip proactive refresh when expiry is unknown; still refresh on 401.
+            return false;
+          }
+        }
+
+        const refreshed = await refreshXAccessToken({ refreshToken });
+        const nextAccessToken = refreshed.access_token || accessToken;
+        if (!nextAccessToken) {
+          throw new Error('Missing X access token in refresh response');
+        }
+        accessToken = nextAccessToken;
+        refreshToken = refreshed.refresh_token || refreshToken;
+        tokenRefreshed = Boolean(refreshed.access_token) || tokenRefreshed;
+        refreshMeta = {
+          tokenType: refreshed.token_type || refreshMeta?.tokenType || null,
+          expiresIn: refreshed.expires_in || refreshMeta?.expiresIn || null,
+          scope: refreshed.scope || refreshMeta?.scope || null,
+        };
+        return Boolean(refreshed.access_token);
+      };
+
+      // Refresh close to expiry so feed sync remains healthy without user reconnect churn.
+      await tryRefreshToken({ force: false });
 
       if (followFromAuthenticatedUser && config.userId) {
         try {
@@ -283,15 +325,7 @@ function createXProvider(integration) {
           const canRefresh = error?.response?.status === 401 && refreshToken;
           if (canRefresh) {
             try {
-              const refreshed = await refreshXAccessToken({ refreshToken });
-              accessToken = refreshed.access_token || accessToken;
-              refreshToken = refreshed.refresh_token || refreshToken;
-              tokenRefreshed = Boolean(refreshed.access_token);
-              refreshMeta = {
-                tokenType: refreshed.token_type || null,
-                expiresIn: refreshed.expires_in || null,
-                scope: refreshed.scope || null,
-              };
+              await tryRefreshToken({ force: true });
               const followingUsers = await fetchXFollowing({
                 apiBase,
                 accessToken,
@@ -358,15 +392,7 @@ function createXProvider(integration) {
         );
       } catch (error) {
         if (error?.response?.status === 401 && refreshToken) {
-          const refreshed = await refreshXAccessToken({ refreshToken });
-          accessToken = refreshed.access_token || accessToken;
-          refreshToken = refreshed.refresh_token || refreshToken;
-          tokenRefreshed = Boolean(refreshed.access_token);
-          refreshMeta = {
-            tokenType: refreshed.token_type || null,
-            expiresIn: refreshed.expires_in || null,
-            scope: refreshed.scope || null,
-          };
+          await tryRefreshToken({ force: true });
           tweetsByUser = await Promise.all(
             uniqueUsers.map(async (user) => {
               const userKey = String(user?.id || '').trim();
