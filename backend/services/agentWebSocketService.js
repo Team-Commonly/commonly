@@ -1,8 +1,41 @@
 const jwt = require('jsonwebtoken');
 const AgentEventService = require('./agentEventService');
 const { AgentInstallation } = require('../models/AgentRegistry');
+const Pod = require('../models/Pod');
 const User = require('../models/User');
 const { hash } = require('../utils/secret');
+
+const normalizeTokenIdentityValue = (value) => (
+  String(value || '').trim().toLowerCase()
+);
+
+const deriveInstanceIdFromUsername = (agentName, username) => {
+  const normalizedAgent = normalizeTokenIdentityValue(agentName);
+  const normalizedUsername = normalizeTokenIdentityValue(username);
+  if (!normalizedAgent || !normalizedUsername) return null;
+  if (normalizedUsername === normalizedAgent) return 'default';
+  const prefix = `${normalizedAgent}-`;
+  if (normalizedUsername.startsWith(prefix)) {
+    const suffix = normalizedUsername.slice(prefix.length).trim();
+    return suffix || null;
+  }
+  return null;
+};
+
+const resolveTokenAgentIdentity = (agentUser) => {
+  const meta = agentUser?.botMetadata || {};
+  const username = normalizeTokenIdentityValue(agentUser?.username);
+  const agentName = normalizeTokenIdentityValue(meta.agentName || meta.agentType || username);
+
+  const metadataInstanceId = normalizeTokenIdentityValue(meta.instanceId);
+  const usernameInstanceId = deriveInstanceIdFromUsername(agentName, username);
+  let instanceId = metadataInstanceId || usernameInstanceId || 'default';
+  if (usernameInstanceId && (!metadataInstanceId || metadataInstanceId === 'default')) {
+    instanceId = usernameInstanceId;
+  }
+
+  return { agentName, instanceId };
+};
 
 /**
  * Agent WebSocket Service
@@ -43,6 +76,7 @@ class AgentWebSocketService {
 
         socket.agentName = agentInfo.agentName;
         socket.instanceId = agentInfo.instanceId || 'default';
+        socket.agentUserId = agentInfo.agentUserId || null;
         socket.agentKey = `${socket.agentName}:${socket.instanceId}`;
         socket.subscribedPods = new Set();
 
@@ -140,13 +174,22 @@ class AgentWebSocketService {
         status: 'active',
       }).select('podId').lean();
 
-      const podIds = Array.from(
+      const installationPodIds = Array.from(
         new Set(
           (installations || [])
             .map((installation) => installation?.podId?.toString())
             .filter(Boolean),
         ),
       );
+      let dmPodIds = [];
+      if (socket.agentUserId) {
+        const dmPods = await Pod.find({
+          type: 'agent-admin',
+          members: socket.agentUserId,
+        }).select('_id').lean();
+        dmPodIds = dmPods.map((pod) => pod?._id?.toString()).filter(Boolean);
+      }
+      const podIds = Array.from(new Set([...installationPodIds, ...dmPodIds]));
 
       if (!podIds.length) return;
 
@@ -236,13 +279,10 @@ class AgentWebSocketService {
             console.warn('Failed to update agent token usage on User:', err.message);
           }
 
-          const agentName = agentUser.botMetadata?.agentName
-            || agentUser.botMetadata?.agentType
-            || agentUser.username;
-          const instanceId = agentUser.botMetadata?.instanceId || 'default';
+          const { agentName, instanceId } = resolveTokenAgentIdentity(agentUser);
 
           if (agentName) {
-            return { agentName, instanceId };
+            return { agentName, instanceId, agentUserId: agentUser._id?.toString?.() };
           }
         }
 

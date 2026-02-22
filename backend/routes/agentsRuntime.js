@@ -42,13 +42,17 @@ const INTEGRATION_PUBLISH_DAILY_LIMIT = parsePositiveInt(
   24,
 );
 
-const ensurePodMatch = (installationOrList, podId) => {
+const ensurePodMatch = (installationOrList, podId, authorizedPodIds = []) => {
+  const normalizedPodId = podId?.toString?.() || String(podId || '');
+  if (Array.isArray(authorizedPodIds) && authorizedPodIds.length > 0) {
+    return authorizedPodIds.some((id) => String(id) === normalizedPodId);
+  }
   if (Array.isArray(installationOrList)) {
     return installationOrList.some((installation) => (
-      installation?.podId?.toString() === podId.toString()
+      installation?.podId?.toString() === normalizedPodId
     ));
   }
-  return installationOrList?.podId?.toString() === podId.toString();
+  return installationOrList?.podId?.toString() === normalizedPodId;
 };
 
 const resolveInstallationForPod = (installations = [], fallback, podId) => {
@@ -124,6 +128,38 @@ const ensureBotInstallation = async (
     status: { $in: statuses },
   }).lean();
   return installation;
+};
+
+const ensureBotPodAccess = async (
+  user,
+  agentName,
+  podId,
+  statuses = ['active'],
+  instanceId = 'default',
+) => {
+  const installation = await ensureBotInstallation(agentName, podId, statuses, instanceId);
+  if (installation) return installation;
+
+  const dmPod = await Pod.findOne({
+    _id: podId,
+    type: 'agent-admin',
+    members: user?._id,
+  }).select('_id').lean();
+  if (!dmPod) return null;
+
+  const fallbackInstallation = await AgentInstallation.findOne({
+    agentName: agentName.toLowerCase(),
+    instanceId,
+    status: { $in: statuses },
+  }).sort({ updatedAt: -1 }).lean();
+
+  if (fallbackInstallation) return fallbackInstallation;
+  return {
+    agentName: agentName.toLowerCase(),
+    instanceId,
+    displayName: user?.botMetadata?.displayName || user?.name || agentName,
+    config: {},
+  };
 };
 
 /**
@@ -249,6 +285,7 @@ router.post('/dm', auth, async (req, res) => {
 
     const agentName = String(rawAgentName || '').trim().toLowerCase();
     const instanceId = String(rawInstanceId || '').trim() || null;
+    const normalizedInstanceId = instanceId ? String(instanceId).toLowerCase() : null;
     if (!agentName) {
       return res.status(400).json({ message: 'agentName is required' });
     }
@@ -260,9 +297,26 @@ router.post('/dm', auth, async (req, res) => {
     if (instanceId) installationQuery.instanceId = instanceId;
     if (requestedPodId) installationQuery.podId = requestedPodId;
 
-    const installations = await AgentInstallation.find(installationQuery)
+    let installations = await AgentInstallation.find(installationQuery)
       .select('agentName instanceId podId installedBy')
       .lean();
+
+    // Backward-compat fallback for stale clients that still send
+    // instanceId=default when only one non-default instance is installed.
+    if (!installations.length && instanceId) {
+      const fallbackQuery = {
+        agentName,
+        status: 'active',
+      };
+      if (requestedPodId) fallbackQuery.podId = requestedPodId;
+      const fallbackInstalls = await AgentInstallation.find(fallbackQuery)
+        .select('agentName instanceId podId installedBy')
+        .limit(2)
+        .lean();
+      if (fallbackInstalls.length === 1) {
+        installations = fallbackInstalls;
+      }
+    }
 
     if (!installations.length) {
       return res.status(404).json({ message: 'No active installation found for that agent' });
@@ -279,13 +333,45 @@ router.post('/dm', auth, async (req, res) => {
       accessiblePods.map((pod) => pod._id.toString()),
     );
 
-    const selectedInstallation = installations.find((installation) => (
+    const authorizedInstallations = installations.filter((installation) => (
       String(installation.installedBy || '') === String(userId)
       || accessiblePodIdSet.has(String(installation.podId))
     ));
 
-    if (!selectedInstallation) {
+    if (!authorizedInstallations.length) {
       return res.status(403).json({ message: 'Not authorized to message this agent' });
+    }
+
+    const normalizedInstalls = authorizedInstallations.map((installation) => ({
+      ...installation,
+      instanceId: String(installation.instanceId || 'default'),
+    }));
+    const byExactInstance = normalizedInstanceId
+      ? normalizedInstalls.filter(
+        (installation) => installation.instanceId.toLowerCase() === normalizedInstanceId,
+      )
+      : [];
+
+    let selectedInstallation = null;
+    if (byExactInstance.length === 1) {
+      selectedInstallation = byExactInstance[0];
+    } else if (byExactInstance.length > 1) {
+      return res.status(409).json({
+        message: 'Multiple installations match that instanceId. Specify podId.',
+      });
+    } else if (normalizedInstanceId === 'default' && normalizedInstalls.length === 1) {
+      // Backward compatibility: stale clients may still send default.
+      selectedInstallation = normalizedInstalls[0];
+    } else if (!normalizedInstanceId && normalizedInstalls.length === 1) {
+      selectedInstallation = normalizedInstalls[0];
+    } else {
+      return res.status(409).json({
+        message: 'Multiple installations found. Specify instanceId (and podId if needed).',
+        installations: normalizedInstalls.map((installation) => ({
+          instanceId: installation.instanceId,
+          podId: String(installation.podId || ''),
+        })),
+      });
     }
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(
@@ -381,7 +467,8 @@ router.get(
         return res.status(403).json({ message: 'Agent token does not match bot user' });
       }
 
-      const installation = await ensureBotInstallation(
+      const installation = await ensureBotPodAccess(
+        user,
         resolvedAgentName,
         podId,
         ['active', 'paused'],
@@ -442,7 +529,8 @@ router.get(
         return res.status(403).json({ message: 'Agent token does not match bot user' });
       }
 
-      const installation = await ensureBotInstallation(
+      const installation = await ensureBotPodAccess(
+        user,
         resolvedAgentName,
         podId,
         ['active', 'paused'],
@@ -483,7 +571,8 @@ router.post(
         return res.status(403).json({ message: 'Agent token does not match bot user' });
       }
 
-      const installation = await ensureBotInstallation(
+      const installation = await ensureBotPodAccess(
+        user,
         resolvedAgentName,
         podId,
         ['active'],
@@ -585,7 +674,7 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
       podId,
     );
 
-    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -652,7 +741,7 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
       podId,
     );
 
-    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -675,7 +764,7 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
       podId,
     );
 
-    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -707,7 +796,7 @@ router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req, res) => {
       podId,
     );
 
-    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -789,7 +878,11 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
       return res.status(404).json({ message: 'Thread not found' });
     }
 
-    if (post.podId && !ensurePodMatch(req.agentInstallations || installation, post.podId)) {
+    if (post.podId && !ensurePodMatch(
+      req.agentInstallations || installation,
+      post.podId,
+      req.agentAuthorizedPodIds,
+    )) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -826,7 +919,7 @@ router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req, res) => {
     );
 
     // Verify agent is installed in this pod
-    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -892,7 +985,7 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
     );
 
     // Verify agent is installed in this pod
-    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
@@ -972,7 +1065,7 @@ router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req, res) => {
       req.agentInstallation,
       podId,
     );
-    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
     const policy = await SocialPolicyService.getPolicy();
@@ -1005,7 +1098,7 @@ router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth
     );
 
     // Verify agent is installed in this pod
-    if (!ensurePodMatch(req.agentInstallations || installation, podId)) {
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 

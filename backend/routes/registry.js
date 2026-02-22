@@ -964,15 +964,13 @@ const deriveInstanceId = (displayName, agentName) => {
 };
 
 const resolveRuntimeInstanceId = ({ agentName, requestedInstanceId, installation }) => {
-  const installedInstanceId = normalizeInstanceId(installation?.instanceId || requestedInstanceId);
-  const normalizedRequested = normalizeInstanceId(requestedInstanceId);
-  if (String(agentName || '').trim().toLowerCase() !== 'openclaw') {
-    return installedInstanceId;
-  }
-  if (installedInstanceId !== 'default') return installedInstanceId;
-  if (normalizedRequested !== 'default') return normalizedRequested;
-  const derived = deriveInstanceId(installation?.displayName, agentName);
-  return derived !== 'default' ? derived : normalizedRequested;
+  // Runtime identity must follow the installed instance exactly.
+  // Do not derive a different runtime instance from displayName, otherwise
+  // shared tokens can drift and runtime pod authorization fails.
+  const installedInstanceId = normalizeInstanceId(installation?.instanceId);
+  if (installedInstanceId) return installedInstanceId;
+
+  return normalizeInstanceId(requestedInstanceId);
 };
 
 /**
