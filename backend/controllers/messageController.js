@@ -104,14 +104,15 @@ exports.createMessage = async (req, res) => {
     );
 
     const username = req.user?.username;
-    await AgentMentionService.enqueueMentions({
-      podId,
-      message,
-      userId,
-      username,
-    });
     if (pod.type === 'agent-admin') {
       await AgentMentionService.enqueueDmEvent({
+        podId,
+        message,
+        userId,
+        username,
+      });
+    } else {
+      await AgentMentionService.enqueueMentions({
         podId,
         message,
         userId,

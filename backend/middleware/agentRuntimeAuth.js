@@ -1,6 +1,39 @@
 const { AgentInstallation } = require('../models/AgentRegistry');
 const User = require('../models/User');
+const Pod = require('../models/Pod');
 const { hash } = require('../utils/secret');
+
+const normalizeTokenIdentityValue = (value) => (
+  String(value || '').trim().toLowerCase()
+);
+
+const deriveInstanceIdFromUsername = (agentName, username) => {
+  const normalizedAgent = normalizeTokenIdentityValue(agentName);
+  const normalizedUsername = normalizeTokenIdentityValue(username);
+  if (!normalizedAgent || !normalizedUsername) return null;
+  if (normalizedUsername === normalizedAgent) return 'default';
+  const prefix = `${normalizedAgent}-`;
+  if (normalizedUsername.startsWith(prefix)) {
+    const suffix = normalizedUsername.slice(prefix.length).trim();
+    return suffix || null;
+  }
+  return null;
+};
+
+const resolveTokenAgentIdentity = (agentUser) => {
+  const meta = agentUser?.botMetadata || {};
+  const username = normalizeTokenIdentityValue(agentUser?.username);
+  const agentName = normalizeTokenIdentityValue(meta.agentName || meta.agentType || username);
+
+  const metadataInstanceId = normalizeTokenIdentityValue(meta.instanceId);
+  const usernameInstanceId = deriveInstanceIdFromUsername(agentName, username);
+  let instanceId = metadataInstanceId || usernameInstanceId || 'default';
+  if (usernameInstanceId && (!metadataInstanceId || metadataInstanceId === 'default')) {
+    instanceId = usernameInstanceId;
+  }
+
+  return { agentName, instanceId };
+};
 
 const extractToken = (req) => {
   const authHeader = req.header('Authorization');
@@ -37,17 +70,26 @@ module.exports = async (req, res, next) => {
       }
 
       // Find all active installations for this agent
-      const agentName = agentUser.botMetadata?.agentName || agentUser.botMetadata?.agentType;
-      const instanceId = agentUser.botMetadata?.instanceId || 'default';
+      const { agentName, instanceId } = resolveTokenAgentIdentity(agentUser);
 
       const installations = await AgentInstallation.find({
-        agentName: agentName?.toLowerCase(),
+        agentName,
         instanceId,
         status: 'active',
       }).lean();
+      const installationPodIds = installations
+        .map((installation) => installation?.podId?.toString())
+        .filter(Boolean);
+      const dmPods = await Pod.find({
+        type: 'agent-admin',
+        members: agentUser._id,
+      }).select('_id').lean();
+      const dmPodIds = dmPods.map((pod) => pod._id?.toString()).filter(Boolean);
+      const authorizedPodIds = Array.from(new Set([...installationPodIds, ...dmPodIds]));
 
       req.agentUser = agentUser;
       req.agentInstallations = installations;
+      req.agentAuthorizedPodIds = authorizedPodIds;
       // For backward compatibility, set agentInstallation to first installation
       req.agentInstallation = installations[0] || null;
       return next();
@@ -75,6 +117,7 @@ module.exports = async (req, res, next) => {
 
     req.agentInstallation = installation;
     req.agentInstallations = [installation];
+    req.agentAuthorizedPodIds = [installation?.podId?.toString()].filter(Boolean);
     return next();
   } catch (error) {
     console.error('Agent auth error:', error);
