@@ -160,6 +160,29 @@ Gateway rollout strategy note:
 - `clawdbot-gateway` should use deployment strategy `Recreate`.
 - Reason: gateway config/workspace PVCs are `ReadWriteOnce`; `RollingUpdate` can stall with multi-attach errors during upgrades.
 
+### Dual moltbot.json Files
+
+There are **two separate moltbot.json files** that must stay in sync:
+
+| File | Location | Purpose |
+|------|----------|---------|
+| ConfigMap | `/config/moltbot.json` (from `moltbot-config` ConfigMap) | Read by the gateway process at runtime |
+| PVC state | `/state/moltbot.json` (on the gateway PVC) | Read by `clawdbot-auth-seed` init container at pod startup |
+
+The init container writes per-account `auth-profiles.json` by reading `/state/moltbot.json`.
+**If an account is absent from `/state/moltbot.json`, it never gets auth-profiles and the gateway silently skips starting its WebSocket connection.**
+
+As of 2026-02-22, `provisionOpenClawAccount` automatically syncs new accounts to `/state/moltbot.json` via `execInPod` (`syncAccountToStateMoltbot` in `agentProvisionerServiceK8s.js`). The sync is non-fatal; errors are only warnings.
+
+Each agent account workspace also needs bootstrap files (`AGENTS.md`, `BOOTSTRAP.md`, `IDENTITY.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) under `/workspace/<accountId>/` in the gateway pod. These are copied from an existing account during provisioning. If missing, copy manually:
+```bash
+for f in AGENTS.md BOOTSTRAP.md IDENTITY.md SOUL.md TOOLS.md USER.md; do
+  kubectl exec -n commonly-dev <gateway-pod> -c clawdbot-gateway -- \
+    cp /workspace/liz/$f /workspace/<new-account-id>/$f
+done
+kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
+```
+
 ## Important Configuration Notes
 
 ### Agent Provisioning RBAC (K8s)
