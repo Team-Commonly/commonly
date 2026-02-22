@@ -1,4 +1,5 @@
 const Pod = require('../models/Pod');
+const User = require('../models/User');
 const { AgentInstallation } = require('../models/AgentRegistry');
 
 let PGPod;
@@ -10,6 +11,60 @@ try {
 }
 
 class DMService {
+  static escapeRegex(value = '') {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  static async syncPgDmMembers(dmPodId, ownerId, agentId) {
+    try {
+      if (process.env.PG_HOST && PGPod) {
+        await PGPod.addMember(dmPodId, ownerId);
+        await PGPod.addMember(dmPodId, agentId);
+      }
+    } catch (pgError) {
+      console.error('Failed to sync DM pod members to PostgreSQL:', pgError.message);
+    }
+  }
+
+  static async ensureDmMembers(dmPod, ownerId, agentId) {
+    const existingMembers = new Set(
+      (dmPod.members || []).map((member) => String(member?._id || member)),
+    );
+    const missingOwner = !existingMembers.has(String(ownerId));
+    const missingAgent = !existingMembers.has(String(agentId));
+    if (!missingOwner && !missingAgent) {
+      return dmPod;
+    }
+
+    dmPod.members = Array.from(new Set([
+      ...Array.from(existingMembers),
+      String(ownerId),
+      String(agentId),
+    ]));
+    await dmPod.save();
+    await DMService.syncPgDmMembers(dmPod._id.toString(), ownerId, agentId);
+    return dmPod;
+  }
+
+  static async isCompatibleStalePod(dmPod, ownerId, agentId) {
+    const ownerIdStr = String(ownerId);
+    const agentIdStr = String(agentId);
+    const otherMemberIds = (dmPod.members || [])
+      .map((member) => String(member?._id || member))
+      .filter((id) => id !== ownerIdStr);
+
+    if (!otherMemberIds.length) return true;
+
+    const botMembers = await User.find({
+      _id: { $in: otherMemberIds },
+      isBot: true,
+    }).select('_id').lean();
+
+    if (!botMembers.length) return true;
+
+    return botMembers.some((member) => String(member._id) === agentIdStr);
+  }
+
   /**
    * Find or create a 1:1 agent-admin DM pod between an agent user and its
    * installer (the owner who installed the agent into a pod).
@@ -25,7 +80,7 @@ class DMService {
       members: { $all: [agentId, ownerId] },
       description: { $regex: `\\b${agentName}\\b`, $options: 'i' },
     });
-    if (existing) return existing;
+    if (existing) return DMService.ensureDmMembers(existing, ownerId, agentId);
 
     // Fallback: broader search without description regex in case the
     // description was edited or stored differently.
@@ -34,7 +89,31 @@ class DMService {
       members: { $all: [agentId, ownerId] },
       name: { $regex: agentName, $options: 'i' },
     });
-    if (fallback) return fallback;
+    if (fallback) return DMService.ensureDmMembers(fallback, ownerId, agentId);
+
+    // Repair stale pods that match this agent hint but are missing one of the
+    // expected members (for example older records with owner-only membership).
+    const safeAgentName = DMService.escapeRegex(agentName || 'agent');
+    const staleCandidates = await Pod.find({
+      type: 'agent-admin',
+      members: ownerId,
+      $or: [
+        { description: { $regex: `\\b${safeAgentName}\\b`, $options: 'i' } },
+        { name: { $regex: safeAgentName, $options: 'i' } },
+      ],
+    })
+      .sort({ updatedAt: -1 })
+      .limit(5);
+    const staleChecks = await Promise.all(
+      staleCandidates.map(async (candidate) => ({
+        candidate,
+        compatible: await DMService.isCompatibleStalePod(candidate, ownerId, agentId),
+      })),
+    );
+    const stale = staleChecks.find((row) => row.compatible)?.candidate || null;
+    if (stale) {
+      return DMService.ensureDmMembers(stale, ownerId, agentId);
+    }
 
     // Create a new DM pod
     const label = agentName || 'agent';
@@ -58,8 +137,8 @@ class DMService {
           ownerId,
           dmPod._id.toString(),
         );
-        // Also add the agent user as a member in PG
-        await PGPod.addMember(dmPod._id.toString(), agentId);
+        // Ensure both members exist in PG.
+        await DMService.syncPgDmMembers(dmPod._id.toString(), ownerId, agentId);
       }
     } catch (pgError) {
       console.error('Failed to sync DM pod to PostgreSQL:', pgError.message);

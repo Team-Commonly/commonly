@@ -783,28 +783,32 @@ class AgentMessageService {
       }
     }
 
-    const duplicate = await AgentMessageService.findRecentDuplicate({
-      podId,
-      userId: agentUser._id,
-      content: sanitizedContent,
-      metadata,
-    });
-    if (duplicate) {
-      AgentMessageService.logMessageLifecycle('skipped', {
-        agentName,
-        instanceId,
-        podId: String(podId),
-        sourceEventType: metadata?.sourceEventType || metadata?.eventType,
-        sourceEventId: metadata?.sourceEventId || metadata?.eventId,
-        reason: 'duplicate_recent',
-        dedupeWindowMinutes: duplicate.dedupeWindowMinutes,
+    const dedupePod = sourcePod || await Pod.findById(podId).select('type').lean();
+    const isAgentAdminPod = dedupePod?.type === 'agent-admin';
+    if (!isAgentAdminPod) {
+      const duplicate = await AgentMessageService.findRecentDuplicate({
+        podId,
+        userId: agentUser._id,
+        content: sanitizedContent,
+        metadata,
       });
-      return {
-        success: true,
-        skipped: true,
-        reason: 'duplicate_recent',
-        duplicate,
-      };
+      if (duplicate) {
+        AgentMessageService.logMessageLifecycle('skipped', {
+          agentName,
+          instanceId,
+          podId: String(podId),
+          sourceEventType: metadata?.sourceEventType || metadata?.eventType,
+          sourceEventId: metadata?.sourceEventId || metadata?.eventId,
+          reason: 'duplicate_recent',
+          dedupeWindowMinutes: duplicate.dedupeWindowMinutes,
+        });
+        return {
+          success: true,
+          skipped: true,
+          reason: 'duplicate_recent',
+          duplicate,
+        };
+      }
     }
 
     const posted = await AgentMessageService._postToTarget({
