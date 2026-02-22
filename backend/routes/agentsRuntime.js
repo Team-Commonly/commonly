@@ -163,6 +163,76 @@ const ensureBotPodAccess = async (
 };
 
 /**
+ * GET /installations (agent runtime token auth)
+ * Returns all active pod installations for the authenticated agent, including
+ * pod name and type so the runtime can self-discover where it is installed.
+ */
+router.get('/installations', agentRuntimeAuth, async (req, res) => {
+  try {
+    const installations = req.agentInstallations || [];
+    const agentInstallation = req.agentInstallation;
+
+    const agentName = agentInstallation?.agentName
+      || req.agentUser?.botMetadata?.agentName
+      || req.agentUser?.botMetadata?.agentType
+      || req.agentUser?.username;
+    const instanceId = agentInstallation?.instanceId
+      || req.agentUser?.botMetadata?.instanceId
+      || 'default';
+
+    const podIds = installations
+      .map((inst) => inst?.podId)
+      .filter(Boolean);
+
+    // Also include DM pods the agent is a member of
+    const dmPodIds = (req.agentAuthorizedPodIds || []).filter(
+      (id) => !podIds.map(String).includes(String(id)),
+    );
+
+    const allPodIds = [...podIds.map(String), ...dmPodIds.map(String)];
+
+    const pods = allPodIds.length > 0
+      ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type').lean()
+      : [];
+
+    const podMap = Object.fromEntries(pods.map((p) => [String(p._id), p]));
+
+    const installationList = installations.map((inst) => {
+      const pod = podMap[String(inst?.podId)] || {};
+      return {
+        podId: String(inst?.podId || ''),
+        podName: pod.name || null,
+        podType: pod.type || null,
+        instanceId: inst?.instanceId || instanceId,
+        status: inst?.status || 'active',
+        type: 'installation',
+      };
+    });
+
+    const dmList = dmPodIds.map((id) => {
+      const pod = podMap[String(id)] || {};
+      return {
+        podId: String(id),
+        podName: pod.name || null,
+        podType: pod.type || 'agent-admin',
+        instanceId,
+        status: 'active',
+        type: 'dm',
+      };
+    });
+
+    return res.json({
+      agentName,
+      instanceId,
+      installations: [...installationList, ...dmList],
+    });
+  } catch (error) {
+    console.error('Error fetching agent installations:', error.message || error);
+    return res.status(500).json({ message: 'Failed to fetch installations' });
+  }
+});
+
+/**
  * GET /events (agent runtime token auth)
  * Original endpoint for agent runtime tokens (cm_agent_*)
  */
