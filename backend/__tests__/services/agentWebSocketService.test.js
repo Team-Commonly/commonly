@@ -11,8 +11,8 @@ jest.mock('../../models/User', () => ({
 }));
 
 const { hash } = require('../../utils/secret');
-const { AgentInstallation } = require('../../models/AgentRegistry');
-const User = require('../../models/User');
+let AgentInstallation = require('../../models/AgentRegistry').AgentInstallation;
+let User = require('../../models/User');
 
 describe('agentWebSocketService', () => {
   let agentWebSocketService;
@@ -22,6 +22,9 @@ describe('agentWebSocketService', () => {
     // Clear module cache to get fresh instance
     jest.resetModules();
     agentWebSocketService = require('../../services/agentWebSocketService');
+    // Re-grab mock references after resetModules to avoid reference drift
+    AgentInstallation = require('../../models/AgentRegistry').AgentInstallation;
+    User = require('../../models/User');
   });
 
   describe('validateAgentToken', () => {
@@ -77,6 +80,7 @@ describe('agentWebSocketService', () => {
       expect(result).toEqual({
         agentName: 'openclaw',
         instanceId: 'cuz',
+        agentUserId: 'user-1',
       });
     });
   });
@@ -209,6 +213,10 @@ describe('agentWebSocketService', () => {
 
     it('logs warning for stale connections without pong', () => {
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      // Set Date.now() to a fixed past time so the connection appears stale
+      // when the ping interval fires (lastPong is set to Date.now() at connect time)
+      const fakeNow = 1000;
+      jest.spyOn(Date, 'now').mockReturnValue(fakeNow);
 
       AgentInstallation.findOne.mockResolvedValue({
         agentName: 'openclaw',
@@ -217,10 +225,13 @@ describe('agentWebSocketService', () => {
 
       agentWebSocketService.init(mockIo);
 
-      // Simulate connection
+      // Simulate connection (lastPong = fakeNow = 1000)
       if (connectionHandler) {
         connectionHandler(mockSocket);
       }
+
+      // Restore Date.now() to real time so the interval sees a large elapsed gap
+      Date.now.mockRestore();
 
       // Advance time by 95 seconds (past 90 second stale threshold)
       jest.advanceTimersByTime(95000);

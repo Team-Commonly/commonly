@@ -15,10 +15,12 @@ jest.mock('../../../models/AgentProfile', () => ({
 
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(),
+  find: jest.fn(),
 }));
 
 jest.mock('../../../models/User', () => ({
   find: jest.fn(),
+  findById: jest.fn(),
 }));
 
 jest.mock('../../../services/chatSummarizerService', () => ({
@@ -169,14 +171,24 @@ describe('AgentMentionService', () => {
         },
       ]),
     });
-    AgentInstallation.findOne.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{
         _id: 'inst-1',
         podId: 'pod-chat-1',
+        installedBy: 'user-1',
         agentName: 'openclaw',
         instanceId: 'liz',
         status: 'active',
-      }),
+      }]),
+    });
+    Pod.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{ _id: 'pod-chat-1' }]),
+    });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ _id: 'user-1', isBot: false }),
     });
 
     const result = await AgentMentionService.enqueueDmEvent({
@@ -191,7 +203,7 @@ describe('AgentMentionService', () => {
         agentName: 'openclaw',
         instanceId: 'liz',
         podId: 'pod-dm-1',
-        type: 'dm.message',
+        type: 'chat.mention',
         payload: expect.objectContaining({
           messageId: '42',
           source: 'dm',
