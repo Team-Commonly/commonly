@@ -258,14 +258,19 @@ const enqueueMentions = async ({
 };
 
 /**
- * Auto-enqueue a dm.message event for every user message in an agent-admin
- * DM pod.  Unlike enqueueMentions, no @mention is required — in a 1:1 DM
- * every message from the human should reach the agent.
+ * Auto-enqueue a DM-origin chat.mention event for every user message in an
+ * agent-admin pod. Unlike regular mentions, no explicit @mention is required
+ * because this is already a 1:1 human <-> agent channel.
  */
 const enqueueDmEvent = async ({ podId, message, userId, username }) => {
   const pod = await Pod.findById(podId).lean();
   if (!pod || pod.type !== 'agent-admin') {
     return { enqueued: false, reason: 'not_dm_pod' };
+  }
+
+  const sender = await User.findById(userId).select('_id isBot').lean();
+  if (sender?.isBot) {
+    return { enqueued: false, reason: 'sender_is_bot' };
   }
 
   const senderIdStr = String(userId);
@@ -292,21 +297,54 @@ const enqueueDmEvent = async ({ podId, message, userId, username }) => {
   for (const agentUser of agentMembers) {
     const agentName = agentUser.botMetadata?.agentName || agentUser.username;
     const instanceId = agentUser.botMetadata?.instanceId || 'default';
+    const mentionHandle = `@${instanceId}`;
 
-    // Find any active installation to confirm the agent is live
-    const installation = await AgentInstallation.findOne({
+    // Find active installations and resolve pods the sender can legitimately reference.
+    const installations = await AgentInstallation.find({
       agentName: agentName.toLowerCase(),
       instanceId,
       status: 'active',
-    }).lean();
+    })
+      .select('podId installedBy')
+      .lean();
 
-    if (!installation) continue;
+    if (!Array.isArray(installations) || installations.length === 0) continue;
+
+    const senderScopedPodIds = new Set(
+      installations
+        .filter((entry) => String(entry?.installedBy || '') === senderIdStr)
+        .map((entry) => String(entry?.podId || ''))
+        .filter(Boolean),
+    );
+
+    const memberPodCandidates = installations
+      .map((entry) => entry?.podId)
+      .filter(Boolean);
+    if (memberPodCandidates.length > 0) {
+      const memberPods = await Pod.find({
+        _id: { $in: memberPodCandidates },
+        members: userId,
+      }).select('_id').lean();
+      memberPods.forEach((entry) => {
+        const id = String(entry?._id || '');
+        if (id) senderScopedPodIds.add(id);
+      });
+    }
+
+    const availablePods = senderScopedPodIds.size > 0
+      ? await Pod.find({ _id: { $in: Array.from(senderScopedPodIds) } })
+        .select('_id name type')
+        .lean()
+      : [];
+    const installationPodId = installations[0]?.podId?.toString?.() || null;
 
     await AgentEventService.enqueue({
       agentName: agentName.toLowerCase(),
       instanceId,
       podId,
-      type: 'dm.message',
+      // Use chat.mention for runtime compatibility: some active runtimes
+      // only process mention/thread event types.
+      type: 'chat.mention',
       payload: {
         messageId: message?._id || message?.id
           ? String(message?._id || message?.id)
@@ -314,11 +352,17 @@ const enqueueDmEvent = async ({ podId, message, userId, username }) => {
         content,
         userId,
         username,
+        mentions: [mentionHandle],
         source: 'dm',
         messageType: message?.messageType || message?.message_type || 'text',
         createdAt: message?.createdAt || message?.created_at || new Date(),
         dmPodId: String(podId),
-        installationPodId: installation.podId?.toString(),
+        installationPodId,
+        availablePods: (availablePods || []).map((entry) => ({
+          podId: String(entry?._id || ''),
+          name: entry?.name || null,
+          type: entry?.type || null,
+        })),
       },
     });
     enqueued.push(agentName);
