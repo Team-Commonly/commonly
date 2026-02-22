@@ -446,7 +446,7 @@ router.post('/dm', auth, async (req, res) => {
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(
       selectedInstallation.agentName,
-      selectedInstallation.instanceId || 'default',
+      { instanceId: selectedInstallation.instanceId || 'default' },
     );
 
     const dmPod = await DMService.getOrCreateAgentDM(agentUser._id, userId, {
