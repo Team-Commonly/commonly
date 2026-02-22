@@ -1157,6 +1157,7 @@ const issueUserTokenForInstallation = async ({
   displayName,
   podId,
   scopes,
+  force = false,
 }) => {
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(agentName.toLowerCase(), {
     instanceId,
@@ -1164,10 +1165,23 @@ const issueUserTokenForInstallation = async ({
   });
   await AgentIdentityService.ensureAgentInPod(agentUser, podId);
   const normalizedScopes = normalizeScopes(scopes);
+
+  // Preserve existing token unless force-rotation is requested
+  if (agentUser.apiToken && !force) {
+    agentUser.apiTokenScopes = normalizedScopes;
+    await agentUser.save();
+    return {
+      token: agentUser.apiToken,
+      scopes: normalizedScopes,
+      createdAt: agentUser.apiTokenCreatedAt,
+      existing: true,
+    };
+  }
+
   const token = agentUser.generateApiToken();
   agentUser.apiTokenScopes = normalizedScopes;
   await agentUser.save();
-  return { token, scopes: normalizedScopes, createdAt: agentUser.apiTokenCreatedAt };
+  return { token, scopes: normalizedScopes, createdAt: agentUser.apiTokenCreatedAt, existing: false };
 };
 
 const reprovisionInstallation = async ({
@@ -1225,6 +1239,7 @@ const reprovisionInstallation = async ({
         displayName: installation.displayName,
         podId,
         scopes: installation.scopes || [],
+        force,
       });
       userToken = userIssued?.token || null;
       if (userToken) {
@@ -3001,6 +3016,7 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
         displayName: installation.displayName,
         podId,
         scopes,
+        force,
       });
     }
 
