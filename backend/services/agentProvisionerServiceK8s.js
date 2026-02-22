@@ -246,6 +246,52 @@ const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway } = {}) =
   return result.stdout.trim() || heartbeatPath;
 };
 
+/**
+ * Sync a newly provisioned account into /state/moltbot.json on the gateway PVC.
+ * The init container (clawdbot-auth-seed) reads /state/moltbot.json, not the
+ * ConfigMap, so new accounts must appear there too or the init container will
+ * never write their auth-profiles.json and the gateway will skip them on startup.
+ */
+const syncAccountToStateMoltbot = async (accountId, accountEntry, agentEntry, binding, { gateway } = {}) => {
+  let podName;
+  try {
+    podName = await resolveGatewayPodNameWithRetry(gateway);
+  } catch {
+    // Gateway may not be running yet (first provision); skip silently.
+    return;
+  }
+
+  const script = [
+    'set -eu',
+    'STATE=/state/moltbot.json',
+    'if [ ! -f "$STATE" ]; then exit 0; fi',
+    `python3 - <<'PYEOF'`,
+    'import json, sys',
+    'with open("/state/moltbot.json") as f: d = json.load(f)',
+    `account_id = ${JSON.stringify(accountId)}`,
+    `account_entry = ${JSON.stringify(accountEntry)}`,
+    `agent_entry = ${JSON.stringify(agentEntry)}`,
+    `binding = ${JSON.stringify(binding)}`,
+    // Accounts
+    'd.setdefault("channels", {}).setdefault("commonly", {}).setdefault("accounts", {})',
+    'accts = d["channels"]["commonly"]["accounts"]',
+    'if account_id not in accts: accts[account_id] = account_entry; print("[state-sync] added account:", account_id)',
+    'else: print("[state-sync] account already present:", account_id)',
+    // Agents list
+    'd.setdefault("agents", {}).setdefault("list", [])',
+    'ids = [a.get("id") for a in d["agents"]["list"]]',
+    'if agent_entry and account_id not in ids: d["agents"]["list"].append(agent_entry); print("[state-sync] added agent:", account_id)',
+    // Bindings
+    'd.setdefault("bindings", [])',
+    'bids = [b.get("match", {}).get("accountId") for b in d["bindings"]]',
+    'if binding and account_id not in bids: d["bindings"].append(binding); print("[state-sync] added binding:", account_id)',
+    'with open("/state/moltbot.json", "w") as f: json.dump(d, f, indent=2)',
+    'PYEOF',
+  ].join('\n');
+
+  await execInPod({ podName, containerName: 'clawdbot-gateway', command: ['sh', '-lc', script] });
+};
+
 const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
@@ -1126,6 +1172,18 @@ const provisionOpenClawAccount = async ({
 
   // Write updated config to ConfigMap
   await writeConfigMap(configMapName, configKey, config);
+
+  // Also sync to /state/moltbot.json on the gateway PVC so the init container
+  // (clawdbot-auth-seed) picks up the account on next gateway restart.
+  try {
+    const accountEntry = config.channels.commonly.accounts[accountId];
+    const agentEntry = config.agents.list.find((a) => a?.id === accountId) || null;
+    const bindingEntry = config.bindings.find((b) => b?.match?.accountId === accountId) || null;
+    await syncAccountToStateMoltbot(accountId, accountEntry, agentEntry, bindingEntry, { gateway });
+    console.log(`[k8s-provisioner] synced ${accountId} to /state/moltbot.json`);
+  } catch (err) {
+    console.warn('[k8s-provisioner] Failed to sync account to /state/moltbot.json:', err.message);
+  }
 
   try {
     const heartbeatPath = await ensureHeartbeatTemplate(accountId, heartbeat, { gateway });
