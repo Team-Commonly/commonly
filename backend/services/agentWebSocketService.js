@@ -286,7 +286,6 @@ class AgentWebSocketService {
           }
         }
 
-        const { AgentInstallation } = require('../models/AgentRegistry');
         const installation = await AgentInstallation.findOne({
           'runtimeTokens.tokenHash': tokenHash,
           status: 'active',
