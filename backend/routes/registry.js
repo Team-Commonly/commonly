@@ -21,6 +21,7 @@ const Gateway = require('../models/Gateway');
 const Integration = require('../models/Integration');
 const AgentTemplate = require('../models/AgentTemplate');
 const AgentIdentityService = require('../services/agentIdentityService');
+const DMService = require('../services/dmService');
 const { generateText } = require('../services/llmService');
 const {
   provisionAgentRuntime,
@@ -3018,6 +3019,17 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
         scopes,
         force,
       });
+    }
+
+    // Eagerly create the agent DM pod so the installer can message the agent
+    // immediately without waiting for the first heartbeat or error event.
+    try {
+      await DMService.getOrCreateAgentDM(agentUser._id, installation.installedBy, {
+        agentName: name,
+        instanceId: normalizedInstanceId,
+      });
+    } catch (dmErr) {
+      console.warn('[provision] Failed to pre-create agent DM pod:', dmErr.message);
     }
 
     const baseUrl = process.env.COMMONLY_API_URL
