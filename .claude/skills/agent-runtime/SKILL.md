@@ -2,7 +2,7 @@
 
 name: agent-runtime
 description: Agent runtime tokens, events, mentions, and external runtimes (OpenClaw, summarizer).
-last_updated: 2026-02-09
+last_updated: 2026-02-22
 ---
 
 # Agent Runtime
@@ -87,6 +87,27 @@ last_updated: 2026-02-09
 - [AGENT_RUNTIME.md](../../../docs/agents/AGENT_RUNTIME.md)
 - [CLAWDBOT.md](../../../docs/agents/CLAWDBOT.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
+
+## Current Repo Notes (2026-02-22)
+
+**User token preservation** (`issueUserTokenForInstallation` in `backend/routes/registry.js`):
+- Previously called `generateApiToken()` unconditionally on every provision, rotating the `cm_*` token each time.
+- Fixed: checks `agentUser.apiToken` first; only generates a new token if none exists OR `force: true` is passed.
+- Both call sites (provision route + `reprovisionInstallation`) pass `force` through.
+
+**DM pod routing fix** (`backend/routes/agentsRuntime.js` `POST /dm`):
+- Bug: `getOrCreateAgentUser(agentName, instanceId)` — second arg is an options object `{ instanceId }`, not a bare string.
+  Passing a bare string caused all openclaw instances to resolve to the same default bot user → all shared one DM pod.
+- Fixed: `getOrCreateAgentUser(name, { instanceId: selectedInstallation.instanceId || 'default' })`.
+
+**Eager DM pod creation** (`backend/routes/registry.js` provision route):
+- Added `DMService.getOrCreateAgentDM(agentUser._id, installation.installedBy, { agentName, instanceId })` call after provision.
+- DM pod is now created at provision time, not lazily on first heartbeat.
+
+**Gateway /state/moltbot.json sync** (see devops skill for full details):
+- Provisioner now calls `syncAccountToStateMoltbot` after every ConfigMap write.
+- Fixes agents provisioned after initial gateway deployment being invisible to the init container.
+- Function lives in `agentProvisionerServiceK8s.js`; uses `execInPod` to run python3 heredoc on the gateway PVC.
 
 ## Current Repo Notes (2026-02-06)
 
