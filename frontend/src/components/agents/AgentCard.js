@@ -28,6 +28,7 @@ import {
   Memory as MemoryIcon,
   Chat as ChatIcon,
   Extension as ExtensionIcon,
+  FiberManualRecord as PulseIcon,
 } from '@mui/icons-material';
 import { normalizeUploadUrl } from '../../utils/apiBaseUrl';
 
@@ -84,7 +85,21 @@ const AgentCard = ({
   const installs = agent.installs || agent.stats?.installs || 0;
   const capabilities = agent.capabilities || agent.manifest?.capabilities?.map(c => c.name) || [];
   const stats = agent.stats || {};
+  const lastHeartbeatAt = agent.lastHeartbeatAt || null;
   const iconUrl = agent.iconUrl || agent.profile?.iconUrl || agent.profile?.avatarUrl || null;
+
+  const formatHeartbeat = (ts) => {
+    if (!ts) return null;
+    const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
+  const heartbeatLabel = formatHeartbeat(lastHeartbeatAt);
+  const heartbeatStale = lastHeartbeatAt
+    ? (Date.now() - new Date(lastHeartbeatAt).getTime()) > 2 * 60 * 60 * 1000
+    : true;
   const iconSrc = iconUrl ? normalizeUploadUrl(iconUrl) : undefined;
 
   const typeColor = agentTypeColors[type] || agentTypeColors.default;
@@ -397,7 +412,7 @@ const AgentCard = ({
         </Typography>
 
         {/* Mini stats */}
-        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <MemoryIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
             <Typography variant="caption" color="text.secondary">
@@ -410,6 +425,16 @@ const AgentCard = ({
               {(stats.messagesProcessed || 0).toLocaleString()} msgs
             </Typography>
           </Box>
+          {installed && (
+            <Tooltip title={lastHeartbeatAt ? `Last heartbeat: ${new Date(lastHeartbeatAt).toLocaleString()}` : 'No heartbeat recorded'}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <PulseIcon sx={{ fontSize: 10, color: heartbeatStale ? 'text.disabled' : 'success.main' }} />
+                <Typography variant="caption" color={heartbeatStale ? 'text.disabled' : 'text.secondary'}>
+                  {heartbeatLabel || 'never'}
+                </Typography>
+              </Box>
+            </Tooltip>
+          )}
         </Box>
 
         {/* Capabilities chips */}
