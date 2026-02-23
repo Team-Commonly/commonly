@@ -2928,6 +2928,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                         profile: agent.profile,
                         instanceId: agent.instanceId,
                         agentName: agent.name,
+                        lastHeartbeatAt: agent.lastHeartbeatAt || null,
                       }}
                       installed
                       onConfigure={(target) => (canManage ? openConfigDialog(target) : openAgentOverviewDialog(target))}
