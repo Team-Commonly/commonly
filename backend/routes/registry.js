@@ -186,6 +186,7 @@ const buildOpenClawIntegrationChannels = (integrations = []) => {
 const buildAgentInstallationPayload = (installation, {
   profile = null,
   iconUrl = '',
+  lastHeartbeatAt = null,
 } = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
@@ -199,6 +200,7 @@ const buildAgentInstallationPayload = (installation, {
     status: installation.status,
     scopes: installation.scopes,
     installedAt: installation.createdAt,
+    lastHeartbeatAt,
     usage: installation.usage,
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     runtime: runtimeConfig,
@@ -2102,6 +2104,30 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
 
     // Get installations
     const installations = await AgentInstallation.getInstalledAgents(podId);
+
+    // Batch-fetch last heartbeat timestamp per agent/instance from agentevents
+    const AgentEvent = require('../models/AgentEvent');
+    const heartbeatRows = await AgentEvent.aggregate([
+      {
+        $match: {
+          type: 'heartbeat',
+          status: 'delivered',
+          agentName: { $in: installations.map((i) => i.agentName) },
+          instanceId: { $in: installations.map((i) => i.instanceId || 'default') },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: { agentName: '$agentName', instanceId: '$instanceId' },
+          lastHeartbeatAt: { $first: '$createdAt' },
+        },
+      },
+    ]);
+    const heartbeatMap = new Map(
+      heartbeatRows.map((r) => [`${r._id.agentName}:${r._id.instanceId}`, r.lastHeartbeatAt]),
+    );
+
     const registryEntries = await AgentRegistry.find({
       agentName: { $in: installations.map((i) => i.agentName) },
     }).select('agentName iconUrl').lean();
@@ -2148,9 +2174,11 @@ router.get('/pods/:podId/agents', auth, async (req, res) => {
           (p) => p.agentName === i.agentName && p.instanceId === (i.instanceId || 'default'),
         );
         const templateIcon = getTemplateIcon(i);
+        const instanceKey = `${i.agentName}:${i.instanceId || 'default'}`;
         return buildAgentInstallationPayload(i, {
           profile,
           iconUrl: templateIcon || iconMap.get(i.agentName) || '',
+          lastHeartbeatAt: heartbeatMap.get(instanceKey) || null,
         });
       }),
     });
