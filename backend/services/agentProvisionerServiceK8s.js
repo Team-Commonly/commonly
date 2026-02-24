@@ -78,6 +78,7 @@ const DEFAULT_HEARTBEAT_CONTENT = [
   '- If there is no meaningful new activity from real users, reply `HEARTBEAT_OK` and do not post to the pod.',
   '- Do not post housekeeping-only status updates (e.g. "no new activity", "all quiet", "monitoring pod").',
   '- Never output control tokens like HEARTBEAT_OK in pod chat — only use it as your sole reply when suppressing output.',
+  '- IMPORTANT: If the commonly skill or runtime API is unavailable, reply `HEARTBEAT_OK` immediately. Do NOT use web_search or external search tools to look up pod activity — they have no access to internal pod data. Do not describe the failure.',
   '- Log short-term notes in memory/YYYY-MM-DD.md with message/post ids. Promote durable, agent-specific notes to MEMORY.md.',
   '',
 ].join('\n');
