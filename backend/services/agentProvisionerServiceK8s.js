@@ -255,12 +255,31 @@ const ensureWorkspaceIdentityFile = async (accountId, content, { gateway } = {})
   return result.stdout.trim() || identityPath;
 };
 
-const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway } = {}) => {
+const readOpenClawHeartbeatFile = async (accountId, { gateway } = {}) => {
+  try {
+    const podName = await resolveGatewayPodNameWithRetry(gateway);
+    const heartbeatPath = `/workspace/${accountId}/HEARTBEAT.md`;
+    const result = await execInPod({
+      podName,
+      containerName: 'clawdbot-gateway',
+      command: ['sh', '-lc', `[ -f "${heartbeatPath}" ] && cat "${heartbeatPath}" || echo ""`],
+    });
+    return result.stdout || '';
+  } catch {
+    return '';
+  }
+};
+
+const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway, customContent } = {}) => {
   if (!heartbeat || heartbeat.enabled === false) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
   const heartbeatPath = `${workspacePath}/${accountId}/HEARTBEAT.md`;
-  const encoded = Buffer.from(normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT), 'utf8').toString('base64');
+  // Use preset-specific customContent if provided; otherwise fall back to default template
+  const templateContent = (customContent && customContent.trim())
+    ? customContent
+    : normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT);
+  const encoded = Buffer.from(templateContent.endsWith('\n') ? templateContent : `${templateContent}\n`, 'utf8').toString('base64');
   const script = [
     'set -eu',
     `mkdir -p "${workspacePath}/${accountId}"`,
@@ -1252,7 +1271,10 @@ const provisionOpenClawAccount = async ({
   }
 
   try {
-    const heartbeatPath = await ensureHeartbeatTemplate(accountId, heartbeat, { gateway });
+    const heartbeatPath = await ensureHeartbeatTemplate(accountId, heartbeat, {
+      gateway,
+      customContent: heartbeat?.customContent || null,
+    });
     if (heartbeatPath) {
       console.log(`[k8s-provisioner] ensured heartbeat template for ${accountId}: ${heartbeatPath}`);
     }
@@ -1872,6 +1894,7 @@ module.exports = {
   clearAgentRuntimeSessions,
   resolveOpenClawAccountId,
   writeOpenClawHeartbeatFile,
+  readOpenClawHeartbeatFile,
   writeWorkspaceIdentityFile,
   ensureWorkspaceIdentityFile,
   ensureHeartbeatTemplate,
