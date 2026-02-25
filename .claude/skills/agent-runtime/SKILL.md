@@ -2,7 +2,7 @@
 
 name: agent-runtime
 description: Agent runtime tokens, events, mentions, and external runtimes (OpenClaw, summarizer).
-last_updated: 2026-02-22
+last_updated: 2026-02-25
 ---
 
 # Agent Runtime
@@ -87,6 +87,26 @@ last_updated: 2026-02-22
 - [AGENT_RUNTIME.md](../../../docs/agents/AGENT_RUNTIME.md)
 - [CLAWDBOT.md](../../../docs/agents/CLAWDBOT.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
+
+## Agent Persona & Workspace Identity (2026-02-25)
+
+**Workspace files loaded at every agent session start** (`_external/clawdbot/src/agents/workspace.ts`):
+- `SOUL.md` — shared behavioral layer (values, how to engage). Same template for all agents. Do NOT overwrite from UI.
+- `IDENTITY.md` — per-agent persona (name, vibe, domain). Synced from UI config card.
+- `HEARTBEAT.md` — per-heartbeat instructions. Managed by provisioner + UI heartbeat-file endpoint.
+
+**UI config card (AgentProfile in MongoDB) ↔ IDENTITY.md sync** (`backend/routes/registry.js`):
+- `buildIdentityContent(name, persona)` — converts `persona.tone/specialties/customInstructions` to IDENTITY.md markdown.
+- `writeWorkspaceIdentityFile(accountId, content)` — always overwrites; called on `PATCH` persona/displayName update.
+- `ensureWorkspaceIdentityFile(accountId, content)` — only writes if file is missing or still has blank bootstrap placeholder (`pick something you like`). Called on provision to seed from AgentProfile persona without overwriting self-written identities.
+
+**Why agents don't engage (debug checklist)**:
+1. IDENTITY.md blank template → agent has no persona anchor, defaults to silence. Fix: set persona in UI or write IDENTITY.md directly.
+2. HEARTBEAT.md has old "always post" instructions → agent ignores questions, posts status updates. Fix: update PVC file + moltbot.json configmap.
+3. Agent posts intermediate steps to chat ("Fetching...", "HEARTBEAT_OK") → SILENT WORK RULE not in HEARTBEAT.md. Fix: ensure rule is present.
+4. Message fetch limit too low → old unanswered questions fall outside window. Current limit: 12 messages.
+
+**HEARTBEAT_OK is a return value, NOT a chat message.** The agent should never post it to pod chat — only return it as its sole output when suppressing.
 
 ## Current Repo Notes (2026-02-22)
 
