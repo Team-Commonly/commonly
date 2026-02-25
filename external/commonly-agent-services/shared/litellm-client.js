@@ -13,6 +13,9 @@ class LiteLLMClient {
     this.defaultTemperature = config.temperature || 0.7;
     this.defaultMaxTokens = config.maxTokens || 1024;
     this.geminiApiKey = config.geminiApiKey || process.env.GEMINI_API_KEY || '';
+    this.openRouterApiKey = config.openRouterApiKey || process.env.OPENROUTER_API_KEY || '';
+    this.openRouterBaseUrl = config.openRouterBaseUrl || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+    this.openRouterModel = config.openRouterModel || process.env.OPENROUTER_MODEL || 'arcee-ai/trinity-large-preview:free';
   }
 
   /**
@@ -33,6 +36,10 @@ class LiteLLMClient {
     const model = options.model || this.defaultModel;
     const temperature = options.temperature ?? this.defaultTemperature;
     const maxTokens = options.maxTokens || this.defaultMaxTokens;
+
+    if (!this.baseUrl && this.openRouterApiKey) {
+      return this.chatCompletionOpenRouter(messages, { model: this.openRouterModel, temperature, maxTokens });
+    }
 
     if (!this.baseUrl && this.geminiApiKey) {
       return this.chatCompletionGemini(messages, { model, temperature, maxTokens });
@@ -59,6 +66,9 @@ class LiteLLMClient {
 
       if (!res.ok) {
         const text = await res.text();
+        if (this.openRouterApiKey) {
+          return this.chatCompletionOpenRouter(messages, { model: this.openRouterModel, temperature, maxTokens });
+        }
         if (this.geminiApiKey) {
           return this.chatCompletionGemini(messages, { model, temperature, maxTokens });
         }
@@ -67,11 +77,40 @@ class LiteLLMClient {
 
       return res.json();
     } catch (error) {
+      if (this.openRouterApiKey) {
+        return this.chatCompletionOpenRouter(messages, { model: this.openRouterModel, temperature, maxTokens });
+      }
       if (this.geminiApiKey) {
         return this.chatCompletionGemini(messages, { model, temperature, maxTokens });
       }
       throw error;
     }
+  }
+
+  async chatCompletionOpenRouter(messages, options = {}) {
+    const model = options.model || this.openRouterModel;
+    const temperature = options.temperature ?? this.defaultTemperature;
+    const maxTokens = options.maxTokens || this.defaultMaxTokens;
+
+    const res = await fetch(`${this.openRouterBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.openRouterApiKey}`,
+        'Content-Type': 'application/json',
+        'X-Title': 'Commonly',
+      },
+      body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      if (this.geminiApiKey) {
+        return this.chatCompletionGemini(messages, { model: this.defaultModel, temperature, maxTokens });
+      }
+      throw new Error(`OpenRouter request failed: ${res.status} ${text.slice(0, 200)}`);
+    }
+
+    return res.json();
   }
 
   async chatCompletionGemini(messages, options = {}) {
