@@ -360,6 +360,16 @@ const writeOpenClawHeartbeatFileLocal = (accountId, content, { allowEmpty = true
   return heartbeatPath;
 };
 
+const writeWorkspaceIdentityFileLocal = (accountId, content) => {
+  const workspacePath = resolveOpenClawWorkspacePath(accountId);
+  const identityPath = path.join(workspacePath, 'IDENTITY.md');
+  ensureDir(identityPath);
+  const normalized = String(content || '');
+  fs.writeFileSync(identityPath, normalized.endsWith('\n') ? normalized : `${normalized}\n`);
+  chownPath(identityPath);
+  return identityPath;
+};
+
 const ensureWorkspaceMemoryFilesLocal = (accountId) => {
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const memoryDir = path.join(workspacePath, 'memory');
@@ -1435,6 +1445,15 @@ const writeOpenClawHeartbeatFile = async (accountId, content, options = {}) => {
   return writeOpenClawHeartbeatFileLocal(accountId, content, options);
 };
 
+const writeWorkspaceIdentityFile = async (accountId, content, options = {}) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.writeWorkspaceIdentityFile(accountId, content, options);
+  }
+  return writeWorkspaceIdentityFileLocal(accountId, content);
+};
+
 const clearOpenClawSessionsLocal = ({ accountId }) => {
   const normalizedAccountId = String(accountId || '').trim();
   if (!normalizedAccountId) {
@@ -1591,6 +1610,7 @@ module.exports = {
   installOpenClawPlugin,
   clearAgentRuntimeSessions,
   writeOpenClawHeartbeatFile,
+  writeWorkspaceIdentityFile,
   ensureHeartbeatTemplate,
   syncOpenClawSkills,
   syncOpenClawSkillEnv,
