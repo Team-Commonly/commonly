@@ -36,10 +36,37 @@ const {
   listOpenClawBundledSkills,
   installOpenClawPlugin,
   writeOpenClawHeartbeatFile,
+  writeWorkspaceIdentityFile,
   syncOpenClawSkills,
   resolveOpenClawAccountId,
 } = require('../services/agentProvisionerService');
 const { hash, randomSecret } = require('../utils/secret');
+
+const buildIdentityContent = (name, persona) => {
+  const toneMap = {
+    friendly: 'Warm, approachable, supportive.',
+    professional: 'Precise, measured, focused.',
+    sarcastic: 'Dry, sardonic, irreverent.',
+    educational: 'Patient, explanatory, thorough.',
+    humorous: 'Playful, witty, light.',
+  };
+  const vibe = toneMap[persona?.tone] || persona?.tone || '';
+  const specialties = Array.isArray(persona?.specialties)
+    ? persona.specialties.join(', ')
+    : String(persona?.specialties || '');
+  const lines = [
+    '# IDENTITY.md',
+    '',
+    `- **Name:** ${name || ''}`,
+    `- **Vibe:** ${vibe}`,
+  ];
+  if (specialties) lines.push(`- **Domain:** ${specialties}`);
+  if (persona?.customInstructions) {
+    lines.push('', '## Notes', '', persona.customInstructions);
+  }
+  lines.push('');
+  return lines.join('\n');
+};
 
 const parseVerifiedFilter = (value) => {
   if (value === 'true') return true;
@@ -4119,6 +4146,14 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
         },
         updates,
       );
+
+      // Sync persona/displayName to workspace IDENTITY.md so agents reflect it at runtime
+      if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
+        const identityContent = buildIdentityContent(displayName || normalizedInstanceId, persona || {});
+        writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err) => {
+          console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
+        });
+      }
     }
 
     const skillSync = config?.skillSync || null;

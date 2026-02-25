@@ -208,6 +208,26 @@ const writeOpenClawHeartbeatFile = async (accountId, content, { allowEmpty = tru
   return result.stdout.trim() || heartbeatPath;
 };
 
+const writeWorkspaceIdentityFile = async (accountId, content, { gateway } = {}) => {
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
+  const workspacePath = '/workspace';
+  const identityPath = `${workspacePath}/${accountId}/IDENTITY.md`;
+  const normalized = String(content || '');
+  const encoded = Buffer.from(normalized.endsWith('\n') ? normalized : `${normalized}\n`, 'utf8').toString('base64');
+  const script = [
+    'set -eu',
+    `mkdir -p "${workspacePath}/${accountId}"`,
+    `printf '%s' '${encoded}' | base64 -d > "${identityPath}"`,
+    `echo "${identityPath}"`,
+  ].join('\n');
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    command: ['sh', '-lc', script],
+  });
+  return result.stdout.trim() || identityPath;
+};
+
 const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway } = {}) => {
   if (!heartbeat || heartbeat.enabled === false) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
@@ -1825,6 +1845,7 @@ module.exports = {
   clearAgentRuntimeSessions,
   resolveOpenClawAccountId,
   writeOpenClawHeartbeatFile,
+  writeWorkspaceIdentityFile,
   ensureHeartbeatTemplate,
   syncOpenClawSkills,
   getGatewaySkillEntries,
