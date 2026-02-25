@@ -20,6 +20,14 @@ const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 const Integration = require('../models/Integration');
 const DMService = require('../services/dmService');
 
+let PGPod;
+try {
+  // eslint-disable-next-line global-require
+  PGPod = require('../models/pg/Pod');
+} catch (_) {
+  PGPod = null;
+}
+
 const router = express.Router();
 const parseNonNegativeInt = (value, fallback) => {
   const parsed = parseInt(value, 10);
@@ -972,6 +980,109 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
   } catch (error) {
     console.error('Error posting agent thread comment:', error);
     return res.status(500).json({ message: error.message || 'Failed to post comment' });
+  }
+});
+
+/**
+ * POST /posts (agent runtime token auth)
+ * Create a post in the feed as the agent's bot user
+ */
+router.post('/posts', agentRuntimeAuth, async (req, res) => {
+  try {
+    const agentUser = req.agentUser;
+    if (!agentUser) {
+      return res.status(403).json({ message: 'No bot user associated with this runtime token' });
+    }
+
+    const { content, tags, category, podId, source } = req.body || {};
+    if (!content) {
+      return res.status(400).json({ message: 'content is required' });
+    }
+
+    if (podId) {
+      const pod = await Pod.findById(podId).select('_id members').lean();
+      if (!pod) return res.status(404).json({ message: 'Pod not found' });
+      const isMember = pod.members?.some((m) => m.toString() === agentUser._id.toString());
+      if (!isMember) {
+        return res.status(403).json({ message: 'Agent is not a member of this pod' });
+      }
+    }
+
+    const resolvedCategory = (category || '').trim() || 'General';
+    const resolvedSource = source && typeof source === 'object'
+      ? {
+        type: source.type || (podId ? 'pod' : 'user'),
+        provider: source.provider || 'internal',
+        externalId: source.externalId || null,
+        url: source.url || null,
+        author: source.author || null,
+        authorUrl: source.authorUrl || null,
+        channel: source.channel || null,
+      }
+      : { type: podId ? 'pod' : 'user', provider: 'internal' };
+
+    const post = new Post({
+      userId: agentUser._id,
+      content,
+      tags: Array.isArray(tags) ? tags : [],
+      podId: podId || null,
+      category: resolvedCategory,
+      source: resolvedSource,
+    });
+    await post.save();
+
+    return res.status(201).json(post);
+  } catch (error) {
+    console.error('Error creating agent post:', error);
+    return res.status(500).json({ message: error.message || 'Failed to create post' });
+  }
+});
+
+/**
+ * POST /pods (agent runtime token auth)
+ * Create a new pod as the agent's bot user
+ */
+router.post('/pods', agentRuntimeAuth, async (req, res) => {
+  try {
+    const agentUser = req.agentUser;
+    if (!agentUser) {
+      return res.status(403).json({ message: 'No bot user associated with this runtime token' });
+    }
+
+    const { name, description, type } = req.body || {};
+    if (!name || !type) {
+      return res.status(400).json({ message: 'name and type are required' });
+    }
+
+    const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin'];
+    if (!VALID_POD_TYPES.includes(type)) {
+      return res.status(400).json({ message: `Invalid pod type. Must be one of: ${VALID_POD_TYPES.join(', ')}` });
+    }
+
+    const newPod = new Pod({
+      name,
+      description,
+      type,
+      createdBy: agentUser._id,
+      members: [agentUser._id],
+    });
+    const pod = await newPod.save();
+
+    await pod.populate('createdBy', 'username profilePicture');
+    await pod.populate('members', 'username profilePicture');
+
+    if (process.env.PG_HOST && PGPod) {
+      try {
+        await PGPod.create(name, description, type, agentUser._id.toString(), pod._id.toString());
+      } catch (pgErr) {
+        console.error('Error creating agent pod in PostgreSQL:', pgErr.message);
+      }
+    }
+
+    return res.status(201).json(pod);
+  } catch (error) {
+    console.error('Error creating agent pod:', error);
+    return res.status(500).json({ message: error.message || 'Failed to create pod' });
   }
 });
 
