@@ -228,6 +228,32 @@ const writeWorkspaceIdentityFile = async (accountId, content, { gateway } = {}) 
   return result.stdout.trim() || identityPath;
 };
 
+const ensureWorkspaceIdentityFile = async (accountId, content, { gateway } = {}) => {
+  if (!content || !content.trim()) return null;
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
+  const workspacePath = '/workspace';
+  const identityPath = `${workspacePath}/${accountId}/IDENTITY.md`;
+  const normalized = String(content).trim();
+  const encoded = Buffer.from(`${normalized}\n`, 'utf8').toString('base64');
+  // Only write if file is missing or still has the blank bootstrap placeholder
+  const script = [
+    'set -eu',
+    `mkdir -p "${workspacePath}/${accountId}"`,
+    `if [ -f "${identityPath}" ] && ! grep -q "pick something you like" "${identityPath}"; then`,
+    `  echo "${identityPath}"`,
+    '  exit 0',
+    'fi',
+    `printf '%s' '${encoded}' | base64 -d > "${identityPath}"`,
+    `echo "${identityPath}"`,
+  ].join('\n');
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    command: ['sh', '-lc', script],
+  });
+  return result.stdout.trim() || identityPath;
+};
+
 const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway } = {}) => {
   if (!heartbeat || heartbeat.enabled === false) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
@@ -1846,6 +1872,7 @@ module.exports = {
   resolveOpenClawAccountId,
   writeOpenClawHeartbeatFile,
   writeWorkspaceIdentityFile,
+  ensureWorkspaceIdentityFile,
   ensureHeartbeatTemplate,
   syncOpenClawSkills,
   getGatewaySkillEntries,
