@@ -36,6 +36,7 @@ const {
   listOpenClawBundledSkills,
   installOpenClawPlugin,
   writeOpenClawHeartbeatFile,
+  readOpenClawHeartbeatFile,
   writeWorkspaceIdentityFile,
   ensureWorkspaceIdentityFile,
   syncOpenClawSkills,
@@ -746,6 +747,44 @@ const PRESET_DEFINITIONS = [
       { id: 'github', reason: 'Track linked repos/topics when social posts reference engineering work.' },
       { id: 'trello', reason: 'Turn curated topics into follow-up tasks.' },
     ],
+    heartbeatTemplate: `# HEARTBEAT.md
+
+## Role
+You are **X Curator** — a social content curator. Your job is to find interesting content from connected social feeds or the web and share signal-rich highlights with commentary.
+
+## Social Feed (primary source)
+- Fetch from the social integration feed: \`GET /api/posts?category=Social\` (no auth needed)
+- Fetch from pod context: \`/api/agents/runtime/pods/:podId/messages?limit=12\`
+- If the social feed has posts → pick the top 2-3 most interesting by engagement + novelty
+- For each pick, write a short commentary (2-3 sentences) explaining why it matters
+
+## Web Search Fallback (when social feed is empty or stale)
+- If \`GET /api/posts?category=Social\` returns zero posts, OR all posts are older than 6 hours → use \`web_search\` to find fresh content
+- Search for: trending AI, tech, or product news relevant to the pod theme
+- Example queries: \`"AI news today"\`, \`"trending tech 2026"\`, \`"latest product launches"\`
+- Use web_search to verify any claim before posting
+
+## Output rules
+- SILENT WORK RULE: Do NOT post while fetching. Work silently, then post ONE message.
+- HEARTBEAT_OK is a return value, NOT a chat message. If nothing to share, return it as your sole output.
+- Do not post "no activity", "HEARTBEAT_OK", or narrate your steps to pod chat.
+- If a real user asked a question, answer it directly — do not just curate.
+- Attribution: always link the source URL and mention the source handle/provider.
+
+## Format
+Post a short curation update like:
+\`\`\`
+📡 Social signal from [SOURCE]:
+
+[2-3 sentence commentary on why this is interesting]
+
+🔗 [url]
+\`\`\`
+If using web_search results, label them: \`🌐 From the web:\` instead of \`📡 Social signal\`.
+
+## Memory
+- Log short-term notes in memory/YYYY-MM-DD.md. Promote durable findings to MEMORY.md.
+- IMPORTANT: If the commonly skill or runtime API is unavailable, reply \`HEARTBEAT_OK\` immediately.`,
   },
   {
     id: 'social-trend-scout',
@@ -775,6 +814,40 @@ const PRESET_DEFINITIONS = [
       { id: 'slack', reason: 'Community ops and social trend relay.' },
       { id: 'weather', reason: 'Simple utility fallback skill.' },
     ],
+    heartbeatTemplate: `# HEARTBEAT.md
+
+## Role
+You are **Social Trend Scout** — a trend discovery agent. Your job is to surface high-signal social trends from connected feeds or the web and kick off pod discussion.
+
+## Social Feed (primary source)
+- Fetch from the social integration feed: \`GET /api/posts?category=Social\` (no auth needed)
+- Fetch from pod context: \`/api/agents/runtime/pods/:podId/messages?limit=12\`
+- Look for clusters of posts on the same topic, spikes in engagement, or novel topics
+- Score each cluster: post count × engagement × novelty → surface the top trend
+
+## Web Search Fallback (when social feed is empty or stale)
+- If \`GET /api/posts?category=Social\` returns zero posts, OR all posts are older than 6 hours → use \`web_search\`
+- Search for: trending topics in AI, tech, design, or your pod theme
+- Example queries: \`"trending AI 2026"\`, \`"viral tech news today"\`, \`"product launch today"\`
+
+## Output rules
+- SILENT WORK RULE: Do NOT post while fetching. Work silently, then post ONE message.
+- HEARTBEAT_OK is a return value, NOT a chat message. If nothing notable to report, return it as your sole output.
+- Do not post "no activity", "HEARTBEAT_OK", or narrate your steps.
+- If a real user asked a question, answer it directly.
+
+## Format
+\`\`\`
+🔥 Trending: [TOPIC]
+
+[2-3 sentences on what's happening and why it matters]
+
+Sources: 🔗 [url1], 🔗 [url2]
+\`\`\`
+
+## Memory
+- Log short-term trend signals in memory/YYYY-MM-DD.md. Promote recurring themes to MEMORY.md.
+- IMPORTANT: If the commonly skill or runtime API is unavailable, reply \`HEARTBEAT_OK\` immediately.`,
   },
   {
     id: 'social-amplifier',
@@ -808,6 +881,38 @@ const PRESET_DEFINITIONS = [
       { id: 'github', reason: 'Optional source context enrichment for linked posts.' },
       { id: 'weather', reason: 'Example low-friction utility fallback.' },
     ],
+    heartbeatTemplate: `# HEARTBEAT.md
+
+## Role
+You are **Social Amplifier** — a content amplification agent. Your job is to find posts worth sharing, repost or rewrite them with attribution, and keep the pod feed lively.
+
+## Social Feed (primary source)
+- Fetch from the social integration feed: \`GET /api/posts?category=Social\` (no auth needed)
+- Fetch from pod context: \`/api/agents/runtime/pods/:podId/messages?limit=12\`
+- Pick the 1-2 highest-value posts (engagement + novelty). Rewrite briefly with attribution.
+
+## Web Search Fallback (when social feed is empty or stale)
+- If \`GET /api/posts?category=Social\` returns zero posts, OR all posts are older than 6 hours → use \`web_search\`
+- Search for relevant content to amplify: \`"AI news today"\`, \`"trending product launches"\`
+
+## Output rules
+- SILENT WORK RULE: Do NOT post while fetching. Work silently, then post ONE message.
+- HEARTBEAT_OK is a return value, NOT a chat message. If nothing to amplify, return it as your sole output.
+- Do not post "no activity", "HEARTBEAT_OK", or narrate your steps.
+- Always attribute original source. Do not misrepresent sources.
+
+## Format
+\`\`\`
+📢 Amplifying: [ORIGINAL SOURCE]
+
+[1-2 sentence rewrite or highlight]
+
+🔗 [original url]
+\`\`\`
+
+## Memory
+- Log amplification history in memory/YYYY-MM-DD.md to avoid re-amplifying same content.
+- IMPORTANT: If the commonly skill or runtime API is unavailable, reply \`HEARTBEAT_OK\` immediately.`,
   },
   {
     id: 'community-hype-host',
@@ -1303,6 +1408,11 @@ const reprovisionInstallation = async ({
     integrationChannels = buildOpenClawIntegrationChannels(integrations);
   }
 
+  const matchedPreset = PRESET_DEFINITIONS.find((p) => p.id === normalizedInstanceId);
+  const heartbeatForProvision = {
+    ...(configPayload.heartbeat || {}),
+    ...(matchedPreset?.heartbeatTemplate ? { customContent: matchedPreset.heartbeatTemplate } : {}),
+  };
   const provisioned = await provisionAgentRuntime({
     runtimeType,
     agentName: name,
@@ -1311,12 +1421,24 @@ const reprovisionInstallation = async ({
     userToken,
     baseUrl,
     displayName: installation.displayName,
-    heartbeat: configPayload.heartbeat || null,
+    heartbeat: Object.keys(heartbeatForProvision).length ? heartbeatForProvision : null,
     gateway,
     authProfiles: runtimeAuthProfiles,
     skillEnv: runtimeSkillEnv,
     integrationChannels,
   });
+
+  // Persist heartbeat template to AgentProfile so config card reflects it
+  if (matchedPreset?.heartbeatTemplate) {
+    try {
+      await AgentProfile.updateMany(
+        { agentName: name.toLowerCase(), instanceId: normalizedInstanceId, podId },
+        { $set: { heartbeatContent: matchedPreset.heartbeatTemplate } },
+      );
+    } catch (hbErr) {
+      console.warn('[provision] Failed to persist heartbeatContent to AgentProfile:', hbErr.message);
+    }
+  }
 
   let runtimeStart = null;
   try {
@@ -3140,6 +3262,11 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
     const shouldProvision = runtimeType === 'moltbot'
       || Boolean(runtimeIssued.token || runtimeAuthProfiles || runtimeSkillEnv);
     if (shouldProvision) {
+      const matchedPreset2 = PRESET_DEFINITIONS.find((p) => p.id === normalizedInstanceId);
+      const heartbeatForProvision2 = {
+        ...(configPayload.heartbeat || {}),
+        ...(matchedPreset2?.heartbeatTemplate ? { customContent: matchedPreset2.heartbeatTemplate } : {}),
+      };
       provisioned = await provisionAgentRuntime({
         runtimeType,
         agentName: name,
@@ -3148,12 +3275,25 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
         userToken: userIssued?.token,
         baseUrl,
         displayName: installation.displayName,
-        heartbeat: configPayload.heartbeat || null,
+        heartbeat: Object.keys(heartbeatForProvision2).length ? heartbeatForProvision2 : null,
         gateway,
         authProfiles: runtimeAuthProfiles,
         skillEnv: runtimeSkillEnv,
         integrationChannels,
       });
+    }
+
+    // Persist heartbeat template to AgentProfile so config card reflects it
+    const matchedPreset2ForSave = PRESET_DEFINITIONS.find((p) => p.id === normalizedInstanceId);
+    if (matchedPreset2ForSave?.heartbeatTemplate) {
+      try {
+        await AgentProfile.updateMany(
+          { agentName: name.toLowerCase(), instanceId: normalizedInstanceId, podId },
+          { $set: { heartbeatContent: matchedPreset2ForSave.heartbeatTemplate } },
+        );
+      } catch (hbErr) {
+        console.warn('[reprovision] Failed to persist heartbeatContent to AgentProfile:', hbErr.message);
+      }
     }
 
     let runtimeStart = null;
@@ -3957,6 +4097,55 @@ router.post('/pods/:podId/agents/:name/persona/generate', auth, async (req, res)
   }
 });
 
+/**
+ * GET /pods/:podId/agents/:name/heartbeat-file
+ * Read the agent's current HEARTBEAT.md from workspace (or AgentProfile cache)
+ */
+router.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { instanceId } = req.query;
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+    if (!membership && !isCreator) return res.status(403).json({ error: 'Access denied' });
+
+    const resolved = await resolveInstallation({ agentName: name, podId, instanceId });
+    if (!resolved.installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
+
+    const accountId = normalizeInstanceId(resolved.instanceId);
+
+    // Try reading live from PVC first; fall back to AgentProfile cached copy
+    let content = '';
+    try {
+      content = await readOpenClawHeartbeatFile(accountId);
+    } catch (_) { /* fall through */ }
+
+    if (!content) {
+      const profile = await AgentProfile.findOne({
+        podId,
+        agentName: name.toLowerCase(),
+        instanceId: resolved.instanceId,
+      }).select('heartbeatContent').lean();
+      content = profile?.heartbeatContent || '';
+    }
+
+    return res.json({ content, accountId });
+  } catch (error) {
+    console.error('Error reading heartbeat file:', error);
+    return res.status(500).json({ error: 'Failed to read heartbeat file' });
+  }
+});
+
 router.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) => {
   try {
     const { podId, name } = req.params;
@@ -4004,6 +4193,16 @@ router.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) =
       : '# HEARTBEAT.md\n\n';
 
     const filePath = await writeOpenClawHeartbeatFile(accountId, normalized, { allowEmpty: true });
+
+    // Persist to AgentProfile so config card can read it without PVC access
+    try {
+      await AgentProfile.updateMany(
+        { podId, agentName: name.toLowerCase(), instanceId: resolved.instanceId },
+        { $set: { heartbeatContent: normalized } },
+      );
+    } catch (profileErr) {
+      console.warn('[heartbeat-file] Failed to persist to AgentProfile:', profileErr.message);
+    }
 
     return res.json({ success: true, path: filePath, reset: Boolean(reset) });
   } catch (error) {

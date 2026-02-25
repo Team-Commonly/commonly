@@ -166,6 +166,13 @@ const AgentProfileSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Heartbeat file content — mirrors the agent's /workspace/{instanceId}/HEARTBEAT.md
+    // Synced when heartbeat-file endpoint writes to PVC, and seeded on provision from preset template.
+    heartbeatContent: {
+      type: String,
+      default: '',
+    },
+
     // Usage statistics
     stats: {
       totalSessions: { type: Number, default: 0 },
