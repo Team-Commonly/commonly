@@ -112,18 +112,24 @@ const fetchRecentMessages = async (runtimeToken, podId, limit = 40) => {
 };
 
 const fetchSocialPosts = async (limit = SOCIAL_POST_LIMIT) => {
-  const res = await fetch(`${baseUrl}/api/posts?category=Social`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch social posts: ${res.status}`);
+  try {
+    const res = await fetch(`${baseUrl}/api/posts?category=Social`);
+    if (!res.ok) {
+      console.warn(`[commonly-bot] Social feed returned ${res.status} — skipping curate`);
+      return [];
+    }
+    const posts = await res.json();
+    if (!Array.isArray(posts)) return [];
+    return posts
+      .filter((post) => {
+        const provider = String(post?.source?.provider || '').toLowerCase();
+        return provider === 'x' || provider === 'instagram';
+      })
+      .slice(0, Math.max(1, limit));
+  } catch (err) {
+    console.warn('[commonly-bot] Failed to fetch social posts:', err.message);
+    return [];
   }
-  const posts = await res.json();
-  if (!Array.isArray(posts)) return [];
-  return posts
-    .filter((post) => {
-      const provider = String(post?.source?.provider || '').toLowerCase();
-      return provider === 'x' || provider === 'instagram';
-    })
-    .slice(0, Math.max(1, limit));
 };
 
 const normalizeWords = (value) => String(value || '')
