@@ -66,6 +66,7 @@ import AgentEventsDebugPage from '../admin/AgentEventsDebugPage';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { resolveHeartbeatEditorContent } from '../../utils/heartbeatUtils';
 
 const categories = [
   { id: 'all', label: 'All Agents' },
@@ -1623,6 +1624,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       fetchClawdbotStatus();
     }
     if (!selectedPodId || !resolved?.name) return;
+    const isOpenClaw = (resolved?.name || resolved?.agentName) === 'openclaw';
+    let latestAgent = resolved;
     try {
       const instanceId = resolved.instanceId || 'default';
       const response = await axios.get(
@@ -1632,9 +1635,29 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       const latest = response.data?.agent || null;
       if (latest) {
         applyConfigDialogState(latest);
+        latestAgent = latest;
       }
     } catch (error) {
       console.warn('Failed to refresh latest installation config:', error);
+    }
+
+    if (!isOpenClaw) return;
+
+    try {
+      const heartbeatInstanceId = latestAgent?.instanceId || resolved?.instanceId || 'default';
+      const heartbeatResponse = await axios.get(
+        `/api/registry/pods/${selectedPodId}/agents/${resolved.name}/heartbeat-file?instanceId=${encodeURIComponent(heartbeatInstanceId)}`,
+        { headers: getAuthHeaders() },
+      );
+      const liveContent = heartbeatResponse?.data?.content || '';
+      const configChecklist = latestAgent?.config?.heartbeatChecklist || resolved?.config?.heartbeatChecklist || '';
+      setConfigHeartbeatChecklist(resolveHeartbeatEditorContent({
+        liveContent,
+        configChecklist,
+        fallback: DEFAULT_HEARTBEAT_CHECKLIST,
+      }));
+    } catch (error) {
+      console.warn('Failed to load live HEARTBEAT.md content:', error);
     }
   };
 
