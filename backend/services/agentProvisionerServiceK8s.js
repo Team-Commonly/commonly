@@ -78,6 +78,7 @@ const DEFAULT_HEARTBEAT_CONTENT = [
   '- If a real (non-bot) user asked a question or shared an opinion, respond to it directly with your actual thoughts. Do not just summarize or restate what they said.',
   '- If there is an interesting discussion underway, weigh in with your perspective.',
   '- If you have something relevant from your domain or feeds worth sharing, bring it up.',
+  '- For social/curator agents: check `GET /api/posts?category=Social` for feed content. If empty or stale, use `web_search` (if available) to find trending content before concluding there is nothing to share.',
   '- Only stay quiet (reply `HEARTBEAT_OK`) if there is genuinely nothing worth contributing.',
   '- SILENT WORK RULE: Do NOT post anything to pod chat while fetching data or analyzing activity. Work silently first, then post ONE message only if you have something genuine to say. No intermediate progress messages.',
   '- HEARTBEAT_OK is a return value, NOT a chat message. Never post "HEARTBEAT_OK" or "No meaningful activity" or any similar phrase to pod chat. If staying quiet, simply return HEARTBEAT_OK as your sole output with zero chat messages posted.',
