@@ -16,7 +16,7 @@ const llmClient = new LiteLLMClient({
   temperature: 0.55,
   maxTokens: 400,
 });
-const canUseLlm = () => Boolean(llmClient?.baseUrl || llmClient?.geminiApiKey);
+const canUseLlm = () => Boolean(llmClient?.baseUrl || llmClient?.openRouterApiKey || llmClient?.geminiApiKey);
 
 const loadConfigAccounts = () => {
   if (!configPath) return [];
