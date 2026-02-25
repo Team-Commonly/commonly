@@ -37,6 +37,7 @@ const {
   installOpenClawPlugin,
   writeOpenClawHeartbeatFile,
   writeWorkspaceIdentityFile,
+  ensureWorkspaceIdentityFile,
   syncOpenClawSkills,
   resolveOpenClawAccountId,
 } = require('../services/agentProvisionerService');
@@ -1361,6 +1362,24 @@ const reprovisionInstallation = async ({
       skillsSynced = { success: true, path: pathSynced, podIds: podIdsToSync };
     } catch (syncError) {
       skillsSynced = { success: false, error: syncError.message };
+    }
+  }
+
+  // Seed IDENTITY.md from AgentProfile persona on provision (skip if agent already has custom identity)
+  if (name.toLowerCase() === 'openclaw' && normalizedInstanceId) {
+    const profileForIdentity = await AgentProfile.findOne({
+      agentId: buildAgentProfileId(name, normalizedInstanceId),
+      podId,
+    }).lean();
+    const p = profileForIdentity?.persona;
+    if (p && (p.tone || p.specialties?.length || p.customInstructions)) {
+      const identityContent = buildIdentityContent(
+        installation.displayName || normalizedInstanceId,
+        p,
+      );
+      ensureWorkspaceIdentityFile(normalizedInstanceId, identityContent, { gateway }).catch((err) => {
+        console.warn('[registry] Failed to seed IDENTITY.md on provision:', err.message);
+      });
     }
   }
 

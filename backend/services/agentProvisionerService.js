@@ -370,6 +370,21 @@ const writeWorkspaceIdentityFileLocal = (accountId, content) => {
   return identityPath;
 };
 
+const ensureWorkspaceIdentityFileLocal = (accountId, content) => {
+  if (!content || !String(content).trim()) return null;
+  const workspacePath = resolveOpenClawWorkspacePath(accountId);
+  const identityPath = path.join(workspacePath, 'IDENTITY.md');
+  if (fs.existsSync(identityPath)) {
+    const existing = fs.readFileSync(identityPath, 'utf8');
+    if (!existing.includes('pick something you like')) return identityPath;
+  }
+  ensureDir(identityPath);
+  const normalized = String(content).trim();
+  fs.writeFileSync(identityPath, `${normalized}\n`);
+  chownPath(identityPath);
+  return identityPath;
+};
+
 const ensureWorkspaceMemoryFilesLocal = (accountId) => {
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const memoryDir = path.join(workspacePath, 'memory');
@@ -1454,6 +1469,15 @@ const writeWorkspaceIdentityFile = async (accountId, content, options = {}) => {
   return writeWorkspaceIdentityFileLocal(accountId, content);
 };
 
+const ensureWorkspaceIdentityFile = async (accountId, content, options = {}) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.ensureWorkspaceIdentityFile(accountId, content, options);
+  }
+  return ensureWorkspaceIdentityFileLocal(accountId, content);
+};
+
 const clearOpenClawSessionsLocal = ({ accountId }) => {
   const normalizedAccountId = String(accountId || '').trim();
   if (!normalizedAccountId) {
@@ -1611,6 +1635,7 @@ module.exports = {
   clearAgentRuntimeSessions,
   writeOpenClawHeartbeatFile,
   writeWorkspaceIdentityFile,
+  ensureWorkspaceIdentityFile,
   ensureHeartbeatTemplate,
   syncOpenClawSkills,
   syncOpenClawSkillEnv,
