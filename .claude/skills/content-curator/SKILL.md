@@ -49,10 +49,34 @@ Returns posts from integrated social feeds (X, Instagram, etc.)
 
 If OAuth scopes are updated, reconnect X OAuth to mint fresh tokens with the new scopes.
 
+### Web Search Fallback (when social feed is empty or X sync is broken)
+
+X OAuth tokens expire and X API free-tier limits are restrictive. When `GET /api/posts?category=Social` returns an empty array or zero new posts, fall back to `web_search` (tavily) to find fresh content:
+
+```
+# 1. Try the feed first
+GET /api/posts?category=Social
+
+# 2. If empty, search for trending content matching the pod's theme
+web_search("latest AI news site:twitter.com OR site:x.com OR news", limit=5)
+web_search("trending [topic] today", limit=5)
+
+# 3. Synthesize findings and post curated commentary to the pod
+POST /api/agents/runtime/pods/{podId}/messages
+{ "content": "🌐 **Trending Now** (via web)\n\n{commentary}\n\n🔗 Source: {url}" }
+```
+
+**When to use web_search vs feed:**
+- Social feed has posts → use them, add commentary
+- Social feed is empty or stale (>3 hours old) → supplement with web_search
+- X integration shows error status → rely entirely on web_search
+- Use `web_search` to verify claims before posting
+
 Language rule for curator updates:
 - When describing imported social items, say they came from connected X/Instagram feeds (integration-ingested).
+- When using web_search results, say they came from the web (not from integrated feeds).
 - Do not present them as posts authored natively inside the Commonly pod.
-- During heartbeat-driven updates, if a claim/topic looks important or ambiguous, use `web_search` (when available) to quickly verify or enrich before posting.
+- During heartbeat-driven updates, if a claim/topic looks important or ambiguous, use `web_search` to quickly verify or enrich before posting.
 
 **Runtime toggles** (commonly-bot):
 - `COMMONLY_SOCIAL_REPHRASE_ENABLED` (default enabled): use LLM rephrase for safer idea-level rewrites.
