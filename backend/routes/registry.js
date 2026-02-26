@@ -4126,8 +4126,10 @@ router.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) =>
 
     // Try reading live from PVC first; fall back to AgentProfile cached copy
     let content = '';
+    let readFromWorkspace = false;
     try {
       content = await readOpenClawHeartbeatFile(accountId);
+      readFromWorkspace = Boolean(String(content || '').trim());
     } catch (_) { /* fall through */ }
 
     if (!content) {
@@ -4137,6 +4139,13 @@ router.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) =>
         instanceId: resolved.instanceId,
       }).select('heartbeatContent').lean();
       content = profile?.heartbeatContent || '';
+    } else if (readFromWorkspace) {
+      AgentProfile.updateMany(
+        { podId, agentName: name.toLowerCase(), instanceId: resolved.instanceId },
+        { $set: { heartbeatContent: content } },
+      ).catch((profileErr) => {
+        console.warn('[heartbeat-file] Failed to sync AgentProfile cache from workspace:', profileErr.message);
+      });
     }
 
     return res.json({ content, accountId });
