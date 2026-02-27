@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { CommonlyEvent } from "../../../src/channels/commonly/events.js";
+import type { CommonlyEvent } from "./events.js";
 
 /**
  * Tests for ensemble turn response prefix fix
