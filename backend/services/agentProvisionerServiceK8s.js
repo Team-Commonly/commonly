@@ -1148,6 +1148,14 @@ const provisionOpenClawAccount = async ({
   config.channels.commonly.accounts = config.channels.commonly.accounts || {};
   config.skills = config.skills || {};
 
+  // Required since upstream v2026.2.26: non-loopback gateway requires either
+  // allowedOrigins or dangerouslyAllowHostHeaderOriginFallback on controlUi.
+  config.gateway = config.gateway || {};
+  config.gateway.controlUi = config.gateway.controlUi || {};
+  if (!config.gateway.controlUi.allowedOrigins && !config.gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback) {
+    config.gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback = true;
+  }
+
   const existingAccount = config.channels.commonly.accounts[accountId] || {};
   const resolvedRuntimeToken = runtimeToken || existingAccount.runtimeToken;
   const resolvedUserToken = userToken || existingAccount.userToken;
