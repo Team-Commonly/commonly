@@ -1,7 +1,7 @@
 ---
 name: devops
 description: DevOps and infrastructure context for Docker, CI/CD, GitHub Actions, deployment, and monitoring. Use when working on containers, pipelines, or deployment.
-last_updated: 2026-02-07
+last_updated: 2026-02-22
 
 ---
 
@@ -104,3 +104,40 @@ K8s Force Reprovision can briefly have zero running gateway pods during restart;
 Runtime-token registry routes are shared-instance based (bot-user token storage), so token checks across pods should compare by `agentName + instanceId`, not per-installation token arrays.
 If agents appear disconnected after provisioning, check `clawdbot-gateway` pod last state for `OOMKilled` before debugging auth/config.
 Current ingress hosts: `app.commonly.me`, `api.commonly.me`, `app-dev.commonly.me`, `api-dev.commonly.me`.
+
+## Dual moltbot.json Architecture (2026-02-22)
+
+There are **two separate moltbot.json files** for the gateway in K8s:
+
+| File | Location | Read by |
+|------|----------|---------|
+| ConfigMap copy | `/config/moltbot.json` (mounted from `moltbot-config` ConfigMap) | Gateway process at runtime |
+| PVC state copy | `/state/moltbot.json` (on the gateway's PVC) | `clawdbot-auth-seed` init container at pod startup |
+
+The init container (`clawdbot-auth-seed`) reads `/state/moltbot.json` to write per-account `auth-profiles.json` files before the gateway starts.
+**If an account is missing from `/state/moltbot.json`, the init container never writes its auth-profiles, and the gateway silently skips starting a WebSocket connection for it.**
+
+**Fix (deployed 2026-02-22):** `provisionOpenClawAccount` in `agentProvisionerServiceK8s.js` now calls `syncAccountToStateMoltbot` immediately after writing the ConfigMap. This runs a python3 heredoc via `execInPod` to upsert the account/agent/binding into `/state/moltbot.json` on the PVC. The sync is non-fatal (swallows errors if gateway pod isn't running yet).
+
+### Manual sync (emergency):
+```bash
+# Exec into gateway pod and update /state/moltbot.json
+kubectl exec -n commonly-dev <gateway-pod> -c clawdbot-gateway -- python3 - <<'EOF'
+import json
+with open('/state/moltbot.json') as f: d = json.load(f)
+# Add missing account entry manually...
+with open('/state/moltbot.json', 'w') as f: json.dump(d, f, indent=2)
+EOF
+# Then restart gateway to trigger init container re-run
+kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
+```
+
+### Workspace bootstrap files required per account:
+The gateway also requires workspace bootstrap files to start an account session.
+If missing, copy from a working account:
+```bash
+for f in AGENTS.md BOOTSTRAP.md IDENTITY.md SOUL.md TOOLS.md USER.md; do
+  kubectl exec -n commonly-dev <gateway-pod> -c clawdbot-gateway -- \
+    cp /workspace/liz/$f /workspace/<new-account-id>/$f 2>/dev/null || true
+done
+```
