@@ -105,39 +105,75 @@ Runtime-token registry routes are shared-instance based (bot-user token storage)
 If agents appear disconnected after provisioning, check `clawdbot-gateway` pod last state for `OOMKilled` before debugging auth/config.
 Current ingress hosts: `app.commonly.me`, `api.commonly.me`, `app-dev.commonly.me`, `api-dev.commonly.me`.
 
-## Dual moltbot.json Architecture (2026-02-22)
+## clawdbot-gateway Build & Deploy (2026-02-27)
 
-There are **two separate moltbot.json files** for the gateway in K8s:
+The gateway image is built from `_external/clawdbot/` via Cloud Build.
+
+### Pre-build (run locally each time before submitting):
+```bash
+cd _external/clawdbot
+pnpm canvas:a2ui:bundle   # generates src/canvas-host/a2ui/a2ui.bundle.js (required in image)
+```
+
+### Build & deploy:
+```bash
+CLAWDBOT_TAG=$(date +%Y%m%d%H%M%S)
+gcloud builds submit _external/clawdbot \
+  --tag gcr.io/commonly-test/clawdbot-gateway:${CLAWDBOT_TAG} \
+  --project commonly-test --machine-type=e2-highcpu-8
+kubectl set image deployment/clawdbot-gateway clawdbot-gateway=gcr.io/commonly-test/clawdbot-gateway:${CLAWDBOT_TAG} -n commonly-dev
+kubectl rollout status deployment/clawdbot-gateway -n commonly-dev --timeout=180s
+# Repeat for -n commonly (prod)
+```
+
+### `.gcloudignore` key rules (differs from `.gitignore`):
+- Keeps `pnpm-lock.yaml` (required by Dockerfile's `pnpm install --frozen-lockfile`)
+- Keeps `src/canvas-host/a2ui/*.bundle.js` (prebuilt asset, needed in image)
+- Negates `IDENTITY.md`/`USER.md` exclusion for `docs/reference/templates/` (required by gateway at runtime)
+
+## Dual moltbot.json Architecture
+
+**CRITICAL**: The gateway reads `OPENCLAW_CONFIG_PATH=/state/moltbot.json` (PVC), NOT the ConfigMap.
 
 | File | Location | Read by |
 |------|----------|---------|
-| ConfigMap copy | `/config/moltbot.json` (mounted from `moltbot-config` ConfigMap) | Gateway process at runtime |
-| PVC state copy | `/state/moltbot.json` (on the gateway's PVC) | `clawdbot-auth-seed` init container at pod startup |
+| PVC state copy | `/state/moltbot.json` | **Gateway process at runtime** + init container |
+| ConfigMap copy | `/config/moltbot.json` | Only the `clawdbot-auth-seed` init container |
 
-The init container (`clawdbot-auth-seed`) reads `/state/moltbot.json` to write per-account `auth-profiles.json` files before the gateway starts.
-**If an account is missing from `/state/moltbot.json`, the init container never writes its auth-profiles, and the gateway silently skips starting a WebSocket connection for it.**
+The init container (`clawdbot-auth-seed`) reads `/state/moltbot.json` to write per-account `auth-profiles.json` files.
+**If an account is missing from `/state/moltbot.json`, the init container never writes its auth-profiles → gateway silently skips that WebSocket.**
 
-**Fix (deployed 2026-02-22):** `provisionOpenClawAccount` in `agentProvisionerServiceK8s.js` now calls `syncAccountToStateMoltbot` immediately after writing the ConfigMap. This runs a python3 heredoc via `execInPod` to upsert the account/agent/binding into `/state/moltbot.json` on the PVC. The sync is non-fatal (swallows errors if gateway pod isn't running yet).
+**Fixes in `agentProvisionerServiceK8s.js`:**
+- `provisionOpenClawAccount` (~line 1123): sets `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=true` in ConfigMap (required since v2026.2.26 for non-loopback mode)
+- `syncAccountToStateMoltbot` (~line 310): upserts account/agent/binding into `/state/moltbot.json` AND sets the same `dangerouslyAllowHostHeaderOriginFallback` flag there
 
-### Manual sync (emergency):
+### Manual emergency sync:
 ```bash
-# Exec into gateway pod and update /state/moltbot.json
-kubectl exec -n commonly-dev <gateway-pod> -c clawdbot-gateway -- python3 - <<'EOF'
+kubectl exec -n commonly-dev <pod> -c clawdbot-gateway -- python3 - <<'EOF'
 import json
 with open('/state/moltbot.json') as f: d = json.load(f)
-# Add missing account entry manually...
+# patch what's needed, e.g.:
+d.setdefault('gateway', {}).setdefault('controlUi', {})['dangerouslyAllowHostHeaderOriginFallback'] = True
 with open('/state/moltbot.json', 'w') as f: json.dump(d, f, indent=2)
 EOF
-# Then restart gateway to trigger init container re-run
-kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
+kubectl delete pod -n commonly-dev -l app=clawdbot-gateway  # force immediate restart
 ```
 
 ### Workspace bootstrap files required per account:
-The gateway also requires workspace bootstrap files to start an account session.
-If missing, copy from a working account:
 ```bash
 for f in AGENTS.md BOOTSTRAP.md IDENTITY.md SOUL.md TOOLS.md USER.md; do
-  kubectl exec -n commonly-dev <gateway-pod> -c clawdbot-gateway -- \
+  kubectl exec -n commonly-dev <pod> -c clawdbot-gateway -- \
     cp /workspace/liz/$f /workspace/<new-account-id>/$f 2>/dev/null || true
 done
 ```
+
+## Commonly Extension Architecture (self-contained since 2026-02-27)
+
+All Commonly channel code lives in `_external/clawdbot/extensions/commonly/` with no imports from `src/`.
+Upgrade path: rsync new upstream into `_external/clawdbot/` excluding `extensions/commonly/`, check plugin-SDK compat, run tests.
+See `_external/clawdbot/extensions/commonly/UPGRADING.md` for full runbook.
+
+### OpenClaw v2026.2.26 known breaking changes:
+1. `socket.io-client` must be in root `package.json` (extension uses it at runtime)
+2. Non-loopback gateway mode requires `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=true` in `/state/moltbot.json`
+3. `docs/reference/templates/IDENTITY.md` and `USER.md` must exist in the image
