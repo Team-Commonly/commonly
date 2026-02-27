@@ -340,6 +340,9 @@ const syncAccountToStateMoltbot = async (accountId, accountEntry, agentEntry, bi
     'd.setdefault("bindings", [])',
     'bids = [b.get("match", {}).get("accountId") for b in d["bindings"]]',
     'if binding and account_id not in bids: d["bindings"].append(binding); print("[state-sync] added binding:", account_id)',
+    // Required since upstream v2026.2.26: non-loopback gateway requires controlUi origin config
+    'd.setdefault("gateway", {}).setdefault("controlUi", {})',
+    'if not d["gateway"]["controlUi"].get("allowedOrigins") and not d["gateway"]["controlUi"].get("dangerouslyAllowHostHeaderOriginFallback"): d["gateway"]["controlUi"]["dangerouslyAllowHostHeaderOriginFallback"] = True; print("[state-sync] set dangerouslyAllowHostHeaderOriginFallback")',
     'with open("/state/moltbot.json", "w") as f: json.dump(d, f, indent=2)',
     'PYEOF',
   ].join('\n');
