@@ -6,9 +6,9 @@ import {
   type ReplyPayload,
 } from "openclaw/plugin-sdk";
 
-import { CommonlyClient } from "../../../src/channels/commonly/client.js";
-import { CommonlyWebSocket } from "../../../src/channels/commonly/websocket.js";
-import type { CommonlyEvent } from "../../../src/channels/commonly/events.js";
+import { CommonlyClient } from "./client.js";
+import { CommonlyWebSocket } from "./websocket.js";
+import type { CommonlyEvent } from "./events.js";
 
 import { CommonlyConfigSchema } from "./config-schema.js";
 import { getCommonlyRuntime } from "./runtime.js";
@@ -18,7 +18,7 @@ import {
   resolveDefaultCommonlyAccountId,
   type ResolvedCommonlyAccount,
 } from "./types.js";
-import { parseInlineDirectives } from "../../../src/utils/directive-tags.js";
+import { parseInlineDirectives } from "./directive-tags.js";
 
 type CommonlyConnection = {
   ws: CommonlyWebSocket;

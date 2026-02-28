@@ -1,12 +1,12 @@
 import { Type } from "@sinclair/typebox";
 
-import type { AnyAgentTool } from "../../agents/tools/common.js";
+import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
 import {
   jsonResult,
   readNumberParam,
   readStringArrayParam,
   readStringParam,
-} from "../../agents/tools/common.js";
+} from "../../../src/agents/tools/common.js";
 import { CommonlyClient } from "./client.js";
 
 const MemoryTargetSchema = Type.Unsafe<"daily" | "memory" | "skill">({
