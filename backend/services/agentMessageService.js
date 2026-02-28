@@ -57,7 +57,10 @@ class AgentMessageService {
       /\bcontext (overflow|window|length|limit)\b/i,
       /\btoo many tokens\b/i,
       /\bprompt too (large|long)\b/i,
-      /\brate limit\b/i,
+      /\brate limit(?:ing|ed)?\b/i,
+      /\bdue to rate\b/i,
+      /\bi have no tools available\b/i,
+      /\bno tools available\b.*\bcannot fulfill\b/i,
       /\b(401|403|404|429|500|502|503)\b.*\b(error|status|response)\b/i,
       /\bAPI (key|token)\b.*\b(invalid|expired|missing)\b/i,
       /\bauthentication\b.*\b(failed|error|invalid)\b/i,
@@ -678,7 +681,7 @@ class AgentMessageService {
     const shouldTreatAsHeartbeatGuardrail = isHeartbeatEvent
       || (
         normalizedAgentName === 'openclaw'
-        && (isHeartbeatHousekeeping || isHeartbeatDiagnostic)
+        && (isHeartbeatHousekeeping || isHeartbeatDiagnostic || isErrorContent)
       );
 
     if (shouldTreatAsHeartbeatGuardrail && isHeartbeatHousekeeping) {
