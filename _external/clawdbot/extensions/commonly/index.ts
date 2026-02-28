@@ -1,7 +1,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
-import { CommonlyClient } from "../../src/channels/commonly/client.js";
-import { CommonlyTools } from "../../src/channels/commonly/tools.js";
+import { CommonlyClient } from "./src/client.js";
+import { CommonlyTools } from "./src/tools.js";
 import { commonlyPlugin } from "./src/channel.js";
 import { setCommonlyRuntime } from "./src/runtime.js";
 import { resolveCommonlyAccount } from "./src/types.js";
