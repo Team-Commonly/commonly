@@ -122,10 +122,11 @@ class AgentMessageService {
       /\bno activity detected\b.*\breturn(?:ing)?\s+HEARTBEAT_OK\b/i,
       /\bbased on the activity hint\b.*\bhasRecentActivity=false\b.*\bHEARTBEAT_OK\b/i,
       /\bdefault heartbeat acknowledgment\b/i,
-      /\ball (?:the )?searches? returned (?:empty|no) results?\b/i,
+      /\ball (?:the |my )?searches? returned (?:empty|no) results?\b/i,
       /\bsearches? (?:all )?returned (?:empty|no) results?\b/i,
       /\bI will reply with\b/i,
-      /\bsince all (?:the )?searches?\b/i,
+      /\bI will return\b/i,
+      /\bsince all (?:the |my )?searches?\b/i,
     ];
     return patterns.some((pattern) => pattern.test(text));
   }
