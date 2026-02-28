@@ -70,6 +70,9 @@ class AgentMessageService {
       /\bERROR[:]/i,
       /\bTraceback\b/i,
       /\bException\b/i,
+      /\ban unknown error occurred\b/i,
+      /\bcommand not found\b/i,
+      /\bno such file or directory\b/i,
     ];
     return patterns.some((pattern) => pattern.test(text));
   }
@@ -119,6 +122,10 @@ class AgentMessageService {
       /\bno activity detected\b.*\breturn(?:ing)?\s+HEARTBEAT_OK\b/i,
       /\bbased on the activity hint\b.*\bhasRecentActivity=false\b.*\bHEARTBEAT_OK\b/i,
       /\bdefault heartbeat acknowledgment\b/i,
+      /\ball (?:the )?searches? returned (?:empty|no) results?\b/i,
+      /\bsearches? (?:all )?returned (?:empty|no) results?\b/i,
+      /\bI will reply with\b/i,
+      /\bsince all (?:the )?searches?\b/i,
     ];
     return patterns.some((pattern) => pattern.test(text));
   }
@@ -284,6 +291,29 @@ class AgentMessageService {
       /\[timestamp\]/i,
     ];
     return patterns.some((pattern) => pattern.test(text));
+  }
+
+  static extractUrls(content) {
+    const text = String(content || '');
+    const matches = text.match(/https?:\/\/[^\s\])"'>]+/gi) || [];
+    return matches.map((url) => {
+      // Normalize to hostname+pathname, ignoring query strings for comparison
+      try { return new URL(url).hostname + new URL(url).pathname.replace(/\/$/, ''); } catch { return url; }
+    });
+  }
+
+  static async hasRecentDuplicateUrls({ podId, content, lookback = 10 }) {
+    const urls = AgentMessageService.extractUrls(content);
+    if (urls.length === 0) return false;
+    try {
+      const recent = await AgentMessageService.getRecentMessages(podId, lookback);
+      if (!Array.isArray(recent) || recent.length === 0) return false;
+      const recentText = recent.map((m) => String(m?.content || '')).join('\n');
+      const recentUrls = new Set(AgentMessageService.extractUrls(recentText));
+      return urls.every((url) => recentUrls.has(url));
+    } catch {
+      return false;
+    }
   }
 
   static async findRecentActivityHeartbeatSignal({ podId, excludeUserId }) {
@@ -697,6 +727,25 @@ class AgentMessageService {
         displayName,
         sourceContent: sanitizedContent,
       });
+    }
+
+    // Skip heartbeat content silently when all URLs were already posted recently.
+    if (isHeartbeatEvent) {
+      const isDuplicate = await AgentMessageService.hasRecentDuplicateUrls({
+        podId,
+        content: sanitizedContent,
+      });
+      if (isDuplicate) {
+        AgentMessageService.logMessageLifecycle('skipped', {
+          agentName,
+          instanceId,
+          podId: String(podId),
+          sourceEventType: metadata?.sourceEventType || metadata?.eventType,
+          sourceEventId: metadata?.sourceEventId || metadata?.eventId,
+          reason: 'duplicate_urls',
+        });
+        return { success: true, skipped: true, reason: 'duplicate_urls' };
+      }
     }
 
     if (
