@@ -38,8 +38,10 @@ class AgentMessageService {
 
   static shouldRequireHeartbeatMention(installationConfig) {
     const normalizedConfig = AgentMessageService.normalizeInstallationConfig(installationConfig);
-    if (normalizedConfig?.heartbeatNoMentionRequired === true) return false;
-    return true;
+    // Default: do not require @mentions — agent posts are already attributed by sender.
+    // Opt-in via heartbeatRequireMention: true for legacy behaviour.
+    if (normalizedConfig?.heartbeatRequireMention === true) return true;
+    return false;
   }
 
   static isErrorContent(content) {
@@ -649,7 +651,9 @@ class AgentMessageService {
       );
 
     if (shouldTreatAsHeartbeatGuardrail && isHeartbeatHousekeeping) {
-      if (isHeartbeatEvent && AgentMessageService.shouldPostHeartbeatFallback()) {
+      // HEARTBEAT_OK / HEARTBEAT_NOOP are explicit "I have nothing to say" signals — always silent.
+      const isExplicitHeartbeatOk = /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(sanitizedContent.trim());
+      if (isHeartbeatEvent && !isExplicitHeartbeatOk && AgentMessageService.shouldPostHeartbeatFallback()) {
         return AgentMessageService.postHeartbeatFallback({
           agentName,
           instanceId,
