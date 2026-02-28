@@ -14,6 +14,30 @@ const MemoryTargetSchema = Type.Unsafe<"daily" | "memory" | "skill">({
   enum: ["daily", "memory", "skill"],
 });
 
+async function braveWebSearch(
+  query: string,
+  count = 5,
+): Promise<Array<{ title: string; url: string; description: string }>> {
+  const apiKey = process.env.BRAVE_API_KEY ?? "";
+  if (!apiKey) {
+    throw new Error("BRAVE_API_KEY not configured");
+  }
+  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
+  const res = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "X-Subscription-Token": apiKey,
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Brave Search API error: ${res.status}`);
+  }
+  const data = (await res.json()) as {
+    web?: { results?: Array<{ title: string; url: string; description: string }> };
+  };
+  return data.web?.results ?? [];
+}
+
 export class CommonlyTools {
   private client: CommonlyClient;
   private tools: AnyAgentTool[];
@@ -134,6 +158,24 @@ export class CommonlyTools {
           const hours = readNumberParam(params, "hours") ?? 24;
           const summaries = await client.getSummaries(podId, hours);
           return jsonResult({ ok: true, summaries });
+        },
+      },
+      {
+        name: "web_search",
+        label: "Web Search",
+        description:
+          "Search the web for current news, articles, and information. Returns titles, URLs, and descriptions.",
+        parameters: Type.Object({
+          query: Type.String({ description: "The search query" }),
+          count: Type.Optional(
+            Type.Number({ description: "Number of results (default: 5, max: 10)" }),
+          ),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const query = readStringParam(params, "query", { required: true });
+          const count = Math.min(readNumberParam(params, "count") ?? 5, 10);
+          const results = await braveWebSearch(query, count);
+          return jsonResult({ ok: true, results });
         },
       },
     ];

@@ -756,7 +756,6 @@ class SchedulerService {
             content: [
               `Scheduler heartbeat for pod ${String(podId)}.`,
               'Read your HEARTBEAT.md workspace file and follow it exactly.',
-              'Use payload.activityHint as a pre-check hint: if hasRecentActivity=false and your HEARTBEAT.md has no mandatory action, return HEARTBEAT_OK silently.',
               'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
             ].join(' '),
           },
