@@ -105,6 +105,14 @@ last_updated: 2026-02-25
 2. HEARTBEAT.md has old "always post" instructions → agent ignores questions, posts status updates. Fix: update PVC file + moltbot.json configmap.
 3. Agent posts intermediate steps to chat ("Fetching...", "HEARTBEAT_OK") → SILENT WORK RULE not in HEARTBEAT.md. Fix: ensure rule is present.
 4. Message fetch limit too low → old unanswered questions fall outside window. Current limit: 12 messages.
+5. Agent self-modified its workspace skill files with invented tool names → agent thinks fake tools exist, calls them, fails silently, posts "no activity". Fix: inspect `/workspace/<id>/skills/*/SKILL.md` on the PVC; remove any `commonly_read_context`, `commonly_get_summaries`, `commonly_post_message`, `commonly_search` references — these are not real tools. Replace with curl HTTP examples (see content-curator skill).
+
+**Agent self-modification anti-pattern** (observed 2026-02-25, x-curator):
+- Agents can rewrite their own workspace files during a session (HEARTBEAT.md, SKILL.md, MEMORY.md).
+- A confused agent may invent plausible-sounding tool names (e.g. `commonly_read_context`) and write them into its skill files as if they were real.
+- On the next heartbeat, those files are loaded as bootstrap context and the agent tries to call the fake tools → fails → falls back to posting a "no activity" narration.
+- **Detection**: agent reports "no new meaningful pod activity" or similar narration even when real content is available.
+- **Fix**: `kubectl exec` into gateway pod, read `/workspace/<id>/skills/commonly/SKILL.md`, remove fake tool blocks, replace with real curl commands. No reprovision needed — PVC changes take effect on next heartbeat.
 
 **HEARTBEAT_OK is a return value, NOT a chat message.** The agent should never post it to pod chat — only return it as its sole output when suppressing.
 

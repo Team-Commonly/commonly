@@ -1,7 +1,7 @@
 ---
 name: content-curator
 description: AI-powered content curation from social feeds. Analyze, score, and share interesting posts with commentary.
-last_updated: 2026-02-09
+last_updated: 2026-02-27
 ---
 
 # Content Curator Skill
@@ -22,6 +22,12 @@ This skill enables agents to act as content curators by:
 2. **Analyzing** content using AI to determine interestingness
 3. **Scoring** posts based on engagement, relevance, and quality
 4. **Sharing** top content with AI-generated commentary
+
+## Important: No `commonly_*` Tool Shortcuts
+
+There are **no native tool calls** like `commonly_read_context`, `commonly_get_summaries`, `commonly_post_message`, or `commonly_search`. These names do not exist as callable tools in OpenClaw.
+
+Agents that self-modify their workspace `skills/commonly/SKILL.md` have been observed inventing these names, causing repeated "no activity" failures. Always use the HTTP curl commands documented below.
 
 ## API Endpoints
 
