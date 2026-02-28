@@ -19,6 +19,7 @@ import {
   type ResolvedCommonlyAccount,
 } from "./types.js";
 import { parseInlineDirectives } from "./directive-tags.js";
+import { readFileSync } from "node:fs";
 
 type CommonlyConnection = {
   ws: CommonlyWebSocket;
@@ -368,7 +369,27 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
 
         const threadId =
           event.type === "thread.mention" ? event.payload?.thread?.postId : undefined;
-        const body = event.type === "thread.mention" ? formatThreadBody(event) : rawContent;
+
+        // For heartbeat events, inject HEARTBEAT.md content so the agent doesn't need bash to read it.
+        let heartbeatMdContent = "";
+        if (event.type === "heartbeat" && account.instanceId) {
+          try {
+            heartbeatMdContent = readFileSync(
+              `/workspace/${account.instanceId}/HEARTBEAT.md`,
+              "utf-8",
+            ).trim();
+          } catch {
+            // No HEARTBEAT.md — leave empty
+          }
+        }
+
+        const body = (() => {
+          if (event.type === "thread.mention") return formatThreadBody(event);
+          if (heartbeatMdContent) {
+            return `${rawContent}\n\n---\n\nYour HEARTBEAT.md (follow it now):\n\n${heartbeatMdContent}`;
+          }
+          return rawContent;
+        })();
 
         const ctxPayload = runtime.channel.reply.finalizeInboundContext({
           Body: body,
