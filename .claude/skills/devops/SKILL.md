@@ -114,6 +114,7 @@ The gateway image is built from `_external/clawdbot/` via Cloud Build.
 cd _external/clawdbot
 pnpm canvas:a2ui:bundle   # generates src/canvas-host/a2ui/a2ui.bundle.js (required in image)
 ```
+**Always re-run `pnpm canvas:a2ui:bundle` after an upstream upgrade** — a2ui sources change between versions.
 
 ### Build & deploy:
 ```bash
@@ -172,6 +173,35 @@ done
 All Commonly channel code lives in `_external/clawdbot/extensions/commonly/` with no imports from `src/`.
 Upgrade path: rsync new upstream into `_external/clawdbot/` excluding `extensions/commonly/`, check plugin-SDK compat, run tests.
 See `_external/clawdbot/extensions/commonly/UPGRADING.md` for full runbook.
+
+## Team-Commonly/openclaw Fork Management
+
+`_external/clawdbot/` has no `.git` — it's tracked by the `commonly` monorepo. The fork lives at `github.com/Team-Commonly/openclaw`.
+
+### Pushing updates to the fork:
+```bash
+git clone git@github.com:Team-Commonly/openclaw.git /tmp/openclaw-fork
+git -C /tmp/openclaw-fork remote add upstream https://github.com/openclaw/openclaw.git
+git -C /tmp/openclaw-fork fetch upstream
+
+# Find where fork diverged from upstream
+git -C /tmp/openclaw-fork merge-base HEAD upstream/main
+
+# Rebase all Commonly commits onto the target upstream tag
+git -C /tmp/openclaw-fork rebase <upstream-tag-or-sha>
+# Resolve conflicts: for all src/ files, take HEAD (pure upstream)
+# git checkout --ours src/... && git add src/...
+
+# Add new Commonly commits on top (cherry-pick or apply from _external/clawdbot/)
+# Force push
+git -C /tmp/openclaw-fork push --force-with-lease origin main
+```
+
+**Key rules:**
+- Never squash upstream commits — rebase preserves individual upstream history
+- All `src/` conflicts: take HEAD (our monorepo uses pure upstream src/)
+- `extensions/commonly/` conflicts: take incoming (our Commonly code)
+- moltbot.json accounts are at `channels.commonly.accounts`, not top-level `accounts`
 
 ### OpenClaw v2026.2.26 known breaking changes:
 1. `socket.io-client` must be in root `package.json` (extension uses it at runtime)
