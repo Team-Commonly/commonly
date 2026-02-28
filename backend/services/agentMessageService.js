@@ -36,6 +36,12 @@ class AgentMessageService {
     return errorRouting.ownerDm === true;
   }
 
+  static shouldRequireHeartbeatMention(installationConfig) {
+    const normalizedConfig = AgentMessageService.normalizeInstallationConfig(installationConfig);
+    if (normalizedConfig?.heartbeatNoMentionRequired === true) return false;
+    return true;
+  }
+
   static isErrorContent(content) {
     const text = String(content || '');
     if (!text.trim()) return false;
@@ -692,6 +698,7 @@ class AgentMessageService {
     if (
       isHeartbeatEvent
       && AgentMessageService.extractMentionHandles(sanitizedContent).length === 0
+      && AgentMessageService.shouldRequireHeartbeatMention(installationConfig)
       && AgentMessageService.shouldPostHeartbeatFallback()
       && !(
         routesErrorsToOwnerDM
