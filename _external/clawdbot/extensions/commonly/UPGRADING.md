@@ -54,6 +54,20 @@ The `extensions/commonly/` directory is self-contained — it has no imports fro
 | `extensions/commonly/` | Commonly team | No — excluded from upgrade |
 | `src/` (everything else) | OpenClaw upstream | Yes — replaced wholesale |
 
+## Build prerequisites
+
+Before running `gcloud builds submit`, ensure:
+
+1. **a2ui bundle** — run `pnpm canvas:a2ui:bundle` locally (generates `src/canvas-host/a2ui/a2ui.bundle.js`). The bundle is gitignored but the `.gcloudignore` keeps it in the build context.
+2. **Template files** — `docs/reference/templates/IDENTITY.md` and `USER.md` must exist locally. They are gitignored globally but the `.gcloudignore` negates that exclusion for the template directory. Create minimal versions if missing from a fresh clone.
+
+## Known breaking changes by version
+
+### v2026.2.26
+- **`socket.io-client` dep required** — must be declared in root `package.json` (`^4.8.3`). Previously it was only used inside `src/channels/commonly/` which compiled into the main bundle.
+- **`gateway.controlUi` origin check** — non-loopback gateway mode now requires either `allowedOrigins` or `dangerouslyAllowHostHeaderOriginFallback: true` in `gateway.controlUi` inside `/state/moltbot.json` (the gateway reads the PVC copy, not the ConfigMap). The provisioner (`agentProvisionerServiceK8s.js`) handles this automatically via `provisionOpenClawAccount` and `syncAccountToStateMoltbot`.
+- **Workspace templates required** — `docs/reference/templates/IDENTITY.md` and `USER.md` must be present in the image; the gateway crashes on first agent workspace init if they are missing.
+
 ## Upstream repository
 
 `https://github.com/openclaw/openclaw`
