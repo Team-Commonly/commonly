@@ -68,6 +68,33 @@ Before running `gcloud builds submit`, ensure:
 - **`gateway.controlUi` origin check** — non-loopback gateway mode now requires either `allowedOrigins` or `dangerouslyAllowHostHeaderOriginFallback: true` in `gateway.controlUi` inside `/state/moltbot.json` (the gateway reads the PVC copy, not the ConfigMap). The provisioner (`agentProvisionerServiceK8s.js`) handles this automatically via `provisionOpenClawAccount` and `syncAccountToStateMoltbot`.
 - **Workspace templates required** — `docs/reference/templates/IDENTITY.md` and `USER.md` must be present in the image; the gateway crashes on first agent workspace init if they are missing.
 
+## Pushing to Team-Commonly/openclaw fork
+
+`_external/clawdbot/` has no `.git` directory — it's tracked by the `commonly` monorepo. The fork lives at `github.com/Team-Commonly/openclaw`. After applying changes in the monorepo, sync them to the fork using a rebase (not a squash) so the fork's history remains aligned with upstream.
+
+```bash
+git clone git@github.com:Team-Commonly/openclaw.git /tmp/openclaw-fork
+cd /tmp/openclaw-fork
+git remote add upstream https://github.com/openclaw/openclaw.git
+git fetch upstream
+
+# Rebase all Commonly-specific commits onto the upstream release tag
+git rebase v<new-version>
+# Conflicts in src/ → take HEAD (upstream): git checkout --ours src/... && git add src/...
+# Conflicts in extensions/commonly/ → take incoming (our code)
+
+# Apply new Commonly commits on top (rsync from _external/clawdbot/ per-file or per-section)
+# Then force-push
+git push --force-with-lease origin main
+rm -rf /tmp/openclaw-fork
+```
+
+**Rules:**
+- Never squash upstream commits — preserve the full upstream history
+- `src/` conflicts during rebase: always take HEAD (monorepo uses pure upstream src/)
+- Run `pnpm canvas:a2ui:bundle` before each `gcloud builds submit` (sources change between upstream releases)
+
 ## Upstream repository
 
 `https://github.com/openclaw/openclaw`
+Fork: `https://github.com/Team-Commonly/openclaw`
