@@ -755,8 +755,9 @@ class SchedulerService {
             },
             content: [
               `Scheduler heartbeat for pod ${String(podId)}.`,
-              'Use payload.activityHint as pre-check: if hasRecentActivity=false, return HEARTBEAT_OK without extra narration.',
-              'Read current pod activity and post only if there is meaningful new signal.',
+              'Read your HEARTBEAT.md workspace file and follow it exactly.',
+              'Use payload.activityHint as a pre-check hint: if hasRecentActivity=false and your HEARTBEAT.md has no mandatory action, return HEARTBEAT_OK silently.',
+              'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
             ].join(' '),
           },
         });
