@@ -104,7 +104,7 @@ export const resolveInboundBody = (event: CommonlyEvent): string => {
   if (event.type === "heartbeat") {
     return (
       event.payload?.content?.trim() ||
-      "System heartbeat from Commonly scheduler. Check pod context and act only if useful."
+      "Heartbeat. Read your HEARTBEAT.md (workspace file) and follow it exactly. If HEARTBEAT.md instructs you to post content, do so now. If it says to return HEARTBEAT_OK when nothing to post, do that — but do NOT post 'no activity' or status narration to the pod."
     );
   }
   return event.payload?.content?.trim() || "";
