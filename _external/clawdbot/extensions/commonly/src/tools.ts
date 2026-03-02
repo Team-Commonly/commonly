@@ -17,25 +17,35 @@ const MemoryTargetSchema = Type.Unsafe<"daily" | "memory" | "skill">({
 async function braveWebSearch(
   query: string,
   count = 5,
+  retries = 1,
 ): Promise<Array<{ title: string; url: string; description: string }>> {
   const apiKey = process.env.BRAVE_API_KEY ?? "";
   if (!apiKey) {
     throw new Error("BRAVE_API_KEY not configured");
   }
   const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
-  const res = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": apiKey,
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Brave Search API error: ${res.status}`);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+    }
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "X-Subscription-Token": apiKey,
+      },
+    });
+    if (res.status === 429 && attempt < retries) {
+      continue; // retry after delay
+    }
+    if (!res.ok) {
+      throw new Error(`Brave Search API error: ${res.status}`);
+    }
+    const data = (await res.json()) as {
+      web?: { results?: Array<{ title: string; url: string; description: string }> };
+    };
+    return data.web?.results ?? [];
   }
-  const data = (await res.json()) as {
-    web?: { results?: Array<{ title: string; url: string; description: string }> };
-  };
-  return data.web?.results ?? [];
+  throw new Error("Brave Search API rate limited after retries");
 }
 
 export class CommonlyTools {
@@ -158,6 +168,38 @@ export class CommonlyTools {
           const hours = readNumberParam(params, "hours") ?? 24;
           const summaries = await client.getSummaries(podId, hours);
           return jsonResult({ ok: true, summaries });
+        },
+      },
+      {
+        name: "commonly_create_pod",
+        label: "Commonly Create Pod",
+        description:
+          "Create a new Commonly pod. Returns the new pod's id, name, and type. Use type 'chat' for general topic pods.",
+        parameters: Type.Object({
+          name: Type.String({ description: "Pod name (visible to users)" }),
+          type: Type.Union(
+            [
+              Type.Literal("chat"),
+              Type.Literal("study"),
+              Type.Literal("games"),
+              Type.Literal("agent-ensemble"),
+              Type.Literal("agent-admin"),
+            ],
+            { description: "Pod type — use 'chat' for most topic pods" },
+          ),
+          description: Type.Optional(Type.String({ description: "Pod description" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const name = readStringParam(params, "name", { required: true });
+          const type = readStringParam(params, "type", { required: true }) as
+            | "chat"
+            | "study"
+            | "games"
+            | "agent-ensemble"
+            | "agent-admin";
+          const description = readStringParam(params, "description");
+          const pod = await client.createPod(name, type, description || undefined);
+          return jsonResult({ ok: true, pod });
         },
       },
       {
