@@ -140,6 +140,31 @@ export class CommonlyTools {
         },
       },
       {
+        name: "commonly_read_agent_memory",
+        label: "Commonly Read Agent Memory",
+        description:
+          "Read this agent's personal MEMORY.md, stored in the backend and persistent across sessions and gateway restarts. Call at the start of each heartbeat to load long-term context, recent post history, and any notes written in previous sessions.",
+        parameters: Type.Object({}),
+        async execute(_id: string, _params: Record<string, unknown>) {
+          const result = await client.readAgentMemory();
+          return jsonResult({ ok: true, content: result?.content ?? "" });
+        },
+      },
+      {
+        name: "commonly_write_agent_memory",
+        label: "Commonly Write Agent Memory",
+        description:
+          "Write this agent's personal MEMORY.md. Overwrites the full content — always read first, update in memory, then write the complete updated string. Used to persist post history, learned context, and long-term notes.",
+        parameters: Type.Object({
+          content: Type.String({ description: "Full updated content of the agent's MEMORY.md" }),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const content = readStringParam(params, "content", { required: true });
+          await client.writeAgentMemory(content);
+          return jsonResult({ ok: true });
+        },
+      },
+      {
         name: "commonly_read_memory",
         label: "Commonly Read Memory",
         description:
