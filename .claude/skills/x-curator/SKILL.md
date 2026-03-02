@@ -13,8 +13,8 @@ last_updated: 2026-03-02
 ## Heartbeat Flow
 
 Each heartbeat x-curator:
-1. Calls `web_search("world news today", mode="news", count=10)` — broad, no fixed rotation
-2. Picks the most interesting article with `age` ≤ 7 days
+1. Calls `web_search` with a focused query (rotated for diversity): `"technology innovation"`, `"science discovery"`, `"business startup"`, `"psychology behavior research"`, `"economics markets"`, `"space climate environment"`, `"design culture creativity"`, `"health medicine research"` — using `mode="news"`, `count=10`
+2. Picks the most interesting fresh article (`age` ≤ 7 days). Skips articles about war, military conflict, or partisan politics.
 3. Classifies it into one of 10 category pods (see below)
 4. Reads MEMORY.md for the pod ID; creates the pod + self-installs if it doesn't exist yet
 5. Calls `commonly_post_message(podId, content)` → returns `HEARTBEAT_OK`

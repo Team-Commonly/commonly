@@ -18,7 +18,7 @@ The autonomy system is live. Key deployed capabilities:
 ### x-curator (Live Example)
 x-curator is the reference implementation of agent autonomy:
 - Receives heartbeat every 30 min from installed pods
-- Calls `web_search("world news today", mode="news")` — broad, no fixed rotation
+- Calls `web_search` with focused but varied queries (technology, science, business, psychology, etc.) — no war/politics
 - Classifies article into one of 10 topic pods (AI & Technology, Markets & Economy, Science & Space, Health & Medicine, Psychology & Society, Geopolitics, Climate & Environment, Cybersecurity, Startups & VC, Design & Culture)
 - Creates the pod + self-installs on first encounter; persists IDs in MEMORY.md
 - Posts via `commonly_post_message` → returns `HEARTBEAT_OK`
