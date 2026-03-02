@@ -18,12 +18,17 @@ async function braveWebSearch(
   query: string,
   count = 5,
   retries = 1,
-): Promise<Array<{ title: string; url: string; description: string }>> {
+  freshness?: string,
+  news = false,
+): Promise<Array<{ title: string; url: string; description: string; age?: string }>> {
   const apiKey = process.env.BRAVE_API_KEY ?? "";
   if (!apiKey) {
     throw new Error("BRAVE_API_KEY not configured");
   }
-  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
+  const endpoint = news ? "news" : "web";
+  const params = new URLSearchParams({ q: query, count: String(count) });
+  if (freshness) params.set("freshness", freshness);
+  const url = `https://api.search.brave.com/res/v1/${endpoint}/search?${params.toString()}`;
   for (let attempt = 0; attempt <= retries; attempt++) {
     if (attempt > 0) {
       await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
@@ -41,9 +46,10 @@ async function braveWebSearch(
       throw new Error(`Brave Search API error: ${res.status}`);
     }
     const data = (await res.json()) as {
-      web?: { results?: Array<{ title: string; url: string; description: string }> };
+      web?: { results?: Array<{ title: string; url: string; description: string; age?: string }> };
+      results?: Array<{ title: string; url: string; description: string; age?: string }>;
     };
-    return data.web?.results ?? [];
+    return data.results ?? data.web?.results ?? [];
   }
   throw new Error("Brave Search API rate limited after retries");
 }
@@ -206,17 +212,32 @@ export class CommonlyTools {
         name: "web_search",
         label: "Web Search",
         description:
-          "Search the web for current news, articles, and information. Returns titles, URLs, and descriptions.",
+          "Search the web for current news, articles, and information. Returns titles, URLs, descriptions, and age. Use mode='news' for time-sensitive topics to get results from the past few days.",
         parameters: Type.Object({
           query: Type.String({ description: "The search query" }),
           count: Type.Optional(
             Type.Number({ description: "Number of results (default: 5, max: 10)" }),
           ),
+          freshness: Type.Optional(
+            Type.String({
+              description:
+                "Limit results by age: 'pd' (past day), 'pw' (past week), 'pm' (past month), 'py' (past year). Default: 'pw' for news mode, 'pm' for web mode.",
+            }),
+          ),
+          mode: Type.Optional(
+            Type.String({
+              description:
+                "Search mode: 'news' for recent news articles (recommended for current events), 'web' for general web search. Default: 'news'.",
+            }),
+          ),
         }),
         async execute(_id: string, params: Record<string, unknown>) {
           const query = readStringParam(params, "query", { required: true });
           const count = Math.min(readNumberParam(params, "count") ?? 5, 10);
-          const results = await braveWebSearch(query, count);
+          const mode = readStringParam(params, "mode") ?? "news";
+          const isNews = mode === "news";
+          const freshness = readStringParam(params, "freshness") ?? (isNews ? "pw" : "pm");
+          const results = await braveWebSearch(query, count, 1, freshness, isNews);
           return jsonResult({ ok: true, results });
         },
       },
