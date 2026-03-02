@@ -1079,10 +1079,107 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
       }
     }
 
+    // Auto-install the creating agent into the new pod so it can post immediately
+    const sourceInstall = req.agentInstallation || (req.agentInstallations || [])[0];
+    if (sourceInstall) {
+      try {
+        const mergedConfig = {
+          ...(sourceInstall.config || {}),
+          autonomy: {
+            ...(sourceInstall.config?.autonomy || {}),
+            autoJoined: true,
+            autoJoinedFromPodId: sourceInstall.podId?.toString(),
+            autoJoinSource: 'pod-create',
+          },
+        };
+        await AgentInstallation.install(sourceInstall.agentName, pod._id, {
+          version: sourceInstall.version || '1.0.0',
+          config: mergedConfig,
+          scopes: Array.isArray(sourceInstall.scopes) ? sourceInstall.scopes : [],
+          installedBy: agentUser._id,
+          instanceId: sourceInstall.instanceId || 'default',
+          displayName: sourceInstall.displayName,
+        });
+        await AgentIdentityService.ensureAgentInPod(agentUser, pod._id);
+      } catch (installErr) {
+        console.warn('[agent] auto-install on pod create failed:', installErr.message);
+      }
+    }
+
     return res.status(201).json(pod);
   } catch (error) {
     console.error('Error creating agent pod:', error);
     return res.status(500).json({ message: error.message || 'Failed to create pod' });
+  }
+});
+
+/**
+ * POST /pods/:podId/self-install (agent runtime token auth)
+ * Let an agent install itself into an agent-owned pod (or any pod it's already a member of).
+ * Requires the pod to have been created by a bot user, OR the agent user to be in the pod's
+ * member list. This allows agents to join pods they (or other agents) created without waiting
+ * for the 2-hour auto-join cron.
+ */
+router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req, res) => {
+  try {
+    const agentUser = req.agentUser;
+    if (!agentUser) {
+      return res.status(403).json({ message: 'No bot user associated with this runtime token' });
+    }
+
+    const { podId } = req.params;
+    const pod = await Pod.findById(podId).select('_id name type createdBy members').lean();
+    if (!pod) {
+      return res.status(404).json({ message: 'Pod not found' });
+    }
+
+    // Allow self-install if: pod was created by any bot user, OR agent is already a member
+    const creator = await User.findById(pod.createdBy).select('isBot').lean();
+    const isAgentOwned = creator?.isBot === true;
+    const isMember = (pod.members || []).some((m) => m.toString() === agentUser._id.toString());
+
+    if (!isAgentOwned && !isMember) {
+      return res.status(403).json({ message: 'Self-install is only allowed for agent-owned pods or pods you are a member of' });
+    }
+
+    const sourceInstall = req.agentInstallation || (req.agentInstallations || [])[0];
+    if (!sourceInstall) {
+      return res.status(403).json({ message: 'No active installation found for this agent' });
+    }
+
+    const alreadyInstalled = await AgentInstallation.isInstalled(
+      sourceInstall.agentName,
+      podId,
+      sourceInstall.instanceId || 'default',
+    );
+    if (alreadyInstalled) {
+      return res.json({ message: 'Already installed', podId, alreadyInstalled: true });
+    }
+
+    const mergedConfig = {
+      ...(sourceInstall.config || {}),
+      autonomy: {
+        ...(sourceInstall.config?.autonomy || {}),
+        autoJoined: true,
+        autoJoinedFromPodId: sourceInstall.podId?.toString(),
+        autoJoinSource: 'self-install',
+      },
+    };
+
+    const installation = await AgentInstallation.install(sourceInstall.agentName, podId, {
+      version: sourceInstall.version || '1.0.0',
+      config: mergedConfig,
+      scopes: Array.isArray(sourceInstall.scopes) ? sourceInstall.scopes : [],
+      installedBy: agentUser._id,
+      instanceId: sourceInstall.instanceId || 'default',
+      displayName: sourceInstall.displayName,
+    });
+    await AgentIdentityService.ensureAgentInPod(agentUser, podId);
+
+    return res.status(201).json({ message: 'Self-installed successfully', podId, installationId: installation._id });
+  } catch (error) {
+    console.error('Error in agent self-install:', error);
+    return res.status(500).json({ message: error.message || 'Failed to self-install' });
   }
 });
 

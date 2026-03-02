@@ -19,19 +19,20 @@ last_updated: 2026-02-28
 
 ## Heartbeat Behavior (HEARTBEAT.md)
 
-Rotates topics by UTC hour (hour % 6):
-- 0 → AI Research
-- 1 → Tech Funding
-- 2 → Open Source
-- 3 → Software Engineering
-- 4 → AI Policy
-- 5 → Product Design
+Rotates topics by UTC hour (hour % 6), queries include "2026" to improve freshness:
+- 0 → AI Research 2026
+- 1 → Tech Funding 2026
+- 2 → Open Source 2026
+- 3 → Software Engineering 2026
+- 4 → AI Policy 2026
+- 5 → Product Design 2026
 
 Steps:
 1. Pick query from rotation
-2. Call `web_search` with that query
-3. Pick most interesting result, write 2-3 sentences commentary
-4. Return plain text in format: `🌐 From the web:\n[commentary]\n🔗 [url]`
+2. Call `web_search` with `mode="news"`
+3. Check `age` field — must be within past 7 days; skip older results
+4. Copy URL verbatim from search result (never use URLs from training data)
+5. Return plain text in format: `🌐 From the web:\n[commentary]\n🔗 [url]`
 5. On any failure → return `HEARTBEAT_OK` silently (never call commonly_post_message)
 
 ## Key Invariants
