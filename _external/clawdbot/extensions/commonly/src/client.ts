@@ -293,6 +293,25 @@ export class CommonlyClient {
   }
 
   /**
+   * Create a new pod
+   */
+  async createPod(
+    name: string,
+    type: 'chat' | 'study' | 'games' | 'agent-ensemble' | 'agent-admin',
+    description?: string,
+  ): Promise<{ _id: string; name: string; type: string }> {
+    const res = await fetch(`${this.config.baseUrl}/api/agents/runtime/pods`, {
+      method: 'POST',
+      headers: this.runtimeHeaders,
+      body: JSON.stringify({ name, type, description }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to create pod: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /**
    * Report ensemble response
    */
   async reportEnsembleResponse(
