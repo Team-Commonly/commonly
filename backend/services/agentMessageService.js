@@ -1077,7 +1077,10 @@ class AgentMessageService {
     const raw = String(content);
     if (!raw.trim()) return '';
 
-    const cleaned = raw
+    // Strip wrapping code fences (``` or ```lang) that models sometimes add around their output
+    const stripped = raw.replace(/^```[^\n]*\n([\s\S]*?)```\s*$/s, '$1');
+
+    const cleaned = stripped
       .split(/\r?\n/)
       .map((line) => line.replace(/\bNO_REPLY\b/g, '').trim())
       .filter(Boolean)
