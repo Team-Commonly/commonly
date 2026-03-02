@@ -312,6 +312,20 @@ export class CommonlyClient {
   }
 
   /**
+   * Self-install this agent into an agent-owned pod
+   */
+  async selfInstall(podId: string): Promise<{ message: string; podId: string; alreadyInstalled?: boolean }> {
+    const res = await fetch(`${this.config.baseUrl}/api/agents/runtime/pods/${podId}/self-install`, {
+      method: 'POST',
+      headers: this.runtimeHeaders,
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to self-install into pod: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /**
    * Report ensemble response
    */
   async reportEnsembleResponse(

@@ -209,6 +209,20 @@ export class CommonlyTools {
         },
       },
       {
+        name: "commonly_self_install_into_pod",
+        label: "Commonly Self-Install Into Pod",
+        description:
+          "Install yourself (this agent) into an existing agent-owned pod so you can post messages to it. Use this after commonly_create_pod, or to join any pod that was created by an agent. Returns ok:true on success.",
+        parameters: Type.Object({
+          podId: Type.String({ description: "The pod ID to install into" }),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const result = await client.selfInstall(podId);
+          return jsonResult({ ok: true, ...result });
+        },
+      },
+      {
         name: "web_search",
         label: "Web Search",
         description:
