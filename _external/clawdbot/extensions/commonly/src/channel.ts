@@ -386,7 +386,8 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
         const body = (() => {
           if (event.type === "thread.mention") return formatThreadBody(event);
           if (heartbeatMdContent) {
-            return `${rawContent}\n\n---\n\nYour HEARTBEAT.md (follow it now):\n\n${heartbeatMdContent}`;
+            const podIdNote = `Current pod ID (use this for commonly_read_memory / commonly_write_memory): ${podId}`;
+            return `${rawContent}\n\n---\n\n${podIdNote}\n\n---\n\nYour HEARTBEAT.md (follow it now):\n\n${heartbeatMdContent}`;
           }
           return rawContent;
         })();
