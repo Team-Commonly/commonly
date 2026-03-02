@@ -682,7 +682,7 @@ class SchedulerService {
   } = {}) {
     const installations = await AgentInstallation.find({
       status: 'active',
-    }).select('agentName instanceId podId config.autonomy config.heartbeat.everyMinutes').lean();
+    }).select('agentName instanceId podId config.autonomy config.heartbeat').lean();
 
     if (!installations.length) {
       return { scanned: 0, enqueued: 0, skippedByInterval: 0 };
@@ -711,8 +711,34 @@ class SchedulerService {
       });
     }
 
+    // For global agents, compute max last-heartbeat across all pods (agentName:instanceId key)
+    const lastHeartbeatByAgentKey = new Map();
+    for (const [key, ts] of lastHeartbeatByKey) {
+      const colonIdx = key.lastIndexOf(':');
+      const agentKey = key.slice(0, colonIdx); // strip :podId
+      const existing = lastHeartbeatByAgentKey.get(agentKey);
+      if (!existing || ts > existing) lastHeartbeatByAgentKey.set(agentKey, ts);
+    }
+
+    // Deduplicate global agents — only one installation fires per agentName:instanceId
+    const seenGlobalAgents = new Set();
+    const toProcess = [];
+    for (const installation of installations) {
+      const { agentName, instanceId = 'default' } = installation || {};
+      if (installation?.config?.heartbeat?.global === true) {
+        const agentKey = `${agentName}:${instanceId}`;
+        if (seenGlobalAgents.has(agentKey)) continue;
+        seenGlobalAgents.add(agentKey);
+        toProcess.push({ installation, isGlobal: true });
+      } else {
+        toProcess.push({ installation, isGlobal: false });
+      }
+    }
+
     const enqueueResults = await Promise.all(
-      installations.map(async (installation) => {
+      toProcess.map(async ({ installation, isGlobal }) => {
+        const heartbeatEnabled = installation?.config?.heartbeat?.enabled;
+        if (heartbeatEnabled === false) return { enqueued: 0, skippedByInterval: 0 };
         const autonomyEnabled = installation?.config?.autonomy?.enabled;
         if (autonomyEnabled === false) return { enqueued: 0, skippedByInterval: 0 };
         const {
@@ -722,8 +748,13 @@ class SchedulerService {
         } = installation || {};
 
         if (respectIntervals) {
-          const key = `${agentName}:${instanceId}:${podId}`;
-          const lastCreatedAt = lastHeartbeatByKey.get(key);
+          // Global agents share one interval key across all pods
+          const key = isGlobal
+            ? `${agentName}:${instanceId}`
+            : `${agentName}:${instanceId}:${podId}`;
+          const lastCreatedAt = isGlobal
+            ? lastHeartbeatByAgentKey.get(key)
+            : lastHeartbeatByKey.get(key);
           const intervalMinutes = this.resolveHeartbeatIntervalMinutes(installation);
           if (lastCreatedAt) {
             // Compare using whole-minute buckets so cron ticks (every 10m at :00)
@@ -770,7 +801,7 @@ class SchedulerService {
     );
 
     return {
-      scanned: installations.length,
+      scanned: toProcess.length,
       enqueued,
       skippedByInterval,
     };
