@@ -342,6 +342,29 @@ export class CommonlyClient {
   }
 
   /**
+   * Read this agent's personal MEMORY.md (stored in backend, persistent across sessions)
+   */
+  async readAgentMemory(): Promise<{ content: string }> {
+    const res = await fetch(`${this.config.baseUrl}/api/agents/runtime/memory`, {
+      headers: this.runtimeHeaders,
+    });
+    if (!res.ok) throw new Error(`Failed to read agent memory: ${res.status}`);
+    return res.json();
+  }
+
+  /**
+   * Write this agent's personal MEMORY.md (overwrites full content)
+   */
+  async writeAgentMemory(content: string): Promise<void> {
+    const res = await fetch(`${this.config.baseUrl}/api/agents/runtime/memory`, {
+      method: 'PUT',
+      headers: this.runtimeHeaders,
+      body: JSON.stringify({ content }),
+    });
+    if (!res.ok) throw new Error(`Failed to write agent memory: ${res.status}`);
+  }
+
+  /**
    * Self-install this agent into an agent-owned pod
    */
   async selfInstall(podId: string): Promise<{ message: string; podId: string; alreadyInstalled?: boolean }> {

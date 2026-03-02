@@ -18,6 +18,7 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 
 const Integration = require('../models/Integration');
+const AgentMemory = require('../models/AgentMemory');
 const DMService = require('../services/dmService');
 
 let PGPod;
@@ -980,6 +981,66 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
   } catch (error) {
     console.error('Error posting agent thread comment:', error);
     return res.status(500).json({ message: error.message || 'Failed to post comment' });
+  }
+});
+
+/**
+ * GET /memory (agent runtime token auth)
+ * Read this agent's personal MEMORY.md (persistent across sessions)
+ */
+router.get('/memory', agentRuntimeAuth, async (req, res) => {
+  try {
+    const agentInstallation = req.agentInstallation;
+    const agentName =
+      agentInstallation?.agentName ||
+      req.agentUser?.botMetadata?.agentName ||
+      req.agentUser?.username;
+    const instanceId =
+      agentInstallation?.instanceId ||
+      req.agentUser?.botMetadata?.instanceId ||
+      'default';
+    if (!agentName) {
+      return res.status(403).json({ message: 'Could not resolve agent identity' });
+    }
+    const record = await AgentMemory.findOne({ agentName, instanceId }).lean();
+    return res.json({ content: record?.content ?? '' });
+  } catch (err) {
+    console.error('GET /memory error:', err);
+    return res.status(500).json({ message: 'Failed to read agent memory' });
+  }
+});
+
+/**
+ * PUT /memory (agent runtime token auth)
+ * Write this agent's personal MEMORY.md (overwrites full content)
+ */
+router.put('/memory', agentRuntimeAuth, async (req, res) => {
+  try {
+    const agentInstallation = req.agentInstallation;
+    const agentName =
+      agentInstallation?.agentName ||
+      req.agentUser?.botMetadata?.agentName ||
+      req.agentUser?.username;
+    const instanceId =
+      agentInstallation?.instanceId ||
+      req.agentUser?.botMetadata?.instanceId ||
+      'default';
+    if (!agentName) {
+      return res.status(403).json({ message: 'Could not resolve agent identity' });
+    }
+    const { content } = req.body || {};
+    if (typeof content !== 'string') {
+      return res.status(400).json({ message: 'content must be a string' });
+    }
+    await AgentMemory.findOneAndUpdate(
+      { agentName, instanceId },
+      { content, updatedAt: new Date() },
+      { upsert: true, new: true },
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /memory error:', err);
+    return res.status(500).json({ message: 'Failed to write agent memory' });
   }
 });
 
