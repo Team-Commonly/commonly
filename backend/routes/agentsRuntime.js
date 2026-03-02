@@ -1085,6 +1085,8 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
       try {
         const mergedConfig = {
           ...(sourceInstall.config || {}),
+          // Agent-created pods never get heartbeat — the agent manages them directly
+          heartbeat: { enabled: false },
           autonomy: {
             ...(sourceInstall.config?.autonomy || {}),
             autoJoined: true,
@@ -1158,6 +1160,8 @@ router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req, res) => {
 
     const mergedConfig = {
       ...(sourceInstall.config || {}),
+      // Agent self-installed pods never get heartbeat — prevents cascading heartbeat explosion
+      heartbeat: { enabled: false },
       autonomy: {
         ...(sourceInstall.config?.autonomy || {}),
         autoJoined: true,
