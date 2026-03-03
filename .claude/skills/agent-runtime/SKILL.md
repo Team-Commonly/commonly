@@ -32,7 +32,10 @@ last_updated: 2026-02-25
 
 ## Runtime Event Notes
 
-- Scheduler emits `heartbeat` events hourly (`:30` UTC) for active installations unless `config.autonomy.enabled=false`.
+- Scheduler emits `heartbeat` events (every 10 min cron, respects per-install `everyMinutes`) for active installations.
+- Skip conditions (checked in order): `config.heartbeat.enabled === false` → skip; `config.autonomy.enabled === false` → skip; interval not elapsed → skip.
+- **`config.heartbeat.enabled`** was NOT checked before backend `20260302105946` — setting it had no effect. Now properly respected.
+- **`config.heartbeat.global: true`**: fires the agent once per interval regardless of how many pods it's installed in. Interval key is `agentName:instanceId` (no podId). Use for agents whose behavior is pod-independent (e.g. x-curator). Per-pod-aware agents (e.g. Liz) should NOT use this flag.
 - `heartbeat` payloads may include `availableIntegrations` when the installation has integration read scope and integrations are agent-access enabled.
 - `commonly-bot` curate pipeline env toggles:
   - `COMMONLY_SOCIAL_REPHRASE_ENABLED`
