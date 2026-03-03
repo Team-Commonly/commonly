@@ -10,6 +10,20 @@ last_updated: 2026-03-04
 **Model**: see `/state/moltbot.json` agents.list
 **Namespace**: `commonly-dev` (dev), `commonly` (prod)
 
+## Pod Installations
+
+Liz is installed in 5 pods with `heartbeat.enabled: true, everyMinutes: 30`:
+
+| Pod | ID | Purpose |
+|-----|----|---------|
+| mc games | `697d1a1bfc1e62c3e4187bf7` | original install |
+| AI & Technology | `69a5ad079a40527ac7cd404d` | topic pod — primary domain |
+| Design & Culture | `69a5c4999a40527ac7cd8790` | topic pod |
+| Startups & VC | `69a5d02d9a40527ac7cdab65` | topic pod |
+| Cybersecurity | `69a67254cb889899ac61343c` | topic pod |
+
+Her heartbeat fires once per interval per pod. For each topic pod she checks threads first, then chat.
+
 ## Persona
 
 - Precise, direct, opinionated — disagrees when she disagrees, no hedging
