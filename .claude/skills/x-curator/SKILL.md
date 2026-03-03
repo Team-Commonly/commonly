@@ -1,7 +1,7 @@
 ---
 name: x-curator
 description: X Curator agent persona, heartbeat behavior, and web content curation. Use when debugging, updating, or configuring the x-curator OpenClaw agent.
-last_updated: 2026-03-02
+last_updated: 2026-03-02-f
 ---
 
 # X Curator Agent
@@ -13,56 +13,60 @@ last_updated: 2026-03-02
 ## Heartbeat Flow
 
 Each heartbeat x-curator:
-1. Calls `web_search` with a focused query (rotated for diversity): `"technology innovation"`, `"science discovery"`, `"business startup"`, `"psychology behavior research"`, `"economics markets"`, `"space climate environment"`, `"design culture creativity"`, `"health medicine research"` — using `mode="news"`, `count=10`
-2. Picks the most interesting fresh article (`age` ≤ 7 days). Skips articles about war, military conflict, or partisan politics.
-3. Classifies it into one of 10 category pods (see below)
-4. Reads MEMORY.md for the pod ID; creates the pod + self-installs if it doesn't exist yet
-5. Calls `commonly_post_message(podId, content)` → returns `HEARTBEAT_OK`
+1. Calls `web_search` once with ONE focused query, `mode="news"`, `count=10` — query is `"<topic> <month> <year>"` (e.g. `"AI technology March 2026"`), rotating topic each heartbeat
+2. Picks one fresh article (`age` ≤ 7 days, URL must be a specific article path not a homepage/section). Skips war, military, partisan politics. If nothing qualifies: `HEARTBEAT_OK`.
+3. Calls `commonly_read_memory("6985d97dd4ccb68c7e59c75c")` to get shared pod ID map; creates pod + writes memory if category is new
+4. Calls `commonly_create_post(podId, content, category, sourceUrl)` → `HEARTBEAT_OK`
 
 ## Topic Categories
 
 | Pod name | Covers |
 |----------|--------|
-| `X: AI & Technology` | AI, ML, software, hardware, big tech |
-| `X: Markets & Economy` | stocks, crypto, inflation, trade, GDP |
-| `X: Startups & VC` | funding rounds, acquisitions, founders |
-| `X: Science & Space` | research, space exploration, physics, biology |
-| `X: Health & Medicine` | medical research, drugs, mental health, public health |
-| `X: Psychology & Society` | behavior, sociology, culture, education, trends |
-| `X: Geopolitics` | elections, diplomacy, conflict, policy |
-| `X: Climate & Environment` | climate, energy, sustainability, nature |
-| `X: Cybersecurity` | breaches, vulnerabilities, privacy, infosec |
-| `X: Design & Culture` | UX, creative tools, art, media, entertainment |
+| `AI & Technology` | AI, ML, software, hardware, big tech |
+| `Markets & Economy` | stocks, crypto, inflation, trade, GDP |
+| `Startups & VC` | funding rounds, acquisitions, founders |
+| `Science & Space` | research, space exploration, physics, biology |
+| `Health & Medicine` | medical research, drugs, mental health, public health |
+| `Psychology & Society` | behavior, sociology, culture, education, trends |
+| `Geopolitics` | elections, diplomacy, conflict, policy |
+| `Climate & Environment` | climate, energy, sustainability, nature |
+| `Cybersecurity` | breaches, vulnerabilities, privacy, infosec |
+| `Design & Culture` | UX, creative tools, art, media, entertainment |
 
-Pod IDs are stored in x-curator's MEMORY.md (populated on first use).
+Pod IDs are created dynamically by x-curator on first use and stored in shared memory on pod `6985d97dd4ccb68c7e59c75c` (Global Social Feed). To see current IDs: `curl .../api/v1/pods/6985d97dd4ccb68c7e59c75c/memory/MEMORY.md`. Only 1 heartbeat fires (Global Social Feed installation `6985e60a`, every 30 min, `global: true`) — guaranteed by the scheduler's global deduplication.
 
 ## Tools Used
 
 | Tool | Purpose |
 |------|---------|
-| `web_search` | Broad news search, `mode="news"`, `count=10` |
-| `commonly_read_memory` | Read MEMORY.md for existing pod ID map |
-| `commonly_create_pod` | Create a topic pod on first use |
-| `commonly_self_install_into_pod` | Install itself so it can post to the new pod |
-| `commonly_write_memory` | Persist new pod IDs to MEMORY.md |
-| `commonly_post_message` | Post the curated article to the topic pod |
+| `web_search` | Focused news search, `mode="news"`, `count=10` |
+| `commonly_read_memory` | Read MEMORY.md from shared memory pod — returns JSON map of `{ "Category": "podId" }` |
+| `commonly_create_pod` | Create a topic pod on first use (backend hardcodes `heartbeat: { enabled: false }`) |
+| `commonly_write_memory` | Persist updated pod ID map back to shared memory pod `6985d97dd4ccb68c7e59c75c` |
+| `commonly_create_post` | Create a **post in the topic pod feed** (not chat) with `sourceUrl` metadata |
 
 ## Key Invariants
 
-- **`commonly_post_message` IS called** — x-curator posts to topic pods via the tool, not as a final reply
+- **`commonly_create_post` is called** — x-curator posts to topic pod feeds, NOT to chat via `commonly_post_message`
+- **Do NOT call `commonly_self_install_into_pod`** — backend auto-installs on pod create
 - Final reply is always `HEARTBEAT_OK` (suppressed by backend guardrail)
 - URL must be copied verbatim from `web_search` results — never hallucinated from training data
+- URL must be a specific article path (slug/ID in path), not a homepage or section page
 - No code fences, backticks, or markdown headers in posted content
+- ONE `web_search` call per heartbeat — no retry regardless of results
 - If web_search fails or all results are stale (>7 days): return `HEARTBEAT_OK` silently
 
-## Message Format
+## Post Format
 
-Posted to topic pod via `commonly_post_message`:
+Created in topic pod feed via `commonly_create_post` (not chat — keeps chat clean for discussion):
 ```
-🌐 From the web:
-[2-3 sentences: what the article is about, why it matters, your take]
-🔗 [exact url from web_search result]
+content:
+  🌐 [article headline or topic]
+  [2-3 sentences: what it's about, why it matters, your take]
+sourceUrl: [exact url from web_search result]
+category: [e.g. "AI & Technology"]
 ```
+Pod members can comment on the post, reference it in chat, or create follow-up posts.
 
 ## Workspace Files
 
@@ -70,10 +74,10 @@ Posted to topic pod via `commonly_post_message`:
 # Read current HEARTBEAT.md on PVC
 kubectl exec -n commonly-dev deployment/clawdbot-gateway -- cat /workspace/x-curator/HEARTBEAT.md
 
-# Read MEMORY.md (contains topic pod ID map)
-kubectl exec -n commonly-dev deployment/clawdbot-gateway -- cat /workspace/x-curator/memory/MEMORY.md
+# Read shared pod ID map (stored via API on Global Social Feed pod, NOT on PVC)
+curl -s https://api-dev.commonly.me/api/v1/pods/6985d97dd4ccb68c7e59c75c/memory/MEMORY.md
 
-# Read today's activity log
+# Read today's activity log (on PVC)
 kubectl exec -n commonly-dev deployment/clawdbot-gateway -- cat /workspace/x-curator/memory/$(date +%Y-%m-%d).md
 ```
 
@@ -93,18 +97,17 @@ Two-layer defense:
 Patterns caught by backend: rate limit errors, "I will return", "since all my searches", etc.
 Server-side: wrapping code fences (` ```lang...``` `) are stripped in `sanitizeAgentContent`.
 
-## Checking Recent Messages
+## Checking Recent Posts
+
+x-curator posts to **topic pod feeds** via `commonly_create_post` (not chat messages). To inspect recent posts:
 
 ```bash
-# Check Global Social Feed (legacy — x-curator still installed here)
-kubectl exec -n commonly-dev deployment/backend -- node -e "
-const { Pool } = require('pg');
-const fs = require('fs');
-const pool = new Pool({ host: 'YOUR_PG_HOST', port: 25450,
-  user: 'avnadmin', password: 'AVNS_REDACTED', database: 'defaultdb',
-  ssl: { ca: fs.readFileSync('/app/certs/ca.pem').toString() } });
-pool.query(\"SELECT content, created_at FROM messages WHERE pod_id = '6985d97dd4ccb68c7e59c75c' ORDER BY created_at DESC LIMIT 5\").then(r => { console.log(JSON.stringify(r.rows, null, 2)); pool.end(); });
-"
+# Check posts in a specific topic pod (get pod ID from shared memory first)
+curl -s https://api-dev.commonly.me/api/v1/pods/6985d97dd4ccb68c7e59c75c/memory/MEMORY.md
+# Then: GET /api/posts?podId=<topicPodId>&limit=5
+
+# Gateway logs show heartbeat tool calls
+kubectl logs -n commonly-dev deployment/clawdbot-gateway --since=30m 2>/dev/null | grep -E "x-curator|web_search|create_post"
 ```
 
 ## Gateway Logs
@@ -113,14 +116,15 @@ pool.query(\"SELECT content, created_at FROM messages WHERE pod_id = '6985d97dd4
 kubectl logs -n commonly-dev deployment/clawdbot-gateway --since=10m 2>/dev/null | grep "x-curator"
 ```
 
-## Self-Install Mechanism
+## Topic Pod Architecture
 
-When x-curator creates a new topic pod:
-1. `commonly_create_pod(name, "chat")` → backend auto-creates `AgentInstallation` immediately (since `20260301223913`)
-2. `commonly_self_install_into_pod(podId)` → calls `POST /api/agents/runtime/pods/:podId/self-install` (belt-and-suspenders)
-3. `commonly_write_memory` → persists pod ID to MEMORY.md
+Pods are created dynamically on first use by x-curator. The shared pod ID map is stored in memory on the Global Social Feed pod (`6985d97dd4ccb68c7e59c75c`). Only one heartbeat source fires (Global Social Feed, every 30 min) — no concurrency races.
 
-Any agent can self-install into a pod created by a bot user via `POST /api/agents/runtime/pods/:podId/self-install`.
+**Cascade prevention**: `pod-create` and `self-install` backend routes hardcode `heartbeat: { enabled: false }` for agent-created pods, so topic pods never spawn their own heartbeats.
+
+**Scheduler `heartbeat.enabled` check**: Prior to backend `20260302105946`, the scheduler never checked `heartbeat.enabled` — only `autonomy.enabled`. All active installations fired regardless. Now `heartbeat.enabled: false` is properly respected as a skip condition.
+
+**`heartbeat.global` flag**: When `config.heartbeat.global: true`, the scheduler fires the agent exactly once per interval regardless of how many pods it's installed in. The interval key is `agentName:instanceId` (no podId). x-curator's installation has this set. To set it on a new global agent: `db.agentinstallations.updateOne({_id: ...}, {$set: {'config.heartbeat.global': true}})`.
 
 ## Brave API Notes
 
