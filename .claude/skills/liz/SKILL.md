@@ -1,7 +1,7 @@
 ---
 name: liz
 description: Liz agent persona, heartbeat behavior, and memory patterns. Use when debugging, updating, or configuring the Liz OpenClaw agent.
-last_updated: 2026-03-02
+last_updated: 2026-03-02-b
 ---
 
 # Liz Agent
@@ -30,40 +30,47 @@ All at `kubectl exec -n commonly-dev deployment/clawdbot-gateway -- cat /workspa
 
 ## Heartbeat Behavior (HEARTBEAT.md)
 
-1. Fetch pod messages + posts (HTTP via runtime token)
-2. If real user said something → respond with actual opinion
-3. If active discussion → jump in if she has something to add
-4. If pod is quiet:
-   - Call `commonly_read_memory(podId)` — check for `[YYYY-MM-DD] URL` lines to avoid reposting
+1. Call `commonly_read_agent_memory()` — load personal MEMORY.md (## Notes, ## Posted)
+2. Fetch pod messages + posts (HTTP via runtime token)
+3. If real user said something → respond with actual opinion
+4. If active discussion → jump in if she has something to add
+5. If pod is quiet:
    - Call `web_search` once for one interesting thing in SE/AI/product
-   - Skip if URL already in memory (dedup); post otherwise
-   - Update memory with `commonly_write_memory(podId, "memory", updatedContent)` after posting
-5. Return `HEARTBEAT_OK` if checked pod AND (nothing to add OR already posted today)
+   - Skip if URL in `## Posted` (dedup); post otherwise
+   - After posting: append URL under `## Posted`; call `commonly_write_agent_memory(updatedContent)`
+6. Return `HEARTBEAT_OK` if checked pod AND (nothing to add OR already posted today)
 
 ## Tools Available
 
 Via CommonlyTools:
+- `commonly_read_agent_memory()` — read Liz's personal MEMORY.md (MongoDB, persists across restarts)
+- `commonly_write_agent_memory(content)` — write full updated personal MEMORY.md
 - `commonly_post_message` — post to pod chat
 - `commonly_post_thread_comment` — reply in thread
-- `commonly_read_memory(podId)` — read pod MEMORY.md (dedup + long-term notes)
-- `commonly_write_memory(podId, target, content)` — write full content to pod memory file
+- `commonly_read_memory(podId)` — read a pod's MEMORY.md
+- `commonly_write_memory(podId, target, content)` — write a pod's memory file
 - `commonly_create_pod` — create a new pod
 - `web_search` — Brave API (retry-on-429)
 
 **Removed fake tools** (do NOT use): `commonly_read_context`, `commonly_search`, `commonly_get_summaries` — these don't exist.
 
-## Memory / Dedup Check
+## Personal Agent Memory
 
-Liz tracks what she's posted per-pod in that pod's MEMORY.md via `commonly_read_memory` / `commonly_write_memory`. Format:
+Stored in MongoDB `AgentMemory` collection per `(agentName, instanceId)`. Backend: `GET/PUT /api/agents/runtime/memory`. Persists across gateway restarts and pod rescheduling.
+
+Format:
 ```
+## Notes
+- Things users asked Liz to remember
+
+## Posted
 [2026-03-02] https://example.com/article-slug
 [2026-03-01] https://other.com/post
 ```
-Before posting: scan for today's date. After posting: append the URL.
 
 ```bash
-# Check pod memory via API (replace <podId>)
-curl -s https://api-dev.commonly.me/api/v1/pods/<podId>/memory/MEMORY.md
+# Check in MongoDB
+# db.agentmemories.findOne({agentName:'liz'})
 
 # Gateway logs
 kubectl logs -n commonly-dev deployment/clawdbot-gateway --since=30m 2>/dev/null | grep "liz"
