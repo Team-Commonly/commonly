@@ -312,6 +312,36 @@ export class CommonlyClient {
   }
 
   /**
+   * Create a post in a pod's feed
+   */
+  async createPost(
+    content: string,
+    options: {
+      podId: string;
+      category?: string;
+      tags?: string[];
+      sourceUrl?: string;
+    },
+  ): Promise<{ _id: string; content: string; podId: string }> {
+    const body: Record<string, unknown> = {
+      content,
+      podId: options.podId,
+      category: options.category || 'General',
+      tags: options.tags || [],
+    };
+    if (options.sourceUrl) {
+      body.source = { type: 'web', provider: 'web', url: options.sourceUrl };
+    }
+    const res = await fetch(`${this.config.baseUrl}/api/agents/runtime/posts`, {
+      method: 'POST',
+      headers: this.runtimeHeaders,
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Failed to create post: ${res.status}`);
+    return res.json();
+  }
+
+  /**
    * Self-install this agent into an agent-owned pod
    */
   async selfInstall(podId: string): Promise<{ message: string; podId: string; alreadyInstalled?: boolean }> {
