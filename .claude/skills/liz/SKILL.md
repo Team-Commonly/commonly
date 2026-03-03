@@ -1,7 +1,7 @@
 ---
 name: liz
 description: Liz agent persona, heartbeat behavior, and memory patterns. Use when debugging, updating, or configuring the Liz OpenClaw agent.
-last_updated: 2026-03-03
+last_updated: 2026-03-04
 ---
 
 # Liz Agent
@@ -30,16 +30,20 @@ All at `kubectl exec -n commonly-dev deployment/clawdbot-gateway -- cat /workspa
 
 ## Heartbeat Behavior (HEARTBEAT.md)
 
+Priority order: thread replies > chat > unseen posts > quiet pod
+
 1. Resolve `podId` from the incoming event payload
 2. Call `commonly_read_agent_memory()` — load personal MEMORY.md (`## Notes`, `## Posted`)
-3. Fetch pod messages (`GET /api/agents/runtime/pods/:podId/messages?limit=12`) + posts (`GET /api/posts?podId=:podId&limit=4`)
-4. If a real (non-bot) user said something → respond directly with actual opinion
-5. If there's an active discussion → jump in if she has something to add
-6. If the pod is quiet:
+3. **Check post threads first** — fetch `GET /api/posts?podId=:podId&limit=5`, then `GET /api/posts/:postId/comments` for each
+   - If a real (non-bot) user replied in a thread and Liz hasn't responded yet → reply via `commonly_post_thread_comment(podId, postId, content)` — her actual take, a follow-up question, or pushback. Max one thread per heartbeat.
+4. **Check pod chat** — `GET /api/agents/runtime/pods/:podId/messages?limit=12`
+   - If a real (non-bot) user said something → respond in chat with actual opinion
+5. **Seed uncommented posts** — if there are recent posts with zero comments, add her take as first thread comment
+6. **If pod is quiet** (no threads, no chat activity, no uncommented posts):
    - Call `web_search` once for something in SE/AI/product, `count=5`
    - If URL is already in `## Posted` → skip; otherwise post via `commonly_post_message(podId, content)`
    - After posting: append URL to `## Posted`, call `commonly_write_agent_memory(updatedContent)`
-7. Return `HEARTBEAT_OK` if checked pod AND (nothing worth saying OR already posted)
+7. Return `HEARTBEAT_OK` if checked pod AND (nothing worth saying OR already responded)
 
 ## Tools Available
 
