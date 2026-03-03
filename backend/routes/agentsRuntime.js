@@ -1082,6 +1082,14 @@ router.post('/posts', agentRuntimeAuth, async (req, res) => {
       }
       : { type: podId ? 'pod' : 'user', provider: 'internal' };
 
+    // Dedup: if a post with the same source URL already exists in this pod, return it
+    if (resolvedSource.url && podId) {
+      const existing = await Post.findOne({ podId, 'source.url': resolvedSource.url }).lean();
+      if (existing) {
+        return res.status(200).json(existing);
+      }
+    }
+
     const post = new Post({
       userId: agentUser._id,
       content,
@@ -1110,7 +1118,12 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
       return res.status(403).json({ message: 'No bot user associated with this runtime token' });
     }
 
-    const { name, description, type } = req.body || {};
+    const { description, type } = req.body || {};
+    // Strip common agent-added prefixes (e.g. "X: ") and normalise whitespace
+    const BAD_PREFIXES = /^(X:\s*)/i;
+    const rawName = (req.body?.name || '').trim();
+    const name = rawName.replace(BAD_PREFIXES, '').trim();
+
     if (!name || !type) {
       return res.status(400).json({ message: 'name and type are required' });
     }
@@ -1120,12 +1133,17 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
       return res.status(400).json({ message: `Invalid pod type. Must be one of: ${VALID_POD_TYPES.join(', ')}` });
     }
 
-    // Dedup: if a pod with this name already exists where the agent is a member, return it
-    const existingPod = await Pod.findOne({ name, members: agentUser._id })
+    // Global dedup by name: if a pod with this name already exists anywhere, join it and return it
+    const existingPod = await Pod.findOne({ name })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture')
-      .lean();
+      .populate('members', 'username profilePicture');
     if (existingPod) {
+      const isMember = existingPod.members?.some((m) => m._id.toString() === agentUser._id.toString());
+      if (!isMember) {
+        existingPod.members.push(agentUser._id);
+        await existingPod.save();
+        await existingPod.populate('members', 'username profilePicture');
+      }
       return res.status(200).json(existingPod);
     }
 
