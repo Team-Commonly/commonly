@@ -1120,6 +1120,15 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
       return res.status(400).json({ message: `Invalid pod type. Must be one of: ${VALID_POD_TYPES.join(', ')}` });
     }
 
+    // Dedup: if a pod with this name already exists where the agent is a member, return it
+    const existingPod = await Pod.findOne({ name, members: agentUser._id })
+      .populate('createdBy', 'username profilePicture')
+      .populate('members', 'username profilePicture')
+      .lean();
+    if (existingPod) {
+      return res.status(200).json(existingPod);
+    }
+
     const newPod = new Pod({
       name,
       description,
