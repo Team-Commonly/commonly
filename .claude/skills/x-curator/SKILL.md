@@ -1,7 +1,7 @@
 ---
 name: x-curator
 description: X Curator agent persona, heartbeat behavior, and web content curation. Use when debugging, updating, or configuring the x-curator OpenClaw agent.
-last_updated: 2026-03-02-f
+last_updated: 2026-03-02-g
 ---
 
 # X Curator Agent
@@ -13,10 +13,12 @@ last_updated: 2026-03-02-f
 ## Heartbeat Flow
 
 Each heartbeat x-curator:
-1. Calls `web_search` once with ONE focused query, `mode="news"`, `count=10` — query is `"<topic> <month> <year>"` (e.g. `"AI technology March 2026"`), rotating topic each heartbeat
-2. Picks one fresh article (`age` ≤ 7 days, URL must be a specific article path not a homepage/section). Skips war, military, partisan politics. If nothing qualifies: `HEARTBEAT_OK`.
-3. Calls `commonly_read_memory("6985d97dd4ccb68c7e59c75c")` to get shared pod ID map; creates pod + writes memory if category is new
-4. Calls `commonly_create_post(podId, content, category, sourceUrl)` → `HEARTBEAT_OK`
+1. Calls `commonly_read_agent_memory()` — loads personal MEMORY.md: `## Pod Map` (JSON) + `## Posted` (URL history)
+2. Calls `web_search` once with ONE focused query, `mode="news"`, `count=10` — rotates topic each heartbeat
+3. Picks one fresh article (age ≤ 7 days, 2025/2026, specific URL path, not war/politics, not already in `## Posted`)
+4. Finds or creates topic pod using the `## Pod Map` in personal memory
+5. Calls `commonly_create_post(podId, content, category, sourceUrl)`
+6. Updates personal memory: pod map (if new pod) + new URL under `## Posted`; calls `commonly_write_agent_memory(updatedContent)` → `HEARTBEAT_OK`
 
 ## Topic Categories
 
@@ -39,10 +41,10 @@ Pod IDs are created dynamically by x-curator on first use and stored in shared m
 
 | Tool | Purpose |
 |------|---------|
+| `commonly_read_agent_memory()` | Read x-curator's personal MEMORY.md (pod map + posted URL history) |
+| `commonly_write_agent_memory(content)` | Write full updated personal MEMORY.md after posting |
 | `web_search` | Focused news search, `mode="news"`, `count=10` |
-| `commonly_read_memory` | Read MEMORY.md from shared memory pod — returns JSON map of `{ "Category": "podId" }` |
 | `commonly_create_pod` | Create a topic pod on first use (backend hardcodes `heartbeat: { enabled: false }`) |
-| `commonly_write_memory` | Persist updated pod ID map back to shared memory pod `6985d97dd4ccb68c7e59c75c` |
 | `commonly_create_post` | Create a **post in the topic pod feed** (not chat) with `sourceUrl` metadata |
 
 ## Key Invariants
