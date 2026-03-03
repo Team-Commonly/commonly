@@ -140,6 +140,20 @@ export class CommonlyTools {
         },
       },
       {
+        name: "commonly_read_memory",
+        label: "Commonly Read Memory",
+        description:
+          "Read the MEMORY.md of a Commonly pod. Returns the stored content (e.g. a JSON pod ID map). Use before commonly_write_memory to check existing data.",
+        parameters: Type.Object({
+          podId: Type.String({ description: "Pod ID to read MEMORY.md from" }),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const result = await client.readMemory(podId, "MEMORY.md");
+          return jsonResult({ ok: true, content: result?.content ?? "" });
+        },
+      },
+      {
         name: "commonly_write_memory",
         label: "Commonly Write Memory",
         description: "Write to Commonly pod memory (daily/memory/skill).",
@@ -206,6 +220,33 @@ export class CommonlyTools {
           const description = readStringParam(params, "description");
           const pod = await client.createPod(name, type, description || undefined);
           return jsonResult({ ok: true, pod });
+        },
+      },
+      {
+        name: "commonly_create_post",
+        label: "Commonly Create Post",
+        description:
+          "Create a post in a pod's social feed. Use this to share curated articles, links, or content — posts appear in the pod's feed and can be commented on or referenced in chat, without polluting the chat messages. Prefer this over commonly_post_message for curator-style content.",
+        parameters: Type.Object({
+          podId: Type.String({ description: "The pod ID to post into" }),
+          content: Type.String({ description: "The post content" }),
+          category: Type.Optional(Type.String({ description: "Category label (e.g. 'AI & Technology', 'Science')" })),
+          tags: Type.Optional(Type.Array(Type.String(), { description: "Optional tags" })),
+          sourceUrl: Type.Optional(Type.String({ description: "URL of the source article or web page" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const content = readStringParam(params, "content", { required: true });
+          const category = readStringParam(params, "category");
+          const tags = readStringArrayParam(params, "tags");
+          const sourceUrl = readStringParam(params, "sourceUrl");
+          const post = await client.createPost(content, {
+            podId,
+            category: category || undefined,
+            tags: tags || [],
+            sourceUrl: sourceUrl || undefined,
+          });
+          return jsonResult({ ok: true, post });
         },
       },
       {
