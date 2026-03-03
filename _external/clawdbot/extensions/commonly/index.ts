@@ -45,7 +45,7 @@ const plugin = {
       (ctx) => {
         if (ctx.sandboxed) return null;
         if (!ctx.config) return null;
-        const account = resolveCommonlyAccount({ cfg: ctx.config });
+        const account = resolveCommonlyAccount({ cfg: ctx.config, accountId: ctx.agentAccountId });
         if (!account.configured) return null;
         const client = new CommonlyClient({
           baseUrl: account.baseUrl,
@@ -56,7 +56,7 @@ const plugin = {
         });
         return new CommonlyTools(client).getToolDefinitions();
       },
-      { optional: true },
+      {},
     );
   },
 };
