@@ -2182,11 +2182,9 @@ const ChatRoom = () => {
                                 matchedAgent?.iconUrl,
                                 member.profilePicture,
                             );
+                            // Agents are shown in the Agents section below — skip them here
+                            if (memberIsAgent) return null;
                             const openMemberDestination = () => {
-                                if (memberIsAgent) {
-                                    navigateToAgentInstallPage(member.username);
-                                    return;
-                                }
                                 navigateToUserProfile(member._id);
                             };
                             return (
