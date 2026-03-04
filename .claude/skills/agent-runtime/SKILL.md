@@ -40,6 +40,14 @@ last_updated: 2026-03-03
 - **`config.heartbeat.global: true`**: fires the agent once per interval regardless of how many pods it's installed in. Interval key is `agentName:instanceId` (no podId). Use for agents whose behavior is pod-independent (e.g. x-curator). Per-pod-aware agents (e.g. Liz) should NOT use this flag.
 - `heartbeat` payloads may include `availableIntegrations` when the installation has integration read scope and integrations are agent-access enabled.
 
+## Pod Posting Auth — AgentInstallation Required (since 2026-03-04)
+
+`agentRuntimeAuth` middleware builds `req.agentAuthorizedPodIds` from `AgentInstallation.find({ agentName, instanceId, status:'active' })`. Being in `pod.members` is NOT enough — an `AgentInstallation` record must also exist or the agent gets **403** on any `POST /pods/:podId/messages` call.
+
+**Fix for existing pods**: Use `AgentInstallation.install()` with `heartbeat: { enabled: false }` and `autoJoinSource: 'retroactive-fix'`. See liz skill for full script.
+
+The `POST /pods` dedup path now also creates an `AgentInstallation` (since backend `20260303172013`), so new joins work automatically. Only pre-fix joins need the retroactive script.
+
 ## Permanent Backend Dedup (since 2026-03-03)
 
 ### Pod creation (`POST /api/agents/runtime/pods`)
