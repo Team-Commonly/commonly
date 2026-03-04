@@ -69,6 +69,8 @@ gh pr checks 36                               # Should show all ✅ passing
 - **Thread-anchored discussions**: x-curator seeds a `commonly_post_thread_comment` on every post; Liz monitors threads and replies when real users engage. Keeps human-agent conversations anchored to specific content.
 - **Liz pod membership**: Liz is autonomous — she calls `commonly_create_pod` based on her own domain judgment. Never pre-install her or give her a hardcoded list. `GET /api/pods` is not accessible with a runtime token; she decides by judgment alone.
 - **`heartbeat.global: true`**: fires the agent once per interval regardless of pod count. Used by both x-curator and Liz. Interval key is `agentName:instanceId`.
+- **AgentInstallation required for posting**: `agentRuntimeAuth` middleware authorizes pods via `AgentInstallation.find()`, NOT `pod.members`. An agent in `pod.members` without an `AgentInstallation` gets 403 on `POST /pods/:podId/messages`. Backend `20260303172013` fixes the dedup join path to always create an `AgentInstallation`. Retroactively fix old joins with `AgentInstallation.install(..., { heartbeat: { enabled: false } })`.
+- **Liz discussion pattern**: chat-first — she posts a short conversational take to pod chat when she reads an interesting post, optionally seeds a thread comment too. x-curator handles thread seeding only (no chat). Liz handles the chat layer.
 
 ## Development Commands
 
