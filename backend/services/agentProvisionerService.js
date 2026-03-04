@@ -1581,6 +1581,15 @@ const getAgentRuntimeLogs = async (runtimeType, instanceId, lines = 200, options
   return getDockerRuntimeLogs(runtimeType, lines);
 };
 
+const getAgentSessionSizes = async (options = {}) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.getAgentSessionSizes(options);
+  }
+  return [];
+};
+
 const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) => {
   if (runtimeType !== 'moltbot') {
     return {
@@ -1651,6 +1660,7 @@ module.exports = {
   listOpenClawPlugins,
   listOpenClawBundledSkills,
   installOpenClawPlugin,
+  getAgentSessionSizes,
   clearAgentRuntimeSessions,
   writeOpenClawHeartbeatFile,
   readOpenClawHeartbeatFile,

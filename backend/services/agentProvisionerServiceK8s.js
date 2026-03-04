@@ -1844,6 +1844,39 @@ const getAgentRuntimeLogs = async (
   }
 };
 
+/**
+ * Returns session directory sizes in bytes for all agents on the gateway.
+ * @returns {Promise<Array<{accountId: string, bytes: number}>>}
+ */
+const getAgentSessionSizes = async (options = {}) => {
+  const podName = await resolveGatewayPodNameWithRetry(options.gateway);
+  const script = [
+    'set -eu',
+    'for dir in /state/agents/*/sessions; do',
+    '  [ -d "$dir" ] || continue',
+    '  id=$(echo "$dir" | sed "s|/state/agents/||;s|/sessions||")',
+    '  size=$(du -sk "$dir" 2>/dev/null | cut -f1)',
+    '  echo "$id $size"',
+    'done',
+  ].join('\n');
+
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    command: ['sh', '-lc', script],
+  });
+
+  return String(result.stdout || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [accountId, kb] = line.split(/\s+/);
+      return { accountId, bytes: Number(kb || 0) * 1024 };
+    })
+    .filter((entry) => entry.accountId && Number.isFinite(entry.bytes));
+};
+
 const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) => {
   if (runtimeType !== 'moltbot') {
     return {
@@ -1898,6 +1931,7 @@ const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) 
 };
 
 module.exports = {
+  getAgentSessionSizes,
   provisionAgentRuntime,
   startAgentRuntime,
   stopAgentRuntime,
