@@ -17,7 +17,7 @@ backend:
   enabled: true
   replicaCount: 1
   image:
-    repository: gcr.io/commonly-test/commonly-backend
+    repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-backend
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -70,7 +70,7 @@ frontend:
   enabled: true
   replicaCount: 1
   image:
-    repository: gcr.io/commonly-test/commonly-frontend
+    repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-frontend
     tag: latest
     pullPolicy: Always
   service:
@@ -175,7 +175,7 @@ agents:
     strategy:
       type: Recreate
     image:
-      repository: gcr.io/commonly-test/clawdbot-gateway
+      repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/clawdbot-gateway
       tag: latest
       pullPolicy: IfNotPresent
     config:
@@ -210,7 +210,7 @@ agents:
   commonlyBot:
     enabled: false
     image:
-      repository: gcr.io/commonly-test/commonly-bot
+      repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-bot
       tag: latest
       pullPolicy: IfNotPresent
     env:
@@ -271,7 +271,7 @@ skillsCatalogStorage:
   storageClassName: standard-rwo
   accessMode: ReadWriteOnce
   bootstrapFromImage: true
-  downloadUrl: "https://storage.googleapis.com/commonly-test_cloudbuild/awesome-agent-skills-index.json"
+  downloadUrl: "https://storage.googleapis.com/YOUR_OLD_GCP_PROJECT_ID_cloudbuild/awesome-agent-skills-index.json"
 
 # Autoscaling configuration
 autoscaling:
