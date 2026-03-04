@@ -223,6 +223,31 @@ class SchedulerService {
       },
     );
 
+    const agentSessionSizeCheckJob = cron.schedule(
+      '30 * * * *',
+      async () => {
+        try {
+          const result = await AgentEventService.clearOversizedAgentSessions({
+            source: 'scheduled-size-check',
+            restart: false,
+          });
+          if (result.cleared > 0) {
+            console.log(
+              `[session-size-check] Cleared ${result.cleared} oversized session(s) `
+              + `(threshold: ${result.thresholdKb} KB): `
+              + result.oversized.map((o) => `${o.accountId}=${o.kb}KB`).join(', '),
+            );
+          }
+        } catch (error) {
+          console.error('Error in agent session size check:', error);
+        }
+      },
+      {
+        scheduled: false,
+        timezone: 'UTC',
+      },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -234,6 +259,7 @@ class SchedulerService {
       agentAutoJoinJob,
       agentHeartbeatJob,
       agentSessionResetJob,
+      agentSessionSizeCheckJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
@@ -249,6 +275,7 @@ class SchedulerService {
     console.log(
       `- OpenClaw sessions reset every ${AgentEventService.getSessionResetIntervalHours()} hour(s)`,
     );
+    console.log('- Agent session size check runs every hour at :30 (clears if > AGENT_SESSION_MAX_SIZE_KB, default 400 KB)');
     console.log(
       '- Stale agent events are garbage-collected every 10 minutes',
     );
