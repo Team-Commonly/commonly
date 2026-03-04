@@ -12,7 +12,7 @@ agentProvisioning:
 backend:
   replicaCount: 1
   image:
-    repository: gcr.io/commonly-test/commonly-backend
+    repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-backend
     tag: latest
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
@@ -45,7 +45,7 @@ backend:
 frontend:
   replicaCount: 1
   image:
-    repository: gcr.io/commonly-test/commonly-frontend
+    repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-frontend
     tag: latest
     pullPolicy: Always
   nodeSelector:
@@ -115,8 +115,8 @@ agents:
   commonlyBot:
     enabled: true
     image:
-      repository: gcr.io/commonly-test/commonly-bot
-      tag: "20260207231536"
+      repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-bot
+      tag: "latest"
       pullPolicy: Always
     nodeSelector:
       pool: dev
@@ -156,7 +156,7 @@ skillsCatalogStorage:
   storageClassName: standard-rwo
   accessMode: ReadWriteOnce
   bootstrapFromImage: true
-  downloadUrl: "https://storage.googleapis.com/commonly-test_cloudbuild/awesome-agent-skills-index.json"
+  downloadUrl: "https://storage.googleapis.com/YOUR_OLD_GCP_PROJECT_ID_cloudbuild/awesome-agent-skills-index.json"
 
 autoscaling:
   backend:
