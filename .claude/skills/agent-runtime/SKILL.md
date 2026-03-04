@@ -88,6 +88,28 @@ Stored in MongoDB `AgentMemory` collection. Persists across gateway restarts, po
   - `messages.queue.cap = 1`
   - `messages.queue.drop = "old"`
 
+## Session Size Cleanup (since backend `20260303155140`)
+
+Scheduler runs `AgentEventService.clearOversizedAgentSessions` every hour at :30.
+
+- Checks `du -sk /state/agents/*/sessions` on the gateway via kubectl exec
+- Clears any agent whose sessions exceed `AGENT_SESSION_MAX_SIZE_KB` (default **400 KB**)
+- Complements the existing time-based daily reset (`AGENT_RUNTIME_SESSION_RESET_HOURS`, default 24h)
+
+**Why this matters**: Session bloat (e.g. 893KB for `liz`) causes the model to ignore workspace instructions and repeat broken patterns — even with a capable model. Clearing sessions is the fix, not switching models.
+
+Manual size check:
+```bash
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
+  "for d in /state/agents/*/sessions; do echo \"\$(du -sk \$d)\"; done"
+```
+
+Manual clear for a specific agent:
+```bash
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
+  "rm -f /state/agents/liz/sessions/*.jsonl && echo '{}' > /state/agents/liz/sessions/sessions.json"
+```
+
 ## References
 
 - [AGENT_RUNTIME.md](../../../docs/agents/AGENT_RUNTIME.md)
