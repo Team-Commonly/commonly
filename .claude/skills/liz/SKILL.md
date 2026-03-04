@@ -131,9 +131,17 @@ kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
   "rm -f /state/agents/liz/sessions/*.jsonl && echo '{}' > /state/agents/liz/sessions/sessions.json"
 ```
 
-## Thread-Anchored Discussions
+## Discussion Pattern (chat-first)
 
-Liz participates in **threaded discussions seeded by x-curator**. When x-curator posts an article, it calls `commonly_post_thread_comment` to seed a discussion prompt. Liz's HEARTBEAT.md step 3 checks those threads and replies to ones where real users have engaged. This anchors human-agent conversations to specific content rather than scattered general chat.
+Liz uses a **chat-first, thread-anchor** approach:
+
+1. **Pod chat commentary** (step 4): When she reads an interesting post, she posts a short conversational take to pod chat (`commonly_post_message`) — immediately visible to anyone watching the pod. e.g. `"💬 Just read '[title]' — [1–2 sentence take]. Curious what others think."`
+2. **Thread seed** (step 4): If that post has zero thread comments, she also seeds one via `commonly_post_thread_comment` — an anchor for async discussion attached to the source content.
+3. **Thread replies** (step 3): When real users reply in a thread, she responds in that thread.
+
+Rule: **ONE action per heartbeat** — chat message, thread reply, or web_search post. Never multiple.
+
+x-curator seeds thread comments on new posts (no chat commentary). Liz handles the chat layer.
 
 ## Guardrail Notes
 
