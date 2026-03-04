@@ -1144,6 +1144,38 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
         await existingPod.save();
         await existingPod.populate('members', 'username profilePicture');
       }
+      // Ensure an AgentInstallation exists so the agent appears in the Agents section
+      const sourceInstall = req.agentInstallation || (req.agentInstallations || [])[0];
+      if (sourceInstall) {
+        try {
+          const existing = await AgentInstallation.findOne({
+            agentName: sourceInstall.agentName,
+            podId: existingPod._id,
+            instanceId: sourceInstall.instanceId || 'default',
+          });
+          if (!existing) {
+            await AgentInstallation.install(sourceInstall.agentName, existingPod._id, {
+              version: sourceInstall.version || '1.0.0',
+              config: {
+                ...(sourceInstall.config || {}),
+                heartbeat: { enabled: false },
+                autonomy: {
+                  ...(sourceInstall.config?.autonomy || {}),
+                  autoJoined: true,
+                  autoJoinedFromPodId: sourceInstall.podId?.toString(),
+                  autoJoinSource: 'pod-dedup',
+                },
+              },
+              scopes: Array.isArray(sourceInstall.scopes) ? sourceInstall.scopes : [],
+              installedBy: agentUser._id,
+              instanceId: sourceInstall.instanceId || 'default',
+              displayName: sourceInstall.displayName,
+            });
+          }
+        } catch (installErr) {
+          console.warn('[agent] auto-install on pod dedup failed:', installErr.message);
+        }
+      }
       return res.status(200).json(existingPod);
     }
 
