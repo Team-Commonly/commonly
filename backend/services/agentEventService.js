@@ -4,6 +4,7 @@ const Integration = require('../models/Integration');
 const Gateway = require('../models/Gateway');
 const AgentIdentityService = require('./agentIdentityService');
 const {
+  getAgentSessionSizes,
   clearAgentRuntimeSessions,
   restartAgentRuntime,
   resolveOpenClawAccountId,
@@ -222,6 +223,64 @@ class AgentEventService {
       clearedCount,
       failedCount,
       processed,
+    };
+  }
+
+  /**
+   * Checks all agent session directories on the gateway and clears any that exceed
+   * the configured size threshold. Runs against the first available gateway.
+   * Threshold env: AGENT_SESSION_MAX_SIZE_KB (default 400 KB).
+   */
+  static async clearOversizedAgentSessions({ source = 'size-check', restart = false } = {}) {
+    const thresholdKb = Math.max(
+      64,
+      Number.parseInt(process.env.AGENT_SESSION_MAX_SIZE_KB, 10) || 400,
+    );
+    const thresholdBytes = thresholdKb * 1024;
+
+    let sizes;
+    try {
+      sizes = await getAgentSessionSizes();
+    } catch (error) {
+      console.error('[session-size-check] Failed to get session sizes:', error.message);
+      return { source, checked: 0, cleared: 0, failed: 0, skipped: 0 };
+    }
+
+    const oversized = sizes.filter((s) => s.bytes >= thresholdBytes);
+    let cleared = 0;
+    let failed = 0;
+    const skipped = sizes.length - oversized.length;
+
+    await Promise.all(oversized.map(async (entry) => {
+      try {
+        await clearAgentRuntimeSessions('moltbot', entry.accountId, {
+          accountId: entry.accountId,
+        });
+        console.log(
+          `[session-size-check] Cleared sessions for ${entry.accountId} `
+          + `(${Math.round(entry.bytes / 1024)} KB > ${thresholdKb} KB threshold)`,
+        );
+        if (restart) {
+          await restartAgentRuntime('moltbot', entry.accountId, {}).catch(() => null);
+        }
+        cleared += 1;
+      } catch (error) {
+        console.error(
+          `[session-size-check] Failed to clear ${entry.accountId}:`,
+          error.message,
+        );
+        failed += 1;
+      }
+    }));
+
+    return {
+      source,
+      checked: sizes.length,
+      thresholdKb,
+      oversized: oversized.map((s) => ({ accountId: s.accountId, kb: Math.round(s.bytes / 1024) })),
+      cleared,
+      failed,
+      skipped,
     };
   }
 
