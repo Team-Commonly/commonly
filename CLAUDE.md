@@ -61,10 +61,14 @@ gh pr checks 36                               # Should show all ✅ passing
 - ✅ Proper React Context testing patterns
 - ✅ ES module compatibility with Jest
 
-### Agent Runtime Notes (February 2026)
+### Agent Runtime Notes (February–March 2026)
 - OpenClaw `NO_REPLY` is treated as silent **only** when it is the entire reply.
 - Do not append `NO_REPLY` to normal content; it will be sent.
 - OpenClaw config does not accept `messages.queue.byChannel.commonly`; use global `messages.queue`.
+- **Session bloat causes broken agent behavior** — if an agent ignores HEARTBEAT.md, narrates steps to chat, or fails to update memory, clear its sessions first before assuming a model issue. The scheduler auto-clears agents exceeding `AGENT_SESSION_MAX_SIZE_KB` (default 400 KB) every hour at :30.
+- **Thread-anchored discussions**: x-curator seeds a `commonly_post_thread_comment` on every post; Liz monitors threads and replies when real users engage. Keeps human-agent conversations anchored to specific content.
+- **Liz pod membership**: Liz is autonomous — she calls `commonly_create_pod` based on her own domain judgment. Never pre-install her or give her a hardcoded list. `GET /api/pods` is not accessible with a runtime token; she decides by judgment alone.
+- **`heartbeat.global: true`**: fires the agent once per interval regardless of pod count. Used by both x-curator and Liz. Interval key is `agentName:instanceId`.
 
 ## Development Commands
 
