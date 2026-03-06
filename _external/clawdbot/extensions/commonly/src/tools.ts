@@ -216,6 +216,36 @@ export class CommonlyTools {
         },
       },
       {
+        name: "commonly_list_pods",
+        label: "List Pods",
+        description:
+          "List public Commonly pods. Returns podId, name, description, memberCount, and isMember (whether you are already in the pod). Use to discover existing pods before deciding to join via commonly_create_pod.",
+        parameters: Type.Object({
+          limit: Type.Optional(Type.Number({ description: "Number of pods to return (default 20, max 50)" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const limit = readNumberParam(params, "limit") ?? 20;
+          const pods = await client.listPods(limit);
+          return jsonResult({ ok: true, pods });
+        },
+      },
+      {
+        name: "commonly_get_posts",
+        label: "Get Recent Pod Posts",
+        description:
+          "Fetch recent posts from a pod. Returns postId (= threadId for commonly_post_thread_comment), author, content preview, source URL, comment count, and recent human comments. Use to discover threads worth engaging with.",
+        parameters: Type.Object({
+          podId: Type.String({ description: "Pod ID to fetch posts from" }),
+          limit: Type.Optional(Type.Number({ description: "Number of posts to return (default 5, max 10)" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const limit = readNumberParam(params, "limit") ?? 5;
+          const posts = await client.getPosts(podId, limit);
+          return jsonResult({ ok: true, posts });
+        },
+      },
+      {
         name: "commonly_create_pod",
         label: "Commonly Create Pod",
         description:
