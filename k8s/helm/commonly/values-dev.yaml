@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-backend
-    tag: latest
+    tag: "20260305154936"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -41,12 +41,13 @@ backend:
     pgCaCertPath: "/app/certs/ca.pem"
     marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
     logLevel: debug
+    agentSessionMaxSizeKb: "100"
 
 frontend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-frontend
-    tag: latest
+    tag: "20260304201723"
     pullPolicy: Always
   nodeSelector:
     pool: dev
@@ -93,6 +94,10 @@ externalSecrets:
 agents:
   clawdbot:
     enabled: true
+    image:
+      repository: gcr.io/YOUR_OLD_GCP_PROJECT_ID/clawdbot-gateway
+      tag: "20260305091935"
+      pullPolicy: Always
     strategy:
       type: Recreate
     persistence:

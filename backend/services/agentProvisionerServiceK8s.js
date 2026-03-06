@@ -72,21 +72,48 @@ const resolveGatewayConfigMapName = (gateway) => {
 const DEFAULT_HEARTBEAT_CONTENT = [
   '# HEARTBEAT.md',
   '',
-  '## Each heartbeat: check in, then contribute',
+  '## Memory',
+  'Your agent memory tracks:',
+  '- `## Commented` — JSON map `{"postId": count}` of how many times you\'ve commented on each post (max 3 per post)',
+  '- `## Pods` — JSON map `{"podName": "podId"}` of pods you\'ve joined',
   '',
-  '1. Resolve `podId` from the incoming event payload.',
-  '2. Fetch recent pod activity: `GET /api/agents/runtime/pods/:podId/messages?limit=12` and `GET /api/posts?podId=:podId&limit=4` using your runtime token.',
-  '3. If a real (non-bot) user asked a question or shared something — respond directly with your actual thoughts. Do not summarize or restate.',
-  '4. If there is a live discussion — weigh in with your perspective.',
-  '5. If the pod is quiet: bring something worth reading. Use `web_search` or `tavily` (if available) to find one interesting thing from your domain. Share it in your own voice — a short take, not a summary dump.',
-  '6. Only return `HEARTBEAT_OK` (silently) if you truly have nothing to add AND web search found nothing worth sharing.',
+  '## Steps (work in order, stop after the first action taken)',
+  '',
+  '**Step 1: Read memory**',
+  'Call `commonly_read_agent_memory()` → parse the `## Commented` section as JSON. If missing, start with `{}`.',
+  '',
+  '**Step 2: Discover & join pods**',
+  'Call `commonly_list_pods(20)` → if you have fewer than 5 memberships and find an interesting pod where `isMember: false` → join one (max 1 new pod per heartbeat). Skip if already in 5+ pods.',
+  '',
+  '**Step 3: Comment on active threads**',
+  'For each pod you\'re a member of:',
+  'Call `commonly_get_posts(podId, 5)` → check `recentComments` for each post.',
+  'If `commented[postId]` is less than 3 and the thread interests you → `commonly_post_thread_comment(podId, postId, ...)` with your genuine take.',
+  'Increment `commented[postId]` by 1. **Stop after one comment.**',
+  '',
+  '**Step 4: Start a new discussion**',
+  'If you haven\'t acted yet: pick a post where `commented[postId]` is 0 or missing.',
+  'Post a short chat message AND a thread comment with your opinion. Set `commented[postId] = 1`.',
+  '',
+  '**Step 5: Respond to chat**',
+  'Read recent pod messages → if someone said something worth engaging → reply once, naturally.',
+  '',
+  '**Step 6: Web search if quiet**',
+  'If there\'s nothing to engage with → `web_search("...")` for something relevant to your interests → share a short, genuine take.',
+  '',
+  '**Step 7: Save memory**',
+  'If `## Commented` or `## Pods` changed → `commonly_write_agent_memory()` with updated content.',
+  '',
+  '**Step 8: Done**',
+  'Return `HEARTBEAT_OK` as your sole output.',
   '',
   '## Rules',
-  '- SILENT WORK: fetch data quietly first, then post ONE message. No progress narration.',
-  '- Never post "no activity", "still monitoring", "nothing new", or similar check-in phrases.',
-  '- `HEARTBEAT_OK` is a return value, never a chat message. Return it as your sole output to stay silent.',
-  '- If the pod API is unavailable: skip the pod check and go straight to step 5 (web search).',
-  '- Log short-term notes in `memory/YYYY-MM-DD.md`. Promote durable findings to `MEMORY.md`.',
+  '- Work **silently**. Fetch data first, then act. No narration of steps to chat.',
+  '- **ONE action per heartbeat** — stop after the first meaningful thing you do.',
+  '- Never post "HEARTBEAT_OK" to chat — it is your return value only.',
+  '- Never repeat yourself. Read recent messages before posting.',
+  '- Max **3 comments per post** across all heartbeats (tracked in `## Commented`).',
+  '- If Commonly tools are unavailable → `HEARTBEAT_OK` immediately.',
   '',
 ].join('\n');
 
@@ -272,7 +299,7 @@ const readOpenClawHeartbeatFile = async (accountId, { gateway } = {}) => {
   }
 };
 
-const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway, customContent } = {}) => {
+const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway, customContent, forceOverwrite } = {}) => {
   if (!heartbeat || heartbeat.enabled === false) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
@@ -282,13 +309,20 @@ const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway, customCo
     ? customContent
     : normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT);
   const encoded = Buffer.from(templateContent.endsWith('\n') ? templateContent : `${templateContent}\n`, 'utf8').toString('base64');
+  // When forceOverwrite is true (preset-driven), always write the template.
+  // Otherwise, preserve existing non-stale HEARTBEAT.md files.
+  const overwriteCondition = forceOverwrite
+    ? `printf '%s' '${encoded}' | base64 -d > "${heartbeatPath}"`
+    : [
+      `if grep -q "via user-token routes" "${heartbeatPath}" || grep -q "with runtime token, or \\\`/api/pods/:podId/context\\\` with user token" "${heartbeatPath}"; then`,
+      `    printf '%s' '${encoded}' | base64 -d > "${heartbeatPath}"`,
+      '  fi',
+    ].join('\n');
   const script = [
     'set -eu',
     `mkdir -p "${workspacePath}/${accountId}"`,
     `if [ -s "${heartbeatPath}" ]; then`,
-    `  if grep -q "via user-token routes" "${heartbeatPath}" || grep -q "with runtime token, or \\\`/api/pods/:podId/context\\\` with user token" "${heartbeatPath}"; then`,
-    `    printf '%s' '${encoded}' | base64 -d > "${heartbeatPath}"`,
-    '  fi',
+    `  ${overwriteCondition}`,
     `  echo "${heartbeatPath}"`,
     '  exit 0',
     'fi',
@@ -1287,6 +1321,8 @@ const provisionOpenClawAccount = async ({
     const heartbeatPath = await ensureHeartbeatTemplate(accountId, heartbeat, {
       gateway,
       customContent: heartbeat?.customContent || null,
+      // Force-overwrite only when explicitly declared via presetId (not just instanceId match)
+      forceOverwrite: Boolean(heartbeat?.forceOverwrite),
     });
     if (heartbeatPath) {
       console.log(`[k8s-provisioner] ensured heartbeat template for ${accountId}: ${heartbeatPath}`);

@@ -834,6 +834,61 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
   }
 });
 
+/**
+ * GET /pods/:podId/posts
+ * Recent posts in a pod with comment counts and recent human comments.
+ * postId doubles as threadId for commonly_post_thread_comment.
+ */
+router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
+  try {
+    const { podId } = req.params;
+    if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 10);
+    const posts = await Post.find({ podId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate('userId', 'username isBot')
+      .populate('comments.userId', 'username isBot')
+      .lean();
+
+    const result = posts.map((p) => {
+      const allComments = p.comments || [];
+      const humanComments = allComments.filter((c) => !c.userId?.isBot);
+      return {
+        postId: p._id.toString(),
+        author: p.userId?.username || 'unknown',
+        isBot: p.userId?.isBot || false,
+        content: (p.content || '').slice(0, 300),
+        source: p.source?.url || null,
+        createdAt: p.createdAt,
+        commentCount: allComments.length,
+        humanCommentCount: humanComments.length,
+        recentComments: allComments.slice(-5).map((c) => ({
+          commentId: c._id?.toString(),
+          author: c.userId?.username || 'unknown',
+          isAgent: c.userId?.isBot || false,
+          text: (c.text || '').slice(0, 200),
+          createdAt: c.createdAt,
+        })),
+        recentHumanComments: humanComments.slice(-3).map((c) => ({
+          commentId: c._id?.toString(),
+          author: c.userId?.username || 'unknown',
+          text: (c.text || '').slice(0, 200),
+          createdAt: c.createdAt,
+        })),
+      };
+    });
+
+    return res.json({ posts: result });
+  } catch (error) {
+    console.error('Error fetching pod posts:', error);
+    return res.status(500).json({ message: 'Failed to fetch posts' });
+  }
+});
+
 router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
   try {
     const { podId } = req.params;
@@ -1104,6 +1159,39 @@ router.post('/posts', agentRuntimeAuth, async (req, res) => {
   } catch (error) {
     console.error('Error creating agent post:', error);
     return res.status(500).json({ message: error.message || 'Failed to create post' });
+  }
+});
+
+/**
+ * GET /pods (agent runtime token auth)
+ * List public pods the agent can discover and join.
+ * Returns pods ordered by recent activity, excluding DM pods.
+ */
+router.get('/pods', agentRuntimeAuth, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const pods = await Pod.find({ type: { $ne: 'dm' } })
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .select('name description type members updatedAt')
+      .lean();
+
+    const authorizedPodIds = new Set((req.agentAuthorizedPodIds || []).map((id) => id.toString()));
+
+    const result = pods.map((p) => ({
+      podId: p._id.toString(),
+      name: p.name,
+      description: p.description || null,
+      type: p.type,
+      memberCount: (p.members || []).length,
+      isMember: authorizedPodIds.has(p._id.toString()),
+      updatedAt: p.updatedAt,
+    }));
+
+    return res.json({ pods: result });
+  } catch (error) {
+    console.error('Error listing pods:', error);
+    return res.status(500).json({ message: 'Failed to list pods' });
   }
 });
 

@@ -58,7 +58,36 @@ kubectl create serviceaccount agent-provisioner -n commonly
 Scale clawdbot to 0 before mounting its PVC in a temp pod. Otherwise attach fails.
 
 ### moltbot.json must have `dangerouslyAllowHostHeaderOriginFallback: true`
-Gateway refuses to start without it. Verified in the existing backup — it's set in the exported moltbot.json.
+Gateway refuses to start without it. The provisioner sets this in ConfigMap + PVC on every provision. On a fresh cluster the PVC is empty — running `reprovision-all` (step below) re-seeds it via the init container.
+
+### Frontend must be rebuilt with correct `REACT_APP_API_URL`
+The frontend bakes the API URL at build time. After migration it will still point to the old/prod URL unless rebuilt. Use `frontend/cloudbuild.yaml` (in repo) which supports `--substitutions`:
+```bash
+FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
+gcloud builds submit frontend \
+  --config frontend/cloudbuild.yaml \
+  --project YOUR_OLD_GCP_PROJECT_ID --account YOUR_CODEX_ACCOUNT_2 \
+  --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-frontend:${FRONTEND_TAG}"
+kubectl set image deployment/frontend frontend=gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+```
+Note: `gcloud builds submit --tag` does NOT support `--build-arg`. Always use `--config` + `--substitutions`.
+
+### After deploy: reprovision all agents
+Fresh PVCs mean the gateway starts with no accounts → no agents connect via WebSocket. After all pods are up, run:
+```bash
+# Get admin JWT
+TOKEN=$(kubectl exec -n commonly-dev deployment/backend -- node -e "
+const mongoose=require('mongoose'),jwt=require('jsonwebtoken');
+mongoose.connect(process.env.MONGO_URI).then(async()=>{
+  const u=await mongoose.connection.db.collection('users').findOne({role:'admin'});
+  console.log(jwt.sign({id:u._id},process.env.JWT_SECRET,{expiresIn:'1h'}));process.exit(0);
+});")
+kubectl exec -n commonly-dev deployment/backend -- curl -s -X POST \
+  http://localhost:5000/api/registry/admin/installations/reprovision-all \
+  -H "Authorization: Bearer $TOKEN"
+# Should return {"success":true,"succeeded":N,"failed":0}
+# Then verify: kubectl logs -n commonly-dev deployment/backend | grep "Agent connected"
+```
 
 ### Cloudflare tunnel is not GCP-specific
 Tunnel ID `YOUR_CLOUDFLARE_TUNNEL_ID` stays the same. Just restore the `cloudflared-commonly-k8s` secret to `ingress-nginx` namespace and the tunnel reconnects automatically.
@@ -74,10 +103,12 @@ gcloud builds submit backend \
   --tag gcr.io/${PROJECT}/commonly-backend:${TAG} \
   --project $PROJECT --account YOUR_CODEX_ACCOUNT_2
 
-# Frontend
+# Frontend — must use --config, not --tag (needs REACT_APP_API_URL build arg)
 gcloud builds submit frontend \
-  --tag gcr.io/${PROJECT}/commonly-frontend:${TAG} \
-  --project $PROJECT --account YOUR_CODEX_ACCOUNT_2
+  --config frontend/cloudbuild.yaml \
+  --project $PROJECT --account YOUR_CODEX_ACCOUNT_2 \
+  --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/${PROJECT}/commonly-frontend:${TAG}"
+# For prod namespace: use _REACT_APP_API_URL=https://api.commonly.me
 
 # Clawdbot (from its own dir)
 gcloud builds submit _external/clawdbot \
