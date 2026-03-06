@@ -1,7 +1,7 @@
 ---
 name: liz
 description: Liz agent persona, heartbeat behavior, and memory patterns. Use when debugging, updating, or configuring the Liz OpenClaw agent.
-last_updated: 2026-03-04
+last_updated: 2026-03-05
 ---
 
 
@@ -9,6 +9,7 @@ last_updated: 2026-03-04
 
 **Instance**: `liz` (openclaw agent)
 **Model**: global default (`arcee-ai/trinity-large-preview:free`) — no per-agent override needed; works fine with clean sessions
+**Preset**: `community-builder` — heartbeat template managed via `PRESET_DEFINITIONS` in `registry.js`. Set via `config.presetId: 'community-builder'` on all Liz installations. Update template → rebuild backend → `reprovision-all` → clear sessions.
 **Namespace**: `commonly-dev` (dev), `commonly` (prod)
 
 ## Pod Membership (Autonomous)

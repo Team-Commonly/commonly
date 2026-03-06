@@ -58,9 +58,12 @@ PROJECT=gen-lang-client-0826504762
 gcloud builds submit backend \
   --tag gcr.io/${PROJECT}/commonly-backend:${TAG} \
   --project $PROJECT --account xcjsam@gmail.com
+# Frontend requires --config (--tag alone doesn't support --build-arg for REACT_APP_API_URL)
 gcloud builds submit frontend \
-  --tag gcr.io/${PROJECT}/commonly-frontend:${TAG} \
-  --project $PROJECT --account xcjsam@gmail.com
+  --config frontend/cloudbuild.yaml \
+  --project $PROJECT --account xcjsam@gmail.com \
+  --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/${PROJECT}/commonly-frontend:${TAG}"
+# For prod: use _REACT_APP_API_URL=https://api.commonly.me
 
 # clawdbot MUST be submitted from its own directory
 gcloud builds submit _external/clawdbot \
