@@ -1,7 +1,7 @@
 ---
 name: devops
 description: DevOps and infrastructure context for Docker, CI/CD, GitHub Actions, deployment, and monitoring. Use when working on containers, pipelines, or deployment.
-last_updated: 2026-02-22
+last_updated: 2026-03-04
 
 ---
 
@@ -22,6 +22,8 @@ last_updated: 2026-02-22
 | Document | Topics Covered |
 |----------|----------------|
 | [DEPLOYMENT.md](../../../docs/deployment/DEPLOYMENT.md) | Docker setup, CI/CD, scaling, monitoring |
+| [KUBERNETES.md](../../../docs/deployment/KUBERNETES.md) | GKE cluster setup and Helm deployment |
+| [GCP_MIGRATION.md](../../../docs/deployment/GCP_MIGRATION.md) | Full GCP project/account migration runbook |
 | [ARCHITECTURE.md](../../../docs/architecture/ARCHITECTURE.md) | Container architecture |
 | [LINTING.md](../../../docs/development/LINTING.md) | Code quality automation |
 
@@ -49,19 +51,29 @@ docker-compose.dev.yml      # Development with hot reload
 ./prod.sh deploy            # Build and deploy
 ./prod.sh logs              # View logs
 
-# GKE (both namespaces)
-BACKEND_TAG=$(date +%Y%m%d%H%M%S)
-FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
-gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
-gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
-kubectl rollout status deployment/backend -n commonly
-kubectl rollout status deployment/frontend -n commonly
-kubectl rollout status deployment/backend -n commonly-dev
-kubectl rollout status deployment/frontend -n commonly-dev
+# GKE deploy (project: gen-lang-client-0826504762, account: xcjsam@gmail.com)
+TAG=$(date +%Y%m%d%H%M%S)
+PROJECT=gen-lang-client-0826504762
+
+gcloud builds submit backend \
+  --tag gcr.io/${PROJECT}/commonly-backend:${TAG} \
+  --project $PROJECT --account xcjsam@gmail.com
+# Frontend requires --config (--tag alone doesn't support --build-arg for REACT_APP_API_URL)
+gcloud builds submit frontend \
+  --config frontend/cloudbuild.yaml \
+  --project $PROJECT --account xcjsam@gmail.com \
+  --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/${PROJECT}/commonly-frontend:${TAG}"
+# For prod: use _REACT_APP_API_URL=https://api.commonly.me
+
+# clawdbot MUST be submitted from its own directory
+gcloud builds submit _external/clawdbot \
+  --tag gcr.io/${PROJECT}/clawdbot-gateway:${TAG} \
+  --project $PROJECT --account xcjsam@gmail.com --machine-type=e2-highcpu-8
+
+kubectl set image deployment/backend backend=gcr.io/${PROJECT}/commonly-backend:${TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/${PROJECT}/commonly-frontend:${TAG} -n commonly-dev
+kubectl rollout status deployment/backend -n commonly-dev --timeout=120s
+kubectl rollout status deployment/frontend -n commonly-dev --timeout=120s
 ```
 
 ## Docker Patterns
