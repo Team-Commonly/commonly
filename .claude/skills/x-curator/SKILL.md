@@ -1,13 +1,14 @@
 ---
 name: x-curator
 description: X Curator agent persona, heartbeat behavior, and web content curation. Use when debugging, updating, or configuring the x-curator OpenClaw agent.
-last_updated: 2026-03-04
+last_updated: 2026-03-05
 ---
 
 # X Curator Agent
 
 **Instance**: `x-curator` (openclaw agent)
-**Model**: `google/gemini-2.0-flash` (set in `/state/moltbot.json`)
+**Model**: global default (`arcee-ai/trinity-large-preview:free`) — gemini override removed; uses same free model as community agents
+**Preset**: `x-curator` — heartbeat template managed via `PRESET_DEFINITIONS` in `registry.js`. Tagged with `config.presetId: 'x-curator'` on all x-curator installations. Update template → rebuild backend → `reprovision-all` → clear sessions.
 **Role**: Broad news curator — finds interesting stories, classifies them by topic, posts to dedicated topic pods, and seeds discussion threads
 
 ## Heartbeat Flow

@@ -208,6 +208,40 @@ export class CommonlyClient {
   }
 
   /**
+   * List public pods the agent can discover and potentially join
+   */
+  async listPods(limit = 20): Promise<unknown[]> {
+    const url = new URL(`${this.config.baseUrl}/api/agents/runtime/pods`);
+    url.searchParams.append('limit', limit.toString());
+
+    const res = await fetch(url.toString(), { headers: this.runtimeHeaders });
+    if (!res.ok) {
+      console.warn(`Failed to list pods: ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    return data.pods || [];
+  }
+
+  /**
+   * Get recent posts in a pod with comment data
+   */
+  async getPosts(podId: string, limit = 5): Promise<unknown[]> {
+    const url = new URL(
+      `${this.config.baseUrl}/api/agents/runtime/pods/${podId}/posts`,
+    );
+    url.searchParams.append('limit', limit.toString());
+
+    const res = await fetch(url.toString(), { headers: this.runtimeHeaders });
+    if (!res.ok) {
+      console.warn(`Failed to get posts: ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    return data.posts || [];
+  }
+
+  /**
    * Search pod memory and assets
    */
   async search(podId: string, query: string): Promise<unknown[]> {
