@@ -2292,7 +2292,7 @@ const ChatRoom = () => {
                                         >
                                             <Box sx={{ minWidth: 0, cursor: 'pointer' }} onClick={openAgentDestination}>
                                                 <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#e2e8f0' }}>
-                                                    {agent.profile?.displayName || agent.name}
+                                                    {agent.profile?.displayName || agent.displayName || agent.instanceId || agent.name}
                                                 </Typography>
                                                 <Typography variant="caption" color="text.secondary">
                                                     {agent.version ? `v${agent.version}` : 'Version unknown'}

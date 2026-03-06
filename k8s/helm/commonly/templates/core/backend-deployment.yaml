@@ -324,6 +324,12 @@ spec:
         - name: LOG_LEVEL
           value: {{ .Values.backend.env.logLevel | default "info" }}
 
+        # Agent session size threshold
+        {{- if .Values.backend.env.agentSessionMaxSizeKb }}
+        - name: AGENT_SESSION_MAX_SIZE_KB
+          value: {{ .Values.backend.env.agentSessionMaxSizeKb | quote }}
+        {{- end }}
+
         volumeMounts:
         - name: postgres-ca-cert
           mountPath: /app/certs
