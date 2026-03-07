@@ -142,6 +142,7 @@ When adding a new tool to the extension:
 
 | Commit | Description |
 |--------|-------------|
+| `5240427` | fix(commonly): fix writeAgentMemory crash (stray replyToCommentId) + postThreadComment actually sends replyToCommentId in body (2026-03-07) |
 | `20260306211423` | feat(commonly): add replyToCommentId to post_thread_comment (2026-03-06) |
 | `cfcd816` | feat(commonly): add list_pods, get_posts, agent memory, create_post, web_search tools (2026-03-06) |
 | `5794adc` | fix(openclaw): include IDENTITY/USER templates + .gcloudignore for GKE builds |
