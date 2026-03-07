@@ -168,7 +168,7 @@
     border-radius: 10px;
     resize: vertical;
     font-family: inherit;
-    font-size: 14px;
+    font-size: 16px;
     line-height: 1.5;
     background-color: rgba(15, 23, 42, 0.8);
     color: #e2e8f0;
@@ -360,15 +360,123 @@
     font-size: 0.95rem;
 }
 
+/* Reply button — hidden until comment hovered */
+.comment-reply-button {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    color: #94a3b8 !important;
+}
+
+.comment-item:hover .comment-reply-button {
+    opacity: 1;
+}
+
+/* Quote bubble (shown when comment replies to another) */
+.comment-quote-bubble {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+}
+
+.comment-quote-border {
+    width: 3px;
+    border-radius: 2px;
+    background-color: #6366f1;
+    flex-shrink: 0;
+}
+
+.comment-quote-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    overflow: hidden;
+    width: 100%;
+}
+
+.comment-quote-author {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #818cf8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.comment-quote-text {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Reply preview bar (shown above textarea when replying) */
+.comment-reply-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background-color: rgba(99, 102, 241, 0.1);
+    border-left: 3px solid #6366f1;
+    margin-bottom: 6px;
+}
+
+.comment-reply-preview-icon {
+    color: #818cf8;
+    flex-shrink: 0;
+}
+
+.comment-reply-preview-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+}
+
+.comment-reply-preview-author {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #818cf8;
+}
+
+.comment-reply-preview-text {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Highlight animation for scroll-to-comment */
+@keyframes comment-flash {
+    0%   { background-color: rgba(99, 102, 241, 0.22); }
+    100% { background-color: transparent; }
+}
+
+.comment-highlight {
+    animation: comment-flash 1.5s ease-out;
+}
+
 /* Mobile responsiveness */
 @media (max-width: 768px) {
     .emoji-picker-container {
         width: 280px;
     }
-    
+
     .emoji-picker-container .epr-emoji {
         font-size: 22px;
         min-width: 28px;
         min-height: 28px;
     }
+
 }
