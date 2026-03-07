@@ -375,7 +375,7 @@ io.on('connection', (socket) => {
   // Send a message to a pod
   socket.on(
     'sendMessage',
-    async ({ podId, content, userId, messageType = 'text' }) => {
+    async ({ podId, content, userId, messageType = 'text', replyToMessageId = null }) => {
       try {
         // Validate required parameters - content must be present
         if (!podId || !content || !userId) {
@@ -430,6 +430,7 @@ io.on('connection', (socket) => {
               userId,
               content,
               messageType,
+              replyToMessageId,
             );
             console.log('Message created successfully:', newMessage);
 
@@ -518,6 +519,9 @@ io.on('connection', (socket) => {
           // Ensure timestamp fields
           createdAt: message.createdAt || message.created_at || new Date(),
           created_at: message.createdAt || message.created_at || new Date(),
+
+          // Reply reference (populated by findById)
+          replyTo: message.replyTo || null,
 
           // Ensure all other fields
           ...message,

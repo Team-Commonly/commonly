@@ -27,7 +27,8 @@ import {
     Settings as SettingsIcon,
     ContentCopy as ContentCopyIcon,
     PersonRemove as PersonRemoveIcon,
-    Article as ArticleIcon
+    Article as ArticleIcon,
+    Reply as ReplyIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -252,6 +253,19 @@ const ChatRoom = () => {
     const [announcements, setAnnouncements] = useState([]);
     const [externalLinks, setExternalLinks] = useState([]);
     
+    // State for reply/quote
+    const [replyingTo, setReplyingTo] = useState(null);
+
+    const scrollToMessage = (messageId) => {
+        if (!messageId) return;
+        const el = document.getElementById(`message-${messageId}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            el.classList.add('message-highlight');
+            setTimeout(() => el.classList.remove('message-highlight'), 1500);
+        }
+    };
+
     // State for editing
     const [isEditingAnnouncement, setIsEditingAnnouncement] = useState(false);
     const [isEditingLinks, setIsEditingLinks] = useState(false);
@@ -1643,14 +1657,22 @@ const ChatRoom = () => {
                     createdAt: new Date()
                 };
                 
-                // Add text message to UI immediately
-                setMessages(prev => [...prev, tempTextMessage]);
-                
+                // Add text message to UI immediately (include replyTo for optimistic render)
+                setMessages(prev => [...prev, {
+                    ...tempTextMessage,
+                    replyTo: replyingTo ? {
+                        id: replyingTo._id || replyingTo.id,
+                        content: replyingTo.content || replyingTo.text || '',
+                        username: replyingTo.userId?.username || replyingTo.username || 'Unknown',
+                    } : null,
+                }]);
+
                 // Send text message via socket
-                sendMessage(roomId, message, 'text');
-                
-                // Clear the message input
+                sendMessage(roomId, message, 'text', replyingTo?._id || replyingTo?.id || null);
+
+                // Clear the message input and reply state
                 setMessage('');
+                setReplyingTo(null);
             }
             
         } catch (err) {
@@ -3584,6 +3606,7 @@ const ChatRoom = () => {
                                         return (
                                             <ListItem
                                                 key={msg._id || msg.id || Date.now() + Math.random()}
+                                                id={`message-${msg._id || msg.id}`}
                                                 className={`message-item ${isCurrentUser ? 'sent' : 'received'}`}
                                             >
                                                 <ListItemAvatar className="message-avatar">
@@ -3611,6 +3634,26 @@ const ChatRoom = () => {
                                                         {displayName}
                                                         {isAgentMessage && <AgentBadge username={username} size="small" />}
                                                     </div>
+
+                                                    {/* Quote bubble if this is a reply */}
+                                                    {msg.replyTo && (
+                                                        <div
+                                                            className={`quote-bubble ${isCurrentUser ? 'sent' : 'received'}`}
+                                                            role="button"
+                                                            tabIndex={0}
+                                                            onClick={() => scrollToMessage(msg.replyTo.id)}
+                                                            onKeyDown={(e) => e.key === 'Enter' && scrollToMessage(msg.replyTo.id)}
+                                                        >
+                                                            <div className="quote-border" />
+                                                            <div className="quote-body">
+                                                                <span className="quote-author">{msg.replyTo.username}</span>
+                                                                <span className="quote-text">
+                                                                    {(msg.replyTo.content || '').slice(0, 100)}{msg.replyTo.content?.length > 100 ? '…' : ''}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
                                                     {/* Text message */}
                                                     {messageType === 'text' && (
                                                         <div className={`message-bubble ${isCurrentUser ? 'sent' : 'received'}`}>
@@ -3632,6 +3675,16 @@ const ChatRoom = () => {
 
                                                     <div className={`message-time ${isCurrentUser ? 'message-sent-time' : 'message-received-time'}`}>
                                                         {formatDistanceToNow(new Date(messageTime), { addSuffix: true })}
+                                                        <Tooltip title="Reply" placement="top">
+                                                            <IconButton
+                                                                size="small"
+                                                                className="reply-button"
+                                                                onClick={() => setReplyingTo(msg)}
+                                                                aria-label="Reply to message"
+                                                            >
+                                                                <ReplyIcon fontSize="inherit" />
+                                                            </IconButton>
+                                                        </Tooltip>
                                                     </div>
                                                 </div>
                                             </ListItem>
@@ -3650,12 +3703,29 @@ const ChatRoom = () => {
                     onSubmit={handleSendMessage}
                     className={`message-input-container ${showMembers ? 'sidebar-visible' : 'sidebar-hidden'}`}
                 >
+                    {replyingTo && (
+                        <Box className="reply-preview-bar">
+                            <div className="reply-preview-content">
+                                <ReplyIcon fontSize="small" className="reply-preview-icon" />
+                                <span className="reply-preview-author">
+                                    {replyingTo.userId?.username || replyingTo.username || 'Unknown'}
+                                </span>
+                                <span className="reply-preview-text">
+                                    {(replyingTo.content || replyingTo.text || '').slice(0, 80)}
+                                </span>
+                            </div>
+                            <IconButton size="small" onClick={() => setReplyingTo(null)} aria-label="Cancel reply">
+                                <CloseIcon fontSize="small" />
+                            </IconButton>
+                        </Box>
+                    )}
+
                     {previewUrl && (
                         <Box className="file-preview">
                             <img src={previewUrl} alt="Preview" className="preview-image" />
-                            <IconButton 
-                                size="small" 
-                                className="remove-preview" 
+                            <IconButton
+                                size="small"
+                                className="remove-preview"
                                 onClick={() => {
                                     setSelectedFile(null);
                                     setPreviewUrl('');
