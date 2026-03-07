@@ -45,6 +45,12 @@ const slugify = (value = '') => value
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');
 
+const getUserDisplayName = (user) => {
+    if (!user) return 'Unknown';
+    if (user.isBot && user.botMetadata?.displayName) return user.botMetadata.displayName;
+    return user.username || 'Unknown';
+};
+
 const Thread = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -512,15 +518,24 @@ const Thread = () => {
                 <CardContent>
                     <div className="post-header">
                         <div className="post-meta">
-                            <Avatar
-                                className="post-avatar"
-                                sx={{ bgcolor: getAvatarColor(post.userId.profilePicture) }}
-                                src={getAvatarSrc(post.userId.profilePicture)}
-                            >
-                                {post.userId.username.charAt(0).toUpperCase()}
-                            </Avatar>
+                            {post.userId.isBot ? (
+                                <AgentAvatar
+                                    className="post-avatar"
+                                    username={post.userId.username}
+                                    size={40}
+                                    showBadge={false}
+                                />
+                            ) : (
+                                <Avatar
+                                    className="post-avatar"
+                                    sx={{ bgcolor: getAvatarColor(post.userId.profilePicture) }}
+                                    src={getAvatarSrc(post.userId.profilePicture)}
+                                >
+                                    {post.userId.username.charAt(0).toUpperCase()}
+                                </Avatar>
+                            )}
                             <div className="post-meta-text">
-                                <Typography variant="h6">{post.userId.username}</Typography>
+                                <Typography variant="h6">{getUserDisplayName(post.userId)}</Typography>
                                 <Typography variant="caption" color="text.secondary">
                                     {formatDistanceToNow(new Date(post.createdAt))} ago
                                 </Typography>
@@ -616,7 +631,7 @@ const Thread = () => {
                             <ReplyIcon className="comment-reply-preview-icon" fontSize="small" />
                             <div className="comment-reply-preview-content">
                                 <span className="comment-reply-preview-author">
-                                    @{replyingTo.userId?.username || 'Unknown'}
+                                    @{getUserDisplayName(replyingTo.userId)}
                                 </span>
                                 <span className="comment-reply-preview-text">
                                     {(replyingTo.text || '').slice(0, 80)}
@@ -677,7 +692,7 @@ const Thread = () => {
                             onKeyDown={handleCommentKeyDown}
                             onClick={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
                             onKeyUp={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
-                            placeholder={replyingTo ? `Reply to @${replyingTo.userId?.username || 'Unknown'}...` : 'Write a comment...'}
+                            placeholder={replyingTo ? `Reply to @${getUserDisplayName(replyingTo.userId)}...` : 'Write a comment...'}
                             ref={commentInputRef}
                         />
                         <Button
@@ -766,7 +781,7 @@ const Thread = () => {
                             <div className="comment-quote-border" />
                             <div className="comment-quote-body">
                                 <div className="comment-quote-author">
-                                    {quotedComment.userId?.username || 'Unknown'}
+                                    {getUserDisplayName(quotedComment.userId)}
                                 </div>
                                 <div className="comment-quote-text">
                                     {(quotedComment.text || '').slice(0, 120)}
@@ -775,20 +790,29 @@ const Thread = () => {
                         </div>
                     )}
                     <div className="comment-row">
-                        <Avatar
-                            className="comment-avatar"
-                            sx={{
-                                bgcolor: getAvatarColor(comment.userId && comment.userId.profilePicture)
-                            }}
-                            src={getAvatarSrc(comment.userId && comment.userId.profilePicture)}
-                        >
-                            {comment.userId && comment.userId.username ? comment.userId.username.charAt(0).toUpperCase() : '?'}
-                        </Avatar>
+                        {comment.userId?.isBot ? (
+                            <AgentAvatar
+                                className="comment-avatar"
+                                username={comment.userId.username}
+                                size={32}
+                                showBadge={false}
+                            />
+                        ) : (
+                            <Avatar
+                                className="comment-avatar"
+                                sx={{
+                                    bgcolor: getAvatarColor(comment.userId && comment.userId.profilePicture)
+                                }}
+                                src={getAvatarSrc(comment.userId && comment.userId.profilePicture)}
+                            >
+                                {comment.userId && comment.userId.username ? comment.userId.username.charAt(0).toUpperCase() : '?'}
+                            </Avatar>
+                        )}
                         <div className="comment-content">
                             <div className="comment-header">
                                 <div className="comment-meta">
                                     <Typography variant="subtitle2">
-                                        {comment.userId && comment.userId.username ? comment.userId.username : 'Unknown User'}
+                                        {getUserDisplayName(comment.userId)}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary">
                                         {formatDistanceToNow(new Date(comment.createdAt))} ago
