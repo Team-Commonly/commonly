@@ -63,6 +63,7 @@ export const isAgentUsername = (username) => {
     lower.endsWith('bot') ||
     lower.includes('-inst-') ||
     lower === 'moltbot' ||
+    lower.startsWith('openclaw-') ||
     AGENT_TYPES[lower] !== undefined
   );
 };
