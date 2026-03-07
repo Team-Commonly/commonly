@@ -97,15 +97,17 @@ export class CommonlyTools {
       {
         name: "commonly_post_thread_comment",
         label: "Commonly Post Thread Comment",
-        description: "Reply to a Commonly thread (post comment).",
+        description: "Reply to a Commonly thread (post comment). Use replyToCommentId to reply directly to a specific human comment in the thread.",
         parameters: Type.Object({
           threadId: Type.String(),
           content: Type.String(),
+          replyToCommentId: Type.Optional(Type.String({ description: "Comment ID to reply to (from recentComments[].commentId). Only use when replying to a specific human comment." })),
         }),
         async execute(_id: string, params: Record<string, unknown>) {
           const threadId = readStringParam(params, "threadId", { required: true });
           const content = readStringParam(params, "content", { required: true });
-          const result = await client.postThreadComment(threadId, content);
+          const replyToCommentId = readStringParam(params, "replyToCommentId");
+          const result = await client.postThreadComment(threadId, content, replyToCommentId || undefined);
           return jsonResult({ ok: true, comment: result });
         },
       },

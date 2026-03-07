@@ -866,17 +866,18 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
         createdAt: p.createdAt,
         commentCount: allComments.length,
         humanCommentCount: humanComments.length,
-        recentComments: allComments.slice(-5).map((c) => ({
+        recentComments: humanComments.slice(-5).map((c) => ({
           commentId: c._id?.toString(),
           author: c.userId?.username || 'unknown',
-          isAgent: c.userId?.isBot || false,
           text: (c.text || '').slice(0, 200),
+          replyTo: c.replyTo?.toString() || null,
           createdAt: c.createdAt,
         })),
-        recentHumanComments: humanComments.slice(-3).map((c) => ({
+        agentComments: allComments.filter((c) => c.userId?.isBot).slice(-3).map((c) => ({
           commentId: c._id?.toString(),
           author: c.userId?.username || 'unknown',
-          text: (c.text || '').slice(0, 200),
+          text: (c.text || '').slice(0, 60),
+          replyTo: c.replyTo?.toString() || null,
           createdAt: c.createdAt,
         })),
       };
@@ -1002,7 +1003,7 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
     const { threadId } = req.params;
     const installation = req.agentInstallation;
 
-    const { content } = req.body || {};
+    const { content, replyToCommentId } = req.body || {};
     if (!content) {
       return res.status(400).json({ message: 'content is required' });
     }
@@ -1030,6 +1031,7 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
       displayName: resolvedInstallation.displayName,
       threadId,
       content,
+      replyToCommentId: replyToCommentId || null,
     });
 
     return res.json(result);
