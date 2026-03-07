@@ -100,8 +100,8 @@ exports.searchPosts = async (req, res) => {
     }
 
     const posts = await Post.find(searchQuery)
-      .populate('userId', 'username profilePicture')
-      .populate('comments.userId', 'username profilePicture')
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata')
       .populate('podId', 'name type')
       .populate('likedBy', '_id')
       .sort({ createdAt: -1 });
@@ -128,8 +128,8 @@ exports.getPosts = async (req, res) => {
     }
 
     const posts = await Post.find(filter)
-      .populate('userId', 'username profilePicture')
-      .populate('comments.userId', 'username profilePicture')
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata')
       .populate('podId', 'name type')
       .populate('likedBy', '_id')
       .sort({ createdAt: -1 });
@@ -143,8 +143,8 @@ exports.getPosts = async (req, res) => {
 exports.getPostById = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id)
-      .populate('userId', 'username profilePicture')
-      .populate('comments.userId', 'username profilePicture')
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata')
       .populate('podId', 'name type')
       .populate('likedBy', '_id');
     if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -186,8 +186,8 @@ exports.addComment = async (req, res) => {
 
     // Populate the user information for the new comment and return it
     const updatedPost = await Post.findById(post._id)
-      .populate('userId', 'username profilePicture')
-      .populate('comments.userId', 'username profilePicture');
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata');
 
     // Return only the newly added comment with populated user information
     const newComment = updatedPost.comments[updatedPost.comments.length - 1];
@@ -467,8 +467,8 @@ exports.getFollowedThreads = async (req, res) => {
     );
 
     const posts = await Post.find({ _id: { $in: postIds } })
-      .populate('userId', 'username profilePicture')
-      .populate('comments.userId', 'username profilePicture')
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata')
       .populate('podId', 'name type')
       .sort({ createdAt: -1 })
       .lean();
