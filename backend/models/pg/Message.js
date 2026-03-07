@@ -2,7 +2,7 @@ const { pool } = require('../../config/db-pg');
 
 class Message {
   // Create a new message
-  static async create(podId, userId, content, messageType = 'text') {
+  static async create(podId, userId, content, messageType = 'text', replyToMessageId = null) {
     console.log('Creating message with params:', {
       podId,
       userId,
@@ -12,8 +12,8 @@ class Message {
     });
 
     const query = `
-      INSERT INTO messages (pod_id, user_id, content, message_type)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
 
@@ -25,6 +25,7 @@ class Message {
         userId,
         content || '',
         messageType,
+        replyToMessageId || null,
       ]);
 
       // Update the pod's updated_at timestamp
@@ -54,19 +55,26 @@ class Message {
   static async findByPodId(podId, limit = 50, before = null) {
     try {
       let query = `
-        SELECT 
-          m.id, 
-          m.pod_id, 
+        SELECT
+          m.id,
+          m.pod_id,
           m.user_id,
-          m.content, 
+          m.content,
           m.message_type,
-          m.created_at, 
+          m.reply_to_message_id,
+          m.created_at,
           m.updated_at,
           u._id as user_db_id,
-          u.username, 
-          u.profile_picture
+          u.username,
+          u.profile_picture,
+          rm.id as reply_msg_id,
+          rm.content as reply_content,
+          rm.user_id as reply_user_id,
+          ru.username as reply_username
         FROM messages m
         LEFT JOIN users u ON m.user_id = u._id
+        LEFT JOIN messages rm ON m.reply_to_message_id = rm.id
+        LEFT JOIN users ru ON rm.user_id = ru._id
         WHERE m.pod_id = $1
       `;
 
@@ -122,6 +130,16 @@ class Message {
               profilePicture: msg.profile_picture,
             }
             : userId, // If username isn't available, just use the ID
+
+          // Reply/quote reference
+          replyTo: msg.reply_msg_id
+            ? {
+              id: msg.reply_msg_id.toString(),
+              content: (msg.reply_content || '').slice(0, 150),
+              username: msg.reply_username || 'Unknown',
+              userId: msg.reply_user_id || '',
+            }
+            : null,
         };
       });
     } catch (error) {
@@ -134,19 +152,26 @@ class Message {
   static async findById(id) {
     try {
       const query = `
-        SELECT 
-          m.id, 
-          m.pod_id, 
+        SELECT
+          m.id,
+          m.pod_id,
           m.user_id,
-          m.content, 
+          m.content,
           m.message_type,
-          m.created_at, 
-          m.updated_at, 
+          m.reply_to_message_id,
+          m.created_at,
+          m.updated_at,
           u._id as user_db_id,
-          u.username, 
-          u.profile_picture
+          u.username,
+          u.profile_picture,
+          rm.id as reply_msg_id,
+          rm.content as reply_content,
+          rm.user_id as reply_user_id,
+          ru.username as reply_username
         FROM messages m
         LEFT JOIN users u ON m.user_id = u._id
+        LEFT JOIN messages rm ON m.reply_to_message_id = rm.id
+        LEFT JOIN users ru ON rm.user_id = ru._id
         WHERE m.id = $1
       `;
 
@@ -188,6 +213,16 @@ class Message {
             profilePicture: msg.profile_picture,
           }
           : userId, // If username isn't available, just use the ID
+
+        // Reply/quote reference
+        replyTo: msg.reply_msg_id
+          ? {
+            id: msg.reply_msg_id.toString(),
+            content: (msg.reply_content || '').slice(0, 150),
+            username: msg.reply_username || 'Unknown',
+            userId: msg.reply_user_id || '',
+          }
+          : null,
       };
     } catch (error) {
       console.error('Error in findById:', error.message);

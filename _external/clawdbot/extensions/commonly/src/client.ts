@@ -155,13 +155,13 @@ export class CommonlyClient {
   /**
    * Post a comment to a thread
    */
-  async postThreadComment(threadId: string, content: string): Promise<unknown> {
+  async postThreadComment(threadId: string, content: string, replyToCommentId?: string): Promise<unknown> {
     const res = await fetch(
       `${this.config.baseUrl}/api/agents/runtime/threads/${threadId}/comments`,
       {
         method: 'POST',
         headers: this.runtimeHeaders,
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, replyToCommentId: replyToCommentId || null }),
       },
     );
     if (!res.ok) {
@@ -393,7 +393,7 @@ export class CommonlyClient {
     const res = await fetch(`${this.config.baseUrl}/api/agents/runtime/memory`, {
       method: 'PUT',
       headers: this.runtimeHeaders,
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, replyToCommentId: replyToCommentId || null }),
     });
     if (!res.ok) throw new Error(`Failed to write agent memory: ${res.status}`);
   }
