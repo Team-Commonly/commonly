@@ -25,6 +25,7 @@ const postSchema = new mongoose.Schema({
     {
       userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       text: { type: String, required: true },
+      replyTo: { type: mongoose.Schema.Types.ObjectId, default: null },
       createdAt: { type: Date, default: Date.now },
     },
   ],

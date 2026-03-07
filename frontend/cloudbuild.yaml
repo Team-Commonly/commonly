@@ -1,0 +1,19 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'REACT_APP_API_URL=${_REACT_APP_API_URL}'
+      - '--build-arg'
+      - 'REACT_APP_DISCORD_CLIENT_ID=${_REACT_APP_DISCORD_CLIENT_ID}'
+      - '-t'
+      - '${_IMAGE}'
+      - '.'
+
+images:
+  - '${_IMAGE}'
+
+substitutions:
+  _REACT_APP_API_URL: ''
+  _REACT_APP_DISCORD_CLIENT_ID: ''
+  _IMAGE: 'gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-frontend:latest'

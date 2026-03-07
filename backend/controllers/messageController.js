@@ -58,7 +58,7 @@ exports.getMessages = async (req, res) => {
 exports.createMessage = async (req, res) => {
   try {
     const { podId } = req.params;
-    const { content, text, attachments } = req.body;
+    const { content, text, attachments, replyToMessageId } = req.body;
 
     if (!podId) {
       return res.status(400).json({ msg: 'Pod ID is required' });
@@ -101,6 +101,7 @@ exports.createMessage = async (req, res) => {
       userId,
       messageContent || '',
       'text',
+      replyToMessageId || null,
     );
 
     const username = req.user?.username;

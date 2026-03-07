@@ -121,13 +121,14 @@ export const SocketProvider = ({ children }) => {
     };
 
     // Send a message to a pod
-    const sendMessage = (podId, content, messageType = 'text') => {
+    const sendMessage = (podId, content, messageType = 'text', replyToMessageId = null) => {
         if (socket && connected && currentUser && currentUser._id && podId) {
             socket.emit('sendMessage', {
                 podId,
                 content,
                 messageType,
-                userId: currentUser._id
+                userId: currentUser._id,
+                ...(replyToMessageId && { replyToMessageId }),
             });
         } else {
             console.warn('Cannot send message: socket, user, or podId is missing');

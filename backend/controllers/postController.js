@@ -157,7 +157,7 @@ exports.getPostById = async (req, res) => {
 // Add a comment to a post
 exports.addComment = async (req, res) => {
   try {
-    const { text, podId: requestPodId } = req.body;
+    const { text, podId: requestPodId, replyToCommentId } = req.body;
 
     if (!text) {
       return res.status(400).json({ error: 'Comment text is required' });
@@ -174,6 +174,7 @@ exports.addComment = async (req, res) => {
     const comment = {
       userId: req.userId,
       text,
+      replyTo: replyToCommentId || null,
       createdAt: new Date(),
     };
 

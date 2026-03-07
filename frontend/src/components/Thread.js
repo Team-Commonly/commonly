@@ -6,6 +6,8 @@ import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, Ico
 import { formatDistanceToNow } from 'date-fns';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import SendIcon from '@mui/icons-material/Send';
+import ReplyIcon from '@mui/icons-material/Reply';
+import CloseIcon from '@mui/icons-material/Close';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
 import FavoriteIcon from '@mui/icons-material/Favorite';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
@@ -66,6 +68,7 @@ const Thread = () => {
     const [lightboxImage, setLightboxImage] = useState(null);
     const [lightboxAlt, setLightboxAlt] = useState('');
     const [lightboxZoomed, setLightboxZoomed] = useState(false);
+    const [replyingTo, setReplyingTo] = useState(null);
     const emojiButtonRef = useRef(null);
     const commentInputRef = useRef(null);
     const mentionDropdownRef = useRef(null);
@@ -96,12 +99,29 @@ const Thread = () => {
         return items;
     }, [podAgents]);
 
+    const commentMap = useMemo(() => {
+        if (!post?.comments) return {};
+        return post.comments.reduce((acc, c) => {
+            acc[c._id] = c;
+            return acc;
+        }, {});
+    }, [post?.comments]);
+
     const filteredMentions = useMemo(() => {
         if (!mentionOpen) return [];
         const query = mentionQuery.trim().toLowerCase();
         const result = mentionableItems.filter((item) => item.labelLower.includes(query));
         return result.slice(0, 8);
     }, [mentionOpen, mentionQuery, mentionableItems]);
+
+    const scrollToComment = (commentId) => {
+        const el = document.getElementById(`comment-${commentId}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            el.classList.add('comment-highlight');
+            setTimeout(() => el.classList.remove('comment-highlight'), 1500);
+        }
+    };
 
     useEffect(() => {
         const fetchPost = async () => {
@@ -200,8 +220,9 @@ const Thread = () => {
             const payload = {
                 text: comment,
                 ...(threadPodId ? { podId: threadPodId } : {}),
+                ...(replyingTo ? { replyToCommentId: replyingTo._id } : {}),
             };
-            const res = await axios.post(`/api/posts/${id}/comments`, 
+            const res = await axios.post(`/api/posts/${id}/comments`,
                 payload,
                 { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
             );
@@ -214,6 +235,7 @@ const Thread = () => {
             setMentionOpen(false);
             setMentionQuery('');
             setMentionStart(-1);
+            setReplyingTo(null);
             
             // Refresh data to ensure consistency
             refreshData();
@@ -591,6 +613,22 @@ const Thread = () => {
 
             <div className="thread-comment-form">
                 <form onSubmit={handleCommentSubmit} className="comment-composer">
+                    {replyingTo && (
+                        <div className="comment-reply-preview">
+                            <ReplyIcon className="comment-reply-preview-icon" fontSize="small" />
+                            <div className="comment-reply-preview-content">
+                                <span className="comment-reply-preview-author">
+                                    @{replyingTo.userId?.username || 'Unknown'}
+                                </span>
+                                <span className="comment-reply-preview-text">
+                                    {(replyingTo.text || '').slice(0, 80)}
+                                </span>
+                            </div>
+                            <IconButton size="small" onClick={() => setReplyingTo(null)} aria-label="cancel reply">
+                                <CloseIcon fontSize="small" />
+                            </IconButton>
+                        </div>
+                    )}
                     {mentionOpen && filteredMentions.length > 0 && (
                         <div className="mention-dropdown" ref={mentionDropdownRef}>
                             {filteredMentions.map((item, index) => (
@@ -641,7 +679,7 @@ const Thread = () => {
                             onKeyDown={handleCommentKeyDown}
                             onClick={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
                             onKeyUp={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
-                            placeholder="Write a comment..."
+                            placeholder={replyingTo ? `Reply to @${replyingTo.userId?.username || 'Unknown'}...` : 'Write a comment...'}
                             ref={commentInputRef}
                         />
                         <Button
@@ -717,13 +755,32 @@ const Thread = () => {
                 Comments ({post.comments.length})
             </Typography>
 
-            {post.comments.map((comment) => (
-                <Paper key={comment._id} className="comment-item">
+            {post.comments.map((comment) => {
+                const quotedComment = comment.replyTo ? commentMap[comment.replyTo] : null;
+                return (
+                <Paper key={comment._id} id={`comment-${comment._id}`} className="comment-item">
+                    {quotedComment && (
+                        <div
+                            className="comment-quote-bubble"
+                            role="button"
+                            onClick={() => scrollToComment(quotedComment._id)}
+                        >
+                            <div className="comment-quote-border" />
+                            <div className="comment-quote-body">
+                                <div className="comment-quote-author">
+                                    {quotedComment.userId?.username || 'Unknown'}
+                                </div>
+                                <div className="comment-quote-text">
+                                    {(quotedComment.text || '').slice(0, 120)}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <div className="comment-row">
-                        <Avatar 
+                        <Avatar
                             className="comment-avatar"
-                            sx={{ 
-                                bgcolor: getAvatarColor(comment.userId && comment.userId.profilePicture) 
+                            sx={{
+                                bgcolor: getAvatarColor(comment.userId && comment.userId.profilePicture)
                             }}
                             src={getAvatarSrc(comment.userId && comment.userId.profilePicture)}
                         >
@@ -739,16 +796,28 @@ const Thread = () => {
                                         {formatDistanceToNow(new Date(comment.createdAt))} ago
                                     </Typography>
                                 </div>
-                                {currentUser && comment.userId && (currentUser._id === comment.userId._id) && (
-                                    <IconButton 
-                                        size="small" 
-                                        onClick={(e) => handleMenuOpen(e, comment._id, 'comment')}
-                                        aria-label="comment options"
-                                        id="post-options-button"
-                                    >
-                                        <MoreVertIcon />
-                                    </IconButton>
-                                )}
+                                <div style={{ display: 'flex', alignItems: 'center' }}>
+                                    <Tooltip title="Reply">
+                                        <IconButton
+                                            size="small"
+                                            className="comment-reply-button"
+                                            onClick={() => { setReplyingTo(comment); commentInputRef.current?.focus(); }}
+                                            aria-label="reply to comment"
+                                        >
+                                            <ReplyIcon fontSize="inherit" />
+                                        </IconButton>
+                                    </Tooltip>
+                                    {currentUser && comment.userId && (currentUser._id === comment.userId._id) && (
+                                        <IconButton
+                                            size="small"
+                                            onClick={(e) => handleMenuOpen(e, comment._id, 'comment')}
+                                            aria-label="comment options"
+                                            id="post-options-button"
+                                        >
+                                            <MoreVertIcon />
+                                        </IconButton>
+                                    )}
+                                </div>
                             </div>
                             <Typography variant="body2" className="comment-body">
                         {comment.text.split(/(#\w+)/g).map((part, index) => {
@@ -772,7 +841,8 @@ const Thread = () => {
                         </div>
                     </div>
                 </Paper>
-            ))}
+                );
+            })}
 
             <Menu
                 anchorEl={menuAnchorEl}
