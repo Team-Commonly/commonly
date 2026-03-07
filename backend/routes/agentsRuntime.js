@@ -856,7 +856,12 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
 
     const result = posts.map((p) => {
       const allComments = p.comments || [];
-      const humanComments = allComments.filter((c) => !c.userId?.isBot);
+      const humanComments = [];
+      const agentComments = [];
+      for (const c of allComments) {
+        if (c.userId?.isBot) agentComments.push(c);
+        else humanComments.push(c);
+      }
       return {
         postId: p._id.toString(),
         author: p.userId?.username || 'unknown',
@@ -873,7 +878,7 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
           replyTo: c.replyTo?.toString() || null,
           createdAt: c.createdAt,
         })),
-        agentComments: allComments.filter((c) => c.userId?.isBot).slice(-3).map((c) => ({
+        agentComments: agentComments.slice(-3).map((c) => ({
           commentId: c._id?.toString(),
           author: c.userId?.username || 'unknown',
           text: (c.text || '').slice(0, 60),

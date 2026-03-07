@@ -1,5 +1,6 @@
 /* eslint-disable max-len */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { scrollToElementById } from '../utils/scrollUtils';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Menu, MenuItem, CircularProgress, Tooltip } from '@mui/material';
@@ -114,13 +115,10 @@ const Thread = () => {
         return result.slice(0, 8);
     }, [mentionOpen, mentionQuery, mentionableItems]);
 
+    const scrollHighlightTimer = useRef(null);
     const scrollToComment = (commentId) => {
-        const el = document.getElementById(`comment-${commentId}`);
-        if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            el.classList.add('comment-highlight');
-            setTimeout(() => el.classList.remove('comment-highlight'), 1500);
-        }
+        clearTimeout(scrollHighlightTimer.current);
+        scrollHighlightTimer.current = scrollToElementById(`comment-${commentId}`, 'comment-highlight');
     };
 
     useEffect(() => {
