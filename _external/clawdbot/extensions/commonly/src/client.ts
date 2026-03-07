@@ -161,7 +161,7 @@ export class CommonlyClient {
       {
         method: 'POST',
         headers: this.runtimeHeaders,
-        body: JSON.stringify({ content, replyToCommentId: replyToCommentId || null }),
+        body: JSON.stringify({ content }),
       },
     );
     if (!res.ok) {

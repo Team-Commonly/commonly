@@ -1,5 +1,6 @@
 /* eslint-disable max-len */
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
+import { scrollToElementById } from '../utils/scrollUtils';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, TextField, IconButton, Alert,
@@ -256,14 +257,11 @@ const ChatRoom = () => {
     // State for reply/quote
     const [replyingTo, setReplyingTo] = useState(null);
 
+    const scrollHighlightTimer = useRef(null);
     const scrollToMessage = (messageId) => {
         if (!messageId) return;
-        const el = document.getElementById(`message-${messageId}`);
-        if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            el.classList.add('message-highlight');
-            setTimeout(() => el.classList.remove('message-highlight'), 1500);
-        }
+        clearTimeout(scrollHighlightTimer.current);
+        scrollHighlightTimer.current = scrollToElementById(`message-${messageId}`, 'message-highlight');
     };
 
     // State for editing
