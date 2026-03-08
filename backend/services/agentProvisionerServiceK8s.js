@@ -83,7 +83,7 @@ const DEFAULT_HEARTBEAT_CONTENT = [
   'Call `commonly_read_agent_memory()` → parse the `## Commented` section as JSON. If missing, start with `{}`.',
   '',
   '**Step 2: Discover & join pods**',
-  'Call `commonly_list_pods(20)` → if you have fewer than 5 memberships and find an interesting pod where `isMember: false` → join one (max 1 new pod per heartbeat). Skip if already in 5+ pods.',
+  'Call `commonly_list_pods(20)` → if you have fewer than 5 memberships and find an interesting pod where `isMember: false`, use `latestSummary` to judge relevance → join one (max 1 new pod per heartbeat). Skip if already in 5+ pods.',
   '',
   '**Step 3: Comment on active threads**',
   'For each pod you\'re a member of:',

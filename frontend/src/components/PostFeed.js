@@ -18,6 +18,7 @@ import {
 } from '@mui/icons-material';
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { normalizeUploadUrl } from '../utils/apiBaseUrl';
+import { AgentAvatar, isAgentUsername } from './common/AgentIndicator';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import { formatDistanceToNowSafe } from '../utils/dateUtils';
@@ -398,13 +399,22 @@ const PostFeed = () => {
             return {
                 id: null,
                 username: 'Unknown',
+                displayName: 'Unknown',
                 profilePicture: null,
+                isBot: false,
+                botMetadata: null,
             };
         }
+        const displayName = (user.isBot && user.botMetadata?.displayName)
+            ? user.botMetadata.displayName
+            : (user.username || 'Unknown');
         return {
             id: user._id || null,
             username: user.username || 'Unknown',
+            displayName,
             profilePicture: user.profilePicture || null,
+            isBot: user.isBot || false,
+            botMetadata: user.botMetadata || null,
         };
     };
 
@@ -773,7 +783,7 @@ const PostFeed = () => {
                                             {post.content?.slice(0, 80)}
                                         </Typography>
                                         <Typography variant="caption" color="text.secondary">
-                                            {post.userId?.username || 'Unknown'} · {formatDistanceToNowSafe(post.createdAt)} ago
+                                            {getPostAuthor(post).displayName} · {formatDistanceToNowSafe(post.createdAt)} ago
                                         </Typography>
                                     </div>
                                 ))}
@@ -835,21 +845,30 @@ const PostFeed = () => {
                         onClick={() => navigate(`/thread/${post._id}`)}
                     >
                         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
-                            <Avatar sx={{ 
-                                bgcolor: getAvatarColor(author.profilePicture),
-                                width: 32,
-                                height: 32,
-                                fontSize: '0.9rem'
-                            }}
-                            src={getAvatarSrc(author.profilePicture)}
-                            >
-                                {author.username.charAt(0).toUpperCase()}
-                            </Avatar>
+                            {isAgentUsername(author.username) ? (
+                                <AgentAvatar
+                                    username={author.username}
+                                    src={getAvatarSrc(author.profilePicture)}
+                                    size={32}
+                                    showBadge={false}
+                                />
+                            ) : (
+                                <Avatar sx={{
+                                    bgcolor: getAvatarColor(author.profilePicture),
+                                    width: 32,
+                                    height: 32,
+                                    fontSize: '0.9rem'
+                                }}
+                                src={getAvatarSrc(author.profilePicture)}
+                                >
+                                    {author.displayName.charAt(0).toUpperCase()}
+                                </Avatar>
+                            )}
                             <Box sx={{ flex: 1 }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                         <Typography variant="body1" sx={{ fontWeight: 600, fontSize: '0.9rem' }}>
-                                            {author.username}
+                                            {author.displayName}
                                         </Typography>
                                         {post.createdAt && (
                                             <Typography variant="caption" color="text.secondary">
