@@ -10,7 +10,7 @@ const AgentEvent = require('../models/AgentEvent');
 const AgentEnsembleService = require('./agentEnsembleService');
 const PodCurationService = require('./podCurationService');
 const AgentAutoJoinService = require('./agentAutoJoinService');
-const Message = require('../models/Message');
+const PGMessage = require('../models/pg/Message');
 const Post = require('../models/Post');
 
 const SummarizerService = summarizerService.constructor;
@@ -651,26 +651,8 @@ class SchedulerService {
     const lookbackMinutes = this.resolveHeartbeatHintWindowMinutes();
     const since = new Date(now.getTime() - (lookbackMinutes * 60 * 1000));
 
-    const [msgFacetResult, postStats] = await Promise.all([
-      Message.aggregate([
-        {
-          $match: {
-            podId,
-            createdAt: { $gte: since },
-            messageType: { $ne: 'system' },
-          },
-        },
-        {
-          $facet: {
-            stats: [{ $group: { _id: null, count: { $sum: 1 }, lastAt: { $max: '$createdAt' } } }],
-            recent: [
-              { $sort: { createdAt: -1 } },
-              { $limit: 3 },
-              { $project: { content: 1, username: 1, createdAt: 1 } },
-            ],
-          },
-        },
-      ]),
+    const [pgMsgHint, postStats] = await Promise.all([
+      PGMessage.findActivityHint(podId, since),
       Post.aggregate([
         {
           $match: {
@@ -688,19 +670,10 @@ class SchedulerService {
       ]),
     ]);
 
-    const messageStats = msgFacetResult?.[0]?.stats || [];
-    const messageCount = Number(messageStats?.[0]?.count || 0);
+    const messageCount = pgMsgHint.count;
     const postCount = Number(postStats?.[0]?.count || 0);
     const totalSignals = messageCount + postCount;
-
-    const recentMessages = (msgFacetResult?.[0]?.recent || [])
-      .reverse()
-      .map((m) => ({
-        id: m._id?.toString(),
-        username: m.username || 'unknown',
-        content: (m.content || '').slice(0, 120),
-        createdAt: m.createdAt,
-      }));
+    const { recentMessages } = pgMsgHint;
 
     return {
       lookbackMinutes,
@@ -709,7 +682,7 @@ class SchedulerService {
       postCount,
       totalSignals,
       hasRecentActivity: totalSignals > 0,
-      lastMessageAt: messageStats?.[0]?.lastAt ? new Date(messageStats[0].lastAt).toISOString() : null,
+      lastMessageAt: pgMsgHint.lastAt ? new Date(pgMsgHint.lastAt).toISOString() : null,
       lastPostAt: postStats?.[0]?.lastAt ? new Date(postStats[0].lastAt).toISOString() : null,
       recentMessages,
       generatedAt: now.toISOString(),
@@ -811,14 +784,14 @@ class SchedulerService {
       const allGlobalPodIds = [...new Set(globalInstalls.map((i) => i.podId).filter(Boolean))];
       if (allGlobalPodIds.length > 0) {
         // eslint-disable-next-line no-await-in-loop
-        const recentMsgs = await Message.find({
-          podId: { $in: allGlobalPodIds },
-          createdAt: { $gte: new Date(now.getTime() - hintWindowMs) },
-        }).sort({ createdAt: -1 }).select('podId').lean();
+        const podActivity = await PGMessage.findMostRecentPodActivity(
+          allGlobalPodIds,
+          new Date(now.getTime() - hintWindowMs),
+        );
         // For each global agent, pick the pod with the most recent message
         for (const [key, podIdSet] of podsByKey) {
-          const bestMsg = recentMsgs.find((m) => podIdSet.has(m.podId.toString()));
-          if (bestMsg) globalHeartbeatPodMap.set(key, bestMsg.podId);
+          const bestPod = podActivity.find((p) => podIdSet.has(p.podId));
+          if (bestPod) globalHeartbeatPodMap.set(key, bestPod.podId);
         }
       }
     }

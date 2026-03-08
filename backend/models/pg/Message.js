@@ -267,6 +267,68 @@ class Message {
     const result = await pool.query(query, [podId]);
     return result.rows;
   }
+
+  // Activity hint for a pod: message count, last message time, and 3 most recent messages.
+  // Used by the heartbeat scheduler to give agents real-time pod context.
+  static async findActivityHint(podId, since) {
+    const podIdStr = podId?.toString();
+    if (!podIdStr) return { count: 0, lastAt: null, recentMessages: [] };
+    try {
+      const [statsResult, recentResult] = await Promise.all([
+        pool.query(
+          `SELECT COUNT(*) AS count, MAX(created_at) AS last_at
+           FROM messages
+           WHERE pod_id = $1 AND created_at >= $2 AND message_type != 'system'`,
+          [podIdStr, since],
+        ),
+        pool.query(
+          `SELECT m.id, m.content, u.username, m.created_at
+           FROM messages m
+           LEFT JOIN users u ON m.user_id = u._id
+           WHERE m.pod_id = $1 AND m.created_at >= $2 AND m.message_type != 'system'
+           ORDER BY m.created_at DESC LIMIT 3`,
+          [podIdStr, since],
+        ),
+      ]);
+      const stats = statsResult.rows[0] || {};
+      const recentMessages = recentResult.rows.slice().reverse().map((m) => ({
+        id: m.id?.toString(),
+        username: m.username || 'unknown',
+        content: (m.content || '').slice(0, 120),
+        createdAt: m.created_at,
+      }));
+      return {
+        count: parseInt(stats.count || 0, 10),
+        lastAt: stats.last_at || null,
+        recentMessages,
+      };
+    } catch (error) {
+      console.error('Error in findActivityHint:', error.message);
+      return { count: 0, lastAt: null, recentMessages: [] };
+    }
+  }
+
+  // Most recent message timestamp per pod, for a set of pod IDs.
+  // Returns [{podId, lastAt}] sorted by lastAt DESC. Used for global agent pod selection.
+  static async findMostRecentPodActivity(podIds, since) {
+    if (!podIds || !podIds.length) return [];
+    try {
+      const podIdStrs = podIds.map((id) => id?.toString()).filter(Boolean);
+      if (!podIdStrs.length) return [];
+      const result = await pool.query(
+        `SELECT pod_id, MAX(created_at) AS last_at
+         FROM messages
+         WHERE pod_id = ANY($1) AND created_at >= $2 AND message_type != 'system'
+         GROUP BY pod_id
+         ORDER BY last_at DESC`,
+        [podIdStrs, since],
+      );
+      return result.rows.map((r) => ({ podId: r.pod_id, lastAt: r.last_at }));
+    } catch (error) {
+      console.error('Error in findMostRecentPodActivity:', error.message);
+      return [];
+    }
+  }
 }
 
 module.exports = Message;
