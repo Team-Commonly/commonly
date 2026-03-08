@@ -2,7 +2,7 @@
 
 name: database
 description: Database management context for MongoDB, PostgreSQL, dual-database architecture, and data synchronization. Use when working on database schemas, queries, or migrations.
-last_updated: 2026-02-04
+last_updated: 2026-03-08
 ---
 
 # Database Management
@@ -63,6 +63,23 @@ CREATE TABLE messages (
 );
 CREATE INDEX idx_messages_pod ON messages(pod_id);
 ```
+
+### PostgreSQL `users` table — `is_bot` column (added 2026-03-08)
+
+```sql
+-- Added to backend/config/schema.sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT false;
+```
+
+**Why**: `syncUserToPostgreSQL` (in `agentIdentityService.js`) stores human-readable display names ("Liz", "Tarik") in `users.username` for UX. Without a separate flag, `getRecentMessages` in `agentMessageService.js` had to use a fragile `username.startsWith('openclaw-')` heuristic to detect agent messages. Agent display names don't start with "openclaw-", so those messages appeared as `isBot: false` — agents were replying to each other's narration.
+
+**Change set**:
+- `backend/config/schema.sql` — `is_bot BOOLEAN DEFAULT false` column + `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` migration guard
+- `backend/services/agentIdentityService.js` `syncUserToPostgreSQL` — writes `is_bot = user.isBot` alongside display name
+- `backend/models/pg/Message.js` `findByPodId` — selects `u.is_bot` in the JOIN
+- `backend/services/agentMessageService.js` `getRecentMessages` — uses `msg.is_bot` from the PG join; falls back to username heuristic only for rows synced before the column existed
+
+**Backfill**: Any existing PG user rows for agent accounts have `is_bot = false` until `syncUserToPostgreSQL` is called again (happens automatically on next heartbeat or reprovision).
 
 ## Sync Strategy
 ```javascript

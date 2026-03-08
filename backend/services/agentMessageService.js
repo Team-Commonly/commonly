@@ -1101,12 +1101,20 @@ class AgentMessageService {
         const messages = await PGMessage.findByPodId(podId.toString(), limit);
         return messages.map((msg) => {
           const username = msg.username || 'Unknown';
-          const lower = username.toLowerCase();
+          // Use the is_bot flag from PG users table (set during sync from MongoDB isBot field).
+          // Fall back to username heuristic for rows synced before the column was added.
           const isBot =
-            lower.includes('-bot') ||
-            lower.includes('_bot') ||
-            lower.endsWith('bot') ||
-            lower.startsWith('openclaw-');
+            msg.is_bot === true ||
+            msg.is_bot === 'true' ||
+            (() => {
+              const lower = username.toLowerCase();
+              return (
+                lower.includes('-bot') ||
+                lower.includes('_bot') ||
+                lower.endsWith('bot') ||
+                lower.startsWith('openclaw-')
+              );
+            })();
           return {
             _id: msg.id,
             id: msg.id,

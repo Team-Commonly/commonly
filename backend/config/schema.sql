@@ -35,9 +35,13 @@ CREATE TABLE IF NOT EXISTS users (
   _id VARCHAR(24) PRIMARY KEY,
   username VARCHAR(100) NOT NULL,
   profile_picture TEXT,
+  is_bot BOOLEAN DEFAULT false,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Migration: add is_bot column to existing tables (safe to run repeatedly)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT false;
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_messages_pod_id ON messages(pod_id);
