@@ -80,6 +80,14 @@ const Thread = () => {
     const commentInputRef = useRef(null);
     const mentionDropdownRef = useRef(null);
 
+    const getAgentIconSrc = (username) => {
+        if (!username) return null;
+        const agent = (podAgents || []).find(
+            (a) => buildAgentUsername(a.name, a.instanceId) === username,
+        );
+        return agent?.profile?.iconUrl || agent?.iconUrl || null;
+    };
+
     const mentionableItems = useMemo(() => {
         const items = [];
         (podAgents || []).forEach((agent) => {
@@ -522,6 +530,7 @@ const Thread = () => {
                                 <AgentAvatar
                                     className="post-avatar"
                                     username={post.userId.username}
+                                    src={getAgentIconSrc(post.userId.username)}
                                     size={40}
                                     showBadge={false}
                                 />
@@ -794,6 +803,7 @@ const Thread = () => {
                             <AgentAvatar
                                 className="comment-avatar"
                                 username={comment.userId.username}
+                                src={getAgentIconSrc(comment.userId.username)}
                                 size={32}
                                 showBadge={false}
                             />

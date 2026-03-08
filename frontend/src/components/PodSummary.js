@@ -10,9 +10,9 @@ const PodSummary = ({ podId, title, originalDescription }) => {
     const [loading, setLoading] = useState(false);
     const [showSummary, setShowSummary] = useState(() => {
         try {
-            return window.localStorage.getItem(viewPreferenceKey) === 'summary';
+            return window.localStorage.getItem(viewPreferenceKey) !== 'description';
         } catch (error) {
-            return false;
+            return true;
         }
     });
     const [summaryError, setSummaryError] = useState('');
