@@ -528,7 +528,7 @@ Be analytical but concise.`;
     }
   }
 
-  static async getMultiplePodSummaries(podIds) {
+  async getMultiplePodSummaries(podIds) {
     try {
       const summaries = await Summary.find({
         type: 'chats',
