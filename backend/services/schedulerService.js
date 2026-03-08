@@ -856,11 +856,6 @@ class SchedulerService {
                 'Read your HEARTBEAT.md workspace file and follow it exactly.',
                 'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
               ];
-              const msgs = activityHint?.recentMessages;
-              if (msgs && msgs.length > 0) {
-                lines.push('\nRecent pod chat messages:');
-                msgs.forEach((m) => lines.push(`  [${m.id || '?'}] @${m.username}: ${m.content}`));
-              }
               return lines.join('\n');
             })(),
           },
