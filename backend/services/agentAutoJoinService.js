@@ -48,6 +48,9 @@ class AgentAutoJoinService {
 
         const mergedConfig = {
           ...(sourceInstall.config || {}),
+          // Never inherit heartbeat from the source installation — auto-joined pods must not
+          // fire their own heartbeats or the agent fires once per pod instead of once globally.
+          heartbeat: { enabled: false },
           autonomy: {
             ...(sourceInstall.config?.autonomy || {}),
             autoJoined: true,

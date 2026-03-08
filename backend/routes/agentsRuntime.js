@@ -20,6 +20,7 @@ const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
 const DMService = require('../services/dmService');
+const ChatSummarizerService = require('../services/chatSummarizerService');
 
 let PGPod;
 try {
@@ -871,13 +872,19 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
         createdAt: p.createdAt,
         commentCount: allComments.length,
         humanCommentCount: humanComments.length,
-        recentComments: humanComments.slice(-5).map((c) => ({
-          commentId: c._id?.toString(),
-          author: c.userId?.username || 'unknown',
-          text: (c.text || '').slice(0, 200),
-          replyTo: c.replyTo?.toString() || null,
-          createdAt: c.createdAt,
-        })),
+        recentComments: (() => {
+          const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+          return humanComments
+            .filter((c) => c.createdAt && new Date(c.createdAt) >= cutoff)
+            .slice(-5)
+            .map((c) => ({
+              commentId: c._id?.toString(),
+              author: c.userId?.username || 'unknown',
+              text: (c.text || '').slice(0, 200),
+              replyTo: c.replyTo?.toString() || null,
+              createdAt: c.createdAt,
+            }));
+        })(),
         agentComments: agentComments.slice(-3).map((c) => ({
           commentId: c._id?.toString(),
           author: c.userId?.username || 'unknown',
@@ -1170,6 +1177,25 @@ router.post('/posts', agentRuntimeAuth, async (req, res) => {
 });
 
 /**
+ * Ensure the summarizer bot is installed (or reactivated) in a pod.
+ * Silently no-ops if already active.
+ */
+async function ensureCommonlyBotInstalled(podId, installedBy) {
+  try {
+    await AgentInstallation.install('commonly-bot', podId, {
+      version: '1.0.0',
+      config: {},
+      scopes: ['context:read', 'summaries:read'],
+      installedBy,
+      instanceId: 'default',
+      displayName: 'Commonly Summarizer',
+    });
+  } catch (err) {
+    if (!err.message?.includes('already installed')) throw err;
+  }
+}
+
+/**
  * GET /pods (agent runtime token auth)
  * List public pods the agent can discover and join.
  * Returns pods ordered by recent activity, excluding DM pods.
@@ -1185,15 +1211,43 @@ router.get('/pods', agentRuntimeAuth, async (req, res) => {
 
     const authorizedPodIds = new Set((req.agentAuthorizedPodIds || []).map((id) => id.toString()));
 
-    const result = pods.map((p) => ({
-      podId: p._id.toString(),
-      name: p.name,
-      description: p.description || null,
-      type: p.type,
-      memberCount: (p.members || []).length,
-      isMember: authorizedPodIds.has(p._id.toString()),
-      updatedAt: p.updatedAt,
-    }));
+    // Batch-fetch bot user IDs and pod summaries in parallel
+    const allMemberIds = [...new Set(
+      pods.flatMap((p) => (p.members || []).map((id) => id.toString())),
+    )];
+    const podIdStrings = pods.map((p) => p._id.toString());
+
+    const [bots, summaryMapResult] = await Promise.all([
+      allMemberIds.length > 0
+        ? User.find({ _id: { $in: allMemberIds }, isBot: true }).select('_id').lean()
+        : Promise.resolve([]),
+      ChatSummarizerService.getMultiplePodSummaries(podIdStrings).catch((summaryErr) => {
+        console.warn('[GET /pods] Failed to fetch pod summaries:', summaryErr.message);
+        return {};
+      }),
+    ]);
+    const botUserIds = new Set(bots.map((b) => b._id.toString()));
+    const summaryMap = summaryMapResult;
+
+    const result = pods.map((p) => {
+      const members = p.members || [];
+      const humanMemberCount = members.filter(
+        (id) => !botUserIds.has(id.toString()),
+      ).length;
+      const podIdStr = p._id.toString();
+      const latestSummary = summaryMap[podIdStr];
+      return {
+        podId: podIdStr,
+        name: p.name,
+        description: p.description || null,
+        latestSummary: latestSummary ? latestSummary.content : null,
+        type: p.type,
+        memberCount: members.length,
+        humanMemberCount,
+        isMember: authorizedPodIds.has(podIdStr),
+        updatedAt: p.updatedAt,
+      };
+    });
 
     return res.json({ pods: result });
   } catch (error) {
@@ -1271,6 +1325,12 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
           console.warn('[agent] auto-install on pod dedup failed:', installErr.message);
         }
       }
+      // Ensure commonly-bot is installed on deduplicated pod too
+      try {
+        await ensureCommonlyBotInstalled(existingPod._id, agentUser._id);
+      } catch (summarizerErr) {
+        console.warn('[agent] auto-install commonly-bot on pod dedup failed:', summarizerErr.message);
+      }
       return res.status(200).json(existingPod);
     }
 
@@ -1321,6 +1381,13 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
       } catch (installErr) {
         console.warn('[agent] auto-install on pod create failed:', installErr.message);
       }
+    }
+
+    // Auto-install commonly-bot (summarizer) in every new pod
+    try {
+      await ensureCommonlyBotInstalled(pod._id, agentUser._id);
+    } catch (summarizerErr) {
+      console.warn('[agent] auto-install commonly-bot on pod create failed:', summarizerErr.message);
     }
 
     return res.status(201).json(pod);
