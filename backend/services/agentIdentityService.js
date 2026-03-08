@@ -309,30 +309,34 @@ class AgentIdentityService {
         ? user.botMetadata.displayName
         : user.username;
 
+      const isBot = user.isBot === true;
+
       if (checkResult.rows.length > 0) {
         const updateQuery = `
           UPDATE users
-          SET username = $2, profile_picture = $3, updated_at = $4
+          SET username = $2, profile_picture = $3, is_bot = $4, updated_at = $5
           WHERE _id = $1
         `;
         await pool.query(updateQuery, [
           user._id.toString(),
           displayUsername,
           user.profilePicture || null,
+          isBot,
           new Date(),
         ]);
         return;
       }
 
       const insertQuery = `
-        INSERT INTO users (_id, username, profile_picture, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO users (_id, username, profile_picture, is_bot, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
       `;
 
       await pool.query(insertQuery, [
         user._id.toString(),
         displayUsername,
         user.profilePicture,
+        isBot,
         user.createdAt,
         new Date(),
       ]);
