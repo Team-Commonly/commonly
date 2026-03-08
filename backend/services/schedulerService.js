@@ -673,7 +673,6 @@ class SchedulerService {
     const messageCount = pgMsgHint.count;
     const postCount = Number(postStats?.[0]?.count || 0);
     const totalSignals = messageCount + postCount;
-    const { recentMessages } = pgMsgHint;
 
     return {
       lookbackMinutes,
@@ -684,7 +683,6 @@ class SchedulerService {
       hasRecentActivity: totalSignals > 0,
       lastMessageAt: pgMsgHint.lastAt ? new Date(pgMsgHint.lastAt).toISOString() : null,
       lastPostAt: postStats?.[0]?.lastAt ? new Date(postStats[0].lastAt).toISOString() : null,
-      recentMessages,
       generatedAt: now.toISOString(),
     };
   }
