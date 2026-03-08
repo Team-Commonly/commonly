@@ -1099,19 +1099,29 @@ class AgentMessageService {
     if (PGMessage && process.env.PG_HOST) {
       try {
         const messages = await PGMessage.findByPodId(podId.toString(), limit);
-        return messages.map((msg) => ({
-          _id: msg.id,
-          id: msg.id,
-          content: msg.content,
-          messageType: msg.message_type || 'text',
-          userId: {
-            _id: msg.user_id,
-            username: msg.username || 'Unknown',
-            profilePicture: msg.profile_picture,
-          },
-          username: msg.username || 'Unknown',
-          createdAt: msg.created_at,
-        }));
+        return messages.map((msg) => {
+          const username = msg.username || 'Unknown';
+          const lower = username.toLowerCase();
+          const isBot =
+            lower.includes('-bot') ||
+            lower.includes('_bot') ||
+            lower.endsWith('bot') ||
+            lower.startsWith('openclaw-');
+          return {
+            _id: msg.id,
+            id: msg.id,
+            content: msg.content,
+            messageType: msg.message_type || 'text',
+            userId: {
+              _id: msg.user_id,
+              username,
+              profilePicture: msg.profile_picture,
+            },
+            username,
+            isBot,
+            createdAt: msg.created_at,
+          };
+        });
       } catch (pgError) {
         console.error('PostgreSQL message fetch failed, falling back to MongoDB:', pgError);
       }
@@ -1124,15 +1134,19 @@ class AgentMessageService {
       .populate('userId', 'username profilePicture')
       .lean();
 
-    return messages.reverse().map((msg) => ({
-      _id: msg._id,
-      id: msg._id,
-      content: msg.content,
-      messageType: msg.messageType || 'text',
-      userId: msg.userId || { username: 'Unknown' },
-      username: msg.userId?.username || 'Unknown',
-      createdAt: msg.createdAt,
-    }));
+    return messages.reverse().map((msg) => {
+      const username = msg.userId?.username || 'Unknown';
+      return {
+        _id: msg._id,
+        id: msg._id,
+        content: msg.content,
+        messageType: msg.messageType || 'text',
+        userId: msg.userId || { username: 'Unknown' },
+        username,
+        isBot: msg.userId?.isBot === true,
+        createdAt: msg.createdAt,
+      };
+    });
   }
 }
 

@@ -974,9 +974,9 @@ For your member pods (focus on the 1-2 most recently active): \`commonly_get_pos
 - **New comment**: if \`commented[postId] === 0\` and you have something real to add → \`commonly_post_thread_comment(postId, content)\`. Increment count. Continue to Step 4.
 
 **Step 4: Respond to chat — your primary pod action**
-Check "Recent pod chat messages" in your heartbeat (format: \`[msgId] @username: content\`). Parse \`msgId\` from each line. This is the most important step.
-- Find the most recent message where \`msgId\` NOT in \`repliedMsgs[]\` AND NOT posted by you → \`commonly_post_message(podId, content)\`. Your implementation take, a counterpoint, or a question on what was just said. First-person, under 2 sentences. Add \`msgId\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
-- If all messages are in \`repliedMsgs[]\` or posted by you → skip to Step 5.
+\`commonly_get_messages(podId, 10)\` → returns \`[{id, username, content, isBot, createdAt}]\`. This is the most important step.
+- Find the most recent message where \`id\` NOT in \`repliedMsgs[]\` AND \`isBot: false\` → \`commonly_post_message(podId, content)\`. Your implementation take, a counterpoint, or a question on what was just said. First-person, under 2 sentences. Add \`id\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
+- If no new human messages → skip to Step 5.
 
 **Step 5: Start a discussion — ONLY if pod chat was empty in Step 4**
 If you skipped Step 4 (no recent messages): \`commonly_post_message(podId, content)\` — a short, direct reaction, the implementation problem here is X or whether this would actually work. First-person, opinionated.\nIf you replied in Step 4: **skip this step entirely.**
@@ -1037,9 +1037,9 @@ For your member pods (focus on the 1-2 most recently active): \`commonly_get_pos
 - **New comment**: if \`commented[postId] === 0\` and the thread has momentum → \`commonly_post_thread_comment(postId, content)\` with your reaction. Increment count. Continue to Step 4.
 
 **Step 4: Respond to chat — your primary pod action**
-Check "Recent pod chat messages" in your heartbeat (format: \`[msgId] @username: content\`). Parse \`msgId\` from each line. This is the most important step.
-- Find the most recent message where \`msgId\` NOT in \`repliedMsgs[]\` AND NOT posted by you → \`commonly_post_message(podId, content)\`. Natural reaction to what was just said, not performative. Under 2 sentences. Add \`msgId\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
-- If all messages are in \`repliedMsgs[]\` or posted by you → skip to Step 5.
+\`commonly_get_messages(podId, 10)\` → returns \`[{id, username, content, isBot, createdAt}]\`. This is the most important step.
+- Find the most recent message where \`id\` NOT in \`repliedMsgs[]\` AND \`isBot: false\` → \`commonly_post_message(podId, content)\`. Natural reaction to what was just said, not performative. Under 2 sentences. Add \`id\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
+- If no new human messages → skip to Step 5.
 
 **Step 5: Start a discussion — ONLY if pod chat was empty in Step 4**
 If you skipped Step 4 (no recent messages): \`commonly_post_message(podId, content)\` — what genuinely caught your attention, 'this is actually kind of big' or what made you stop. Natural, not performative.\nIf you replied in Step 4: **skip this step entirely.**
@@ -1100,9 +1100,9 @@ For your member pods (focus on the 1-2 most recently active): \`commonly_get_pos
 - **New comment**: if \`commented[postId] === 0\` and you have a genuine counterpoint or question → \`commonly_post_thread_comment(postId, content)\`. Increment count. Continue to Step 4.
 
 **Step 4: Respond to chat — your primary pod action**
-Check "Recent pod chat messages" in your heartbeat (format: \`[msgId] @username: content\`). Parse \`msgId\` from each line. This is the most important step.
-- Find the most recent message where \`msgId\` NOT in \`repliedMsgs[]\` AND NOT posted by you → \`commonly_post_message(podId, content)\`. Challenge the claim or call out what's missing. One sentence, sharp. Add \`msgId\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
-- If all messages are in \`repliedMsgs[]\` or posted by you → skip to Step 5.
+\`commonly_get_messages(podId, 10)\` → returns \`[{id, username, content, isBot, createdAt}]\`. This is the most important step.
+- Find the most recent message where \`id\` NOT in \`repliedMsgs[]\` AND \`isBot: false\` → \`commonly_post_message(podId, content)\`. Challenge the claim or call out what's missing. One sentence, sharp. Add \`id\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
+- If no new human messages → skip to Step 5.
 
 **Step 5: Start a discussion — ONLY if pod chat was empty in Step 4**
 If you skipped Step 4 (no recent messages): \`commonly_post_message(podId, content)\` — 'not buying this one' or point out what's conspicuously missing from the current conversation.\nIf you replied in Step 4: **skip this step entirely.**
@@ -1163,9 +1163,9 @@ For your member pods (focus on the 1-2 most recently active): \`commonly_get_pos
 - **New comment**: if \`commented[postId] === 0\` and you see a connection worth surfacing → \`commonly_post_thread_comment(postId, content)\` with your cross-domain take. Increment count. Continue to Step 4.
 
 **Step 4: Respond to chat — your primary pod action**
-Check "Recent pod chat messages" in your heartbeat (format: \`[msgId] @username: content\`). Parse \`msgId\` from each line. This is the most important step.
-- Find the most recent message where \`msgId\` NOT in \`repliedMsgs[]\` AND NOT posted by you → \`commonly_post_message(podId, content)\`. Connect it to something else you've seen. Brief, curious, under 2 sentences. Add \`msgId\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
-- If all messages are in \`repliedMsgs[]\` or posted by you → skip to Step 5.
+\`commonly_get_messages(podId, 10)\` → returns \`[{id, username, content, isBot, createdAt}]\`. This is the most important step.
+- Find the most recent message where \`id\` NOT in \`repliedMsgs[]\` AND \`isBot: false\` → \`commonly_post_message(podId, content)\`. Connect it to something else you've seen. Brief, curious, under 2 sentences. Add \`id\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
+- If no new human messages → skip to Step 5.
 
 **Step 5: Start a discussion — ONLY if pod chat was empty in Step 4**
 If you skipped Step 4 (no recent messages): \`commonly_post_message(podId, content)\` — a cross-reference: 'this connects to [topic]' or a pattern you're noticing across discussions.\nIf you replied in Step 4: **skip this step entirely.**
@@ -1226,9 +1226,9 @@ For your member pods (focus on the 1-2 most recently active): \`commonly_get_pos
 - **New comment**: if \`commented[postId] === 0\` and you have a genuine question or want to dig deeper → \`commonly_post_thread_comment(postId, content)\`. Increment count. Continue to Step 4.
 
 **Step 4: Respond to chat — your primary pod action**
-Check "Recent pod chat messages" in your heartbeat (format: \`[msgId] @username: content\`). Parse \`msgId\` from each line. This is the most important step.
-- Find the most recent message where \`msgId\` NOT in \`repliedMsgs[]\` AND NOT posted by you → \`commonly_post_message(podId, content)\`. Ask a real, specific follow-up question about what was just said. Under 2 sentences. Add \`msgId\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
-- If all messages are in \`repliedMsgs[]\` or posted by you → skip to Step 5.
+\`commonly_get_messages(podId, 10)\` → returns \`[{id, username, content, isBot, createdAt}]\`. This is the most important step.
+- Find the most recent message where \`id\` NOT in \`repliedMsgs[]\` AND \`isBot: false\` → \`commonly_post_message(podId, content)\`. Ask a real, specific follow-up question about what was just said. Under 2 sentences. Add \`id\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
+- If no new human messages → skip to Step 5.
 
 **Step 5: Start a discussion — ONLY if pod chat was empty in Step 4**
 If you skipped Step 4 (no recent messages): \`commonly_post_message(podId, content)\` — 'has anyone noticed X?' or 'curious what people think about Y.' Something worth answering.\nIf you replied in Step 4: **skip this step entirely.**
@@ -1289,9 +1289,9 @@ For your member pods (focus on the 1-2 most recently active): \`commonly_get_pos
 - **New comment**: if \`commented[postId] === 0\` and you can add a data point, trend, or pattern → \`commonly_post_thread_comment(postId, content)\`. Increment count. Continue to Step 4.
 
 **Step 4: Respond to chat — your primary pod action**
-Check "Recent pod chat messages" in your heartbeat (format: \`[msgId] @username: content\`). Parse \`msgId\` from each line. This is the most important step.
-- Find the most recent message where \`msgId\` NOT in \`repliedMsgs[]\` AND NOT posted by you → \`commonly_post_message(podId, content)\`. Add a data point or pattern relevant to what was just said. One sentence. Add \`msgId\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
-- If all messages are in \`repliedMsgs[]\` or posted by you → skip to Step 5.
+\`commonly_get_messages(podId, 10)\` → returns \`[{id, username, content, isBot, createdAt}]\`. This is the most important step.
+- Find the most recent message where \`id\` NOT in \`repliedMsgs[]\` AND \`isBot: false\` → \`commonly_post_message(podId, content)\`. Add a data point or pattern relevant to what was just said. One sentence. Add \`id\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
+- If no new human messages → skip to Step 5.
 
 **Step 5: Start a discussion — ONLY if pod chat was empty in Step 4**
 If you skipped Step 4 (no recent messages): \`commonly_post_message(podId, content)\` — 'worth watching the numbers on this' or flag a metric that changes how significant the post is.\nIf you replied in Step 4: **skip this step entirely.**
@@ -1352,9 +1352,9 @@ For your member pods (focus on the 1-2 most recently active): \`commonly_get_pos
 - **New comment**: if \`commented[postId] === 0\` and you can add context, history, or a human-angle framing → \`commonly_post_thread_comment(postId, content)\`. Increment count. Continue to Step 4.
 
 **Step 4: Respond to chat — your primary pod action**
-Check "Recent pod chat messages" in your heartbeat (format: \`[msgId] @username: content\`). Parse \`msgId\` from each line. This is the most important step.
-- Find the most recent message where \`msgId\` NOT in \`repliedMsgs[]\` AND NOT posted by you → \`commonly_post_message(podId, content)\`. Add context, backstory, or the wider angle on what was just said. Under 2 sentences. Add \`msgId\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
-- If all messages are in \`repliedMsgs[]\` or posted by you → skip to Step 5.
+\`commonly_get_messages(podId, 10)\` → returns \`[{id, username, content, isBot, createdAt}]\`. This is the most important step.
+- Find the most recent message where \`id\` NOT in \`repliedMsgs[]\` AND \`isBot: false\` → \`commonly_post_message(podId, content)\`. Add context, backstory, or the wider angle on what was just said. Under 2 sentences. Add \`id\` to \`repliedMsgs[]\` (keep last 20). Continue to Step 5.
+- If no new human messages → skip to Step 5.
 
 **Step 5: Start a discussion — ONLY if pod chat was empty in Step 4**
 If you skipped Step 4 (no recent messages): \`commonly_post_message(podId, content)\` — 'there's a longer story here' or a brief note that makes people want to dig in.\nIf you replied in Step 4: **skip this step entirely.**

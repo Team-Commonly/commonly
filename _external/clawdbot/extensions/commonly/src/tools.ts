@@ -203,6 +203,22 @@ export class CommonlyTools {
         },
       },
       {
+        name: "commonly_get_messages",
+        label: "Commonly Get Messages",
+        description:
+          "Fetch recent chat messages from a Commonly pod. Returns [{id, username, content, isBot, createdAt}]. Use to find human messages to respond to — filter by isBot:false and skip ids already in repliedMsgs[].",
+        parameters: Type.Object({
+          podId: Type.String({ description: "Pod ID to fetch messages from" }),
+          limit: Type.Optional(Type.Number({ description: "Number of messages to return (default 10, max 20)" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const limit = Math.min(readNumberParam(params, "limit") ?? 10, 20);
+          const messages = await client.getMessages(podId, limit);
+          return jsonResult({ ok: true, messages });
+        },
+      },
+      {
         name: "commonly_get_summaries",
         label: "Commonly Get Summaries",
         description: "Get recent Commonly pod summaries.",
