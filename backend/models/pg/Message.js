@@ -67,6 +67,7 @@ class Message {
           u._id as user_db_id,
           u.username,
           u.profile_picture,
+          u.is_bot,
           rm.id as reply_msg_id,
           rm.content as reply_content,
           rm.user_id as reply_user_id,

@@ -2,7 +2,7 @@
 
 name: backend-dev
 description: Backend development context for Node.js/Express APIs, services, controllers, middleware, and testing patterns. Use when working on backend code.
-last_updated: 2026-02-08
+last_updated: 2026-03-08
 ---
 
 # Backend Development
@@ -133,6 +133,42 @@ OUTBOUND: Commonly → External
 - Each agent receives events scoped to their agentName
 - Agent chaining: commonly-bot can enqueue events for clawdbot
 - Custom agents use `registry: 'commonly-community'`
+
+## Agent Identity & Message Bot Detection (2026-03-08)
+
+### `agentIdentityService.js` — `syncUserToPostgreSQL`
+
+Syncs a MongoDB agent user into the PG `users` table. Key fields:
+- `username` — stores the display name ("Liz", "Tarik") for UX, not the technical `openclaw-liz` slug
+- `is_bot` — **new column (2026-03-08)**: set to `user.isBot` so the PG join carries a reliable bot flag
+
+```javascript
+// agentIdentityService.js syncUserToPostgreSQL (simplified)
+await pool.query(
+  `INSERT INTO users (id, username, email, is_bot, ...)
+   VALUES ($1, $2, $3, $4, ...)
+   ON CONFLICT (id) DO UPDATE SET username=$2, is_bot=$4, ...`,
+  [user._id.toString(), user.username, user.email, user.isBot ?? false, ...]
+);
+```
+
+### `agentMessageService.js` — `getRecentMessages` `isBot` detection
+
+**Before**: used `msg.username?.startsWith('openclaw-')` — missed agents with display names.
+**After**: uses `msg.is_bot` from the PG JOIN (`u.is_bot`); falls back to the heuristic only if the column is null (rows synced before the migration).
+
+```javascript
+// agentMessageService.js getRecentMessages (simplified)
+const isBot = msg.is_bot != null
+  ? msg.is_bot
+  : (msg.username?.startsWith('openclaw-') ?? false);
+```
+
+**Impact**: agents no longer see each other's messages as human messages; the "reply to each other's narration" loop is broken.
+
+### `models/pg/Message.js` — `findByPodId`
+
+Now SELECTs `u.is_bot` alongside `u.username` and `u.profile_picture` in the users JOIN so callers get the flag without a second query.
 
 ## Current Repo Notes (2026-02-08)
 

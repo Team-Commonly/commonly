@@ -224,7 +224,7 @@ class SchedulerService {
     );
 
     const agentSessionSizeCheckJob = cron.schedule(
-      '30 * * * *',
+      '*/10 * * * *',
       async () => {
         try {
           const result = await AgentEventService.clearOversizedAgentSessions({
@@ -275,7 +275,7 @@ class SchedulerService {
     console.log(
       `- OpenClaw sessions reset every ${AgentEventService.getSessionResetIntervalHours()} hour(s)`,
     );
-    console.log('- Agent session size check runs every hour at :30 (clears if > AGENT_SESSION_MAX_SIZE_KB, default 400 KB)');
+    console.log('- Agent session size check runs every 10 minutes (clears if > AGENT_SESSION_MAX_SIZE_KB, default 400 KB)');
     console.log(
       '- Stale agent events are garbage-collected every 10 minutes',
     );
@@ -740,6 +740,8 @@ class SchedulerService {
       if (installation?.config?.heartbeat?.global === true) {
         const agentKey = `${agentName}:${instanceId}`;
         if (seenGlobalAgents.has(agentKey)) continue;
+        // Skip disabled installations without claiming the slot — let the enabled one claim it
+        if (installation?.config?.heartbeat?.enabled === false) continue;
         seenGlobalAgents.add(agentKey);
         toProcess.push({ installation, isGlobal: true });
       } else {
@@ -781,15 +783,42 @@ class SchedulerService {
       });
       const allGlobalPodIds = [...new Set(globalInstalls.map((i) => i.podId).filter(Boolean))];
       if (allGlobalPodIds.length > 0) {
+        const since = new Date(now.getTime() - hintWindowMs);
         // eslint-disable-next-line no-await-in-loop
-        const podActivity = await PGMessage.findMostRecentPodActivity(
-          allGlobalPodIds,
-          new Date(now.getTime() - hintWindowMs),
+        const [podActivity, recentPostActivity] = await Promise.all([
+          PGMessage.findMostRecentPodActivity(allGlobalPodIds, since),
+          Post.aggregate([
+            { $match: { podId: { $in: allGlobalPodIds }, createdAt: { $gte: since } } },
+            { $group: { _id: '$podId', lastAt: { $max: '$createdAt' } } },
+            { $sort: { lastAt: -1 } },
+          ]),
+        ]);
+        // Build a map of podId -> most recent post timestamp
+        const postActivityMap = new Map(
+          recentPostActivity.map((p) => [p._id.toString(), p.lastAt]),
         );
-        // For each global agent, pick the pod with the most recent message
+        // Posts get a recency boost so pods with new posts are preferred over chat-only pods
+        const POST_BOOST_MS = 3 * 60 * 60 * 1000; // 3h boost for posts
+        // For each global agent, pick pod with most recent activity (message OR post, posts boosted)
         for (const [key, podIdSet] of podsByKey) {
-          const bestPod = podActivity.find((p) => podIdSet.has(p.podId));
-          if (bestPod) globalHeartbeatPodMap.set(key, bestPod.podId);
+          let bestPodId = null;
+          let bestAt = null;
+          for (const pid of podIdSet) {
+            const msgPod = podActivity.find((p) => p.podId === pid);
+            const msgAt = msgPod ? new Date(msgPod.lastAt) : null;
+            const postRaw = postActivityMap.has(pid) ? new Date(postActivityMap.get(pid)) : null;
+            // Boost post recency so a fresh post beats a pod with only messages
+            const postAt = postRaw ? new Date(postRaw.getTime() + POST_BOOST_MS) : null;
+            const podBestAt = msgAt && postAt ? (msgAt > postAt ? msgAt : postAt) : (msgAt || postAt);
+            if (process.env.DEBUG_POD_SELECTION && (msgAt || postRaw)) {
+              console.log(`[pod-select][${key}] pod=${pid.substring(0,8)} msgAt=${msgAt?.toISOString()||'none'} postRaw=${postRaw?.toISOString()||'none'} podBestAt=${podBestAt?.toISOString()||'none'}`);
+            }
+            if (podBestAt && (!bestAt || podBestAt > bestAt)) {
+              bestAt = podBestAt;
+              bestPodId = pid;
+            }
+          }
+          if (bestPodId) globalHeartbeatPodMap.set(key, bestPodId);
         }
       }
     }
@@ -837,12 +866,12 @@ class SchedulerService {
         await AgentEventService.enqueue({
           agentName,
           instanceId,
-          podId,
+          podId: heartbeatPodId,
           type: 'heartbeat',
           payload: {
             trigger,
             generatedAt: new Date().toISOString(),
-            podId: String(podId),
+            podId: String(heartbeatPodId),
             activityHint,
             policy: {
               noFetchWhenIdle: true,
@@ -850,7 +879,7 @@ class SchedulerService {
             },
             content: (() => {
               const lines = [
-                `Scheduler heartbeat for pod ${String(podId)}.`,
+                `Scheduler heartbeat for pod ${String(heartbeatPodId)}.`,
                 'Read your HEARTBEAT.md workspace file and follow it exactly.',
                 'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
               ];
