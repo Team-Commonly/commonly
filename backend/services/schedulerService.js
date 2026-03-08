@@ -696,6 +696,7 @@ class SchedulerService {
     const recentMessages = (msgFacetResult?.[0]?.recent || [])
       .reverse()
       .map((m) => ({
+        id: m._id?.toString(),
         username: m.username || 'unknown',
         content: (m.content || '').slice(0, 120),
         createdAt: m.createdAt,
@@ -885,7 +886,7 @@ class SchedulerService {
               const msgs = activityHint?.recentMessages;
               if (msgs && msgs.length > 0) {
                 lines.push('\nRecent pod chat messages:');
-                msgs.forEach((m) => lines.push(`  @${m.username}: ${m.content}`));
+                msgs.forEach((m) => lines.push(`  [${m.id || '?'}] @${m.username}: ${m.content}`));
               }
               return lines.join('\n');
             })(),

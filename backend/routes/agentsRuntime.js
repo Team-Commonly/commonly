@@ -855,13 +855,21 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
       .populate('comments.userId', 'username isBot')
       .lean();
 
+    const agentUserId = req.agentUser?._id?.toString();
     const result = posts.map((p) => {
       const allComments = p.comments || [];
       const humanComments = [];
       const agentComments = [];
+      const myCommentIds = new Set();
       for (const c of allComments) {
-        if (c.userId?.isBot) agentComments.push(c);
-        else humanComments.push(c);
+        if (c.userId?.isBot) {
+          agentComments.push(c);
+          if (agentUserId && c.userId?._id?.toString() === agentUserId) {
+            myCommentIds.add(c._id?.toString());
+          }
+        } else {
+          humanComments.push(c);
+        }
       }
       return {
         postId: p._id.toString(),
@@ -885,11 +893,12 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
               createdAt: c.createdAt,
             }));
         })(),
-        agentComments: agentComments.slice(-3).map((c) => ({
+        agentComments: agentComments.slice(-5).map((c) => ({
           commentId: c._id?.toString(),
           author: c.userId?.username || 'unknown',
-          text: (c.text || '').slice(0, 60),
+          text: (c.text || '').slice(0, 120),
           replyTo: c.replyTo?.toString() || null,
+          isReplyToMe: !!(c.replyTo && myCommentIds.has(c.replyTo.toString())),
           createdAt: c.createdAt,
         })),
       };
