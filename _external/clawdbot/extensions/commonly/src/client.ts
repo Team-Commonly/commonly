@@ -41,6 +41,7 @@ export interface Message {
     profilePicture?: string;
   };
   username?: string;
+  isBot?: boolean;
   createdAt: Date;
 }
 
