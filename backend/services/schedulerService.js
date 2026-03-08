@@ -651,7 +651,7 @@ class SchedulerService {
     const lookbackMinutes = this.resolveHeartbeatHintWindowMinutes();
     const since = new Date(now.getTime() - (lookbackMinutes * 60 * 1000));
 
-    const [messageStats, postStats] = await Promise.all([
+    const [msgFacetResult, postStats] = await Promise.all([
       Message.aggregate([
         {
           $match: {
@@ -661,10 +661,13 @@ class SchedulerService {
           },
         },
         {
-          $group: {
-            _id: null,
-            count: { $sum: 1 },
-            lastAt: { $max: '$createdAt' },
+          $facet: {
+            stats: [{ $group: { _id: null, count: { $sum: 1 }, lastAt: { $max: '$createdAt' } } }],
+            recent: [
+              { $sort: { createdAt: -1 } },
+              { $limit: 3 },
+              { $project: { content: 1, username: 1, createdAt: 1 } },
+            ],
           },
         },
       ]),
@@ -685,9 +688,18 @@ class SchedulerService {
       ]),
     ]);
 
+    const messageStats = msgFacetResult?.[0]?.stats || [];
     const messageCount = Number(messageStats?.[0]?.count || 0);
     const postCount = Number(postStats?.[0]?.count || 0);
     const totalSignals = messageCount + postCount;
+
+    const recentMessages = (msgFacetResult?.[0]?.recent || [])
+      .reverse()
+      .map((m) => ({
+        username: m.username || 'unknown',
+        content: (m.content || '').slice(0, 120),
+        createdAt: m.createdAt,
+      }));
 
     return {
       lookbackMinutes,
@@ -698,6 +710,7 @@ class SchedulerService {
       hasRecentActivity: totalSignals > 0,
       lastMessageAt: messageStats?.[0]?.lastAt ? new Date(messageStats[0].lastAt).toISOString() : null,
       lastPostAt: postStats?.[0]?.lastAt ? new Date(postStats[0].lastAt).toISOString() : null,
+      recentMessages,
       generatedAt: now.toISOString(),
     };
   }
@@ -762,6 +775,53 @@ class SchedulerService {
       }
     }
 
+    // Batch-fetch best pod for each global agent (avoids N+1 per-agent queries)
+    const globalHeartbeatPodMap = new Map(); // agentKey -> best podId
+    const globalKeys = [...new Set(
+      toProcess
+        .filter(({ isGlobal }) => isGlobal)
+        .map(({ installation }) => {
+          const { agentName, instanceId = 'default' } = installation;
+          return `${agentName}:${instanceId}`;
+        }),
+    )];
+    if (globalKeys.length > 0) {
+      const hintWindowMs = this.resolveHeartbeatHintWindowMinutes() * 60 * 1000;
+      const orClauses = globalKeys.map((key) => {
+        const colonIdx = key.indexOf(':');
+        return {
+          agentName: key.slice(0, colonIdx),
+          instanceId: key.slice(colonIdx + 1),
+          status: 'active',
+        };
+      });
+      // eslint-disable-next-line no-await-in-loop
+      const globalInstalls = await AgentInstallation.find({
+        $or: orClauses,
+        podId: { $exists: true, $ne: null },
+      }).select('agentName instanceId podId').lean();
+      // Group podIds by agentKey
+      const podsByKey = new Map();
+      globalInstalls.forEach((inst) => {
+        const key = `${inst.agentName}:${inst.instanceId || 'default'}`;
+        if (!podsByKey.has(key)) podsByKey.set(key, new Set());
+        podsByKey.get(key).add(inst.podId.toString());
+      });
+      const allGlobalPodIds = [...new Set(globalInstalls.map((i) => i.podId).filter(Boolean))];
+      if (allGlobalPodIds.length > 0) {
+        // eslint-disable-next-line no-await-in-loop
+        const recentMsgs = await Message.find({
+          podId: { $in: allGlobalPodIds },
+          createdAt: { $gte: new Date(now.getTime() - hintWindowMs) },
+        }).sort({ createdAt: -1 }).select('podId').lean();
+        // For each global agent, pick the pod with the most recent message
+        for (const [key, podIdSet] of podsByKey) {
+          const bestMsg = recentMsgs.find((m) => podIdSet.has(m.podId.toString()));
+          if (bestMsg) globalHeartbeatPodMap.set(key, bestMsg.podId);
+        }
+      }
+    }
+
     const enqueueResults = await Promise.all(
       toProcess.map(async ({ installation, isGlobal }) => {
         const heartbeatEnabled = installation?.config?.heartbeat?.enabled;
@@ -795,7 +855,12 @@ class SchedulerService {
           }
         }
 
-        const activityHint = await this.buildHeartbeatActivityHint({ podId, now });
+        // For global agents, use pre-fetched best pod (avoids per-agent DB queries)
+        const heartbeatPodId = isGlobal
+          ? (globalHeartbeatPodMap.get(`${agentName}:${instanceId}`) || podId)
+          : podId;
+
+        const activityHint = await this.buildHeartbeatActivityHint({ podId: heartbeatPodId, now });
 
         await AgentEventService.enqueue({
           agentName,
@@ -811,11 +876,19 @@ class SchedulerService {
               noFetchWhenIdle: true,
               silentOnReadFailure: true,
             },
-            content: [
-              `Scheduler heartbeat for pod ${String(podId)}.`,
-              'Read your HEARTBEAT.md workspace file and follow it exactly.',
-              'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
-            ].join(' '),
+            content: (() => {
+              const lines = [
+                `Scheduler heartbeat for pod ${String(podId)}.`,
+                'Read your HEARTBEAT.md workspace file and follow it exactly.',
+                'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
+              ];
+              const msgs = activityHint?.recentMessages;
+              if (msgs && msgs.length > 0) {
+                lines.push('\nRecent pod chat messages:');
+                msgs.forEach((m) => lines.push(`  @${m.username}: ${m.content}`));
+              }
+              return lines.join('\n');
+            })(),
           },
         });
         return { enqueued: 1, skippedByInterval: 0 };
