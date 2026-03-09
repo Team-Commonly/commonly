@@ -228,33 +228,36 @@ const GlobalIntegrations = () => {
     }
   };
 
+  const buildModelPolicyPayload = () => {
+    const fallbackModels = Array.isArray(modelPolicy?.openclaw?.fallbackModels)
+      ? modelPolicy.openclaw.fallbackModels
+      : String(modelPolicy?.openclaw?.fallbackModels || '').split(',').map((e) => e.trim()).filter(Boolean);
+    return {
+      llmService: {
+        provider: modelPolicy?.llmService?.provider || 'auto',
+        model: modelPolicy?.llmService?.model || '',
+        openrouter: {
+          baseUrl: modelPolicy?.llmService?.openrouter?.baseUrl || '',
+          model: modelPolicy?.llmService?.openrouter?.model || '',
+        },
+      },
+      openclaw: {
+        provider: modelPolicy?.openclaw?.provider || 'google',
+        model: modelPolicy?.openclaw?.model || '',
+        fallbackModels,
+      },
+    };
+  };
+
   const handleSaveModelPolicy = async () => {
     try {
       setSaving(true);
       setError('');
       setSuccess('');
       const token = localStorage.getItem('token');
-      const fallbackModels = String(modelPolicy?.openclaw?.fallbackModels || '')
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean);
       await axios.post(
         '/api/admin/integrations/global/model-policy',
-        {
-          llmService: {
-            provider: modelPolicy?.llmService?.provider || 'auto',
-            model: modelPolicy?.llmService?.model || '',
-            openrouter: {
-              baseUrl: modelPolicy?.llmService?.openrouter?.baseUrl || '',
-              model: modelPolicy?.llmService?.openrouter?.model || '',
-            },
-          },
-          openclaw: {
-            provider: modelPolicy?.openclaw?.provider || 'google',
-            model: modelPolicy?.openclaw?.model || '',
-            fallbackModels,
-          },
-        },
+        buildModelPolicyPayload(),
         { headers: { Authorization: `Bearer ${token}` } },
       );
       setSuccess('Global model policy saved.');
@@ -273,38 +276,23 @@ const GlobalIntegrations = () => {
       setError('');
       setSuccess('');
       const token = localStorage.getItem('token');
-      const fallbackModels = String(modelPolicy?.openclaw?.fallbackModels || '')
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean);
 
       await axios.post(
         '/api/admin/integrations/global/model-policy',
-        {
-          llmService: {
-            provider: modelPolicy?.llmService?.provider || 'auto',
-            model: modelPolicy?.llmService?.model || '',
-            openrouter: {
-              baseUrl: modelPolicy?.llmService?.openrouter?.baseUrl || '',
-              model: modelPolicy?.llmService?.openrouter?.model || '',
-            },
-          },
-          openclaw: {
-            provider: modelPolicy?.openclaw?.provider || 'google',
-            model: modelPolicy?.openclaw?.model || '',
-            fallbackModels,
-          },
-        },
+        buildModelPolicyPayload(),
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      await axios.post(
+      // Fire reprovision as background task — takes ~60s for 100+ agents, don't block UI
+      axios.post(
         '/api/registry/admin/installations/reprovision-all',
         {},
         { headers: { Authorization: `Bearer ${token}` } },
-      );
+      ).catch((reprErr) => {
+        console.warn('Reprovision-all background error:', reprErr?.message);
+      });
 
-      setSuccess('Global model policy saved and reprovision-all triggered.');
+      setSuccess('Model policy saved. Agents reprovisioning in background — changes apply within 2 minutes.');
       await fetchIntegrations();
     } catch (err) {
       console.error('Failed to save/apply global model policy:', err);
