@@ -654,6 +654,7 @@ const syncOpenClawSkills = async ({
   skillNames = [],
   gateway,
   defaultCommonlySkillContent = '',
+  bundledSkills = [],
 } = {}) => {
   if (!accountId) {
     throw new Error('accountId is required');
@@ -666,6 +667,19 @@ const syncOpenClawSkills = async ({
       path: 'commonly/SKILL.md',
       content: seedCommonlySkill.endsWith('\n') ? seedCommonlySkill : `${seedCommonlySkill}\n`,
       mode: '0644',
+    });
+  }
+
+  // Seed any bundled extension skills (e.g. acp-router from acpx extension)
+  if (Array.isArray(bundledSkills)) {
+    bundledSkills.forEach(({ name, content: skillContent }) => {
+      const trimmed = String(skillContent || '').trim();
+      if (!name || !trimmed) return;
+      files.push({
+        path: `${name}/SKILL.md`,
+        content: trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`,
+        mode: '0644',
+      });
     });
   }
 
@@ -752,6 +766,16 @@ const syncOpenClawSkills = async ({
     '}',
     'NODE',
     `rm -f "${manifestPath}"`,
+    // Copy skills from enabled extension skill dirs (e.g. /app/extensions/acpx/skills/acp-router)
+    // Only copies if the extension dir exists AND the skill is not already written by the manifest.
+    'for ext_skill_dir in /app/extensions/acpx/skills/*/; do',
+    '  skill_name=$(basename "$ext_skill_dir")',
+    `  skill_target="${skillsDir}/$skill_name/SKILL.md"`,
+    '  if [ -f "${ext_skill_dir}SKILL.md" ] && [ ! -f "$skill_target" ]; then',
+    '    mkdir -p "$(dirname "$skill_target")"',
+    '    cp "${ext_skill_dir}SKILL.md" "$skill_target"',
+    '  fi',
+    'done',
     `echo "${skillsDir}"`,
   ].join('\n');
 
@@ -1135,6 +1159,21 @@ const applyOpenClawContextDefaults = (config) => {
 
 const GEMINI_FALLBACKS = ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'];
 
+const applyOpenClawAcpxPluginDefaults = (config) => {
+  config.plugins = config.plugins || {};
+  config.plugins.entries = config.plugins.entries || {};
+  if (!config.plugins.entries.acpx) {
+    config.plugins.entries.acpx = {
+      enabled: true,
+      config: {
+        permissionMode: 'approve-all',
+      },
+    };
+  } else if (config.plugins.entries.acpx.enabled === undefined) {
+    config.plugins.entries.acpx.enabled = true;
+  }
+};
+
 const applyOpenClawCodexProviderConfig = (config) => {
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
@@ -1284,6 +1323,7 @@ const provisionOpenClawAccount = async ({
   applyOpenClawWebToolDefaults(config);
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
+  applyOpenClawAcpxPluginDefaults(config);
   await applyOpenClawModelDefaults(config);
 
   applySkillEnvEntriesToConfig(config, skillEnv);
