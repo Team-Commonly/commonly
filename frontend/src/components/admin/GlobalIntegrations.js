@@ -37,6 +37,27 @@ const XIcon = () => (
   </svg>
 );
 
+const OPENCLAW_MODEL_OPTIONS = {
+  google: [
+    { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+    { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  ],
+  'openai-codex': [
+    { value: 'openai-codex/gpt-5.3-codex', label: 'GPT-5.3 Codex (OAuth required)' },
+  ],
+  openai: [
+    { value: 'openai/gpt-4o', label: 'GPT-4o' },
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+    { value: 'openai/gpt-4.1', label: 'GPT-4.1' },
+  ],
+  anthropic: [
+    { value: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
+    { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+    { value: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+  ],
+};
+
 const GlobalIntegrations = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -766,21 +787,52 @@ const GlobalIntegrations = () => {
                 helperText="Used by llmService when callers do not pass a model."
               />
             </Grid>
-            <Grid item xs={12} md={4}>
-              <TextField
-                label="OpenClaw Model"
-                value={modelPolicy.openclaw.model}
-                onChange={(event) => setModelPolicy({
-                  ...modelPolicy,
-                  openclaw: {
-                    ...modelPolicy.openclaw,
-                    model: event.target.value,
-                  },
-                })}
-                fullWidth
-                size="small"
-                helperText="Applied to gateway defaults on reprovision (overwrites global default primary)."
-              />
+            {modelPolicy.llmService.provider === 'openrouter' && (
+              <>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    label="OpenRouter Base URL"
+                    value={modelPolicy.llmService.openrouter.baseUrl}
+                    onChange={(event) => setModelPolicy({
+                      ...modelPolicy,
+                      llmService: {
+                        ...modelPolicy.llmService,
+                        openrouter: {
+                          ...modelPolicy.llmService.openrouter,
+                          baseUrl: event.target.value,
+                        },
+                      },
+                    })}
+                    fullWidth
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    label="OpenRouter Model"
+                    value={modelPolicy.llmService.openrouter.model}
+                    onChange={(event) => setModelPolicy({
+                      ...modelPolicy,
+                      llmService: {
+                        ...modelPolicy.llmService,
+                        openrouter: {
+                          ...modelPolicy.llmService.openrouter,
+                          model: event.target.value,
+                        },
+                      },
+                    })}
+                    fullWidth
+                    size="small"
+                    helperText="Example: openai/gpt-4.1-mini"
+                  />
+                </Grid>
+              </>
+            )}
+            <Grid item xs={12}>
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                OpenClaw Gateway (Agents)
+              </Typography>
             </Grid>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
@@ -789,15 +841,22 @@ const GlobalIntegrations = () => {
                   labelId="openclaw-provider-label"
                   value={modelPolicy.openclaw.provider}
                   label="OpenClaw Provider"
-                  onChange={(event) => setModelPolicy({
-                    ...modelPolicy,
-                    openclaw: {
-                      ...modelPolicy.openclaw,
-                      provider: event.target.value,
-                    },
-                  })}
+                  onChange={(event) => {
+                    const nextProvider = event.target.value;
+                    const models = OPENCLAW_MODEL_OPTIONS[nextProvider];
+                    const nextModel = models ? models[0].value : '';
+                    setModelPolicy({
+                      ...modelPolicy,
+                      openclaw: {
+                        ...modelPolicy.openclaw,
+                        provider: nextProvider,
+                        model: nextModel,
+                      },
+                    });
+                  }}
                 >
-                  <MenuItem value="google">Google</MenuItem>
+                  <MenuItem value="google">Google (Gemini)</MenuItem>
+                  <MenuItem value="openai-codex">OpenAI Codex (OAuth)</MenuItem>
                   <MenuItem value="openrouter">OpenRouter</MenuItem>
                   <MenuItem value="openai">OpenAI</MenuItem>
                   <MenuItem value="anthropic">Anthropic</MenuItem>
@@ -806,42 +865,50 @@ const GlobalIntegrations = () => {
               </FormControl>
             </Grid>
             <Grid item xs={12} md={4}>
-              <TextField
-                label="OpenRouter Base URL"
-                value={modelPolicy.llmService.openrouter.baseUrl}
-                onChange={(event) => setModelPolicy({
-                  ...modelPolicy,
-                  llmService: {
-                    ...modelPolicy.llmService,
-                    openrouter: {
-                      ...modelPolicy.llmService.openrouter,
-                      baseUrl: event.target.value,
-                    },
-                  },
-                })}
-                fullWidth
-                size="small"
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <TextField
-                label="OpenRouter Model"
-                value={modelPolicy.llmService.openrouter.model}
-                onChange={(event) => setModelPolicy({
-                  ...modelPolicy,
-                  llmService: {
-                    ...modelPolicy.llmService,
-                    openrouter: {
-                      ...modelPolicy.llmService.openrouter,
+              {OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider] ? (
+                <FormControl fullWidth size="small">
+                  <InputLabel id="openclaw-model-label">OpenClaw Model</InputLabel>
+                  <Select
+                    labelId="openclaw-model-label"
+                    value={modelPolicy.openclaw.model}
+                    label="OpenClaw Model"
+                    onChange={(event) => setModelPolicy({
+                      ...modelPolicy,
+                      openclaw: {
+                        ...modelPolicy.openclaw,
+                        model: event.target.value,
+                      },
+                    })}
+                  >
+                    {OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider].map((opt) => (
+                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <TextField
+                  label="OpenClaw Model"
+                  value={modelPolicy.openclaw.model}
+                  onChange={(event) => setModelPolicy({
+                    ...modelPolicy,
+                    openclaw: {
+                      ...modelPolicy.openclaw,
                       model: event.target.value,
                     },
-                  },
-                })}
-                fullWidth
-                size="small"
-                helperText="Example: openai/gpt-4.1-mini"
-              />
+                  })}
+                  fullWidth
+                  size="small"
+                  helperText="Applied to gateway defaults on reprovision."
+                />
+              )}
             </Grid>
+            {modelPolicy.openclaw.provider === 'openai-codex' && (
+              <Grid item xs={12}>
+                <Alert severity="info" sx={{ py: 0.5 }}>
+                  Codex requires OAuth tokens in the K8s Secret <code>api-keys</code>. See <code>docs/CODEX_OAUTH_SETUP.md</code>. Gemini fallbacks are applied automatically on reprovision.
+                </Alert>
+              </Grid>
+            )}
             <Grid item xs={12}>
               <TextField
                 label="OpenClaw Fallback Models"
