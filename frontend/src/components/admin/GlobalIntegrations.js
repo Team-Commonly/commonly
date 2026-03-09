@@ -37,25 +37,41 @@ const XIcon = () => (
   </svg>
 );
 
+const GEMINI_MODELS = [
+  { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+  { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+];
+
+const OPENAI_MODELS = [
+  { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
+  { value: 'openai/gpt-4o', label: 'GPT-4o' },
+  { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+  { value: 'openai/gpt-4.1', label: 'GPT-4.1' },
+];
+
+const ANTHROPIC_MODELS = [
+  { value: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
+  { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  { value: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+];
+
+// Backend LLM service model options (provider → model list)
+const LLM_SERVICE_MODEL_OPTIONS = {
+  gemini: GEMINI_MODELS,
+  openai: OPENAI_MODELS,
+  anthropic: ANTHROPIC_MODELS,
+};
+
+// OpenClaw gateway model options (provider → model list)
 const OPENCLAW_MODEL_OPTIONS = {
-  google: [
-    { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-    { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-  ],
+  google: GEMINI_MODELS,
   'openai-codex': [
-    { value: 'openai-codex/gpt-5.3-codex', label: 'GPT-5.3 Codex (OAuth required)' },
+    { value: 'openai-codex/gpt-5.4', label: 'GPT-5.4 (OAuth)' },
+    { value: 'openai-codex/gpt-5.3-codex', label: 'GPT-5.3 Codex (OAuth, legacy)' },
   ],
-  openai: [
-    { value: 'openai/gpt-4o', label: 'GPT-4o' },
-    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'openai/gpt-4.1', label: 'GPT-4.1' },
-  ],
-  anthropic: [
-    { value: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
-    { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-    { value: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-  ],
+  openai: OPENAI_MODELS,
+  anthropic: ANTHROPIC_MODELS,
 };
 
 const GlobalIntegrations = () => {
@@ -746,9 +762,14 @@ const GlobalIntegrations = () => {
             Global Model Policy
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Set global defaults for backend LLM routing and OpenClaw gateway model defaults.
+            Set global defaults for backend LLM routing and OpenClaw gateway model defaults. OpenClaw model applies to <strong>all agents</strong> — there is one shared gateway.
           </Typography>
           <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                Backend LLM Service
+              </Typography>
+            </Grid>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
                 <InputLabel id="llm-provider-label">Backend LLM Provider</InputLabel>
@@ -756,36 +777,60 @@ const GlobalIntegrations = () => {
                   labelId="llm-provider-label"
                   value={modelPolicy.llmService.provider}
                   label="Backend LLM Provider"
-                  onChange={(event) => setModelPolicy({
-                    ...modelPolicy,
-                    llmService: {
-                      ...modelPolicy.llmService,
-                      provider: event.target.value,
-                    },
-                  })}
+                  onChange={(event) => {
+                    const nextProvider = event.target.value;
+                    const models = LLM_SERVICE_MODEL_OPTIONS[nextProvider];
+                    const nextModel = models ? models[0].value : modelPolicy.llmService.model;
+                    setModelPolicy({
+                      ...modelPolicy,
+                      llmService: {
+                        ...modelPolicy.llmService,
+                        provider: nextProvider,
+                        model: nextModel,
+                      },
+                    });
+                  }}
                 >
                   <MenuItem value="auto">Auto (LiteLLM then Gemini)</MenuItem>
-                  <MenuItem value="gemini">Gemini only</MenuItem>
-                  <MenuItem value="litellm">LiteLLM preferred</MenuItem>
-                  <MenuItem value="openrouter">OpenRouter preferred</MenuItem>
+                  <MenuItem value="gemini">Gemini</MenuItem>
+                  <MenuItem value="openai">OpenAI</MenuItem>
+                  <MenuItem value="anthropic">Anthropic</MenuItem>
+                  <MenuItem value="litellm">LiteLLM</MenuItem>
+                  <MenuItem value="openrouter">OpenRouter</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
             <Grid item xs={12} md={4}>
-              <TextField
-                label="Backend Model"
-                value={modelPolicy.llmService.model}
-                onChange={(event) => setModelPolicy({
-                  ...modelPolicy,
-                  llmService: {
-                    ...modelPolicy.llmService,
-                    model: event.target.value,
-                  },
-                })}
-                fullWidth
-                size="small"
-                helperText="Used by llmService when callers do not pass a model."
-              />
+              {LLM_SERVICE_MODEL_OPTIONS[modelPolicy.llmService.provider] ? (
+                <FormControl fullWidth size="small">
+                  <InputLabel id="llm-model-label">Backend Model</InputLabel>
+                  <Select
+                    labelId="llm-model-label"
+                    value={modelPolicy.llmService.model}
+                    label="Backend Model"
+                    onChange={(event) => setModelPolicy({
+                      ...modelPolicy,
+                      llmService: { ...modelPolicy.llmService, model: event.target.value },
+                    })}
+                  >
+                    {LLM_SERVICE_MODEL_OPTIONS[modelPolicy.llmService.provider].map((opt) => (
+                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <TextField
+                  label="Backend Model"
+                  value={modelPolicy.llmService.model}
+                  onChange={(event) => setModelPolicy({
+                    ...modelPolicy,
+                    llmService: { ...modelPolicy.llmService, model: event.target.value },
+                  })}
+                  fullWidth
+                  size="small"
+                  helperText="Used by llmService when callers do not pass a model."
+                />
+              )}
             </Grid>
             {modelPolicy.llmService.provider === 'openrouter' && (
               <>
