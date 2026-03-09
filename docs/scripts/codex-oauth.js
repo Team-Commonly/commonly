@@ -55,6 +55,20 @@ blocker.listen(1455, '127.0.0.1', async () => {
 
     console.log(`\nDone! Codex OAuth tokens saved to ${written} agent(s).`);
     console.log('Expires:', new Date(creds.expires).toISOString());
+
+    // Print kubectl command to persist tokens to K8s Secret so they survive
+    // PVC deletion and seed new agents via the init container
+    console.log('\n=== IMPORTANT: Run this command locally to make tokens permanent ===\n');
+    console.log(`kubectl create secret generic api-keys \\`);
+    console.log(`  --from-literal=openai-codex-access-token='${creds.access}' \\`);
+    console.log(`  --from-literal=openai-codex-refresh-token='${creds.refresh}' \\`);
+    console.log(`  --from-literal=openai-codex-expires-at='${creds.expires}' \\`);
+    console.log(`  -n commonly-dev --dry-run=client -o yaml | kubectl apply -f -`);
+    console.log('\n====================================================================\n');
+    console.log('This stores tokens in the K8s Secret so:');
+    console.log('  - New agents get Codex tokens automatically via the init container');
+    console.log('  - Tokens survive PVC deletion / full redeployment');
+
     rl.close();
   } catch (err) {
     blocker.close();
