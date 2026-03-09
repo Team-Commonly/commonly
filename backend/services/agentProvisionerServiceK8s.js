@@ -1118,6 +1118,33 @@ const applyOpenClawContextDefaults = (config) => {
   }
 };
 
+const GEMINI_FALLBACKS = ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'];
+
+const applyOpenClawCodexProviderConfig = (config) => {
+  config.models = config.models || {};
+  config.models.providers = config.models.providers || {};
+  if (!config.models.providers['openai-codex']) {
+    config.models.providers['openai-codex'] = {
+      baseUrl: 'https://chatgpt.com/backend-api',
+      api: 'openai-codex-responses',
+      models: [{ id: 'gpt-5.3-codex', name: 'gpt-5.3-codex' }],
+    };
+  }
+  // Register the OAuth profile so the gateway knows to use OAuth for openai-codex
+  config.auth = config.auth || {};
+  config.auth.profiles = config.auth.profiles || {};
+  config.auth.order = config.auth.order || {};
+  if (!config.auth.profiles['openai-codex:codex-cli']) {
+    config.auth.profiles['openai-codex:codex-cli'] = {
+      provider: 'openai-codex',
+      mode: 'oauth',
+    };
+  }
+  if (!config.auth.order['openai-codex']) {
+    config.auth.order['openai-codex'] = ['openai-codex:codex-cli'];
+  }
+};
+
 const applyOpenClawModelDefaults = async (config) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
@@ -1146,11 +1173,20 @@ const applyOpenClawModelDefaults = async (config) => {
   } else if (!config.agents.defaults.model.primary) {
     config.agents.defaults.model.primary = defaultPrimary;
   }
+  const primary = config.agents.defaults.model.primary || '';
+  const isCodexPrimary = primary.startsWith('openai-codex/');
+  if (isCodexPrimary) {
+    applyOpenClawCodexProviderConfig(config);
+  }
   const existingFallbacks = Array.isArray(config.agents.defaults.model.fallbacks)
     ? config.agents.defaults.model.fallbacks
     : [];
+  // Always include Gemini fallbacks so agents can fall back if Codex OAuth fails
+  const baseFallbacks = isCodexPrimary
+    ? [...GEMINI_FALLBACKS, ...defaultFallbacks]
+    : defaultFallbacks;
   const mergedFallbacks = [
-    ...defaultFallbacks,
+    ...baseFallbacks,
     ...existingFallbacks,
   ].filter(Boolean);
   config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));

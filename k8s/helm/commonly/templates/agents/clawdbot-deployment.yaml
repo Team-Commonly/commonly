@@ -54,6 +54,9 @@ spec:
           const openrouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
           const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
           const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
+          const codexAccess = (process.env.OPENAI_CODEX_ACCESS_TOKEN || '').trim();
+          const codexRefresh = (process.env.OPENAI_CODEX_REFRESH_TOKEN || '').trim();
+          const codexExpires = parseInt(process.env.OPENAI_CODEX_EXPIRES_AT || '0', 10);
           if (!fs.existsSync(configPath)) {
             console.log('[auth-seed] missing config:', configPath);
             process.exit(0);
@@ -102,6 +105,15 @@ spec:
             if (openaiKey && !store.profiles['openai:default']) {
               store.profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
             }
+            if (codexAccess && codexRefresh && !store.profiles['openai-codex:codex-cli']) {
+              store.profiles['openai-codex:codex-cli'] = {
+                type: 'oauth',
+                provider: 'openai-codex',
+                access: codexAccess,
+                refresh: codexRefresh,
+                expires: codexExpires || (Date.now() + 3600000),
+              };
+            }
             fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
             console.log('[auth-seed] wrote:', authPath, hasCustomProfiles ? 'custom profiles' : 'default keys');
           });
@@ -139,6 +151,24 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openai-api-key
+              optional: true
+        - name: OPENAI_CODEX_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token
+              optional: true
+        - name: OPENAI_CODEX_REFRESH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-refresh-token
+              optional: true
+        - name: OPENAI_CODEX_EXPIRES_AT
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-expires-at
               optional: true
         volumeMounts:
         - name: clawdbot-config
