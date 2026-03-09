@@ -36,7 +36,7 @@ const normalizeProvider = (value) => {
 
 const normalizeOpenClawProvider = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
-  if (['google', 'openrouter', 'openai', 'anthropic', 'custom'].includes(normalized)) {
+  if (['google', 'openrouter', 'openai', 'anthropic', 'openai-codex', 'custom'].includes(normalized)) {
     return normalized;
   }
   return DEFAULT_CONFIG.openclaw.provider;
@@ -57,6 +57,10 @@ const normalizeOpenClawModel = ({ provider, model, fallback }) => {
       return `openrouter/${resolved.slice('openrouter:'.length)}`;
     }
     return `openrouter/${resolved}`;
+  }
+  if (provider === 'openai-codex') {
+    if (resolved.startsWith('openai-codex/')) return resolved;
+    return `openai-codex/${resolved}`;
   }
   if (resolved.includes('/')) return resolved;
   return `${provider}/${resolved}`;

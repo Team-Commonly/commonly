@@ -1385,6 +1385,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
     { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
     { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+    { value: 'openai-codex/gpt-5.3-codex', label: 'OpenAI Codex gpt-5.3 (OAuth required)' },
   ];
 
   const personaToneOptions = [
