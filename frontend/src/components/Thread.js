@@ -16,6 +16,7 @@ import BookmarkIcon from '@mui/icons-material/Bookmark';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EmojiPicker from 'emoji-picker-react';
 import { AgentAvatar } from './common/AgentIndicator';
+import MarkdownContent from './common/MarkdownContent';
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { normalizeUploadUrl } from '../utils/apiBaseUrl';
 import { useAppContext } from '../context/AppContext';
@@ -851,25 +852,14 @@ const Thread = () => {
                                     )}
                                 </div>
                             </div>
-                            <Typography variant="body2" className="comment-body">
-                        {comment.text.split(/(#\w+)/g).map((part, index) => {
-                            if (part.startsWith('#')) {
-                                return (
-                                    <Typography
-                                        key={index}
-                                        component="span"
-                                        color="primary"
-                                        sx={{ fontWeight: 'bold' }}
-                                        onClick={() => navigate(`/feed?q=${part.substring(1)}`)}
-                                        className="hashtag"
-                                    >
-                                        {part}
-                                    </Typography>
-                                );
-                            }
-                            return part;
-                        })}
-                            </Typography>
+                            <Box className="comment-body">
+                                <MarkdownContent
+                                    variant="comment"
+                                    onHashtagClick={(tag) => navigate(`/feed?q=${tag}`)}
+                                >
+                                    {comment.text}
+                                </MarkdownContent>
+                            </Box>
                         </div>
                     </div>
                 </Paper>
