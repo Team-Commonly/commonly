@@ -28,7 +28,7 @@ let cachedAt = 0;
 
 const normalizeProvider = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
-  if (['auto', 'gemini', 'litellm', 'openrouter'].includes(normalized)) {
+  if (['auto', 'gemini', 'litellm', 'openrouter', 'openai', 'anthropic'].includes(normalized)) {
     return normalized;
   }
   return DEFAULT_CONFIG.llmService.provider;
