@@ -299,6 +299,21 @@ const readOpenClawHeartbeatFile = async (accountId, { gateway } = {}) => {
   }
 };
 
+const readOpenClawIdentityFile = async (accountId, { gateway } = {}) => {
+  try {
+    const podName = await resolveGatewayPodNameWithRetry(gateway);
+    const identityPath = `/workspace/${accountId}/IDENTITY.md`;
+    const result = await execInPod({
+      podName,
+      containerName: 'clawdbot-gateway',
+      command: ['sh', '-lc', `[ -f "${identityPath}" ] && cat "${identityPath}" || echo ""`],
+    });
+    return result.stdout || '';
+  } catch {
+    return '';
+  }
+};
+
 const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway, customContent, forceOverwrite } = {}) => {
   if (!heartbeat || heartbeat.enabled === false) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
@@ -2014,6 +2029,7 @@ module.exports = {
   resolveOpenClawAccountId,
   writeOpenClawHeartbeatFile,
   readOpenClawHeartbeatFile,
+  readOpenClawIdentityFile,
   writeWorkspaceIdentityFile,
   ensureWorkspaceIdentityFile,
   ensureHeartbeatTemplate,
