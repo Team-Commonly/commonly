@@ -37,6 +37,7 @@ const {
   installOpenClawPlugin,
   writeOpenClawHeartbeatFile,
   readOpenClawHeartbeatFile,
+  readOpenClawIdentityFile,
   writeWorkspaceIdentityFile,
   ensureWorkspaceIdentityFile,
   syncOpenClawSkills,
@@ -4762,6 +4763,85 @@ router.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) =
   } catch (error) {
     console.error('Error updating heartbeat file:', error);
     return res.status(500).json({ error: 'Failed to update heartbeat file' });
+  }
+});
+
+/**
+ * GET /api/registry/pods/:podId/agents/:name/identity-file
+ * Read IDENTITY.md from agent workspace
+ */
+router.get('/pods/:podId/agents/:name/identity-file', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { instanceId } = req.query;
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+    if (!membership && !isCreator) return res.status(403).json({ error: 'Access denied' });
+
+    const resolved = await resolveInstallation({ agentName: name, podId, instanceId });
+    if (!resolved.installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
+
+    const accountId = normalizeInstanceId(resolved.instanceId);
+
+    let content = '';
+    try {
+      content = await readOpenClawIdentityFile(accountId);
+    } catch (_) { /* fall through */ }
+
+    return res.json({ content, accountId });
+  } catch (error) {
+    console.error('Error reading identity file:', error);
+    return res.status(500).json({ error: 'Failed to read identity file' });
+  }
+});
+
+/**
+ * POST /api/registry/pods/:podId/agents/:name/identity-file
+ * Write IDENTITY.md to agent workspace
+ */
+router.post('/pods/:podId/agents/:name/identity-file', auth, async (req, res) => {
+  try {
+    const { podId, name } = req.params;
+    const { instanceId, content } = req.body;
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (name.toLowerCase() !== 'openclaw') {
+      return res.status(400).json({ error: 'Identity file updates are only supported for OpenClaw agents.' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+    if (!membership && !isCreator) return res.status(403).json({ error: 'Access denied' });
+
+    const resolved = await resolveInstallation({ agentName: name, podId, instanceId });
+    if (!resolved.installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
+
+    const accountId = normalizeInstanceId(resolved.instanceId);
+    const normalized = String(content || '').trim();
+    const filePath = await writeWorkspaceIdentityFile(accountId, normalized);
+
+    return res.json({ success: true, path: filePath });
+  } catch (error) {
+    console.error('Error updating identity file:', error);
+    return res.status(500).json({ error: 'Failed to update identity file' });
   }
 });
 
