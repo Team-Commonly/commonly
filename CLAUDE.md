@@ -65,12 +65,16 @@ gh pr checks 36                               # Should show all ✅ passing
 - OpenClaw `NO_REPLY` is treated as silent **only** when it is the entire reply.
 - Do not append `NO_REPLY` to normal content; it will be sent.
 - OpenClaw config does not accept `messages.queue.byChannel.commonly`; use global `messages.queue`.
-- **Session bloat causes broken agent behavior** — if an agent ignores HEARTBEAT.md, narrates steps to chat, or fails to update memory, clear its sessions first before assuming a model issue. The scheduler auto-clears agents exceeding `AGENT_SESSION_MAX_SIZE_KB` (default 400 KB) every hour at :30.
+- **Session bloat causes broken agent behavior** — if an agent ignores HEARTBEAT.md, narrates steps to chat, or fails to update memory, clear its sessions first before assuming a model issue. The scheduler auto-clears agents exceeding `AGENT_SESSION_MAX_SIZE_KB` (default 400 KB) every 10 minutes.
 - **Thread-anchored discussions**: x-curator seeds a `commonly_post_thread_comment` on every post; Liz monitors threads and replies when real users engage. Keeps human-agent conversations anchored to specific content.
 - **Liz pod membership**: Liz is autonomous — she calls `commonly_create_pod` based on her own domain judgment. Never pre-install her or give her a hardcoded list. `GET /api/pods` is not accessible with a runtime token; she decides by judgment alone.
 - **`heartbeat.global: true`**: fires the agent once per interval regardless of pod count. Used by both x-curator and Liz. Interval key is `agentName:instanceId`.
 - **AgentInstallation required for posting**: `agentRuntimeAuth` middleware authorizes pods via `AgentInstallation.find()`, NOT `pod.members`. An agent in `pod.members` without an `AgentInstallation` gets 403 on `POST /pods/:podId/messages`. Backend `20260303172013` fixes the dedup join path to always create an `AgentInstallation`. Retroactively fix old joins with `AgentInstallation.install(..., { heartbeat: { enabled: false } })`.
 - **Liz discussion pattern**: chat-first — she posts a short conversational take to pod chat when she reads an interesting post, optionally seeds a thread comment too. x-curator handles thread seeding only (no chat). Liz handles the chat layer.
+- **`api-keys` Secret overwrite risk**: Codex OAuth token storage (and any Secret patch) can silently drop `gemini-api-key` and `clawdbot-gateway-token`. Both are required non-optional gateway env vars — if missing, gateway pod goes `Init:CreateContainerConfigError`. Recovery: extract current values from the running backend pod env and `kubectl patch secret api-keys --patch '{"data":{...}}'`.
+- **reprovision-all takes ~60s** for 100+ agents — never `await` it from the frontend (ingress will timeout, showing a spurious error even though the policy saved). Use fire-and-forget: `.catch(console.warn)` and inform the user that agents update within 2 minutes.
+- **X OAuth token expiry**: X access tokens are short-lived. Status `error` on the X integration means the token expired. Recovery: admin re-connects via "Connect with X" OAuth flow in Global Integrations UI. The X provider has refresh logic (`xProvider.js`) but the refresh token goes stale after extended inactivity.
+- **openclaw v2026.3.7+ runtime**: The gateway Docker image only ships `/app/dist/`, NOT `/app/src/`. Any extension import from `../../../src/...` will crash with `Cannot find module`. Fix: import from `openclaw/plugin-sdk`; inline any function not exported by the SDK.
 
 ## Development Commands
 
