@@ -5,30 +5,45 @@ Tokens are stored on the PVC and auto-refresh — this only needs to be done onc
 
 ## Steps
 
-### 1. Open a shell into the gateway pod
+### 1. Get the current gateway pod name
 
 ```bash
-kubectl exec -it -n commonly-dev clawdbot-gateway-6d79fc9d4d-r562x -- sh
+kubectl get pods -n commonly-dev -l app=clawdbot-gateway --no-headers
 ```
 
-### 2. Run the login command
+### 2. Copy the OAuth helper script to the pod
+
+> Note: `openclaw models auth login --provider openai-codex` requires a provider plugin
+> that is not bundled in the gateway image. Use this script instead — it calls the
+> OAuth library directly.
 
 ```bash
-node dist/index.js models auth login --provider openai-codex
+curl -o /tmp/codex-oauth.js https://raw.githubusercontent.com/Team-Commonly/commonly/v1.0.x/docs/scripts/codex-oauth.js
+kubectl cp /tmp/codex-oauth.js commonly-dev/<pod-name>:/tmp/codex-oauth.js
 ```
 
-The container is headless (no display), so it will automatically enter VPS/remote mode:
+Or write it inline — the script is at `docs/scripts/codex-oauth.js` in this repo.
 
-```
-You are running in a remote/VPS environment.
-A URL will be shown for you to open in your LOCAL browser.
-After signing in, paste the redirect URL back here.
+### 3. Run the script interactively
 
-Open this URL in your LOCAL browser:
-https://auth.openai.com/oauth/authorize?client_id=app_EMo...
+```bash
+kubectl exec -it -n commonly-dev <pod-name> -- node /tmp/codex-oauth.js
 ```
 
-### 3. Open the URL in your local browser
+It will print the auth URL:
+
+```
+=== Open this URL in your LOCAL browser ===
+
+https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMo...
+
+===========================================
+
+Paste the redirect URL (http://localhost:1455/auth/callback?...)
+>
+```
+
+### 4. Open the URL in your local browser
 
 Sign in with your OpenAI account. After sign-in, the browser will redirect to:
 
@@ -38,12 +53,12 @@ http://localhost:1455/auth/callback?code=XXX&state=YYY
 
 This page will **fail to load** — that is expected. Nothing needs to be running on port 1455.
 
-### 4. Copy the full URL from the browser address bar
+### 5. Copy the full URL from the browser address bar
 
 Copy the entire `http://localhost:1455/auth/callback?code=...&state=...` URL
 and paste it back into the terminal when prompted.
 
-### 5. Verify tokens were written
+### 6. Verify tokens were written
 
 ```bash
 cat /state/agents/*/agent/auth-profiles.json | python3 -c "
