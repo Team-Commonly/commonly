@@ -1174,7 +1174,7 @@ const applyOpenClawAcpxPluginDefaults = (config) => {
   }
 };
 
-const applyOpenClawCodexProviderConfig = (config) => {
+const applyOpenClawCodexProviderConfig = async (config) => {
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
   if (!config.models.providers['openai-codex']) {
@@ -1184,18 +1184,77 @@ const applyOpenClawCodexProviderConfig = (config) => {
       models: [{ id: 'gpt-5.3-codex', name: 'gpt-5.3-codex' }],
     };
   }
-  // Register the OAuth profile so the gateway knows to use OAuth for openai-codex
   config.auth = config.auth || {};
   config.auth.profiles = config.auth.profiles || {};
   config.auth.order = config.auth.order || {};
-  if (!config.auth.profiles['openai-codex:codex-cli']) {
-    config.auth.profiles['openai-codex:codex-cli'] = {
-      provider: 'openai-codex',
-      mode: 'oauth',
-    };
+
+  // moltbot.json schema only accepts mode (not type) and no actual token fields.
+  // The actual OAuth token is injected into per-agent auth-profiles.json separately
+  // via injectCodexTokenToAgentAuthProfiles() below.
+  const profileId = 'openai-codex:default';
+  delete config.auth.profiles['openai-codex:codex-cli'];
+  if (!config.auth.profiles[profileId]) {
+    config.auth.profiles[profileId] = { provider: 'openai-codex', mode: 'oauth' };
   }
-  if (!config.auth.order['openai-codex']) {
-    config.auth.order['openai-codex'] = ['openai-codex:codex-cli'];
+  config.auth.order['openai-codex'] = [profileId];
+
+  // Read the actual OAuth token for return (used by caller to inject into auth-profiles.json)
+  try {
+    const secretResponse = await k8sApi.readNamespacedSecret('api-keys', NAMESPACE);
+    const secretData = secretResponse.body.data || {};
+    const decode = (key) => (secretData[key] ? Buffer.from(secretData[key], 'base64').toString('utf8') : null);
+    const access = decode('openai-codex-access-token');
+    const refresh = decode('openai-codex-refresh-token');
+    const expiresAt = decode('openai-codex-expires-at');
+    if (access) {
+      return {
+        type: 'oauth',
+        provider: 'openai-codex',
+        access,
+        ...(refresh && { refresh }),
+        ...(expiresAt && { expires: Number(expiresAt) }),
+      };
+    }
+  } catch (_err) {
+    // Not in k8s mode or secret unavailable
+  }
+  return null;
+};
+
+const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, credential) => {
+  if (!credential) return;
+  const profileId = 'openai-codex:default';
+  const credJson = JSON.stringify(credential).replace(/'/g, "'\\''");
+  const script = [
+    `const fs = require('fs');`,
+    `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
+    `try {`,
+    `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
+    `  store.profiles['${profileId}'] = ${credJson};`,
+    `  delete store.profiles['openai-codex:codex-cli'];`,
+    `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
+    `  process.stdout.write('ok');`,
+    `} catch(e) { process.stdout.write('skip:' + e.message); }`,
+  ].join(' ');
+  try {
+    await new Promise((resolve, reject) => {
+      k8sExec.exec(
+        NAMESPACE,
+        deploymentName,
+        'clawdbot-gateway',
+        ['node', '-e', script],
+        null,
+        process.stderr,
+        process.stdin,
+        false,
+        (status) => {
+          if (status.status === 'Success') resolve();
+          else reject(new Error(status.message || 'exec failed'));
+        },
+      );
+    });
+  } catch (err) {
+    console.warn(`[k8s-provisioner] codex token inject skipped for ${agentId}: ${err.message}`);
   }
 };
 
@@ -1229,8 +1288,9 @@ const applyOpenClawModelDefaults = async (config) => {
   }
   const primary = config.agents.defaults.model.primary || '';
   const isCodexPrimary = primary.startsWith('openai-codex/');
+  let codexCredential = null;
   if (isCodexPrimary) {
-    applyOpenClawCodexProviderConfig(config);
+    codexCredential = await applyOpenClawCodexProviderConfig(config);
   }
   const existingFallbacks = Array.isArray(config.agents.defaults.model.fallbacks)
     ? config.agents.defaults.model.fallbacks
@@ -1244,6 +1304,7 @@ const applyOpenClawModelDefaults = async (config) => {
     ...existingFallbacks,
   ].filter(Boolean);
   config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
+  return codexCredential;
 };
 
 /**
@@ -1324,8 +1385,9 @@ const provisionOpenClawAccount = async ({
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
   applyOpenClawAcpxPluginDefaults(config);
-  await applyOpenClawModelDefaults(config);
+  const codexCredential = await applyOpenClawModelDefaults(config);
 
+  await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredential);
   applySkillEnvEntriesToConfig(config, skillEnv);
 
   // Update agents list
