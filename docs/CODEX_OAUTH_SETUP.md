@@ -1,7 +1,8 @@
 # OpenAI Codex OAuth Setup
 
 One-time setup to authenticate the gateway with OpenAI Codex via OAuth.
-Tokens are stored on the PVC and auto-refresh — this only needs to be done once per cluster.
+Tokens are persisted in the K8s Secret and auto-refresh — after completing these steps
+once, all existing and future agents get Codex automatically.
 
 ## Steps
 
@@ -14,15 +15,11 @@ kubectl get pods -n commonly-dev -l app=clawdbot-gateway --no-headers
 ### 2. Copy the OAuth helper script to the pod
 
 > Note: `openclaw models auth login --provider openai-codex` requires a provider plugin
-> that is not bundled in the gateway image. Use this script instead — it calls the
-> OAuth library directly.
+> not bundled in the gateway image. Use this script instead — it calls the OAuth library directly.
 
 ```bash
-curl -o /tmp/codex-oauth.js https://raw.githubusercontent.com/Team-Commonly/commonly/v1.0.x/docs/scripts/codex-oauth.js
-kubectl cp /tmp/codex-oauth.js commonly-dev/<pod-name>:/tmp/codex-oauth.js
+kubectl cp docs/scripts/codex-oauth.js commonly-dev/<pod-name>:/tmp/codex-oauth.js
 ```
-
-Or write it inline — the script is at `docs/scripts/codex-oauth.js` in this repo.
 
 ### 3. Run the script interactively
 
@@ -53,62 +50,85 @@ http://localhost:1455/auth/callback?code=XXX&state=YYY
 
 This page will **fail to load** — that is expected. Nothing needs to be running on port 1455.
 
-### 5. Copy the full URL from the browser address bar
+### 5. Paste the redirect URL
 
-Copy the entire `http://localhost:1455/auth/callback?code=...&state=...` URL
-and paste it back into the terminal when prompted.
+Copy the entire `http://localhost:1455/auth/callback?code=...&state=...` URL from the
+browser address bar and paste it back into the terminal when prompted.
 
-### 6. Verify tokens were written
+The script writes tokens to all existing agent `auth-profiles.json` files on the PVC,
+then prints a `kubectl` command.
+
+### 6. Run the printed kubectl command locally
+
+The script outputs a command like:
 
 ```bash
-cat /state/agents/*/agent/auth-profiles.json | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-for k, v in d.get('profiles', {}).items():
-    print(k, v.get('type'), v.get('provider'))
-"
+kubectl create secret generic api-keys \
+  --from-literal=openai-codex-access-token='<access>' \
+  --from-literal=openai-codex-refresh-token='<refresh>' \
+  --from-literal=openai-codex-expires-at='<epoch_ms>' \
+  -n commonly-dev --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-You should see a line like:
-```
-openai-codex:codex-cli  oauth  openai-codex
-```
+**Run this on your local machine.** This persists tokens in the K8s Secret so that:
+- New agents get Codex tokens automatically via the init container
+- Tokens survive PVC deletion or full cluster redeployment
 
-### 6. Select Codex as the agent model
+### 7. Select Codex as the agent model
 
 In the Agents Hub UI, open any agent's config dialog, set the model to:
-**OpenAI Codex gpt-5.3 (OAuth required)**
+**OpenAI Codex gpt-5.3 (OAuth required)** → save.
 
-Then save. The next reprovision will write the `openai-codex` provider config
-and `auth.profiles` OAuth entry into `moltbot.json`.
-
-Gemini models are automatically kept as fallbacks:
+The next reprovision writes the `openai-codex` provider config and `auth.profiles`
+OAuth entry into `moltbot.json`. Gemini models are kept as automatic fallbacks:
 `gemini-2.5-flash → gemini-2.5-flash-lite → gemini-2.0-flash`
+
+---
+
+## How Persistence Works
+
+```
+OAuth flow (one-time)
+  → tokens written to /state/agents/*/agent/auth-profiles.json (PVC)
+  → tokens saved to K8s Secret api-keys (openai-codex-access-token etc.)
+
+Pod restart / new deployment
+  → init container runs
+  → reads tokens from K8s Secret
+  → upserts openai-codex:codex-cli profile into each auth-profiles.json
+    (only overwrites if K8s secret has newer expiry than what's on disk)
+
+New agent provisioned
+  → init container creates fresh auth-profiles.json
+  → seeds Codex OAuth profile from K8s Secret automatically
+
+Live token refresh (ongoing, automatic)
+  → gateway checks expires before each model call
+  → if expired: calls auth.openai.com with refresh_token → new tokens
+  → written back to auth-profiles.json on PVC under file lock
+  → K8s Secret stays as a seed/fallback (may lag behind live-refreshed tokens)
+```
 
 ---
 
 ## Token Refresh
 
-Refresh is fully automatic — no sidecar or cron job needed.
+Fully automatic — no sidecar or cron job needed.
 
-- The gateway checks the `expires` timestamp before each model call
-- If expired, it calls `https://auth.openai.com/oauth/token` with `grant_type=refresh_token`
-- Updated tokens are written back to `auth-profiles.json` on the PVC under a file lock
-- Tokens survive pod restarts as long as the PVC is intact
+- Gateway checks `expires` timestamp before each model call
+- If expired: calls `https://auth.openai.com/oauth/token` with `grant_type=refresh_token`
+- Updated tokens written back to `auth-profiles.json` on PVC under file lock
 
-The only way tokens become permanently invalid:
-- PVC is deleted (full cluster teardown)
-- Refresh token expires due to >30–90 days of gateway inactivity
+Tokens become invalid only if:
+- Refresh token expires from **>30–90 days of gateway inactivity**
+- In that case: re-run this setup from Step 1
 
 ---
 
-## Re-running After Pod Change
+## Re-running After Cluster Teardown / PVC Loss
 
-The pod name changes on redeploy. Get the current pod name first:
+If the PVC is lost but the K8s Secret still exists, just restart the gateway —
+the init container re-seeds all agent profiles from the K8s Secret automatically.
+No OAuth browser flow needed.
 
-```bash
-kubectl get pods -n commonly-dev -l app=clawdbot-gateway --no-headers
-```
-
-Then repeat Step 1 with the new pod name. Since `auth-profiles.json` already
-exists on the PVC, Step 2–4 are only needed if the tokens have expired.
+If both PVC and Secret are lost, re-run from Step 1.
