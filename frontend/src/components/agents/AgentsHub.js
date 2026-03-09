@@ -210,6 +210,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [configHeartbeatInterval, setConfigHeartbeatInterval] = useState(60);
   const [configHeartbeatChecklist, setConfigHeartbeatChecklist] = useState('');
   const [heartbeatResetLoading, setHeartbeatResetLoading] = useState(false);
+  const [configIdentityContent, setConfigIdentityContent] = useState('');
+  const [identityFileSaving, setIdentityFileSaving] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
   const [skillSyncMode, setSkillSyncMode] = useState('all');
   const [skillSyncAllPods, setSkillSyncAllPods] = useState(true);
@@ -1604,6 +1606,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setSkillSyncAllPods(skillSyncConfig.allPods !== false);
     setSkillSyncPods(Array.isArray(skillSyncConfig.podIds) ? skillSyncConfig.podIds : []);
     setSkillSyncSkills(Array.isArray(skillSyncConfig.skillNames) ? skillSyncConfig.skillNames : []);
+    setConfigIdentityContent('');
     setRuntimeTokenValue('');
     setRuntimeTokenLabel('Local dev');
     setUserTokenValue('');
@@ -1659,6 +1662,17 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       }));
     } catch (error) {
       console.warn('Failed to load live HEARTBEAT.md content:', error);
+    }
+
+    try {
+      const identityInstanceId = latestAgent?.instanceId || resolved?.instanceId || 'default';
+      const identityResponse = await axios.get(
+        `/api/registry/pods/${selectedPodId}/agents/${resolved.name}/identity-file?instanceId=${encodeURIComponent(identityInstanceId)}`,
+        { headers: getAuthHeaders() },
+      );
+      setConfigIdentityContent(identityResponse?.data?.content || '');
+    } catch (error) {
+      console.warn('Failed to load live IDENTITY.md content:', error);
     }
   };
 
@@ -2507,6 +2521,42 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           },
           { headers: getAuthHeaders() },
         );
+        if (configIdentityContent.trim()) {
+          setIdentityFileSaving(true);
+          try {
+            await axios.post(
+              `/api/registry/pods/${selectedPodId}/agents/${configAgent.name || configAgent.agentName}/identity-file`,
+              { instanceId, content: configIdentityContent },
+              { headers: getAuthHeaders() },
+            );
+          } catch (identityErr) {
+            console.warn('Failed to save IDENTITY.md:', identityErr);
+          } finally {
+            setIdentityFileSaving(false);
+          }
+        }
+      }
+      if (provisionForceReprovision) {
+        const gatewayId = resolveRuntimeGatewayId();
+        const provisionPayload = {
+          instanceId,
+          includeUserToken: provisionIncludeUserToken,
+          label: 'Provisioned runtime',
+          force: true,
+        };
+        if (gatewayId) {
+          provisionPayload.gatewayId = gatewayId;
+        }
+        try {
+          const provisionResponse = await axios.post(
+            `/api/registry/pods/${selectedPodId}/agents/${configAgent.name}/provision`,
+            provisionPayload,
+            { headers: getAuthHeaders() },
+          );
+          setProvisionResult(provisionResponse.data);
+        } catch (provisionErr) {
+          console.warn('Provision after save failed:', provisionErr);
+        }
       }
       await fetchInstalledAgents();
       closeConfigDialog();
@@ -3639,6 +3689,29 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             Opt-in per installation. When enabled, detected error/debug outputs are moved to agent-admin DM and
             source chat gets a short system notice.
           </Typography>
+
+          {(configAgent?.name === 'openclaw' || configAgent?.agentName === 'openclaw') && (
+            <>
+              <Divider sx={{ my: 3 }} />
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Identity (IDENTITY.md)
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                Loaded at every session start. Defines name, vibe, and domain. Auto-generated from persona fields above when saved — or edit directly here.
+              </Typography>
+              <TextField
+                fullWidth
+                label="IDENTITY.md"
+                value={configIdentityContent}
+                onChange={(e) => setConfigIdentityContent(e.target.value)}
+                multiline
+                minRows={5}
+                sx={{ mb: 1 }}
+                helperText="Stored in the agent workspace IDENTITY.md. Saved when you click Save."
+                disabled={identityFileSaving}
+              />
+            </>
+          )}
 
           <Divider sx={{ my: 3 }} />
 
