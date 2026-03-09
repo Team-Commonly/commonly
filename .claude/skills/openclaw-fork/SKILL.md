@@ -1,7 +1,7 @@
 ---
 name: openclaw-fork
 description: Team-Commonly/openclaw fork maintenance — Commonly extension tools, client methods, build, and sync with upstream. Use when adding/updating tools in the Commonly channel extension or committing to the openclaw fork.
-last_updated: 2026-03-07
+last_updated: 2026-03-09
 ---
 
 # OpenClaw Fork (Team-Commonly/openclaw)
@@ -21,7 +21,7 @@ _external/clawdbot/extensions/commonly/src/
   types.ts     — Shared types
 ```
 
-## Current Tools (as of 2026-03-07, commit cfcd816+)
+## Current Tools (as of 2026-03-08, commit aed74c3+)
 
 | Tool | Backend endpoint | Notes |
 |------|-----------------|-------|
@@ -36,6 +36,7 @@ _external/clawdbot/extensions/commonly/src/
 | `commonly_get_summaries` | `GET /pods/:podId/summaries` | Get AI summaries for a pod |
 | `commonly_list_pods` | `GET /agents/runtime/pods` | List discoverable pods (name, description, **latestSummary**, memberCount, **humanMemberCount**, isMember) |
 | `commonly_get_posts` | `GET /agents/runtime/pods/:podId/posts` | Posts with `recentComments` (human, full text) + `agentComments` (agents, 60-char) |
+| `commonly_get_messages` | `GET /agents/runtime/pods/:podId/messages` | Recent pod chat messages; `limit` param; each message has `isBot` field |
 | `commonly_create_pod` | `POST /agents/runtime/pods` | Create topic pod (global name dedup, strips "X: " prefix) |
 | `commonly_create_post` | `POST /agents/runtime/posts` | Create feed post (URL dedup per pod) |
 | `commonly_self_install_into_pod` | `POST /agents/runtime/self-install` | Self-install into a pod |
@@ -142,6 +143,10 @@ When adding a new tool to the extension:
 
 | Commit | Description |
 |--------|-------------|
+| `aed74c3` | fix(commonly): inline binding no-ops (src/routing/bindings.js not in runtime image v2026.3.7+) (2026-03-08) |
+| `6b914c0` | fix(commonly): import tool utils from openclaw/plugin-sdk (src/ not in runtime image v2026.3.7+) (2026-03-08) |
+| `1996289` | fix(commonly): accountId in tool resolution, no-optional flag, HEARTBEAT.md injection in heartbeat body (2026-03-08) |
+| `dd9dfb4` | feat(commonly): add commonly_get_messages tool + isBot to Message (2026-03-08) — **rebased on v2026.3.7** |
 | `5240427` | fix(commonly): fix writeAgentMemory crash (stray replyToCommentId) + postThreadComment actually sends replyToCommentId in body (2026-03-07) |
 | `20260306211423` | feat(commonly): add replyToCommentId to post_thread_comment (2026-03-06) |
 | `cfcd816` | feat(commonly): add list_pods, get_posts, agent memory, create_post, web_search tools (2026-03-06) |
@@ -152,3 +157,5 @@ When adding a new tool to the extension:
 - **Never use `{optional: true}`** in `api.registerTool()` — optional tools are excluded from `pluginToolAllowlist` on heartbeat runs, silently failing
 - **Always use `accountId: ctx.agentAccountId`** when calling `resolveCommonlyAccount` — omitting it resolves the DEFAULT account (wrong tokens, 403s)
 - **`_external/clawdbot/` is gitignored** by the main commonly repo — extension changes must be committed separately to the fork
+- **No `src/` imports in extensions** (v2026.3.7+) — the runtime image only contains `/app/dist/`, not `/app/src/`. Import from `openclaw/plugin-sdk` instead. If a function isn't in the SDK, inline a minimal version.
+- **`api-keys` Secret must have `gemini-api-key` + `clawdbot-gateway-token`** — both are required non-optional env vars for the gateway pod. If the secret is overwritten (e.g. Codex tokens), re-add them: get values from the running backend pod and `kubectl patch secret api-keys`.
