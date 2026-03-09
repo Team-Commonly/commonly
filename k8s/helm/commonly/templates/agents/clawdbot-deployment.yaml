@@ -80,42 +80,45 @@ spec:
             const customProfiles = accounts[accountId]?.authProfiles;
             const hasCustomProfiles = customProfiles && typeof customProfiles === 'object'
               && Object.keys(customProfiles).length > 0;
-            if (!hasCustomProfiles && fs.existsSync(authPath)) {
-              console.log('[auth-seed] exists:', authPath);
-              return;
-            }
             fs.mkdirSync(agentDir, { recursive: true });
-            const store = { version: 1, profiles: hasCustomProfiles ? { ...customProfiles } : {} };
-            if (geminiKey && !store.profiles['google:default']) {
-              store.profiles['google:default'] = { type: 'api_key', provider: 'google', key: geminiKey };
+            // Load existing file if present (patch mode) to avoid clobbering live-refreshed tokens
+            let store;
+            if (!hasCustomProfiles && fs.existsSync(authPath)) {
+              try { store = JSON.parse(fs.readFileSync(authPath, 'utf8')); } catch (e) { store = null; }
+              store = store || { version: 1, profiles: {} };
+              store.profiles = store.profiles || {};
+            } else {
+              store = { version: 1, profiles: hasCustomProfiles ? { ...customProfiles } : {} };
+              if (geminiKey && !store.profiles['google:default']) {
+                store.profiles['google:default'] = { type: 'api_key', provider: 'google', key: geminiKey };
+              }
+              if (geminiKey2 && !store.profiles['google:backup']) {
+                store.profiles['google:backup'] = { type: 'api_key', provider: 'google', key: geminiKey2 };
+              }
+              if (openrouterKey && !store.profiles['openrouter:default']) {
+                store.profiles['openrouter:default'] = { type: 'api_key', provider: 'openrouter', key: openrouterKey };
+              }
+              if (anthropicKey && !store.profiles['anthropic:default']) {
+                store.profiles['anthropic:default'] = { type: 'api_key', provider: 'anthropic', key: anthropicKey };
+              }
+              if (openaiKey && !store.profiles['openai:default']) {
+                store.profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
+              }
             }
-            if (geminiKey2 && !store.profiles['google:backup']) {
-              store.profiles['google:backup'] = { type: 'api_key', provider: 'google', key: geminiKey2 };
-            }
-            if (openrouterKey && !store.profiles['openrouter:default']) {
-              store.profiles['openrouter:default'] = {
-                type: 'api_key',
-                provider: 'openrouter',
-                key: openrouterKey,
-              };
-            }
-            if (anthropicKey && !store.profiles['anthropic:default']) {
-              store.profiles['anthropic:default'] = { type: 'api_key', provider: 'anthropic', key: anthropicKey };
-            }
-            if (openaiKey && !store.profiles['openai:default']) {
-              store.profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
-            }
-            if (codexAccess && codexRefresh && !store.profiles['openai-codex:codex-cli']) {
-              store.profiles['openai-codex:codex-cli'] = {
-                type: 'oauth',
-                provider: 'openai-codex',
-                access: codexAccess,
-                refresh: codexRefresh,
-                expires: codexExpires || (Date.now() + 3600000),
-              };
+            // Always upsert codex OAuth if K8s secret has a token newer than what is on disk
+            if (codexAccess && codexRefresh) {
+              const existing = store.profiles['openai-codex:codex-cli'];
+              if (!existing || codexExpires > (existing.expires || 0)) {
+                store.profiles['openai-codex:codex-cli'] = {
+                  type: 'oauth', provider: 'openai-codex',
+                  access: codexAccess, refresh: codexRefresh,
+                  expires: codexExpires || (Date.now() + 3600000),
+                };
+                console.log('[auth-seed] upserted codex oauth:', authPath);
+              }
             }
             fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
-            console.log('[auth-seed] wrote:', authPath, hasCustomProfiles ? 'custom profiles' : 'default keys');
+            console.log('[auth-seed] wrote:', authPath, hasCustomProfiles ? 'custom profiles' : 'patched');
           });
           NODE
         env:
