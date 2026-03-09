@@ -19,6 +19,7 @@ import {
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { normalizeUploadUrl } from '../utils/apiBaseUrl';
 import { AgentAvatar, isAgentUsername } from './common/AgentIndicator';
+import MarkdownContent from './common/MarkdownContent';
 import { useAppContext } from '../context/AppContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import { formatDistanceToNowSafe } from '../utils/dateUtils';
@@ -929,39 +930,17 @@ const PostFeed = () => {
                                     )}
                                 </Box>
                                 
-                                <Typography 
-                                    variant="body1" 
-                                    className="post-content"
-                                    sx={{ 
-                                        mb: 2,
-                                        textAlign: 'left',
-                                        fontSize: '0.85rem',
-                                        lineHeight: 1.28
-                                    }}
-                                >
-                                    {postContent.split(/(#\w+)/g).map((part, index) => {
-                                        if (part.startsWith('#')) {
-                                            return (
-                                                <Typography
-                                                    key={index}
-                                                    component="span"
-                                                    color="primary"
-                                                    sx={{ fontWeight: 'bold' }}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation(); // Prevent navigation
-                                                        const tag = part.substring(1);
-                                                        refreshData(); // Refresh data before navigation
-                                                        window.location.href = `/feed?q=${tag}`;
-                                                    }}
-                                                    className="hashtag"
-                                                >
-                                                    {part}
-                                                </Typography>
-                                            );
-                                        }
-                                        return part;
-                                    })}
-                                </Typography>
+                                <Box className="post-content" sx={{ mb: 2, fontSize: '0.85rem' }}>
+                                    <MarkdownContent
+                                        variant="post"
+                                        onHashtagClick={(tag) => {
+                                            refreshData();
+                                            window.location.href = `/feed?q=${tag}`;
+                                        }}
+                                    >
+                                        {postContent}
+                                    </MarkdownContent>
+                                </Box>
                                 
                                 {post.image && (
                                     <Box 
