@@ -1,12 +1,15 @@
 const { loginOpenAICodex } = require('/app/node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js');
 const readline = require('readline');
+const net = require('net');
 const fs = require('fs');
 const path = require('path');
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => new Promise(res => rl.question(q, res));
 
-(async () => {
+// Pre-occupy port 1455 so loginOpenAICodex can't bind it and falls back to onPrompt
+const blocker = net.createServer();
+blocker.listen(1455, '127.0.0.1', async () => {
   try {
     const creds = await loginOpenAICodex({
       onAuth: async (obj) => {
@@ -21,6 +24,8 @@ const ask = (q) => new Promise(res => rl.question(q, res));
       },
       onProgress: (msg) => process.stdout.write('\r' + msg + '      '),
     });
+
+    blocker.close();
 
     if (!creds) { console.error('\nNo credentials returned'); process.exit(1); }
 
@@ -52,8 +57,9 @@ const ask = (q) => new Promise(res => rl.question(q, res));
     console.log('Expires:', new Date(creds.expires).toISOString());
     rl.close();
   } catch (err) {
+    blocker.close();
     console.error('\nError:', err.message || err);
     rl.close();
     process.exit(1);
   }
-})();
+});
