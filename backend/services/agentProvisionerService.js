@@ -1479,6 +1479,25 @@ const readOpenClawHeartbeatFile = async (accountId, options = {}) => {
   }
 };
 
+const readOpenClawIdentityFile = async (accountId, options = {}) => {
+  if (isK8sMode()) {
+    // eslint-disable-next-line global-require
+    const k8sProvisioner = require('./agentProvisionerServiceK8s');
+    return k8sProvisioner.readOpenClawIdentityFile(accountId, options);
+  }
+  // Local: read from filesystem
+  try {
+    const workspacePath = process.env.OPENCLAW_WORKSPACE_PATH || '/workspace';
+    const filePath = `${workspacePath}/${accountId}/IDENTITY.md`;
+    // eslint-disable-next-line global-require
+    const fs = require('fs');
+    if (!fs.existsSync(filePath)) return '';
+    return fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return '';
+  }
+};
+
 const writeWorkspaceIdentityFile = async (accountId, content, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
@@ -1664,6 +1683,7 @@ module.exports = {
   clearAgentRuntimeSessions,
   writeOpenClawHeartbeatFile,
   readOpenClawHeartbeatFile,
+  readOpenClawIdentityFile,
   writeWorkspaceIdentityFile,
   ensureWorkspaceIdentityFile,
   ensureHeartbeatTemplate,
