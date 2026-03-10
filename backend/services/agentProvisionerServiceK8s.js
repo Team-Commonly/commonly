@@ -1336,6 +1336,10 @@ const provisionOpenClawAccount = async ({
   config.channels.commonly.enabled = true;
   config.channels.commonly.baseUrl = config.channels.commonly.baseUrl || baseUrl || BACKEND_SERVICE_URL;
   config.channels.commonly.accounts = config.channels.commonly.accounts || {};
+  // Enable thread-bound ACP sessions via the Commonly subagent-hooks
+  if (!config.channels.commonly.threadBindings) {
+    config.channels.commonly.threadBindings = { enabled: true, spawnSubagentSessions: true };
+  }
   config.skills = config.skills || {};
 
   // Required since upstream v2026.2.26: non-loopback gateway requires either
@@ -1426,7 +1430,10 @@ const provisionOpenClawAccount = async ({
     }
     if (heartbeatConfig) {
       agentEntry.heartbeat = heartbeatConfig;
-    } else if (agentEntry.heartbeat) {
+    } else if (!heartbeat && agentEntry.heartbeat) {
+      // Only remove gateway-autonomous heartbeat when heartbeat is entirely absent (null),
+      // not when it is explicitly disabled (enabled: false) — prevents per-pod disabled
+      // installations from clobbering the shared gateway heartbeat entry during reprovision-all.
       delete agentEntry.heartbeat;
     }
   } else {
@@ -2119,6 +2126,184 @@ const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) 
   };
 };
 
+/**
+ * Refresh the Codex OAuth access token using the stored refresh token.
+ * Updates the k8s secret, re-injects into all agent auth-profiles.json files,
+ * and patches the gateway deployment env var so acpx picks up the new token.
+ */
+const refreshCodexOAuthToken = async () => {
+  // Read current tokens from secret
+  let secretData;
+  try {
+    const secretResponse = await k8sApi.readNamespacedSecret('api-keys', NAMESPACE);
+    secretData = secretResponse.body.data || {};
+  } catch (err) {
+    throw new Error(`[codex-refresh] Failed to read api-keys secret: ${err.message}`);
+  }
+
+  const decode = (key) => (secretData[key] ? Buffer.from(secretData[key], 'base64').toString('utf8') : null);
+  const refreshToken = decode('openai-codex-refresh-token');
+  const clientId = decode('openai-codex-client-id') || process.env.OPENAI_CODEX_CLIENT_ID;
+
+  if (!refreshToken) {
+    throw new Error('[codex-refresh] No refresh token available in api-keys secret');
+  }
+
+  // Call OpenAI token endpoint
+  const axios = require('axios');
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    ...(clientId && { client_id: clientId }),
+  });
+
+  let tokenResponse;
+  try {
+    tokenResponse = await axios.post('https://auth.openai.com/oauth/token', body.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+  } catch (err) {
+    const status = err.response?.status;
+    const detail = JSON.stringify(err.response?.data || err.message);
+    throw new Error(`[codex-refresh] Token refresh failed (${status}): ${detail}`);
+  }
+
+  const { access_token, refresh_token: newRefreshToken, expires_in } = tokenResponse.data;
+  if (!access_token) {
+    throw new Error('[codex-refresh] No access_token in refresh response');
+  }
+
+  const expiresAt = Date.now() + (expires_in || 3600) * 1000;
+  const encode = (s) => Buffer.from(s).toString('base64');
+
+  // Patch the k8s secret with new tokens
+  const patch = {
+    data: {
+      'openai-codex-access-token': encode(access_token),
+      'openai-codex-expires-at': encode(String(expiresAt)),
+      ...(newRefreshToken && { 'openai-codex-refresh-token': encode(newRefreshToken) }),
+    },
+  };
+  try {
+    await k8sApi.patchNamespacedSecret('api-keys', NAMESPACE, patch, undefined, undefined, undefined, undefined, undefined, {
+      headers: { 'Content-Type': 'application/merge-patch+json' },
+    });
+    console.log(`[codex-refresh] Secret patched. New token expires at ${new Date(expiresAt).toISOString()}`);
+  } catch (err) {
+    throw new Error(`[codex-refresh] Failed to patch api-keys secret: ${err.message}`);
+  }
+
+  // Patch gateway deployment env var so new pods pick up the token
+  try {
+    const deployments = await k8sAppsApi.listNamespacedDeployment(NAMESPACE);
+    const gwDeployment = deployments.body.items.find((d) => d.metadata?.name?.startsWith('clawdbot-gateway'));
+    if (gwDeployment) {
+      const containers = gwDeployment.spec?.template?.spec?.containers || [];
+      const gwContainer = containers.find((c) => c.name === 'clawdbot-gateway');
+      if (gwContainer) {
+        const envPatch = {
+          spec: {
+            template: {
+              spec: {
+                containers: containers.map((c) => {
+                  if (c.name !== 'clawdbot-gateway') return { name: c.name };
+                  const env = (c.env || []).filter((e) => e.name !== 'CODEX_API_KEY');
+                  env.push({ name: 'CODEX_API_KEY', value: access_token });
+                  return { name: c.name, env };
+                }),
+              },
+            },
+          },
+        };
+        await k8sAppsApi.patchNamespacedDeployment(gwDeployment.metadata.name, NAMESPACE, envPatch, undefined, undefined, undefined, undefined, undefined, {
+          headers: { 'Content-Type': 'application/merge-patch+json' },
+        });
+        console.log('[codex-refresh] Gateway deployment env patched with new CODEX_API_KEY');
+      }
+    }
+  } catch (err) {
+    console.warn(`[codex-refresh] Gateway env patch skipped: ${err.message}`);
+  }
+
+  // Re-inject into all agent auth-profiles.json files on the gateway PVC
+  const credential = {
+    type: 'oauth',
+    provider: 'openai-codex',
+    access: access_token,
+    refresh: newRefreshToken || refreshToken,
+    expires: expiresAt,
+  };
+  try {
+    const gwPods = await k8sApi.listNamespacedPod(NAMESPACE, undefined, undefined, undefined, undefined, 'app=clawdbot-gateway');
+    const gwPod = gwPods.body.items.find((p) => p.status?.phase === 'Running');
+    if (gwPod) {
+      const profileId = 'openai-codex:default';
+      const credJson = JSON.stringify(credential).replace(/'/g, "'\\''");
+      const script = [
+        `const fs = require('fs'), path = require('path');`,
+        `const base = '/state/agents';`,
+        `let count = 0;`,
+        `try {`,
+        `  const agents = fs.readdirSync(base);`,
+        `  for (const a of agents) {`,
+        `    const p = path.join(base, a, 'agent', 'auth-profiles.json');`,
+        `    try {`,
+        `      const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
+        `      store.profiles['${profileId}'] = ${credJson};`,
+        `      delete store.profiles['openai-codex:codex-cli'];`,
+        `      fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
+        `      count++;`,
+        `    } catch (_) {}`,
+        `  }`,
+        `} catch (_) {}`,
+        `process.stdout.write('updated:' + count);`,
+      ].join(' ');
+      await new Promise((resolve) => {
+        k8sExec.exec(
+          NAMESPACE,
+          gwPod.metadata.name,
+          'clawdbot-gateway',
+          ['node', '-e', script],
+          null,
+          process.stderr,
+          process.stdin,
+          false,
+          (status) => {
+            console.log(`[codex-refresh] auth-profiles inject: ${status.status}`);
+            resolve();
+          },
+        );
+      });
+    }
+  } catch (err) {
+    console.warn(`[codex-refresh] auth-profiles re-inject skipped: ${err.message}`);
+  }
+
+  return { expiresAt };
+};
+
+/**
+ * Refresh the Codex OAuth token only if it expires within the given threshold.
+ * Safe to call from a daily cron — returns null if no refresh was needed.
+ */
+const refreshCodexOAuthTokenIfNeeded = async ({ thresholdDays = 3 } = {}) => {
+  let secretData;
+  try {
+    const secretResponse = await k8sApi.readNamespacedSecret('api-keys', NAMESPACE);
+    secretData = secretResponse.body.data || {};
+  } catch (_err) {
+    return null; // Not in k8s mode
+  }
+  const expiresAtRaw = secretData['openai-codex-expires-at']
+    ? Buffer.from(secretData['openai-codex-expires-at'], 'base64').toString('utf8')
+    : null;
+  if (!expiresAtRaw) return null; // No token stored
+  const expiresAt = Number(expiresAtRaw);
+  const thresholdMs = thresholdDays * 24 * 60 * 60 * 1000;
+  if (expiresAt - Date.now() > thresholdMs) return null; // Still fresh
+  return refreshCodexOAuthToken();
+};
+
 module.exports = {
   getAgentSessionSizes,
   provisionAgentRuntime,
@@ -2141,4 +2326,6 @@ module.exports = {
   listOpenClawBundledSkills,
   listOpenClawPlugins,
   installOpenClawPlugin,
+  refreshCodexOAuthToken,
+  refreshCodexOAuthTokenIfNeeded,
 };

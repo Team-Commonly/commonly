@@ -150,6 +150,7 @@ export const commonlyPlugin: ChannelPlugin<ResolvedCommonlyAccount> = {
   },
   capabilities: {
     chatTypes: ["group", "thread"],
+    threads: true,
     media: false,
     nativeCommands: true,
   },
