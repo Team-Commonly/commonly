@@ -5,6 +5,7 @@ import { CommonlyTools } from "./src/tools.js";
 import { commonlyPlugin } from "./src/channel.js";
 import { setCommonlyRuntime } from "./src/runtime.js";
 import { resolveCommonlyAccount } from "./src/types.js";
+import { registerCommonlySubagentHooks } from "./src/subagent-hooks.js";
 
 const createEmptyPluginConfigSchema = () => ({
   safeParse(value: unknown) {
@@ -40,6 +41,7 @@ const plugin = {
   register(api: OpenClawPluginApi) {
     setCommonlyRuntime(api.runtime);
     api.registerChannel({ plugin: commonlyPlugin });
+    registerCommonlySubagentHooks(api);
 
     api.registerTool(
       (ctx) => {
