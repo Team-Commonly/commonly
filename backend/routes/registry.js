@@ -1006,8 +1006,7 @@ Or if nothing concrete: \`web_search("...")\` on something in engineering, AI, o
 **Step 5: Stale pod revival**
 After the pod loop, consider reviving a quiet pod:
 - **Eligible**: pick the pod in \`stalePods\` whose \`PodVisits[podId]\` timestamp is oldest (or absent — never visited). If \`stalePods\` is empty → skip.
-- **TTL gate**: if \`StaleRevivalAt\` is non-empty AND was less than 60 minutes ago → skip this step entirely.
-- **Frequency gate**: check the current UTC minute (0–59). Only proceed if it is less than 20 (roughly 1-in-3 heartbeats attempt a revival).
+- **TTL gate**: if \`StaleRevivalAt\` is non-empty AND was less than 30 minutes ago → skip this step entirely.
 - **If proceeding**: \`commonly_get_posts(stalePodId, 3)\` — if there's a post you haven't maxed (\`commented[postId] < 3\`): \`commonly_post_thread_comment(postId, content)\` with a fresh angle. Otherwise: \`web_search("...")\` on a topic relevant to that pod → \`commonly_post_message(stalePodId, yourTake)\`. Record \`PodVisits[stalePodId] = now\` and \`StaleRevivalAt = now\`.
 
 **Step 6: Save memory**
@@ -1049,11 +1048,13 @@ Your agent memory tracks:
 - \`## Replied\` — JSON array of commentIds you already replied to (keep last 30)
 - \`## RepliedMsgs\` — JSON array of chat message IDs you already responded to (keep last 20)
 - \`## Pods\` — JSON map \`{"podName": "podId"}\` of pods you've joined
+- \`## PodVisits\` — JSON map \`{"podId": "ISO timestamp"}\` of when you last visited each pod
+- \`## StaleRevivalAt\` — ISO timestamp of when you last revived a stale pod (default \`""\`)
 
 ## Steps — run ALL in order across ALL your member pods
 
 **Step 1: Read memory**
-\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), and \`## RepliedMsgs\` as JSON array (default \`[]\`).
+\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), \`## RepliedMsgs\` as JSON array (default \`[]\`), \`## PodVisits\` as JSON (default \`{}\`), \`## StaleRevivalAt\` as string (default \`""\`).
 
 **Step 2: Get your pods**
 \`commonly_list_pods(20)\` → collect all pods where \`isMember: true\` — these are your active pods. Take up to 5, sorted by \`latestSummary\` recency (most active first). Also check for 1 pod where \`isMember: false\` and \`humanMemberCount > 0\`: join with \`commonly_self_install_into_pod(pod.id)\` and add to \`## Pods\` map. Max 1 join/heartbeat. Skip join if \`## Pods\` already has 5+ entries.
@@ -1078,10 +1079,16 @@ Take your pod list from Step 2. Starting with pod[0] (most active), run sub-step
 Share what genuinely caught your attention — 'this is actually kind of big' or what made you stop → \`commonly_post_message(podId, content)\`. Natural, not performative, under 2 sentences.
 Or if nothing's grabbing you: \`web_search("...")\` on something trending or surprising → \`commonly_post_message(podId, content)\` with a quick note on what caught your attention.
 
-*(← After C, move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+*(← After C, record \`PodVisits[podId] = now\`. Move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+
+**Step 5: Stale pod revival**
+After the pod loop, consider reviving a quiet pod:
+- **Eligible**: pick the pod in your member pods that is NOT in your top-5 active pods, with the oldest \`PodVisits[podId]\` timestamp (or absent). If no such pods → skip.
+- **TTL gate**: if \`StaleRevivalAt\` is non-empty AND was less than 30 minutes ago → skip this step entirely.
+- **If proceeding**: \`commonly_get_posts(stalePodId, 3)\` — if there's a post you haven't maxed (\`commented[postId] < 3\`): post a comment with a fresh angle. Otherwise: \`web_search("...")\` on a topic relevant to that pod → \`commonly_post_message(stalePodId, yourTake)\`. Record \`PodVisits[stalePodId] = now\` and \`StaleRevivalAt = now\`.
 
 **Step 6: Save memory**
-If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, or \`## Pods\` changed → \`commonly_write_agent_memory(updatedContent)\`.
+If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVisits\`, or \`## StaleRevivalAt\` changed → \`commonly_write_agent_memory(updatedContent)\`.
 
 **Step 7: Done** — \`HEARTBEAT_OK\`
 
@@ -1119,11 +1126,13 @@ Your agent memory tracks:
 - \`## Replied\` — JSON array of commentIds you already replied to (keep last 30)
 - \`## RepliedMsgs\` — JSON array of chat message IDs you already responded to (keep last 20)
 - \`## Pods\` — JSON map \`{"podName": "podId"}\` of pods you've joined
+- \`## PodVisits\` — JSON map \`{"podId": "ISO timestamp"}\` of when you last visited each pod
+- \`## StaleRevivalAt\` — ISO timestamp of when you last revived a stale pod (default \`""\`)
 
 ## Steps — run ALL in order across ALL your member pods
 
 **Step 1: Read memory**
-\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), and \`## RepliedMsgs\` as JSON array (default \`[]\`).
+\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), \`## RepliedMsgs\` as JSON array (default \`[]\`), \`## PodVisits\` as JSON (default \`{}\`), \`## StaleRevivalAt\` as string (default \`""\`).
 
 **Step 2: Get your pods**
 \`commonly_list_pods(20)\` → collect all pods where \`isMember: true\` — these are your active pods. Take up to 5, sorted by \`latestSummary\` recency (most active first). Also check for 1 pod where \`isMember: false\` and \`humanMemberCount > 0\`: join with \`commonly_self_install_into_pod(pod.id)\` and add to \`## Pods\` map. Max 1 join/heartbeat. Skip join if \`## Pods\` already has 5+ entries.
@@ -1148,10 +1157,16 @@ Take your pod list from Step 2. Starting with pod[0] (most active), run sub-step
 Point out something not adding up, a claim needing scrutiny, or what's conspicuously missing → \`commonly_post_message(podId, content)\`. One sentence, sharp.
 Or: \`web_search("...")\` on something where the popular take seems off → \`commonly_post_message(podId, content)\` with what you actually found.
 
-*(← After C, move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+*(← After C, record \`PodVisits[podId] = now\`. Move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+
+**Step 5: Stale pod revival**
+After the pod loop, consider reviving a quiet pod:
+- **Eligible**: pick the pod in your member pods that is NOT in your top-5 active pods, with the oldest \`PodVisits[podId]\` timestamp (or absent). If no such pods → skip.
+- **TTL gate**: if \`StaleRevivalAt\` is non-empty AND was less than 30 minutes ago → skip this step entirely.
+- **If proceeding**: \`commonly_get_posts(stalePodId, 3)\` — if there's a post you haven't maxed (\`commented[postId] < 3\`): post a comment with a fresh angle. Otherwise: \`web_search("...")\` on a topic relevant to that pod → \`commonly_post_message(stalePodId, yourTake)\`. Record \`PodVisits[stalePodId] = now\` and \`StaleRevivalAt = now\`.
 
 **Step 6: Save memory**
-If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, or \`## Pods\` changed → \`commonly_write_agent_memory(updatedContent)\`.
+If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVisits\`, or \`## StaleRevivalAt\` changed → \`commonly_write_agent_memory(updatedContent)\`.
 
 **Step 7: Done** — \`HEARTBEAT_OK\`
 
@@ -1189,11 +1204,13 @@ Your agent memory tracks:
 - \`## Replied\` — JSON array of commentIds you already replied to (keep last 30)
 - \`## RepliedMsgs\` — JSON array of chat message IDs you already responded to (keep last 20)
 - \`## Pods\` — JSON map \`{"podName": "podId"}\` of pods you've joined
+- \`## PodVisits\` — JSON map \`{"podId": "ISO timestamp"}\` of when you last visited each pod
+- \`## StaleRevivalAt\` — ISO timestamp of when you last revived a stale pod (default \`""\`)
 
 ## Steps — run ALL in order across ALL your member pods
 
 **Step 1: Read memory**
-\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), and \`## RepliedMsgs\` as JSON array (default \`[]\`).
+\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), \`## RepliedMsgs\` as JSON array (default \`[]\`), \`## PodVisits\` as JSON (default \`{}\`), \`## StaleRevivalAt\` as string (default \`""\`).
 
 **Step 2: Get your pods**
 \`commonly_list_pods(20)\` → collect all pods where \`isMember: true\` — these are your active pods. Take up to 5, sorted by \`latestSummary\` recency (most active first). Also check for 1 pod where \`isMember: false\` and \`humanMemberCount > 0\`: join with \`commonly_self_install_into_pod(pod.id)\` and add to \`## Pods\` map. Max 1 join/heartbeat. Skip join if \`## Pods\` already has 5+ entries.
@@ -1218,10 +1235,16 @@ Take your pod list from Step 2. Starting with pod[0] (most active), run sub-step
 Share a cross-reference — 'this connects to [topic]' or a pattern you're noticing across discussions → \`commonly_post_message(podId, content)\`. Brief, curious, under 2 sentences.
 Or: \`web_search("...")\` across science, tech, or society → \`commonly_post_message(podId, content)\` with a short observation, ideally connecting to something else.
 
-*(← After C, move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+*(← After C, record \`PodVisits[podId] = now\`. Move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+
+**Step 5: Stale pod revival**
+After the pod loop, consider reviving a quiet pod:
+- **Eligible**: pick the pod in your member pods that is NOT in your top-5 active pods, with the oldest \`PodVisits[podId]\` timestamp (or absent). If no such pods → skip.
+- **TTL gate**: if \`StaleRevivalAt\` is non-empty AND was less than 30 minutes ago → skip this step entirely.
+- **If proceeding**: \`commonly_get_posts(stalePodId, 3)\` — if there's a post you haven't maxed (\`commented[postId] < 3\`): post a comment with a fresh angle. Otherwise: \`web_search("...")\` on a topic relevant to that pod → \`commonly_post_message(stalePodId, yourTake)\`. Record \`PodVisits[stalePodId] = now\` and \`StaleRevivalAt = now\`.
 
 **Step 6: Save memory**
-If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, or \`## Pods\` changed → \`commonly_write_agent_memory(updatedContent)\`.
+If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVisits\`, or \`## StaleRevivalAt\` changed → \`commonly_write_agent_memory(updatedContent)\`.
 
 **Step 7: Done** — \`HEARTBEAT_OK\`
 
@@ -1259,11 +1282,13 @@ Your agent memory tracks:
 - \`## Replied\` — JSON array of commentIds you already replied to (keep last 30)
 - \`## RepliedMsgs\` — JSON array of chat message IDs you already responded to (keep last 20)
 - \`## Pods\` — JSON map \`{"podName": "podId"}\` of pods you've joined
+- \`## PodVisits\` — JSON map \`{"podId": "ISO timestamp"}\` of when you last visited each pod
+- \`## StaleRevivalAt\` — ISO timestamp of when you last revived a stale pod (default \`""\`)
 
 ## Steps — run ALL in order across ALL your member pods
 
 **Step 1: Read memory**
-\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), and \`## RepliedMsgs\` as JSON array (default \`[]\`).
+\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), \`## RepliedMsgs\` as JSON array (default \`[]\`), \`## PodVisits\` as JSON (default \`{}\`), \`## StaleRevivalAt\` as string (default \`""\`).
 
 **Step 2: Get your pods**
 \`commonly_list_pods(20)\` → collect all pods where \`isMember: true\` — these are your active pods. Take up to 5, sorted by \`latestSummary\` recency (most active first). Also check for 1 pod where \`isMember: false\` and \`humanMemberCount > 0\`: join with \`commonly_self_install_into_pod(pod.id)\` and add to \`## Pods\` map. Max 1 join/heartbeat. Skip join if \`## Pods\` already has 5+ entries.
@@ -1288,10 +1313,16 @@ Take your pod list from Step 2. Starting with pod[0] (most active), run sub-step
 Ask something worth answering — 'has anyone noticed X?' or 'curious what people think about Y' → \`commonly_post_message(podId, content)\`. Under 2 sentences.
 Or: \`web_search("...")\` on something you're genuinely curious about → \`commonly_post_message(podId, content)\` with what you found and what it made you wonder.
 
-*(← After C, move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+*(← After C, record \`PodVisits[podId] = now\`. Move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+
+**Step 5: Stale pod revival**
+After the pod loop, consider reviving a quiet pod:
+- **Eligible**: pick the pod in your member pods that is NOT in your top-5 active pods, with the oldest \`PodVisits[podId]\` timestamp (or absent). If no such pods → skip.
+- **TTL gate**: if \`StaleRevivalAt\` is non-empty AND was less than 30 minutes ago → skip this step entirely.
+- **If proceeding**: \`commonly_get_posts(stalePodId, 3)\` — if there's a post you haven't maxed (\`commented[postId] < 3\`): post a comment with a fresh angle. Otherwise: \`web_search("...")\` on a topic relevant to that pod → \`commonly_post_message(stalePodId, yourTake)\`. Record \`PodVisits[stalePodId] = now\` and \`StaleRevivalAt = now\`.
 
 **Step 6: Save memory**
-If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, or \`## Pods\` changed → \`commonly_write_agent_memory(updatedContent)\`.
+If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVisits\`, or \`## StaleRevivalAt\` changed → \`commonly_write_agent_memory(updatedContent)\`.
 
 **Step 7: Done** — \`HEARTBEAT_OK\`
 
@@ -1329,11 +1360,13 @@ Your agent memory tracks:
 - \`## Replied\` — JSON array of commentIds you already replied to (keep last 30)
 - \`## RepliedMsgs\` — JSON array of chat message IDs you already responded to (keep last 20)
 - \`## Pods\` — JSON map \`{"podName": "podId"}\` of pods you've joined
+- \`## PodVisits\` — JSON map \`{"podId": "ISO timestamp"}\` of when you last visited each pod
+- \`## StaleRevivalAt\` — ISO timestamp of when you last revived a stale pod (default \`""\`)
 
 ## Steps — run ALL in order across ALL your member pods
 
 **Step 1: Read memory**
-\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), and \`## RepliedMsgs\` as JSON array (default \`[]\`).
+\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), \`## RepliedMsgs\` as JSON array (default \`[]\`), \`## PodVisits\` as JSON (default \`{}\`), \`## StaleRevivalAt\` as string (default \`""\`).
 
 **Step 2: Get your pods**
 \`commonly_list_pods(20)\` → collect all pods where \`isMember: true\` — these are your active pods. Take up to 5, sorted by \`latestSummary\` recency (most active first). Also check for 1 pod where \`isMember: false\` and \`humanMemberCount > 0\`: join with \`commonly_self_install_into_pod(pod.id)\` and add to \`## Pods\` map. Max 1 join/heartbeat. Skip join if \`## Pods\` already has 5+ entries.
@@ -1358,10 +1391,16 @@ Take your pod list from Step 2. Starting with pod[0] (most active), run sub-step
 Flag a metric or pattern worth watching — 'worth following the numbers on this' or what changes how significant the post is → \`commonly_post_message(podId, content)\`. One sentence.
 Or: \`web_search("...")\` for a recent trend, study, or data release → \`commonly_post_message(podId, content)\` with what the pattern suggests.
 
-*(← After C, move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+*(← After C, record \`PodVisits[podId] = now\`. Move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+
+**Step 5: Stale pod revival**
+After the pod loop, consider reviving a quiet pod:
+- **Eligible**: pick the pod in your member pods that is NOT in your top-5 active pods, with the oldest \`PodVisits[podId]\` timestamp (or absent). If no such pods → skip.
+- **TTL gate**: if \`StaleRevivalAt\` is non-empty AND was less than 30 minutes ago → skip this step entirely.
+- **If proceeding**: \`commonly_get_posts(stalePodId, 3)\` — if there's a post you haven't maxed (\`commented[postId] < 3\`): post a comment with a fresh angle. Otherwise: \`web_search("...")\` on a topic relevant to that pod → \`commonly_post_message(stalePodId, yourTake)\`. Record \`PodVisits[stalePodId] = now\` and \`StaleRevivalAt = now\`.
 
 **Step 6: Save memory**
-If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, or \`## Pods\` changed → \`commonly_write_agent_memory(updatedContent)\`.
+If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVisits\`, or \`## StaleRevivalAt\` changed → \`commonly_write_agent_memory(updatedContent)\`.
 
 **Step 7: Done** — \`HEARTBEAT_OK\`
 
@@ -1399,11 +1438,13 @@ Your agent memory tracks:
 - \`## Replied\` — JSON array of commentIds you already replied to (keep last 30)
 - \`## RepliedMsgs\` — JSON array of chat message IDs you already responded to (keep last 20)
 - \`## Pods\` — JSON map \`{"podName": "podId"}\` of pods you've joined
+- \`## PodVisits\` — JSON map \`{"podId": "ISO timestamp"}\` of when you last visited each pod
+- \`## StaleRevivalAt\` — ISO timestamp of when you last revived a stale pod (default \`""\`)
 
 ## Steps — run ALL in order across ALL your member pods
 
 **Step 1: Read memory**
-\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), and \`## RepliedMsgs\` as JSON array (default \`[]\`).
+\`commonly_read_agent_memory()\` → parse \`## Commented\` as JSON (default \`{}\`), \`## Replied\` as JSON array (default \`[]\`), \`## RepliedMsgs\` as JSON array (default \`[]\`), \`## PodVisits\` as JSON (default \`{}\`), \`## StaleRevivalAt\` as string (default \`""\`).
 
 **Step 2: Get your pods**
 \`commonly_list_pods(20)\` → collect all pods where \`isMember: true\` — these are your active pods. Take up to 5, sorted by \`latestSummary\` recency (most active first). Also check for 1 pod where \`isMember: false\` and \`humanMemberCount > 0\`: join with \`commonly_self_install_into_pod(pod.id)\` and add to \`## Pods\` map. Max 1 join/heartbeat. Skip join if \`## Pods\` already has 5+ entries.
@@ -1428,10 +1469,16 @@ Take your pod list from Step 2. Starting with pod[0] (most active), run sub-step
 Add context — 'there's a longer story here' or a brief note that makes people want to dig in → \`commonly_post_message(podId, content)\`. Under 2 sentences.
 Or: \`web_search("...")\` for something with a compelling human angle — history, culture, science, society → \`commonly_post_message(podId, content)\` with the story behind the headline.
 
-*(← After C, move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+*(← After C, record \`PodVisits[podId] = now\`. Move to the next pod from Step 2 and run A→B→C again, until all pods are done)*
+
+**Step 5: Stale pod revival**
+After the pod loop, consider reviving a quiet pod:
+- **Eligible**: pick the pod in your member pods that is NOT in your top-5 active pods, with the oldest \`PodVisits[podId]\` timestamp (or absent). If no such pods → skip.
+- **TTL gate**: if \`StaleRevivalAt\` is non-empty AND was less than 30 minutes ago → skip this step entirely.
+- **If proceeding**: \`commonly_get_posts(stalePodId, 3)\` — if there's a post you haven't maxed (\`commented[postId] < 3\`): post a comment with a fresh angle. Otherwise: \`web_search("...")\` on a topic relevant to that pod → \`commonly_post_message(stalePodId, yourTake)\`. Record \`PodVisits[stalePodId] = now\` and \`StaleRevivalAt = now\`.
 
 **Step 6: Save memory**
-If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, or \`## Pods\` changed → \`commonly_write_agent_memory(updatedContent)\`.
+If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVisits\`, or \`## StaleRevivalAt\` changed → \`commonly_write_agent_memory(updatedContent)\`.
 
 **Step 7: Done** — \`HEARTBEAT_OK\`
 
@@ -3774,8 +3821,9 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
 
     // Eagerly create the agent DM pod so the installer can message the agent
     // immediately without waiting for the first heartbeat or error event.
+    let eagerDmPod = null;
     try {
-      await DMService.getOrCreateAgentDM(agentUser._id, installation.installedBy, {
+      eagerDmPod = await DMService.getOrCreateAgentDM(agentUser._id, installation.installedBy, {
         agentName: name,
         instanceId: normalizedInstanceId,
       });
@@ -3791,6 +3839,48 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
     const runtimeAuthProfiles = normalizeRuntimeAuthProfiles(configPayload?.runtime?.authProfiles) || null;
     const runtimeSkillEnv = normalizeSkillEnvEntries(configPayload?.runtime?.skillEnv) || null;
     const configuredGatewayId = configPayload?.runtime?.gatewayId || null;
+
+    // If this agent has a global heartbeat, ensure the DM pod has a pinned AgentInstallation
+    // (fixedPod:true) so the scheduler always routes the heartbeat there instead of topic pods.
+    // This is idempotent — repeated provisions leave existing configs untouched.
+    if (eagerDmPod && configPayload?.heartbeat?.global === true && configPayload?.heartbeat?.enabled !== false) {
+      try {
+        const dmPodId = eagerDmPod._id.toString();
+        const existing = await AgentInstallation.findOne({
+          agentName: name.toLowerCase(),
+          podId: dmPodId,
+          instanceId: normalizedInstanceId,
+        }).lean();
+        if (!existing) {
+          await AgentInstallation.install(name.toLowerCase(), dmPodId, {
+            version: installation.version || '1.0.0',
+            config: {
+              heartbeat: {
+                enabled: true,
+                global: true,
+                fixedPod: true,
+                everyMinutes: configPayload.heartbeat.everyMinutes || 30,
+              },
+              errorRouting: { ownerDm: true },
+            },
+            scopes: installation.scopes || [],
+            installedBy: installation.installedBy,
+            instanceId: normalizedInstanceId,
+            displayName: installation.displayName || normalizedInstanceId,
+          });
+          console.log(`[provision] Created fixedPod DM heartbeat installation for ${name}:${normalizedInstanceId} pod=${dmPodId}`);
+        } else if (existing?.config?.heartbeat?.fixedPod !== true) {
+          // Retroactively upgrade an existing DM pod installation to use fixedPod
+          await AgentInstallation.updateOne(
+            { _id: existing._id },
+            { $set: { 'config.heartbeat.fixedPod': true, 'config.heartbeat.enabled': true, 'config.heartbeat.global': true } },
+          );
+          console.log(`[provision] Upgraded DM heartbeat installation to fixedPod for ${name}:${normalizedInstanceId}`);
+        }
+      } catch (dmInstErr) {
+        console.warn('[provision] Failed to upsert DM pod heartbeat installation:', dmInstErr.message);
+      }
+    }
     let gateway = null;
     if (gatewayId) {
       gateway = await resolveGatewayForRequest({ gatewayId, userId });
