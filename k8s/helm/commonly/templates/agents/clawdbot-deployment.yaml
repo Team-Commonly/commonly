@@ -43,12 +43,7 @@ spec:
           const path = require('path');
           const configPath = process.env.OPENCLAW_CONFIG_PATH || '/config/moltbot.json';
           const stateDir = process.env.OPENCLAW_STATE_DIR || '/state';
-          // Copy config from read-only ConfigMap to writable state dir
           const stateConfigPath = path.join(stateDir, 'moltbot.json');
-          if (fs.existsSync(configPath)) {
-            fs.copyFileSync(configPath, stateConfigPath);
-            console.log('[auth-seed] copied config to writable path:', stateConfigPath);
-          }
           const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
           const geminiKey2 = (process.env.GEMINI_API_KEY_2 || '').trim();
           const openrouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
@@ -68,6 +63,29 @@ spec:
             console.log('[auth-seed] invalid config:', err.message);
             process.exit(0);
           }
+          // Preserve accounts from the existing PVC state across gateway restarts.
+          // The ConfigMap carries gateway settings but accounts are written to the PVC
+          // by the provisioner at runtime — the ConfigMap accounts section is often empty.
+          // Merging ensures agents stay connected after a pod restart without requiring
+          // a full reprovision-all.
+          let existingState = null;
+          if (fs.existsSync(stateConfigPath)) {
+            try { existingState = JSON.parse(fs.readFileSync(stateConfigPath, 'utf8')); } catch (e) {}
+          }
+          const existingAccounts = existingState?.channels?.commonly?.accounts || {};
+          const cfgAccounts = cfg?.channels?.commonly?.accounts || {};
+          // ConfigMap wins per-accountId (for updates), PVC-only accounts are preserved
+          const mergedAccounts = { ...existingAccounts, ...cfgAccounts };
+          const preserved = Object.keys(existingAccounts).filter(k => !cfgAccounts[k]).length;
+          if (preserved > 0) {
+            cfg.channels = cfg.channels || {};
+            cfg.channels.commonly = cfg.channels.commonly || {};
+            cfg.channels.commonly.accounts = mergedAccounts;
+            console.log('[auth-seed] preserved', preserved, 'accounts from existing PVC state');
+          }
+          // Write merged config to PVC
+          fs.writeFileSync(stateConfigPath, JSON.stringify(cfg, null, 2));
+          console.log('[auth-seed] wrote config to writable path:', stateConfigPath);
           const accounts = cfg?.channels?.commonly?.accounts || {};
           const accountIds = Object.keys(accounts);
           if (!accountIds.length) {
