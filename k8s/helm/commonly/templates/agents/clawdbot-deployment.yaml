@@ -116,6 +116,33 @@ spec:
                 };
                 console.log('[auth-seed] upserted codex oauth:', authPath);
               }
+              // Also write ~/.codex/auth.json in chatgpt format so acpx uses chatgpt auth
+              // (not codex-api-key which requires api.responses.write scope)
+              const codexAuthDir = path.join(stateDir, 'agents', accountId, '.codex');
+              const codexAuthPath = path.join(codexAuthDir, 'auth.json');
+              const codexIdToken = (process.env.OPENAI_CODEX_ID_TOKEN || '').trim();
+              const codexAccountId = (process.env.OPENAI_CODEX_ACCOUNT_ID || '').trim();
+              const existingCodexAuth = fs.existsSync(codexAuthPath)
+                ? (() => { try { return JSON.parse(fs.readFileSync(codexAuthPath, 'utf8')); } catch { return null; } })()
+                : null;
+              const existingExpires = existingCodexAuth?.tokens?.expires_at
+                ? new Date(existingCodexAuth.tokens.expires_at).getTime() : 0;
+              if (!existingCodexAuth || codexExpires > existingExpires) {
+                fs.mkdirSync(codexAuthDir, { recursive: true });
+                const codexAuth = {
+                  auth_mode: 'chatgpt',
+                  OPENAI_API_KEY: null,
+                  tokens: {
+                    ...(codexIdToken ? { id_token: codexIdToken } : {}),
+                    access_token: codexAccess,
+                    refresh_token: codexRefresh,
+                    ...(codexAccountId ? { account_id: codexAccountId } : {}),
+                  },
+                  last_refresh: new Date().toISOString(),
+                };
+                fs.writeFileSync(codexAuthPath, JSON.stringify(codexAuth, null, 2));
+                console.log('[auth-seed] wrote codex auth.json:', codexAuthPath);
+              }
             }
             fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
             console.log('[auth-seed] wrote:', authPath, hasCustomProfiles ? 'custom profiles' : 'patched');
@@ -172,6 +199,18 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openai-codex-expires-at
+              optional: true
+        - name: OPENAI_CODEX_ID_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-id-token
+              optional: true
+        - name: OPENAI_CODEX_ACCOUNT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-account-id
               optional: true
         volumeMounts:
         - name: clawdbot-config
