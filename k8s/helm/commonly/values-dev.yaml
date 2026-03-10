@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/gen-lang-client-0826504762/commonly-backend
-    tag: "20260305154936"
+    tag: "20260309200959"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -47,7 +47,7 @@ frontend:
   replicaCount: 1
   image:
     repository: gcr.io/gen-lang-client-0826504762/commonly-frontend
-    tag: "20260304201723"
+    tag: "20260309031716"
     pullPolicy: Always
   nodeSelector:
     pool: dev
@@ -96,7 +96,7 @@ agents:
     enabled: true
     image:
       repository: gcr.io/gen-lang-client-0826504762/clawdbot-gateway
-      tag: "20260305091935"
+      tag: "20260309040912"
       pullPolicy: Always
     strategy:
       type: Recreate
