@@ -198,6 +198,8 @@ const execInPod = async ({ podName, containerName = 'clawdbot-gateway', command 
   stderr.on('data', (chunk) => { err += chunk.toString(); });
 
   await new Promise((resolve, reject) => {
+    stdout.on('error', reject);
+    stderr.on('error', reject);
     k8sExec.exec(
       NAMESPACE,
       podName,
@@ -1251,7 +1253,7 @@ const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, cred
           if (status.status === 'Success') resolve();
           else reject(new Error(status.message || 'exec failed'));
         },
-      );
+      ).catch(reject);
     });
   } catch (err) {
     console.warn(`[k8s-provisioner] codex token inject skipped for ${agentId}: ${err.message}`);
@@ -2242,7 +2244,7 @@ const refreshCodexOAuthToken = async () => {
         `} catch (_) {}`,
         `process.stdout.write('updated:' + count);`,
       ].join(' ');
-      await new Promise((resolve) => {
+      await new Promise((resolve, reject) => {
         k8sExec.exec(
           NAMESPACE,
           gwPod.metadata.name,
@@ -2256,7 +2258,7 @@ const refreshCodexOAuthToken = async () => {
             console.log(`[codex-refresh] auth files re-inject: ${status.status}`);
             resolve();
           },
-        );
+        ).catch(reject);
       });
     }
   } catch (err) {
