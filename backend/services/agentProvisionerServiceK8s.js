@@ -2242,6 +2242,16 @@ const refreshCodexOAuthToken = async () => {
         `    } catch (_) {}`,
         `  }`,
         `} catch (_) {}`,
+        // Also write to shared PVC path (read by lifecycle postStart on next pod start)
+        // and directly to HOME (takes effect immediately without pod restart)
+        `try {`,
+        `  fs.mkdirSync('/state/.codex', { recursive: true });`,
+        `  fs.writeFileSync('/state/.codex/auth.json', '${codexAuthJson}');`,
+        `} catch (_) {}`,
+        `try {`,
+        `  fs.mkdirSync('/home/node/.codex', { recursive: true });`,
+        `  fs.writeFileSync('/home/node/.codex/auth.json', '${codexAuthJson}');`,
+        `} catch (_) {}`,
         `process.stdout.write('updated:' + count);`,
       ].join(' ');
       await new Promise((resolve, reject) => {
