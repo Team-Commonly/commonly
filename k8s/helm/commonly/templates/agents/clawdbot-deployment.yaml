@@ -160,6 +160,12 @@ spec:
                 };
                 fs.writeFileSync(codexAuthPath, JSON.stringify(codexAuth, null, 2));
                 console.log('[auth-seed] wrote codex auth.json:', codexAuthPath);
+                // Also write to $HOME/.codex/auth.json so acpx finds it (HOME=/home/node in container)
+                const homeDir = process.env.HOME || '/home/node';
+                const homeCodexDir = path.join(homeDir, '.codex');
+                fs.mkdirSync(homeCodexDir, { recursive: true });
+                fs.writeFileSync(path.join(homeCodexDir, 'auth.json'), JSON.stringify(codexAuth, null, 2));
+                console.log('[auth-seed] wrote codex auth.json to HOME:', path.join(homeCodexDir, 'auth.json'));
               }
             }
             fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
