@@ -60,6 +60,9 @@ data:
         "entries": {
           "commonly": {
             "enabled": true
+          },
+          "acpx": {
+            "enabled": true
           }
         }
       }
