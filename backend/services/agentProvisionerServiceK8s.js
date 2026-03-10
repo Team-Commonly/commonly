@@ -2193,39 +2193,11 @@ const refreshCodexOAuthToken = async () => {
     throw new Error(`[codex-refresh] Failed to patch api-keys secret: ${err.message}`);
   }
 
-  // Patch gateway deployment env var so new pods pick up the token
-  try {
-    const deployments = await k8sAppsApi.listNamespacedDeployment(NAMESPACE);
-    const gwDeployment = deployments.body.items.find((d) => d.metadata?.name?.startsWith('clawdbot-gateway'));
-    if (gwDeployment) {
-      const containers = gwDeployment.spec?.template?.spec?.containers || [];
-      const gwContainer = containers.find((c) => c.name === 'clawdbot-gateway');
-      if (gwContainer) {
-        const envPatch = {
-          spec: {
-            template: {
-              spec: {
-                containers: containers.map((c) => {
-                  if (c.name !== 'clawdbot-gateway') return { name: c.name };
-                  const env = (c.env || []).filter((e) => e.name !== 'CODEX_API_KEY');
-                  env.push({ name: 'CODEX_API_KEY', value: access_token });
-                  return { name: c.name, env };
-                }),
-              },
-            },
-          },
-        };
-        await k8sAppsApi.patchNamespacedDeployment(gwDeployment.metadata.name, NAMESPACE, envPatch, undefined, undefined, undefined, undefined, undefined, {
-          headers: { 'Content-Type': 'application/merge-patch+json' },
-        });
-        console.log('[codex-refresh] Gateway deployment env patched with new CODEX_API_KEY');
-      }
-    }
-  } catch (err) {
-    console.warn(`[codex-refresh] Gateway env patch skipped: ${err.message}`);
-  }
-
-  // Re-inject into all agent auth-profiles.json files on the gateway PVC
+  // Re-inject refreshed tokens into all agent files on the gateway PVC:
+  // 1. auth-profiles.json (openai-codex:codex-cli profile)
+  // 2. ~/.codex/auth.json (chatgpt format — required for acpx chatgpt auth mode)
+  // NOTE: Do NOT patch CODEX_API_KEY env var — that forces codex-api-key auth which
+  // lacks api.responses.write scope. chatgpt auth mode via ~/.codex/auth.json works.
   const credential = {
     type: 'oauth',
     provider: 'openai-codex',
@@ -2237,8 +2209,16 @@ const refreshCodexOAuthToken = async () => {
     const gwPods = await k8sApi.listNamespacedPod(NAMESPACE, undefined, undefined, undefined, undefined, 'app=clawdbot-gateway');
     const gwPod = gwPods.body.items.find((p) => p.status?.phase === 'Running');
     if (gwPod) {
-      const profileId = 'openai-codex:default';
       const credJson = JSON.stringify(credential).replace(/'/g, "'\\''");
+      const codexAuthJson = JSON.stringify({
+        auth_mode: 'chatgpt',
+        OPENAI_API_KEY: null,
+        tokens: {
+          access_token,
+          refresh_token: newRefreshToken || refreshToken,
+        },
+        last_refresh: new Date().toISOString(),
+      }).replace(/'/g, "'\\''");
       const script = [
         `const fs = require('fs'), path = require('path');`,
         `const base = '/state/agents';`,
@@ -2246,12 +2226,16 @@ const refreshCodexOAuthToken = async () => {
         `try {`,
         `  const agents = fs.readdirSync(base);`,
         `  for (const a of agents) {`,
-        `    const p = path.join(base, a, 'agent', 'auth-profiles.json');`,
         `    try {`,
+        `      const p = path.join(base, a, 'agent', 'auth-profiles.json');`,
         `      const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
-        `      store.profiles['${profileId}'] = ${credJson};`,
-        `      delete store.profiles['openai-codex:codex-cli'];`,
+        `      store.profiles['openai-codex:codex-cli'] = ${credJson};`,
         `      fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
+        `    } catch (_) {}`,
+        `    try {`,
+        `      const d = path.join(base, a, '.codex');`,
+        `      fs.mkdirSync(d, { recursive: true });`,
+        `      fs.writeFileSync(path.join(d, 'auth.json'), '${codexAuthJson}');`,
         `      count++;`,
         `    } catch (_) {}`,
         `  }`,
@@ -2269,14 +2253,14 @@ const refreshCodexOAuthToken = async () => {
           process.stdin,
           false,
           (status) => {
-            console.log(`[codex-refresh] auth-profiles inject: ${status.status}`);
+            console.log(`[codex-refresh] auth files re-inject: ${status.status}`);
             resolve();
           },
         );
       });
     }
   } catch (err) {
-    console.warn(`[codex-refresh] auth-profiles re-inject skipped: ${err.message}`);
+    console.warn(`[codex-refresh] auth files re-inject skipped: ${err.message}`);
   }
 
   return { expiresAt };
