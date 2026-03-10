@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const { refreshCodexOAuthTokenIfNeeded } = require('./agentProvisionerServiceK8s');
 const summarizerService = require('./summarizerService');
 const Integration = require('../models/Integration');
 const IntegrationSummaryService = require('./integrationSummaryService');
@@ -248,6 +249,22 @@ class SchedulerService {
       },
     );
 
+    // Refresh Codex OAuth token daily at 3 AM UTC if expiring within 3 days
+    const codexTokenRefreshJob = cron.schedule(
+      '0 3 * * *',
+      async () => {
+        try {
+          const result = await refreshCodexOAuthTokenIfNeeded({ thresholdDays: 3 });
+          if (result) {
+            console.log(`[codex-token-refresh] Refreshed. New expiry: ${new Date(result.expiresAt).toISOString()}`);
+          }
+        } catch (error) {
+          console.error('[codex-token-refresh] Failed:', error.message);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -260,6 +277,7 @@ class SchedulerService {
       agentHeartbeatJob,
       agentSessionResetJob,
       agentSessionSizeCheckJob,
+      codexTokenRefreshJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
@@ -276,6 +294,7 @@ class SchedulerService {
       `- OpenClaw sessions reset every ${AgentEventService.getSessionResetIntervalHours()} hour(s)`,
     );
     console.log('- Agent session size check runs every 10 minutes (clears if > AGENT_SESSION_MAX_SIZE_KB, default 400 KB)');
+    console.log('- Codex OAuth token refresh check runs daily at 3 AM UTC (refreshes if expiring within 3 days)');
     console.log(
       '- Stale agent events are garbage-collected every 10 minutes',
     );
@@ -856,8 +875,11 @@ class SchedulerService {
           }
         }
 
-        // For global agents, use pre-fetched best pod (avoids per-agent DB queries)
-        const heartbeatPodId = isGlobal
+        // For global agents, use pre-fetched best pod (avoids per-agent DB queries).
+        // fixedPod:true pins heartbeat to the installation's own podId (e.g. DM pod) and skips
+        // the activity-based rerouting so narration never lands in a topic pod.
+        const useFixedPod = installation?.config?.heartbeat?.fixedPod === true;
+        const heartbeatPodId = isGlobal && !useFixedPod
           ? (globalHeartbeatPodMap.get(`${agentName}:${instanceId}`) || podId)
           : podId;
 
