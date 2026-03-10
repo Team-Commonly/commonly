@@ -160,12 +160,12 @@ spec:
                 };
                 fs.writeFileSync(codexAuthPath, JSON.stringify(codexAuth, null, 2));
                 console.log('[auth-seed] wrote codex auth.json:', codexAuthPath);
-                // Also write to $HOME/.codex/auth.json so acpx finds it (HOME=/home/node in container)
-                const homeDir = process.env.HOME || '/home/node';
-                const homeCodexDir = path.join(homeDir, '.codex');
-                fs.mkdirSync(homeCodexDir, { recursive: true });
-                fs.writeFileSync(path.join(homeCodexDir, 'auth.json'), JSON.stringify(codexAuth, null, 2));
-                console.log('[auth-seed] wrote codex auth.json to HOME:', path.join(homeCodexDir, 'auth.json'));
+                // Write to shared PVC path so lifecycle postStart can copy it to HOME in the main container.
+                // (Init container and main container have separate ephemeral filesystems; only volumes are shared.)
+                const sharedCodexPath = path.join(stateDir, '.codex', 'auth.json');
+                fs.mkdirSync(path.dirname(sharedCodexPath), { recursive: true });
+                fs.writeFileSync(sharedCodexPath, JSON.stringify(codexAuth, null, 2));
+                console.log('[auth-seed] wrote codex auth.json to shared PVC:', sharedCodexPath);
               }
             }
             fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
@@ -255,6 +255,13 @@ spec:
         - --port
         - {{ .Values.agents.clawdbot.config.gatewayPort | default 18789 | quote }}
         - --allow-unconfigured
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - mkdir -p /home/node/.codex && cp /state/.codex/auth.json /home/node/.codex/auth.json 2>/dev/null || true
         env:
         - name: CLAWDBOT_GATEWAY_PORT
           value: {{ .Values.agents.clawdbot.config.gatewayPort | default 18789 | quote }}
