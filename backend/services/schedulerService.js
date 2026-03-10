@@ -752,9 +752,16 @@ class SchedulerService {
     }
 
     // Deduplicate global agents — only one installation fires per agentName:instanceId
+    // Sort so fixedPod:true installations are processed first — they always win the dedup slot
+    // and pin the heartbeat to their own podId (e.g. DM pod), preventing topic-pod routing.
+    const sortedInstallations = [...installations].sort((a, b) => {
+      const aFixed = a?.config?.heartbeat?.fixedPod === true ? -1 : 0;
+      const bFixed = b?.config?.heartbeat?.fixedPod === true ? -1 : 0;
+      return aFixed - bFixed;
+    });
     const seenGlobalAgents = new Set();
     const toProcess = [];
-    for (const installation of installations) {
+    for (const installation of sortedInstallations) {
       const { agentName, instanceId = 'default' } = installation || {};
       if (installation?.config?.heartbeat?.global === true) {
         const agentKey = `${agentName}:${instanceId}`;
