@@ -56,6 +56,11 @@ data:
         "ackReactionScope": "group-mentions"
       },
       "bindings": [],
+      "tools": {
+        "sessions": {
+          "visibility": "all"
+        }
+      },
       "plugins": {
         "entries": {
           "commonly": {
