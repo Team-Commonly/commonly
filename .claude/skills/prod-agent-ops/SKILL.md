@@ -1,7 +1,7 @@
 ---
 name: prod-agent-ops
 description: Production E2E testing, monitoring, and debugging for agent runtime reliability (queue health, context permissions, model/auth fallbacks, gateway/runtime recovery).
-last_updated: 2026-02-14
+last_updated: 2026-03-09
 ---
 
 # Prod Agent Ops
@@ -231,6 +231,58 @@ Verification:
 - Sync result includes X success and either fetched messages or no-new-posts without auth failure.
 - Integration record updates `lastSync` even when no posts are returned.
 - If token refresh occurred, refreshed token metadata is persisted (`accessToken`/`refreshToken`/scope/expires fields).
+
+### I) Gateway restart wipes all agent accounts (init container overwrites PVC)
+
+Symptoms:
+- After a gateway pod restart all agents show "not connected" in the admin UI
+- `kubectl exec -n commonly-dev deployment/clawdbot-gateway -- cat /state/moltbot.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('channels',{}).get('commonly',{}).get('accounts',{})))"`  → `0`
+- Init container log: `[auth-seed] no accounts found`
+- ConfigMap `channels.commonly.accounts` is empty (accounts only live in the PVC)
+
+Root cause: **Old init container** blindly `copyFileSync(ConfigMap → PVC)` before checking for accounts, wiping provisioner-written accounts. Fixed in helm chart commit `06127e485`.
+
+Fix (if running old image):
+1. Trigger reprovision-all (see below) — this rewrites accounts to both ConfigMap and PVC.
+2. After deploying the fixed helm chart (commit `06127e485`), future gateway restarts preserve PVC accounts automatically.
+
+Check the fix is deployed:
+```bash
+# Init container log should say "preserved N accounts from existing PVC state"
+kubectl logs -n commonly-dev -l app=clawdbot-gateway -c clawdbot-auth-seed --tail=20
+```
+
+### J) Backend crash during reprovision-all (`execInPod` unhandled stream errors)
+
+Symptoms:
+- Backend pod OOMKilled or exits with `UnhandledPromiseRejection #<ErrorEvent>`
+- Error traces reference `PassThrough` stream or k8s WebSocket errors during `syncAccountToStateMoltbot`
+- Reprovision-all curl returns a timeout or connection reset
+- `kubectl logs deployment/backend` shows the crash just after reprovision started
+
+Root cause: `execInPod` created `PassThrough` streams (stdout/stderr) without `'error'` event listeners. k8s WebSocket failures emit errors on those streams → Node.js uncaught exception → backend crash. Fixed in backend build `20260309230154`.
+
+Fix (workaround if old backend):
+- Reduce concurrent connections — reprovision individual agents rather than all at once.
+- Or: restart backend and retry reprovision-all quickly.
+
+Fix (permanent, backend `20260309230154`+):
+- `execInPod` now attaches `stdout.on('error', reject)` and `stderr.on('error', reject)`.
+- `injectCodexTokenToAgentAuthProfiles` and `refreshCodexOAuthToken` also have `.catch(reject)` guards.
+
+Generating admin JWT without crashing backend (avoid heavy `kubectl exec -- node -e "...mongoose.connect..."` — that causes OOM):
+```bash
+# Read JWT_SECRET from running process env
+JWT_SECRET=$(kubectl exec -n commonly-dev deployment/backend -- node -e "console.log(process.env.JWT_SECRET)" 2>/dev/null)
+# Read an admin user _id from mongo
+ADMIN_ID=$(kubectl exec -n commonly-dev deployment/backend -- node -e "
+const m=require('mongoose'); m.connect(process.env.MONGO_URI).then(async()=>{
+  const u=await m.connection.db.collection('users').findOne({role:'admin'},{projection:{_id:1}});
+  console.log(u._id); m.disconnect();
+});" 2>/dev/null)
+# Generate token locally
+node -e "const jwt=require('jsonwebtoken'); console.log(jwt.sign({id:'$ADMIN_ID'},'$JWT_SECRET',{expiresIn:'1h'}))"
+```
 
 ### D) Context/permission failures
 
