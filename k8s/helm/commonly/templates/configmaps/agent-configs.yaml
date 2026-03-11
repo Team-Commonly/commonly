@@ -67,7 +67,10 @@ data:
             "enabled": true
           },
           "acpx": {
-            "enabled": true
+            "enabled": true,
+            "permissionMode": "approve-all",
+            "nonInteractivePermissions": "fail",
+            "cwd": "/workspace"
           }
         }
       }
