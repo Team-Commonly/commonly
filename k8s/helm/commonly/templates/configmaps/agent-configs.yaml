@@ -59,9 +59,6 @@ data:
       "tools": {
         "sessions": {
           "visibility": "all"
-        },
-        "exec": {
-          "host": "gateway"
         }
       },
       "plugins": {
