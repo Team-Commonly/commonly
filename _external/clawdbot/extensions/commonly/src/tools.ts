@@ -1,12 +1,87 @@
+import { spawn } from "node:child_process";
+import { accessSync, constants } from "node:fs";
+
 import { Type } from "@sinclair/typebox";
 
-import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
 import {
   jsonResult,
   readNumberParam,
-  readStringArrayParam,
   readStringParam,
-} from "../../../src/agents/tools/common.js";
+} from "openclaw/plugin-sdk";
+
+const ACPX_BIN_CANDIDATES = [
+  "/app/node_modules/.pnpm/node_modules/.bin/acpx", // plugin-local install
+  "/app/extensions/acpx/node_modules/.bin/acpx",    // bundled extension binary
+  "/app/node_modules/.bin/acpx",                    // hoisted pnpm
+];
+
+function resolveAcpxBin(): string {
+  for (const candidate of ACPX_BIN_CANDIDATES) {
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // not executable, try next
+    }
+  }
+  return "acpx"; // fallback: hope it's in PATH
+}
+
+function runAcpx(
+  agentId: string,
+  task: string,
+  timeoutMs: number,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const bin = resolveAcpxBin();
+    const args = [agentId, "exec", task];
+    const child = spawn(bin, args, {
+      cwd: "/workspace",
+      env: { ...process.env },
+    });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, timeoutMs);
+    child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
+    child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+    child.on("error", (err) => { clearTimeout(timer); reject(err); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        reject(new Error(`acpx timed out after ${timeoutMs / 1000}s`));
+        return;
+      }
+      const output = stdout.trim() || stderr.trim();
+      if (code === 0 || stdout.trim()) {
+        resolve(output);
+      } else {
+        reject(new Error(stderr.trim() || `acpx exited with code ${code}`));
+      }
+    });
+  });
+}
+
+// readStringArrayParam is not in plugin-sdk — inline a minimal version.
+function readStringArrayParam(
+  params: Record<string, unknown>,
+  key: string,
+  options: { required?: boolean } = {},
+): string[] | undefined {
+  const raw = (params as Record<string, unknown>)[key];
+  if (Array.isArray(raw)) {
+    return raw.filter((e) => typeof e === "string").map((e: string) => e.trim());
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return [raw.trim()];
+  }
+  if (options.required) throw new Error(`${key} required`);
+  return undefined;
+}
 import { CommonlyClient } from "./client.js";
 
 const MemoryTargetSchema = Type.Unsafe<"daily" | "memory" | "skill">({
@@ -334,6 +409,32 @@ export class CommonlyTools {
           const podId = readStringParam(params, "podId", { required: true });
           const result = await client.selfInstall(podId);
           return jsonResult({ ok: true, ...result });
+        },
+      },
+      {
+        name: "acpx_run",
+        label: "ACP Agent Run",
+        description:
+          "Run a one-shot task with an ACP coding agent (codex, claude, pi, gemini, opencode, kimi). " +
+          "Blocks until the agent completes and returns the full output synchronously. " +
+          "Use this instead of sessions_spawn for coding tasks — it waits for the result and returns it in the same message.",
+        parameters: Type.Object({
+          agentId: Type.String({
+            description: "Agent to run: codex, claude, pi, gemini, opencode, kimi",
+          }),
+          task: Type.String({
+            description: "The task or prompt to send to the agent",
+          }),
+          timeoutSeconds: Type.Optional(
+            Type.Number({ description: "Timeout in seconds (default: 300)" }),
+          ),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const agentId = readStringParam(params, "agentId", { required: true })!;
+          const task = readStringParam(params, "task", { required: true })!;
+          const timeoutSeconds = readNumberParam(params, "timeoutSeconds") ?? 300;
+          const output = await runAcpx(agentId, task, timeoutSeconds * 1000);
+          return jsonResult({ ok: true, output });
         },
       },
       {

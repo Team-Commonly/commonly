@@ -1,41 +1,21 @@
 ---
 name: acp-router
-description: Route plain-language requests for Pi, Claude Code, Codex, OpenCode, Gemini CLI, or ACP harness work into direct acpx-driven sessions or OpenClaw ACP runtime sessions.
+description: Route plain-language requests for Pi, Claude Code, Codex, OpenCode, Gemini CLI, or ACP harness work into direct acpx_run tool calls.
 user-invocable: false
 ---
 
 # ACP Harness Router
 
-When user intent is "run this in Pi/Claude Code/Codex/OpenCode/Gemini/Kimi (ACP harness)", route through ACP-aware flows. Do NOT use subagent runtime or PTY scraping.
+When the user asks to run a coding agent (codex, claude, pi, gemini, opencode, kimi), call `acpx_run` and wait for it to return. Do NOT use sessions_spawn — it is async and the result is lost.
 
-## Intent detection
+## Workflow
 
-Trigger this skill when the user asks to:
-
-- run something in Pi / Claude Code / Codex / OpenCode / Gemini / Kimi
-- continue existing harness work
-- relay instructions to an external coding harness
-
-## Mode selection
-
-**DEFAULT: Use direct `acpx` path (path 2) for ALL coding harness requests.**
-
-Only use `sessions_spawn` (path 1) when the user explicitly asks for an "ACP thread" or "ACP session" by name.
-
-Direct `acpx` path is preferred because:
-- `sessions_spawn` with `thread: true` fails in commonly channel ("Thread bindings are unavailable")
-- `sessions_spawn` with `mode: "session"` requires thread binding which also fails
-- Direct acpx works reliably and supports persistent sessions natively
-
-Do not ask the user which path to use. Do not ask for confirmation. Act immediately.
-
-Do not use:
-- `subagents` runtime for harness control
-- PTY scraping of pi/claude/codex/opencode/gemini/kimi CLIs when `acpx` is available
+1. Call `acpx_run` with the agentId and task
+2. WAIT for it to return — it is synchronous and blocks until the agent completes
+3. In the SAME message, print the full output to the user
+4. Do NOT say "I'll let you know" or respond before you have the result
 
 ## AgentId mapping
-
-Use these immediately — never ask the user for agentId:
 
 - "pi" → `pi`
 - "claude" or "claude code" → `claude`
@@ -44,42 +24,21 @@ Use these immediately — never ask the user for agentId:
 - "gemini" or "gemini cli" → `gemini`
 - "kimi" or "kimi cli" → `kimi`
 
-## Direct acpx path (DEFAULT)
+## Example
 
-ACPX binary (always use this exact path):
-```
-ACPX_CMD="/app/extensions/acpx/node_modules/.bin/acpx"
-```
+acpx_run({ agentId: "codex", task: "write hello world in python", timeoutSeconds: 300 })
 
-### Persistent session (use for "keep it going", "ongoing", "persistent")
+## NEVER use
 
-```bash
-# Create session if missing, then prompt
-$ACPX_CMD <agent> sessions show <sessionName> 2>/dev/null \
-  || $ACPX_CMD <agent> sessions new --name <sessionName>
+- sessions_spawn (async — result never arrives back to this pod)
+- exec tool with acpx binary (sandbox has no acpx)
+- mode: "session" or thread: true
 
-$ACPX_CMD <agent> -s <sessionName> --cwd /workspace --format quiet "<prompt>"
-```
+## After running
 
-Session name format: `oc-<agent>-<conversationId>` where conversationId = thread/channel id.
+Print the full output to the user. Do not summarize or truncate.
 
-### One-shot
+## Failure handling
 
-```bash
-$ACPX_CMD <agent> exec --cwd /workspace --format quiet "<prompt>"
-```
-
-### After running: print the output to the user.
-
-### Failure handling
-
-- `NO_SESSION`: run `$ACPX_CMD <agent> sessions new --name <sessionName>` then retry once.
-- Any other error: report clearly to user, do NOT ask permission to retry.
-- If acpx binary missing: check `/app/extensions/acpx/node_modules/.bin/acpx` first. If missing, `cd /app/extensions/acpx && npm install --omit=dev --no-save acpx@0.1.15`.
-
-## OpenClaw ACP runtime path (fallback only)
-
-Only use if user explicitly requests `sessions_spawn` / ACP runtime. Use `sessions_spawn` with:
-- `runtime: "acp"`, `agentId: <id>`, `mode: "session"`
-
-If it returns any error → immediately switch to direct acpx path without asking.
+- If acpx_run returns an error: report it clearly. Do NOT retry silently.
+- If binary not found: report "acpx binary not found".
