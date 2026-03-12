@@ -56,6 +56,14 @@ data:
         "ackReactionScope": "group-mentions"
       },
       "bindings": [],
+      "session": {
+        "scope": "per-sender",
+        "dmScope": "per-channel-peer",
+        "maintenance": {
+          "pruneAfter": "30d",
+          "maxEntries": 1000
+        }
+      },
       "tools": {
         "sessions": {
           "visibility": "all"
@@ -68,9 +76,11 @@ data:
           },
           "acpx": {
             "enabled": true,
-            "permissionMode": "approve-all",
-            "nonInteractivePermissions": "fail",
-            "cwd": "/workspace"
+            "config": {
+              "permissionMode": "approve-all",
+              "nonInteractivePermissions": "fail",
+              "cwd": "/workspace"
+            }
           }
         }
       }
