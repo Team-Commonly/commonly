@@ -115,7 +115,7 @@ export default function MarkdownContent({ children, variant = 'post', onHashtagC
       return (
         <Box
           component="code"
-          sx={{ fontFamily: 'monospace', fontSize: '0.875em', display: 'block' }}
+          sx={{ fontFamily: 'monospace', fontSize: '0.875em', display: 'block', whiteSpace: 'pre' }}
         >
           {cChildren}
         </Box>
@@ -136,6 +136,9 @@ export default function MarkdownContent({ children, variant = 'post', onHashtagC
             fontFamily: 'monospace',
             fontSize: '0.85em',
             lineHeight: 1.5,
+            whiteSpace: 'pre',
+            wordBreak: 'normal',
+            overflowWrap: 'normal',
           }}
         >
           {preChildren}

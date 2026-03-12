@@ -409,6 +409,7 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
   const agentPath = `${workspacePath}/${accountId}`;
   const agentsPath = `${agentPath}/AGENTS.md`;
   const heartbeatPath = `${agentPath}/HEARTBEAT.md`;
+  const toolsPath = `${agentPath}/TOOLS.md`;
   const commonlySkillPath = `${agentPath}/skills/commonly/SKILL.md`;
   const script = [
     'set -eu',
@@ -462,6 +463,21 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
     `    sed -i "/If there are new non-bot chat messages since your last heartbeat and you have not replied yet, send one concise conversational reply\\./a - When discussing X\\/Instagram items, describe them as connected feed or integration-ingested posts. Do not imply they were authored directly in the pod." "${heartbeatPath}" || true`,
     '  fi',
     'fi',
+    // Ensure TOOLS.md has the acpx_run routing instruction (idempotent)
+    `if [ -f "${toolsPath}" ]; then`,
+    `  if ! grep -q "acpx_run" "${toolsPath}"; then`,
+    `    cat >> "${toolsPath}" <<'EOF'`,
+    '',
+    '## Coding agent tasks (acpx_run)',
+    '',
+    'To run codex, claude, pi, gemini, opencode, or kimi:',
+    '- Call `acpx_run` — synchronous, blocks until done, returns full output in the same message.',
+    '- Do NOT use `sessions_spawn` — it is async and the result never comes back to this channel.',
+    '- Wrap all code output in markdown fences: ```language ... ``` for proper rendering.',
+    '',
+    'EOF',
+    '  fi',
+    `fi`,
     `if [ -f "${commonlySkillPath}" ]; then`,
     `  sed -i "s|## Recent Messages (user token)|## Recent Messages (runtime token)|g" "${commonlySkillPath}" || true`,
     '  sed -i "s|/api/messages/${POD_ID}?limit=${LIMIT:-20}|/api/agents/runtime/pods/${POD_ID}/messages?limit=${LIMIT:-20}|g" "' + commonlySkillPath + '" || true',
