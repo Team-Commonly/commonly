@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const crypto = require('crypto');
 const { refreshCodexOAuthTokenIfNeeded } = require('./agentProvisionerServiceK8s');
 const summarizerService = require('./summarizerService');
 const Integration = require('../models/Integration');
@@ -659,6 +660,20 @@ class SchedulerService {
     return Math.max(1, Math.min(1440, Math.trunc(parsed)));
   }
 
+  /**
+   * Returns a deterministic minute offset (0..intervalMinutes-1) for an agent,
+   * derived from a SHA-256 hash of its identity key. Used to stagger first-fire
+   * times so all agents don't fire simultaneously after a cold start.
+   * The offset is rounded to the nearest 10-minute cron tick boundary.
+   */
+  static resolveHeartbeatStaggerOffset(agentKey, intervalMinutes) {
+    const tickWindow = 10; // scheduler cron runs every 10 min
+    const numSlots = Math.max(1, Math.floor(intervalMinutes / tickWindow));
+    const digest = crypto.createHash('sha256').update(agentKey).digest();
+    const slotIndex = digest.readUInt32BE(0) % numSlots;
+    return slotIndex * tickWindow;
+  }
+
   static resolveHeartbeatHintWindowMinutes() {
     const parsed = Number(process.env.AGENT_HEARTBEAT_SIGNAL_WINDOW_MINUTES);
     if (!Number.isFinite(parsed) || parsed <= 0) return 120;
@@ -870,13 +885,22 @@ class SchedulerService {
             ? lastHeartbeatByAgentKey.get(key)
             : lastHeartbeatByKey.get(key);
           const intervalMinutes = this.resolveHeartbeatIntervalMinutes(installation);
+          const nowMinutes = Math.floor(now.getTime() / 60000);
           if (lastCreatedAt) {
             // Compare using whole-minute buckets so cron ticks (every 10m at :00)
             // don't miss by 1-59s when last heartbeat was recorded at :01..:59.
-            const nowMinutes = Math.floor(now.getTime() / 60000);
             const lastMinutes = Math.floor(lastCreatedAt.getTime() / 60000);
             const ageMinutes = nowMinutes - lastMinutes;
             if (ageMinutes < intervalMinutes) {
+              return { enqueued: 0, skippedByInterval: 1 };
+            }
+          } else {
+            // No prior heartbeat (cold start). Stagger agents so they don't all
+            // fire on the first scheduler tick. Each agent gets a deterministic
+            // 10-minute slot within the interval, derived from its identity key.
+            const staggerOffset = this.resolveHeartbeatStaggerOffset(key, intervalMinutes);
+            const minuteWithinInterval = nowMinutes % intervalMinutes;
+            if (minuteWithinInterval < staggerOffset || minuteWithinInterval >= staggerOffset + 10) {
               return { enqueued: 0, skippedByInterval: 1 };
             }
           }
