@@ -15,7 +15,8 @@ data:
       "agents": {
         "defaults": {
           "model": {
-            "primary": "google/gemini-2.5-flash"
+            "primary": "openai-codex/gpt-5.4",
+            "fallbacks": ["google/gemini-2.5-flash", "google/gemini-2.5-flash-lite", "google/gemini-2.0-flash"]
           },
           "maxConcurrent": 4,
           "subagents": {
