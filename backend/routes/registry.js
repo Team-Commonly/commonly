@@ -3831,6 +3831,18 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       console.warn('[provision] Failed to pre-create agent DM pod:', dmErr.message);
     }
 
+    // Eagerly create the shared admin DM pod so all admins have an oversight channel
+    // for every provisioned agent instance. All admin users share one pod per agent
+    // instance — messages from any admin are treated uniformly as admin directives.
+    try {
+      await DMService.getOrCreateAdminDMPod(agentUser._id, {
+        agentName: name,
+        instanceId: normalizedInstanceId,
+      });
+    } catch (adminDmErr) {
+      console.warn('[provision] Failed to pre-create admin DM pod:', adminDmErr.message);
+    }
+
     const baseUrl = process.env.COMMONLY_API_URL
       || process.env.COMMONLY_BASE_URL
       || 'http://backend:5000';
