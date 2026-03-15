@@ -912,14 +912,11 @@ class AgentMessageService {
     metadata = {},
     postSourceNotice = true,
   }) {
+    // Resolve the installer so they are included in the shared DM pod even if
+    // they are not an admin. If no installer is found, admins-only still works.
     const ownerId = await DMService.resolveAgentOwner(agentName, podId, instanceId);
-    if (!ownerId) return null;
 
-    const ownerIdString = String(ownerId);
-    const agentIdString = String(agentUser?._id || '');
-    if (!ownerIdString || ownerIdString === agentIdString) return null;
-
-    const dmPod = await DMService.getOrCreateAgentDM(agentUser._id, ownerId, {
+    const dmPod = await DMService.getOrCreateAdminDMPod(agentUser._id, ownerId, {
       agentName,
       instanceId,
     });
