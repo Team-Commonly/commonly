@@ -166,6 +166,80 @@ class DMService {
 
     return installation?.installedBy || null;
   }
+
+  /**
+   * Find or create a shared admin DM pod for a given agent instance.
+   * All users with role='admin' are members of the same pod — they share one channel
+   * so admin messages are treated uniformly as admin directives by the agent.
+   * Idempotent: if new admins are added later they are merged into the existing pod.
+   */
+  static async getOrCreateAdminDMPod(agentUserId, { agentName, instanceId } = {}) {
+    const agentId = String(agentUserId);
+    const label = agentName || 'agent';
+    const instanceSuffix = instanceId && instanceId !== 'default' ? `:${instanceId}` : '';
+    const podName = `Admin: ${label}${instanceSuffix}`;
+
+    const admins = await User.find({ role: 'admin' }).select('_id').lean();
+    const adminIds = admins.map((a) => String(a._id));
+
+    // Look for the existing admin DM pod by canonical name.
+    const existing = await Pod.findOne({
+      type: 'agent-admin',
+      members: agentId,
+      name: podName,
+    });
+
+    if (existing) {
+      // Merge in any admins added since the pod was created.
+      const existingMemberStrings = existing.members.map(String);
+      const missing = adminIds.filter((id) => !existingMemberStrings.includes(id));
+      if (missing.length > 0) {
+        existing.members.push(...missing);
+        await existing.save();
+        try {
+          if (process.env.PG_HOST && PGPod) {
+            await Promise.all(missing.map((id) => PGPod.addMember(existing._id.toString(), id)));
+          }
+        } catch (pgError) {
+          console.error('Failed to sync new admin members to PostgreSQL:', pgError.message);
+        }
+      }
+      return existing;
+    }
+
+    // Create a new shared admin DM pod.
+    const allMembers = [...new Set([agentId, ...adminIds])];
+    const dmPod = new Pod({
+      name: podName,
+      description: `Admin oversight channel for ${label}${instanceSuffix}`,
+      type: 'agent-admin',
+      createdBy: adminIds[0] || agentId,
+      members: allMembers,
+    });
+    await dmPod.save();
+
+    try {
+      if (process.env.PG_HOST && PGPod) {
+        await PGPod.create(
+          dmPod.name,
+          dmPod.description,
+          'agent-admin',
+          adminIds[0] || agentId,
+          dmPod._id.toString(),
+        );
+        await Promise.all(allMembers.map((id) => PGPod.addMember(dmPod._id.toString(), id)));
+      }
+    } catch (pgError) {
+      console.error('Failed to sync admin DM pod to PostgreSQL:', pgError.message);
+    }
+
+    console.log(
+      `[dm-service] Created admin DM pod=${dmPod._id}`
+      + ` agent=${agentName} admins=${adminIds.length}`,
+    );
+
+    return dmPod;
+  }
 }
 
 module.exports = DMService;
