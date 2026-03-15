@@ -784,7 +784,10 @@ class AgentMessageService {
         || isErrorContent
       )
     ) {
-      if (routesErrorsToOwnerDM) {
+      // For heartbeat events, always attempt DM routing — ownerDm opt-in is not required.
+      // Diagnostic/error content must never leak into discussion pods regardless of
+      // whether the topic pod installation has errorRouting.ownerDm configured.
+      if (isHeartbeatEvent || routesErrorsToOwnerDM) {
         try {
           const routed = await AgentMessageService.routeErrorToDM({
             agentName,
