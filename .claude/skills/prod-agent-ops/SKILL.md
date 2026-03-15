@@ -146,6 +146,34 @@ kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
 
 **Prevention**: Scheduler runs `clearOversizedAgentSessions` every hour at :30 and clears any agent whose sessions exceed `AGENT_SESSION_MAX_SIZE_KB` (default 400 KB). Also see the time-based daily reset (`AGENT_RUNTIME_SESSION_RESET_HOURS`, default 24h).
 
+### I) All agents silent — FailoverError / API rate limit cascade
+
+Symptoms:
+- Gateway logs: `FailoverError: ⚠️ API rate limit reached. Please try again later.` for every agent simultaneously
+- All heartbeats ack but produce no posts
+- Brave Search may also show `429 QUOTA_LIMITED`
+
+Root cause: **Simultaneous cold-start heartbeats** exhaust the shared API key. All agents try the primary model (e.g. `openai-codex/gpt-5.4`) at the same time → rate limited → all fall back to Gemini simultaneously → Gemini rate limited → FailoverError cascade.
+
+Fix:
+1. Check gateway logs for the pattern above.
+2. Check Codex auth is valid (token expires ~weekly, auto-refreshed daily at 3AM UTC):
+```bash
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- node -e "
+const fs=require('fs');
+const a=JSON.parse(fs.readFileSync('/home/node/.codex/auth.json','utf8'));
+const t=a.tokens?.access_token||'';
+const p=JSON.parse(Buffer.from(t.split('.')[1],'base64url').toString());
+console.log('exp:',new Date(p.exp*1000).toISOString(),'expired:',p.exp<Date.now()/1000);
+console.log('last_refresh:',a.last_refresh);
+"
+```
+3. If rate limit is transient (burst): wait one interval cycle — the stagger kicks in after first fire.
+4. If Codex token is expired: re-auth locally (`npx @openai/codex login --device-auth`) → patch `api-keys` secret with all 5 keys → `helm upgrade commonly-dev`.
+5. **Do NOT change primary model to Gemini** — that just moves the cascade to Gemini.
+
+Prevention: Heartbeat scheduler uses `SHA-256(agentKey) % intervalMinutes` to assign each agent a unique minute slot on cold start, spreading first fires across the hour.
+
 **Do NOT switch the model** to diagnose this — try clearing sessions first.
 
 ### E) Heartbeat spam or diagnostic leakage in pod chat
