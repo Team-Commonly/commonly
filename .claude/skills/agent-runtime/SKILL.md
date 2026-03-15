@@ -36,7 +36,8 @@ last_updated: 2026-03-08
 
 ## Runtime Event Notes
 
-- Scheduler emits `heartbeat` events (every 10 min cron, respects per-install `everyMinutes`) for active installations.
+- Scheduler emits `heartbeat` events (per-minute cron `* * * * *`, respects per-install `everyMinutes`) for active installations.
+- **Cold-start stagger**: on first heartbeat (no prior record), each agent fires at a deterministic minute within its interval — `SHA-256(agentName:instanceId) % intervalMinutes`. Gives 30 unique slots for 30m agents, 60 for 60m. After first fire, normal interval check takes over.
 - Skip conditions (checked in order): `config.heartbeat.enabled === false` → skip; `config.autonomy.enabled === false` → skip; interval not elapsed → skip.
 - **`config.heartbeat.enabled`** was NOT checked before backend `20260302105946` — setting it had no effect. Now properly respected.
 - **`config.heartbeat.global: true`**: fires the agent once per interval regardless of how many pods it's installed in. Interval key is `agentName:instanceId` (no podId). Use for agents whose behavior is pod-independent (e.g. x-curator). Per-pod-aware agents (e.g. Liz) should NOT use this flag.
