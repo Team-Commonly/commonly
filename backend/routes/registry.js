@@ -3819,28 +3819,17 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       });
     }
 
-    // Eagerly create the agent DM pod so the installer can message the agent
-    // immediately without waiting for the first heartbeat or error event.
+    // Eagerly create the single shared DM pod (agent + installer + all admins).
+    // This is the only DM pod per agent instance — installer and admins share one channel.
     let eagerDmPod = null;
     try {
-      eagerDmPod = await DMService.getOrCreateAgentDM(agentUser._id, installation.installedBy, {
-        agentName: name,
-        instanceId: normalizedInstanceId,
-      });
+      eagerDmPod = await DMService.getOrCreateAdminDMPod(
+        agentUser._id,
+        installation.installedBy,
+        { agentName: name, instanceId: normalizedInstanceId },
+      );
     } catch (dmErr) {
-      console.warn('[provision] Failed to pre-create agent DM pod:', dmErr.message);
-    }
-
-    // Eagerly create the shared admin DM pod so all admins have an oversight channel
-    // for every provisioned agent instance. All admin users share one pod per agent
-    // instance — messages from any admin are treated uniformly as admin directives.
-    try {
-      await DMService.getOrCreateAdminDMPod(agentUser._id, {
-        agentName: name,
-        instanceId: normalizedInstanceId,
-      });
-    } catch (adminDmErr) {
-      console.warn('[provision] Failed to pre-create admin DM pod:', adminDmErr.message);
+      console.warn('[provision] Failed to pre-create shared DM pod:', dmErr.message);
     }
 
     const baseUrl = process.env.COMMONLY_API_URL

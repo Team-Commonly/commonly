@@ -168,12 +168,13 @@ class DMService {
   }
 
   /**
-   * Find or create a shared admin DM pod for a given agent instance.
-   * All users with role='admin' are members of the same pod — they share one channel
-   * so admin messages are treated uniformly as admin directives by the agent.
-   * Idempotent: if new admins are added later they are merged into the existing pod.
+   * Find or create the single shared DM pod for a given agent instance.
+   * Members: agent + installer/owner + all admin users.
+   * All members are treated as a unified admin/owner group — the agent does not
+   * distinguish between individual admins. Idempotent: new admins or a changed
+   * installer are merged in on every call (e.g. reprovision).
    */
-  static async getOrCreateAdminDMPod(agentUserId, { agentName, instanceId } = {}) {
+  static async getOrCreateAdminDMPod(agentUserId, installerUserId, { agentName, instanceId } = {}) {
     const agentId = String(agentUserId);
     const label = agentName || 'agent';
     const instanceSuffix = instanceId && instanceId !== 'default' ? `:${instanceId}` : '';
@@ -181,8 +182,11 @@ class DMService {
 
     const admins = await User.find({ role: 'admin' }).select('_id').lean();
     const adminIds = admins.map((a) => String(a._id));
+    // Include the installer even if they are not an admin (community-installed agents).
+    const installerId = installerUserId ? String(installerUserId) : null;
+    const allExpectedIds = [...new Set([agentId, ...adminIds, ...(installerId ? [installerId] : [])])];
 
-    // Look for the existing admin DM pod by canonical name.
+    // Look for the existing shared DM pod by canonical name.
     const existing = await Pod.findOne({
       type: 'agent-admin',
       members: agentId,
@@ -190,9 +194,9 @@ class DMService {
     });
 
     if (existing) {
-      // Merge in any admins added since the pod was created.
+      // Merge in any members missing since the pod was created (new admins, changed installer).
       const existingMemberStrings = existing.members.map(String);
-      const missing = adminIds.filter((id) => !existingMemberStrings.includes(id));
+      const missing = allExpectedIds.filter((id) => !existingMemberStrings.includes(id));
       if (missing.length > 0) {
         existing.members.push(...missing);
         await existing.save();
@@ -201,20 +205,20 @@ class DMService {
             await Promise.all(missing.map((id) => PGPod.addMember(existing._id.toString(), id)));
           }
         } catch (pgError) {
-          console.error('Failed to sync new admin members to PostgreSQL:', pgError.message);
+          console.error('Failed to sync new members to PostgreSQL:', pgError.message);
         }
       }
       return existing;
     }
 
-    // Create a new shared admin DM pod.
-    const allMembers = [...new Set([agentId, ...adminIds])];
+    // Create the shared DM pod.
+    const creatorId = installerId || adminIds[0] || agentId;
     const dmPod = new Pod({
       name: podName,
-      description: `Admin oversight channel for ${label}${instanceSuffix}`,
+      description: `Admin & owner channel for ${label}${instanceSuffix}`,
       type: 'agent-admin',
-      createdBy: adminIds[0] || agentId,
-      members: allMembers,
+      createdBy: creatorId,
+      members: allExpectedIds,
     });
     await dmPod.save();
 
@@ -224,18 +228,18 @@ class DMService {
           dmPod.name,
           dmPod.description,
           'agent-admin',
-          adminIds[0] || agentId,
+          creatorId,
           dmPod._id.toString(),
         );
-        await Promise.all(allMembers.map((id) => PGPod.addMember(dmPod._id.toString(), id)));
+        await Promise.all(allExpectedIds.map((id) => PGPod.addMember(dmPod._id.toString(), id)));
       }
     } catch (pgError) {
       console.error('Failed to sync admin DM pod to PostgreSQL:', pgError.message);
     }
 
     console.log(
-      `[dm-service] Created admin DM pod=${dmPod._id}`
-      + ` agent=${agentName} admins=${adminIds.length}`,
+      `[dm-service] Created shared admin DM pod=${dmPod._id}`
+      + ` agent=${agentName} members=${allExpectedIds.length}`,
     );
 
     return dmPod;
