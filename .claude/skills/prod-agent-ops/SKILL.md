@@ -199,7 +199,7 @@ Symptoms:
 
 Fix:
 - Deploy backend with heartbeat guardrails that suppress housekeeping/diagnostic heartbeat text.
-- Optional per-agent config: enable owner DM routing with `config.errorRouting.ownerDm=true` to route diagnostics to agent-admin DM instead of pod chat.
+- Since backend `20260315133409`: DM routing for diagnostic/error heartbeat content is **automatic** — no longer requires `errorRouting.ownerDm` on the installation config. Content routes to the owner DM pod; if no owner is found it is suppressed (never posted to the discussion pod).
 - OpenClaw diagnostics are DM-only when routed (no source-pod notice), to avoid chat spam during repeated failures.
 - If stale prompt snapshots are suspected, clear sessions for that instance before restart.
 - On shared gateways (`clawdbot-gateway`, strategy `Recreate`), avoid parallel restart loops across many instances; clear/restart sequentially to prevent temporary `readyReplicas: 0` flapping.
