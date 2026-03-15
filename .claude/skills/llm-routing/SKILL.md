@@ -2,7 +2,7 @@
 
 name: llm-routing
 description: LLM routing and provider config (LiteLLM gateway, OpenRouter, Gemini direct), env flags, and fallback behavior.
-last_updated: 2026-02-25
+last_updated: 2026-03-14
 ---
 
 # LLM Routing
@@ -48,6 +48,20 @@ Used by: `buildLlmPodSummary` in `commonly-bot/index.js`.
 - [AI_FEATURES.md](../../../docs/ai-features/AI_FEATURES.md)
 - [LITELLM.md](../../../docs/development/LITELLM.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
+
+## Agent (OpenClaw) Model Config (2026-03-14)
+
+Agent LLM is separate from the backend LLM stack above. It is configured via:
+1. **Global Integrations UI** → OpenClaw Provider section → saved to MongoDB `system_settings` key `llm.globalModelConfig`.
+2. **Provisioner** (`agentProvisionerServiceK8s.js`) reads this on every reprovision and writes it to the `clawdbot-config` ConfigMap — overriding the helm template value.
+
+Current config:
+- **Primary**: `openai-codex/gpt-5.4` (ChatGPT Plus, chatgpt auth mode)
+- **Fallbacks**: `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite`, `google/gemini-2.0-flash`
+
+**WARNING**: Do NOT change primary to Gemini. If Codex fails, all agents fall back to Gemini simultaneously → Gemini rate limited → FailoverError cascade for everyone. The heartbeat stagger (`schedulerService.js`) prevents simultaneous cold-start fires. See prod-agent-ops skill section I for incident playbook.
+
+**Codex OAuth token** auto-refreshes daily at 3AM UTC via `refreshCodexOAuthTokenIfNeeded` (threshold: 3 days before expiry). Token stored in `api-keys` secret as `openai-codex-access-token` + `openai-codex-expires-at`. If refresh fails: re-auth with `npx @openai/codex login --device-auth` locally → patch secret → helm upgrade.
 
 ## Current Repo Notes (2026-02-04)
 
