@@ -3389,12 +3389,12 @@ const ChatRoom = () => {
                                 <Box sx={{ flexGrow: 1 }}>
                                     <Typography variant="h6" component="div">
                                         {room?.type === 'agent-admin'
-                                            ? String(room?.name || 'Direct Message').replace(/^DM:\s*/i, '')
+                                            ? String(room?.name || 'Admin Channel').replace(/^Admin:\s*/i, '')
                                             : (room?.name || 'Chat Room')}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary">
                                         {room?.type === 'agent-admin'
-                                            ? 'Direct Message'
+                                            ? 'Admin Channel'
                                             : `${room?.members?.length || 0} members`}
                                     </Typography>
                                 </Box>
