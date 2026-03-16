@@ -351,7 +351,7 @@ const Pod = () => {
             }
             
             // Get the pod type based on the selected tab
-            const podTypes = ['chat', 'study', 'games', 'agent-ensemble'];
+            const podTypes = ['chat', 'study', 'games', 'agent-ensemble', 'team'];
             const podType = podTypes[tabValue] || 'chat';
             
             const response = await axios.post('/api/pods', {
@@ -819,6 +819,7 @@ const Pod = () => {
                             <MenuItem value={1}>Study</MenuItem>
                             <MenuItem value={2}>Games</MenuItem>
                             <MenuItem value={3}>Agent Ensemble</MenuItem>
+                            <MenuItem value={4}>Team</MenuItem>
                         </Select>
                     </FormControl>
                     <FormControl fullWidth sx={{ mb: 2 }}>
