@@ -325,6 +325,17 @@ const ChatRoom = () => {
     const [taskBoard, setTaskBoard] = useState(null);
     const [taskBoardLoading, setTaskBoardLoading] = useState(false);
 
+    // Parent pod info for child pods — derive from room.parentPod
+    const parentPodId = room?.parentPod
+        ? (room.parentPod._id || room.parentPod)
+        : null;
+    const podSection = parentPodId
+        ? (/backend/i.test(room.name) ? 'Backend'
+            : /frontend/i.test(room.name) ? 'Frontend'
+            : /devops/i.test(room.name) ? 'DevOps'
+            : null)
+        : null;
+
     const isPodAdmin = room?.createdBy?._id && currentUser?._id
         ? room.createdBy._id === currentUser._id
         : false;
@@ -657,7 +668,7 @@ const ChatRoom = () => {
             setTaskBoardLoading(true);
             try {
                 const token = localStorage.getItem('token');
-                const res = await axios.get(`/api/v1/pods/${roomId}/memory/MEMORY.md`, {
+                const res = await axios.get(`/api/v1/pods/${parentPodId || roomId}/memory/MEMORY.md`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 if (!cancelled) setTaskBoard(res.data.content || '');
@@ -670,7 +681,7 @@ const ChatRoom = () => {
         load();
         const interval = setInterval(load, 30000);
         return () => { cancelled = true; clearInterval(interval); };
-    }, [activeTab, roomId]);
+    }, [activeTab, roomId, parentPodId]);
 
     const fetchOlderMessages = async () => {
         if (!roomId || !hasMoreMessages || isLoadingOlder) {
@@ -3502,10 +3513,31 @@ const ChatRoom = () => {
                     {/* Board Tab */}
                     {activeTab === 'board' && (
                         <Box sx={{ p: 3, mt: 8, overflowY: 'auto', height: 'calc(100vh - 64px)' }}>
+                            {parentPodId && (
+                                <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Button
+                                        size="small"
+                                        variant="outlined"
+                                        onClick={() => navigate(`/pods/chat/${parentPodId}`)}
+                                        sx={{ textTransform: 'none', fontSize: '0.8rem' }}
+                                    >
+                                        ↑ View {room?.parentPod?.name || 'Parent'} task board
+                                    </Button>
+                                    {podSection && (
+                                        <Typography variant="caption" color="text.secondary">
+                                            Showing: {podSection} tasks only
+                                        </Typography>
+                                    )}
+                                </Box>
+                            )}
                             {taskBoardLoading && <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', my: 4 }} />}
                             {!taskBoardLoading && (() => {
                                 const { sections, done } = parseTaskBoard(taskBoard);
-                                const hasTasks = sections.some(s => s.tasks.length > 0) || done.length > 0;
+                                const displaySections = podSection
+                                    ? sections.filter(s => s.title.toLowerCase().includes(podSection.toLowerCase()))
+                                    : sections;
+                                const displayDone = done;
+                                const hasTasks = displaySections.some(s => s.tasks.length > 0) || displayDone.length > 0;
                                 if (!hasTasks) {
                                     return (
                                         <Box sx={{ textAlign: 'center', mt: 8, color: 'text.secondary' }}>
@@ -3518,7 +3550,7 @@ const ChatRoom = () => {
                                 return (
                                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                                         {/* Pending sections */}
-                                        {sections.map((section) => {
+                                        {displaySections.map((section) => {
                                             const assignee = getAssigneeFromSection(section.title);
                                             const color = ASSIGNEE_COLORS[assignee] || '#555';
                                             return (
@@ -3554,12 +3586,12 @@ const ChatRoom = () => {
                                             );
                                         })}
                                         {/* Done column */}
-                                        {done.length > 0 && (
+                                        {displayDone.length > 0 && (
                                             <Box sx={{ minWidth: 260, flex: '1 1 260px', maxWidth: 340 }}>
                                                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color: 'success.main', letterSpacing: 0.3 }}>
                                                     Done
                                                 </Typography>
-                                                {done.map((task) => (
+                                                {displayDone.map((task) => (
                                                     <Card key={task.taskId} variant="outlined" sx={{ mb: 1.5, borderLeft: '3px solid #2e7d32', opacity: 0.75 }}>
                                                         <CardContent sx={{ p: '10px 14px !important' }}>
                                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>

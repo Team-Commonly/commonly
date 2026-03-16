@@ -450,6 +450,20 @@ router.get('/:podId/external-links', auth, async (req, res) => {
   }
 });
 
+// Get child pods for a parent pod
+router.get('/:id/children', auth, async (req, res) => {
+  try {
+    const children = await Pod.find({ parentPod: req.params.id })
+      .populate('createdBy', 'username profilePicture')
+      .populate('members', 'username profilePicture')
+      .sort({ name: 1 });
+    return res.json(children);
+  } catch (err) {
+    console.error('Error fetching child pods:', err.message);
+    return res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 // Get pods by type or specific pod by ID
 router.get('/:param', auth, async (req, res) => {
   const { param } = req.params;
