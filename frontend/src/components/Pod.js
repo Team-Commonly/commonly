@@ -1,18 +1,19 @@
 /* eslint-disable max-len */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { 
-    Container, Typography, Box, Grid, Card, CardContent, CardActions, 
+import {
+    Container, Typography, Box, Grid, Card, CardContent, CardActions,
     Button, TextField, Dialog, DialogTitle, DialogContent, DialogActions,
     FormControl, InputLabel, Select, MenuItem, CircularProgress, Tabs, Tab,
-    AppBar, Toolbar, Avatar, Chip, Tooltip, IconButton
+    AppBar, Toolbar, Avatar, Chip, Tooltip, IconButton, FormControlLabel, Switch
 } from '@mui/material';
-import { 
-    Add as AddIcon, 
+import {
+    Add as AddIcon,
     Search as SearchIcon,
     People as PeopleIcon,
     Launch as LaunchIcon,
-    DeleteOutline as DeleteOutlineIcon
+    DeleteOutline as DeleteOutlineIcon,
+    Lock as LockIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -58,6 +59,7 @@ const Pod = () => {
     const [openDialog, setOpenDialog] = useState(false);
     const [roomName, setRoomName] = useState('');
     const [roomDescription, setRoomDescription] = useState('');
+    const [inviteOnly, setInviteOnly] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [tabValue, setTabValue] = useState(0);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -354,7 +356,8 @@ const Pod = () => {
             const response = await axios.post('/api/pods', {
                 name: roomName,
                 description: roomDescription,
-                type: podType
+                type: podType,
+                joinPolicy: inviteOnly ? 'invite-only' : 'open',
             }, {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -368,6 +371,7 @@ const Pod = () => {
             setOpenDialog(false);
             setRoomName('');
             setRoomDescription('');
+            setInviteOnly(false);
             setError(null);
             
             // Refresh the pod list
@@ -642,6 +646,11 @@ const Pod = () => {
                                                 label={(pod.type || getPodType()).replace('-', ' ')}
                                             />
                                             <Box className="pod-card-meta-status">
+                                                {pod.joinPolicy === 'invite-only' && (
+                                                    <Tooltip title="Invite-only" arrow>
+                                                        <LockIcon fontSize="small" sx={{ color: 'text.secondary', mr: 0.5 }} />
+                                                    </Tooltip>
+                                                )}
                                                 {hasUnread ? (
                                                     <Chip
                                                         size="small"
@@ -709,15 +718,23 @@ const Pod = () => {
                                                 <LaunchIcon fontSize="small" />
                                             </IconButton>
                                         </Tooltip>
-                                        <Button 
-                                            variant="contained" 
-                                            color="primary"
-                                            fullWidth
-                                            className="pod-primary-action"
-                                            onClick={() => handleJoinRoom(pod._id)}
+                                        <Tooltip
+                                            title={!joined && pod.joinPolicy === 'invite-only' ? 'Invite-only — ask the pod creator to add you' : ''}
+                                            arrow
                                         >
-                                            {joined ? 'Open Chat' : 'Join Room'}
-                                        </Button>
+                                            <span style={{ width: '100%' }}>
+                                                <Button
+                                                    variant="contained"
+                                                    color="primary"
+                                                    fullWidth
+                                                    className="pod-primary-action"
+                                                    onClick={() => handleJoinRoom(pod._id)}
+                                                    disabled={!joined && pod.joinPolicy === 'invite-only'}
+                                                >
+                                                    {joined ? 'Open Chat' : 'Join Room'}
+                                                </Button>
+                                            </span>
+                                        </Tooltip>
                                         {canDeletePod && (
                                             <Tooltip title="Delete" arrow>
                                                 <IconButton
@@ -785,6 +802,24 @@ const Pod = () => {
                             <MenuItem value={3}>Agent Ensemble</MenuItem>
                         </Select>
                     </FormControl>
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                checked={inviteOnly}
+                                onChange={(e) => setInviteOnly(e.target.checked)}
+                                color="primary"
+                            />
+                        }
+                        label={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <LockIcon fontSize="small" sx={{ color: inviteOnly ? 'primary.main' : 'text.disabled' }} />
+                                <Typography variant="body2">
+                                    Invite-only {inviteOnly ? '— only you and admins can add members' : ''}
+                                </Typography>
+                            </Box>
+                        }
+                        sx={{ mb: 1 }}
+                    />
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 3 }}>
                     <Button onClick={() => setOpenDialog(false)} color="inherit" variant="outlined">

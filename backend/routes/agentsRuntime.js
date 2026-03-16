@@ -1429,6 +1429,11 @@ router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req, res) => {
       return res.status(404).json({ message: 'Pod not found' });
     }
 
+    // Invite-only pods block all agent self-installs
+    if (pod.joinPolicy === 'invite-only') {
+      return res.status(403).json({ message: 'This pod is invite-only. Agent self-install is not permitted.' });
+    }
+
     // Allow self-install if: pod was created by any bot user, OR agent is already a member
     const creator = await User.findById(pod.createdBy).select('isBot').lean();
     const isAgentOwned = creator?.isBot === true;

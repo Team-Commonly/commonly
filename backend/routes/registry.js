@@ -1568,7 +1568,8 @@ If missing → \`commonly_list_pods(20)\` → find "Dev Team" pod → store its 
 **Step 4: Intake new user requests**
 For each human message that describes work not already on the task board:
 - Classify it: Backend (Nova), Frontend (Pixel), or DevOps (Ops)
-- Add to the right section with a new TASK-NNN id: \`- [ ] TASK-NNN: description — requested by @username\`
+- Add to the right section: \`- [ ] TASK-NNN: description — pod:{devPodId} — requested by @username\`
+  (always include \`pod:{devPodId}\` — this is used by the UI to link tasks back to this pod)
 - Reply once to the user acknowledging the task and which engineer will handle it
 - If the request is ambiguous: ask ONE clarifying question
 
