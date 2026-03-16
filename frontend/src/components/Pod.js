@@ -60,6 +60,7 @@ const Pod = () => {
     const [roomName, setRoomName] = useState('');
     const [roomDescription, setRoomDescription] = useState('');
     const [inviteOnly, setInviteOnly] = useState(false);
+    const [parentPodId, setParentPodId] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [tabValue, setTabValue] = useState(0);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -358,6 +359,7 @@ const Pod = () => {
                 description: roomDescription,
                 type: podType,
                 joinPolicy: inviteOnly ? 'invite-only' : 'open',
+                ...(parentPodId ? { parentPod: parentPodId } : {}),
             }, {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -372,6 +374,7 @@ const Pod = () => {
             setRoomName('');
             setRoomDescription('');
             setInviteOnly(false);
+            setParentPodId('');
             setError(null);
             
             // Refresh the pod list
@@ -622,7 +625,15 @@ const Pod = () => {
                             </Box>
                         </Grid>
                     ) : (
-                        sortedPods.map(pod => {
+                        (() => {
+                            const byParent = sortedPods.reduce((acc, p) => {
+                                if (p.parentPod) {
+                                    const pid = p.parentPod?._id || p.parentPod;
+                                    acc[pid] = [...(acc[pid] || []), p];
+                                }
+                                return acc;
+                            }, {});
+                            const renderCard = (pod, isChild) => {
                             const canDeletePod = Boolean(currentUser && (
                                 currentUser.role === 'admin'
                                 || (pod.createdBy && pod.createdBy._id === currentUser._id)
@@ -636,8 +647,8 @@ const Pod = () => {
                                 roleCounts.Member ? `${roleCounts.Member} member${roleCounts.Member > 1 ? 's' : ''}` : null,
                             ].filter(Boolean).join(' • ');
                             return (
-                            <Grid item xs={12} sm={6} md={4} key={pod._id}>
-                                <Card className={`pod-card ${hasUnread ? 'pod-card-unread' : ''}`}>
+                            <Grid item xs={12} sm={6} md={4} key={pod._id} sx={isChild ? { pl: { sm: 4 } } : undefined}>
+                                <Card className={`pod-card ${hasUnread ? 'pod-card-unread' : ''}`} sx={isChild ? { borderLeft: '3px solid', borderColor: 'primary.light' } : undefined}>
                                     <CardContent sx={{ p: 2, pb: 1.5 }}>
                                         <Box className="pod-card-meta">
                                             <Chip
@@ -661,6 +672,9 @@ const Pod = () => {
                                                 {joined ? (
                                                     <Chip size="small" className="pod-card-joined-chip" label="Joined" />
                                                 ) : null}
+                                                {!isChild && byParent[pod._id]?.length > 0 && (
+                                                    <Chip size="small" label={`${byParent[pod._id].length} sub-pod${byParent[pod._id].length > 1 ? 's' : ''}`} sx={{ ml: 0.5 }} />
+                                                )}
                                             </Box>
                                         </Box>
                                         <PodSummary 
@@ -750,7 +764,12 @@ const Pod = () => {
                                 </Card>
                             </Grid>
                             );
-                        })
+                            };
+                            return sortedPods.filter(p => !p.parentPod).flatMap(pod => [
+                                renderCard(pod, false),
+                                ...(byParent[pod._id] || []).map(c => renderCard(c, true)),
+                            ]);
+                        })()
                     )}
                 </Grid>
             )}
@@ -800,6 +819,19 @@ const Pod = () => {
                             <MenuItem value={1}>Study</MenuItem>
                             <MenuItem value={2}>Games</MenuItem>
                             <MenuItem value={3}>Agent Ensemble</MenuItem>
+                        </Select>
+                    </FormControl>
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                        <InputLabel>Parent Pod (optional)</InputLabel>
+                        <Select
+                            value={parentPodId}
+                            onChange={(e) => setParentPodId(e.target.value)}
+                            label="Parent Pod (optional)"
+                        >
+                            <MenuItem value="">None (top-level pod)</MenuItem>
+                            {pods.filter(p => !p.parentPod).map(p => (
+                                <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>
+                            ))}
                         </Select>
                     </FormControl>
                     <FormControlLabel

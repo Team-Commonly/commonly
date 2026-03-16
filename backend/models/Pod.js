@@ -21,6 +21,11 @@ const PodSchema = new mongoose.Schema(
       enum: ['open', 'invite-only'],
       default: 'open',
     },
+    parentPod: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Pod',
+      default: null,
+    },
     // Agent Ensemble Pod (AEP) configuration - only used when type === 'agent-ensemble'
     agentEnsemble: {
       // Whether the ensemble is currently enabled
