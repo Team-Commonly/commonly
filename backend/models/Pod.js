@@ -16,6 +16,11 @@ const PodSchema = new mongoose.Schema(
       enum: ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin'],
       default: 'chat',
     },
+    joinPolicy: {
+      type: String,
+      enum: ['open', 'invite-only'],
+      default: 'open',
+    },
     // Agent Ensemble Pod (AEP) configuration - only used when type === 'agent-ensemble'
     agentEnsemble: {
       // Whether the ensemble is currently enabled
