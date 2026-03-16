@@ -16,7 +16,7 @@ if (process.env.PG_HOST) {
   PGMessage = require('../models/pg/Message');
 }
 
-const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin'];
+const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'team'];
 const DEFAULT_POD_AGENT = process.env.DEFAULT_POD_AGENT_NAME || 'commonly-bot';
 const DEFAULT_POD_AGENT_SCOPES = [
   'context:read',
