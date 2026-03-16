@@ -159,6 +159,7 @@ exports.getAllPods = async (req, res) => {
     let pods = await Pod.find(query)
       .populate('createdBy', 'username profilePicture')
       .populate('members', 'username profilePicture')
+      .populate('parentPod', 'name _id')
       .sort({ updatedAt: -1 });
 
     // When fetching agent-admin pods, restrict to pods the requester belongs to
@@ -213,7 +214,8 @@ exports.getPodById = async (req, res) => {
     // Get the pod with populated data
     const pod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture');
+      .populate('members', 'username profilePicture')
+      .populate('parentPod', 'name _id');
 
     if (!pod) {
       return res.status(404).json({ error: 'Pod not found' });
@@ -239,7 +241,9 @@ exports.getPodById = async (req, res) => {
 // Create a pod
 exports.createPod = async (req, res) => {
   try {
-    const { name, description, type, joinPolicy } = req.body;
+    const {
+      name, description, type, joinPolicy, parentPod,
+    } = req.body;
 
     if (!name || !type) {
       return res.status(400).json({ msg: 'Name and type are required' });
@@ -254,6 +258,7 @@ exports.createPod = async (req, res) => {
       description,
       type,
       joinPolicy: joinPolicy === 'invite-only' ? 'invite-only' : 'open',
+      parentPod: parentPod || null,
       createdBy: req.userId,
       members: [req.userId],
     });
