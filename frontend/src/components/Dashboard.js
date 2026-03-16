@@ -147,7 +147,7 @@ const Dashboard = () => {
                     <ListItemIcon>
                         <ForumIcon />
                     </ListItemIcon>
-                    <ListItemText primary="Agent DMs" />
+                    <ListItemText primary="Agent Admin" />
                 </ListItem>
 
                 <ListItem
