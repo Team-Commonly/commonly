@@ -6,6 +6,7 @@ const adminAuth = require('../middleware/adminAuth');
 const {
   register,
   login,
+  refresh,
   getCurrentUser,
   verifyEmail,
   updateProfile,
@@ -33,6 +34,11 @@ router.post('/waitlist', requestWaitlist);
 // @desc    Login user
 // @access  Public
 router.post('/login', login);
+
+// @route   POST api/auth/refresh
+// @desc    Silently refresh a valid token (returns new 1h token)
+// @access  Private
+router.post('/refresh', auth, refresh);
 
 // @route   GET api/auth/user
 // @desc    Get user data
