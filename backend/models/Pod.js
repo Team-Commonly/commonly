@@ -13,7 +13,7 @@ const PodSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin'],
+      enum: ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'team'],
       default: 'chat',
     },
     joinPolicy: {
