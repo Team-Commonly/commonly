@@ -239,7 +239,7 @@ exports.getPodById = async (req, res) => {
 // Create a pod
 exports.createPod = async (req, res) => {
   try {
-    const { name, description, type } = req.body;
+    const { name, description, type, joinPolicy } = req.body;
 
     if (!name || !type) {
       return res.status(400).json({ msg: 'Name and type are required' });
@@ -253,6 +253,7 @@ exports.createPod = async (req, res) => {
       name,
       description,
       type,
+      joinPolicy: joinPolicy === 'invite-only' ? 'invite-only' : 'open',
       createdBy: req.userId,
       members: [req.userId],
     });
@@ -341,6 +342,15 @@ exports.joinPod = async (req, res) => {
 
     if (isMember) {
       return res.status(400).json({ msg: 'Already a member of this pod' });
+    }
+
+    // Enforce invite-only policy
+    if (pod.joinPolicy === 'invite-only') {
+      const isAdmin = await isGlobalAdminRequest(req);
+      const isCreator = pod.createdBy.toString() === userId.toString();
+      if (!isAdmin && !isCreator) {
+        return res.status(403).json({ msg: 'This pod is invite-only. Ask the pod creator to add you.' });
+      }
     }
 
     // Add user to pod members
