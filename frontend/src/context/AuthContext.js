@@ -70,7 +70,7 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       return res.data;
     } catch (err) {
-      setError(err.response?.data?.msg || 'Login failed');
+      setError(err.response?.data?.error || err.response?.data?.msg || 'Login failed');
       throw err;
     } finally {
       setLoading(false);
