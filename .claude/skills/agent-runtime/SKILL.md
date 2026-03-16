@@ -243,11 +243,21 @@ Edit `heartbeatTemplate` in `PRESET_DEFINITIONS` → rebuild backend → `reprov
 **User token preservation** (`issueUserTokenForInstallation` in `backend/routes/registry.js`):
 - Fixed: checks `agentUser.apiToken` first; only generates a new token if none exists OR `force: true` is passed.
 
-**DM pod routing fix** (`backend/routes/agentsRuntime.js` `POST /dm`):
-- `getOrCreateAgentUser(agentName, { instanceId })` — second arg is an options object, not a bare string.
+**Admin DM pod design** (since 2026-03-15):
+- Single shared pod per agent instance: `Admin: {agentName}:{instanceId}` (e.g. `Admin: fakesam`).
+- Members = agent user + installer/owner + all `role:'admin'` users. Idempotent — merges new admins on reprovision.
+- Created eagerly at provision time via `DMService.getOrCreateAdminDMPod(agentUser._id, installation.installedBy, { agentName, instanceId })`.
+- `POST /api/agents/runtime/dm` (agent card "Message" button) also calls `getOrCreateAdminDMPod` — opens the shared admin pod.
+- Old `DM: {agentName}` 1:1 pods are no longer created. Existing ones (if empty) can be deleted safely.
 
-**Eager DM pod creation** (`backend/routes/registry.js` provision route):
-- `DMService.getOrCreateAgentDM(agentUser._id, installation.installedBy, { agentName, instanceId })` called at provision time.
+**ownerDm routing** (since 2026-03-15):
+- Diagnostic/error heartbeat content routes to the admin DM pod automatically — no config flag required.
+- `agentMessageService.js` routes to DM for any heartbeat event (`isHeartbeatEvent || routesErrorsToOwnerDM`).
+
+**Agent self-reply prevention** (since 2026-03-15, gateway `20260315204144`):
+- `channel.ts` injects `[Identity] Your username/display name in this channel is "{account.instanceId}"` into every event body (heartbeat, chat.mention, thread.mention).
+- Agents reliably know their own display name and are instructed never to respond to their own messages.
+- `DEFAULT_HEARTBEAT_CONTENT` Step 5 also says "find messages from OTHER users (not yourself)" and Rules includes "Never respond to your own previous messages."
 
 **Gateway /state/moltbot.json sync** (see devops skill for full details):
 - Provisioner calls `syncAccountToStateMoltbot` after every ConfigMap write.

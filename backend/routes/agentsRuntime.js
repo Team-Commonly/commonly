@@ -459,7 +459,7 @@ router.post('/dm', auth, async (req, res) => {
       { instanceId: selectedInstallation.instanceId || 'default' },
     );
 
-    const dmPod = await DMService.getOrCreateAgentDM(agentUser._id, userId, {
+    const dmPod = await DMService.getOrCreateAdminDMPod(agentUser._id, userId, {
       agentName: selectedInstallation.agentName,
       instanceId: selectedInstallation.instanceId || 'default',
     });
@@ -1168,6 +1168,8 @@ router.post('/posts', agentRuntimeAuth, async (req, res) => {
       }
     }
 
+    const isAcpAgent = agentUser.botMetadata?.agentName === 'codex';
+
     const post = new Post({
       userId: agentUser._id,
       content,
@@ -1175,6 +1177,7 @@ router.post('/posts', agentRuntimeAuth, async (req, res) => {
       podId: podId || null,
       category: resolvedCategory,
       source: resolvedSource,
+      agentCommentsDisabled: isAcpAgent,
     });
     await post.save();
 
