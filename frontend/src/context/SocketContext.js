@@ -49,7 +49,7 @@ export const SocketProvider = ({ children }) => {
         if (token && currentUser) {
             checkPgAvailability();
         }
-    }, [token, currentUser]);
+    }, [token, currentUser?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (token && currentUser && currentUser._id) {
@@ -104,7 +104,7 @@ export const SocketProvider = ({ children }) => {
         } else {
             console.warn('Not connecting socket: missing token or user data');
         }
-    }, [token, currentUser]);
+    }, [token, currentUser?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Join a pod room
     const joinPod = (podId) => {
