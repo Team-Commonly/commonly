@@ -5,7 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, TextField, IconButton, Alert,
     Avatar, List, ListItem, ListItemAvatar,
-    Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Card, CardContent, Collapse, FormControlLabel, Switch
+    Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Card, CardContent, Collapse, FormControlLabel, Switch, Tabs, Tab
 } from '@mui/material';
 import { 
     Add as AddIcon,
@@ -29,7 +29,8 @@ import {
     ContentCopy as ContentCopyIcon,
     PersonRemove as PersonRemoveIcon,
     Article as ArticleIcon,
-    Reply as ReplyIcon
+    Reply as ReplyIcon,
+    ViewKanban as BoardIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -319,6 +320,10 @@ const ChatRoom = () => {
     const [instagramError, setInstagramError] = useState('');
     const [instagramSaving, setInstagramSaving] = useState(false);
     const instagramDiscardOnCreateRef = useRef(false);
+
+    const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'board'
+    const [taskBoard, setTaskBoard] = useState(null);
+    const [taskBoardLoading, setTaskBoardLoading] = useState(false);
 
     const isPodAdmin = room?.createdBy?._id && currentUser?._id
         ? room.createdBy._id === currentUser._id
@@ -643,6 +648,29 @@ const ChatRoom = () => {
     useEffect(() => {
         initialScrollDoneRef.current = false;
     }, [roomId]);
+
+    // Fetch task board from pod memory when Board tab is active
+    useEffect(() => {
+        if (activeTab !== 'board' || !roomId) return;
+        let cancelled = false;
+        const load = async () => {
+            setTaskBoardLoading(true);
+            try {
+                const token = localStorage.getItem('token');
+                const res = await axios.get(`/api/v1/pods/${roomId}/memory/MEMORY.md`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!cancelled) setTaskBoard(res.data.content || '');
+            } catch {
+                if (!cancelled) setTaskBoard('');
+            } finally {
+                if (!cancelled) setTaskBoardLoading(false);
+            }
+        };
+        load();
+        const interval = setInterval(load, 30000);
+        return () => { cancelled = true; clearInterval(interval); };
+    }, [activeTab, roomId]);
 
     const fetchOlderMessages = async () => {
         if (!roomId || !hasMoreMessages || isLoadingOlder) {
@@ -2132,6 +2160,55 @@ const ChatRoom = () => {
         return <Typography color="error">{error}</Typography>;
     }
 
+    // Parse task board markdown into structured data
+    const parseTaskBoard = (md) => {
+        if (!md) return { sections: [], done: [] };
+        const sections = [];
+        const done = [];
+        let currentSection = null;
+        for (const line of md.split('\n')) {
+            const sectionMatch = line.match(/^###\s+(.+)/);
+            if (sectionMatch) {
+                const title = sectionMatch[1].trim();
+                if (/done/i.test(title)) {
+                    currentSection = null;
+                } else {
+                    currentSection = { title, tasks: [] };
+                    sections.push(currentSection);
+                }
+                continue;
+            }
+            const pendingMatch = line.match(/^-\s+\[\s\]\s+(TASK-\d+):\s*(.+)/);
+            if (pendingMatch && currentSection) {
+                const [, taskId, rest] = pendingMatch;
+                const podMatch = rest.match(/pod:([a-f0-9]{24})/i);
+                const desc = rest.replace(/\s*—\s*pod:[a-f0-9]{24}/i, '').replace(/\s*—\s*requested by .+$/, '').trim();
+                currentSection.tasks.push({ taskId, desc, podId: podMatch?.[1] || null, done: false });
+                continue;
+            }
+            const doneMatch = line.match(/^-\s+\[x\]\s+(TASK-\d+)[:：]\s*(.+)/i);
+            if (doneMatch) {
+                const [, taskId, rest] = doneMatch;
+                const prMatch = rest.match(/PR\s*#?(\d+|https?:\/\/\S+)/i);
+                done.push({ taskId, desc: rest.trim(), pr: prMatch?.[1] || null });
+            }
+        }
+        return { sections, done };
+    };
+
+    const ASSIGNEE_COLORS = {
+        Nova: '#1976d2',
+        Pixel: '#7b1fa2',
+        Ops: '#e65100',
+    };
+
+    const getAssigneeFromSection = (title) => {
+        if (/backend/i.test(title)) return 'Nova';
+        if (/frontend/i.test(title)) return 'Pixel';
+        if (/devops/i.test(title)) return 'Ops';
+        return null;
+    };
+
     return (
         <>
             {/* Sidebar backdrop only used on mobile */}
@@ -3404,17 +3481,112 @@ const ChatRoom = () => {
                                         variant="outlined"
                                         startIcon={<ArticleIcon />}
                                         onClick={() => navigate(`/feed?podId=${roomId}`)}
-                                        sx={{ textTransform: 'none' }}
+                                        sx={{ textTransform: 'none', mr: 1 }}
                                     >
                                         Posts
                                     </Button>
                                 )}
+                                <Tabs
+                                    value={activeTab}
+                                    onChange={(_, v) => setActiveTab(v)}
+                                    textColor="inherit"
+                                    sx={{ minHeight: 'unset' }}
+                                >
+                                    <Tab value="chat" label="Chat" sx={{ minHeight: 40, py: 0, textTransform: 'none', fontSize: '0.85rem' }} />
+                                    <Tab value="board" icon={<BoardIcon fontSize="small" />} iconPosition="start" label="Board" sx={{ minHeight: 40, py: 0, textTransform: 'none', fontSize: '0.85rem' }} />
+                                </Tabs>
                             </Toolbar>
                         </AppBar>
                     )}
                     
+                    {/* Board Tab */}
+                    {activeTab === 'board' && (
+                        <Box sx={{ p: 3, mt: 8, overflowY: 'auto', height: 'calc(100vh - 64px)' }}>
+                            {taskBoardLoading && <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', my: 4 }} />}
+                            {!taskBoardLoading && (() => {
+                                const { sections, done } = parseTaskBoard(taskBoard);
+                                const hasTasks = sections.some(s => s.tasks.length > 0) || done.length > 0;
+                                if (!hasTasks) {
+                                    return (
+                                        <Box sx={{ textAlign: 'center', mt: 8, color: 'text.secondary' }}>
+                                            <BoardIcon sx={{ fontSize: 56, mb: 2, opacity: 0.3 }} />
+                                            <Typography variant="h6" gutterBottom>No tasks yet</Typography>
+                                            <Typography variant="body2">Post a task request to Theo in this pod and it will appear here.</Typography>
+                                        </Box>
+                                    );
+                                }
+                                return (
+                                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                                        {/* Pending sections */}
+                                        {sections.map((section) => {
+                                            const assignee = getAssigneeFromSection(section.title);
+                                            const color = ASSIGNEE_COLORS[assignee] || '#555';
+                                            return (
+                                                <Box key={section.title} sx={{ minWidth: 260, flex: '1 1 260px', maxWidth: 340 }}>
+                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color, letterSpacing: 0.3 }}>
+                                                        {section.title}
+                                                    </Typography>
+                                                    {section.tasks.length === 0 ? (
+                                                        <Typography variant="caption" color="text.disabled" sx={{ display: 'block', px: 1 }}>No tasks</Typography>
+                                                    ) : section.tasks.map((task) => (
+                                                        <Card key={task.taskId} variant="outlined" sx={{ mb: 1.5, borderLeft: `3px solid ${color}` }}>
+                                                            <CardContent sx={{ p: '10px 14px !important' }}>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                                                    <Chip label={task.taskId} size="small" sx={{ fontSize: '0.7rem', height: 20, bgcolor: `${color}22`, color }} />
+                                                                    {assignee && (
+                                                                        <Chip label={assignee} size="small" sx={{ fontSize: '0.7rem', height: 20 }} />
+                                                                    )}
+                                                                </Box>
+                                                                <Typography variant="body2" sx={{ fontSize: '0.8rem', lineHeight: 1.4 }}>{task.desc}</Typography>
+                                                                {task.podId && (
+                                                                    <Button
+                                                                        size="small"
+                                                                        sx={{ mt: 0.5, p: 0, fontSize: '0.72rem', textTransform: 'none' }}
+                                                                        onClick={() => navigate(`/pods/chat/${task.podId}`)}
+                                                                    >
+                                                                        View pod →
+                                                                    </Button>
+                                                                )}
+                                                            </CardContent>
+                                                        </Card>
+                                                    ))}
+                                                </Box>
+                                            );
+                                        })}
+                                        {/* Done column */}
+                                        {done.length > 0 && (
+                                            <Box sx={{ minWidth: 260, flex: '1 1 260px', maxWidth: 340 }}>
+                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color: 'success.main', letterSpacing: 0.3 }}>
+                                                    Done
+                                                </Typography>
+                                                {done.map((task) => (
+                                                    <Card key={task.taskId} variant="outlined" sx={{ mb: 1.5, borderLeft: '3px solid #2e7d32', opacity: 0.75 }}>
+                                                        <CardContent sx={{ p: '10px 14px !important' }}>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                                                <Chip label={task.taskId} size="small" sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#e8f5e9', color: '#2e7d32' }} />
+                                                                <Chip label="✓ Done" size="small" color="success" sx={{ fontSize: '0.7rem', height: 20 }} />
+                                                            </Box>
+                                                            <Typography variant="body2" sx={{ fontSize: '0.8rem', lineHeight: 1.4, textDecoration: 'line-through', color: 'text.secondary' }}>{task.desc}</Typography>
+                                                            {task.pr && (
+                                                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.3 }}>
+                                                                    PR: {task.pr.startsWith('http') ? (
+                                                                        <a href={task.pr} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>{task.pr}</a>
+                                                                    ) : `#${task.pr}`}
+                                                                </Typography>
+                                                            )}
+                                                        </CardContent>
+                                                    </Card>
+                                                ))}
+                                            </Box>
+                                        )}
+                                    </Box>
+                                );
+                            })()}
+                        </Box>
+                    )}
+
                     {/* Chat Content */}
-                    <Box className="chat-content-container">
+                    {activeTab === 'chat' && <Box className="chat-content-container">
                         <Paper 
                             elevation={0} 
                             className="messages-container"
@@ -3693,9 +3865,9 @@ const ChatRoom = () => {
                                 </List>
                             )}
                         </Paper>
-                    </Box>
+                    </Box>}
                 </div>
-                
+
                 {/* Message input */}
                 <Paper
                     component="form"
