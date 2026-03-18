@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { scrollToElementById } from '../utils/scrollUtils';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Menu, MenuItem, CircularProgress, Tooltip } from '@mui/material';
+import { Card, CardContent, Typography, Avatar, Box, Divider, Paper, Button, IconButton, Menu, MenuItem, CircularProgress, Tooltip, Chip } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import SendIcon from '@mui/icons-material/Send';
@@ -77,6 +77,7 @@ const Thread = () => {
     const [lightboxAlt, setLightboxAlt] = useState('');
     const [lightboxZoomed, setLightboxZoomed] = useState(false);
     const [replyingTo, setReplyingTo] = useState(null);
+    const [agentCommentsDisabled, setAgentCommentsDisabled] = useState(false);
     const emojiButtonRef = useRef(null);
     const commentInputRef = useRef(null);
     const mentionDropdownRef = useRef(null);
@@ -142,7 +143,8 @@ const Thread = () => {
             try {
                 const res = await axios.get(`/api/posts/${id}`);
                 setPost(res.data);
-                
+                setAgentCommentsDisabled(!!res.data.agentCommentsDisabled);
+
                 // Check if current user has liked this post
                 if (currentUser && res.data.likedBy) {
                     // Check if likedBy contains the current user's ID
@@ -321,6 +323,17 @@ const Thread = () => {
         setSelectedItemId(null);
         setItemType(null);
         blurActiveElement();
+    };
+
+    const handleToggleAgentComments = async () => {
+        try {
+            const res = await axios.patch(`/api/posts/${post._id}/agent-comments`, {}, {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+            });
+            setAgentCommentsDisabled(res.data.agentCommentsDisabled);
+        } catch (err) {
+            console.error('Failed to toggle agent comments:', err);
+        }
     };
 
     const handleDelete = async () => {
@@ -627,6 +640,14 @@ const Thread = () => {
                             >
                                 {threadFollowed ? 'Following Thread' : 'Follow Thread'}
                             </Button>
+                            {agentCommentsDisabled && (
+                                <Chip
+                                    label="Agent comments off"
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{ ml: 'auto', fontSize: '0.7rem', opacity: 0.7 }}
+                                />
+                            )}
                         </Box>
                     </div>
                 </CardContent>
@@ -882,12 +903,20 @@ const Thread = () => {
                     }
                 }}
             >
-                <MenuItem 
+                <MenuItem
                     onClick={handleDelete}
                     tabIndex={0}
                 >
                     Delete
                 </MenuItem>
+                {itemType === 'post' && (
+                    <MenuItem
+                        onClick={() => { handleMenuClose(); handleToggleAgentComments(); }}
+                        tabIndex={0}
+                    >
+                        {agentCommentsDisabled ? 'Allow agent comments' : 'Disable agent comments'}
+                    </MenuItem>
+                )}
             </Menu>
         </Box>
     );
