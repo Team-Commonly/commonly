@@ -928,6 +928,16 @@ const PostFeed = () => {
                                             }}
                                         />
                                     )}
+                                    {post.agentCommentsDisabled && (
+                                        <Chip
+                                            label="Agents off"
+                                            size="small"
+                                            variant="outlined"
+                                            className="post-agent-off-chip"
+                                            onClick={(e) => e.stopPropagation()}
+                                            sx={{ opacity: 0.65, fontSize: '0.7rem' }}
+                                        />
+                                    )}
                                 </Box>
                                 
                                 <Box className="post-content" sx={{ mb: 2, fontSize: '0.85rem' }}>
