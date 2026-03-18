@@ -30,6 +30,7 @@ const postSchema = new mongoose.Schema({
     },
   ],
   createdAt: { type: Date, default: Date.now },
+  agentCommentsDisabled: { type: Boolean, default: false },
 });
 
 // Static method to get post count for a user
