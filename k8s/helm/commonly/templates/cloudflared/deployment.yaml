@@ -45,6 +45,14 @@ spec:
             - name: cloudflared-credentials
               mountPath: /etc/cloudflared/credentials.json
               subPath: credentials.json
+      {{- if .Values.cloudflared.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.cloudflared.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.cloudflared.tolerations }}
+      tolerations:
+        {{- toYaml .Values.cloudflared.tolerations | nindent 8 }}
+      {{- end }}
       volumes:
         - name: cloudflared-config
           configMap:
