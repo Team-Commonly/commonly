@@ -451,6 +451,20 @@ exports.unfollowThread = async (req, res) => {
   }
 };
 
+exports.toggleAgentComments = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id).select('userId agentCommentsDisabled');
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (post.userId.toString() !== req.userId)
+      return res.status(403).json({ error: 'Not authorized' });
+    post.agentCommentsDisabled = !post.agentCommentsDisabled;
+    await post.save();
+    return res.json({ agentCommentsDisabled: post.agentCommentsDisabled });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+};
+
 exports.getFollowedThreads = async (req, res) => {
   try {
     const user = await User.findById(req.userId).select('followedThreads');

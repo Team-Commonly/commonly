@@ -11,6 +11,7 @@ const {
   followThread,
   unfollowThread,
   getFollowedThreads,
+  toggleAgentComments,
 } = require('../controllers/postController');
 const { _authenticate } = require('../middleware/authMiddleware');
 
@@ -73,5 +74,10 @@ router.delete('/:id', auth, deletePost);
 // @desc    Delete comment from post
 // @access  Private
 router.delete('/:id/comments/:commentId', auth, deleteComment);
+
+// @route   PATCH api/posts/:id/agent-comments
+// @desc    Toggle agent auto-commenting on a post (author only)
+// @access  Private
+router.patch('/:id/agent-comments', auth, toggleAgentComments);
 
 module.exports = router;
