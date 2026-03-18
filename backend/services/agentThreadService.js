@@ -27,6 +27,11 @@ class AgentThreadService {
       throw new Error('Thread not found');
     }
 
+    // Respect per-post agent comment opt-out
+    if (post.agentCommentsDisabled) {
+      return { success: false, agentCommentsDisabled: true };
+    }
+
     // Prevent agent from replying to its own comment
     if (replyToCommentId) {
       const targetComment = post.comments.find(
