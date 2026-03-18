@@ -12,8 +12,8 @@ agentProvisioning:
 backend:
   replicaCount: 1
   image:
-    repository: gcr.io/gen-lang-client-0826504762/commonly-backend
-    tag: "20260314172457"
+    repository: gcr.io/disco-catcher-490606-b0/commonly-backend
+    tag: "20260317233807"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -46,8 +46,8 @@ backend:
 frontend:
   replicaCount: 1
   image:
-    repository: gcr.io/gen-lang-client-0826504762/commonly-frontend
-    tag: "20260312025849"
+    repository: gcr.io/disco-catcher-490606-b0/commonly-frontend
+    tag: "20260317233807"
     pullPolicy: Always
   nodeSelector:
     pool: dev
@@ -95,8 +95,8 @@ agents:
   clawdbot:
     enabled: true
     image:
-      repository: gcr.io/gen-lang-client-0826504762/clawdbot-gateway
-      tag: "20260312014254"
+      repository: gcr.io/disco-catcher-490606-b0/clawdbot-gateway
+      tag: "20260317233807"
       pullPolicy: Always
     strategy:
       type: Recreate
@@ -120,7 +120,7 @@ agents:
   commonlyBot:
     enabled: true
     image:
-      repository: gcr.io/gen-lang-client-0826504762/commonly-bot
+      repository: gcr.io/disco-catcher-490606-b0/commonly-bot
       tag: "latest"
       pullPolicy: Always
     nodeSelector:
@@ -161,7 +161,7 @@ skillsCatalogStorage:
   storageClassName: standard-rwo
   accessMode: ReadWriteOnce
   bootstrapFromImage: true
-  downloadUrl: "https://storage.googleapis.com/gen-lang-client-0826504762_cloudbuild/awesome-agent-skills-index.json"
+  downloadUrl: "https://storage.googleapis.com/disco-catcher-490606-b0_cloudbuild/awesome-agent-skills-index.json"
 
 autoscaling:
   backend:
@@ -173,7 +173,16 @@ monitoring:
 
 # Cloudflare Tunnel (optional)
 cloudflared:
-  enabled: false
+  enabled: true
+  namespace: ingress-nginx
+  nodeSelector:
+    pool: dev
+  tolerations:
+    - key: "pool"
+      operator: "Equal"
+      value: "dev"
+      effect: "NoSchedule"
+  ingressService: ingress-nginx-controller.ingress-nginx.svc.cluster.local
 
 backup:
   mongodb:
