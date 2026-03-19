@@ -52,6 +52,11 @@ spec:
           const codexAccess = (process.env.OPENAI_CODEX_ACCESS_TOKEN || '').trim();
           const codexRefresh = (process.env.OPENAI_CODEX_REFRESH_TOKEN || '').trim();
           const codexExpires = parseInt(process.env.OPENAI_CODEX_EXPIRES_AT || '0', 10);
+          const codexAccess2 = (process.env.OPENAI_CODEX_ACCESS_TOKEN_2 || '').trim();
+          const codexRefresh2 = (process.env.OPENAI_CODEX_REFRESH_TOKEN_2 || '').trim();
+          const codexExpires2 = parseInt(process.env.OPENAI_CODEX_EXPIRES_AT_2 || '0', 10);
+          const codexIdToken2 = (process.env.OPENAI_CODEX_ID_TOKEN_2 || '').trim();
+          const codexAccountId2 = (process.env.OPENAI_CODEX_ACCOUNT_ID_2 || '').trim();
           if (!fs.existsSync(configPath)) {
             console.log('[auth-seed] missing config:', configPath);
             process.exit(0);
@@ -123,7 +128,9 @@ spec:
                 store.profiles['openai:default'] = { type: 'api_key', provider: 'openai', key: openaiKey };
               }
             }
-            // Always upsert codex OAuth if K8s secret has a token newer than what is on disk
+            // Always upsert codex OAuth if K8s secret has a token newer than what is on disk.
+            // Account 1 is the primary; account 2 is the fallback for rate-limit resilience.
+            const codexOrder = [];
             if (codexAccess && codexRefresh) {
               const existing = store.profiles['openai-codex:codex-cli'];
               if (!existing || codexExpires > (existing.expires || 0)) {
@@ -132,10 +139,33 @@ spec:
                   access: codexAccess, refresh: codexRefresh,
                   expires: codexExpires || (Date.now() + 3600000),
                 };
-                console.log('[auth-seed] upserted codex oauth:', authPath);
+                console.log('[auth-seed] upserted codex oauth account-1:', authPath);
               }
-              // Also write ~/.codex/auth.json in chatgpt format so acpx uses chatgpt auth
-              // (not codex-api-key which requires api.responses.write scope)
+              codexOrder.push('openai-codex:codex-cli');
+            }
+            // Account 2 fallback — written only when secret keys are present
+            if (codexAccess2 && codexRefresh2) {
+              const existing2 = store.profiles['openai-codex:account-2'];
+              if (!existing2 || codexExpires2 > (existing2.expires || 0)) {
+                store.profiles['openai-codex:account-2'] = {
+                  type: 'oauth', provider: 'openai-codex',
+                  access: codexAccess2, refresh: codexRefresh2,
+                  expires: codexExpires2 || (Date.now() + 3600000),
+                };
+                console.log('[auth-seed] upserted codex oauth account-2:', authPath);
+              }
+              codexOrder.push('openai-codex:account-2');
+            }
+            // Persist auth order so OpenClaw falls back across accounts on rate-limit
+            // NOTE: field must be 'order' (not 'authOrder') — OpenClaw reads store.order
+            if (codexOrder.length > 0) {
+              store.order = store.order || {};
+              store.order['openai-codex'] = codexOrder;
+            }
+            // Also write ~/.codex/auth.json in chatgpt format so acpx uses chatgpt auth
+            // (not codex-api-key which requires api.responses.write scope).
+            // acpx reads a single auth.json — use account-1 as primary.
+            if (codexAccess && codexRefresh) {
               const codexAuthDir = path.join(stateDir, 'agents', accountId, '.codex');
               const codexAuthPath = path.join(codexAuthDir, 'auth.json');
               const codexIdToken = (process.env.OPENAI_CODEX_ID_TOKEN || '').trim();
@@ -168,9 +198,51 @@ spec:
                 console.log('[auth-seed] wrote codex auth.json to shared PVC:', sharedCodexPath);
               }
             }
+            // Upsert account-2 fallback profile if K8s secret has a second Codex account
+            if (codexAccess2 && codexRefresh2) {
+              const existing2 = store.profiles['openai-codex:account-2'];
+              if (!existing2 || codexExpires2 > (existing2.expires || 0)) {
+                store.profiles['openai-codex:account-2'] = {
+                  type: 'oauth', provider: 'openai-codex',
+                  access: codexAccess2, refresh: codexRefresh2,
+                  expires: codexExpires2 || (Date.now() + 3600000),
+                };
+                console.log('[auth-seed] upserted codex oauth account-2:', authPath);
+              }
+              // Write auth-2.json to shared PVC so acpx_run can swap to account-2 on rate-limit.
+              const auth2Json = {
+                auth_mode: 'chatgpt',
+                OPENAI_API_KEY: null,
+                tokens: {
+                  ...(codexIdToken2 ? { id_token: codexIdToken2 } : {}),
+                  access_token: codexAccess2,
+                  refresh_token: codexRefresh2,
+                  ...(codexAccountId2 ? { account_id: codexAccountId2 } : {}),
+                },
+                last_refresh: new Date().toISOString(),
+              };
+              const sharedAuth2Path = path.join(stateDir, '.codex', 'auth-2.json');
+              fs.mkdirSync(path.dirname(sharedAuth2Path), { recursive: true });
+              fs.writeFileSync(sharedAuth2Path, JSON.stringify(auth2Json, null, 2));
+              console.log('[auth-seed] wrote codex auth-2.json to shared PVC:', sharedAuth2Path);
+            }
             fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
             console.log('[auth-seed] wrote:', authPath, hasCustomProfiles ? 'custom profiles' : 'patched');
           });
+          // Also write auth-profiles.json to the gateway 'main' agentDir — OpenClaw resolves
+          // global LLM model auth from /state/agents/main/agent/auth-profiles.json, not the
+          // per-account agentDir. Use the last account's store as representative (all accounts
+          // share the same codex credentials).
+          const mainAgentDir = path.join(stateDir, 'agents', 'main', 'agent');
+          const mainAuthPath = path.join(mainAgentDir, 'auth-profiles.json');
+          if (accountIds.length > 0) {
+            const repAuthPath = path.join(stateDir, 'agents', accountIds[0], 'agent', 'auth-profiles.json');
+            if (fs.existsSync(repAuthPath)) {
+              fs.mkdirSync(mainAgentDir, { recursive: true });
+              fs.copyFileSync(repAuthPath, mainAuthPath);
+              console.log('[auth-seed] copied auth-profiles.json to main agentDir:', mainAuthPath);
+            }
+          }
           NODE
         env:
         - name: OPENCLAW_CONFIG_PATH
@@ -235,6 +307,36 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openai-codex-account-id
+              optional: true
+        - name: OPENAI_CODEX_ACCESS_TOKEN_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token-2
+              optional: true
+        - name: OPENAI_CODEX_REFRESH_TOKEN_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-refresh-token-2
+              optional: true
+        - name: OPENAI_CODEX_EXPIRES_AT_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-expires-at-2
+              optional: true
+        - name: OPENAI_CODEX_ID_TOKEN_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-id-token-2
+              optional: true
+        - name: OPENAI_CODEX_ACCOUNT_ID_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-account-id-2
               optional: true
         volumeMounts:
         - name: clawdbot-config
