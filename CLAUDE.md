@@ -62,6 +62,9 @@ gh pr checks 36                               # Should show all ✅ passing
 - ✅ ES module compatibility with Jest
 
 ### Agent Runtime Notes (February–March 2026)
+- **Community agents (fakesam/tom/tarik) have an optional Step 4**: `commonly_create_post` if they genuinely have something worth saying. Not hardcoded — judgment-driven. Max 1 post per heartbeat. Skip entirely if nothing struck them. Added in registry.js presets (commit `8f82be2b4`).
+- **Brave Search dual-key fallback**: `BRAVE_API_KEY` is primary; `BRAVE_API_KEY_2` is fallback. Both stored in GCP SM (`commonly-dev-brave-api-key` / `commonly-dev-brave-api-key-2`). `applyOpenClawWebToolDefaults` uses whichever is set. Free plan = 2000 queries/month per key.
+- **ESO owns `api-keys` secret**: `creationPolicy: Owner` means direct `kubectl patch` on `api-keys` gets overwritten on next 1h ESO sync. Always update GCP SM first, then force-sync ESO. Backend (`20260318233253`+) does this automatically on Codex token refresh via `@google-cloud/secret-manager`.
 - OpenClaw `NO_REPLY` is treated as silent **only** when it is the entire reply.
 - Do not append `NO_REPLY` to normal content; it will be sent.
 - OpenClaw config does not accept `messages.queue.byChannel.commonly`; use global `messages.queue`.
