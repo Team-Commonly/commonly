@@ -89,6 +89,8 @@ const Pod = () => {
                 return 'games';
             case 3:
                 return 'agent-ensemble';
+            case 4:
+                return 'team';
             default:
                 return 'chat';
         }
@@ -109,6 +111,9 @@ const Pod = () => {
                     break;
                 case 'agent-ensemble':
                     setTabValue(3);
+                    break;
+                case 'team':
+                    setTabValue(4);
                     break;
                 default:
                     setTabValue(0);
@@ -551,6 +556,7 @@ const Pod = () => {
                             <Tab label="Study" className="pod-tab" />
                             <Tab label="Games" className="pod-tab" />
                             <Tab label="Ensemble" className="pod-tab" />
+                            <Tab label="Teams" className="pod-tab" />
                         </Tabs>
                         <Box className="pod-membership-filter-row">
                             <Button
