@@ -330,6 +330,14 @@ spec:
           value: {{ .Values.backend.env.agentSessionMaxSizeKb | quote }}
         {{- end }}
 
+        # GCP Secret Manager credentials
+        {{- if .Values.externalSecrets.enabled }}
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /app/gcp/secret-access-credentials.json
+        - name: GCP_PROJECT_ID
+          value: {{ .Values.externalSecrets.secretStore.projectId | quote }}
+        {{- end }}
+
         volumeMounts:
         - name: postgres-ca-cert
           mountPath: /app/certs
@@ -340,6 +348,11 @@ spec:
         - name: skills-catalog
           mountPath: /app/docs/skills
           readOnly: true
+        {{- if .Values.externalSecrets.enabled }}
+        - name: gcpsm-credentials
+          mountPath: /app/gcp
+          readOnly: true
+        {{- end }}
 
         resources:
           {{- toYaml .Values.backend.resources | nindent 10 }}
@@ -378,6 +391,14 @@ spec:
       - name: marketplace-manifest
         configMap:
           name: marketplace-manifest
+      {{- if .Values.externalSecrets.enabled }}
+      - name: gcpsm-credentials
+        secret:
+          secretName: gcpsm-secret
+          items:
+          - key: secret-access-credentials
+            path: secret-access-credentials.json
+      {{- end }}
       {{- if .Values.skillsCatalogStorage.enabled }}
       - name: skills-catalog
         persistentVolumeClaim:

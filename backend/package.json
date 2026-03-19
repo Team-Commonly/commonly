@@ -19,6 +19,7 @@
     "bootstrap:clawd-bot": "node scripts/bootstrap-clawd-bot.js"
   },
   "dependencies": {
+    "@google-cloud/secret-manager": "^6.1.1",
     "@google/generative-ai": "^0.2.1",
     "@kubernetes/client-node": "^0.21.0",
     "@sendgrid/mail": "^7.7.0",
