@@ -1122,17 +1122,20 @@ const applyOpenClawIntegrationChannels = (config, integrationChannels) => {
 
 const applyOpenClawWebToolDefaults = (config) => {
   const braveApiKey = String(process.env.BRAVE_API_KEY || '').trim();
+  const braveApiKey2 = String(process.env.BRAVE_API_KEY_2 || '').trim();
   const firecrawlApiKey = String(process.env.FIRECRAWL_API_KEY || '').trim();
-  if (!braveApiKey && !firecrawlApiKey) return;
+  // Use key 2 as fallback if key 1 is absent
+  const activeBraveKey = braveApiKey || braveApiKey2;
+  if (!activeBraveKey && !firecrawlApiKey) return;
   config.tools = config.tools || {};
   config.tools.web = config.tools.web || {};
-  if (braveApiKey) {
+  if (activeBraveKey) {
     config.tools.web.search = config.tools.web.search || {};
     if (!config.tools.web.search.provider) {
       config.tools.web.search.provider = 'brave';
     }
     if (!config.tools.web.search.apiKey) {
-      config.tools.web.search.apiKey = braveApiKey;
+      config.tools.web.search.apiKey = activeBraveKey;
     }
     if (config.tools.web.search.enabled === undefined) {
       config.tools.web.search.enabled = true;
