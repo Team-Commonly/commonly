@@ -10,21 +10,30 @@ const VALID_NAME = /^[a-zA-Z0-9_.-]+$/;
 /**
  * POST /api/github/token
  *
- * Agents call this (via acpx_run curl) to get a fresh GitHub App installation token.
- * Token is valid for 1 hour and can be used with:
+ * Agents call this (via acpx_run curl) to get a GitHub token for git/gh CLI operations.
+ * Supports two modes (checked in order):
+ *   1. PAT mode  — if GITHUB_PAT is set, returns it directly (simpler, for dev use)
+ *   2. App mode  — generates a short-lived installation token via GitHub App RS256 JWT
+ *
+ * Response: { token: string, expiresAt: string|null }
+ * Token usage:
  *   - git clone https://x-access-token:${token}@github.com/owner/repo.git
  *   - GH_TOKEN=${token} gh pr create ...
  *
  * Body (optional): { owner: "Team-Commonly", repo: "commonly" }
- * Defaults to Team-Commonly/commonly if omitted.
- *
  * Secured by agentRuntimeAuth — requires a valid cm_agent_* runtime token.
  */
 router.post('/token', agentRuntimeAuth, async (req, res) => {
   try {
+    // PAT mode — simple passthrough, no GitHub App setup needed
+    if (GitHubAppService.isPatConfigured()) {
+      return res.json(GitHubAppService.getPatToken());
+    }
+
+    // GitHub App mode
     if (!GitHubAppService.isConfigured()) {
       return res.status(503).json({
-        message: 'GitHub App not configured. Set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, and GITHUB_APP_INSTALLATION_ID_COMMONLY.',
+        message: 'No GitHub credentials configured. Set GITHUB_PAT or GitHub App env vars (GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_INSTALLATION_ID_COMMONLY).',
       });
     }
 
@@ -60,15 +69,18 @@ router.post('/token', agentRuntimeAuth, async (req, res) => {
  */
 router.get('/status', auth, async (req, res) => {
   try {
-    if (!req.user?.role === 'admin') {
+    if (req.user?.role !== 'admin') {
       return res.status(403).json({ message: 'Admin only' });
     }
-    if (!GitHubAppService.isConfigured()) {
-      return res.json({ configured: false, message: 'Missing env vars' });
+    if (GitHubAppService.isPatConfigured()) {
+      return res.json({ mode: 'pat', configured: true });
     }
-    // Validate that the JWT can be generated (catches bad key format early)
+    if (!GitHubAppService.isConfigured()) {
+      return res.json({ mode: 'none', configured: false, message: 'Set GITHUB_PAT or GitHub App env vars' });
+    }
     const appJWT = GitHubAppService.generateAppJWT();
     return res.json({
+      mode: 'app',
       configured: true,
       appId: process.env.GITHUB_APP_ID,
       installationId: process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY,
