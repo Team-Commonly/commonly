@@ -1318,26 +1318,33 @@ const applyOpenClawModelDefaults = async (config) => {
   const existingFallbacks = Array.isArray(config.agents.defaults.model.fallbacks)
     ? config.agents.defaults.model.fallbacks
     : [];
-  // Always include Gemini fallbacks so agents can fall back if Codex OAuth fails
+  // Free OpenRouter models — no credit burn. Nemotron is primary, Trinity is secondary.
+  const FREE_OPENROUTER_FALLBACKS = [
+    'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+    'openrouter/arcee-ai/trinity-large-preview:free',
+  ];
+  // Strip out any paid OpenRouter models that may be lingering from old config,
+  // and any Llama free model (replaced by Nemotron/Trinity).
+  const filteredExisting = existingFallbacks.filter(
+    (m) => !m.startsWith('openrouter/') || m.endsWith(':free'),
+  );
   const baseFallbacks = isCodexPrimary
-    ? [...defaultFallbacks, ...GEMINI_FALLBACKS]
-    : defaultFallbacks;
+    ? [...FREE_OPENROUTER_FALLBACKS, ...defaultFallbacks, ...GEMINI_FALLBACKS]
+    : [...FREE_OPENROUTER_FALLBACKS, ...defaultFallbacks];
   const mergedFallbacks = [
     ...baseFallbacks,
-    ...existingFallbacks,
+    ...filteredExisting,
   ].filter(Boolean);
   config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
 
-  // Cap maxTokens on OpenRouter fallback models to fit the free-tier per-request limit.
-  // OpenRouter free plan errors with 402 when requesting >~16k tokens. 8k fits safely.
+  // OpenRouter provider catalog — free models only, no paid models.
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
   config.models.providers.openrouter = {
     baseUrl: 'https://openrouter.ai/api/v1',
     models: [
-      { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', maxTokens: 8000, contextWindow: 1000000 },
-      { id: 'google/gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', maxTokens: 8000, contextWindow: 1000000 },
-      { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', maxTokens: 8000, contextWindow: 1000000 },
+      { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron Super 120B (free)', maxTokens: 8000, contextWindow: 128000 },
+      { id: 'arcee-ai/trinity-large-preview:free', name: 'Trinity Large (free)', maxTokens: 8000, contextWindow: 32000 },
     ],
   };
 
