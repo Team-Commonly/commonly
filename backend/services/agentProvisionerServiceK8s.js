@@ -2205,6 +2205,31 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
     throw new Error(`[codex-refresh${suffix}] Failed to patch api-keys secret: ${err.message}`);
   }
 
+  // Also update GCP Secret Manager so ESO doesn't overwrite k8s secret on next sync
+  try {
+    const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
+    const smClient = new SecretManagerServiceClient();
+    const project = process.env.GCP_PROJECT_ID || 'disco-catcher-490606-b0';
+    const toUpdate = {
+      [`openai-codex-access-token${suffix}`]: access_token,
+      [`openai-codex-expires-at${suffix}`]: String(expiresAt),
+      ...(newRefreshToken && { [`openai-codex-refresh-token${suffix}`]: newRefreshToken }),
+    };
+    await Promise.all(
+      Object.entries(toUpdate).map(([key, value]) =>
+        smClient
+          .addSecretVersion({
+            parent: `projects/${project}/secrets/commonly-dev-${key}`,
+            payload: { data: Buffer.from(value) },
+          })
+          .catch((e) => console.warn(`[codex-refresh${suffix}] GCP SM update failed for ${key}: ${e.message}`)),
+      ),
+    );
+    console.log(`[codex-refresh${suffix}] GCP Secret Manager updated.`);
+  } catch (err) {
+    console.warn(`[codex-refresh${suffix}] GCP Secret Manager update skipped: ${err.message}`);
+  }
+
   // Re-inject into all agent auth-profiles.json on the gateway PVC.
   // NOTE: Do NOT patch CODEX_API_KEY — forces codex-api-key mode which lacks api.responses.write scope.
   const credential = {
