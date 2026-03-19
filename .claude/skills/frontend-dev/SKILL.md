@@ -2,7 +2,7 @@
 
 name: frontend-dev
 description: Frontend development context for React.js, Material-UI, Context API, hooks, and component patterns. Use when working on frontend code.
-last_updated: 2026-02-08
+last_updated: 2026-03-19
 ---
 
 # Frontend Development
@@ -101,6 +101,102 @@ const useSocket = (podId) => {
   return { messages };
 };
 ```
+
+## MCP Playwright — UI Verification Workflow
+
+Use the `mcp__playwright__*` tools to verify frontend changes **without needing a manual browser** — navigate, snapshot, screenshot, click, and fill forms against the live dev URL.
+
+### Standard verification loop
+```
+1. mcp__playwright__browser_navigate   → load the page/route
+2. mcp__playwright__browser_snapshot   → get accessibility tree (best for asserting text/state)
+3. mcp__playwright__browser_take_screenshot → visual confirmation (type: "png")
+4. mcp__playwright__browser_click / browser_type  → interact with elements using ref= from snapshot
+```
+
+### Auth flow (JWT stored in localStorage)
+```js
+// Generate a token via kubectl, then inject:
+mcp__playwright__browser_evaluate:
+  function: () => { localStorage.setItem('token', 'eyJ...'); location.reload(); }
+```
+
+### Useful patterns
+```js
+// Resize to mobile viewport before snapshot
+mcp__playwright__browser_resize: { width: 390, height: 844 }
+
+// Wait for async content before snapshotting
+mcp__playwright__browser_wait_for: { text: "Dev Team" }
+
+// Navigate to a specific pod chat room
+mcp__playwright__browser_navigate: { url: "https://app-dev.commonly.me/pods/chat/<podId>" }
+```
+
+### When to use Playwright MCP
+- After every GKE frontend deploy to confirm the change is live
+- Before/after responsive layout fixes (resize to 390px mobile, then 1280px desktop)
+- Checking tab visibility, button placement, and text rendering
+- Confirming modal/dialog flows without manual testing
+- Debugging "I can't see X on the UI" reports — navigate directly and snapshot
+
+---
+
+## Responsive ChatRoom Header Pattern (2026-03-19)
+
+`ChatRoom.js` AppBar must be `position="sticky"` (not `fixed`) so it flows below the outer Layout search bar rather than overlapping it at `top: 0`.
+
+```jsx
+<AppBar position="sticky" color="default" elevation={1} className="chat-room-header">
+  <Toolbar sx={{ minHeight: { xs: 52, sm: 64 }, px: { xs: 1, sm: 2 } }}>
+    <IconButton sx={{ mr: { xs: 0.5, sm: 1.5 }, flexShrink: 0 }}>...</IconButton>
+    <Box sx={{ flexGrow: 1, overflow: 'hidden', mr: 1 }}>
+      <Typography noWrap className="chat-room-title">{room?.name}</Typography>
+      <Typography className="chat-room-subtitle">{members} members</Typography>
+    </Box>
+    {/* Hide secondary actions on mobile */}
+    {!isMobile && <Button>Posts</Button>}
+    {/* Tabs always visible */}
+    <Tabs sx={{ flexShrink: 0 }}>
+      <Tab sx={{ minHeight: { xs: 36, sm: 40 }, px: { xs: 1.5, sm: 2 }, fontSize: { xs: '0.8rem', sm: '0.85rem' } }} />
+    </Tabs>
+  </Toolbar>
+</AppBar>
+```
+
+**CSS design tokens** — match `Pod.css` pattern, do NOT apply gradient to all `.MuiTypography-root`:
+```css
+.chat-room-title  { color: #e2e8f0; font-weight: 700; font-size: 1rem; }
+.chat-room-subtitle { color: #9fb2cb; font-size: 0.78rem; display: block; }
+```
+
+---
+
+## Pod Type System — Adding New Types (2026-03-19)
+
+Pod types require updates in **two places**:
+
+### 1. `PodRedirect.js` — category selector (landing at `/pods`)
+Add a Button with `onClick={() => handleNavigate('<type>')}`:
+```jsx
+import GroupsIcon from '@mui/icons-material/Groups';
+<Button startIcon={<GroupsIcon />} onClick={() => handleNavigate('team')}
+  sx={{ backgroundColor: '#7c3aed', '&:hover': { backgroundColor: '#6d28d9' } }}>
+  Team Pods
+</Button>
+```
+
+### 2. `Pod.js` — tab list inside the category view
+```js
+// In getPodType() switch:
+case 4: return 'team';
+// In URL→tab useEffect switch:
+case 'team': setTabValue(4); break;
+// In JSX Tabs:
+<Tab label="Teams" className="pod-tab" />
+```
+
+---
 
 ## Current Repo Notes (2026-02-08)
 
