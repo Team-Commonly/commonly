@@ -3463,52 +3463,55 @@ const ChatRoom = () => {
             <Container maxWidth={false} disableGutters className={`chat-room-container ${isDashboardCollapsed ? 'dashboard-collapsed' : ''} ${showMembers ? 'sidebar-visible' : ''}`}>
                 <div className="main-chat-content">
                     {/* Chat header */}
-                    {!isMobile && (
-                        <AppBar position="sticky" color="default" elevation={1} className="chat-room-header">
-                            <Toolbar>
-                                <IconButton
-                                    edge="start"
-                                    color="inherit"
-                                    onClick={() => navigate(room?.type === 'agent-admin' ? '/pods/agent-admin' : `/pods/${podType}`)}
-                                    sx={{ mr: 2 }}
+                    <AppBar position="sticky" color="default" elevation={1} className="chat-room-header">
+                        <Toolbar sx={{ minHeight: { xs: 52, sm: 64 }, px: { xs: 1, sm: 2 } }}>
+                            <IconButton
+                                edge="start"
+                                color="inherit"
+                                onClick={() => navigate(room?.type === 'agent-admin' ? '/pods/agent-admin' : `/pods/${podType}`)}
+                                sx={{ mr: { xs: 0.5, sm: 1.5 }, flexShrink: 0 }}
+                            >
+                                <ArrowBackIcon />
+                            </IconButton>
+                            <Box sx={{ flexGrow: 1, overflow: 'hidden', mr: 1 }}>
+                                <Typography
+                                    variant="subtitle1"
+                                    component="div"
+                                    noWrap
+                                    className="chat-room-title"
                                 >
-                                    <ArrowBackIcon />
-                                </IconButton>
-                                <Box sx={{ flexGrow: 1 }}>
-                                    <Typography variant="h6" component="div">
-                                        {room?.type === 'agent-admin'
-                                            ? String(room?.name || 'Admin Channel').replace(/^Admin:\s*/i, '')
-                                            : (room?.name || 'Chat Room')}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                        {room?.type === 'agent-admin'
-                                            ? 'Admin Channel'
-                                            : `${room?.members?.length || 0} members`}
-                                    </Typography>
-                                </Box>
-                                {room?.type !== 'agent-admin' && (
-                                    <Button
-                                        size="small"
-                                        variant="outlined"
-                                        startIcon={<ArticleIcon />}
-                                        onClick={() => navigate(`/feed?podId=${roomId}`)}
-                                        sx={{ textTransform: 'none', mr: 1 }}
-                                    >
-                                        Posts
-                                    </Button>
-                                )}
-                                <Tabs
-                                    value={activeTab}
-                                    onChange={(_, v) => setActiveTab(v)}
-                                    textColor="inherit"
-                                    sx={{ minHeight: 'unset' }}
+                                    {room?.type === 'agent-admin'
+                                        ? String(room?.name || 'Admin Channel').replace(/^Admin:\s*/i, '')
+                                        : (room?.name || 'Chat Room')}
+                                </Typography>
+                                <Typography variant="caption" className="chat-room-subtitle">
+                                    {room?.type === 'agent-admin'
+                                        ? 'Admin Channel'
+                                        : `${room?.members?.length || 0} members`}
+                                </Typography>
+                            </Box>
+                            {room?.type !== 'agent-admin' && !isMobile && (
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<ArticleIcon />}
+                                    onClick={() => navigate(`/feed?podId=${roomId}`)}
+                                    sx={{ textTransform: 'none', mr: 1, flexShrink: 0 }}
                                 >
-                                    <Tab value="chat" label="Chat" sx={{ minHeight: 40, py: 0, textTransform: 'none', fontSize: '0.85rem' }} />
-                                    <Tab value="board" icon={<BoardIcon fontSize="small" />} iconPosition="start" label="Board" sx={{ minHeight: 40, py: 0, textTransform: 'none', fontSize: '0.85rem' }} />
-                                </Tabs>
-                            </Toolbar>
-                        </AppBar>
-                    )}
+                                    Posts
+                                </Button>
+                            )}
+                            <Tabs
+                                value={activeTab}
+                                onChange={(_, v) => setActiveTab(v)}
+                                textColor="inherit"
+                                sx={{ minHeight: 'unset', flexShrink: 0 }}
+                            >
+                                <Tab value="chat" label="Chat" sx={{ minHeight: { xs: 36, sm: 40 }, py: 0, textTransform: 'none', fontSize: { xs: '0.8rem', sm: '0.85rem' }, px: { xs: 1.5, sm: 2 } }} />
+                                <Tab value="board" icon={<BoardIcon fontSize="small" />} iconPosition="start" label="Board" sx={{ minHeight: { xs: 36, sm: 40 }, py: 0, textTransform: 'none', fontSize: { xs: '0.8rem', sm: '0.85rem' }, px: { xs: 1.5, sm: 2 } }} />
+                            </Tabs>
+                        </Toolbar>
+                    </AppBar>
                     
                     {/* Board Tab */}
                     {activeTab === 'board' && (
