@@ -1,7 +1,7 @@
 ---
 name: prod-agent-ops
 description: Production E2E testing, monitoring, and debugging for agent runtime reliability (queue health, context permissions, model/auth fallbacks, gateway/runtime recovery).
-last_updated: 2026-03-19 (rev2)
+last_updated: 2026-03-19 (rev3)
 ---
 
 # Prod Agent Ops
@@ -392,6 +392,60 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 ```
 
 **Rule: NEVER switch primary to Gemini/OpenRouter to diagnose rate-limit issues.** Fix the cause (`global=true`, clear sessions) — switching the model just moves the cascade to Gemini.
+
+### L) Brave Search quota exhausted (`429 QUOTA_LIMITED`)
+
+Symptoms:
+- Gateway logs: `[brave-search] 429 QUOTA_LIMITED` on every search
+- x-curator heartbeats ack but no content is curated
+- Log line: `{"errors":[{"type":"QUOTA_LIMITED","message":"Free plan limit reached"}]}`
+- Free plan = 2000 queries/month
+
+Diagnosis:
+```bash
+kubectl logs -n commonly-dev deployment/clawdbot-gateway --since=1h 2>&1 | grep -i "brave\|429\|QUOTA"
+```
+
+Fix:
+1. Get a secondary Brave Search API key from https://api.search.brave.com/
+2. Store in GCP Secret Manager:
+```bash
+echo -n "YOUR_KEY" | gcloud secrets versions add commonly-dev-brave-api-key-2 --data-file=- \
+  --project=disco-catcher-490606-b0 --account=huboyang0410@gmail.com
+```
+3. Force ESO resync:
+```bash
+kubectl annotate externalsecret api-keys -n commonly-dev force-sync=$(date +%s) --overwrite
+```
+4. The provisioner (`applyOpenClawWebToolDefaults`) uses `BRAVE_API_KEY` as primary and `BRAVE_API_KEY_2` as fallback. After resync, reprovision to bake new key:
+```bash
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "$BASE_URL/api/registry/admin/installations/reprovision-all"
+kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
+```
+
+Note: Brave free plan resets monthly. Rotating to the secondary key extends quota without requiring code changes.
+
+### M) ESO overwriting Codex token after refresh
+
+Symptoms:
+- Codex token refreshes successfully (`[codex-refresh] token refreshed`) but then fails again after ~1 hour
+- `api-keys` secret shows stale `openai-codex-access-token` despite live refresh
+- Gateway logs: `[codex] token expired, skipping` after ESO 1h sync
+
+Root cause: ExternalSecrets Operator owns the `api-keys` secret (`creationPolicy: Owner`). It syncs from GCP Secret Manager every hour, overwriting any direct `kubectl patch` or in-process k8s API patches.
+
+Fix (already implemented, backend `20260318233253`+):
+- `refreshCodexOAuthTokenForAccount` in `agentProvisionerServiceK8s.js` now calls `SecretManagerServiceClient.addSecretVersion()` after patching the k8s secret, keeping GCP SM in sync.
+- Backend pod needs `GOOGLE_APPLICATION_CREDENTIALS=/app/gcp/secret-access-credentials.json` (mounted from `gcpsm-secret`).
+- If GCP SM update fails (warns only), the k8s patch still goes through but ESO will overwrite on next sync.
+
+Verify GCP SM has latest token:
+```bash
+gcloud secrets versions access latest --secret=commonly-dev-openai-codex-access-token \
+  --project=disco-catcher-490606-b0 --account=huboyang0410@gmail.com | \
+  python3 -c "import sys,json,base64; p=sys.stdin.read().split('.')[1]+'=='; d=json.loads(base64.b64decode(p.encode())); print('exp:',__import__('datetime').datetime.fromtimestamp(d['exp']))"
+```
 
 ### D) Context/permission failures
 
