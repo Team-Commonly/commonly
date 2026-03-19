@@ -1681,15 +1681,19 @@ Call \`acpx_run\`:
 - agentId: "codex"
 - timeoutSeconds: 600
 - task: construct carefully with:
-  1. \`if [ ! -d /workspace/nova/repo ]; then gh repo clone Team-Commonly/commonly /workspace/nova/repo; fi\`
-  2. \`cd /workspace/nova/repo && git pull origin main\`
-  3. \`git checkout -b task-NNN-short-name\`
-  4. Implementation (backend/ — Node.js/Express/Mongoose patterns, auth middleware, input validation)
-  5. Security check: does the endpoint require auth? Validate all inputs. No SQL/NoSQL injection.
-  6. Performance: is this query indexed? Avoid N+1. Target <200ms.
-  7. \`cd backend && npm test\` — fix ALL failures before committing
-  8. \`gh pr create --title "feat(NNN): description" --body "Resolves TASK-NNN\n\nAPI: POST /api/...\nResponse time: ~Xms\nTests: X passing" --base main\`
-  9. Output the PR URL
+  1. Fetch GitHub App token + set git identity:
+     \`GH_TOKEN=$(curl -s -X POST ${COMMONLY_API_URL}/api/github/token -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" -H "Content-Type: application/json" -d '{"owner":"Team-Commonly","repo":"commonly"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")\`
+     \`git config --global user.name "Nova (Commonly Agent)"\`
+     \`git config --global user.email "nova-agent@users.noreply.github.com"\`
+  2. \`if [ ! -d /workspace/nova/repo ]; then git clone https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/nova/repo; fi\`
+  3. \`cd /workspace/nova/repo && git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git && git pull origin main\`
+  4. \`git checkout -b nova/task-NNN-short-name\`
+  5. Implementation (backend/ — Node.js/Express/Mongoose patterns, auth middleware, input validation)
+  6. Security check: does the endpoint require auth? Validate all inputs. No SQL/NoSQL injection.
+  7. Performance: is this query indexed? Avoid N+1. Target <200ms.
+  8. \`cd backend && npm test\` — fix ALL failures before committing
+  9. \`GH_TOKEN=$GH_TOKEN gh pr create --title "feat(NNN): description" --body "Resolves TASK-NNN\\n\\nAPI: POST /api/...\\nResponse time: ~Xms\\nTests: X passing" --base main\`
+  10. Output the PR URL
 
 **Step 6: Post result to myPodId**
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Tests: X passing | ~Xms response")\`
@@ -1762,15 +1766,19 @@ Call \`acpx_run\`:
 - agentId: "codex"
 - timeoutSeconds: 600
 - task: construct carefully with:
-  1. \`if [ ! -d /workspace/pixel/repo ]; then gh repo clone Team-Commonly/commonly /workspace/pixel/repo; fi\`
-  2. \`cd /workspace/pixel/repo && git pull origin main\`
-  3. \`git checkout -b task-NNN-short-name\`
-  4. Implementation (frontend/src/ — React hooks, MUI components, CSS-in-JS)
-  5. Accessibility: interactive elements have aria-labels, keyboard-navigable, color contrast AA
-  6. Reusability: extract to shared component if used >1 place
-  7. \`cd frontend && npm test -- --watchAll=false\` — fix ALL failures before committing
-  8. \`gh pr create --title "feat(NNN): description" --body "Resolves TASK-NNN\n\nComponent: ...\nA11y: ✓ WCAG 2.1 AA\nTests: X passing" --base main\`
-  9. Output the PR URL
+  1. Fetch GitHub App token + set git identity:
+     \`GH_TOKEN=$(curl -s -X POST ${COMMONLY_API_URL}/api/github/token -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" -H "Content-Type: application/json" -d '{"owner":"Team-Commonly","repo":"commonly"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")\`
+     \`git config --global user.name "Pixel (Commonly Agent)"\`
+     \`git config --global user.email "pixel-agent@users.noreply.github.com"\`
+  2. \`if [ ! -d /workspace/pixel/repo ]; then git clone https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/pixel/repo; fi\`
+  3. \`cd /workspace/pixel/repo && git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git && git pull origin main\`
+  4. \`git checkout -b pixel/task-NNN-short-name\`
+  5. Implementation (frontend/src/ — React hooks, MUI components, CSS-in-JS)
+  6. Accessibility: interactive elements have aria-labels, keyboard-navigable, color contrast AA
+  7. Reusability: extract to shared component if used >1 place
+  8. \`cd frontend && npm test -- --watchAll=false\` — fix ALL failures before committing
+  9. \`GH_TOKEN=$GH_TOKEN gh pr create --title "feat(NNN): description" --body "Resolves TASK-NNN\\n\\nComponent: ...\\nA11y: ✓ WCAG 2.1 AA\\nTests: X passing" --base main\`
+  10. Output the PR URL
 
 **Step 6: Post result to myPodId**
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Tests: X passing | A11y: ✓")\`
@@ -1841,14 +1849,18 @@ Call \`acpx_run\`:
 - agentId: "codex"
 - timeoutSeconds: 600
 - task: construct carefully with:
-  1. \`if [ ! -d /workspace/ops/repo ]; then gh repo clone Team-Commonly/commonly /workspace/ops/repo; fi\`
-  2. \`cd /workspace/ops/repo && git pull origin main\`
-  3. \`git checkout -b task-NNN-short-name\`
-  4. Implementation (k8s/, helm/, .github/workflows/, Dockerfile — IaC patterns)
-  5. Deployment safety: use rolling or blue-green strategy. Add readinessProbe if missing.
-  6. If adding a new env var: update Secret and deployment YAML together.
-  7. \`gh pr create --title "ops(NNN): description" --body "Resolves TASK-NNN\n\nChange: ...\nRollback plan: ...\nMonitoring: ..." --base main\`
-  8. Output the PR URL
+  1. Fetch GitHub App token + set git identity:
+     \`GH_TOKEN=$(curl -s -X POST ${COMMONLY_API_URL}/api/github/token -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" -H "Content-Type: application/json" -d '{"owner":"Team-Commonly","repo":"commonly"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")\`
+     \`git config --global user.name "Ops (Commonly Agent)"\`
+     \`git config --global user.email "ops-agent@users.noreply.github.com"\`
+  2. \`if [ ! -d /workspace/ops/repo ]; then git clone https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/ops/repo; fi\`
+  3. \`cd /workspace/ops/repo && git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git && git pull origin main\`
+  4. \`git checkout -b ops/task-NNN-short-name\`
+  5. Implementation (k8s/, helm/, .github/workflows/, Dockerfile — IaC patterns)
+  6. Deployment safety: use rolling or blue-green strategy. Add readinessProbe if missing.
+  7. If adding a new env var: update Secret and deployment YAML together.
+  8. \`GH_TOKEN=$GH_TOKEN gh pr create --title "ops(NNN): description" --body "Resolves TASK-NNN\\n\\nChange: ...\\nRollback plan: ...\\nMonitoring: ..." --base main\`
+  9. Output the PR URL
 
 **Step 6: Post result to myPodId**
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Zero-downtime: ✓ | Rollback: <plan>")\`
