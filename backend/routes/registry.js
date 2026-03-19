@@ -1682,11 +1682,11 @@ Call \`acpx_run\`:
 - timeoutSeconds: 600
 - task: construct carefully with:
   1. Fetch GitHub App token + set git identity:
-     \`GH_TOKEN=$(curl -s -X POST ${COMMONLY_API_URL}/api/github/token -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" -H "Content-Type: application/json" -d '{"owner":"Team-Commonly","repo":"commonly"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")\`
+     \`GH_TOKEN=$(curl -s -X POST \${COMMONLY_API_URL}/api/github/token -H "Authorization: Bearer \${COMMONLY_API_TOKEN}" -H "Content-Type: application/json" -d '{"owner":"Team-Commonly","repo":"commonly"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")\`
      \`git config --global user.name "Nova (Commonly Agent)"\`
      \`git config --global user.email "nova-agent@users.noreply.github.com"\`
-  2. \`if [ ! -d /workspace/nova/repo ]; then git clone https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/nova/repo; fi\`
-  3. \`cd /workspace/nova/repo && git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git && git pull origin main\`
+  2. \`if [ ! -d /workspace/nova/repo ]; then git clone https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/nova/repo; fi\`
+  3. \`cd /workspace/nova/repo && git remote set-url origin https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git && git pull origin main\`
   4. \`git checkout -b nova/task-NNN-short-name\`
   5. Implementation (backend/ — Node.js/Express/Mongoose patterns, auth middleware, input validation)
   6. Security check: does the endpoint require auth? Validate all inputs. No SQL/NoSQL injection.
@@ -1767,11 +1767,11 @@ Call \`acpx_run\`:
 - timeoutSeconds: 600
 - task: construct carefully with:
   1. Fetch GitHub App token + set git identity:
-     \`GH_TOKEN=$(curl -s -X POST ${COMMONLY_API_URL}/api/github/token -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" -H "Content-Type: application/json" -d '{"owner":"Team-Commonly","repo":"commonly"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")\`
+     \`GH_TOKEN=$(curl -s -X POST \${COMMONLY_API_URL}/api/github/token -H "Authorization: Bearer \${COMMONLY_API_TOKEN}" -H "Content-Type: application/json" -d '{"owner":"Team-Commonly","repo":"commonly"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")\`
      \`git config --global user.name "Pixel (Commonly Agent)"\`
      \`git config --global user.email "pixel-agent@users.noreply.github.com"\`
-  2. \`if [ ! -d /workspace/pixel/repo ]; then git clone https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/pixel/repo; fi\`
-  3. \`cd /workspace/pixel/repo && git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git && git pull origin main\`
+  2. \`if [ ! -d /workspace/pixel/repo ]; then git clone https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/pixel/repo; fi\`
+  3. \`cd /workspace/pixel/repo && git remote set-url origin https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git && git pull origin main\`
   4. \`git checkout -b pixel/task-NNN-short-name\`
   5. Implementation (frontend/src/ — React hooks, MUI components, CSS-in-JS)
   6. Accessibility: interactive elements have aria-labels, keyboard-navigable, color contrast AA
@@ -1850,11 +1850,11 @@ Call \`acpx_run\`:
 - timeoutSeconds: 600
 - task: construct carefully with:
   1. Fetch GitHub App token + set git identity:
-     \`GH_TOKEN=$(curl -s -X POST ${COMMONLY_API_URL}/api/github/token -H "Authorization: Bearer ${COMMONLY_API_TOKEN}" -H "Content-Type: application/json" -d '{"owner":"Team-Commonly","repo":"commonly"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")\`
+     \`GH_TOKEN=$(curl -s -X POST \${COMMONLY_API_URL}/api/github/token -H "Authorization: Bearer \${COMMONLY_API_TOKEN}" -H "Content-Type: application/json" -d '{"owner":"Team-Commonly","repo":"commonly"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")\`
      \`git config --global user.name "Ops (Commonly Agent)"\`
      \`git config --global user.email "ops-agent@users.noreply.github.com"\`
-  2. \`if [ ! -d /workspace/ops/repo ]; then git clone https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/ops/repo; fi\`
-  3. \`cd /workspace/ops/repo && git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/Team-Commonly/commonly.git && git pull origin main\`
+  2. \`if [ ! -d /workspace/ops/repo ]; then git clone https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/ops/repo; fi\`
+  3. \`cd /workspace/ops/repo && git remote set-url origin https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git && git pull origin main\`
   4. \`git checkout -b ops/task-NNN-short-name\`
   5. Implementation (k8s/, helm/, .github/workflows/, Dockerfile — IaC patterns)
   6. Deployment safety: use rolling or blue-green strategy. Add readinessProbe if missing.
