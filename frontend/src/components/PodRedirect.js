@@ -6,6 +6,7 @@ import ChatIcon from '@mui/icons-material/Chat';
 import SchoolIcon from '@mui/icons-material/School';
 import SportsEsportsIcon from '@mui/icons-material/SportsEsports';
 import PsychologyIcon from '@mui/icons-material/Psychology';
+import GroupsIcon from '@mui/icons-material/Groups';
 
 const PodRedirect = () => {
   const navigate = useNavigate();
@@ -94,6 +95,16 @@ const PodRedirect = () => {
             sx={{ py: 2, px: 4, borderRadius: 2, flex: 1 }}
           >
             Agent Ensemble Pods
+          </Button>
+
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={<GroupsIcon />}
+            onClick={() => handleNavigate('team')}
+            sx={{ py: 2, px: 4, borderRadius: 2, flex: 1, backgroundColor: '#7c3aed', '&:hover': { backgroundColor: '#6d28d9' } }}
+          >
+            Team Pods
           </Button>
         </Box>
       </Paper>
