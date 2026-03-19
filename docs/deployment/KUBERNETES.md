@@ -324,11 +324,94 @@ kubectl rollout status deployment/backend -n commonly-dev
 kubectl rollout status deployment/frontend -n commonly-dev
 ```
 
+## GCP Secret Manager + External Secrets Operator (Dev Cluster)
+
+The `commonly-dev` cluster uses **ExternalSecrets Operator (ESO)** to sync all secrets from GCP Secret Manager. This means secrets survive cluster rebuilds and Codex token rotations are durable.
+
+### How It Works
+
+- `externalSecrets.enabled: true` in `values-dev.yaml`
+- ESO syncs `api-keys` and `database-credentials` k8s Secrets from GCP SM every 1 hour
+- ESO owns both secrets (`creationPolicy: Owner`) — direct `kubectl patch` is overwritten on next sync
+- **GCP project**: `YOUR_GCP_PROJECT_ID`
+- **Secret Store**: `gcpsm-secretstore` (SA key auth via `gcpsm-secret` k8s secret)
+- **Secret naming convention**: `commonly-dev-<k8s-key>` (e.g. `commonly-dev-jwt-secret`)
+
+### Setup (fresh cluster)
+
+```bash
+# 1. Install ESO operator
+helm repo add external-secrets https://charts.external-secrets.io
+helm install external-secrets external-secrets/external-secrets \
+  -n external-secrets --create-namespace
+
+# Patch ESO deployments for pool=dev taint (dev cluster only)
+for d in external-secrets external-secrets-webhook external-secrets-cert-controller; do
+  kubectl patch deployment $d -n external-secrets --type=json -p='[
+    {"op":"add","path":"/spec/template/spec/tolerations","value":[{"key":"pool","operator":"Equal","value":"dev","effect":"NoSchedule"}]},
+    {"op":"add","path":"/spec/template/spec/nodeSelector","value":{"pool":"dev"}}
+  ]'
+done
+
+# 2. Create GCP SA and grant access
+gcloud iam service-accounts create commonly-secrets-sa \
+  --project=YOUR_GCP_PROJECT_ID --account=YOUR_GCP_ACCOUNT
+gcloud projects add-iam-policy-binding YOUR_GCP_PROJECT_ID \
+  --member="serviceAccount:commonly-secrets-sa@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor" --account=YOUR_GCP_ACCOUNT
+
+# 3. Create SA key and store as k8s secret
+gcloud iam service-accounts keys create /tmp/gcpsm-key.json \
+  --iam-account=commonly-secrets-sa@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com \
+  --project=YOUR_GCP_PROJECT_ID --account=YOUR_GCP_ACCOUNT
+kubectl create secret generic gcpsm-secret -n commonly-dev \
+  --from-file=secret-access-credentials=/tmp/gcpsm-key.json
+rm /tmp/gcpsm-key.json
+
+# 4. Populate GCP SM secrets from running cluster (if migrating)
+kubectl get secret api-keys -n commonly-dev -o json > /tmp/api-keys-secret.json
+# Run populate_secrets.py (see docs/scripts/codex-oauth.js for pattern)
+
+# 5. Deploy with helm (ESO will create/sync the secrets)
+helm upgrade --install commonly-dev ./k8s/helm/commonly \
+  -n commonly-dev -f k8s/helm/commonly/values-dev.yaml
+```
+
+### Updating a Secret Value
+
+```bash
+# Add new version in GCP SM
+echo -n "NEW_VALUE" | gcloud secrets versions add commonly-dev-<key> --data-file=- \
+  --project=YOUR_GCP_PROJECT_ID --account=YOUR_GCP_ACCOUNT
+
+# Force immediate ESO sync (instead of waiting up to 1h)
+kubectl annotate externalsecret api-keys -n commonly-dev force-sync=$(date +%s) --overwrite
+# Or: kubectl annotate externalsecret database-credentials -n commonly-dev force-sync=$(date +%s) --overwrite
+
+# Restart affected deployments to pick up new env values
+kubectl rollout restart deployment/backend -n commonly-dev
+kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
+```
+
+### Codex Token Durability
+
+Codex OAuth tokens are rotated by `refreshCodexOAuthTokenForAccount` in the backend. Since ESO owns `api-keys`, patches that only update the k8s secret get overwritten on the next 1h sync. The backend (since `20260318233253`) also calls GCP SM `addSecretVersion` after every k8s patch so the refresh is durable. Backend requires `GOOGLE_APPLICATION_CREDENTIALS` pointing to the mounted `gcpsm-secret` key.
+
+### Secret Inventory (api-keys)
+
+All values in `k8s/helm/commonly/templates/secrets/api-keys.yaml`. Required non-optional:
+- `jwt-secret`, `session-secret` — auth
+- `gemini-api-key` — LLM summarization
+- `clawdbot-gateway-token` — gateway runtime auth
+- `openai-codex-access-token`, `openai-codex-refresh-token`, `openai-codex-expires-at`, `openai-codex-account-id`, `openai-codex-id-token` — Codex account 1
+- `openai-codex-access-token-2`, `openai-codex-refresh-token-2`, `openai-codex-expires-at-2` — Codex account 2
+- `brave-api-key` — web search (primary); `brave-api-key-2` — fallback if quota exhausted
+
 ## Production Considerations
 
 ### Security
 
-1. **Use External Secrets** - Enable `externalSecrets.enabled=true` and configure External Secrets Operator
+1. **Use External Secrets** - Enable `externalSecrets.enabled=true` and configure External Secrets Operator (see section above)
 2. **TLS/HTTPS** - Configure cert-manager and use HTTPS ingress
 3. **Network Policies** - Restrict pod-to-pod communication
 4. **RBAC** - Use service accounts with minimal permissions
