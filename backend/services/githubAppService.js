@@ -66,6 +66,22 @@ class GitHubAppService {
   }
 
   /**
+   * Check whether a PAT is configured (simpler alternative to GitHub App).
+   */
+  static isPatConfigured() {
+    return !!process.env.GITHUB_PAT;
+  }
+
+  /**
+   * Return the PAT directly as a token response.
+   * PATs don't have a server-issued expiry, so expiresAt is null.
+   * @returns {{ token: string, expiresAt: null }}
+   */
+  static getPatToken() {
+    return { token: process.env.GITHUB_PAT, expiresAt: null };
+  }
+
+  /**
    * Check whether the GitHub App credentials are configured in env.
    */
   static isConfigured() {
