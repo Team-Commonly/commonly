@@ -225,6 +225,12 @@ spec:
               name: api-keys
               key: github-client-secret
               optional: true
+        - name: GITHUB_PAT
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_PAT
+              optional: true
         - name: X_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
