@@ -87,9 +87,12 @@ redis:
       effect: "NoSchedule"
 
 externalSecrets:
-  enabled: false
-  serviceAccount:
-    gcpServiceAccount: commonly-secrets-sa@commonly-test.iam.gserviceaccount.com
+  enabled: true
+  secretStore:
+    name: gcpsm-secretstore
+    projectId: YOUR_GCP_PROJECT_ID
+    clusterLocation: us-central1
+    clusterName: commonly-dev
 
 agents:
   clawdbot:
