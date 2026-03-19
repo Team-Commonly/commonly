@@ -2326,6 +2326,10 @@ const reprovisionInstallation = async ({
   const explicitPresetId = configPayload?.presetId || null;
   const matchedPreset = PRESET_DEFINITIONS.find((p) => p.id === (explicitPresetId || normalizedInstanceId));
   const heartbeatForProvision = {
+    // Presets with a heartbeat template default to global=true: the agent iterates
+    // its own pods during the heartbeat rather than firing once per pod.
+    ...(matchedPreset?.heartbeatTemplate ? { global: true, everyMinutes: 30 } : {}),
+    ...(matchedPreset?.defaultHeartbeat || {}),
     ...(configPayload.heartbeat || {}),
     ...(matchedPreset?.heartbeatTemplate ? {
       customContent: matchedPreset.heartbeatTemplate,
@@ -4247,6 +4251,8 @@ router.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
       const explicitPresetId2 = configPayload?.presetId || null;
       const matchedPreset2 = PRESET_DEFINITIONS.find((p) => p.id === (explicitPresetId2 || normalizedInstanceId));
       const heartbeatForProvision2 = {
+        ...(matchedPreset2?.heartbeatTemplate ? { global: true, everyMinutes: 30 } : {}),
+        ...(matchedPreset2?.defaultHeartbeat || {}),
         ...(configPayload.heartbeat || {}),
         ...(matchedPreset2?.heartbeatTemplate ? {
           customContent: matchedPreset2.heartbeatTemplate,
