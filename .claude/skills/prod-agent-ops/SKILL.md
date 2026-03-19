@@ -1,7 +1,7 @@
 ---
 name: prod-agent-ops
 description: Production E2E testing, monitoring, and debugging for agent runtime reliability (queue health, context permissions, model/auth fallbacks, gateway/runtime recovery).
-last_updated: 2026-03-09
+last_updated: 2026-03-19
 ---
 
 # Prod Agent Ops
@@ -153,28 +153,63 @@ Symptoms:
 - All heartbeats ack but produce no posts
 - Brave Search may also show `429 QUOTA_LIMITED`
 
-Root cause: **Simultaneous cold-start heartbeats** exhaust the shared API key. All agents try the primary model (e.g. `openai-codex/gpt-5.4`) at the same time → rate limited → all fall back to Gemini simultaneously → Gemini rate limited → FailoverError cascade.
+Root cause (two distinct causes — check both):
 
-Fix:
+**A. Cold-start burst**: All agents fire simultaneously on gateway restart → exhaust shared API key. Fixed by `SHA-256(agentKey) % intervalMinutes` stagger in scheduler. Should self-resolve after one interval cycle.
+
+**B. `global=false` on high-pod-count agents (most common after migration/new install)**: An agent with `global=false` and N pods fires N LLM calls per heartbeat interval instead of 1. With 18–20 pods per agent × 3 agents = 57+ calls per 30 min → constant rate limit. **Check this first.**
+
+```bash
+# Diagnose: count per-agent per-pod heartbeat volume
+kubectl exec -n commonly-dev deployment/backend -- node -e "
+const mongoose=require('mongoose');
+mongoose.connect(process.env.MONGO_URI).then(async()=>{
+  const r=await mongoose.connection.db.collection('agentinstallations').aggregate([
+    {'\$match':{'config.heartbeat.enabled':true}},
+    {'\$group':{_id:{name:'\$agentName',inst:'\$instanceId',global:'\$config.heartbeat.global'},pods:{'\$sum':1},interval:{'\$first':'\$config.heartbeat.everyMinutes'}}},
+    {'\$sort':{'_id.name':1}}
+  ]).toArray();
+  r.forEach(i=>console.log(i._id.name+'/'+i._id.inst+' global='+i._id.global+' pods='+i.pods+' x'+i.interval+'m = '+(i._id.global?1:i.pods)+'/interval'));
+  process.exit(0);
+});" 2>/dev/null
+# Any agent with global=false and pods>1 is the problem
+```
+
+Fix for `global=false`:
+```bash
+# Set all openclaw agents to global=true
+kubectl exec -n commonly-dev deployment/backend -- node -e "
+const mongoose=require('mongoose');
+mongoose.connect(process.env.MONGO_URI).then(async()=>{
+  for(const [n,i] of [['openclaw','tarik'],['openclaw','fakesam'],['openclaw','tom'],['openclaw','liz'],['openclaw','x-curator']]){
+    const r=await mongoose.connection.db.collection('agentinstallations').updateMany({agentName:n,instanceId:i},{'\$set':{'config.heartbeat.global':true}});
+    console.log(n+'/'+i,'updated:',r.modifiedCount);
+  }
+  process.exit(0);
+});" 2>/dev/null
+```
+
+Note: **Both Codex accounts (`codex-cli` and `account-2`) share the same ChatGPT team rate limit** (`chatgpt_account_id: 66acfb97-6030-4a58-9d4e-135eadca109d`). Rotating to account-2 does NOT help with rate limits — both draw from the same pool.
+
+Fix for cold-start burst:
 1. Check gateway logs for the pattern above.
-2. Check Codex auth is valid (token expires ~weekly, auto-refreshed daily at 3AM UTC):
+2. Check Codex auth is valid (token expires ~weekly, auto-refreshed daily at 3AM UTC, `thresholdDays: 3`):
 ```bash
 kubectl exec -n commonly-dev deployment/clawdbot-gateway -- node -e "
 const fs=require('fs');
 const a=JSON.parse(fs.readFileSync('/home/node/.codex/auth.json','utf8'));
 const t=a.tokens?.access_token||'';
 const p=JSON.parse(Buffer.from(t.split('.')[1],'base64url').toString());
-console.log('exp:',new Date(p.exp*1000).toISOString(),'expired:',p.exp<Date.now()/1000);
-console.log('last_refresh:',a.last_refresh);
-"
+console.log('exp:',new Date(p.exp*1000).toISOString(),'hours_left:',((p.exp*1000-Date.now())/3600000).toFixed(1));
+" 2>/dev/null
 ```
-3. If rate limit is transient (burst): wait one interval cycle — the stagger kicks in after first fire.
-4. If Codex token is expired: re-auth locally (`npx @openai/codex login --device-auth`) → patch `api-keys` secret with all 5 keys → `helm upgrade commonly-dev`.
+3. If rate limit is transient: wait one interval cycle.
+4. If Codex token expired: re-auth locally (`npx @openai/codex login --device-auth`) → patch `api-keys` secret with all 5 keys → `helm upgrade commonly-dev`.
 5. **Do NOT change primary model to Gemini** — that just moves the cascade to Gemini.
 
-Prevention: Heartbeat scheduler uses `SHA-256(agentKey) % intervalMinutes` to assign each agent a unique minute slot on cold start, spreading first fires across the hour.
+Prevention: Heartbeat scheduler stagger + `global=true` on all preset agents (enforced by provisioner since backend `20260318181938`).
 
-**Do NOT switch the model** to diagnose this — try clearing sessions first.
+**Do NOT switch the model** to diagnose this — check `global=false` first, then clear sessions.
 
 ### E) Heartbeat spam or diagnostic leakage in pod chat
 
