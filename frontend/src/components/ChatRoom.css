@@ -54,11 +54,9 @@
 /* Chat header that stays at top */
 .chat-room-header {
   background-color: rgba(15, 23, 42, 0.96) !important;
-  border-bottom: none; /* Remove bottom border for cleaner look */
-  box-shadow: none !important; /* Remove shadow for cleaner look */
-  z-index: 1200;
-  position: sticky;
-  top: 0;
+  border-bottom: none;
+  box-shadow: none !important;
+  z-index: 100;
   width: 100%;
   padding-right: 8px;
   flex-shrink: 0;
