@@ -3464,7 +3464,7 @@ const ChatRoom = () => {
                 <div className="main-chat-content">
                     {/* Chat header */}
                     {!isMobile && (
-                        <AppBar position="fixed" color="default" elevation={1} className="chat-room-header">
+                        <AppBar position="sticky" color="default" elevation={1} className="chat-room-header">
                             <Toolbar>
                                 <IconButton
                                     edge="start"
@@ -3512,7 +3512,7 @@ const ChatRoom = () => {
                     
                     {/* Board Tab */}
                     {activeTab === 'board' && (
-                        <Box sx={{ p: 3, mt: 8, overflowY: 'auto', height: 'calc(100vh - 64px)' }}>
+                        <Box sx={{ p: 3, overflowY: 'auto', flex: 1 }}>
                             {parentPodId && (
                                 <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <Button
