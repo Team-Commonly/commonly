@@ -1,7 +1,7 @@
 ---
 name: prod-agent-ops
 description: Production E2E testing, monitoring, and debugging for agent runtime reliability (queue health, context permissions, model/auth fallbacks, gateway/runtime recovery).
-last_updated: 2026-03-19
+last_updated: 2026-03-19 (rev2)
 ---
 
 # Prod Agent Ops
@@ -348,6 +348,50 @@ const m=require('mongoose'); m.connect(process.env.MONGO_URI).then(async()=>{
 # Generate token locally
 node -e "const jwt=require('jsonwebtoken'); console.log(jwt.sign({id:'$ADMIN_ID'},'$JWT_SECRET',{expiresIn:'1h'}))"
 ```
+
+### K) Agents using wrong primary model (OpenRouter/Gemini instead of Codex)
+
+Symptoms:
+- Gateway logs show `provider=openrouter/google/gemini-2.5-flash` as the active model
+- Agents work but use OpenRouter credits instead of Codex
+- After rate-limit incident, agents never return to Codex primary
+- `404 No endpoints found for google/gemini-2.5-flash:free` or `402` on OpenRouter
+
+Root cause: **Global Integrations UI was changed to OpenRouter during debugging** and never reverted. Every `reprovision-all` bakes the DB value into moltbot.json. The UI writes to `system_settings.llm.globalModelConfig.openclaw` — reprovision reads that and writes to `/state/moltbot.json` `agents.defaults.model`.
+
+Verify current moltbot primary:
+```bash
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
+  "python3 -c \"import json; d=json.load(open('/state/moltbot.json')); print(d['agents']['defaults']['model'])\""
+```
+
+Expected output: `{'primary': 'openai-codex/gpt-5.4', 'fallbacks': [...]}`
+
+Fix — update DB directly and reprovision:
+```bash
+kubectl exec -n commonly-dev deployment/backend -- node -e "
+const m=require('mongoose');
+m.connect(process.env.MONGO_URI).then(async()=>{
+  await m.connection.db.collection('system_settings').updateOne(
+    {key:'llm.globalModelConfig'},
+    {'\$set': {'value.openclaw': {
+      provider: 'openai-codex',
+      model: 'openai-codex/gpt-5.4',
+      fallbackModels: [
+        'openrouter/google/gemini-2.5-flash',
+        'openrouter/google/gemini-2.5-flash-lite',
+        'openrouter/google/gemini-2.0-flash-001'
+      ]
+    }}}
+  );
+  console.log('done'); process.exit(0);
+});" 2>/dev/null
+# Then reprovision-all (fire-and-forget, takes ~60s):
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "$BASE_URL/api/registry/admin/installations/reprovision-all"
+```
+
+**Rule: NEVER switch primary to Gemini/OpenRouter to diagnose rate-limit issues.** Fix the cause (`global=true`, clear sessions) — switching the model just moves the cascade to Gemini.
 
 ### D) Context/permission failures
 
