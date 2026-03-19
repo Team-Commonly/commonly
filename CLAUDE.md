@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 🚀 Quick Start for New Claude Sessions
 
-### CURRENT STATE (January 2025) ✅ ALL GREEN
+### CURRENT STATE (March 2026) ✅ ACTIVE DEVELOPMENT
 - **Repository**: Commonly (Team-Commonly/commonly)
-- **Current Branch**: `discord-integration`
-- **PR #36**: ✅ ALL CHECKS PASSING - Ready for merge
-- **Tests**: ✅ 100/100 frontend + backend passing
-- **Linting**: ✅ 0 ESLint errors (fixed 57 errors)
-- **GitHub Actions**: ✅ Code Quality + Test Coverage passing
+- **Current Branch**: `v1.0.x` (main: `main`)
+- **GKE**: `gke_YOUR_GCP_PROJECT_ID_us-central1_commonly-dev`
+- **Live**: `app-dev.commonly.me` / `api-dev.commonly.me`
+- **Latest frontend image**: `gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend:20260319021336`
+- **Latest backend image**: `gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend:20260318233253`
+- **UI verification**: Use MCP Playwright (`mcp__playwright__*`) — see MCP Playwright section below
 
 ### 📁 Key Documentation Files
 - **Main Guide**: `/CLAUDE.md` (this file)
@@ -40,13 +41,18 @@ gh pr checks 36                               # Should show all ✅ passing
 
 ---
 
-## Current Status (Updated January 2025)
+## Current Status (Updated March 2026)
 
-### PR #36 Status ✅ ALL CHECKS PASSING
-- **Code Quality**: ✅ PASSED (0 ESLint errors, down from 57)
-- **Test & Coverage**: ✅ PASSED (100/100 tests passing)
-- **Branch**: `discord-integration`
-- **Ready for**: Review and merge
+### Dev Agency Team Pods ✅ LIVE
+- **Pods**: Dev Team (parent `69b7ddff...`), Backend Tasks, Frontend Tasks, DevOps Tasks
+- **Agents**: Theo (dev-pm, all 4 pods), Nova (backend, Backend Tasks), Pixel (frontend, Frontend Tasks), Ops (devops, DevOps Tasks)
+- **UI**: "Team Pods" button in PodRedirect.js → `/pods/team` → browse/enter pods with Chat + Board tabs
+- **Board tab**: reads `MEMORY.md` from pod memory, renders Kanban by assignee section
+
+### Recent Major Fixes (March 2026)
+1. **Teams tab + category button** (`1704a442a`, `dcf386954`) — Pod type `team` now visible in browse UI
+2. **ChatRoom AppBar `position: sticky`** (`1c8874f2f`) — was `fixed`, overlapped layout search bar, hiding tabs
+3. **Responsive header + mobile tabs** (`0c3849bab`) — Chat/Board tabs now visible on mobile; title/subtitle match Pod.css design tokens (`#e2e8f0` / `#9fb2cb`)
 
 ### Recent Major Fixes (January 2025)
 1. **Comprehensive ESLint fixes** - Resolved 57 linting errors systematically
@@ -224,6 +230,29 @@ static async syncBotUserToPostgreSQL(bot) {
 - `cd backend && npm run dev` - Start backend with nodemon
 - `cd frontend && npm start` - Start frontend dev server
 - `node download-ca.js` - Download PostgreSQL CA certificate
+
+### MCP Playwright — UI Verification (Claude Code)
+
+Use `mcp__playwright__*` tools to verify frontend changes against the live dev environment without manual browser testing.
+
+```
+# Standard verification loop after a GKE deploy:
+1. browser_navigate  → https://app-dev.commonly.me/<route>
+2. browser_snapshot  → accessibility tree (assert text, tabs, buttons visible)
+3. browser_take_screenshot → visual confirmation
+4. browser_resize { width: 390, height: 844 } → mobile viewport check
+```
+
+**Auth injection** (token required for most routes):
+```js
+// Generate token via kubectl exec (see GKE section), then:
+browser_evaluate: () => { localStorage.setItem('token', 'eyJ...'); location.reload(); }
+```
+
+**Common patterns:**
+- `browser_wait_for { text: "Dev Team" }` — wait for async content before snapshotting
+- `browser_click { ref: "..." }` — interact using `ref=` from snapshot output
+- Always check mobile (390px) after any AppBar/layout change — `position: fixed` vs `sticky` bugs only appear at that width
 
 ## Architecture Overview
 
