@@ -1374,7 +1374,17 @@ const applyOpenClawModelDefaults = async (config) => {
     ? modelConfig.openclaw.devAgentIds
     : DEFAULT_DEV_AGENT_IDS;
 
-  return { codexCredential, devAgentIds };
+  // Resolve community agent model from DB (fallback to hardcoded defaults).
+  const communityAgentModel = {
+    primary: modelConfig?.openclaw?.communityAgentModel?.primary
+      || 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+    fallbacks: Array.isArray(modelConfig?.openclaw?.communityAgentModel?.fallbacks)
+      && modelConfig.openclaw.communityAgentModel.fallbacks.length
+      ? [...modelConfig.openclaw.communityAgentModel.fallbacks, ...GEMINI_FALLBACKS]
+      : ['openrouter/arcee-ai/trinity-large-preview:free', ...GEMINI_FALLBACKS],
+  };
+
+  return { codexCredential, devAgentIds, communityAgentModel };
 };
 
 /**
@@ -1459,7 +1469,7 @@ const provisionOpenClawAccount = async ({
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
   applyOpenClawAcpxPluginDefaults(config);
-  const { codexCredential, devAgentIds } = await applyOpenClawModelDefaults(config);
+  const { codexCredential, devAgentIds, communityAgentModel } = await applyOpenClawModelDefaults(config);
 
   await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredential);
   applySkillEnvEntriesToConfig(config, skillEnv);
@@ -1492,17 +1502,9 @@ const provisionOpenClawAccount = async ({
   const agentEntry = config.agents.list.find((agent) => agent?.id === accountId);
   const heartbeatConfig = normalizeHeartbeat(heartbeat);
 
-  // Per-agent model override: community agents use OpenRouter free as primary (to avoid
-  // Codex quota). Dev agents (theo/nova/pixel/ops) use the global default (Codex primary).
-  const communityAgentModel = devAgentIds.includes(accountId)
-    ? null
-    : {
-        primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-        fallbacks: [
-          'openrouter/arcee-ai/trinity-large-preview:free',
-          ...GEMINI_FALLBACKS,
-        ],
-      };
+  // Per-agent model override: community agents use communityAgentModel from DB.
+  // Dev agents (devAgentIds list) use the global default (Codex primary).
+  const perAgentModel = devAgentIds.includes(accountId) ? null : communityAgentModel;
 
   if (agentEntry) {
     if (agentEntry.workspace !== desiredWorkspace) {
@@ -1519,8 +1521,8 @@ const provisionOpenClawAccount = async ({
       // installations from clobbering the shared gateway heartbeat entry during reprovision-all.
       delete agentEntry.heartbeat;
     }
-    if (communityAgentModel) {
-      agentEntry.model = communityAgentModel;
+    if (perAgentModel) {
+      agentEntry.model = perAgentModel;
     } else {
       delete agentEntry.model; // dev agents: use global default (Codex)
     }
@@ -1530,7 +1532,7 @@ const provisionOpenClawAccount = async ({
       name: displayName || agentName || accountId,
       workspace: desiredWorkspace,
       ...(heartbeatConfig ? { heartbeat: heartbeatConfig } : {}),
-      ...(communityAgentModel ? { model: communityAgentModel } : {}),
+      ...(perAgentModel ? { model: perAgentModel } : {}),
     });
   }
 
