@@ -1182,6 +1182,10 @@ const applyOpenClawContextDefaults = (config) => {
 
 const GEMINI_FALLBACKS = ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'];
 
+// Dev agents that should use Codex as primary (best for coding tasks).
+// Community agents default to OpenRouter free models as primary.
+const DEV_AGENT_IDS = new Set(['theo', 'nova', 'pixel', 'ops']);
+
 const applyOpenClawAcpxPluginDefaults = (config) => {
   config.plugins = config.plugins || {};
   config.plugins.entries = config.plugins.entries || {};
@@ -1337,13 +1341,32 @@ const applyOpenClawModelDefaults = async (config) => {
   config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
 
   // OpenRouter provider catalog — free models only, no paid models.
+  // `api: "openai-completions"` is required: pi-ai uses it to route to the correct provider.
+  // `reasoning`, `input`, `cost` are required fields in ModelDefinitionConfig.
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
   config.models.providers.openrouter = {
     baseUrl: 'https://openrouter.ai/api/v1',
+    api: 'openai-completions',
     models: [
-      { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron Super 120B (free)', maxTokens: 8000, contextWindow: 128000 },
-      { id: 'arcee-ai/trinity-large-preview:free', name: 'Trinity Large (free)', maxTokens: 8000, contextWindow: 32000 },
+      {
+        id: 'nvidia/nemotron-3-super-120b-a12b:free',
+        name: 'Nemotron Super 120B (free)',
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        maxTokens: 8000,
+        contextWindow: 128000,
+      },
+      {
+        id: 'arcee-ai/trinity-large-preview:free',
+        name: 'Trinity Large (free)',
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        maxTokens: 8000,
+        contextWindow: 32000,
+      },
     ],
   };
 
@@ -1464,6 +1487,19 @@ const provisionOpenClawAccount = async ({
 
   const agentEntry = config.agents.list.find((agent) => agent?.id === accountId);
   const heartbeatConfig = normalizeHeartbeat(heartbeat);
+
+  // Per-agent model override: community agents use OpenRouter free as primary (to avoid
+  // Codex quota). Dev agents (theo/nova/pixel/ops) use the global default (Codex primary).
+  const communityAgentModel = DEV_AGENT_IDS.has(accountId)
+    ? null
+    : {
+        primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+        fallbacks: [
+          'openrouter/arcee-ai/trinity-large-preview:free',
+          ...GEMINI_FALLBACKS,
+        ],
+      };
+
   if (agentEntry) {
     if (agentEntry.workspace !== desiredWorkspace) {
       agentEntry.workspace = desiredWorkspace;
@@ -1479,12 +1515,18 @@ const provisionOpenClawAccount = async ({
       // installations from clobbering the shared gateway heartbeat entry during reprovision-all.
       delete agentEntry.heartbeat;
     }
+    if (communityAgentModel) {
+      agentEntry.model = communityAgentModel;
+    } else {
+      delete agentEntry.model; // dev agents: use global default (Codex)
+    }
   } else {
     config.agents.list.push({
       id: accountId,
       name: displayName || agentName || accountId,
       workspace: desiredWorkspace,
       ...(heartbeatConfig ? { heartbeat: heartbeatConfig } : {}),
+      ...(communityAgentModel ? { model: communityAgentModel } : {}),
     });
   }
 
