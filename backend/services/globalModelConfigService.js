@@ -16,8 +16,9 @@ const DEFAULT_CONFIG = {
     provider: 'google', // google | openrouter | openai | anthropic | custom
     model: 'google/gemini-2.5-flash',
     fallbackModels: [
-      'google/gemini-2.5-flash-lite',
-      'google/gemini-2.0-flash',
+      'openrouter/google/gemini-2.5-flash',
+      'openrouter/google/gemini-2.5-flash-lite',
+      'openrouter/google/gemini-2.0-flash-001',
     ],
     // Agent IDs that use Codex as primary. All others use communityAgentModel as primary.
     devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
