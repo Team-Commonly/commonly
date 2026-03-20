@@ -1,7 +1,7 @@
 ---
 name: prod-agent-ops
 description: Production E2E testing, monitoring, and debugging for agent runtime reliability (queue health, context permissions, model/auth fallbacks, gateway/runtime recovery).
-last_updated: 2026-03-19 (rev3)
+last_updated: 2026-03-19 (rev4)
 ---
 
 # Prod Agent Ops
@@ -446,6 +446,60 @@ gcloud secrets versions access latest --secret=commonly-dev-openai-codex-access-
   --project=disco-catcher-490606-b0 --account=huboyang0410@gmail.com | \
   python3 -c "import sys,json,base64; p=sys.stdin.read().split('.')[1]+'=='; d=json.loads(base64.b64decode(p.encode())); print('exp:',__import__('datetime').datetime.fromtimestamp(d['exp']))"
 ```
+
+### N) Per-agent model routing wrong (dev agents using OpenRouter or community agents using Codex)
+
+Symptoms:
+- Dev agents (theo/nova/pixel/ops) show OpenRouter model in gateway logs
+- Community agents (liz/tarik/tom/fakesam/x-curator) show Codex model in gateway logs
+- Gateway crash: "No API provider registered for api: undefined" (openrouter provider missing `api` field)
+
+Verify current per-agent routing in moltbot.json:
+```bash
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
+  "python3 -c \"import json; d=json.load(open('/state/moltbot.json')); [print(a['id'],'→',a.get('model',{}).get('primary','global-default')) for a in d.get('agents',{}).get('list',[])]\""
+```
+
+Expected output:
+- `theo → global-default` (uses global Codex primary)
+- `nova → global-default`
+- `pixel → global-default`
+- `ops → global-default`
+- `liz → openrouter/nvidia/nemotron-3-super-120b-a12b:free`
+- (other community agents → same OpenRouter model)
+
+Check DB devAgentIds:
+```bash
+kubectl exec -n commonly-dev deployment/backend -- node -e "
+const m=require('mongoose');
+m.connect(process.env.MONGO_URI).then(async()=>{
+  const s=await m.connection.db.collection('system_settings').findOne({key:'llm.globalModelConfig'});
+  console.log('devAgentIds:', JSON.stringify(s?.value?.openclaw?.devAgentIds));
+  process.exit(0);
+});" 2>/dev/null
+```
+
+Fix routing (update devAgentIds via DB or UI):
+- **UI**: Global Integrations → OpenClaw → "Dev Agent IDs" field → Save + Apply To All Agents
+- **CLI**: Update DB then reprovision-all (fire-and-forget):
+```bash
+kubectl exec -n commonly-dev deployment/backend -- node -e "
+const m=require('mongoose');
+m.connect(process.env.MONGO_URI).then(async()=>{
+  await m.connection.db.collection('system_settings').updateOne(
+    {key:'llm.globalModelConfig'},
+    {'\$set':{'value.openclaw.devAgentIds':['theo','nova','pixel','ops']}}
+  );
+  console.log('done'); process.exit(0);
+});" 2>/dev/null
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "$BASE_URL/api/registry/admin/installations/reprovision-all"
+```
+
+Fix gateway crash (missing `api` field in openrouter provider):
+- Root cause: older provisioner wrote openrouter config without `api: 'openai-completions'` field
+- Fix: upgrade to backend `20260319193507`+ which writes correct provider config
+- Workaround (manual): `kubectl exec` into gateway pod, edit `/state/moltbot.json` to add `"api": "openai-completions"` under `config.models.providers.openrouter`, then `kill 1` to restart gateway
 
 ### D) Context/permission failures
 
