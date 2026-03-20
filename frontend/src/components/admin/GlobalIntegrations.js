@@ -102,6 +102,7 @@ const GlobalIntegrations = () => {
       provider: 'google',
       model: 'google/gemini-2.5-flash',
       fallbackModels: ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
+      devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
     },
   });
 
@@ -217,6 +218,9 @@ const GlobalIntegrations = () => {
             fallbackModels: Array.isArray(nextModelPolicy?.openclaw?.fallbackModels)
               ? nextModelPolicy.openclaw.fallbackModels
               : ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
+            devAgentIds: Array.isArray(nextModelPolicy?.openclaw?.devAgentIds)
+              ? nextModelPolicy.openclaw.devAgentIds
+              : ['theo', 'nova', 'pixel', 'ops'],
           },
         });
       }
@@ -245,6 +249,9 @@ const GlobalIntegrations = () => {
         provider: modelPolicy?.openclaw?.provider || 'google',
         model: modelPolicy?.openclaw?.model || '',
         fallbackModels,
+        devAgentIds: Array.isArray(modelPolicy?.openclaw?.devAgentIds)
+          ? modelPolicy.openclaw.devAgentIds
+          : String(modelPolicy?.openclaw?.devAgentIds || '').split(',').map((e) => e.trim()).filter(Boolean),
       },
     };
   };
@@ -958,6 +965,24 @@ const GlobalIntegrations = () => {
                 fullWidth
                 size="small"
                 helperText="Comma-separated, in order. Example: google/gemini-2.5-flash-lite, google/gemini-2.0-flash"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="Dev Agent IDs (use Codex as primary)"
+                value={Array.isArray(modelPolicy.openclaw.devAgentIds)
+                  ? modelPolicy.openclaw.devAgentIds.join(', ')
+                  : modelPolicy.openclaw.devAgentIds}
+                onChange={(event) => setModelPolicy({
+                  ...modelPolicy,
+                  openclaw: {
+                    ...modelPolicy.openclaw,
+                    devAgentIds: event.target.value,
+                  },
+                })}
+                fullWidth
+                size="small"
+                helperText="Comma-separated instance IDs that use Codex as primary model. All other agents use OpenRouter free as primary. Example: theo, nova, pixel, ops"
               />
             </Grid>
           </Grid>
