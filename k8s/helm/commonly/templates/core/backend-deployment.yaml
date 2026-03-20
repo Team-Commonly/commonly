@@ -27,8 +27,10 @@ spec:
           - |
             if [ -n "${SKILLS_CATALOG_URL}" ]; then
               echo "Downloading skills catalog from ${SKILLS_CATALOG_URL}";
-              curl -fsSL "${SKILLS_CATALOG_URL}" -o /catalog/awesome-agent-skills-index.json;
-              exit 0;
+              if curl -fsSL "${SKILLS_CATALOG_URL}" -o /catalog/awesome-agent-skills-index.json; then
+                exit 0;
+              fi
+              echo "Download failed, falling back to image file";
             fi
             if [ -f /app/docs/skills/awesome-agent-skills-index.json ]; then
               cp /app/docs/skills/awesome-agent-skills-index.json /catalog/awesome-agent-skills-index.json;
