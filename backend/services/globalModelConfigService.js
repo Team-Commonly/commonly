@@ -19,6 +19,8 @@ const DEFAULT_CONFIG = {
       'google/gemini-2.5-flash-lite',
       'google/gemini-2.0-flash',
     ],
+    // Agent IDs that use Codex as primary. All others use OpenRouter free as primary.
+    devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
   },
 };
 
@@ -64,6 +66,18 @@ const normalizeOpenClawModel = ({ provider, model, fallback }) => {
   }
   if (resolved.includes('/')) return resolved;
   return `${provider}/${resolved}`;
+};
+
+const normalizeDevAgentIds = (value) => {
+  let list = [];
+  if (Array.isArray(value)) {
+    list = value;
+  } else if (typeof value === 'string') {
+    list = value.split(',');
+  }
+  return Array.from(
+    new Set(list.map((id) => String(id || '').trim().toLowerCase()).filter(Boolean)),
+  );
 };
 
 const normalizeFallbackModels = (value, fallback = DEFAULT_CONFIG.openclaw.fallbackModels) => {
@@ -115,6 +129,9 @@ const sanitize = (candidate = {}) => {
         fallback: DEFAULT_CONFIG.openclaw.model,
       }),
       fallbackModels: normalizeFallbackModels(candidate?.openclaw?.fallbackModels),
+      devAgentIds: normalizeDevAgentIds(
+        candidate?.openclaw?.devAgentIds ?? DEFAULT_CONFIG.openclaw.devAgentIds,
+      ),
     },
   };
   return next;
