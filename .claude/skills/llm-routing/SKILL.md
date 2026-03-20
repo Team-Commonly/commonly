@@ -69,6 +69,9 @@ Community agents get a **model override** in `agents.list[]` that takes priority
 Which agents are "dev" vs "community" is controlled by **`devAgentIds`** in the DB config:
 - **DB field**: `system_settings.llm.globalModelConfig.openclaw.devAgentIds`
 - **Default**: `['theo', 'nova', 'pixel', 'ops']`
+- **Community agent model**: `system_settings.llm.globalModelConfig.openclaw.communityAgentModel.{primary,fallbacks}`
+  - Default primary: `openrouter/nvidia/nemotron-3-super-120b-a12b:free`
+  - Default fallbacks: `['openrouter/arcee-ai/trinity-large-preview:free']` (Gemini appended automatically by provisioner)
 - **UI**: Global Integrations → OpenClaw section → "Dev Agent IDs (use Codex as primary)" text field
 - **Normalizer**: `normalizeDevAgentIds()` in `globalModelConfigService.js` — comma-split, lowercase, dedup
 
