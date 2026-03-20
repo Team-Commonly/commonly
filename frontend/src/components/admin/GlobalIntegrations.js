@@ -103,6 +103,10 @@ const GlobalIntegrations = () => {
       model: 'google/gemini-2.5-flash',
       fallbackModels: ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
       devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
+      communityAgentModel: {
+        primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+        fallbacks: ['openrouter/arcee-ai/trinity-large-preview:free'],
+      },
     },
   });
 
@@ -221,6 +225,13 @@ const GlobalIntegrations = () => {
             devAgentIds: Array.isArray(nextModelPolicy?.openclaw?.devAgentIds)
               ? nextModelPolicy.openclaw.devAgentIds
               : ['theo', 'nova', 'pixel', 'ops'],
+            communityAgentModel: {
+              primary: nextModelPolicy?.openclaw?.communityAgentModel?.primary
+                || 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+              fallbacks: Array.isArray(nextModelPolicy?.openclaw?.communityAgentModel?.fallbacks)
+                ? nextModelPolicy.openclaw.communityAgentModel.fallbacks
+                : ['openrouter/arcee-ai/trinity-large-preview:free'],
+            },
           },
         });
       }
@@ -252,6 +263,12 @@ const GlobalIntegrations = () => {
         devAgentIds: Array.isArray(modelPolicy?.openclaw?.devAgentIds)
           ? modelPolicy.openclaw.devAgentIds
           : String(modelPolicy?.openclaw?.devAgentIds || '').split(',').map((e) => e.trim()).filter(Boolean),
+        communityAgentModel: {
+          primary: modelPolicy?.openclaw?.communityAgentModel?.primary || '',
+          fallbacks: Array.isArray(modelPolicy?.openclaw?.communityAgentModel?.fallbacks)
+            ? modelPolicy.openclaw.communityAgentModel.fallbacks
+            : String(modelPolicy?.openclaw?.communityAgentModel?.fallbacks || '').split(',').map((e) => e.trim()).filter(Boolean),
+        },
       },
     };
   };
@@ -982,7 +999,47 @@ const GlobalIntegrations = () => {
                 })}
                 fullWidth
                 size="small"
-                helperText="Comma-separated instance IDs that use Codex as primary model. All other agents use OpenRouter free as primary. Example: theo, nova, pixel, ops"
+                helperText="Comma-separated instance IDs that use Codex as primary model. All other agents use the Community Agent model below. Example: theo, nova, pixel, ops"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="Community Agent Primary Model"
+                value={modelPolicy.openclaw.communityAgentModel?.primary || ''}
+                onChange={(event) => setModelPolicy({
+                  ...modelPolicy,
+                  openclaw: {
+                    ...modelPolicy.openclaw,
+                    communityAgentModel: {
+                      ...modelPolicy.openclaw.communityAgentModel,
+                      primary: event.target.value,
+                    },
+                  },
+                })}
+                fullWidth
+                size="small"
+                helperText="Primary model for community agents (not in Dev Agent IDs). Example: openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="Community Agent Fallback Models"
+                value={Array.isArray(modelPolicy.openclaw.communityAgentModel?.fallbacks)
+                  ? modelPolicy.openclaw.communityAgentModel.fallbacks.join(', ')
+                  : (modelPolicy.openclaw.communityAgentModel?.fallbacks || '')}
+                onChange={(event) => setModelPolicy({
+                  ...modelPolicy,
+                  openclaw: {
+                    ...modelPolicy.openclaw,
+                    communityAgentModel: {
+                      ...modelPolicy.openclaw.communityAgentModel,
+                      fallbacks: event.target.value,
+                    },
+                  },
+                })}
+                fullWidth
+                size="small"
+                helperText="Comma-separated fallback models for community agents (Gemini fallbacks appended automatically). Example: openrouter/arcee-ai/trinity-large-preview:free"
               />
             </Grid>
           </Grid>
