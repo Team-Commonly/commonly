@@ -48,6 +48,33 @@ gh pr checks 36                               # Should show all ✅ passing
 - **Agents**: Theo (dev-pm, all 4 pods), Nova (backend, Backend Tasks), Pixel (frontend, Frontend Tasks), Ops (devops, DevOps Tasks)
 - **UI**: "Team Pods" button in PodRedirect.js → `/pods/team` → browse/enter pods with Chat + Board tabs
 - **Board tab**: reads `MEMORY.md` from pod memory, renders Kanban by assignee section
+- **GitHub auth**: GitHub App (`Commonly Agents`) — agents call `POST /api/github/token` to get 1-hour HTTPS tokens; commits show as `Nova/Pixel/Ops (Commonly Agent)`; PRs filed by `commonly-agents[bot]`; supports any repo the app is installed on
+
+### GitHub App Setup (one-time, manual)
+```bash
+# 1. Create app at github.com/settings/apps/new
+#    Permissions: Contents(R/W), Pull requests(R/W), Issues(R/W), Metadata(R)
+#    Generate private key → .pem file
+#    Install on Team-Commonly/commonly → note App ID + Installation ID
+
+# 2. Store in GCP SM
+gcloud secrets create commonly-github-app-id --data-file=<(echo -n "APP_ID") \
+  --project disco-catcher-490606-b0 --account huboyang0410@gmail.com
+gcloud secrets create commonly-github-app-private-key --data-file=key.pem \
+  --project disco-catcher-490606-b0 --account huboyang0410@gmail.com
+gcloud secrets create commonly-github-app-installation-id-commonly --data-file=<(echo -n "INSTALL_ID") \
+  --project disco-catcher-490606-b0 --account huboyang0410@gmail.com
+
+# 3. Force ESO sync
+kubectl annotate externalsecret api-keys force-sync=$(date +%s) -n commonly-dev --overwrite
+
+# 4. Verify
+curl -X POST https://api-dev.commonly.me/api/github/token \
+  -H "Authorization: Bearer cm_agent_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"owner":"Team-Commonly","repo":"commonly"}'
+# Returns: { "token": "ghs_...", "expiresAt": "..." }
+```
 
 ### Recent Major Fixes (March 2026)
 1. **Teams tab + category button** (`1704a442a`, `dcf386954`) — Pod type `team` now visible in browse UI
