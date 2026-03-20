@@ -472,7 +472,7 @@ const Pod = () => {
     // Handle tab change
     const handleTabChange = (event, newValue) => {
         setTabValue(newValue);
-        const podTypes = ['chat', 'study', 'games', 'agent-ensemble'];
+        const podTypes = ['chat', 'study', 'games', 'agent-ensemble', 'team'];
         navigate(`/pods/${podTypes[newValue]}`);
     };
 
