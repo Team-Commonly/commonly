@@ -1318,23 +1318,21 @@ const applyOpenClawModelDefaults = async (config) => {
   const existingFallbacks = Array.isArray(config.agents.defaults.model.fallbacks)
     ? config.agents.defaults.model.fallbacks
     : [];
-  // Free OpenRouter models — no credit burn. Nemotron is primary, Trinity is secondary.
-  // These are enforced regardless of what the DB or existing ConfigMap have stored,
-  // so paid openrouter/ models never appear in the fallback chain.
-  const FREE_OPENROUTER_FALLBACKS = [
+  // OpenRouter fallbacks: free models only, explicit list enforced on every provision.
+  // Nemotron is primary fallback, Trinity is secondary. No paid or Llama models.
+  const OPENROUTER_FREE_FALLBACKS = [
     'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
     'openrouter/arcee-ai/trinity-large-preview:free',
   ];
-  const isAllowedFallback = (m) => !m.startsWith('openrouter/') || m.endsWith(':free');
-  // Strip paid/unwanted OpenRouter models from DB defaults and existing ConfigMap fallbacks.
-  const filteredDefaults = defaultFallbacks.filter(isAllowedFallback);
-  const filteredExisting = existingFallbacks.filter(isAllowedFallback);
+  // Strip ALL openrouter/ models from DB/ConfigMap values — we control them above.
+  const nonOpenRouterDefaults = defaultFallbacks.filter((m) => !m.startsWith('openrouter/'));
+  const nonOpenRouterExisting = existingFallbacks.filter((m) => !m.startsWith('openrouter/'));
   const baseFallbacks = isCodexPrimary
-    ? [...FREE_OPENROUTER_FALLBACKS, ...filteredDefaults, ...GEMINI_FALLBACKS]
-    : [...FREE_OPENROUTER_FALLBACKS, ...filteredDefaults];
+    ? [...OPENROUTER_FREE_FALLBACKS, ...nonOpenRouterDefaults, ...GEMINI_FALLBACKS]
+    : [...OPENROUTER_FREE_FALLBACKS, ...nonOpenRouterDefaults];
   const mergedFallbacks = [
     ...baseFallbacks,
-    ...filteredExisting,
+    ...nonOpenRouterExisting,
   ].filter(Boolean);
   config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
 
