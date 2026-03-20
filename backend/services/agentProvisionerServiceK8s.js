@@ -1327,6 +1327,20 @@ const applyOpenClawModelDefaults = async (config) => {
     ...existingFallbacks,
   ].filter(Boolean);
   config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
+
+  // Cap maxTokens on OpenRouter fallback models to fit the free-tier per-request limit.
+  // OpenRouter free plan errors with 402 when requesting >~16k tokens. 8k fits safely.
+  config.models = config.models || {};
+  config.models.providers = config.models.providers || {};
+  config.models.providers.openrouter = {
+    baseUrl: 'https://openrouter.ai/api/v1',
+    models: [
+      { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', maxTokens: 8000, contextWindow: 1000000 },
+      { id: 'google/gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', maxTokens: 8000, contextWindow: 1000000 },
+      { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', maxTokens: 8000, contextWindow: 1000000 },
+    ],
+  };
+
   return codexCredential;
 };
 
