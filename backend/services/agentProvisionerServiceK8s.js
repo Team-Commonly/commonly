@@ -1182,9 +1182,8 @@ const applyOpenClawContextDefaults = (config) => {
 
 const GEMINI_FALLBACKS = ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'];
 
-// Dev agents that should use Codex as primary (best for coding tasks).
-// Community agents default to OpenRouter free models as primary.
-const DEV_AGENT_IDS = new Set(['theo', 'nova', 'pixel', 'ops']);
+// Default dev agent IDs — overridden by DB openclaw.devAgentIds if set.
+const DEFAULT_DEV_AGENT_IDS = ['theo', 'nova', 'pixel', 'ops'];
 
 const applyOpenClawAcpxPluginDefaults = (config) => {
   config.plugins = config.plugins || {};
@@ -1370,7 +1369,12 @@ const applyOpenClawModelDefaults = async (config) => {
     ],
   };
 
-  return codexCredential;
+  // Resolve dev agent IDs from DB (fallback to defaults if not set).
+  const devAgentIds = Array.isArray(modelConfig?.openclaw?.devAgentIds) && modelConfig.openclaw.devAgentIds.length
+    ? modelConfig.openclaw.devAgentIds
+    : DEFAULT_DEV_AGENT_IDS;
+
+  return { codexCredential, devAgentIds };
 };
 
 /**
@@ -1455,7 +1459,7 @@ const provisionOpenClawAccount = async ({
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
   applyOpenClawAcpxPluginDefaults(config);
-  const codexCredential = await applyOpenClawModelDefaults(config);
+  const { codexCredential, devAgentIds } = await applyOpenClawModelDefaults(config);
 
   await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredential);
   applySkillEnvEntriesToConfig(config, skillEnv);
@@ -1490,7 +1494,7 @@ const provisionOpenClawAccount = async ({
 
   // Per-agent model override: community agents use OpenRouter free as primary (to avoid
   // Codex quota). Dev agents (theo/nova/pixel/ops) use the global default (Codex primary).
-  const communityAgentModel = DEV_AGENT_IDS.has(accountId)
+  const communityAgentModel = devAgentIds.includes(accountId)
     ? null
     : {
         primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
