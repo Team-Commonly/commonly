@@ -23,6 +23,7 @@ const slackWebhookRoutes = require('./routes/webhooks/slack');
 const groupMeWebhookRoutes = require('./routes/webhooks/groupme');
 const telegramWebhookRoutes = require('./routes/webhooks/telegram');
 const discordRoutes = require('./routes/discord');
+const githubRoutes = require('./routes/github');
 const analyticsRoutes = require('./routes/analytics');
 const contextApiRoutes = require('./routes/contextApi');
 const registryRoutes = require('./routes/registry');
@@ -160,6 +161,7 @@ app.use('/api/webhooks/slack', slackWebhookRoutes);
 app.use('/api/webhooks/groupme', groupMeWebhookRoutes);
 app.use('/api/webhooks/telegram', telegramWebhookRoutes);
 app.use('/api/discord', discordRoutes);
+app.use('/api/github', githubRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/v1', contextApiRoutes); // Context API for MCP and external agents
 app.use('/api/registry', registryRoutes); // Agent Registry (package manager for agents)
