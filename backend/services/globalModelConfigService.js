@@ -19,8 +19,13 @@ const DEFAULT_CONFIG = {
       'google/gemini-2.5-flash-lite',
       'google/gemini-2.0-flash',
     ],
-    // Agent IDs that use Codex as primary. All others use OpenRouter free as primary.
+    // Agent IDs that use Codex as primary. All others use communityAgentModel as primary.
     devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
+    // Model used by non-dev agents (community agents like liz/tarik/tom/fakesam/x-curator).
+    communityAgentModel: {
+      primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+      fallbacks: ['openrouter/arcee-ai/trinity-large-preview:free'],
+    },
   },
 };
 
@@ -98,6 +103,14 @@ const normalizeFallbackModels = (value, fallback = DEFAULT_CONFIG.openclaw.fallb
   return [...fallback];
 };
 
+const normalizeCommunityAgentModel = (value) => {
+  const defaultVal = DEFAULT_CONFIG.openclaw.communityAgentModel;
+  if (!value || typeof value !== 'object') return { ...defaultVal };
+  const primary = normalizeModel(value.primary, defaultVal.primary);
+  const fallbacks = normalizeFallbackModels(value.fallbacks, defaultVal.fallbacks);
+  return { primary, fallbacks };
+};
+
 const normalizeContextLimit = (value) => {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 1024) return DEFAULT_CONFIG.llmService.contextLimit;
@@ -132,6 +145,7 @@ const sanitize = (candidate = {}) => {
       devAgentIds: normalizeDevAgentIds(
         candidate?.openclaw?.devAgentIds ?? DEFAULT_CONFIG.openclaw.devAgentIds,
       ),
+      communityAgentModel: normalizeCommunityAgentModel(candidate?.openclaw?.communityAgentModel),
     },
   };
   return next;
