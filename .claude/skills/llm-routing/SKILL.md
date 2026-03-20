@@ -2,7 +2,7 @@
 
 name: llm-routing
 description: LLM routing and provider config (LiteLLM gateway, OpenRouter, Gemini direct), env flags, and fallback behavior.
-last_updated: 2026-03-14
+last_updated: 2026-03-19
 ---
 
 # LLM Routing
@@ -49,19 +49,52 @@ Used by: `buildLlmPodSummary` in `commonly-bot/index.js`.
 - [LITELLM.md](../../../docs/development/LITELLM.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
 
-## Agent (OpenClaw) Model Config (2026-03-14)
+## Agent (OpenClaw) Model Config (2026-03-19)
 
-Agent LLM is separate from the backend LLM stack above. It is configured via:
+Agent LLM is separate from the backend LLM stack above. Configured via:
 1. **Global Integrations UI** → OpenClaw Provider section → saved to MongoDB `system_settings` key `llm.globalModelConfig`.
 2. **Provisioner** (`agentProvisionerServiceK8s.js`) reads this on every reprovision and writes it to the `clawdbot-config` ConfigMap — overriding the helm template value.
 
-Current config:
+### Global Default (dev agents)
+
 - **Primary**: `openai-codex/gpt-5.4` (ChatGPT Plus, chatgpt auth mode)
-- **Fallbacks**: `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite`, `google/gemini-2.0-flash`
+- **Fallbacks**: `openrouter/google/gemini-2.5-flash`, `openrouter/google/gemini-2.5-flash-lite`, `openrouter/google/gemini-2.0-flash-001`
 
-**WARNING**: Do NOT change primary to Gemini. If Codex fails, all agents fall back to Gemini simultaneously → Gemini rate limited → FailoverError cascade for everyone. The heartbeat stagger (`schedulerService.js`) prevents simultaneous cold-start fires. See prod-agent-ops skill section I for incident playbook.
+### Per-Agent Override (community agents)
 
-**Codex OAuth token** auto-refreshes daily at 3AM UTC via `refreshCodexOAuthTokenIfNeeded` (threshold: 3 days before expiry). Token stored in `api-keys` secret as `openai-codex-access-token` + `openai-codex-expires-at`. If refresh fails: re-auth with `npx @openai/codex login --device-auth` locally → patch secret → helm upgrade.
+Community agents get a **model override** in `agents.list[]` that takes priority over the global default:
+- **Primary**: `openrouter/nvidia/nemotron-3-super-120b-a12b:free`
+- **Fallbacks**: `openrouter/arcee-ai/trinity-large-preview:free`, then Gemini cascade
+
+Which agents are "dev" vs "community" is controlled by **`devAgentIds`** in the DB config:
+- **DB field**: `system_settings.llm.globalModelConfig.openclaw.devAgentIds`
+- **Default**: `['theo', 'nova', 'pixel', 'ops']`
+- **UI**: Global Integrations → OpenClaw section → "Dev Agent IDs (use Codex as primary)" text field
+- **Normalizer**: `normalizeDevAgentIds()` in `globalModelConfigService.js` — comma-split, lowercase, dedup
+
+Current routing table:
+| Agent | Primary Model |
+|-------|--------------|
+| theo, nova, pixel, ops | `openai-codex/gpt-5.4` (no model override, uses global default) |
+| liz, tarik, tom, fakesam, x-curator, newshound-aiyo | `openrouter/nvidia/nemotron-3-super-120b-a12b:free` |
+
+### OpenRouter Provider Config Requirements
+
+OpenRouter is NOT a native pi-ai provider. The provisioner writes it to `config.models.providers.openrouter` with `api: 'openai-completions'`. **Every model definition requires** `reasoning: boolean`, `input: Array<"text"|"image">`, `cost: {input, output, cacheRead, cacheWrite}`. Missing `api` field → crash ("No API provider registered for api: undefined").
+
+### Changing devAgentIds
+
+1. Go to Global Integrations UI → OpenClaw → "Dev Agent IDs" field
+2. Edit comma-separated list, Save + Apply To All Agents
+3. Reprovision runs automatically (~60s fire-and-forget); verify moltbot.json after:
+```bash
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
+  "python3 -c \"import json; d=json.load(open('/state/moltbot.json')); [print(a['id'], a.get('model', {}).get('primary', 'global-default')) for a in d.get('agents', {}).get('list', [])]\""
+```
+
+**WARNING**: Do NOT change global default primary to Gemini. If Codex fails, all dev agents fall back to Gemini simultaneously → Gemini rate limited → FailoverError cascade. The heartbeat stagger (`schedulerService.js`) prevents simultaneous cold-start fires. See prod-agent-ops skill section I for incident playbook.
+
+**Codex OAuth token** auto-refreshes daily at 3AM UTC via `refreshCodexOAuthTokenIfNeeded` (threshold: 3 days before expiry). Token stored in `api-keys` secret as `openai-codex-access-token` + `openai-codex-expires-at`. If refresh fails: re-auth with `docs/scripts/codex-oauth.js --device-auth` inside the gateway pod → patch secret → helm upgrade. Script now supports `--account=2` flag for second account.
 
 ## Current Repo Notes (2026-02-04)
 
