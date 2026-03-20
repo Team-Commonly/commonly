@@ -67,6 +67,7 @@ dist/
 # Documentation
 README.md
 docs/
+!docs/skills/
 
 # Git
 .git/
