@@ -1180,13 +1180,12 @@ const applyOpenClawContextDefaults = (config) => {
   }
 };
 
-// Route Gemini through OpenRouter (openrouter/google/...) to avoid dependency on the direct
-// Gemini API key. The direct google/ provider requires a valid GEMINI_API_KEY env var which
-// goes auth_permanent when the key is revoked. OpenRouter has its own key.
+// Direct Gemini provider fallbacks (google/ prefix, not via OpenRouter).
+// Requires a valid GEMINI_API_KEY in the gateway's api-keys secret.
 const GEMINI_FALLBACKS = [
-  'openrouter/google/gemini-2.5-flash',
-  'openrouter/google/gemini-2.5-flash-lite',
-  'openrouter/google/gemini-2.0-flash-001',
+  'google/gemini-2.5-flash',
+  'google/gemini-2.5-flash-lite',
+  'google/gemini-2.0-flash',
 ];
 
 // Default dev agent IDs — overridden by DB openclaw.devAgentIds if set.
@@ -1372,34 +1371,6 @@ const applyOpenClawModelDefaults = async (config) => {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         maxTokens: 8000,
         contextWindow: 32000,
-      },
-      // Gemini via OpenRouter — avoids dependency on the direct Gemini API key.
-      {
-        id: 'google/gemini-2.5-flash',
-        name: 'Gemini 2.5 Flash (via OpenRouter)',
-        reasoning: false,
-        input: ['text', 'image'],
-        cost: { input: 0.15, output: 0.6, cacheRead: 0, cacheWrite: 0 },
-        maxTokens: 65536,
-        contextWindow: 1000000,
-      },
-      {
-        id: 'google/gemini-2.5-flash-lite',
-        name: 'Gemini 2.5 Flash Lite (via OpenRouter)',
-        reasoning: false,
-        input: ['text', 'image'],
-        cost: { input: 0.075, output: 0.3, cacheRead: 0, cacheWrite: 0 },
-        maxTokens: 65536,
-        contextWindow: 1000000,
-      },
-      {
-        id: 'google/gemini-2.0-flash-001',
-        name: 'Gemini 2.0 Flash (via OpenRouter)',
-        reasoning: false,
-        input: ['text', 'image'],
-        cost: { input: 0.1, output: 0.4, cacheRead: 0, cacheWrite: 0 },
-        maxTokens: 8192,
-        contextWindow: 1000000,
       },
     ],
   };
