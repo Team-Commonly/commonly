@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Current Branch**: `v1.0.x` (main: `main`)
 - **GKE**: `gke_YOUR_GCP_PROJECT_ID_us-central1_commonly-dev`
 - **Live**: `app-dev.commonly.me` / `api-dev.commonly.me`
-- **Latest frontend image**: `gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend:20260319234123`
+- **Latest frontend image**: `gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend:20260320144703`
 - **Latest backend image**: `gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend:20260320001607`
 - **UI verification**: Use MCP Playwright (`mcp__playwright__*`) — see MCP Playwright section below
 
