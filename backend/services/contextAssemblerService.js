@@ -467,7 +467,8 @@ class ContextAssemblerService {
       target, content, tags = [], source = {},
     } = options;
     const agentContext = options.agentContext || null;
-    const scope = options.scope || (agentContext ? 'agent' : 'pod');
+    // 'memory' target is a shared pod resource (task board) — always pod-scoped so all members can see it
+    const scope = target === 'memory' ? 'pod' : (options.scope || (agentContext ? 'agent' : 'pod'));
     const normalizedAgent = PodAssetService.normalizeAgentContext(agentContext);
     const metadata = {
       ...(options.metadata || {}),
