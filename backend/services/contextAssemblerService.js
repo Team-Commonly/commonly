@@ -571,8 +571,8 @@ class ContextAssemblerService {
         });
       }
 
-      // Append to memory
-      asset.content += `\n${content}\n`;
+      // Replace memory (MEMORY.md is a living document, not a log)
+      asset.content = content;
       asset.tags = [...new Set([...asset.tags, ...tags])];
       asset.metadata = { ...(asset.metadata || {}), ...metadata };
       await asset.save();
