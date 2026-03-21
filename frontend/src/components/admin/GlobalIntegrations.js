@@ -887,17 +887,25 @@ const GlobalIntegrations = () => {
             )}
             <Grid item xs={12}>
               <Divider sx={{ my: 1 }} />
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                OpenClaw Gateway (Agents)
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                OpenClaw — Agent Model Routing
+              </Typography>
+              <Typography variant="caption" color="text.disabled">
+                Dev agents (by ID) use the primary below. All other agents use the Community section.
+              </Typography>
+            </Grid>
+            <Grid item xs={12}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Dev Agents
               </Typography>
             </Grid>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
-                <InputLabel id="openclaw-provider-label">OpenClaw Provider</InputLabel>
+                <InputLabel id="openclaw-provider-label">Dev Agent Provider</InputLabel>
                 <Select
                   labelId="openclaw-provider-label"
                   value={modelPolicy.openclaw.provider}
-                  label="OpenClaw Provider"
+                  label="Dev Agent Provider"
                   onChange={(event) => {
                     const nextProvider = event.target.value;
                     const models = OPENCLAW_MODEL_OPTIONS[nextProvider];
@@ -924,11 +932,11 @@ const GlobalIntegrations = () => {
             <Grid item xs={12} md={4}>
               {OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider] ? (
                 <FormControl fullWidth size="small">
-                  <InputLabel id="openclaw-model-label">OpenClaw Model</InputLabel>
+                  <InputLabel id="openclaw-model-label">Dev Agent Primary Model</InputLabel>
                   <Select
                     labelId="openclaw-model-label"
                     value={modelPolicy.openclaw.model}
-                    label="OpenClaw Model"
+                    label="Dev Agent Primary Model"
                     onChange={(event) => setModelPolicy({
                       ...modelPolicy,
                       openclaw: {
@@ -944,7 +952,7 @@ const GlobalIntegrations = () => {
                 </FormControl>
               ) : (
                 <TextField
-                  label="OpenClaw Model"
+                  label="Dev Agent Primary Model"
                   value={modelPolicy.openclaw.model}
                   onChange={(event) => setModelPolicy({
                     ...modelPolicy,
@@ -968,7 +976,7 @@ const GlobalIntegrations = () => {
             )}
             <Grid item xs={12}>
               <TextField
-                label="OpenClaw Fallback Models"
+                label="Dev Agent Fallback Models"
                 value={Array.isArray(modelPolicy.openclaw.fallbackModels)
                   ? modelPolicy.openclaw.fallbackModels.join(', ')
                   : modelPolicy.openclaw.fallbackModels}
@@ -981,12 +989,12 @@ const GlobalIntegrations = () => {
                 })}
                 fullWidth
                 size="small"
-                helperText="Comma-separated, in order. Example: google/gemini-2.5-flash-lite, google/gemini-2.0-flash"
+                helperText="Comma-separated fallbacks for dev agents, in order. Example: google/gemini-2.5-flash-lite, google/gemini-2.0-flash"
               />
             </Grid>
             <Grid item xs={12}>
               <TextField
-                label="Dev Agent IDs (use Codex as primary)"
+                label="Dev Agent IDs"
                 value={Array.isArray(modelPolicy.openclaw.devAgentIds)
                   ? modelPolicy.openclaw.devAgentIds.join(', ')
                   : modelPolicy.openclaw.devAgentIds}
@@ -999,8 +1007,13 @@ const GlobalIntegrations = () => {
                 })}
                 fullWidth
                 size="small"
-                helperText="Comma-separated instance IDs that use Codex as primary model. All other agents use the Community Agent model below. Example: theo, nova, pixel, ops"
+                helperText="Comma-separated instance IDs that use the dev agent primary above. All other agents use the community model below. Example: theo, nova, pixel, ops"
               />
+            </Grid>
+            <Grid item xs={12}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Community Agents
+              </Typography>
             </Grid>
             <Grid item xs={12}>
               <TextField
@@ -1018,7 +1031,7 @@ const GlobalIntegrations = () => {
                 })}
                 fullWidth
                 size="small"
-                helperText="Primary model for community agents (not in Dev Agent IDs). Example: openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+                helperText="Primary model for agents not in Dev Agent IDs. Example: openrouter/nvidia/nemotron-3-super-120b-a12b:free"
               />
             </Grid>
             <Grid item xs={12}>
@@ -1039,7 +1052,7 @@ const GlobalIntegrations = () => {
                 })}
                 fullWidth
                 size="small"
-                helperText="Comma-separated fallback models for community agents (Gemini fallbacks appended automatically). Example: openrouter/arcee-ai/trinity-large-preview:free"
+                helperText="Comma-separated fallbacks for community agents (Gemini appended automatically). Example: openrouter/arcee-ai/trinity-large-preview:free"
               />
             </Grid>
           </Grid>
