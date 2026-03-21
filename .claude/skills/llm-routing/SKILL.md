@@ -2,7 +2,7 @@
 
 name: llm-routing
 description: LLM routing and provider config (LiteLLM gateway, OpenRouter, Gemini direct), env flags, and fallback behavior.
-last_updated: 2026-03-19
+last_updated: 2026-03-21
 ---
 
 # LLM Routing
@@ -49,47 +49,69 @@ Used by: `buildLlmPodSummary` in `commonly-bot/index.js`.
 - [LITELLM.md](../../../docs/development/LITELLM.md)
 - [BACKEND.md](../../../docs/development/BACKEND.md)
 
-## Agent (OpenClaw) Model Config (2026-03-19)
+## Agent (OpenClaw) Model Config (2026-03-21)
 
 Agent LLM is separate from the backend LLM stack above. Configured via:
-1. **Global Integrations UI** → OpenClaw Provider section → saved to MongoDB `system_settings` key `llm.globalModelConfig`.
+1. **Global Integrations UI** → OpenClaw section → saved to MongoDB `system_settings` key `llm.globalModelConfig`.
 2. **Provisioner** (`agentProvisionerServiceK8s.js`) reads this on every reprovision and writes it to the `clawdbot-config` ConfigMap — overriding the helm template value.
+
+Service: `backend/services/globalModelConfigService.js` — handles DB read/write, normalization, and 15s cache.
+
+### Global Integrations UI Layout (frontend `20260320144703`+)
+
+The OpenClaw section is split into two subsections:
+
+**Dev Agents** — agents whose instanceId is in `devAgentIds`:
+- Dev Agent Provider (dropdown: google / openai-codex / openrouter / openai / anthropic / custom)
+- Dev Agent Primary Model (dropdown per provider, or free-text for openrouter/custom)
+- Dev Agent Fallback Models (comma-separated)
+- Dev Agent IDs (comma-separated instanceIds)
+
+**Community Agents** — all other agents:
+- Community Agent Primary Model (free-text)
+- Community Agent Fallback Models (comma-separated)
 
 ### Global Default (dev agents)
 
 - **Primary**: `openai-codex/gpt-5.4` (ChatGPT Plus, chatgpt auth mode)
-- **Fallbacks**: `openrouter/google/gemini-2.5-flash`, `openrouter/google/gemini-2.5-flash-lite`, `openrouter/google/gemini-2.0-flash-001`
+- **Fallbacks**: `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite`, `google/gemini-2.0-flash`
+
+**IMPORTANT**: Gemini fallbacks use the **direct `google/` provider**, NOT `openrouter/google/`. The direct provider requires `GEMINI_API_KEY` in the gateway `api-keys` secret. Current key is revoked — replace before relying on Gemini fallbacks.
 
 ### Per-Agent Override (community agents)
 
 Community agents get a **model override** in `agents.list[]` that takes priority over the global default:
 - **Primary**: `openrouter/nvidia/nemotron-3-super-120b-a12b:free`
-- **Fallbacks**: `openrouter/arcee-ai/trinity-large-preview:free`, then Gemini cascade
+- **Fallbacks**: `openrouter/arcee-ai/trinity-large-preview:free`, then Gemini cascade (appended automatically by provisioner)
+
+Both `communityAgentModel.primary` and `communityAgentModel.fallbacks` are stored in the DB and configurable from the UI (no code change needed).
 
 Which agents are "dev" vs "community" is controlled by **`devAgentIds`** in the DB config:
 - **DB field**: `system_settings.llm.globalModelConfig.openclaw.devAgentIds`
 - **Default**: `['theo', 'nova', 'pixel', 'ops']`
-- **Community agent model**: `system_settings.llm.globalModelConfig.openclaw.communityAgentModel.{primary,fallbacks}`
-  - Default primary: `openrouter/nvidia/nemotron-3-super-120b-a12b:free`
-  - Default fallbacks: `['openrouter/arcee-ai/trinity-large-preview:free']` (Gemini appended automatically by provisioner)
-- **UI**: Global Integrations → OpenClaw section → "Dev Agent IDs (use Codex as primary)" text field
-- **Normalizer**: `normalizeDevAgentIds()` in `globalModelConfigService.js` — comma-split, lowercase, dedup
+- **Service**: `normalizeCommunityAgentModel()` in `globalModelConfigService.js` — validates and defaults communityAgentModel shape
+- **Normalizer**: `normalizeDevAgentIds()` — comma-split, lowercase, dedup
 
 Current routing table:
 | Agent | Primary Model |
 |-------|--------------|
-| theo, nova, pixel, ops | `openai-codex/gpt-5.4` (no model override, uses global default) |
+| theo, nova, pixel, ops | `openai-codex/gpt-5.4` (global default, no per-agent override) |
 | liz, tarik, tom, fakesam, x-curator, newshound-aiyo | `openrouter/nvidia/nemotron-3-super-120b-a12b:free` |
+
+### Per-Agent Model Override (AgentsHub dialog)
+
+The agent config dialog in AgentsHub.js has a "Model Override" dropdown. This saves to `AgentInstallation.profile.modelPreferences.preferred`. **The provisioner does NOT read this field** — it uses the global devAgentIds/communityAgentModel routing. Use this only for future per-agent overrides if the provisioner is updated to read it.
+
+Model options in the dialog include: Default (global routing), openai-codex/gpt-5.4, openai-codex/gpt-5.3-codex, google/gemini-2.5-flash*, openrouter/nvidia/nemotron*, openrouter/arcee-ai/trinity*.
 
 ### OpenRouter Provider Config Requirements
 
 OpenRouter is NOT a native pi-ai provider. The provisioner writes it to `config.models.providers.openrouter` with `api: 'openai-completions'`. **Every model definition requires** `reasoning: boolean`, `input: Array<"text"|"image">`, `cost: {input, output, cacheRead, cacheWrite}`. Missing `api` field → crash ("No API provider registered for api: undefined").
 
-### Changing devAgentIds
+### Changing devAgentIds or communityAgentModel
 
-1. Go to Global Integrations UI → OpenClaw → "Dev Agent IDs" field
-2. Edit comma-separated list, Save + Apply To All Agents
-3. Reprovision runs automatically (~60s fire-and-forget); verify moltbot.json after:
+1. Go to Global Integrations UI → OpenClaw section → edit the relevant field, Save + Apply To All Agents
+2. Reprovision runs automatically (~60s fire-and-forget); verify moltbot.json after:
 ```bash
 kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
   "python3 -c \"import json; d=json.load(open('/state/moltbot.json')); [print(a['id'], a.get('model', {}).get('primary', 'global-default')) for a in d.get('agents', {}).get('list', [])]\""
@@ -99,7 +121,7 @@ kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
 
 **Codex OAuth token** auto-refreshes daily at 3AM UTC via `refreshCodexOAuthTokenIfNeeded` (threshold: 3 days before expiry). Token stored in `api-keys` secret as `openai-codex-access-token` + `openai-codex-expires-at`. If refresh fails: re-auth with `docs/scripts/codex-oauth.js --device-auth` inside the gateway pod → patch secret → helm upgrade. Script now supports `--account=2` flag for second account.
 
-## Current Repo Notes (2026-02-04)
+## Current Repo Notes (2026-03-21)
 
 Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
