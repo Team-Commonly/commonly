@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
-    tag: "20260317233807"
+    tag: "20260322033912"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -47,7 +47,7 @@ frontend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
-    tag: "20260317233807"
+    tag: "20260320144703"
     pullPolicy: Always
   nodeSelector:
     pool: dev
@@ -100,7 +100,7 @@ agents:
     image:
       repository: gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway
       tag: "20260317233807"
-      pullPolicy: Always
+      pullPolicy: IfNotPresent
     strategy:
       type: Recreate
     persistence:
@@ -156,7 +156,7 @@ configMaps:
   skillsCatalog:
     enabled: true
   postgresCA:
-    enabled: false
+    enabled: true
 
 skillsCatalogStorage:
   enabled: true
