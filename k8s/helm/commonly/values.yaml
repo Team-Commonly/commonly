@@ -36,12 +36,12 @@ backend:
   tolerations: []
   livenessProbe:
     enabled: true
-    path: /api/health
+    path: /api/health/live
     initialDelaySeconds: 30
     periodSeconds: 10
   readinessProbe:
     enabled: true
-    path: /api/health
+    path: /api/health/live
     initialDelaySeconds: 10
     periodSeconds: 5
   env:
@@ -50,7 +50,7 @@ backend:
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: ""
-    frontendUrl: "https://app.commonly.me"
+    frontendUrl: "https://app-dev.commonly.me"
     backendUrl: "https://api.commonly.me"
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
@@ -161,12 +161,12 @@ externalSecrets:
   enabled: false
   secretStore:
     name: gcpsm-secretstore
-    projectId: commonly-test
+    projectId: YOUR_GCP_PROJECT_ID
     clusterLocation: us-central1
     clusterName: commonly-dev
   serviceAccount:
     name: external-secrets-sa
-    gcpServiceAccount: commonly-secrets-sa@commonly-test.iam.gserviceaccount.com
+    gcpServiceAccount: commonly-secrets-sa@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com
 
 # Agent runtime configuration
 agents:
@@ -244,13 +244,15 @@ ingress:
     nginx.ingress.kubernetes.io/session-cookie-name: "commonly-backend"
   hosts:
     frontend:
-      host: app.commonly.me
+      host: app-dev.commonly.me
       path: /
       pathType: Prefix
+      aliases: []
     backend:
-      host: api.commonly.me
+      host: api-dev.commonly.me
       path: /
       pathType: Prefix
+      aliases: []
   tls:
     enabled: false
     secretName: commonly-tls
