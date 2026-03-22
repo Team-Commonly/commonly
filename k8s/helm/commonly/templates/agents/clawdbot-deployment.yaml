@@ -57,6 +57,11 @@ spec:
           const codexExpires2 = parseInt(process.env.OPENAI_CODEX_EXPIRES_AT_2 || '0', 10);
           const codexIdToken2 = (process.env.OPENAI_CODEX_ID_TOKEN_2 || '').trim();
           const codexAccountId2 = (process.env.OPENAI_CODEX_ACCOUNT_ID_2 || '').trim();
+          const codexAccess3 = (process.env.OPENAI_CODEX_ACCESS_TOKEN_3 || '').trim();
+          const codexRefresh3 = (process.env.OPENAI_CODEX_REFRESH_TOKEN_3 || '').trim();
+          const codexExpires3 = parseInt(process.env.OPENAI_CODEX_EXPIRES_AT_3 || '0', 10);
+          const codexIdToken3 = (process.env.OPENAI_CODEX_ID_TOKEN_3 || '').trim();
+          const codexAccountId3 = (process.env.OPENAI_CODEX_ACCOUNT_ID_3 || '').trim();
           if (!fs.existsSync(configPath)) {
             console.log('[auth-seed] missing config:', configPath);
             process.exit(0);
@@ -226,6 +231,33 @@ spec:
               fs.writeFileSync(sharedAuth2Path, JSON.stringify(auth2Json, null, 2));
               console.log('[auth-seed] wrote codex auth-2.json to shared PVC:', sharedAuth2Path);
             }
+            // Upsert account-3 fallback profile if K8s secret has a third Codex account
+            if (codexAccess3 && codexRefresh3) {
+              const existing3 = store.profiles['openai-codex:account-3'];
+              if (!existing3 || codexExpires3 > (existing3.expires || 0)) {
+                store.profiles['openai-codex:account-3'] = {
+                  type: 'oauth', provider: 'openai-codex',
+                  access: codexAccess3, refresh: codexRefresh3,
+                  expires: codexExpires3 || (Date.now() + 3600000),
+                };
+                console.log('[auth-seed] upserted codex oauth account-3:', authPath);
+              }
+              const auth3Json = {
+                auth_mode: 'chatgpt',
+                OPENAI_API_KEY: null,
+                tokens: {
+                  ...(codexIdToken3 ? { id_token: codexIdToken3 } : {}),
+                  access_token: codexAccess3,
+                  refresh_token: codexRefresh3,
+                  ...(codexAccountId3 ? { account_id: codexAccountId3 } : {}),
+                },
+                last_refresh: new Date().toISOString(),
+              };
+              const sharedAuth3Path = path.join(stateDir, '.codex', 'auth-3.json');
+              fs.mkdirSync(path.dirname(sharedAuth3Path), { recursive: true });
+              fs.writeFileSync(sharedAuth3Path, JSON.stringify(auth3Json, null, 2));
+              console.log('[auth-seed] wrote codex auth-3.json to shared PVC:', sharedAuth3Path);
+            }
             fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
             console.log('[auth-seed] wrote:', authPath, hasCustomProfiles ? 'custom profiles' : 'patched');
           });
@@ -337,6 +369,36 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openai-codex-account-id-2
+              optional: true
+        - name: OPENAI_CODEX_ACCESS_TOKEN_3
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token-3
+              optional: true
+        - name: OPENAI_CODEX_REFRESH_TOKEN_3
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-refresh-token-3
+              optional: true
+        - name: OPENAI_CODEX_EXPIRES_AT_3
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-expires-at-3
+              optional: true
+        - name: OPENAI_CODEX_ID_TOKEN_3
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-id-token-3
+              optional: true
+        - name: OPENAI_CODEX_ACCOUNT_ID_3
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-account-id-3
               optional: true
         volumeMounts:
         - name: clawdbot-config
