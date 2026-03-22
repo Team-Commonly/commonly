@@ -27,6 +27,27 @@ data:
 {{- end }}
 ---
 {{- if .Values.configMaps.postgresCA.enabled }}
+{{- if .Values.externalSecrets.enabled }}
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-ca-cert
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+spec:
+  refreshInterval: 24h
+  secretStoreRef:
+    name: {{ .Values.externalSecrets.secretStore.name }}
+    kind: SecretStore
+  target:
+    name: postgres-ca-cert
+    creationPolicy: Owner
+  data:
+  - secretKey: ca.pem
+    remoteRef:
+      key: commonly-pg-ca-cert
+{{- else }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -38,4 +59,5 @@ type: Opaque
 data:
   ca.pem: |
 {{ .Files.Get "configs/ca.pem" | b64enc | indent 4 }}
+{{- end }}
 {{- end }}
