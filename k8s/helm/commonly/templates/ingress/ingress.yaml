@@ -28,6 +28,18 @@ spec:
             name: frontend
             port:
               number: {{ .Values.frontend.service.port }}
+  {{- range .Values.ingress.hosts.frontend.aliases }}
+  - host: {{ . }}
+    http:
+      paths:
+      - path: {{ $.Values.ingress.hosts.frontend.path }}
+        pathType: {{ $.Values.ingress.hosts.frontend.pathType }}
+        backend:
+          service:
+            name: frontend
+            port:
+              number: {{ $.Values.frontend.service.port }}
+  {{- end }}
   - host: {{ .Values.ingress.hosts.backend.host }}
     http:
       paths:
@@ -38,4 +50,16 @@ spec:
             name: backend
             port:
               number: {{ .Values.backend.service.port }}
+  {{- range .Values.ingress.hosts.backend.aliases }}
+  - host: {{ . }}
+    http:
+      paths:
+      - path: {{ $.Values.ingress.hosts.backend.path }}
+        pathType: {{ $.Values.ingress.hosts.backend.pathType }}
+        backend:
+          service:
+            name: backend
+            port:
+              number: {{ $.Values.backend.service.port }}
+  {{- end }}
 {{- end }}
