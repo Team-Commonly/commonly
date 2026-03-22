@@ -36,11 +36,15 @@ if (process.env.PG_SSL_CA_PATH) {
   pgConfig.ssl = false;
 }
 
-// Create a new pool
-const pool = new Pool(pgConfig);
+// Skip pool creation entirely if no host is configured
+const pool = pgConfig.host ? new Pool(pgConfig) : null;
 
 // Test the connection
 const connectPG = async () => {
+  if (!pool) {
+    console.log('PostgreSQL not configured (PG_HOST not set), skipping connection');
+    return null;
+  }
   try {
     console.log('Attempting to connect to PostgreSQL...');
     const client = await pool.connect();
@@ -57,7 +61,6 @@ const connectPG = async () => {
       user: pgConfig.user,
       ssl: pgConfig.ssl ? 'Enabled' : 'Disabled',
     });
-    // Don't exit the process, just log the error
     return null;
   }
 };
