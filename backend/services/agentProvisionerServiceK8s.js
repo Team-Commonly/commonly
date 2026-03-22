@@ -1300,50 +1300,23 @@ const applyOpenClawModelDefaults = async (config) => {
   } catch (error) {
     modelConfig = null;
   }
-  const defaultPrimary = String(
-    modelConfig?.openclaw?.model
-    || modelConfig?.openclaw?.defaultModel
-    || '',
-  ).trim() || 'google/gemini-2.5-flash';
-  const hasPolicyPrimary = Boolean(String(
-    modelConfig?.openclaw?.model
-    || modelConfig?.openclaw?.defaultModel
-    || '',
-  ).trim());
-  const defaultFallbacks = Array.isArray(modelConfig?.openclaw?.fallbackModels)
-    ? modelConfig.openclaw.fallbackModels
-    : ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'];
-  if (hasPolicyPrimary) {
-    config.agents.defaults.model.primary = defaultPrimary;
-  } else if (!config.agents.defaults.model.primary) {
-    config.agents.defaults.model.primary = defaultPrimary;
-  }
-  const primary = config.agents.defaults.model.primary || '';
-  const isCodexPrimary = primary.startsWith('openai-codex/');
-  let codexCredential = null;
-  if (isCodexPrimary) {
-    codexCredential = await applyOpenClawCodexProviderConfig(config);
-  }
-  const existingFallbacks = Array.isArray(config.agents.defaults.model.fallbacks)
-    ? config.agents.defaults.model.fallbacks
-    : [];
   // OpenRouter fallbacks: free models only, explicit list enforced on every provision.
   // Nemotron is primary fallback, Trinity is secondary. No paid or Llama models.
   const OPENROUTER_FREE_FALLBACKS = [
     'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
     'openrouter/arcee-ai/trinity-large-preview:free',
   ];
-  // Strip ALL openrouter/ models from DB/ConfigMap values — we control them above.
-  const nonOpenRouterDefaults = defaultFallbacks.filter((m) => !m.startsWith('openrouter/'));
-  const nonOpenRouterExisting = existingFallbacks.filter((m) => !m.startsWith('openrouter/'));
-  const baseFallbacks = isCodexPrimary
-    ? [...OPENROUTER_FREE_FALLBACKS, ...nonOpenRouterDefaults, ...GEMINI_FALLBACKS]
-    : [...OPENROUTER_FREE_FALLBACKS, ...nonOpenRouterDefaults];
-  const mergedFallbacks = [
-    ...baseFallbacks,
-    ...nonOpenRouterExisting,
-  ].filter(Boolean);
-  config.agents.defaults.model.fallbacks = Array.from(new Set(mergedFallbacks));
+
+  // Global default is nemotron — dev agents get an explicit Codex override per-agent.
+  // This ensures any new agent defaults to free quota rather than consuming Codex.
+  config.agents.defaults.model.primary = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
+  config.agents.defaults.model.fallbacks = Array.from(new Set([
+    'openrouter/arcee-ai/trinity-large-preview:free',
+    ...GEMINI_FALLBACKS,
+  ]));
+
+  // Always set up Codex provider config so dev agents can use it via per-agent override.
+  const codexCredential = await applyOpenClawCodexProviderConfig(config);
 
   // OpenRouter provider catalog — free models only, no paid models.
   // `api: "openai-completions"` is required: pi-ai uses it to route to the correct provider.
@@ -1380,17 +1353,13 @@ const applyOpenClawModelDefaults = async (config) => {
     ? modelConfig.openclaw.devAgentIds
     : DEFAULT_DEV_AGENT_IDS;
 
-  // Resolve community agent model from DB (fallback to hardcoded defaults).
-  const communityAgentModel = {
-    primary: modelConfig?.openclaw?.communityAgentModel?.primary
-      || 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-    fallbacks: Array.isArray(modelConfig?.openclaw?.communityAgentModel?.fallbacks)
-      && modelConfig.openclaw.communityAgentModel.fallbacks.length
-      ? [...modelConfig.openclaw.communityAgentModel.fallbacks, ...GEMINI_FALLBACKS]
-      : ['openrouter/arcee-ai/trinity-large-preview:free', ...GEMINI_FALLBACKS],
+  // Dev agents get an explicit Codex per-agent model override.
+  const devAgentModel = {
+    primary: 'openai-codex/gpt-5.4',
+    fallbacks: Array.from(new Set([...OPENROUTER_FREE_FALLBACKS, ...GEMINI_FALLBACKS])),
   };
 
-  return { codexCredential, devAgentIds, communityAgentModel };
+  return { codexCredential, devAgentIds, devAgentModel };
 };
 
 /**
@@ -1475,7 +1444,7 @@ const provisionOpenClawAccount = async ({
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
   applyOpenClawAcpxPluginDefaults(config);
-  const { codexCredential, devAgentIds, communityAgentModel } = await applyOpenClawModelDefaults(config);
+  const { codexCredential, devAgentIds, devAgentModel } = await applyOpenClawModelDefaults(config);
 
   await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredential);
   applySkillEnvEntriesToConfig(config, skillEnv);
@@ -1508,9 +1477,9 @@ const provisionOpenClawAccount = async ({
   const agentEntry = config.agents.list.find((agent) => agent?.id === accountId);
   const heartbeatConfig = normalizeHeartbeat(heartbeat);
 
-  // Per-agent model override: community agents use communityAgentModel from DB.
-  // Dev agents (devAgentIds list) use the global default (Codex primary).
-  const perAgentModel = devAgentIds.includes(accountId) ? null : communityAgentModel;
+  // Per-agent model override: dev agents get explicit Codex config.
+  // Community agents use global default (nemotron) — no per-agent entry needed.
+  const perAgentModel = devAgentIds.includes(accountId) ? devAgentModel : null;
 
   if (agentEntry) {
     if (agentEntry.workspace !== desiredWorkspace) {
@@ -1530,7 +1499,7 @@ const provisionOpenClawAccount = async ({
     if (perAgentModel) {
       agentEntry.model = perAgentModel;
     } else {
-      delete agentEntry.model; // dev agents: use global default (Codex)
+      delete agentEntry.model; // community agents: use global default (nemotron)
     }
   } else {
     config.agents.list.push({
