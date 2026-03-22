@@ -77,9 +77,10 @@ curl -X POST https://api-dev.commonly.me/api/github/token \
 ```
 
 ### Recent Major Fixes (March 2026)
-1. **Teams tab + category button** (`1704a442a`, `dcf386954`) — Pod type `team` now visible in browse UI
-2. **ChatRoom AppBar `position: sticky`** (`1c8874f2f`) — was `fixed`, overlapped layout search bar, hiding tabs
-3. **Responsive header + mobile tabs** (`0c3849bab`) — Chat/Board tabs now visible on mobile; title/subtitle match Pod.css design tokens (`#e2e8f0` / `#9fb2cb`)
+1. **Dev infra restored** (`8e905de08`, `de088d978`) — After helm upgrades with `--reuse-values` caused stale prod values to override dev config: fixed correct Aiven PG host (`commonly-psql-commonly.b.aivencloud.com:25450`), PG CA cert via ESO (`commonly-pg-ca-cert` in GCP SM), `externalSecrets.enabled: true`, `ingress.hosts` to `*-dev.commonly.me`, all image repos to `disco-catcher-490606-b0`. Root fix: always use `-f values.yaml -f values-dev.yaml`.
+2. **Teams tab + category button** (`1704a442a`, `dcf386954`) — Pod type `team` now visible in browse UI
+3. **ChatRoom AppBar `position: sticky`** (`1c8874f2f`) — was `fixed`, overlapped layout search bar, hiding tabs
+4. **Responsive header + mobile tabs** (`0c3849bab`) — Chat/Board tabs now visible on mobile; title/subtitle match Pod.css design tokens (`#e2e8f0` / `#9fb2cb`)
 
 ### Recent Major Fixes (January 2025)
 1. **Comprehensive ESLint fixes** - Resolved 57 linting errors systematically
@@ -167,12 +168,18 @@ curl -X POST https://api-dev.commonly.me/api/github/token \
 - 🏭 Production-ready configuration
 - 🏭 Stable, cacheable container images
 
-#### Kubernetes Deployment (GKE, EKS, AKS, etc.)
-For production cloud deployments, see `/docs/deployment/KUBERNETES.md`:
-- `helm install commonly ./k8s/helm/commonly` - Deploy with Helm
-- `kubectl get pods -n commonly` - Check pod status
-- `kubectl logs -n commonly -l app=backend` - View backend logs
-- `kubectl rollout restart deployment backend -n commonly` - Restart deployment
+#### Kubernetes Deployment (GKE — commonly-dev)
+**ALWAYS use explicit values files — NEVER `--reuse-values`** (stale stored release values override correct hosts/images):
+```bash
+helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev \
+  -f k8s/helm/commonly/values.yaml \
+  -f k8s/helm/commonly/values-dev.yaml
+```
+- `values.yaml` — base defaults (project refs, PG host/port, ESO enabled)
+- `values-dev.yaml` — dev overrides (image tags, ingress hosts, node selectors)
+- **Update `values-dev.yaml` image tag before every helm upgrade** — this is the source of truth
+- `kubectl get pods -n commonly-dev` - Check pod status
+- `kubectl logs -n commonly-dev -l app=backend` - View backend logs
 
 **Key Requirements:**
 - Frontend MUST be built with `--build-arg REACT_APP_API_URL=http://api.YOUR_DOMAIN.com`
