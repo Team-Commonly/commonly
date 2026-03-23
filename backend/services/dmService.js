@@ -122,6 +122,7 @@ class DMService {
       name: `DM: ${label}${instanceSuffix}`,
       description: `Debug channel for ${label}${instanceSuffix}`,
       type: 'agent-admin',
+      joinPolicy: 'invite-only',
       createdBy: ownerId,
       members: [agentId, ownerId],
     });
@@ -217,6 +218,7 @@ class DMService {
       name: podName,
       description: `Admin & owner channel for ${label}${instanceSuffix}`,
       type: 'agent-admin',
+      joinPolicy: 'invite-only',
       createdBy: creatorId,
       members: allExpectedIds,
     });
