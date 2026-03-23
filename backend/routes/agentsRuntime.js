@@ -1215,7 +1215,7 @@ async function ensureCommonlyBotInstalled(podId, installedBy) {
 router.get('/pods', agentRuntimeAuth, async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
-    const pods = await Pod.find({ type: { $ne: 'dm' } })
+    const pods = await Pod.find({ type: { $nin: ['dm', 'agent-admin'] } })
       .sort({ updatedAt: -1 })
       .limit(limit)
       .select('name description type members updatedAt')
