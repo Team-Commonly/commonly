@@ -1,7 +1,7 @@
 ---
 name: devops
 description: DevOps and infrastructure context for Docker, CI/CD, GitHub Actions, deployment, and monitoring. Use when working on containers, pipelines, or deployment.
-last_updated: 2026-03-04
+last_updated: 2026-03-22
 
 ---
 
@@ -51,29 +51,26 @@ docker-compose.dev.yml      # Development with hot reload
 ./prod.sh deploy            # Build and deploy
 ./prod.sh logs              # View logs
 
-# GKE deploy (project: YOUR_OLD_GCP_PROJECT_ID, account: YOUR_CODEX_ACCOUNT_2)
+# GKE deploy (project: YOUR_GCP_PROJECT_ID, account: YOUR_GCP_ACCOUNT)
 TAG=$(date +%Y%m%d%H%M%S)
-PROJECT=YOUR_OLD_GCP_PROJECT_ID
+PROJECT=YOUR_GCP_PROJECT_ID
+ACCOUNT=YOUR_GCP_ACCOUNT
 
 gcloud builds submit backend \
   --tag gcr.io/${PROJECT}/commonly-backend:${TAG} \
-  --project $PROJECT --account YOUR_CODEX_ACCOUNT_2
+  --project $PROJECT --account $ACCOUNT
+
 # Frontend requires --config (--tag alone doesn't support --build-arg for REACT_APP_API_URL)
 gcloud builds submit frontend \
   --config frontend/cloudbuild.yaml \
-  --project $PROJECT --account YOUR_CODEX_ACCOUNT_2 \
+  --project $PROJECT --account $ACCOUNT \
   --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/${PROJECT}/commonly-frontend:${TAG}"
 # For prod: use _REACT_APP_API_URL=https://api.commonly.me
 
-# clawdbot MUST be submitted from its own directory
-gcloud builds submit _external/clawdbot \
-  --tag gcr.io/${PROJECT}/clawdbot-gateway:${TAG} \
-  --project $PROJECT --account YOUR_CODEX_ACCOUNT_2 --machine-type=e2-highcpu-8
-
-kubectl set image deployment/backend backend=gcr.io/${PROJECT}/commonly-backend:${TAG} -n commonly-dev
-kubectl set image deployment/frontend frontend=gcr.io/${PROJECT}/commonly-frontend:${TAG} -n commonly-dev
-kubectl rollout status deployment/backend -n commonly-dev --timeout=120s
-kubectl rollout status deployment/frontend -n commonly-dev --timeout=120s
+# After build: update values-dev.yaml image tag, then helm upgrade (NEVER --reuse-values):
+helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev \
+  -f k8s/helm/commonly/values.yaml \
+  -f k8s/helm/commonly/values-dev.yaml
 ```
 
 ## Docker Patterns

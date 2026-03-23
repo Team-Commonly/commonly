@@ -2,7 +2,7 @@
 
 name: database
 description: Database management context for MongoDB, PostgreSQL, dual-database architecture, and data synchronization. Use when working on database schemas, queries, or migrations.
-last_updated: 2026-03-08
+last_updated: 2026-03-22
 ---
 
 # Database Management
@@ -92,6 +92,16 @@ async function ensureUserInPostgres(mongoUserId) {
   }
 }
 ```
+
+## PostgreSQL (Aiven) — TLS / CA Cert (2026-03-22)
+
+- **Host**: `YOUR_PG_HOST:25450`
+- **SSL required**: Aiven uses a self-signed Project CA. Must set `PG_SSL_CA_PATH=/app/certs/ca.pem`.
+- **CA cert storage**: GCP Secret Manager key `commonly-pg-ca-cert` → ESO ExternalSecret `postgres-ca-cert` → mounted at `/app/certs/ca.pem` in backend pod.
+- **Template**: `k8s/helm/commonly/templates/configmaps/backend-config.yaml` — uses ESO when `externalSecrets.enabled: true` (do NOT use file-based `configs/ca.pem`; `*.pem` is gitignored and will be empty).
+- **If CA cert is missing/empty**: backend logs `self-signed certificate in certificate chain` → PG skipped → messages fall back to MongoDB.
+- **Extracting the cert** (if ever needed again): `openssl s_client -connect YOUR_PG_HOST:25450 -starttls postgres -showcerts 2>/dev/null` → second cert in chain is the Aiven Project CA (issuer = subject).
+- **MongoDB fallback**: `backend/config/db-pg.js` skips pool init when `PG_HOST` is empty; `messageController.js` and `server.js` catch PG errors and fall back to MongoDB.
 
 ## Current Repo Notes (2026-02-04)
 

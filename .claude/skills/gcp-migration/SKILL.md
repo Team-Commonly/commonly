@@ -1,7 +1,7 @@
 ---
 name: gcp-migration
 description: GCP project/account migration for the Commonly Kubernetes cluster. Use when migrating between GCP projects, accounts, or clusters — including full cluster teardown and rebuild.
-last_updated: 2026-03-04
+last_updated: 2026-03-22
 
 ---
 
@@ -9,16 +9,16 @@ last_updated: 2026-03-04
 
 **Full guide**: `docs/deployment/GCP_MIGRATION.md`
 
-## Current Cluster (post-migration 2026-03-04)
+## Current Cluster (post-migration 2026-03-17)
 
 | Field | Value |
 |-------|-------|
-| Account | `YOUR_CODEX_ACCOUNT_2` |
-| Project | `YOUR_OLD_GCP_PROJECT_ID` |
+| Account | `YOUR_GCP_ACCOUNT` |
+| Project | `YOUR_GCP_PROJECT_ID` (name: commonly) |
 | Cluster | `commonly-dev` (us-central1) |
-| kubectl context | `gke_YOUR_OLD_GCP_PROJECT_ID_us-central1_commonly-dev` |
-| Registry | `gcr.io/YOUR_OLD_GCP_PROJECT_ID/` |
-| GCS bucket | `gs://YOUR_OLD_GCP_PROJECT_ID_cloudbuild/` |
+| kubectl context | `gke_YOUR_GCP_PROJECT_ID_us-central1_commonly-dev` |
+| Registry | `gcr.io/YOUR_GCP_PROJECT_ID/` |
+| GCS bucket | `gs://YOUR_GCP_PROJECT_ID_cloudbuild/` |
 
 ## Migration Phases
 
@@ -66,9 +66,9 @@ The frontend bakes the API URL at build time. After migration it will still poin
 FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
 gcloud builds submit frontend \
   --config frontend/cloudbuild.yaml \
-  --project YOUR_OLD_GCP_PROJECT_ID --account YOUR_CODEX_ACCOUNT_2 \
-  --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-frontend:${FRONTEND_TAG}"
-kubectl set image deployment/frontend frontend=gcr.io/YOUR_OLD_GCP_PROJECT_ID/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+  --project YOUR_GCP_PROJECT_ID --account YOUR_GCP_ACCOUNT \
+  --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend:${FRONTEND_TAG}"
+kubectl set image deployment/frontend frontend=gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
 ```
 Note: `gcloud builds submit --tag` does NOT support `--build-arg`. Always use `--config` + `--substitutions`.
 
@@ -92,34 +92,36 @@ kubectl exec -n commonly-dev deployment/backend -- curl -s -X POST \
 ### Cloudflare tunnel is not GCP-specific
 Tunnel ID `YOUR_CLOUDFLARE_TUNNEL_ID` stays the same. Just restore the `cloudflared-commonly-k8s` secret to `ingress-nginx` namespace and the tunnel reconnects automatically.
 
-## Build Commands (new project)
+## Build Commands (current project)
 
 ```bash
 TAG=$(date +%Y%m%d%H%M%S)
-PROJECT=YOUR_OLD_GCP_PROJECT_ID
+PROJECT=YOUR_GCP_PROJECT_ID
+ACCOUNT=YOUR_GCP_ACCOUNT
 
 # Backend
 gcloud builds submit backend \
   --tag gcr.io/${PROJECT}/commonly-backend:${TAG} \
-  --project $PROJECT --account YOUR_CODEX_ACCOUNT_2
+  --project $PROJECT --account $ACCOUNT
 
 # Frontend — must use --config, not --tag (needs REACT_APP_API_URL build arg)
 gcloud builds submit frontend \
   --config frontend/cloudbuild.yaml \
-  --project $PROJECT --account YOUR_CODEX_ACCOUNT_2 \
+  --project $PROJECT --account $ACCOUNT \
   --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/${PROJECT}/commonly-frontend:${TAG}"
 # For prod namespace: use _REACT_APP_API_URL=https://api.commonly.me
 
-# Clawdbot (from its own dir)
+# Clawdbot — MUST use cloudbuild.gateway.yaml (--tag alone skips acpx install + gh CLI)
 gcloud builds submit _external/clawdbot \
-  --tag gcr.io/${PROJECT}/clawdbot-gateway:${TAG} \
-  --project $PROJECT --account YOUR_CODEX_ACCOUNT_2 \
+  --config _external/clawdbot/cloudbuild.gateway.yaml \
+  --project $PROJECT --account $ACCOUNT \
+  --substitutions "_IMAGE_TAG=${TAG}" \
   --machine-type=e2-highcpu-8
 
 # commonly-bot
 gcloud builds submit external/commonly-agent-services \
   --tag gcr.io/${PROJECT}/commonly-bot:${TAG} \
-  --project $PROJECT --account YOUR_CODEX_ACCOUNT_2
+  --project $PROJECT --account $ACCOUNT
 
 # Tag as latest after build
 gcloud container images add-tag \
