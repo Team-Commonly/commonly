@@ -1223,46 +1223,69 @@ const applyOpenClawCodexProviderConfig = async (config) => {
   // moltbot.json schema only accepts mode (not type) and no actual token fields.
   // The actual OAuth token is injected into per-agent auth-profiles.json separately
   // via injectCodexTokenToAgentAuthProfiles() below.
-  const profileId = 'openai-codex:default';
   delete config.auth.profiles['openai-codex:codex-cli'];
-  if (!config.auth.profiles[profileId]) {
-    config.auth.profiles[profileId] = { provider: 'openai-codex', mode: 'oauth' };
-  }
-  config.auth.order['openai-codex'] = [profileId];
 
-  // Read the actual OAuth token for return (used by caller to inject into auth-profiles.json)
+  // Account definitions: suffix -> profileId
+  const CODEX_ACCOUNTS = [
+    { suffix: '', profileId: 'openai-codex:default' },
+    { suffix: '-2', profileId: 'openai-codex:account-2' },
+    { suffix: '-3', profileId: 'openai-codex:account-3' },
+  ];
+
+  const credentials = [];
   try {
     const secretResponse = await k8sApi.readNamespacedSecret('api-keys', NAMESPACE);
     const secretData = secretResponse.body.data || {};
     const decode = (key) => (secretData[key] ? Buffer.from(secretData[key], 'base64').toString('utf8') : null);
-    const access = decode('openai-codex-access-token');
-    const refresh = decode('openai-codex-refresh-token');
-    const expiresAt = decode('openai-codex-expires-at');
-    if (access) {
-      return {
-        type: 'oauth',
-        provider: 'openai-codex',
-        access,
-        ...(refresh && { refresh }),
-        ...(expiresAt && { expires: Number(expiresAt) }),
-      };
+
+    for (const { suffix, profileId } of CODEX_ACCOUNTS) {
+      const access = decode(`openai-codex-access-token${suffix}`);
+      if (!access) continue; // account not configured
+      const refresh = decode(`openai-codex-refresh-token${suffix}`);
+      const expiresAt = decode(`openai-codex-expires-at${suffix}`);
+      if (!config.auth.profiles[profileId]) {
+        config.auth.profiles[profileId] = { provider: 'openai-codex', mode: 'oauth' };
+      }
+      credentials.push({
+        profileId,
+        credential: {
+          type: 'oauth',
+          provider: 'openai-codex',
+          access,
+          ...(refresh && { refresh }),
+          ...(expiresAt && { expires: Number(expiresAt) }),
+        },
+      });
     }
   } catch (_err) {
     // Not in k8s mode or secret unavailable
   }
-  return null;
+
+  // Set auth.order to all configured accounts (enables rotation on rate-limit)
+  config.auth.order['openai-codex'] = credentials.length > 0
+    ? credentials.map((c) => c.profileId)
+    : ['openai-codex:default'];
+
+  // Ensure at least the default profile stub exists
+  if (!config.auth.profiles['openai-codex:default']) {
+    config.auth.profiles['openai-codex:default'] = { provider: 'openai-codex', mode: 'oauth' };
+  }
+
+  return credentials.length > 0 ? credentials : null;
 };
 
-const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, credential) => {
-  if (!credential) return;
-  const profileId = 'openai-codex:default';
-  const credJson = JSON.stringify(credential).replace(/'/g, "'\\''");
+const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, credentials) => {
+  // credentials: array of { profileId, credential } or null
+  if (!credentials || credentials.length === 0) return;
+  const assignments = credentials
+    .map(({ profileId, credential }) => `store.profiles['${profileId}'] = ${JSON.stringify(credential).replace(/'/g, "'\\''")};`)
+    .join(' ');
   const script = [
     `const fs = require('fs');`,
     `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
     `try {`,
     `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
-    `  store.profiles['${profileId}'] = ${credJson};`,
+    `  ${assignments}`,
     `  delete store.profiles['openai-codex:codex-cli'];`,
     `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
     `  process.stdout.write('ok');`,
@@ -1316,7 +1339,7 @@ const applyOpenClawModelDefaults = async (config) => {
   ]));
 
   // Always set up Codex provider config so dev agents can use it via per-agent override.
-  const codexCredential = await applyOpenClawCodexProviderConfig(config);
+  const codexCredentials = await applyOpenClawCodexProviderConfig(config);
 
   // OpenRouter provider catalog — free models only, no paid models.
   // `api: "openai-completions"` is required: pi-ai uses it to route to the correct provider.
@@ -1359,7 +1382,7 @@ const applyOpenClawModelDefaults = async (config) => {
     fallbacks: Array.from(new Set([...OPENROUTER_FREE_FALLBACKS, ...GEMINI_FALLBACKS])),
   };
 
-  return { codexCredential, devAgentIds, devAgentModel };
+  return { codexCredentials, devAgentIds, devAgentModel };
 };
 
 /**
@@ -1444,9 +1467,9 @@ const provisionOpenClawAccount = async ({
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
   applyOpenClawAcpxPluginDefaults(config);
-  const { codexCredential, devAgentIds, devAgentModel } = await applyOpenClawModelDefaults(config);
+  const { codexCredentials, devAgentIds, devAgentModel } = await applyOpenClawModelDefaults(config);
 
-  await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredential);
+  await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
   applySkillEnvEntriesToConfig(config, skillEnv);
 
   // Update agents list
@@ -2387,7 +2410,7 @@ const refreshCodexOAuthTokenIfNeeded = async ({ thresholdDays = 3 } = {}) => {
   const thresholdMs = thresholdDays * 24 * 60 * 60 * 1000;
   const results = [];
 
-  for (const suffix of ['', '-2']) {
+  for (const suffix of ['', '-2', '-3']) {
     const expiresAtRaw = decode(`openai-codex-expires-at${suffix}`);
     if (!expiresAtRaw) continue; // No token configured for this account
     const expiresAt = Number(expiresAtRaw);
