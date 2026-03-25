@@ -387,10 +387,19 @@ const syncAccountToStateMoltbot = async (accountId, accountEntry, agentEntry, bi
     'accts = d["channels"]["commonly"]["accounts"]',
     'if account_id not in accts: accts[account_id] = account_entry; print("[state-sync] added account:", account_id)',
     'else: print("[state-sync] account already present:", account_id)',
-    // Agents list
+    // Agents list — upsert: add if missing, update model+heartbeat if already present
     'd.setdefault("agents", {}).setdefault("list", [])',
     'ids = [a.get("id") for a in d["agents"]["list"]]',
-    'if agent_entry and account_id not in ids: d["agents"]["list"].append(agent_entry); print("[state-sync] added agent:", account_id)',
+    'if agent_entry:',
+    '    if account_id not in ids:',
+    '        d["agents"]["list"].append(agent_entry); print("[state-sync] added agent:", account_id)',
+    '    else:',
+    '        for a in d["agents"]["list"]:',
+    '            if a.get("id") == account_id:',
+    '                if "model" in agent_entry: a["model"] = agent_entry["model"]',
+    '                elif "model" in a: del a["model"]',
+    '                if "heartbeat" in agent_entry: a["heartbeat"] = agent_entry["heartbeat"]',
+    '                print("[state-sync] updated agent:", account_id); break',
     // Bindings
     'd.setdefault("bindings", [])',
     'bids = [b.get("match", {}).get("accountId") for b in d["bindings"]]',
@@ -1206,15 +1215,93 @@ const applyOpenClawAcpxPluginDefaults = (config) => {
   }
 };
 
+/**
+ * Issue (or re-issue) a LiteLLM virtual key for the given agent.
+ * Returns the key string (sk-...) on success, null if LiteLLM is not configured.
+ * Keys are not deduplicated — re-provisioning creates a new key each time.
+ * Old keys remain valid in LiteLLM DB (harmless orphans).
+ */
+const issueLiteLLMVirtualKey = async (agentId) => {
+  const baseUrl = process.env.LITELLM_BASE_URL;
+  const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
+  if (!baseUrl || !masterKey) return null;
+  try {
+    const axios = require('axios');
+    const headers = { Authorization: `Bearer ${masterKey}` };
+
+    // Read current key from PVC. If it is still valid in LiteLLM, reuse it — this makes
+    // the function idempotent so concurrent provisioning calls don't race-delete each other.
+    let existingKey = null;
+    try {
+      const gwPod = await waitForReadyGatewayPod(10000, 2000);
+      if (gwPod) {
+        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openai-codex:codex-cli'];process.stdout.write(p&&p.access?p.access:'');} catch(e){}"`;
+        const out = await new Promise((resolve) => {
+          const chunks = [];
+          const s = new stream.PassThrough();
+          s.on('data', (d) => chunks.push(d));
+          k8sExec.exec(NAMESPACE, gwPod.metadata.name, 'clawdbot-gateway',
+            ['sh', '-c', readScript], s, null, null, false,
+            () => resolve(Buffer.concat(chunks).toString().trim()),
+          ).catch(() => resolve(''));
+        });
+        if (out && out.startsWith('sk-')) existingKey = out;
+      }
+    } catch (_) { /* best-effort */ }
+
+    // Check if existing key is still valid in LiteLLM DB — if so, reuse it.
+    if (existingKey) {
+      try {
+        const check = await axios.get(`${baseUrl}/key/info?key=${existingKey}`, { headers });
+        if (check.data?.info) {
+          return existingKey; // still valid, no new issuance needed
+        }
+      } catch (_) { /* key not in DB — fall through to issue a new one */ }
+    }
+
+    const resp = await axios.post(
+      `${baseUrl}/key/generate`,
+      {
+        user_id: agentId,
+        // Grant access to all models the agent may use
+        models: [
+          'gpt-5.4',
+          'openai-codex/gpt-5.4',
+          'google/gemini-2.5-flash',
+          'google/gemini-2.5-flash-lite',
+          'google/gemini-2.0-flash',
+          'gemini-2.5-flash',
+          'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+          'openrouter/arcee-ai/trinity-large-preview:free',
+        ],
+        metadata: { agent_id: agentId, provisioned_at: new Date().toISOString() },
+      },
+      { headers },
+    );
+    const newKey = resp.data?.key || null;
+    if (newKey) console.log(`[litellm] Issued new virtual key for ${agentId}`);
+    return newKey;
+  } catch (err) {
+    console.warn(`[litellm] Virtual key generation failed for ${agentId}: ${err.message}`);
+    return null;
+  }
+};
+
 const applyOpenClawCodexProviderConfig = async (config) => {
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
+
+  // Always direct Codex routing — LiteLLM cannot proxy chatgpt.com (GKE IPs blocked by Cloudflare)
+  const codexBaseUrl = 'https://chatgpt.com/backend-api';
   if (!config.models.providers['openai-codex']) {
     config.models.providers['openai-codex'] = {
-      baseUrl: 'https://chatgpt.com/backend-api',
+      baseUrl: codexBaseUrl,
       api: 'openai-codex-responses',
       models: [{ id: 'gpt-5.3-codex', name: 'gpt-5.3-codex' }],
     };
+  } else {
+    config.models.providers['openai-codex'].baseUrl = codexBaseUrl;
+    config.models.providers['openai-codex'].api = 'openai-codex-responses';
   }
   config.auth = config.auth || {};
   config.auth.profiles = config.auth.profiles || {};
@@ -1223,11 +1310,13 @@ const applyOpenClawCodexProviderConfig = async (config) => {
   // moltbot.json schema only accepts mode (not type) and no actual token fields.
   // The actual OAuth token is injected into per-agent auth-profiles.json separately
   // via injectCodexTokenToAgentAuthProfiles() below.
-  delete config.auth.profiles['openai-codex:codex-cli'];
+  // NOTE: do NOT delete openai-codex:codex-cli — it's the canonical rotation slot
+  // for account-1; the inject below overwrites it with the real OAuth token each provision.
 
   // Account definitions: suffix -> profileId
+  // openai-codex:codex-cli is the established rotation name for account-1 (suffix '').
   const CODEX_ACCOUNTS = [
-    { suffix: '', profileId: 'openai-codex:default' },
+    { suffix: '', profileId: 'openai-codex:codex-cli' },
     { suffix: '-2', profileId: 'openai-codex:account-2' },
     { suffix: '-3', profileId: 'openai-codex:account-3' },
   ];
@@ -1253,7 +1342,8 @@ const applyOpenClawCodexProviderConfig = async (config) => {
           provider: 'openai-codex',
           access,
           ...(refresh && { refresh }),
-          ...(expiresAt && { expires: Number(expiresAt) }),
+          // Parse ISO date string to milliseconds; Number() of ISO string gives NaN
+          ...(expiresAt && { expires: new Date(expiresAt).getTime() || null }),
         },
       });
     }
@@ -1264,14 +1354,34 @@ const applyOpenClawCodexProviderConfig = async (config) => {
   // Set auth.order to all configured accounts (enables rotation on rate-limit)
   config.auth.order['openai-codex'] = credentials.length > 0
     ? credentials.map((c) => c.profileId)
-    : ['openai-codex:default'];
+    : ['openai-codex:codex-cli'];
 
   // Ensure at least the default profile stub exists
-  if (!config.auth.profiles['openai-codex:default']) {
-    config.auth.profiles['openai-codex:default'] = { provider: 'openai-codex', mode: 'oauth' };
+  if (!config.auth.profiles['openai-codex:codex-cli']) {
+    config.auth.profiles['openai-codex:codex-cli'] = { provider: 'openai-codex', mode: 'oauth' };
   }
 
   return credentials.length > 0 ? credentials : null;
+};
+
+// Returns a gateway pod that is fully Ready (init containers done, main container running).
+// Polls up to timeoutMs (default 90s) so injections survive a gateway rolling restart.
+const waitForReadyGatewayPod = async (timeoutMs = 90000, pollIntervalMs = 5000) => {
+  const isReady = (pod) => {
+    if (pod.status?.phase !== 'Running') return false;
+    const conditions = pod.status?.conditions || [];
+    return conditions.some((c) => c.type === 'Ready' && c.status === 'True');
+  };
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const gwPods = await k8sApi.listNamespacedPod(
+      NAMESPACE, undefined, undefined, undefined, undefined, 'app=clawdbot-gateway',
+    );
+    const pod = gwPods.body.items.find(isReady);
+    if (pod) return pod;
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+  }
+  return null;
 };
 
 const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, credentials) => {
@@ -1280,36 +1390,66 @@ const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, cred
   const assignments = credentials
     .map(({ profileId, credential }) => `store.profiles['${profileId}'] = ${JSON.stringify(credential).replace(/'/g, "'\\''")};`)
     .join(' ');
+  const profileIds = JSON.stringify(credentials.map((c) => c.profileId));
   const script = [
     `const fs = require('fs');`,
     `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
     `try {`,
     `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
     `  ${assignments}`,
-    `  delete store.profiles['openai-codex:codex-cli'];`,
+    `  store.order = store.order || {};`,
+    `  const existing = store.order['openai-codex'] || [];`,
+    `  const injected = ${profileIds};`,
+    `  store.order['openai-codex'] = Array.from(new Set([...injected, ...existing]));`,
     `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
     `  process.stdout.write('ok');`,
     `} catch(e) { process.stdout.write('skip:' + e.message); }`,
   ].join(' ');
-  try {
-    await new Promise((resolve, reject) => {
-      k8sExec.exec(
-        NAMESPACE,
-        deploymentName,
-        'clawdbot-gateway',
-        ['node', '-e', script],
-        null,
-        process.stderr,
-        process.stdin,
-        false,
-        (status) => {
-          if (status.status === 'Success') resolve();
-          else reject(new Error(status.message || 'exec failed'));
-        },
-      ).catch(reject);
-    });
-  } catch (err) {
-    console.warn(`[k8s-provisioner] codex token inject skipped for ${agentId}: ${err.message}`);
+
+  const execOnPod = async (podName) => new Promise((resolve, reject) => {
+    // stdout captures script output. stdin MUST be null — passing any stream (even an
+    // ended PassThrough) keeps the stdin WebSocket channel open and stalls the status
+    // callback, causing the Promise to never settle.
+    const stdoutStream = new stream.PassThrough();
+    k8sExec.exec(
+      NAMESPACE,
+      podName,
+      'clawdbot-gateway',
+      ['node', '-e', script],
+      stdoutStream,
+      stdoutStream,
+      null,
+      false,
+      (status) => {
+        if (status.status === 'Success') resolve();
+        else reject(new Error(status.message || 'exec failed'));
+      },
+    ).catch(reject);
+  });
+
+  // Reprovision-all restarts the gateway mid-flow; the injection may run while the new pod
+  // is still initialising. Wait up to 90s for a Ready pod, then retry the exec once on
+  // failure so transient 500s during pod startup don't permanently skip the order update.
+  const MAX_ATTEMPTS = 2;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const gwPod = await waitForReadyGatewayPod(90000, 5000);
+      if (!gwPod) {
+        console.warn(`[k8s-provisioner] codex token inject skipped for ${agentId}: no ready gateway pod after 90s`);
+        return;
+      }
+      const podName = gwPod.metadata.name;
+      await execOnPod(podName);
+      console.log(`[k8s-provisioner] codex token injected for ${agentId} into ${podName}`);
+      return;
+    } catch (err) {
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[k8s-provisioner] codex token inject attempt ${attempt} failed for ${agentId}: ${err.message} — retrying`);
+        await new Promise((r) => setTimeout(r, 10000));
+      } else {
+        console.warn(`[k8s-provisioner] codex token inject skipped for ${agentId}: ${err.message}`);
+      }
+    }
   }
 };
 
@@ -2321,10 +2461,16 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
       }).replace(/'/g, "'\\''")
     : null;
 
+  // When LiteLLM virtual keys are in use, agents' auth-profiles.json contains a stable
+  // virtual key — do NOT overwrite it with the raw OAuth token. Only update .codex/auth.json
+  // (needed by the acpx coding tool which authenticates directly, not via LiteLLM).
+  const useLiteLLM = false; // LiteLLM no longer proxies Codex
+
   try {
     const gwPods = await k8sApi.listNamespacedPod(NAMESPACE, undefined, undefined, undefined, undefined, 'app=clawdbot-gateway');
     const gwPod = gwPods.body.items.find((p) => p.status?.phase === 'Running');
-    if (gwPod) {
+    // When using LiteLLM, only account 1 needs to run (for .codex/auth.json); accounts 2/3 skip.
+    if (gwPod && (!useLiteLLM || isAccount1)) {
       const script = [
         `const fs = require('fs'), path = require('path');`,
         `const base = '/state/agents';`,
@@ -2332,13 +2478,18 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
         `try {`,
         `  const agents = fs.readdirSync(base);`,
         `  for (const a of agents) {`,
-        `    try {`,
-        `      const p = path.join(base, a, 'agent', 'auth-profiles.json');`,
-        `      const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
-        `      store.profiles['${profileId}'] = ${credJson};`,
-        `      fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
-        `      count++;`,
-        `    } catch (_) {}`,
+        // Skip auth-profiles.json update when LiteLLM is enabled (virtual keys are stable)
+        ...(!useLiteLLM
+          ? [
+              `    try {`,
+              `      const p = path.join(base, a, 'agent', 'auth-profiles.json');`,
+              `      const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
+              `      store.profiles['${profileId}'] = ${credJson};`,
+              `      fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
+              `      count++;`,
+              `    } catch (_) {}`,
+            ]
+          : []),
         ...(isAccount1
           ? [
               `    try {`,
