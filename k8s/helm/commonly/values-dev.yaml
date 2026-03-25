@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/disco-catcher-490606-b0/commonly-backend
-    tag: "20260323160728"
+    tag: "20260325001617"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -147,6 +147,8 @@ ingress:
       host: app-dev.commonly.me
     backend:
       host: api-dev.commonly.me
+    litellm:
+      host: litellm-dev.commonly.me
   tls:
     enabled: false  # Enable after setting up cert-manager
 
@@ -186,6 +188,16 @@ cloudflared:
       value: "dev"
       effect: "NoSchedule"
   ingressService: ingress-nginx-controller.ingress-nginx.svc.cluster.local
+
+litellm:
+  enabled: true
+  nodeSelector:
+    pool: dev
+  tolerations:
+    - key: "pool"
+      operator: "Equal"
+      value: "dev"
+      effect: "NoSchedule"
 
 backup:
   mongodb:

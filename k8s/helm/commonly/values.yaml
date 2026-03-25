@@ -253,6 +253,10 @@ ingress:
       path: /
       pathType: Prefix
       aliases: []
+    litellm:
+      host: litellm-dev.commonly.me
+      path: /
+      pathType: Prefix
   tls:
     enabled: false
     secretName: commonly-tls
@@ -309,6 +313,24 @@ cloudflared:
     - api-dev.commonly.me
     - app-dev.commonly.me
     - api-dev.commonly.me
+    - litellm-dev.commonly.me
+
+# LiteLLM proxy (model gateway + request logging)
+litellm:
+  enabled: false
+  image:
+    repository: ghcr.io/berriai/litellm
+    tag: v1.82.3-stable
+  port: 4000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  nodeSelector: {}
+  tolerations: []
 
 # Backup configuration
 backup:
