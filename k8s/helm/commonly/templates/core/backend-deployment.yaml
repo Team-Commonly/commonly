@@ -321,6 +321,8 @@ spec:
               name: api-keys
               key: litellm-master-key
               optional: true
+        - name: LITELLM_BASE_URL
+          value: "http://litellm:4000"
         - name: SKILLS_CATALOG_PATH
           value: /app/docs/skills/awesome-agent-skills-index.json
         - name: MARKETPLACE_MANIFEST_PATH

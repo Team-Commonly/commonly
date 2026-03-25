@@ -161,12 +161,7 @@ spec:
               }
               codexOrder.push('openai-codex:account-2');
             }
-            // Persist auth order so OpenClaw falls back across accounts on rate-limit
-            // NOTE: field must be 'order' (not 'authOrder') — OpenClaw reads store.order
-            if (codexOrder.length > 0) {
-              store.order = store.order || {};
-              store.order['openai-codex'] = codexOrder;
-            }
+            // order is written after all account blocks below so account-3 is included
             // Also write ~/.codex/auth.json in chatgpt format so acpx uses chatgpt auth
             // (not codex-api-key which requires api.responses.write scope).
             // acpx reads a single auth.json — use account-1 as primary.
@@ -257,6 +252,13 @@ spec:
               fs.mkdirSync(path.dirname(sharedAuth3Path), { recursive: true });
               fs.writeFileSync(sharedAuth3Path, JSON.stringify(auth3Json, null, 2));
               console.log('[auth-seed] wrote codex auth-3.json to shared PVC:', sharedAuth3Path);
+              codexOrder.push('openai-codex:account-3');
+            }
+            // Persist auth order so OpenClaw falls back across accounts on rate-limit
+            // NOTE: field must be 'order' (not 'authOrder') — OpenClaw reads store.order
+            if (codexOrder.length > 0) {
+              store.order = store.order || {};
+              store.order['openai-codex'] = codexOrder;
             }
             fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
             console.log('[auth-seed] wrote:', authPath, hasCustomProfiles ? 'custom profiles' : 'patched');
