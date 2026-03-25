@@ -1,14 +1,20 @@
 const { pool } = require('../config/db-pg');
 const User = require('../models/User');
 
-// Check if PostgreSQL is available for chat functionality
+// Check if PostgreSQL is available for chat functionality.
+// Verifies the required tables actually exist, not just that the connection works.
 exports.checkStatus = async (req, res) => {
   try {
-    // If this route is registered, PostgreSQL is available
-    res.json({ available: true });
+    if (!pool) {
+      return res.json({ available: false });
+    }
+    const result = await pool.query(
+      "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='messages' LIMIT 1",
+    );
+    res.json({ available: result.rowCount > 0 });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
+    console.error('PG status check failed:', err.message);
+    res.json({ available: false });
   }
 };
 

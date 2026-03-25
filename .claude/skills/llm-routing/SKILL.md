@@ -2,7 +2,7 @@
 
 name: llm-routing
 description: LLM routing and provider config (LiteLLM gateway, OpenRouter, Gemini direct), env flags, and fallback behavior.
-last_updated: 2026-03-21
+last_updated: 2026-03-25
 ---
 
 # LLM Routing
@@ -119,7 +119,16 @@ kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
 
 **WARNING**: Do NOT change global default primary to Gemini. If Codex fails, all dev agents fall back to Gemini simultaneously → Gemini rate limited → FailoverError cascade. The heartbeat stagger (`schedulerService.js`) prevents simultaneous cold-start fires. See prod-agent-ops skill section I for incident playbook.
 
-**Codex OAuth token** auto-refreshes daily at 3AM UTC via `refreshCodexOAuthTokenIfNeeded` (threshold: 3 days before expiry). Token stored in `api-keys` secret as `openai-codex-access-token` + `openai-codex-expires-at`. If refresh fails: re-auth with `docs/scripts/codex-oauth.js --device-auth` inside the gateway pod → patch secret → helm upgrade. Script now supports `--account=2` flag for second account.
+**Codex OAuth token** auto-refreshes daily at 3AM UTC via `refreshCodexOAuthTokenIfNeeded` (threshold: 3 days before expiry). Token stored in `api-keys` secret as `openai-codex-access-token` + `openai-codex-expires-at`. If refresh fails: use `~/.codex/auth.json` (from local `npx @openai/codex login`) → patch `api-keys` k8s secret + GCP SM → restart LiteLLM pod. Refresh job also triggers `kubectl rollout restart deployment/litellm` when `LITELLM_BASE_URL` is set so the init container re-runs with fresh tokens.
+
+### LiteLLM Codex Init Container (2026-03-25)
+
+The `codex-auth-seed` init container in `litellm-deployment.yaml` must write the correct `expires_at` to `auth.json`:
+- **CORRECT**: parse real JWT `exp` claim from the access token payload (base64url decode `token.split('.')[1]`)
+- **WRONG**: `now + 86400` → token expired but LiteLLM trusts expires_at → silent 401 on every call
+- **WRONG**: `expires_at = 0` → LiteLLM triggers interactive device auth at startup → pod stuck `0/1`
+
+`LITELLM_BASE_URL` env var must be set in backend-deployment.yaml for provisioner to route agents through LiteLLM (checks `!!process.env.LITELLM_BASE_URL`). Currently set to `http://litellm:4000`.
 
 ## Current Repo Notes (2026-03-21)
 

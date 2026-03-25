@@ -45,9 +45,21 @@ data:
           model: openrouter/arcee-ai/trinity-large-preview:free
           api_key: os.environ/OPENROUTER_API_KEY
 
-      # NOTE: gpt-5.4 / openai-codex/gpt-5.4 are NOT routed through LiteLLM.
-      # The chatgpt/ provider triggers interactive device-auth from a k8s pod (GKE IPs
-      # are blocked by Cloudflare). Codex calls go direct: OpenClaw to chatgpt.com.
+      # --- Codex (chatgpt/ provider, OAuth tokens from codex-auth-seed init container) ---
+      # The init container parses the real JWT exp claim so LiteLLM never uses a stale token
+      # or triggers interactive device auth on startup. The daily refresh job restarts this
+      # pod after refreshing the secret so the init container always picks up fresh tokens.
+      - model_name: gpt-5.4
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4
+
+      - model_name: openai-codex/gpt-5.4
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4
 
       # --- OpenAI (optional, for embeddings) ---
       - model_name: text-embedding-3-large
