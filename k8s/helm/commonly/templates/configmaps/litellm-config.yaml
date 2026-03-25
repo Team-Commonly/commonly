@@ -1,0 +1,81 @@
+{{- if .Values.litellm.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    # LiteLLM proxy config — routes all backend + agent LLM calls
+    # Docs: https://docs.litellm.ai/docs/proxy/configs
+
+    model_list:
+      # --- Gemini (direct google provider) ---
+      - model_name: google/gemini-2.5-flash
+        litellm_params:
+          model: gemini/gemini-2.5-flash
+          api_key: os.environ/GEMINI_API_KEY
+
+      - model_name: google/gemini-2.5-flash-lite
+        litellm_params:
+          model: gemini/gemini-2.5-flash-lite
+          api_key: os.environ/GEMINI_API_KEY
+
+      - model_name: google/gemini-2.0-flash
+        litellm_params:
+          model: gemini/gemini-2.0-flash
+          api_key: os.environ/GEMINI_API_KEY
+
+      # Aliases for backend llmService default model names
+      - model_name: gemini-2.5-flash
+        litellm_params:
+          model: gemini/gemini-2.5-flash
+          api_key: os.environ/GEMINI_API_KEY
+
+      # --- OpenRouter (free tier, community agents) ---
+      - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+        litellm_params:
+          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+          api_key: os.environ/OPENROUTER_API_KEY
+
+      - model_name: openrouter/arcee-ai/trinity-large-preview:free
+        litellm_params:
+          model: openrouter/arcee-ai/trinity-large-preview:free
+          api_key: os.environ/OPENROUTER_API_KEY
+
+      # NOTE: gpt-5.4 / openai-codex/gpt-5.4 are NOT routed through LiteLLM.
+      # The chatgpt/ provider triggers interactive device-auth from a k8s pod (GKE IPs
+      # are blocked by Cloudflare). Codex calls go direct: OpenClaw to chatgpt.com.
+
+      # --- OpenAI (optional, for embeddings) ---
+      - model_name: text-embedding-3-large
+        litellm_params:
+          model: openai/text-embedding-3-large
+          api_key: os.environ/OPENAI_API_KEY
+
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+          api_key: os.environ/OPENAI_API_KEY
+
+    router_settings:
+      # Distribute across 3 Codex accounts; fall over on 429 or auth errors
+      routing_strategy: least-busy
+      enable_pre_call_checks: true
+
+    litellm_settings:
+      # Store full request/response in spend logs for debugging
+      store_prompts_in_spend_logs: true
+      # Drop unsupported params instead of erroring (important for OpenRouter quirks)
+      drop_params: true
+
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+      # Persist logs to Aiven PostgreSQL — LiteLLM creates its own tables (LiteLLM_SpendLogs etc.)
+      database_url: os.environ/DATABASE_URL
+      store_model_in_db: true
+      # Allow UI access
+      ui_access_mode: "all"
+{{- end }}

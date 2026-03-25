@@ -62,4 +62,16 @@ spec:
             port:
               number: {{ $.Values.backend.service.port }}
   {{- end }}
+  {{- if and .Values.litellm.enabled .Values.ingress.hosts.litellm.host }}
+  - host: {{ .Values.ingress.hosts.litellm.host }}
+    http:
+      paths:
+      - path: {{ .Values.ingress.hosts.litellm.path }}
+        pathType: {{ .Values.ingress.hosts.litellm.pathType }}
+        backend:
+          service:
+            name: litellm
+            port:
+              number: {{ .Values.litellm.port }}
+  {{- end }}
 {{- end }}
