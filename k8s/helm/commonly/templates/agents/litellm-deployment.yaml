@@ -66,6 +66,15 @@ spec:
               name: api-keys
               key: anthropic-api-key
               optional: true
+        # chatgpt/ provider reads auth.json from CHATGPT_TOKEN_DIR (written by init container)
+        - name: CHATGPT_TOKEN_DIR
+          value: /chatgpt-auth
+        volumeMounts:
+        - name: litellm-config
+          mountPath: /app/config.yaml
+          subPath: config.yaml
+        - name: chatgpt-auth
+          mountPath: /chatgpt-auth
         resources:
           {{- toYaml .Values.litellm.resources | nindent 10 }}
         # /health/readiness does not require auth; /health requires Bearer token
@@ -89,9 +98,88 @@ spec:
             port: 4000
           periodSeconds: 30
           failureThreshold: 3
+      initContainers:
+      # Seed auth.json for LiteLLM's chatgpt/ provider from k8s secrets.
+      # The chatgpt/ provider ignores litellm_params.api_key; it reads CHATGPT_TOKEN_DIR/auth.json.
+      #
+      # CRITICAL: expires_at must equal the real JWT exp claim (Unix seconds), not "now+1day".
+      # LiteLLM trusts expires_at, not the JWT — if expires_at is future but the JWT is expired,
+      # every call returns 401. If expires_at is 0 or past, LiteLLM triggers interactive device
+      # auth at STARTUP and the pod never becomes Ready. Parsing the real exp avoids both bugs.
+      # The daily refresh job (refreshCodexOAuthTokenIfNeeded) restarts this pod when it refreshes
+      # the token, so the init container always picks up fresh credentials.
+      - name: codex-auth-seed
+        image: python:3-alpine
+        command:
+        - python3
+        - -c
+        - |
+          import os, sys, base64, json, datetime
+
+          access = os.environ.get('OPENAI_CODEX_ACCESS_TOKEN', '')
+          if not access:
+              with open('/chatgpt-auth/auth.json', 'w') as f:
+                  json.dump({}, f)
+              print('No Codex token configured, wrote empty auth.json')
+              sys.exit(0)
+
+          try:
+              # Decode JWT payload (middle section, base64url-encoded) to get real exp
+              payload_b64 = access.split('.')[1]
+              padding = 4 - len(payload_b64) % 4
+              if padding != 4:
+                  payload_b64 += '=' * padding
+              payload = json.loads(base64.b64decode(
+                  payload_b64.replace('-', '+').replace('_', '/')
+              ))
+              exp = int(payload.get('exp', 0))
+          except Exception as e:
+              print(f'JWT parse error: {e}', file=sys.stderr)
+              exp = 0
+
+          out = {'access_token': access, 'expires_at': exp}
+          refresh = os.environ.get('OPENAI_CODEX_REFRESH_TOKEN', '')
+          id_tok = os.environ.get('OPENAI_CODEX_ID_TOKEN', '')
+          if refresh:
+              out['refresh_token'] = refresh
+          if id_tok:
+              out['id_token'] = id_tok
+
+          with open('/chatgpt-auth/auth.json', 'w') as f:
+              json.dump(out, f)
+
+          now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+          exp_str = datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat() if exp else 'unknown'
+          status = 'VALID' if exp > now_ts else 'EXPIRED — refresh job will restart pod with fresh token'
+          print(f'auth.json written — expires_at={exp} ({exp_str}) [{status}]')
+        env:
+        - name: OPENAI_CODEX_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token
+              optional: true
+        - name: OPENAI_CODEX_REFRESH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-refresh-token
+              optional: true
+        - name: OPENAI_CODEX_ID_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-id-token
+              optional: true
+        volumeMounts:
+        - name: chatgpt-auth
+          mountPath: /chatgpt-auth
+      volumes:
       - name: litellm-config
         configMap:
           name: litellm-config
+      - name: chatgpt-auth
+        emptyDir: {}
       {{- with .Values.litellm.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

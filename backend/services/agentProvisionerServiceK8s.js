@@ -1291,17 +1291,38 @@ const applyOpenClawCodexProviderConfig = async (config) => {
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
 
-  // Always direct Codex routing — LiteLLM cannot proxy chatgpt.com (GKE IPs blocked by Cloudflare)
-  const codexBaseUrl = 'https://chatgpt.com/backend-api';
-  if (!config.models.providers['openai-codex']) {
-    config.models.providers['openai-codex'] = {
-      baseUrl: codexBaseUrl,
-      api: 'openai-codex-responses',
-      models: [{ id: 'gpt-5.3-codex', name: 'gpt-5.3-codex' }],
-    };
+  const litellmBase = process.env.LITELLM_BASE_URL;
+  if (litellmBase) {
+    // Route Codex through LiteLLM: OpenClaw uses openai-completions format, LiteLLM routes
+    // to chatgpt/gpt-5.4 using OAuth tokens seeded by the codex-auth-seed init container.
+    // The daily refresh job (refreshCodexOAuthTokenIfNeeded) keeps the token fresh and
+    // triggers a LiteLLM pod restart so the init container re-reads the updated secret.
+    if (!config.models.providers['openai-codex']) {
+      config.models.providers['openai-codex'] = {
+        baseUrl: litellmBase,
+        api: 'openai-completions',
+        models: [
+          { id: 'gpt-5.4', name: 'gpt-5.4' },
+          { id: 'gpt-5.3-codex', name: 'gpt-5.3-codex' },
+        ],
+      };
+    } else {
+      config.models.providers['openai-codex'].baseUrl = litellmBase;
+      config.models.providers['openai-codex'].api = 'openai-completions';
+    }
   } else {
-    config.models.providers['openai-codex'].baseUrl = codexBaseUrl;
-    config.models.providers['openai-codex'].api = 'openai-codex-responses';
+    // Direct Codex API (no LiteLLM)
+    const codexBaseUrl = 'https://chatgpt.com/backend-api';
+    if (!config.models.providers['openai-codex']) {
+      config.models.providers['openai-codex'] = {
+        baseUrl: codexBaseUrl,
+        api: 'openai-codex-responses',
+        models: [{ id: 'gpt-5.3-codex', name: 'gpt-5.3-codex' }],
+      };
+    } else {
+      config.models.providers['openai-codex'].baseUrl = codexBaseUrl;
+      config.models.providers['openai-codex'].api = 'openai-codex-responses';
+    }
   }
   config.auth = config.auth || {};
   config.auth.profiles = config.auth.profiles || {};
@@ -1609,7 +1630,32 @@ const provisionOpenClawAccount = async ({
   applyOpenClawAcpxPluginDefaults(config);
   const { codexCredentials, devAgentIds, devAgentModel } = await applyOpenClawModelDefaults(config);
 
-  await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+  if (process.env.LITELLM_BASE_URL) {
+    // Issue a per-agent LiteLLM virtual key and inject it as the openai-codex Bearer token.
+    // LiteLLM authenticates the virtual key and routes to chatgpt/gpt-5.4 using its own
+    // stored OAuth tokens — no raw OAuth token injection into per-agent PVC files needed.
+    const virtualKey = await issueLiteLLMVirtualKey(accountId);
+    if (virtualKey) {
+      await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, [{
+        profileId: 'openai-codex:codex-cli',
+        credential: {
+          type: 'oauth',
+          provider: 'openai-codex',
+          access: virtualKey,
+          // Far-future expires: prevents the clawdbot-auth-seed init container from
+          // overwriting this virtual key on gateway restarts. The init container checks
+          // codexExpires > existing.expires — the real token expires in ~1 day, so
+          // a 1-year expires here means the check fails and the virtual key is preserved.
+          expires: Date.now() + 365 * 24 * 3600 * 1000,
+        },
+      }]);
+    } else {
+      // LiteLLM key generation failed — fall back to raw OAuth token injection
+      await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+    }
+  } else {
+    await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+  }
   applySkillEnvEntriesToConfig(config, skillEnv);
 
   // Update agents list
@@ -2461,10 +2507,10 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
       }).replace(/'/g, "'\\''")
     : null;
 
-  // When LiteLLM virtual keys are in use, agents' auth-profiles.json contains a stable
-  // virtual key — do NOT overwrite it with the raw OAuth token. Only update .codex/auth.json
-  // (needed by the acpx coding tool which authenticates directly, not via LiteLLM).
-  const useLiteLLM = false; // LiteLLM no longer proxies Codex
+  // When LiteLLM proxies Codex, agents' auth-profiles.json contains a stable virtual key —
+  // do NOT overwrite it with the raw OAuth token. Only update .codex/auth.json (needed by
+  // the acpx coding tool which authenticates directly, not via LiteLLM).
+  const useLiteLLM = !!process.env.LITELLM_BASE_URL;
 
   try {
     const gwPods = await k8sApi.listNamespacedPod(NAMESPACE, undefined, undefined, undefined, undefined, 'app=clawdbot-gateway');
@@ -2528,6 +2574,24 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
     }
   } catch (err) {
     console.warn(`[codex-refresh${suffix}] auth files re-inject skipped: ${err.message}`);
+  }
+
+  // When LiteLLM proxies Codex, restart it so the codex-auth-seed init container re-reads
+  // the freshly patched api-keys secret and writes a valid auth.json. Only account 1 needs
+  // to trigger this (LiteLLM uses a single shared auth.json, not per-account).
+  if (useLiteLLM && isAccount1) {
+    try {
+      await k8sAppsApi.patchNamespacedDeployment(
+        'litellm',
+        NAMESPACE,
+        { spec: { template: { metadata: { annotations: { 'kubectl.kubernetes.io/restartedAt': new Date().toISOString() } } } } },
+        undefined, undefined, undefined, undefined, undefined,
+        { headers: { 'Content-Type': 'application/strategic-merge-patch+json' } },
+      );
+      console.log('[codex-refresh] Triggered LiteLLM rollout restart to pick up refreshed token.');
+    } catch (err) {
+      console.warn(`[codex-refresh] LiteLLM restart skipped: ${err.message}`);
+    }
   }
 
   return { expiresAt };

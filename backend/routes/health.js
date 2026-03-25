@@ -133,7 +133,7 @@ router.get('/', async (req, res) => {
       configured: !!process.env.GEMINI_API_KEY,
     },
     litellm: {
-      configured: !!(process.env.LITELLM_BASE_URL && process.env.LITELLM_API_KEY),
+      configured: !!(process.env.LITELLM_BASE_URL && process.env.LITELLM_MASTER_KEY),
     },
     sendgrid: {
       configured: !!process.env.SENDGRID_API_KEY,
