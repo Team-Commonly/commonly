@@ -1,5 +1,20 @@
 const PGPod = require('../models/pg/Pod');
 const PGMessage = require('../models/pg/Message');
+const MongoPod = require('../models/Pod');
+
+// Auto-sync a pod from MongoDB to PG if it does not exist yet.
+async function syncPodFromMongo(podId, requestingUserId) {
+  const mongoPod = await MongoPod.findById(podId).lean();
+  if (!mongoPod) return null;
+  const pgPod = await PGPod.create(
+    mongoPod.name,
+    mongoPod.description || '',
+    mongoPod.type || 'chat',
+    requestingUserId,
+    podId,
+  );
+  return pgPod;
+}
 
 // Get messages for a specific pod
 exports.getMessages = async (req, res) => {
@@ -11,16 +26,18 @@ exports.getMessages = async (req, res) => {
       return res.status(400).json({ msg: 'Pod ID is required' });
     }
 
-    // Check if pod exists
-    const pod = await PGPod.findById(podId);
-    if (!pod) {
-      return res.status(404).json({ msg: 'Pod not found' });
-    }
-
-    // Access the user ID safely
     const userId = req.userId || req.user.id;
     if (!userId) {
       return res.status(401).json({ msg: 'User authentication failed' });
+    }
+
+    // Check if pod exists in PG; auto-sync from MongoDB if not
+    let pod = await PGPod.findById(podId);
+    if (!pod) {
+      pod = await syncPodFromMongo(podId, userId);
+      if (!pod) {
+        return res.status(404).json({ msg: 'Pod not found' });
+      }
     }
 
     console.log(`Checking message access for pod ${podId} by user ${userId}`);
@@ -82,16 +99,16 @@ exports.createMessage = async (req, res) => {
       return res.status(400).json({ msg: 'Pod ID is required' });
     }
 
-    // Check if pod exists
-    const pod = await PGPod.findById(podId);
-    if (!pod) {
-      return res.status(404).json({ msg: 'Pod not found' });
-    }
-
     // Access the user ID safely
     const userId = req.userId || req.user.id;
     if (!userId) {
       return res.status(401).json({ msg: 'User authentication failed' });
+    }
+
+    // Check if pod exists in PG; auto-sync from MongoDB if not
+    const pod = (await PGPod.findById(podId)) || (await syncPodFromMongo(podId, userId));
+    if (!pod) {
+      return res.status(404).json({ msg: 'Pod not found' });
     }
 
     // Check if user is a member of the pod
