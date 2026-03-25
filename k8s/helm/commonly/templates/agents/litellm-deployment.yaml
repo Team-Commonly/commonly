@@ -1,0 +1,103 @@
+{{- if .Values.litellm.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: litellm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "commonly.selectorLabels" . | nindent 6 }}
+      app: litellm
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.selectorLabels" . | nindent 8 }}
+        app: litellm
+    spec:
+      containers:
+      - name: litellm
+        image: "{{ .Values.litellm.image.repository }}:{{ .Values.litellm.image.tag }}"
+        imagePullPolicy: IfNotPresent
+        args: ["--config", "/app/config.yaml"]
+        ports:
+        - name: http
+          containerPort: 4000
+          protocol: TCP
+        env:
+        - name: LITELLM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: litellm-master-key
+        # Build DATABASE_URL from parts; $(PG_PASSWORD) is substituted by K8s at runtime
+        - name: PG_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: postgres-password
+        - name: DATABASE_URL
+          value: "postgresql://{{ .Values.backend.env.pgUser }}:$(PG_PASSWORD)@{{ .Values.backend.env.pgHost }}:{{ .Values.backend.env.pgPort }}/{{ .Values.backend.env.pgDatabase }}?sslmode=require"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: gemini-api-key
+              optional: true
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openrouter-api-key
+              optional: true
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-api-key
+              optional: true
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: anthropic-api-key
+              optional: true
+        resources:
+          {{- toYaml .Values.litellm.resources | nindent 10 }}
+        # /health/readiness does not require auth; /health requires Bearer token
+        # Startup probe gives LiteLLM up to 3m for Prisma DB migrations on first boot
+        startupProbe:
+          httpGet:
+            path: /health/readiness
+            port: 4000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 18
+        readinessProbe:
+          httpGet:
+            path: /health/readiness
+            port: 4000
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health/readiness
+            port: 4000
+          periodSeconds: 30
+          failureThreshold: 3
+      - name: litellm-config
+        configMap:
+          name: litellm-config
+      {{- with .Values.litellm.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.litellm.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
