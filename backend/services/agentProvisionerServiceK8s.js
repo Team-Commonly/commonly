@@ -1249,12 +1249,15 @@ const issueLiteLLMVirtualKey = async (agentId) => {
       }
     } catch (_) { /* best-effort */ }
 
-    // Check if existing key is still valid in LiteLLM DB — if so, reuse it.
+    // Check if existing key is still valid in LiteLLM DB AND belongs to this agent.
+    // Without the ownership check, a key mistakenly written to the wrong agent's PVC
+    // would be perpetually reused across reprovisions.
     if (existingKey) {
       try {
         const check = await axios.get(`${baseUrl}/key/info?key=${existingKey}`, { headers });
-        if (check.data?.info) {
-          return existingKey; // still valid, no new issuance needed
+        const info = check.data?.info;
+        if (info && (info.metadata?.agent_id === agentId || info.user_id === agentId)) {
+          return existingKey; // still valid and owned by this agent
         }
       } catch (_) { /* key not in DB — fall through to issue a new one */ }
     }
