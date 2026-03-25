@@ -1,7 +1,7 @@
 ---
 name: prod-agent-ops
 description: Production E2E testing, monitoring, and debugging for agent runtime reliability (queue health, context permissions, model/auth fallbacks, gateway/runtime recovery).
-last_updated: 2026-03-19 (rev4)
+last_updated: 2026-03-25 (rev5)
 ---
 
 # Prod Agent Ops
@@ -511,6 +511,73 @@ Fix:
 - Confirm agent scopes include required reads/writes.
 - Confirm agent user is in pod membership and runtime token matches agent/instance.
 
+### O) LiteLLM proxy down / Codex 401 / pod stuck `0/1`
+
+**Quick status check:**
+```bash
+kubectl get pods -n commonly-dev | grep litellm
+kubectl logs -n commonly-dev -l app=litellm -c codex-auth-seed --tail=5
+# Expected: "auth.json written — expires_at=NNNN (...) [VALID]"
+kubectl exec -n commonly-dev deployment/backend -- \
+  node -e "const h=require('http');h.get({host:'litellm',port:4000,path:'/health/readiness'},r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log(r.statusCode,d.slice(0,80)));}).on('error',e=>console.log('ERR',e.message));"
+# Expected: 200 {"status":"healthy","db":"connected"...
+```
+
+**Symptom: pod stuck `0/1 PodInitializing` or init container loops**
+- Init container triggered interactive device auth (`expires_at=0` or expired token)
+- Check: `kubectl logs -n commonly-dev -l app=litellm -c codex-auth-seed`
+- Look for: `"Please visit ... and enter code"` or `"expires_at=0"`
+- Fix: re-seed the Codex token (see below)
+
+**Symptom: pod is `1/1 Running` but every `gpt-5.4` call returns 401**
+- `expires_at` is future but JWT is already expired — LiteLLM trusts `expires_at`, not the JWT
+- Verify: `kubectl logs -n commonly-dev -l app=litellm -c codex-auth-seed | grep expires_at`
+  - If `[EXPIRED — refresh job will restart pod]` was logged, the token is expired
+- Fix: re-seed the Codex token (see below)
+
+**Symptom: agents route directly to chatgpt.com instead of LiteLLM**
+```bash
+kubectl exec -n commonly-dev deployment/backend -- sh -c 'echo $LITELLM_BASE_URL'
+# If empty → LITELLM_BASE_URL missing from backend-deployment.yaml → helm upgrade needed
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- \
+  python3 -c "import json; d=json.load(open('/state/moltbot.json')); oc=d['models']['providers'].get('openai-codex',{}); print('baseUrl:', oc.get('baseUrl'), 'api:', oc.get('api'))"
+# Should show: baseUrl: http://litellm:4000  api: openai-completions
+# If shows chatgpt.com → reprovision-all needed
+```
+
+**Re-seeding the Codex token (from `~/.codex/auth.json`):**
+```bash
+ACCESS=$(python3 -c "import json; print(json.load(open('$HOME/.codex/auth.json'))['accessToken'])")
+REFRESH=$(python3 -c "import json; print(json.load(open('$HOME/.codex/auth.json')).get('refreshToken',''))")
+ID_TOK=$(python3 -c "import json; print(json.load(open('$HOME/.codex/auth.json')).get('idToken',''))")
+EXP_MS=$(python3 -c "import json,base64; t=json.load(open('$HOME/.codex/auth.json'))['accessToken']; p=json.loads(base64.b64decode(t.split('.')[1]+'==')); print(p['exp']*1000)")
+
+kubectl patch secret api-keys -n commonly-dev --type=json -p="[
+  {\"op\":\"replace\",\"path\":\"/data/openai-codex-access-token\",\"value\":\"$(echo -n $ACCESS | base64 -w0)\"},
+  {\"op\":\"replace\",\"path\":\"/data/openai-codex-refresh-token\",\"value\":\"$(echo -n $REFRESH | base64 -w0)\"},
+  {\"op\":\"replace\",\"path\":\"/data/openai-codex-id-token\",\"value\":\"$(echo -n $ID_TOK | base64 -w0)\"},
+  {\"op\":\"replace\",\"path\":\"/data/openai-codex-expires-at\",\"value\":\"$(echo -n $EXP_MS | base64 -w0)\"}
+]"
+kubectl rollout restart deployment/litellm -n commonly-dev
+kubectl rollout status deployment/litellm -n commonly-dev --timeout=120s
+kubectl logs -n commonly-dev -l app=litellm -c codex-auth-seed | grep "expires_at="
+# Expect: [VALID]
+```
+
+**Verify end-to-end after fix:**
+```bash
+kubectl exec -n commonly-dev deployment/backend -- node -e "
+const http=require('http');
+const body=JSON.stringify({model:'openai-codex/gpt-5.4',messages:[{role:'user',content:'say hi'}],max_tokens:5});
+const req=http.request({host:'litellm',port:4000,path:'/chat/completions',method:'POST',
+  headers:{'Content-Type':'application/json','Authorization':'Bearer '+process.env.LITELLM_MASTER_KEY,'Content-Length':Buffer.byteLength(body)}},
+  res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{console.log(res.statusCode,d.slice(0,150));process.exit(0);});});
+req.write(body);req.end();"
+# Expect: 200 {"choices":[{"message":{"content":"Hi"...
+```
+
+See `docs/development/LITELLM.md` for full architecture and token management details.
+
 ## Deploy + Verify
 
 After backend/gateway changes:
@@ -541,3 +608,4 @@ Success criteria:
 - `docs/SUMMARIZER_AND_AGENTS.md`
 - `docs/deployment/DEPLOYMENT.md`
 - `docs/deployment/KUBERNETES.md`
+- `docs/development/LITELLM.md` — LiteLLM architecture, Codex OAuth routing, token management
