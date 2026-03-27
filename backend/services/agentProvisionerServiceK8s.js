@@ -1259,6 +1259,12 @@ const issueLiteLLMVirtualKey = async (agentId) => {
         if (info && (info.metadata?.agent_id === agentId || info.user_id === agentId)) {
           return existingKey; // still valid and owned by this agent
         }
+        // Key exists in DB but is invalid or belongs to another agent — delete it so it
+        // doesn't accumulate as an orphan, then fall through to issue a fresh one.
+        if (info) {
+          await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
+          console.log(`[litellm] Deleted stale/misowned key for ${agentId}`);
+        }
       } catch (_) { /* key not in DB — fall through to issue a new one */ }
     }
 
@@ -1266,7 +1272,9 @@ const issueLiteLLMVirtualKey = async (agentId) => {
       `${baseUrl}/key/generate`,
       {
         user_id: agentId,
-        // Grant access to all models the agent may use
+        // Grant access to all models the agent may use.
+        // OpenClaw strips "openrouter/" prefix when using openrouter:default profile,
+        // so we allow both prefixed and un-prefixed variants.
         models: [
           'gpt-5.4',
           'openai-codex/gpt-5.4',
@@ -1275,7 +1283,9 @@ const issueLiteLLMVirtualKey = async (agentId) => {
           'google/gemini-2.0-flash',
           'gemini-2.5-flash',
           'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+          'nvidia/nemotron-3-super-120b-a12b:free',
           'openrouter/arcee-ai/trinity-large-preview:free',
+          'arcee-ai/trinity-large-preview:free',
         ],
         metadata: { agent_id: agentId, provisioned_at: new Date().toISOString() },
       },
@@ -1287,6 +1297,138 @@ const issueLiteLLMVirtualKey = async (agentId) => {
   } catch (err) {
     console.warn(`[litellm] Virtual key generation failed for ${agentId}: ${err.message}`);
     return null;
+  }
+};
+
+/**
+ * Issue a LiteLLM virtual key scoped to OpenRouter models only.
+ * Used for community agents so their nemotron/trinity calls route through LiteLLM
+ * for visibility and centralized failover — without granting Codex access.
+ */
+const issueLiteLLMOpenRouterKey = async (agentId) => {
+  const baseUrl = process.env.LITELLM_BASE_URL;
+  const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
+  if (!baseUrl || !masterKey) return null;
+  try {
+    const axios = require('axios');
+    const headers = { Authorization: `Bearer ${masterKey}` };
+
+    // Read existing key from openrouter:default.key on the agent PVC
+    let existingKey = null;
+    try {
+      const gwPod = await waitForReadyGatewayPod(10000, 2000);
+      if (gwPod) {
+        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openrouter:default'];process.stdout.write(p&&p.key?p.key:'');} catch(e){}"`;
+        const out = await new Promise((resolve) => {
+          const chunks = [];
+          const s = new stream.PassThrough();
+          s.on('data', (d) => chunks.push(d));
+          k8sExec.exec(NAMESPACE, gwPod.metadata.name, 'clawdbot-gateway',
+            ['sh', '-c', readScript], s, null, null, false,
+            () => resolve(Buffer.concat(chunks).toString().trim()),
+          ).catch(() => resolve(''));
+        });
+        if (out && out.startsWith('sk-')) existingKey = out;
+      }
+    } catch (_) { /* best-effort */ }
+
+    if (existingKey) {
+      try {
+        const check = await axios.get(`${baseUrl}/key/info?key=${existingKey}`, { headers });
+        const info = check.data?.info;
+        if (info && (info.metadata?.agent_id === agentId || info.user_id === agentId)) {
+          return existingKey;
+        }
+        if (info) {
+          await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
+          console.log(`[litellm] Deleted stale/misowned OpenRouter key for ${agentId}`);
+        }
+      } catch (_) { /* key not in DB — fall through */ }
+    }
+
+    const resp = await axios.post(
+      `${baseUrl}/key/generate`,
+      {
+        user_id: agentId,
+        models: [
+          'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+          'nvidia/nemotron-3-super-120b-a12b:free',
+          'openrouter/arcee-ai/trinity-large-preview:free',
+          'arcee-ai/trinity-large-preview:free',
+          'google/gemini-2.5-flash',
+          'google/gemini-2.5-flash-lite',
+          'google/gemini-2.0-flash',
+          'gemini-2.5-flash',
+        ],
+        metadata: { agent_id: agentId, key_type: 'openrouter', provisioned_at: new Date().toISOString() },
+      },
+      { headers },
+    );
+    const newKey = resp.data?.key || null;
+    if (newKey) console.log(`[litellm] Issued OpenRouter virtual key for ${agentId}`);
+    return newKey;
+  } catch (err) {
+    console.warn(`[litellm] OpenRouter virtual key generation failed for ${agentId}: ${err.message}`);
+    return null;
+  }
+};
+
+/**
+ * Inject a LiteLLM virtual key into the openrouter:default profile on the agent PVC.
+ * Replaces the raw sk-or-v1-... key so OpenRouter calls route through LiteLLM.
+ * The init container runs in patch mode for existing files and does NOT update
+ * openrouter:default, so this injection persists across gateway restarts.
+ */
+const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, virtualKey) => {
+  if (!virtualKey) return;
+  const escaped = virtualKey.replace(/'/g, "\\'");
+  const script = [
+    `const fs = require('fs');`,
+    `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
+    `try {`,
+    `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
+    `  store.profiles['openrouter:default'] = Object.assign({}, store.profiles['openrouter:default'] || {}, { key: '${escaped}' });`,
+    `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
+    `  process.stdout.write('ok');`,
+    `} catch(e) { process.stdout.write('skip:' + e.message); }`,
+  ].join(' ');
+
+  const execOnPod = async (podName) => new Promise((resolve, reject) => {
+    const stdoutStream = new stream.PassThrough();
+    k8sExec.exec(
+      NAMESPACE,
+      podName,
+      'clawdbot-gateway',
+      ['node', '-e', script],
+      stdoutStream,
+      stdoutStream,
+      null,
+      false,
+      (status) => {
+        if (status.status === 'Success') resolve();
+        else reject(new Error(status.message || 'exec failed'));
+      },
+    ).catch(reject);
+  });
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const gwPod = await waitForReadyGatewayPod(90000, 5000);
+      if (!gwPod) {
+        console.warn(`[k8s-provisioner] openrouter key inject skipped for ${agentId}: no ready gateway pod`);
+        return;
+      }
+      await execOnPod(gwPod.metadata.name);
+      console.log(`[k8s-provisioner] openrouter key injected for ${agentId}`);
+      return;
+    } catch (err) {
+      if (attempt < 2) {
+        console.warn(`[k8s-provisioner] openrouter key inject attempt ${attempt} failed for ${agentId}: ${err.message} — retrying`);
+        await new Promise((r) => setTimeout(r, 10000));
+      } else {
+        console.warn(`[k8s-provisioner] openrouter key inject skipped for ${agentId}: ${err.message}`);
+      }
+    }
   }
 };
 
@@ -1511,7 +1653,9 @@ const applyOpenClawModelDefaults = async (config) => {
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
   config.models.providers.openrouter = {
-    baseUrl: 'https://openrouter.ai/api/v1',
+    // Route through LiteLLM when available so all OpenRouter calls are visible in spend logs
+    // and benefit from centralized failover. Falls back to direct OpenRouter if LiteLLM is absent.
+    baseUrl: process.env.LITELLM_BASE_URL || 'https://openrouter.ai/api/v1',
     api: 'openai-completions',
     models: [
       {
@@ -1633,31 +1777,57 @@ const provisionOpenClawAccount = async ({
   applyOpenClawAcpxPluginDefaults(config);
   const { codexCredentials, devAgentIds, devAgentModel } = await applyOpenClawModelDefaults(config);
 
-  if (process.env.LITELLM_BASE_URL) {
-    // Issue a per-agent LiteLLM virtual key and inject it as the openai-codex Bearer token.
-    // LiteLLM authenticates the virtual key and routes to chatgpt/gpt-5.4 using its own
-    // stored OAuth tokens — no raw OAuth token injection into per-agent PVC files needed.
-    const virtualKey = await issueLiteLLMVirtualKey(accountId);
-    if (virtualKey) {
-      await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, [{
-        profileId: 'openai-codex:codex-cli',
-        credential: {
+  const isDevAgent = devAgentIds.includes(accountId);
+  let codexVirtualKey = null;
+  if (isDevAgent) {
+    // Only dev agents get Codex credentials. Community agents use OpenRouter/Gemini only
+    // and must NOT have openai-codex:codex-cli keys — acpx_run uses that profile and would
+    // burn shared Codex rate limits if community agents have access.
+    if (process.env.LITELLM_BASE_URL) {
+      // Issue a per-agent LiteLLM virtual key and inject it as the openai-codex Bearer token.
+      // LiteLLM authenticates the virtual key and routes to chatgpt/gpt-5.4 using its own
+      // stored OAuth tokens — no raw OAuth token injection into per-agent PVC files needed.
+      codexVirtualKey = await issueLiteLLMVirtualKey(accountId);
+      if (codexVirtualKey) {
+        // Inject the same virtual key into all 3 codex profiles. All 3 route to the same
+        // LiteLLM model (openai-codex/gpt-5.4) which has 3 deployments (one per account);
+        // LiteLLM's least-busy routing distributes and falls back between accounts
+        // transparently. The gateway's profile rotation serves as a secondary fallback.
+        // Far-future expires prevents clawdbot-auth-seed from overwriting virtual keys
+        // with raw JWTs on gateway restarts (init container only overwrites if its token
+        // expiry is later than the existing profile's expires field).
+        const codexCredential = {
           type: 'oauth',
           provider: 'openai-codex',
-          access: virtualKey,
-          // Far-future expires: prevents the clawdbot-auth-seed init container from
-          // overwriting this virtual key on gateway restarts. The init container checks
-          // codexExpires > existing.expires — the real token expires in ~1 day, so
-          // a 1-year expires here means the check fails and the virtual key is preserved.
+          access: codexVirtualKey,
           expires: Date.now() + 365 * 24 * 3600 * 1000,
-        },
-      }]);
+        };
+        await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, [
+          { profileId: 'openai-codex:codex-cli', credential: codexCredential },
+          { profileId: 'openai-codex:account-2', credential: codexCredential },
+          { profileId: 'openai-codex:account-3', credential: codexCredential },
+        ]);
+      } else {
+        // LiteLLM key generation failed — fall back to raw OAuth token injection
+        await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+      }
     } else {
-      // LiteLLM key generation failed — fall back to raw OAuth token injection
       await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
     }
-  } else {
-    await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+  }
+
+  // Route OpenRouter calls through LiteLLM for all agents when LiteLLM is available.
+  // openrouter.baseUrl is set to LiteLLM in applyOpenClawModelDefaults, so the gateway
+  // will send openrouter/... model requests to LiteLLM — which requires a virtual key.
+  // Dev agents reuse their Codex virtual key (it already grants OpenRouter model access).
+  // Community agents get a separate key scoped to OpenRouter models only (no Codex).
+  if (process.env.LITELLM_BASE_URL) {
+    const openRouterKey = isDevAgent
+      ? codexVirtualKey // reuse — already has openrouter/* in models scope
+      : await issueLiteLLMOpenRouterKey(accountId);
+    if (openRouterKey) {
+      await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
+    }
   }
   applySkillEnvEntriesToConfig(config, skillEnv);
 
@@ -2381,6 +2551,8 @@ const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) 
       `  removed="${target}\\n$removed"`,
       'fi',
     ].join('\n')),
+    // Recreate sessions dir so any in-flight session writes don't ENOENT-crash the gateway
+    `mkdir -p "/state/agents/${accountId}/sessions"`,
     'printf "%s" "$removed"',
   ].join('\n');
 
