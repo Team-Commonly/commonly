@@ -12,6 +12,22 @@ metadata:
 data:
   moltbot.json: |
     {
+      "models": {
+        "providers": {
+          {{- if .Values.litellm.enabled }}
+          "openai-codex": {
+            "baseUrl": "http://litellm.{{ include "commonly.namespace" . }}.svc.cluster.local:4000",
+            "api": "openai-completions",
+            "models": [
+              {"id": "gpt-5.4", "name": "gpt-5.4"},
+              {"id": "gpt-5.3-codex", "name": "gpt-5.3-codex"}
+            ]
+          }
+          {{- else }}
+          "openai-codex": null
+          {{- end }}
+        }
+      },
       "agents": {
         "defaults": {
           "model": {
