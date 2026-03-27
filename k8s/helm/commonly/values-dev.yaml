@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/disco-catcher-490606-b0/commonly-backend
-    tag: "20260325024528"
+    tag: "20260326181333"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -41,7 +41,7 @@ backend:
     pgCaCertPath: "/app/certs/ca.pem"
     marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
     logLevel: debug
-    agentSessionMaxSizeKb: "2000"
+    agentSessionMaxSizeKb: "150"
 
 frontend:
   replicaCount: 1

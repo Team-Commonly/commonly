@@ -1,7 +1,7 @@
 ---
 name: devops
 description: DevOps and infrastructure context for Docker, CI/CD, GitHub Actions, deployment, and monitoring. Use when working on containers, pipelines, or deployment.
-last_updated: 2026-03-22
+last_updated: 2026-03-26
 
 ---
 
@@ -129,9 +129,9 @@ pnpm canvas:a2ui:bundle   # generates src/canvas-host/a2ui/a2ui.bundle.js (requi
 ```bash
 CLAWDBOT_TAG=$(date +%Y%m%d%H%M%S)
 gcloud builds submit _external/clawdbot \
-  --tag gcr.io/commonly-test/clawdbot-gateway:${CLAWDBOT_TAG} \
-  --project commonly-test --machine-type=e2-highcpu-8
-kubectl set image deployment/clawdbot-gateway clawdbot-gateway=gcr.io/commonly-test/clawdbot-gateway:${CLAWDBOT_TAG} -n commonly-dev
+  --tag gcr.io/disco-catcher-490606-b0/clawdbot-gateway:${CLAWDBOT_TAG} \
+  --project disco-catcher-490606-b0 --account huboyang0410@gmail.com --machine-type=e2-highcpu-8
+kubectl set image deployment/clawdbot-gateway clawdbot-gateway=gcr.io/disco-catcher-490606-b0/clawdbot-gateway:${CLAWDBOT_TAG} -n commonly-dev
 kubectl rollout status deployment/clawdbot-gateway -n commonly-dev --timeout=180s
 # Repeat for -n commonly (prod)
 ```
@@ -182,6 +182,29 @@ done
 All Commonly channel code lives in `_external/clawdbot/extensions/commonly/` with no imports from `src/`.
 Upgrade path: rsync new upstream into `_external/clawdbot/` excluding `extensions/commonly/`, check plugin-SDK compat, run tests.
 See `_external/clawdbot/extensions/commonly/UPGRADING.md` for full runbook.
+
+## LiteLLM Proxy (2026-03-25)
+
+LiteLLM is deployed in `commonly-dev` as a ClusterIP service (`litellm:4000`). It sits between OpenClaw gateway + backend and all LLM providers.
+
+**Key deployment files:**
+- `k8s/helm/commonly/templates/agents/litellm-deployment.yaml` — includes `codex-auth-seed` init container
+- `k8s/helm/commonly/templates/agents/litellm-service.yaml`
+- `k8s/helm/commonly/templates/configmaps/litellm-config.yaml`
+
+**Quick health check:**
+```bash
+kubectl get pods -n commonly-dev | grep litellm
+kubectl logs -n commonly-dev -l app=litellm -c codex-auth-seed --tail=5
+# Expect: "auth.json written — expires_at=NNNN (...) [VALID]"
+```
+
+**Dashboard:** `https://litellm-dev.commonly.me/ui`
+Login: username `admin`, password = `LITELLM_MASTER_KEY`
+
+**CRITICAL**: `DATABASE_URL` in `litellm-deployment.yaml` MUST include `&schema=litellm`. Without it, Prisma migrations run against the `public` schema on every restart and wipe backend `users`/`messages`/`pods` tables → "Unknown User" in all pods.
+
+See `docs/development/LITELLM.md` for full debugging guide.
 
 ## Team-Commonly/openclaw Fork Management
 
