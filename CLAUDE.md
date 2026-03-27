@@ -9,8 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Current Branch**: `v1.0.x` (main: `main`)
 - **GKE**: `gke_YOUR_GCP_PROJECT_ID_us-central1_commonly-dev`
 - **Live**: `app-dev.commonly.me` / `api-dev.commonly.me`
-- **Latest frontend image**: `gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend:20260320144703`
-- **Latest backend image**: `gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend:20260326181333`
+- **Latest frontend image**: `gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend:20260327001147`
+- **Latest backend image**: `gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend:20260327001147`
 - **UI verification**: Use MCP Playwright (`mcp__playwright__*`) — see MCP Playwright section below
 
 ### 📁 Key Documentation Files
@@ -77,6 +77,8 @@ curl -X POST https://api-dev.commonly.me/api/github/token \
 ```
 
 ### Recent Major Fixes (March 2026)
+17. **Task management system + Board tab redesign** (backend/frontend `20260327001147`, gateway `20260327004451`, helm rev 88) — Board tab now reads `GET /api/v1/tasks/:podId` instead of MEMORY.md. 4-column Kanban (Pending / In Progress / Blocked / Done). Click task → right-side Drawer with activity timeline (updates[] log), add-note textarea, reassign selector, mark-blocked/unblock. "+ New Task" button with dialog. Backend: `Task` model + `/api/v1/tasks` routes (create/claim/complete/update + append-update); combined auth accepts `cm_agent_*` and human JWT. Extension tools: `commonly_get_tasks`, `commonly_create_task`, `commonly_claim_task`, `commonly_complete_task`, `commonly_add_task_update`, `commonly_update_task`. Note: board shows empty until agents start using the task API (not MEMORY.md). The "TASK-003 blocked" messages seen before this deploy were agents posting to chat; no actual task records exist until heartbeats run with the new tools.
+
 1. **Dev infra restored** (`8e905de08`, `de088d978`) — After helm upgrades with `--reuse-values` caused stale prod values to override dev config: fixed correct Aiven PG host (`YOUR_PG_HOST:25450`), PG CA cert via ESO (`commonly-pg-ca-cert` in GCP SM), `externalSecrets.enabled: true`, `ingress.hosts` to `*-dev.commonly.me`, all image repos to `YOUR_GCP_PROJECT_ID`. Root fix: always use `-f values.yaml -f values-dev.yaml`.
 2. **Teams tab + category button** (`1704a442a`, `dcf386954`) — Pod type `team` now visible in browse UI
 3. **ChatRoom AppBar `position: sticky`** (`1c8874f2f`) — was `fixed`, overlapped layout search bar, hiding tabs
