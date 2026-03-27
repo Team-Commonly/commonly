@@ -35,7 +35,16 @@ data:
           api_key: os.environ/GEMINI_API_KEY
 
       # --- OpenRouter (free tier, community agents) ---
+      # Registered with both prefixed and un-prefixed model names:
+      # - openrouter/* used when gateway calls via openai-codex/gpt-5.4 fallback path
+      # - nvidia/* / arcee-ai/* used when gateway uses openrouter:default profile
+      #   (OpenClaw strips the "openrouter/" prefix before sending to the provider)
       - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+        litellm_params:
+          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+          api_key: os.environ/OPENROUTER_API_KEY
+
+      - model_name: nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
           model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
           api_key: os.environ/OPENROUTER_API_KEY
@@ -45,10 +54,18 @@ data:
           model: openrouter/arcee-ai/trinity-large-preview:free
           api_key: os.environ/OPENROUTER_API_KEY
 
-      # --- Codex (chatgpt/ provider, OAuth tokens from codex-auth-seed init container) ---
-      # The init container parses the real JWT exp claim so LiteLLM never uses a stale token
-      # or triggers interactive device auth on startup. The daily refresh job restarts this
-      # pod after refreshing the secret so the init container always picks up fresh tokens.
+      - model_name: arcee-ai/trinity-large-preview:free
+        litellm_params:
+          model: openrouter/arcee-ai/trinity-large-preview:free
+          api_key: os.environ/OPENROUTER_API_KEY
+
+      # --- Codex (chatgpt/ provider, 3 accounts for independent rate-limit pools) ---
+      # Account-1: token written to /chatgpt-auth/auth.json by codex-auth-seed init container.
+      # Accounts 2 & 3: tokens passed via api_key in litellm_params (env var, no auth.json needed).
+      # All three serve the same model names — LiteLLM's least-busy routing distributes requests
+      # and falls back to accounts 2 or 3 automatically when account-1 hits 429.
+      # Note: accounts 1 & 2 share the same ChatGPT team plan; account-3 is a separate plan
+      # with a fully independent weekly rate-limit pool.
       - model_name: gpt-5.4
         model_info:
           mode: responses
@@ -60,6 +77,22 @@ data:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4
+
+      # Account-2 fallback
+      - model_name: openai-codex/gpt-5.4
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4
+          api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_2
+
+      # Account-3 fallback (separate ChatGPT plan — independent rate-limit pool)
+      - model_name: openai-codex/gpt-5.4
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4
+          api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_3
 
       # --- OpenAI (optional, for embeddings) ---
       - model_name: text-embedding-3-large
@@ -76,10 +109,16 @@ data:
       # Distribute across 3 Codex accounts; fall over on 429 or auth errors
       routing_strategy: least-busy
       enable_pre_call_checks: true
+      # When ALL Codex accounts are exhausted (weekly quota), fall back to OpenRouter.
+      # This applies to acpx_run calls that route gpt-5.4 through LiteLLM.
+      fallbacks:
+        - {"gpt-5.4": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"openai-codex/gpt-5.4": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+      # Retry once before triggering fallback to catch transient errors
+      num_retries: 1
+      retry_after: 5
 
     litellm_settings:
-      # Store full request/response in spend logs for debugging
-      store_prompts_in_spend_logs: true
       # Drop unsupported params instead of erroring (important for OpenRouter quirks)
       drop_params: true
 
@@ -90,4 +129,9 @@ data:
       store_model_in_db: true
       # Allow UI access
       ui_access_mode: "all"
+      # Auto-purge spend logs older than 2 days to keep Aiven PG storage small
+      max_request_log_retention_days: 2
+      # Store full prompt/response bodies in LiteLLM_SpendLogs for UI inspection
+      # NOTE: must be under general_settings (not litellm_settings) — that's where the code reads it
+      store_prompts_in_spend_logs: true
 {{- end }}
