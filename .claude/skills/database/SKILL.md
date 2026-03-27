@@ -93,6 +93,42 @@ async function ensureUserInPostgres(mongoUserId) {
 }
 ```
 
+### PG Pod Auto-Sync (2026-03-25)
+
+PG `pods` table is populated **lazily** — pods are not eagerly mirrored from MongoDB. After an Aiven PG host switch (or any fresh PG instance), the table will be empty, causing `GET /api/pg/messages/:podId` to return 404 for all pods.
+
+**Fix**: `pgMessageController.js` calls `syncPodFromMongo(podId, userId)` whenever `PGPod.findById()` returns null:
+
+```javascript
+async function syncPodFromMongo(podId, requestingUserId) {
+  const mongoPod = await MongoPod.findById(podId).lean();
+  if (!mongoPod) return null;
+  return PGPod.create(
+    mongoPod.name, mongoPod.description || '', mongoPod.type || 'chat',
+    requestingUserId, podId,
+  );
+}
+
+// In getMessages and createMessage:
+let pod = await PGPod.findById(podId);
+if (!pod) {
+  pod = await syncPodFromMongo(podId, userId);
+  if (!pod) return res.status(404).json({ msg: 'Pod not found' });
+}
+```
+
+First message load creates the PG pod row automatically. No data recovery for messages from before the host switch — they are gone. All new messages persist from the first access onward.
+
+### LiteLLM PG Schema Isolation (2026-03-25) — CRITICAL
+
+LiteLLM shares Aiven `defaultdb` with the backend but **must use its own schema**. LiteLLM's `DATABASE_URL` includes `&schema=litellm` so Prisma runs all migrations in the `litellm` schema, not `public`.
+
+**Without `schema=litellm`**: Prisma runs against `public` on every LiteLLM pod restart (daily Codex token refresh, manual restart, etc.) and wipes `public.users`, `public.messages`, `public.pods` → all pod chats show "Unknown User", messages lost.
+
+**With `schema=litellm`**: LiteLLM tables (`LiteLLM_SpendLogs`, `LiteLLM_VerificationToken`, `_prisma_migrations`) live in the `litellm` schema. Backend `public` schema is untouched. Verified by restarting LiteLLM and confirming `public.users` count unchanged.
+
+Key file: `k8s/helm/commonly/templates/agents/litellm-deployment.yaml` — `DATABASE_URL` env var.
+
 ## PostgreSQL (Aiven) — TLS / CA Cert (2026-03-22)
 
 - **Host**: `YOUR_PG_HOST:25450`
