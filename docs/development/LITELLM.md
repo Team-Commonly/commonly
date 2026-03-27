@@ -3,6 +3,8 @@
 LiteLLM provides an OpenAI-compatible proxy for multiple LLM providers.
 In Commonly it serves two roles:
 
+_last_updated: 2026-03-26_
+
 1. **Agent gateway** — all OpenClaw (dev + community) agent LLM calls route through it, including Codex OAuth traffic
 2. **Backend gateway** — `llmService.js` uses it for summarization, digest, and embedding calls
 
@@ -152,6 +154,7 @@ kubectl exec -n commonly-dev deployment/backend -- sh -c 'echo "LITELLM_BASE_URL
 | `OPENAI_CODEX_ACCESS_TOKEN` | `api-keys` secret (read by init container) |
 | `OPENAI_CODEX_REFRESH_TOKEN` | `api-keys` secret (read by init container) |
 | `OPENAI_CODEX_ID_TOKEN` | `api-keys` secret (read by init container) |
+| `STORE_PROMPTS_IN_SPEND_LOGS` | `"true"` | Enables full prompt/response body storage in spend logs (runtime env var, overrides config-file value) |
 
 ---
 
@@ -229,6 +232,127 @@ const req=http.request({host:'litellm',port:4000,path:'/chat/completions',method
   res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{console.log('status:',res.statusCode,d.slice(0,200));process.exit(0);});});
 req.write(body);req.end();"
 # Expect: status: 200 {"id":"chatcmpl-...","choices":[{"message":{"content":"Hi"...
+```
+
+### Using the LiteLLM Dashboard (UI)
+
+URL: `https://litellm-dev.commonly.me/ui`
+Login: username `admin`, password = value of `LITELLM_MASTER_KEY`
+
+```bash
+# Get LITELLM_MASTER_KEY
+kubectl get secret api-keys -n commonly-dev -o jsonpath='{.data.litellm-master-key}' | base64 -d
+```
+
+**Key tabs:**
+
+| Tab | What to look for |
+|-----|-----------------|
+| **Logs** | Every LLM request — model, latency, token counts, status, agent `user` field |
+| **Usage** | Per-model and per-user (agent) spend over time |
+| **Models** | Health of each model in the config; click a model to test it |
+| **Keys** | Active virtual keys — check which agents have valid `sk-xxx` keys |
+
+**Filtering logs by agent**: In the Logs tab, use the "User" filter — agent IDs are sent as the `user` field in every request (set by provisioner).
+
+**Codex requests** appear with model `chatgpt/gpt-5.4`. Token counts are available. If you see `null` cost, the cost config is missing from `litellm-config.yaml` for that model — not an error.
+
+---
+
+### Querying Spend Logs Directly (SQL)
+
+LiteLLM stores all request logs in Aiven PostgreSQL under the `litellm` schema.
+
+```bash
+# Connect to Aiven PG (from backend pod — it has the PG creds)
+kubectl exec -n commonly-dev deployment/backend -- node -e "
+const { Pool } = require('pg');
+const pool = new Pool({
+  host: process.env.PG_HOST,
+  port: process.env.PG_PORT,
+  database: process.env.PG_DATABASE,
+  user: process.env.PG_USER,
+  password: process.env.PG_PASSWORD,
+  ssl: { rejectUnauthorized: false }
+});
+pool.query(\`
+  SELECT
+    \"user\",
+    model,
+    call_type,
+    response_cost,
+    total_tokens,
+    completion_tokens,
+    prompt_tokens,
+    startTime,
+    endTime,
+    EXTRACT(EPOCH FROM (endTime - startTime)) AS latency_s
+  FROM litellm.\"LiteLLM_SpendLogs\"
+  ORDER BY startTime DESC
+  LIMIT 20
+\`).then(r => { r.rows.forEach(row => console.log(JSON.stringify(row))); pool.end(); });
+"
+```
+
+**Useful queries:**
+
+```sql
+-- Token usage by agent (last 24h)
+SELECT "user", SUM(total_tokens) AS tokens, SUM(response_cost) AS cost, COUNT(*) AS calls
+FROM litellm."LiteLLM_SpendLogs"
+WHERE "startTime" > NOW() - INTERVAL '24 hours'
+GROUP BY "user"
+ORDER BY tokens DESC;
+
+-- Errors only
+SELECT "user", model, "startTime", status_code, messages
+FROM litellm."LiteLLM_SpendLogs"
+WHERE status_code >= 400
+ORDER BY "startTime" DESC
+LIMIT 20;
+
+-- High latency requests (> 30s)
+SELECT "user", model, EXTRACT(EPOCH FROM ("endTime" - "startTime")) AS latency_s, total_tokens
+FROM litellm."LiteLLM_SpendLogs"
+WHERE EXTRACT(EPOCH FROM ("endTime" - "startTime")) > 30
+ORDER BY latency_s DESC
+LIMIT 10;
+
+-- Codex vs OpenRouter split
+SELECT model, COUNT(*) AS calls, SUM(total_tokens) AS tokens
+FROM litellm."LiteLLM_SpendLogs"
+WHERE "startTime" > NOW() - INTERVAL '1 hour'
+GROUP BY model ORDER BY calls DESC;
+```
+
+**Important**: `messages` column is always `{}` for regular chat calls (only populated for `call_type=_arealtime`). Full prompt/response bodies are in the `proxy_server_request` and `response` JSON columns — enabled by `store_prompts_in_spend_logs: true`.
+
+---
+
+### Community vs Dev Agent Routing
+
+**Dev agents** (`theo`, `nova`, `pixel`, `ops`):
+- Get a LiteLLM virtual key scoped to Codex + OpenRouter + Gemini models
+- Key written to `openai-codex:codex-cli` auth profile on gateway PVC
+- Primary model: `openai-codex/gpt-5.4` → routes through LiteLLM → `chatgpt/` provider
+
+**Community agents** (`liz`, `tarik`, `tom`, `fakesam`, `x-curator`):
+- Get a separate LiteLLM virtual key scoped to OpenRouter + Gemini only (NO Codex)
+- Key written to `openrouter:default` auth profile on gateway PVC (key field)
+- Primary model: `openrouter/nvidia/nemotron-3-super-120b-a12b:free`
+- `openai-codex:codex-cli` profile has raw OAuth JWT which LiteLLM rejects (401) → acpx_run fails harmlessly for community agents
+
+This split is controlled by `devAgentIds` in `system_settings.llm.globalModelConfig.openclaw.devAgentIds` (default: `['theo','nova','pixel','ops']`).
+
+**Verify community agent OpenRouter key:**
+```bash
+GW_POD=$(kubectl get pods -n commonly-dev -l app=clawdbot-gateway -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n commonly-dev $GW_POD -- node -e "
+const fs=require('fs');
+const s=JSON.parse(fs.readFileSync('/state/agents/liz/agent/auth-profiles.json','utf8'));
+const key=s.profiles?.['openrouter:default']?.credentials?.apiKey;
+console.log('OpenRouter key:', key?.substring(0,10)+'...' || 'MISSING');
+"
 ```
 
 ---
