@@ -19,12 +19,11 @@ async function main() {
   }
 
   // Add user to pod if not already a member
-  const isMember = pod.members?.some(m =>
-    (m.userId?.toString() || m.toString()) === user._id.toString()
-  );
+  // Pod.members is a plain ObjectId array — do not push {userId, role} objects
+  const isMember = pod.members?.some(m => m.toString() === user._id.toString());
 
   if (!isMember) {
-    pod.members.push({ userId: user._id, role: 'member' });
+    pod.members.push(user._id);
     await pod.save();
     console.log('Added openclaw-cuz to pod:', pod.name);
   } else {
