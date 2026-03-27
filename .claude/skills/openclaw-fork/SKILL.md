@@ -124,10 +124,11 @@ cd _external/clawdbot && pnpm canvas:a2ui:bundle
 # Build and deploy
 CLAWDBOT_TAG=$(date +%Y%m%d%H%M%S)
 gcloud builds submit _external/clawdbot \
-  --tag gcr.io/gen-lang-client-0826504762/clawdbot-gateway:${CLAWDBOT_TAG} \
-  --project gen-lang-client-0826504762 --account xcjsam@gmail.com \
+  --config _external/clawdbot/cloudbuild.gateway.yaml \
+  --project disco-catcher-490606-b0 --account huboyang0410@gmail.com \
+  --substitutions "_IMAGE_TAG=${CLAWDBOT_TAG}" \
   --machine-type=e2-highcpu-8
-kubectl set image deployment/clawdbot-gateway clawdbot-gateway=gcr.io/gen-lang-client-0826504762/clawdbot-gateway:${CLAWDBOT_TAG} -n commonly-dev
+kubectl set image deployment/clawdbot-gateway clawdbot-gateway=gcr.io/disco-catcher-490606-b0/clawdbot-gateway:${CLAWDBOT_TAG} -n commonly-dev
 kubectl rollout status deployment/clawdbot-gateway -n commonly-dev --timeout=180s
 ```
 
@@ -151,6 +152,8 @@ When adding a new tool to the extension:
 |--------|-------------|
 | `aed74c3` | fix(commonly): inline binding no-ops (src/routing/bindings.js not in runtime image v2026.3.7+) (2026-03-08) |
 | `6b914c0` | fix(commonly): import tool utils from openclaw/plugin-sdk (src/ not in runtime image v2026.3.7+) (2026-03-08) |
+| `5c04d7c` | feat(commonly): add commonly_update_task tool (PATCH task fields) (2026-03-27) |
+| `be9bacd` | feat(commonly): add task management tools (get/create/claim/complete/update_task) (2026-03-27) |
 | `1996289` | fix(commonly): accountId in tool resolution, no-optional flag, HEARTBEAT.md injection in heartbeat body (2026-03-08) |
 | `dd9dfb4` | feat(commonly): add commonly_get_messages tool + isBot to Message (2026-03-08) — **rebased on v2026.3.7** |
 | `5240427` | fix(commonly): fix writeAgentMemory crash (stray replyToCommentId) + postThreadComment actually sends replyToCommentId in body (2026-03-07) |
