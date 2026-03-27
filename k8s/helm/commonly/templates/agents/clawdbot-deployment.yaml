@@ -504,6 +504,22 @@ spec:
               name: api-keys
               key: deepgram-api-key
               optional: true
+        # GitHub PAT — inherited by acpx_run sub-agents so they can clone repos and open PRs
+        - name: GITHUB_PAT
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_PAT
+              optional: true
+        # LiteLLM — routes acpx_run calls through LiteLLM for unified logging + model fallback
+        - name: LITELLM_BASE_URL
+          value: "http://litellm:4000"
+        - name: LITELLM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: litellm-master-key
+              optional: true
         ports:
         - containerPort: {{ .Values.agents.clawdbot.config.gatewayPort | default 18789 }}
           name: gateway
