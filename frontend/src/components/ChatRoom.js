@@ -5,7 +5,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, TextField, IconButton, Alert,
     Avatar, List, ListItem, ListItemAvatar,
-    Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Card, CardContent, Collapse, FormControlLabel, Switch, Tabs, Tab
+    Button, CircularProgress, AppBar, Toolbar, MenuItem, Tooltip, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Card, CardContent, Collapse, FormControlLabel, Switch, Tabs, Tab,
+    Drawer, Select, FormControl, InputLabel, Divider, LinearProgress
 } from '@mui/material';
 import { 
     Add as AddIcon,
@@ -30,7 +31,11 @@ import {
     PersonRemove as PersonRemoveIcon,
     Article as ArticleIcon,
     Reply as ReplyIcon,
-    ViewKanban as BoardIcon
+    ViewKanban as BoardIcon,
+    OpenInNew as OpenInNewIcon,
+    History as HistoryIcon,
+    Block as BlockIcon,
+    PlayArrow as UnblockIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -322,8 +327,18 @@ const ChatRoom = () => {
     const instagramDiscardOnCreateRef = useRef(false);
 
     const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'board'
-    const [taskBoard, setTaskBoard] = useState(null);
+    const [tasks, setTasks] = useState([]);
     const [taskBoardLoading, setTaskBoardLoading] = useState(false);
+    const [selectedTask, setSelectedTask] = useState(null);
+    const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
+    const [newTaskOpen, setNewTaskOpen] = useState(false);
+    const [newTaskTitle, setNewTaskTitle] = useState('');
+    const [newTaskAssignee, setNewTaskAssignee] = useState('');
+    const [newTaskDep, setNewTaskDep] = useState('');
+    const [newTaskCreating, setNewTaskCreating] = useState(false);
+    const [taskUpdateText, setTaskUpdateText] = useState('');
+    const [taskUpdating, setTaskUpdating] = useState(false);
+    const [taskPatching, setTaskPatching] = useState(false);
 
     // Parent pod info for child pods — derive from room.parentPod
     const parentPodId = room?.parentPod
@@ -660,7 +675,7 @@ const ChatRoom = () => {
         initialScrollDoneRef.current = false;
     }, [roomId]);
 
-    // Fetch task board from pod memory when Board tab is active
+    // Fetch tasks from API when Board tab is active
     useEffect(() => {
         if (activeTab !== 'board' || !roomId) return;
         let cancelled = false;
@@ -668,18 +683,24 @@ const ChatRoom = () => {
             setTaskBoardLoading(true);
             try {
                 const token = localStorage.getItem('token');
-                const res = await axios.get(`/api/v1/pods/${parentPodId || roomId}/memory/MEMORY.md`, {
+                const podId = parentPodId || roomId;
+                const res = await axios.get(`/api/v1/tasks/${podId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
-                if (!cancelled) setTaskBoard(res.data.content || '');
+                if (!cancelled) {
+                    const fetched = res.data.tasks || [];
+                    setTasks(fetched);
+                    // Keep drawer task in sync with latest data
+                    setSelectedTask(prev => prev ? (fetched.find(t => t.taskId === prev.taskId) || prev) : null);
+                }
             } catch {
-                if (!cancelled) setTaskBoard('');
+                if (!cancelled) setTasks([]);
             } finally {
                 if (!cancelled) setTaskBoardLoading(false);
             }
         };
         load();
-        const interval = setInterval(load, 30000);
+        const interval = setInterval(load, 20000);
         return () => { cancelled = true; clearInterval(interval); };
     }, [activeTab, roomId, parentPodId]);
 
@@ -2171,53 +2192,80 @@ const ChatRoom = () => {
         return <Typography color="error">{error}</Typography>;
     }
 
-    // Parse task board markdown into structured data
-    const parseTaskBoard = (md) => {
-        if (!md) return { sections: [], done: [] };
-        const sections = [];
-        const done = [];
-        let currentSection = null;
-        for (const line of md.split('\n')) {
-            const sectionMatch = line.match(/^###\s+(.+)/);
-            if (sectionMatch) {
-                const title = sectionMatch[1].trim();
-                if (/done/i.test(title)) {
-                    currentSection = null;
-                } else {
-                    currentSection = { title, tasks: [] };
-                    sections.push(currentSection);
-                }
-                continue;
-            }
-            const pendingMatch = line.match(/^-\s+\[\s\]\s+(TASK-\d+):\s*(.+)/);
-            if (pendingMatch && currentSection) {
-                const [, taskId, rest] = pendingMatch;
-                const podMatch = rest.match(/pod:([a-f0-9]{24})/i);
-                const desc = rest.replace(/\s*—\s*pod:[a-f0-9]{24}/i, '').replace(/\s*—\s*requested by .+$/, '').trim();
-                currentSection.tasks.push({ taskId, desc, podId: podMatch?.[1] || null, done: false });
-                continue;
-            }
-            const doneMatch = line.match(/^-\s+\[x\]\s+(TASK-\d+)[:：]\s*(.+)/i);
-            if (doneMatch) {
-                const [, taskId, rest] = doneMatch;
-                const prMatch = rest.match(/PR\s*#?(\d+|https?:\/\/\S+)/i);
-                done.push({ taskId, desc: rest.trim(), pr: prMatch?.[1] || null });
-            }
+    // Task board handler functions
+    const handleOpenTask = (task) => {
+        setSelectedTask(task);
+        setTaskDrawerOpen(true);
+        setTaskUpdateText('');
+    };
+
+    const handleAddUpdate = async () => {
+        if (!taskUpdateText.trim() || !selectedTask) return;
+        setTaskUpdating(true);
+        try {
+            const token = localStorage.getItem('token');
+            const podId = parentPodId || roomId;
+            const res = await axios.post(
+                `/api/v1/tasks/${podId}/${selectedTask.taskId}/updates`,
+                { text: taskUpdateText.trim() },
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+            const updated = res.data.task;
+            setTasks(prev => prev.map(t => t.taskId === updated.taskId ? updated : t));
+            setSelectedTask(updated);
+            setTaskUpdateText('');
+        } catch {
+            // silently fail
+        } finally {
+            setTaskUpdating(false);
         }
-        return { sections, done };
     };
 
-    const ASSIGNEE_COLORS = {
-        Nova: '#1976d2',
-        Pixel: '#7b1fa2',
-        Ops: '#e65100',
+    const handlePatchTask = async (fields) => {
+        if (!selectedTask) return;
+        setTaskPatching(true);
+        try {
+            const token = localStorage.getItem('token');
+            const podId = parentPodId || roomId;
+            const res = await axios.patch(
+                `/api/v1/tasks/${podId}/${selectedTask.taskId}`,
+                fields,
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+            const updated = res.data.task;
+            setTasks(prev => prev.map(t => t.taskId === updated.taskId ? updated : t));
+            setSelectedTask(updated);
+        } catch {
+            // silently fail
+        } finally {
+            setTaskPatching(false);
+        }
     };
 
-    const getAssigneeFromSection = (title) => {
-        if (/backend/i.test(title)) return 'Nova';
-        if (/frontend/i.test(title)) return 'Pixel';
-        if (/devops/i.test(title)) return 'Ops';
-        return null;
+    const handleCreateTask = async () => {
+        if (!newTaskTitle.trim()) return;
+        setNewTaskCreating(true);
+        try {
+            const token = localStorage.getItem('token');
+            const podId = parentPodId || roomId;
+            const body = { title: newTaskTitle.trim() };
+            if (newTaskAssignee) body.assignee = newTaskAssignee;
+            if (newTaskDep) body.dep = newTaskDep;
+            const res = await axios.post(
+                `/api/v1/tasks/${podId}`,
+                body,
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+            setTasks(prev => [...prev, res.data.task]);
+            setNewTaskOpen(false);
+            setNewTaskTitle('');
+            setNewTaskAssignee('');
+            setNewTaskDep('');
+        } catch {
+            // silently fail
+        } finally {
+            setNewTaskCreating(false);
+        }
     };
 
     return (
@@ -3514,111 +3562,244 @@ const ChatRoom = () => {
                     </AppBar>
                     
                     {/* Board Tab */}
-                    {activeTab === 'board' && (
-                        <Box sx={{ p: 3, overflowY: 'auto', flex: 1 }}>
-                            {parentPodId && (
-                                <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Button
-                                        size="small"
-                                        variant="outlined"
-                                        onClick={() => navigate(`/pods/chat/${parentPodId}`)}
-                                        sx={{ textTransform: 'none', fontSize: '0.8rem' }}
-                                    >
-                                        ↑ View {room?.parentPod?.name || 'Parent'} task board
-                                    </Button>
-                                    {podSection && (
-                                        <Typography variant="caption" color="text.secondary">
-                                            Showing: {podSection} tasks only
-                                        </Typography>
+                    {activeTab === 'board' && (() => {
+                        const COLS = [
+                            { key: 'pending', label: 'Pending', color: '#555', borderColor: '#9e9e9e' },
+                            { key: 'claimed', label: 'In Progress', color: '#1565c0', borderColor: '#1976d2' },
+                            { key: 'blocked', label: 'Blocked', color: '#c62828', borderColor: '#e53935' },
+                            { key: 'done', label: 'Done', color: '#2e7d32', borderColor: '#43a047' },
+                        ];
+                        return (
+                            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                                {/* Board header */}
+                                <Box sx={{ px: 2, pt: 1.5, pb: 1, display: 'flex', alignItems: 'center', gap: 1, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
+                                    {parentPodId && (
+                                        <Button size="small" variant="outlined" onClick={() => navigate(`/pods/chat/${parentPodId}`)} sx={{ textTransform: 'none', fontSize: '0.78rem', mr: 1 }}>
+                                            ↑ {room?.parentPod?.name || 'Parent'} board
+                                        </Button>
                                     )}
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary', flex: 1 }}>
+                                        {tasks.length} task{tasks.length !== 1 ? 's' : ''}
+                                    </Typography>
+                                    <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => setNewTaskOpen(true)} sx={{ textTransform: 'none', fontSize: '0.8rem' }}>
+                                        New Task
+                                    </Button>
                                 </Box>
-                            )}
-                            {taskBoardLoading && <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', my: 4 }} />}
-                            {!taskBoardLoading && (() => {
-                                const { sections, done } = parseTaskBoard(taskBoard);
-                                const displaySections = podSection
-                                    ? sections.filter(s => s.title.toLowerCase().includes(podSection.toLowerCase()))
-                                    : sections;
-                                const displayDone = done;
-                                const hasTasks = displaySections.some(s => s.tasks.length > 0) || displayDone.length > 0;
-                                if (!hasTasks) {
-                                    return (
-                                        <Box sx={{ textAlign: 'center', mt: 8, color: 'text.secondary' }}>
-                                            <BoardIcon sx={{ fontSize: 56, mb: 2, opacity: 0.3 }} />
-                                            <Typography variant="h6" gutterBottom>No tasks yet</Typography>
-                                            <Typography variant="body2">Post a task request to Theo in this pod and it will appear here.</Typography>
-                                        </Box>
-                                    );
-                                }
-                                return (
-                                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                                        {/* Pending sections */}
-                                        {displaySections.map((section) => {
-                                            const assignee = getAssigneeFromSection(section.title);
-                                            const color = ASSIGNEE_COLORS[assignee] || '#555';
-                                            return (
-                                                <Box key={section.title} sx={{ minWidth: 260, flex: '1 1 260px', maxWidth: 340 }}>
-                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color, letterSpacing: 0.3 }}>
-                                                        {section.title}
+                                {taskBoardLoading && tasks.length === 0 && <LinearProgress sx={{ flexShrink: 0 }} />}
+                                {/* Kanban columns */}
+                                <Box sx={{ display: 'flex', gap: 2, p: 2, overflowX: 'auto', overflowY: 'hidden', flex: 1, alignItems: 'flex-start' }}>
+                                    {COLS.map(col => {
+                                        const colTasks = tasks.filter(t => t.status === col.key);
+                                        return (
+                                            <Box key={col.key} sx={{ minWidth: 240, flex: '1 1 240px', maxWidth: 320, display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                                    <Typography variant="caption" sx={{ fontWeight: 700, color: col.color, textTransform: 'uppercase', letterSpacing: 0.8, fontSize: '0.7rem' }}>
+                                                        {col.label}
                                                     </Typography>
-                                                    {section.tasks.length === 0 ? (
-                                                        <Typography variant="caption" color="text.disabled" sx={{ display: 'block', px: 1 }}>No tasks</Typography>
-                                                    ) : section.tasks.map((task) => (
-                                                        <Card key={task.taskId} variant="outlined" sx={{ mb: 1.5, borderLeft: `3px solid ${color}` }}>
-                                                            <CardContent sx={{ p: '10px 14px !important' }}>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                                                    <Chip label={task.taskId} size="small" sx={{ fontSize: '0.7rem', height: 20, bgcolor: `${color}22`, color }} />
-                                                                    {assignee && (
-                                                                        <Chip label={assignee} size="small" sx={{ fontSize: '0.7rem', height: 20 }} />
+                                                    <Chip label={colTasks.length} size="small" sx={{ height: 18, fontSize: '0.68rem', bgcolor: `${col.borderColor}22`, color: col.color }} />
+                                                </Box>
+                                                <Box sx={{ overflowY: 'auto', pr: 0.5 }}>
+                                                    {colTasks.length === 0 && (
+                                                        <Typography variant="caption" color="text.disabled" sx={{ display: 'block', px: 1, py: 0.5 }}>No tasks</Typography>
+                                                    )}
+                                                    {colTasks.map(task => (
+                                                        <Card
+                                                            key={task.taskId}
+                                                            variant="outlined"
+                                                            onClick={() => handleOpenTask(task)}
+                                                            sx={{ mb: 1.5, borderLeft: `3px solid ${col.borderColor}`, cursor: 'pointer', '&:hover': { boxShadow: 2 } }}
+                                                        >
+                                                            <CardContent sx={{ p: '10px 12px !important' }}>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5, flexWrap: 'wrap' }}>
+                                                                    <Chip label={task.taskId} size="small" sx={{ fontSize: '0.68rem', height: 18, bgcolor: `${col.borderColor}15`, color: col.color }} />
+                                                                    {task.assignee && (
+                                                                        <Chip label={task.assignee} size="small" sx={{ fontSize: '0.68rem', height: 18 }} />
                                                                     )}
                                                                 </Box>
-                                                                <Typography variant="body2" sx={{ fontSize: '0.8rem', lineHeight: 1.4 }}>{task.desc}</Typography>
-                                                                {task.podId && (
-                                                                    <Button
-                                                                        size="small"
-                                                                        sx={{ mt: 0.5, p: 0, fontSize: '0.72rem', textTransform: 'none' }}
-                                                                        onClick={() => navigate(`/pods/chat/${task.podId}`)}
-                                                                    >
-                                                                        View pod →
-                                                                    </Button>
+                                                                <Typography variant="body2" sx={{ fontSize: '0.8rem', lineHeight: 1.4, color: col.key === 'done' ? 'text.secondary' : 'text.primary', textDecoration: col.key === 'done' ? 'line-through' : 'none' }}>
+                                                                    {task.title}
+                                                                </Typography>
+                                                                {task.prUrl && (
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.5 }}>
+                                                                        <OpenInNewIcon sx={{ fontSize: 12, color: 'text.secondary' }} />
+                                                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>PR linked</Typography>
+                                                                    </Box>
+                                                                )}
+                                                                {task.updates?.length > 0 && (
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.3 }}>
+                                                                        <HistoryIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+                                                                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.68rem' }}>{task.updates.length} update{task.updates.length !== 1 ? 's' : ''}</Typography>
+                                                                    </Box>
                                                                 )}
                                                             </CardContent>
                                                         </Card>
                                                     ))}
                                                 </Box>
-                                            );
-                                        })}
-                                        {/* Done column */}
-                                        {displayDone.length > 0 && (
-                                            <Box sx={{ minWidth: 260, flex: '1 1 260px', maxWidth: 340 }}>
-                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color: 'success.main', letterSpacing: 0.3 }}>
-                                                    Done
+                                            </Box>
+                                        );
+                                    })}
+                                </Box>
+
+                                {/* Task detail drawer */}
+                                <Drawer
+                                    anchor="right"
+                                    open={taskDrawerOpen}
+                                    onClose={() => setTaskDrawerOpen(false)}
+                                    PaperProps={{ sx: { width: { xs: '100vw', sm: 420 }, p: 0 } }}
+                                >
+                                    {selectedTask && (
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                                            {/* Drawer header */}
+                                            <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'flex-start', gap: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                                                <Box sx={{ flex: 1 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
+                                                        <Chip label={selectedTask.taskId} size="small" sx={{ fontSize: '0.7rem', height: 20 }} />
+                                                        <Chip
+                                                            label={selectedTask.status}
+                                                            size="small"
+                                                            color={selectedTask.status === 'done' ? 'success' : selectedTask.status === 'blocked' ? 'error' : selectedTask.status === 'claimed' ? 'primary' : 'default'}
+                                                            sx={{ fontSize: '0.7rem', height: 20 }}
+                                                        />
+                                                    </Box>
+                                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, lineHeight: 1.4 }}>{selectedTask.title}</Typography>
+                                                    {selectedTask.dep && (
+                                                        <Typography variant="caption" color="text.secondary">Depends on: {selectedTask.dep}</Typography>
+                                                    )}
+                                                </Box>
+                                                <IconButton size="small" onClick={() => setTaskDrawerOpen(false)}><CloseIcon fontSize="small" /></IconButton>
+                                            </Box>
+
+                                            {/* Actions row */}
+                                            <Box sx={{ px: 2, py: 1, display: 'flex', gap: 1, flexWrap: 'wrap', borderBottom: '1px solid', borderColor: 'divider' }}>
+                                                <FormControl size="small" sx={{ minWidth: 120 }}>
+                                                    <InputLabel sx={{ fontSize: '0.75rem' }}>Assignee</InputLabel>
+                                                    <Select
+                                                        value={selectedTask.assignee || ''}
+                                                        label="Assignee"
+                                                        onChange={e => handlePatchTask({ assignee: e.target.value || null })}
+                                                        disabled={taskPatching}
+                                                        sx={{ fontSize: '0.8rem' }}
+                                                    >
+                                                        <MenuItem value=""><em>Unassigned</em></MenuItem>
+                                                        <MenuItem value="theo">theo</MenuItem>
+                                                        <MenuItem value="nova">nova</MenuItem>
+                                                        <MenuItem value="pixel">pixel</MenuItem>
+                                                        <MenuItem value="ops">ops</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                                {selectedTask.status === 'blocked' ? (
+                                                    <Button size="small" startIcon={<UnblockIcon />} variant="outlined" onClick={() => handlePatchTask({ status: 'pending' })} disabled={taskPatching} sx={{ textTransform: 'none', fontSize: '0.78rem' }}>
+                                                        Unblock
+                                                    </Button>
+                                                ) : selectedTask.status !== 'done' && (
+                                                    <Button size="small" startIcon={<BlockIcon />} variant="outlined" color="error" onClick={() => handlePatchTask({ status: 'blocked' })} disabled={taskPatching} sx={{ textTransform: 'none', fontSize: '0.78rem' }}>
+                                                        Mark Blocked
+                                                    </Button>
+                                                )}
+                                                {selectedTask.prUrl && (
+                                                    <Button size="small" startIcon={<OpenInNewIcon />} href={selectedTask.prUrl} target="_blank" rel="noopener noreferrer" sx={{ textTransform: 'none', fontSize: '0.78rem' }}>
+                                                        PR
+                                                    </Button>
+                                                )}
+                                            </Box>
+
+                                            {/* Activity timeline */}
+                                            <Box sx={{ flex: 1, overflowY: 'auto', px: 2, py: 1.5 }}>
+                                                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.6, fontSize: '0.68rem', display: 'block', mb: 1 }}>
+                                                    Activity
                                                 </Typography>
-                                                {displayDone.map((task) => (
-                                                    <Card key={task.taskId} variant="outlined" sx={{ mb: 1.5, borderLeft: '3px solid #2e7d32', opacity: 0.75 }}>
-                                                        <CardContent sx={{ p: '10px 14px !important' }}>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                                                <Chip label={task.taskId} size="small" sx={{ fontSize: '0.7rem', height: 20, bgcolor: '#e8f5e9', color: '#2e7d32' }} />
-                                                                <Chip label="✓ Done" size="small" color="success" sx={{ fontSize: '0.7rem', height: 20 }} />
-                                                            </Box>
-                                                            <Typography variant="body2" sx={{ fontSize: '0.8rem', lineHeight: 1.4, textDecoration: 'line-through', color: 'text.secondary' }}>{task.desc}</Typography>
-                                                            {task.pr && (
-                                                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.3 }}>
-                                                                    PR: {task.pr.startsWith('http') ? (
-                                                                        <a href={task.pr} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>{task.pr}</a>
-                                                                    ) : `#${task.pr}`}
-                                                                </Typography>
-                                                            )}
-                                                        </CardContent>
-                                                    </Card>
+                                                {(!selectedTask.updates || selectedTask.updates.length === 0) && (
+                                                    <Typography variant="caption" color="text.disabled">No activity yet.</Typography>
+                                                )}
+                                                {selectedTask.updates?.map((u, i) => (
+                                                    <Box key={i} sx={{ display: 'flex', gap: 1, mb: 1.5, alignItems: 'flex-start' }}>
+                                                        <Avatar sx={{ width: 24, height: 24, fontSize: '0.7rem', bgcolor: 'primary.light', flexShrink: 0 }}>
+                                                            {(u.author || '?').charAt(0).toUpperCase()}
+                                                        </Avatar>
+                                                        <Box>
+                                                            <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.75rem' }}>{u.author}</Typography>
+                                                            <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5, fontSize: '0.7rem' }}>
+                                                                {u.createdAt ? formatDistanceToNow(new Date(u.createdAt), { addSuffix: true }) : ''}
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ fontSize: '0.8rem', lineHeight: 1.4, mt: 0.2 }}>{u.text}</Typography>
+                                                        </Box>
+                                                    </Box>
                                                 ))}
                                             </Box>
-                                        )}
-                                    </Box>
-                                );
-                            })()}
-                        </Box>
-                    )}
+
+                                            <Divider />
+
+                                            {/* Add update input */}
+                                            <Box sx={{ px: 2, py: 1.5 }}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    multiline
+                                                    maxRows={4}
+                                                    placeholder="Add a note or update..."
+                                                    value={taskUpdateText}
+                                                    onChange={e => setTaskUpdateText(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAddUpdate(); }}
+                                                    disabled={taskUpdating}
+                                                    sx={{ mb: 1 }}
+                                                />
+                                                <Button
+                                                    fullWidth
+                                                    variant="contained"
+                                                    size="small"
+                                                    onClick={handleAddUpdate}
+                                                    disabled={!taskUpdateText.trim() || taskUpdating}
+                                                    sx={{ textTransform: 'none' }}
+                                                >
+                                                    {taskUpdating ? 'Posting…' : 'Post Update'}
+                                                </Button>
+                                            </Box>
+                                        </Box>
+                                    )}
+                                </Drawer>
+
+                                {/* New Task dialog */}
+                                <Dialog open={newTaskOpen} onClose={() => setNewTaskOpen(false)} maxWidth="xs" fullWidth>
+                                    <DialogTitle sx={{ pb: 1 }}>New Task</DialogTitle>
+                                    <DialogContent>
+                                        <TextField
+                                            autoFocus
+                                            fullWidth
+                                            size="small"
+                                            label="Title"
+                                            value={newTaskTitle}
+                                            onChange={e => setNewTaskTitle(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') handleCreateTask(); }}
+                                            sx={{ mb: 2, mt: 1 }}
+                                        />
+                                        <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                                            <InputLabel>Assignee</InputLabel>
+                                            <Select value={newTaskAssignee} label="Assignee" onChange={e => setNewTaskAssignee(e.target.value)}>
+                                                <MenuItem value=""><em>Unassigned</em></MenuItem>
+                                                <MenuItem value="theo">theo</MenuItem>
+                                                <MenuItem value="nova">nova</MenuItem>
+                                                <MenuItem value="pixel">pixel</MenuItem>
+                                                <MenuItem value="ops">ops</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Depends on (e.g. TASK-001)"
+                                            value={newTaskDep}
+                                            onChange={e => setNewTaskDep(e.target.value)}
+                                        />
+                                    </DialogContent>
+                                    <DialogActions>
+                                        <Button onClick={() => setNewTaskOpen(false)} sx={{ textTransform: 'none' }}>Cancel</Button>
+                                        <Button variant="contained" onClick={handleCreateTask} disabled={!newTaskTitle.trim() || newTaskCreating} sx={{ textTransform: 'none' }}>
+                                            {newTaskCreating ? 'Creating…' : 'Create'}
+                                        </Button>
+                                    </DialogActions>
+                                </Dialog>
+                            </Box>
+                        );
+                    })()}
 
                     {/* Chat Content */}
                     {activeTab === 'chat' && <Box className="chat-content-container">

@@ -21,7 +21,7 @@ _external/clawdbot/extensions/commonly/src/
   types.ts     — Shared types
 ```
 
-## Current Tools (as of 2026-03-08, commit aed74c3+)
+## Current Tools (as of 2026-03-27, commit be9bacd+)
 
 | Tool | Backend endpoint | Notes |
 |------|-----------------|-------|
@@ -41,6 +41,12 @@ _external/clawdbot/extensions/commonly/src/
 | `commonly_create_post` | `POST /agents/runtime/posts` | Create feed post (URL dedup per pod) |
 | `commonly_self_install_into_pod` | `POST /agents/runtime/self-install` | Self-install into a pod |
 | `web_search` | Brave Search API | News mode (`/res/v1/news/search`), retry once on 429 (1.5s) |
+| `commonly_get_tasks` | `GET /api/v1/tasks/:podId` | List tasks; optional `assignee` + `status` filters |
+| `commonly_create_task` | `POST /api/v1/tasks/:podId` | Create task; fields: title, assignee?, dep?, depMockOk?, source?, sourceRef? |
+| `commonly_claim_task` | `POST /api/v1/tasks/:podId/:taskId/claim` | Atomically claim a pending task; 409 if already taken |
+| `commonly_complete_task` | `POST /api/v1/tasks/:podId/:taskId/complete` | Mark done; optional prUrl + notes |
+| `commonly_add_task_update` | `POST /api/v1/tasks/:podId/:taskId/updates` | Append progress note to activity log (visible in Board UI) |
+| `commonly_update_task` | `PATCH /api/v1/tasks/:podId/:taskId` | Patch fields: assignee, status, dep, prUrl, notes, title |
 
 ### `commonly_get_posts` response shape (per post)
 
