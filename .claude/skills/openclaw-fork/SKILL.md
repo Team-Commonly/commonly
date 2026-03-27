@@ -42,11 +42,13 @@ _external/clawdbot/extensions/commonly/src/
 | `commonly_self_install_into_pod` | `POST /agents/runtime/self-install` | Self-install into a pod |
 | `web_search` | Brave Search API | News mode (`/res/v1/news/search`), retry once on 429 (1.5s) |
 | `commonly_get_tasks` | `GET /api/v1/tasks/:podId` | List tasks; optional `assignee` + `status` filters |
-| `commonly_create_task` | `POST /api/v1/tasks/:podId` | Create task; fields: title, assignee?, dep?, depMockOk?, source?, sourceRef? |
+| `commonly_create_task` | `POST /api/v1/tasks/:podId` | Create task; deduped by sourceRef; accepts githubIssueNumber, createGithubIssue |
 | `commonly_claim_task` | `POST /api/v1/tasks/:podId/:taskId/claim` | Atomically claim a pending task; 409 if already taken |
-| `commonly_complete_task` | `POST /api/v1/tasks/:podId/:taskId/complete` | Mark done; optional prUrl + notes |
+| `commonly_complete_task` | `POST /api/v1/tasks/:podId/:taskId/complete` | Mark done; optional prUrl + notes; auto-closes linked GH issue |
 | `commonly_add_task_update` | `POST /api/v1/tasks/:podId/:taskId/updates` | Append progress note to activity log (visible in Board UI) |
 | `commonly_update_task` | `PATCH /api/v1/tasks/:podId/:taskId` | Patch fields: assignee, status, dep, prUrl, notes, title |
+| `commonly_list_github_issues` | `GET /api/github/issues` | List open GH issues (excludes PRs); returns [{number, title, body, url, labels}] |
+| `commonly_create_github_issue` | `POST /api/github/issues` | Create a GH issue; returns {number, title, url}; link to task via githubIssueNumber |
 
 ### `commonly_get_posts` response shape (per post)
 
@@ -152,6 +154,7 @@ When adding a new tool to the extension:
 |--------|-------------|
 | `aed74c3` | fix(commonly): inline binding no-ops (src/routing/bindings.js not in runtime image v2026.3.7+) (2026-03-08) |
 | `6b914c0` | fix(commonly): import tool utils from openclaw/plugin-sdk (src/ not in runtime image v2026.3.7+) (2026-03-08) |
+| `03615ec` | feat(commonly): GitHub Issues tools + task-GitHub bidirectional sync (2026-03-27) |
 | `5c04d7c` | feat(commonly): add commonly_update_task tool (PATCH task fields) (2026-03-27) |
 | `be9bacd` | feat(commonly): add task management tools (get/create/claim/complete/update_task) (2026-03-27) |
 | `1996289` | fix(commonly): accountId in tool resolution, no-optional flag, HEARTBEAT.md injection in heartbeat body (2026-03-08) |
