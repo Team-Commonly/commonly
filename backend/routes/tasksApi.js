@@ -5,6 +5,7 @@ const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 const Pod = require('../models/Pod');
 const Task = require('../models/Task');
 const User = require('../models/User');
+const GitHubAppService = require('../services/githubAppService');
 
 /**
  * Accept both agent runtime tokens (cm_agent_*) and regular JWT/API tokens.
@@ -100,7 +101,13 @@ router.get('/:podId', auth, async (req, res) => {
 
 /**
  * POST /api/v1/tasks/:podId
- * Create a task. Body: { title, assignee?, dep?, depMockOk?, source?, sourceRef? }
+ * Create a task. Body: { title, assignee?, dep?, depMockOk?, source?, sourceRef?,
+ *                        githubIssueNumber?, githubIssueUrl?, createGithubIssue? }
+ *
+ * Dedup: if sourceRef is provided and a task with that sourceRef already exists in this pod,
+ * returns the existing task with { task, alreadyExists: true } — no duplicate created.
+ *
+ * createGithubIssue: true — creates a GH issue from the task (board→GitHub direction).
  */
 router.post('/:podId', auth, async (req, res) => {
   try {
@@ -108,6 +115,7 @@ router.post('/:podId', auth, async (req, res) => {
     const userId = req.userId || req.user?._id;
     const {
       title, assignee, dep, depMockOk, source, sourceRef,
+      githubIssueNumber, githubIssueUrl, createGithubIssue,
     } = req.body;
 
     if (!title) return res.status(400).json({ error: 'title is required' });
@@ -115,12 +123,35 @@ router.post('/:podId', auth, async (req, res) => {
     const access = await requirePodMember(podId, userId, { write: true });
     if (access.error) return res.status(access.status).json({ error: access.error });
 
+    // Dedup: don't create a second task for the same GitHub issue
+    if (sourceRef) {
+      const existing = await Task.findOne({
+        podId: mongoose.Types.ObjectId.createFromHexString(podId),
+        sourceRef,
+      }).lean();
+      if (existing) return res.json({ task: existing, alreadyExists: true });
+    }
+
+    // Board → GitHub: optionally create a GH issue so humans can track it there too
+    let ghNumber = githubIssueNumber || null;
+    let ghUrl = githubIssueUrl || null;
+    if (createGithubIssue && title && GitHubAppService.isPatConfigured()) {
+      try {
+        const issue = await GitHubAppService.createIssue({ title, body: assignee ? `Assigned to: ${assignee}` : undefined });
+        ghNumber = issue.number;
+        ghUrl = issue.html_url;
+      } catch (ghErr) {
+        console.warn('createGithubIssue failed (non-fatal):', ghErr.message);
+      }
+    }
+
     const author = await resolveAuthor(req);
     const { taskId, taskNum } = await nextTaskId(podId);
 
     const initUpdate = { text: `Created by ${author}`, author, authorId: userId?.toString() || null, createdAt: new Date() };
     if (assignee) initUpdate.text = `Created by ${author} · assigned to ${assignee}`;
     if (sourceRef) initUpdate.text = `Created by ${author} from ${sourceRef}${assignee ? ` · assigned to ${assignee}` : ''}`;
+    if (ghNumber) initUpdate.text += ` · GH#${ghNumber}`;
 
     const task = await Task.create({
       podId,
@@ -130,8 +161,10 @@ router.post('/:podId', auth, async (req, res) => {
       assignee: assignee || null,
       dep: dep || null,
       depMockOk: !!depMockOk,
-      source: source || 'human',
-      sourceRef: sourceRef || null,
+      source: source || (ghNumber ? 'github' : 'human'),
+      sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : null),
+      githubIssueNumber: ghNumber,
+      githubIssueUrl: ghUrl,
       updates: [initUpdate],
     });
 
@@ -208,6 +241,15 @@ router.post('/:podId/:taskId/complete', auth, async (req, res) => {
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId), taskId }).lean();
       if (!existing) return res.status(404).json({ error: 'Task not found' });
       return res.status(409).json({ error: 'Task is already done', status: existing.status });
+    }
+
+    // Auto-close linked GitHub issue when task is completed
+    if (task.githubIssueNumber && GitHubAppService.isPatConfigured()) {
+      const closeComment = prUrl
+        ? `Completed via ${prUrl}`
+        : `Completed by ${author}`;
+      GitHubAppService.closeIssue({ issueNumber: task.githubIssueNumber, comment: closeComment })
+        .catch((err) => console.warn(`Failed to auto-close GH#${task.githubIssueNumber}:`, err.message));
     }
 
     return res.json({ task });

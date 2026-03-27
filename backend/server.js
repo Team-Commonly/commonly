@@ -26,6 +26,7 @@ const discordRoutes = require('./routes/discord');
 const githubRoutes = require('./routes/github');
 const analyticsRoutes = require('./routes/analytics');
 const contextApiRoutes = require('./routes/contextApi');
+const tasksApiRoutes = require('./routes/tasksApi');
 const registryRoutes = require('./routes/registry');
 const agentsRuntimeRoutes = require('./routes/agentsRuntime');
 const federationRoutes = require('./routes/federation');
@@ -164,6 +165,7 @@ app.use('/api/discord', discordRoutes);
 app.use('/api/github', githubRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/v1', contextApiRoutes); // Context API for MCP and external agents
+app.use('/api/v1/tasks', tasksApiRoutes); // Task management for dev agents
 app.use('/api/registry', registryRoutes); // Agent Registry (package manager for agents)
 app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
 app.use('/api/federation', federationRoutes); // Cross-pod federation

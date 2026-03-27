@@ -8,6 +8,15 @@ const GitHubAppService = require('../services/githubAppService');
 const VALID_NAME = /^[a-zA-Z0-9_.-]+$/;
 
 /**
+ * Accept both agent tokens and human JWT for issue endpoints.
+ */
+function anyAuth(req, res, next) {
+  const token = (req.header('Authorization') || '').replace('Bearer ', '');
+  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
+  return auth(req, res, next);
+}
+
+/**
  * POST /api/github/token
  *
  * Agents call this (via acpx_run curl) to get a GitHub token for git/gh CLI operations.
@@ -88,6 +97,88 @@ router.get('/status', auth, async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ configured: false, error: err.message });
+  }
+});
+
+// ─── GitHub Issues API ───────────────────────────────────────────────────────
+
+/**
+ * GET /api/github/issues
+ * List open issues (excludes pull requests).
+ * Query: ?owner=Team-Commonly&repo=commonly&per_page=20
+ */
+router.get('/issues', anyAuth, async (req, res) => {
+  try {
+    if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
+      return res.status(503).json({ error: 'No GitHub credentials configured' });
+    }
+    const { owner = 'Team-Commonly', repo = 'commonly', per_page } = req.query;
+    if (!VALID_NAME.test(owner) || !VALID_NAME.test(repo)) {
+      return res.status(400).json({ error: 'Invalid owner or repo' });
+    }
+    const issues = await GitHubAppService.listOpenIssues({ owner, repo, perPage: Number(per_page) || 20 });
+    return res.json({ issues: issues.map((i) => ({ number: i.number, title: i.title, body: i.body, url: i.html_url, labels: i.labels?.map((l) => l.name) })) });
+  } catch (err) {
+    console.error('GET /github/issues error:', err.message);
+    return res.status(500).json({ error: 'Failed to list issues', detail: err.message });
+  }
+});
+
+/**
+ * POST /api/github/issues
+ * Create a new GitHub issue.
+ * Body: { title, body?, labels?, owner?, repo? }
+ */
+router.post('/issues', anyAuth, async (req, res) => {
+  try {
+    if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
+      return res.status(503).json({ error: 'No GitHub credentials configured' });
+    }
+    const { title, body, labels, owner = 'Team-Commonly', repo = 'commonly' } = req.body || {};
+    if (!title) return res.status(400).json({ error: 'title is required' });
+    if (!VALID_NAME.test(owner) || !VALID_NAME.test(repo)) {
+      return res.status(400).json({ error: 'Invalid owner or repo' });
+    }
+    const issue = await GitHubAppService.createIssue({ owner, repo, title, body, labels });
+    return res.status(201).json({ number: issue.number, title: issue.title, url: issue.html_url });
+  } catch (err) {
+    console.error('POST /github/issues error:', err.message);
+    return res.status(500).json({ error: 'Failed to create issue', detail: err.message });
+  }
+});
+
+/**
+ * POST /api/github/issues/:number/comment
+ * Add a comment to an issue.
+ * Body: { body, owner?, repo? }
+ */
+router.post('/issues/:number/comment', anyAuth, async (req, res) => {
+  try {
+    const issueNumber = Number(req.params.number);
+    const { body, owner = 'Team-Commonly', repo = 'commonly' } = req.body || {};
+    if (!body) return res.status(400).json({ error: 'body is required' });
+    await GitHubAppService.addIssueComment({ owner, repo, issueNumber, body });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /github/issues/comment error:', err.message);
+    return res.status(500).json({ error: 'Failed to comment', detail: err.message });
+  }
+});
+
+/**
+ * POST /api/github/issues/:number/close
+ * Close an issue, optionally with a final comment.
+ * Body: { comment?, owner?, repo? }
+ */
+router.post('/issues/:number/close', anyAuth, async (req, res) => {
+  try {
+    const issueNumber = Number(req.params.number);
+    const { comment, owner = 'Team-Commonly', repo = 'commonly' } = req.body || {};
+    await GitHubAppService.closeIssue({ owner, repo, issueNumber, comment });
+    return res.json({ ok: true, closed: issueNumber });
+  } catch (err) {
+    console.error('POST /github/issues/close error:', err.message);
+    return res.status(500).json({ error: 'Failed to close issue', detail: err.message });
   }
 });
 

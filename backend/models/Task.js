@@ -21,6 +21,8 @@ const TaskSchema = new mongoose.Schema(
     notes: { type: String, default: null },
     source: { type: String, default: 'human' }, // 'github' | 'human' | 'agent'
     sourceRef: { type: String, default: null }, // e.g. 'GH#1'
+    githubIssueNumber: { type: Number, default: null }, // linked GH issue number for auto-close
+    githubIssueUrl: { type: String, default: null }, // e.g. https://github.com/Team-Commonly/commonly/issues/1
     updates: [
       {
         text: { type: String, required: true },
@@ -36,5 +38,7 @@ const TaskSchema = new mongoose.Schema(
 TaskSchema.index({ podId: 1, status: 1 });
 TaskSchema.index({ podId: 1, assignee: 1, status: 1 });
 TaskSchema.index({ podId: 1, taskId: 1 }, { unique: true });
+// Prevent duplicate tasks for the same GitHub issue in a pod
+TaskSchema.index({ podId: 1, sourceRef: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Task', TaskSchema);
