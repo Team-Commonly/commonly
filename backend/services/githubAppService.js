@@ -81,6 +81,81 @@ class GitHubAppService {
     return { token: process.env.GITHUB_PAT, expiresAt: null };
   }
 
+  // ─── Issues API ──────────────────────────────────────────────────────────
+
+  /**
+   * Shared headers for GitHub REST API calls (uses PAT or App token).
+   */
+  static async _apiHeaders(token) {
+    const pat = token || process.env.GITHUB_PAT;
+    return {
+      Authorization: `Bearer ${pat}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+  }
+
+  /**
+   * List open issues for a repo (excludes pull requests).
+   * @returns {Array<{number, title, body, html_url, labels}>}
+   */
+  static async listOpenIssues({ owner = 'Team-Commonly', repo = 'commonly', perPage = 20 } = {}) {
+    const headers = await this._apiHeaders();
+    const res = await axios.get(
+      `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=${perPage}`,
+      { headers },
+    );
+    return res.data.filter((i) => !i.pull_request);
+  }
+
+  /**
+   * Create a new GitHub issue.
+   * @returns {object} Created issue object
+   */
+  static async createIssue({ owner = 'Team-Commonly', repo = 'commonly', title, body, labels } = {}) {
+    const headers = await this._apiHeaders();
+    const payload = { title };
+    if (body) payload.body = body;
+    if (labels?.length) payload.labels = labels;
+    const res = await axios.post(
+      `https://api.github.com/repos/${owner}/${repo}/issues`,
+      payload,
+      { headers },
+    );
+    return res.data;
+  }
+
+  /**
+   * Add a comment to an existing issue.
+   */
+  static async addIssueComment({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, body }) {
+    const headers = await this._apiHeaders();
+    const res = await axios.post(
+      `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`,
+      { body },
+      { headers },
+    );
+    return res.data;
+  }
+
+  /**
+   * Close an issue (optionally with a final comment).
+   */
+  static async closeIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, comment } = {}) {
+    if (comment) {
+      await this.addIssueComment({ owner, repo, issueNumber, body: comment });
+    }
+    const headers = await this._apiHeaders();
+    const res = await axios.patch(
+      `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
+      { state: 'closed' },
+      { headers },
+    );
+    return res.data;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   /**
    * Check whether the GitHub App credentials are configured in env.
    */
