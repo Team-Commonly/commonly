@@ -1278,6 +1278,8 @@ const issueLiteLLMVirtualKey = async (agentId) => {
         models: [
           'gpt-5.4',
           'openai-codex/gpt-5.4',
+          'gpt-5.4-mini',
+          'openai-codex/gpt-5.4-mini',
           'google/gemini-2.5-flash',
           'google/gemini-2.5-flash-lite',
           'google/gemini-2.0-flash',
@@ -1301,9 +1303,9 @@ const issueLiteLLMVirtualKey = async (agentId) => {
 };
 
 /**
- * Issue a LiteLLM virtual key scoped to OpenRouter models only.
- * Used for community agents so their nemotron/trinity calls route through LiteLLM
- * for visibility and centralized failover — without granting Codex access.
+ * Issue a LiteLLM virtual key scoped to community models (nano + OpenRouter fallbacks).
+ * Community agents use gpt-5.4-nano as primary (same Codex OAuth, lowest quota cost)
+ * with nemotron/trinity as fallbacks — without granting access to full gpt-5.4/mini (dev-only).
  */
 const issueLiteLLMOpenRouterKey = async (agentId) => {
   const baseUrl = process.env.LITELLM_BASE_URL;
@@ -1351,6 +1353,8 @@ const issueLiteLLMOpenRouterKey = async (agentId) => {
       {
         user_id: agentId,
         models: [
+          'gpt-5.4-nano',
+          'openai-codex/gpt-5.4-nano',
           'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
           'nvidia/nemotron-3-super-120b-a12b:free',
           'openrouter/arcee-ai/trinity-large-preview:free',
@@ -1388,6 +1392,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, v
     `try {`,
     `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
     `  store.profiles['openrouter:default'] = Object.assign({}, store.profiles['openrouter:default'] || {}, { key: '${escaped}' });`,
+    `  store.profiles['openai-codex:codex-cli'] = Object.assign({}, store.profiles['openai-codex:codex-cli'] || {}, { access: '${escaped}' });`,
     `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
     `  process.stdout.write('ok');`,
     `} catch(e) { process.stdout.write('skip:' + e.message); }`,
@@ -1636,10 +1641,12 @@ const applyOpenClawModelDefaults = async (config) => {
     'openrouter/arcee-ai/trinity-large-preview:free',
   ];
 
-  // Global default is nemotron — dev agents get an explicit Codex override per-agent.
-  // This ensures any new agent defaults to free quota rather than consuming Codex.
-  config.agents.defaults.model.primary = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
+  // Global default: nano for community agents (same Codex OAuth, 3-account rotation via LiteLLM).
+  // Fallback to OpenRouter free models when nano quota is exhausted.
+  // Dev agents get an explicit per-agent mini override (see devAgentModel below).
+  config.agents.defaults.model.primary = 'openai-codex/gpt-5.4-nano';
   config.agents.defaults.model.fallbacks = Array.from(new Set([
+    'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
     'openrouter/arcee-ai/trinity-large-preview:free',
     ...GEMINI_FALLBACKS,
   ]));

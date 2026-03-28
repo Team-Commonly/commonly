@@ -125,6 +125,35 @@ data:
           model: chatgpt/gpt-5.4-mini
           api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_3
 
+      # --- gpt-5.4-nano (community agents — cheapest Codex model, same chatgpt/ OAuth) ---
+      - model_name: gpt-5.4-nano
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-nano
+
+      - model_name: openai-codex/gpt-5.4-nano
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-nano
+
+      # Account-2 fallback
+      - model_name: openai-codex/gpt-5.4-nano
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-nano
+          api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_2
+
+      # Account-3 fallback (separate ChatGPT plan — independent rate-limit pool)
+      - model_name: openai-codex/gpt-5.4-nano
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-nano
+          api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_3
+
       # Aliases for Codex CLI default model names in openai mode
       # When acpx_run spawns with auth_mode=openai, the CLI may send these model names
       - model_name: codex-mini-latest
@@ -161,6 +190,11 @@ data:
         - {"openai-codex/gpt-5.4": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
         - {"gpt-5.4-mini": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
         - {"openai-codex/gpt-5.4-mini": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"gpt-5.4-nano": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"openai-codex/gpt-5.4-nano": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        # OpenRouter models fall back to each other — prevents crash when one 429s
+        - {"openrouter/nvidia/nemotron-3-super-120b-a12b:free": ["openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"nvidia/nemotron-3-super-120b-a12b:free": ["openrouter/arcee-ai/trinity-large-preview:free"]}
       # Retry once before triggering fallback to catch transient errors
       num_retries: 1
       retry_after: 5
