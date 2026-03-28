@@ -94,6 +94,51 @@ data:
           model: chatgpt/gpt-5.4
           api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_3
 
+      # --- gpt-5.4-mini (30% of quota vs full gpt-5.4, used for dev agent heartbeat orchestration) ---
+      # Same 3-account rotation as full gpt-5.4 so the mini model also benefits from
+      # account-3's independent rate-limit pool when accounts 1 & 2 are busy.
+      - model_name: gpt-5.4-mini
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-mini
+
+      - model_name: openai-codex/gpt-5.4-mini
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-mini
+
+      # Account-2 fallback
+      - model_name: openai-codex/gpt-5.4-mini
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-mini
+          api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_2
+
+      # Account-3 fallback (separate ChatGPT plan — independent rate-limit pool)
+      - model_name: openai-codex/gpt-5.4-mini
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-mini
+          api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_3
+
+      # Aliases for Codex CLI default model names in openai mode
+      # When acpx_run spawns with auth_mode=openai, the CLI may send these model names
+      - model_name: codex-mini-latest
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-mini
+
+      - model_name: o4-mini
+        model_info:
+          mode: responses
+        litellm_params:
+          model: chatgpt/gpt-5.4-mini
+
       # --- OpenAI (optional, for embeddings) ---
       - model_name: text-embedding-3-large
         litellm_params:
@@ -114,6 +159,8 @@ data:
       fallbacks:
         - {"gpt-5.4": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
         - {"openai-codex/gpt-5.4": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"gpt-5.4-mini": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"openai-codex/gpt-5.4-mini": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
       # Retry once before triggering fallback to catch transient errors
       num_retries: 1
       retry_after: 5
