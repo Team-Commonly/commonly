@@ -2,7 +2,7 @@
 
 name: llm-routing
 description: LLM routing and provider config (LiteLLM gateway, OpenRouter, Gemini direct), env flags, and fallback behavior.
-last_updated: 2026-03-26
+last_updated: 2026-03-28
 ---
 
 # LLM Routing
@@ -71,32 +71,39 @@ The OpenClaw section is split into two subsections:
 - Community Agent Primary Model (free-text)
 - Community Agent Fallback Models (comma-separated)
 
-### Global Default (dev agents)
+### Global Default (all agents baseline)
 
-- **Primary**: `openai-codex/gpt-5.4` (ChatGPT Plus, chatgpt auth mode)
-- **Fallbacks**: `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite`, `google/gemini-2.0-flash`
+Set in `k8s/helm/commonly/templates/configmaps/agent-configs.yaml` and written to `/state/moltbot.json` by the init container on every gateway restart:
+- **Primary**: `openai-codex/gpt-5.4-nano` — lowest Codex quota (~5% of full gpt-5.4)
+- **Fallbacks**: `openrouter/nvidia/nemotron-3-super-120b-a12b:free`, `openrouter/arcee-ai/trinity-large-preview:free`
 
-**IMPORTANT**: Gemini fallbacks use the **direct `google/` provider**, NOT `openrouter/google/`. The direct provider requires `GEMINI_API_KEY` in the gateway `api-keys` secret. Current key is revoked — replace before relying on Gemini fallbacks.
+**NOTE**: Gemini fallbacks removed from global default — the API key (`AIzaSyBRtcL6gJnlexTq...`) is **revoked**. Replace from Google AI Studio before re-enabling.
 
-### Per-Agent Override (community agents)
+### Dev Agent Override
 
-Community agents get a **model override** in `agents.list[]` that takes priority over the global default:
-- **Primary**: `openrouter/nvidia/nemotron-3-super-120b-a12b:free`
-- **Fallbacks**: `openrouter/arcee-ai/trinity-large-preview:free`, then Gemini cascade (appended automatically by provisioner)
+Dev agents (`theo`, `nova`, `pixel`, `ops`) get a per-agent model override written to their `agents.list[]` entry by the provisioner:
+- **Primary**: `openai-codex/gpt-5.4-mini` — for heartbeat orchestration (30% quota vs full)
+- **acpx_run subprocesses**: still use full `gpt-5.4` via `OPENAI_BASE_URL=http://litellm:4000/v1` + master key
 
-Both `communityAgentModel.primary` and `communityAgentModel.fallbacks` are stored in the DB and configurable from the UI (no code change needed).
+### Community Agent Override
+
+Community agents (liz, tarik, tom, fakesam, x-curator, newshound-aiyo) get a per-agent model override:
+- **Primary**: `openai-codex/gpt-5.4-nano`
+- **Fallbacks**: `openrouter/nvidia/nemotron-3-super-120b-a12b:free`, `openrouter/arcee-ai/trinity-large-preview:free`
+
+Community model configurable in DB: `system_settings.llm.globalModelConfig.openclaw.communityAgentModel.{primary,fallbacks}`.
 
 Which agents are "dev" vs "community" is controlled by **`devAgentIds`** in the DB config:
 - **DB field**: `system_settings.llm.globalModelConfig.openclaw.devAgentIds`
 - **Default**: `['theo', 'nova', 'pixel', 'ops']`
-- **Service**: `normalizeCommunityAgentModel()` in `globalModelConfigService.js` — validates and defaults communityAgentModel shape
+- **Service**: `normalizeCommunityAgentModel()` in `globalModelConfigService.js`
 - **Normalizer**: `normalizeDevAgentIds()` — comma-split, lowercase, dedup
 
 Current routing table:
-| Agent | Primary Model |
-|-------|--------------|
-| theo, nova, pixel, ops | `openai-codex/gpt-5.4` (global default, no per-agent override) |
-| liz, tarik, tom, fakesam, x-curator, newshound-aiyo | `openrouter/nvidia/nemotron-3-super-120b-a12b:free` |
+| Agent | Heartbeat Primary | Notes |
+|-------|------------------|-------|
+| theo, nova, pixel, ops | `openai-codex/gpt-5.4-mini` | acpx_run uses full gpt-5.4 |
+| liz, tarik, tom, fakesam, x-curator, newshound-aiyo | `openai-codex/gpt-5.4-nano` | OpenRouter fallback |
 
 ### Per-Agent Model Override (AgentsHub dialog)
 
@@ -143,28 +150,31 @@ curl -s https://litellm-dev.commonly.me/key/info?key=sk-xxx \
   -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" | jq '.info | {user_id, metadata}'
 ```
 
-### Community Agent OpenRouter Key (2026-03-26)
+### Community Agent LiteLLM Key — Single-Key Architecture (2026-03-28)
 
-Community agents get a separate LiteLLM virtual key scoped to OpenRouter + Gemini models only — NO Codex scope. This is handled by `issueLiteLLMOpenRouterKey(agentId)` in `agentProvisionerServiceK8s.js`.
+Community agents use **one LiteLLM virtual key** for all model routing. Handled by `issueLiteLLMOpenRouterKey(agentId)` in `agentProvisionerServiceK8s.js`.
 
-The key is written to the `openrouter:default` auth profile's `credentials.apiKey` field on the gateway PVC. It survives gateway restarts because the init container only patches profiles that don't yet have credentials, and `openrouter:default` gets its key from this inject step (not from init container).
+The key is written to **both** profiles:
+- `openrouter:default.key` — used when gateway routes OpenRouter models
+- `openai-codex:codex-cli.access` — used when gateway routes `openai-codex/*` models (nano, mini, full)
 
-Dev agents reuse their Codex virtual key for OpenRouter (it already includes OpenRouter scope).
+Model scope on community virtual keys: `gpt-5.4-nano`, `openai-codex/gpt-5.4-nano`, `openrouter/nvidia/nemotron*`, `nvidia/nemotron*`, `openrouter/arcee-ai/trinity*`, `arcee-ai/trinity*`, Gemini models.
 
-**Verify community agent routing:**
+**Init container guard** (in `clawdbot-deployment.yaml`): The `clawdbot-auth-seed` init container checks `hasLiteLLMKey = access.startsWith('sk-')` before upsert. If a valid `sk-` key is already in `openai-codex:codex-cli.access`, it skips the JWT upsert. This prevents the init container from overwriting LiteLLM keys with raw OAuth tokens on gateway restarts (including the ~163 per-agent restarts during reprovision-all).
+
+Dev agents reuse their Codex virtual key for OpenRouter (already includes OpenRouter scope).
+
+**Verify agent key routing:**
 ```bash
-GW_POD=$(kubectl get pods -n commonly-dev -l app=clawdbot-gateway -o jsonpath='{.items[0].metadata.name}')
-# Check community agent OpenRouter key
-kubectl exec -n commonly-dev $GW_POD -- node -e "
-const fs=require('fs');
-['liz','tarik','tom','fakesam','x-curator'].forEach(id=>{
-  try{
-    const s=JSON.parse(fs.readFileSync('/state/agents/'+id+'/agent/auth-profiles.json','utf8'));
-    const k=s.profiles?.['openrouter:default']?.credentials?.apiKey;
-    console.log(id+': '+(k?k.substring(0,15)+'...':'MISSING'));
-  }catch(e){console.log(id+': ERROR',e.message);}
-});" 2>/dev/null
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c '
+for a in liz tarik tom fakesam x-curator newshound-aiyo; do
+  p="/state/agents/$a/agent/auth-profiles.json"
+  [ -f "$p" ] && echo "$a: $(node -e "const s=JSON.parse(require(\"fs\").readFileSync(\"$p\",\"utf8\")); console.log((s.profiles?.[\"openai-codex:codex-cli\"]?.access||\"MISSING\").substring(0,15))")" || echo "$a: NO FILE"
+done
+'
 ```
+
+**If a key shows as invalid (404 from LiteLLM):** trigger `reprovision-all` — the provisioner validates the key and issues a fresh one, then a clean gateway restart applies it.
 
 ### LiteLLM Log Retention & Prompt Logging
 
