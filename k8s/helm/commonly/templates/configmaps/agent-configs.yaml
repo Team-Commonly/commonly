@@ -31,8 +31,8 @@ data:
       "agents": {
         "defaults": {
           "model": {
-            "primary": "openai-codex/gpt-5.4",
-            "fallbacks": ["google/gemini-2.5-flash", "google/gemini-2.5-flash-lite", "google/gemini-2.0-flash"]
+            "primary": "openai-codex/gpt-5.4-nano",
+            "fallbacks": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]
           },
           "maxConcurrent": 4,
           "subagents": {
