@@ -93,6 +93,20 @@ spec:
             cfg.channels.commonly.accounts = mergedAccounts;
             console.log('[auth-seed] preserved', preserved, 'accounts from existing PVC state');
           }
+          // Preserve agents.list and bindings from PVC — these are written by the provisioner
+          // at runtime and are NOT in the ConfigMap. Without this, every gateway restart wipes
+          // all agent configs because cfg (ConfigMap) has an empty agents.list.
+          const existingAgents = existingState?.agents?.list;
+          if (Array.isArray(existingAgents) && existingAgents.length > 0) {
+            cfg.agents = cfg.agents || {};
+            cfg.agents.list = existingAgents;
+            console.log('[auth-seed] preserved', existingAgents.length, 'agents from existing PVC state');
+          }
+          const existingBindings = existingState?.bindings;
+          if (Array.isArray(existingBindings) && existingBindings.length > 0) {
+            cfg.bindings = existingBindings;
+            console.log('[auth-seed] preserved', existingBindings.length, 'bindings from existing PVC state');
+          }
           // Write merged config to PVC
           fs.writeFileSync(stateConfigPath, JSON.stringify(cfg, null, 2));
           console.log('[auth-seed] wrote config to writable path:', stateConfigPath);
@@ -138,13 +152,16 @@ spec:
             const codexOrder = [];
             if (codexAccess && codexRefresh) {
               const existing = store.profiles['openai-codex:codex-cli'];
-              if (!existing || codexExpires > (existing.expires || 0)) {
+              const hasLiteLLMKey = existing && typeof existing.access === 'string' && existing.access.startsWith('sk-');
+              if (!hasLiteLLMKey && (!existing || codexExpires > (existing.expires || 0))) {
                 store.profiles['openai-codex:codex-cli'] = {
                   type: 'oauth', provider: 'openai-codex',
                   access: codexAccess, refresh: codexRefresh,
                   expires: codexExpires || (Date.now() + 3600000),
                 };
                 console.log('[auth-seed] upserted codex oauth account-1:', authPath);
+              } else if (hasLiteLLMKey) {
+                console.log('[auth-seed] skipped codex oauth upsert (LiteLLM key in place):', authPath);
               }
               codexOrder.push('openai-codex:codex-cli');
             }
