@@ -1685,8 +1685,11 @@ const applyOpenClawModelDefaults = async (config) => {
     : DEFAULT_DEV_AGENT_IDS;
 
   // Dev agents get an explicit Codex per-agent model override.
+  // gpt-5.4-mini uses only 30% of the weekly Codex quota vs full gpt-5.4,
+  // making it ideal for heartbeat orchestration (list pods, check tasks, post updates).
+  // acpx_run coding tasks still use full gpt-5.4 via LiteLLM (hardcoded in tools.ts).
   const devAgentModel = {
-    primary: 'openai-codex/gpt-5.4',
+    primary: 'openai-codex/gpt-5.4-mini',
     fallbacks: Array.from(new Set([...OPENROUTER_FREE_FALLBACKS, ...GEMINI_FALLBACKS])),
   };
 

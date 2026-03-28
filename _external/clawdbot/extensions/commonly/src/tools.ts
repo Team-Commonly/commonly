@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, readFileSync, writeFileSync } from "node:fs";
 
 import { Type } from "@sinclair/typebox";
 
@@ -28,17 +28,61 @@ function resolveAcpxBin(): string {
   return "acpx"; // fallback: hope it's in PATH
 }
 
-function runAcpx(
+// Paths for Codex auth.json — shared PVC so init container and main container can both access.
+const CODEX_AUTH_PATH = "/home/node/.codex/auth.json";
+const CODEX_AUTH2_PATH = "/state/.codex/auth-2.json";
+const CODEX_AUTH3_PATH = "/state/.codex/auth-3.json";
+
+function isRateLimitError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("rate limit") ||
+    m.includes("rate_limit") ||
+    m.includes("ratelimit") ||
+    m.includes("too many requests") ||
+    m.includes("429") ||
+    m.includes("quota exceeded") ||
+    m.includes("requests per minute") ||
+    m.includes("requests per day") ||
+    // Weekly / monthly quota limits from chatgpt.com
+    m.includes("weekly limit") ||
+    m.includes("monthly limit") ||
+    m.includes("daily limit") ||
+    m.includes("usage limit") ||
+    m.includes("usage cap") ||
+    m.includes("cap reached") ||
+    m.includes("limit reached") ||
+    m.includes("limit exceeded") ||
+    m.includes("over your limit") ||
+    m.includes("insufficient_quota") ||
+    m.includes("insufficient quota") ||
+    m.includes("out of tokens") ||
+    m.includes("credit balance") ||
+    m.includes("ran out") ||
+    // Codex ACP endpoint (chatgpt.com) returns 'RUNTIME: Internal error' when
+    // the weekly Codex quota is exhausted — treat as rate limit to trigger account rotation.
+    m.includes("runtime: internal error") ||
+    m.includes("internal error")
+  );
+}
+
+interface AcpxError extends Error {
+  acpxOutput?: string;
+  acpxExitCode?: number | null;
+}
+
+function spawnAcpx(
   agentId: string,
   task: string,
   timeoutMs: number,
+  extraEnv?: Record<string, string>,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const bin = resolveAcpxBin();
     const args = [agentId, "exec", task];
     const child = spawn(bin, args, {
       cwd: "/workspace",
-      env: { ...process.env },
+      env: { ...process.env, ...extraEnv },
     });
     let stdout = "";
     let stderr = "";
@@ -60,10 +104,93 @@ function runAcpx(
       if (code === 0 || stdout.trim()) {
         resolve(output);
       } else {
-        reject(new Error(stderr.trim() || `acpx exited with code ${code}`));
+        const err: AcpxError = new Error(stderr.trim() || `acpx exited with code ${code}`);
+        err.acpxOutput = output;
+        err.acpxExitCode = code;
+        reject(err);
       }
     });
   });
+}
+
+async function runAcpx(
+  agentId: string,
+  task: string,
+  timeoutMs: number,
+  extraEnv?: Record<string, string>,
+): Promise<string> {
+  // Direct Codex path via acpx codex exec.
+  // acpx codex connects to chatgpt.com's ACP endpoint using chatgpt OAuth tokens.
+  // Note: acpx codex does NOT use OPENAI_BASE_URL — it always connects to chatgpt.com.
+  // Rate-limit can surface two ways:
+  //   (a) acpx exits non-zero with no stdout → spawnAcpx rejects
+  //   (b) acpx exits 0 (or has stdout) but the text itself is a rate-limit message
+  // Both paths land here so we handle either uniformly.
+  let firstOutput: string | null = null;
+  let firstRateLimited = false;
+
+  try {
+    firstOutput = await spawnAcpx(agentId, task, timeoutMs, extraEnv);
+    if (isRateLimitError(firstOutput)) {
+      firstRateLimited = true;
+    } else {
+      return firstOutput; // genuine success
+    }
+  } catch (err: unknown) {
+    const acpxErr = err as AcpxError;
+    const errMsg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
+    if (!isRateLimitError(errMsg)) {
+      throw err;
+    }
+    firstOutput = errMsg;
+    firstRateLimited = true;
+  }
+
+  if (!firstRateLimited) return firstOutput!;
+
+  // Rate-limit on account-1 — try account-2 then account-3 if available.
+  const fallbackPaths = [CODEX_AUTH2_PATH, CODEX_AUTH3_PATH];
+  let account1Backup: string | null = null;
+  try {
+    account1Backup = readFileSync(CODEX_AUTH_PATH, "utf8");
+  } catch { /* missing — no backup */ }
+
+  let lastError = firstOutput;
+  for (let i = 0; i < fallbackPaths.length; i++) {
+    const fallbackPath = fallbackPaths[i];
+    const accountNum = i + 2;
+    let fallbackJson: string | null = null;
+    try {
+      fallbackJson = readFileSync(fallbackPath, "utf8");
+    } catch {
+      // account not configured
+    }
+    if (!fallbackJson) continue;
+
+    try {
+      writeFileSync(CODEX_AUTH_PATH, fallbackJson, "utf8");
+    } catch (writeErr: unknown) {
+      throw new Error(`Codex rate-limited; failed to swap to account-${accountNum}: ${(writeErr as Error).message}`);
+    }
+
+    try {
+      const output = await spawnAcpx(agentId, task, timeoutMs, extraEnv);
+      if (!isRateLimitError(output)) return output;
+      lastError = output;
+    } catch (err: unknown) {
+      const acpxErr = err as AcpxError;
+      const errMsg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
+      if (!isRateLimitError(errMsg)) throw err;
+      lastError = errMsg;
+    } finally {
+      // Restore account-1 for next call.
+      if (account1Backup) {
+        try { writeFileSync(CODEX_AUTH_PATH, account1Backup, "utf8"); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  throw new Error(`Codex rate-limited on all configured accounts.\n${lastError}`);
 }
 
 // readStringArrayParam is not in plugin-sdk — inline a minimal version.
@@ -412,6 +539,189 @@ export class CommonlyTools {
         },
       },
       {
+        name: "commonly_get_tasks",
+        label: "Commonly Get Tasks",
+        description:
+          "List tasks for a pod. Optionally filter by assignee (agent instanceId) and/or status (pending/claimed/done/blocked). Returns [{taskId, title, assignee, status, dep, claimedBy, prUrl, notes}].",
+        parameters: Type.Object({
+          podId: Type.String({ description: "Pod ID to list tasks for" }),
+          assignee: Type.Optional(Type.String({ description: "Filter by assignee instanceId (e.g. 'nova')" })),
+          status: Type.Optional(Type.String({ description: "Filter by status: pending, claimed, done, blocked" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const assignee = readStringParam(params, "assignee");
+          const status = readStringParam(params, "status");
+          const tasks = await client.getTasks(podId, {
+            assignee: assignee || undefined,
+            status: status || undefined,
+          });
+          return jsonResult({ ok: true, tasks });
+        },
+      },
+      {
+        name: "commonly_create_task",
+        label: "Commonly Create Task",
+        description:
+          "Create a new task in a pod. Returns the created task with its taskId (e.g. TASK-001). Use source='agent' when creating tasks programmatically.",
+        parameters: Type.Object({
+          podId: Type.String({ description: "Pod ID to create the task in" }),
+          title: Type.String({ description: "Task title / description" }),
+          assignee: Type.Optional(Type.String({ description: "Agent instanceId to assign (e.g. 'nova')" })),
+          dep: Type.Optional(Type.String({ description: "Blocking dependency taskId (e.g. 'TASK-001')" })),
+          depMockOk: Type.Optional(Type.Boolean({ description: "True if task can start with mocks even if dep unmet" })),
+          source: Type.Optional(Type.String({ description: "Source: 'human' | 'agent' | 'github'" })),
+          sourceRef: Type.Optional(Type.String({ description: "External reference (e.g. 'GH#12'). Deduped — safe to call multiple times for the same issue." })),
+          githubIssueNumber: Type.Optional(Type.Number({ description: "GitHub issue number to link (enables auto-close on task complete)" })),
+          githubIssueUrl: Type.Optional(Type.String({ description: "GitHub issue HTML URL" })),
+          createGithubIssue: Type.Optional(Type.Boolean({ description: "If true, create a new GitHub issue from this task (board→GitHub direction)" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const title = readStringParam(params, "title", { required: true });
+          const assignee = readStringParam(params, "assignee");
+          const dep = readStringParam(params, "dep");
+          const depMockOk = params.depMockOk === true;
+          const source = readStringParam(params, "source");
+          const sourceRef = readStringParam(params, "sourceRef");
+          const githubIssueNumber = params.githubIssueNumber as number | undefined;
+          const githubIssueUrl = readStringParam(params, "githubIssueUrl");
+          const createGithubIssue = params.createGithubIssue === true;
+          const task = await client.createTask(podId, {
+            title: title!,
+            assignee: assignee || undefined,
+            dep: dep || undefined,
+            depMockOk,
+            source: source || undefined,
+            sourceRef: sourceRef || undefined,
+            githubIssueNumber: githubIssueNumber || undefined,
+            githubIssueUrl: githubIssueUrl || undefined,
+            createGithubIssue: createGithubIssue || undefined,
+          });
+          return jsonResult({ ok: !task.alreadyExists, task: task.task || task, alreadyExists: !!task.alreadyExists });
+        },
+      },
+      {
+        name: "commonly_claim_task",
+        label: "Commonly Claim Task",
+        description:
+          "Atomically claim a pending task. Only one agent wins — returns ok:true with the task on success, or ok:false with claimedBy/status if already taken. Always check ok before proceeding.",
+        parameters: Type.Object({
+          podId: Type.String({ description: "Pod ID that owns the task" }),
+          taskId: Type.String({ description: "Task ID to claim (e.g. 'TASK-001')" }),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const taskId = readStringParam(params, "taskId", { required: true });
+          const result = await client.claimTask(podId, taskId!);
+          if (result.error) {
+            return jsonResult({ ok: false, error: result.error, claimedBy: result.claimedBy, status: result.status });
+          }
+          return jsonResult({ ok: true, task: result.task });
+        },
+      },
+      {
+        name: "commonly_complete_task",
+        label: "Commonly Complete Task",
+        description:
+          "Mark a claimed task as done. Optionally attach a PR URL and notes. Returns the updated task.",
+        parameters: Type.Object({
+          podId: Type.String({ description: "Pod ID that owns the task" }),
+          taskId: Type.String({ description: "Task ID to complete (e.g. 'TASK-001')" }),
+          prUrl: Type.Optional(Type.String({ description: "URL of the PR that fulfils this task" })),
+          notes: Type.Optional(Type.String({ description: "Completion notes" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const taskId = readStringParam(params, "taskId", { required: true });
+          const prUrl = readStringParam(params, "prUrl");
+          const notes = readStringParam(params, "notes");
+          const task = await client.completeTask(podId, taskId!, {
+            prUrl: prUrl || undefined,
+            notes: notes || undefined,
+          });
+          return jsonResult({ ok: true, task });
+        },
+      },
+      {
+        name: "commonly_add_task_update",
+        label: "Commonly Add Task Update",
+        description:
+          "Append a progress note to a task's activity log (visible to humans in the UI). Use this to report mid-task progress, blockers, or findings — e.g. 'Cloned repo, running tests', 'Tests pass, opening PR', 'Blocked: Nova's API not ready yet'.",
+        parameters: Type.Object({
+          podId: Type.String({ description: "Pod ID that owns the task" }),
+          taskId: Type.String({ description: "Task ID to update (e.g. 'TASK-001')" }),
+          text: Type.String({ description: "Progress note to append to the activity log" }),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const taskId = readStringParam(params, "taskId", { required: true });
+          const text = readStringParam(params, "text", { required: true });
+          const task = await client.addTaskUpdate(podId, taskId!, text!);
+          return jsonResult({ ok: true, task });
+        },
+      },
+      {
+        name: "commonly_update_task",
+        label: "Commonly Update Task",
+        description:
+          "Patch task fields: assignee, status (pending|claimed|done|blocked), dep, prUrl, notes, title. Use to reassign, mark blocked/unblocked, or link a PR. For progress notes use commonly_add_task_update instead.",
+        parameters: Type.Object({
+          podId: Type.String({ description: "Pod ID that owns the task" }),
+          taskId: Type.String({ description: "Task ID to update (e.g. 'TASK-001')" }),
+          assignee: Type.Optional(Type.String({ description: "New assignee (agent instanceId) or empty string to unassign" })),
+          status: Type.Optional(Type.String({ description: "New status: pending | claimed | done | blocked" })),
+          dep: Type.Optional(Type.String({ description: "Blocking dependency task ID, or empty string to clear" })),
+          prUrl: Type.Optional(Type.String({ description: "PR URL" })),
+          notes: Type.Optional(Type.String({ description: "Notes" })),
+          title: Type.Optional(Type.String({ description: "New title" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const podId = readStringParam(params, "podId", { required: true });
+          const taskId = readStringParam(params, "taskId", { required: true });
+          const fields: Record<string, unknown> = {};
+          const fieldNames = ["assignee", "status", "dep", "prUrl", "notes", "title"];
+          for (const f of fieldNames) {
+            const v = readStringParam(params, f);
+            if (v !== undefined) fields[f] = v || null;
+          }
+          const task = await client.updateTask(podId, taskId!, fields);
+          return jsonResult({ ok: true, task });
+        },
+      },
+      {
+        name: "commonly_list_github_issues",
+        label: "Commonly List GitHub Issues",
+        description:
+          "List open GitHub issues for Team-Commonly/commonly (excludes pull requests). Returns [{number, title, body, url, labels}]. Use this to check what work exists before creating tasks.",
+        parameters: Type.Object({
+          perPage: Type.Optional(Type.Number({ description: "Max issues to return (default 20)" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const perPage = params.perPage as number | undefined;
+          const issues = await client.listGithubIssues({ perPage });
+          return jsonResult({ issues });
+        },
+      },
+      {
+        name: "commonly_create_github_issue",
+        label: "Commonly Create GitHub Issue",
+        description:
+          "Create a new GitHub issue on Team-Commonly/commonly. Use when you want to track a task publicly on GitHub. Returns { number, title, url }. Tip: you can then call commonly_create_task with githubIssueNumber to link board and GitHub.",
+        parameters: Type.Object({
+          title: Type.String({ description: "Issue title" }),
+          body: Type.Optional(Type.String({ description: "Issue body / description" })),
+          labels: Type.Optional(Type.Array(Type.String(), { description: "Label names to apply" })),
+        }),
+        async execute(_id: string, params: Record<string, unknown>) {
+          const title = readStringParam(params, "title", { required: true });
+          const body = readStringParam(params, "body");
+          const labels = params.labels as string[] | undefined;
+          const issue = await client.createGithubIssue({ title: title!, body, labels });
+          return jsonResult({ ok: true, ...issue });
+        },
+      },
+      {
         name: "acpx_run",
         label: "ACP Agent Run",
         description:
@@ -433,7 +743,10 @@ export class CommonlyTools {
           const agentId = readStringParam(params, "agentId", { required: true })!;
           const task = readStringParam(params, "task", { required: true })!;
           const timeoutSeconds = readNumberParam(params, "timeoutSeconds") ?? 300;
-          const output = await runAcpx(agentId, task, timeoutSeconds * 1000);
+          // Inject COMMONLY_API_URL + COMMONLY_API_TOKEN so shell scripts in
+          // HEARTBEAT.md tasks can authenticate against the Commonly API.
+          const apiEnv = client.getApiEnv();
+          const output = await runAcpx(agentId, task, timeoutSeconds * 1000, apiEnv);
           return jsonResult({ ok: true, output });
         },
       },
