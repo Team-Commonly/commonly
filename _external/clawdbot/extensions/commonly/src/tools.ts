@@ -33,6 +33,22 @@ const CODEX_AUTH_PATH = "/home/node/.codex/auth.json";
 const CODEX_AUTH2_PATH = "/state/.codex/auth-2.json";
 const CODEX_AUTH3_PATH = "/state/.codex/auth-3.json";
 
+// Read the per-agent LiteLLM virtual key from the agent's auth-profiles.json.
+// The provisioner writes the sk-xxx key to profiles['openrouter:default'].key (not .apiKey).
+function readAgentLiteLLMKey(agentId: string): string | null {
+  try {
+    const profilesPath = `/state/agents/${agentId}/agent/auth-profiles.json`;
+    const profiles = JSON.parse(readFileSync(profilesPath, "utf8")) as {
+      profiles?: Record<string, { key?: string; apiKey?: string }>;
+    };
+    const orProfile = profiles?.profiles?.["openrouter:default"];
+    const key = orProfile?.key ?? orProfile?.apiKey;
+    return typeof key === "string" && key.startsWith("sk-") ? key : null;
+  } catch {
+    return null;
+  }
+}
+
 function isRateLimitError(message: string): boolean {
   const m = message.toLowerCase();
   return (
@@ -61,8 +77,8 @@ function isRateLimitError(message: string): boolean {
     m.includes("ran out") ||
     // Codex ACP endpoint (chatgpt.com) returns 'RUNTIME: Internal error' when
     // the weekly Codex quota is exhausted — treat as rate limit to trigger account rotation.
-    m.includes("runtime: internal error") ||
-    m.includes("internal error")
+    // NOTE: match the full prefix to avoid treating unrelated internal errors as rate limits.
+    m.includes("runtime: internal error")
   );
 }
 
@@ -119,13 +135,52 @@ async function runAcpx(
   timeoutMs: number,
   extraEnv?: Record<string, string>,
 ): Promise<string> {
-  // Direct Codex path via acpx codex exec.
-  // acpx codex connects to chatgpt.com's ACP endpoint using chatgpt OAuth tokens.
-  // Note: acpx codex does NOT use OPENAI_BASE_URL — it always connects to chatgpt.com.
-  // Rate-limit can surface two ways:
-  //   (a) acpx exits non-zero with no stdout → spawnAcpx rejects
-  //   (b) acpx exits 0 (or has stdout) but the text itself is a rate-limit message
-  // Both paths land here so we handle either uniformly.
+  // Prefer LiteLLM path: use the per-agent virtual key (stored at openrouter:default in
+  // auth-profiles.json) so that all Codex calls flow through LiteLLM's routing layer.
+  // LiteLLM handles 3-account rotation, OpenRouter fallback, and logging internally.
+  // We switch the auth.json to openai mode so codex-acp respects OPENAI_BASE_URL.
+  const litellmBase = process.env.LITELLM_BASE_URL;
+  const agentLiteLLMKey = litellmBase ? readAgentLiteLLMKey(agentId) : null;
+
+  if (litellmBase && agentLiteLLMKey) {
+    const originalAuth = (() => {
+      try { return readFileSync(CODEX_AUTH_PATH, "utf8"); } catch { return null; }
+    })();
+    try {
+      writeFileSync(
+        CODEX_AUTH_PATH,
+        JSON.stringify({ auth_mode: "openai", OPENAI_API_KEY: agentLiteLLMKey }),
+        "utf8",
+      );
+      const litellmEnv: Record<string, string> = {
+        ...(extraEnv ?? {}),
+        OPENAI_BASE_URL: `${litellmBase}/v1`,
+        OPENAI_API_KEY: agentLiteLLMKey,
+        OPENAI_MODEL: "gpt-5.4",
+        CODEX_MODEL: "gpt-5.4",
+      };
+      const output = await spawnAcpx(agentId, task, timeoutMs, litellmEnv);
+      // LiteLLM exhausted (all Codex + OpenRouter fallbacks failed) — surface the error.
+      if (isRateLimitError(output)) {
+        throw new Error(`LiteLLM routing exhausted: ${output}`);
+      }
+      return output;
+    } catch (err: unknown) {
+      const acpxErr = err as AcpxError;
+      const errMsg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
+      if (isRateLimitError(errMsg)) {
+        throw new Error(`LiteLLM routing exhausted: ${errMsg}`);
+      }
+      throw err;
+    } finally {
+      if (originalAuth) {
+        try { writeFileSync(CODEX_AUTH_PATH, originalAuth, "utf8"); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  // Fallback: direct chatgpt auth rotation (used when LiteLLM is not configured or key missing).
+  // acpx codex connects to chatgpt.com using the OAuth token in CODEX_AUTH_PATH.
   let firstOutput: string | null = null;
   let firstRateLimited = false;
 
@@ -134,45 +189,35 @@ async function runAcpx(
     if (isRateLimitError(firstOutput)) {
       firstRateLimited = true;
     } else {
-      return firstOutput; // genuine success
+      return firstOutput;
     }
   } catch (err: unknown) {
     const acpxErr = err as AcpxError;
     const errMsg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
-    if (!isRateLimitError(errMsg)) {
-      throw err;
-    }
+    if (!isRateLimitError(errMsg)) throw err;
     firstOutput = errMsg;
     firstRateLimited = true;
   }
 
   if (!firstRateLimited) return firstOutput!;
 
-  // Rate-limit on account-1 — try account-2 then account-3 if available.
+  // Rate-limited on account-1 — try account-2 then account-3 if available.
   const fallbackPaths = [CODEX_AUTH2_PATH, CODEX_AUTH3_PATH];
   let account1Backup: string | null = null;
-  try {
-    account1Backup = readFileSync(CODEX_AUTH_PATH, "utf8");
-  } catch { /* missing — no backup */ }
+  try { account1Backup = readFileSync(CODEX_AUTH_PATH, "utf8"); } catch { /* missing */ }
 
   let lastError = firstOutput;
   for (let i = 0; i < fallbackPaths.length; i++) {
     const fallbackPath = fallbackPaths[i];
     const accountNum = i + 2;
     let fallbackJson: string | null = null;
-    try {
-      fallbackJson = readFileSync(fallbackPath, "utf8");
-    } catch {
-      // account not configured
-    }
+    try { fallbackJson = readFileSync(fallbackPath, "utf8"); } catch { /* not configured */ }
     if (!fallbackJson) continue;
-
     try {
       writeFileSync(CODEX_AUTH_PATH, fallbackJson, "utf8");
     } catch (writeErr: unknown) {
       throw new Error(`Codex rate-limited; failed to swap to account-${accountNum}: ${(writeErr as Error).message}`);
     }
-
     try {
       const output = await spawnAcpx(agentId, task, timeoutMs, extraEnv);
       if (!isRateLimitError(output)) return output;
@@ -183,7 +228,6 @@ async function runAcpx(
       if (!isRateLimitError(errMsg)) throw err;
       lastError = errMsg;
     } finally {
-      // Restore account-1 for next call.
       if (account1Backup) {
         try { writeFileSync(CODEX_AUTH_PATH, account1Backup, "utf8"); } catch { /* ignore */ }
       }
