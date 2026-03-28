@@ -39,7 +39,16 @@ if (process.env.PG_SSL_CA_PATH) {
 // Skip pool creation entirely if no host is configured
 const pool = pgConfig.host ? new Pool(pgConfig) : null;
 
-// Test the connection
+// Ensure every new connection from the pool is writable.
+// Aiven (and other managed PG) can flip default_transaction_read_only = on at the
+// database or role level — this silently breaks all INSERTs. Guard at connection level.
+if (pool) {
+  pool.on('connect', (client) => {
+    client.query('SET default_transaction_read_only = off').catch(() => {});
+  });
+}
+
+// Test the connection and fix database-level read-only if needed
 const connectPG = async () => {
   if (!pool) {
     console.log('PostgreSQL not configured (PG_HOST not set), skipping connection');
@@ -50,6 +59,18 @@ const connectPG = async () => {
     const client = await pool.connect();
     const result = await client.query('SELECT VERSION()');
     console.log('PostgreSQL connected: ', result.rows[0].version);
+
+    // Check and fix database-level read-only default
+    const roResult = await client.query('SHOW default_transaction_read_only');
+    if (roResult.rows[0].default_transaction_read_only === 'on') {
+      console.warn('PostgreSQL default_transaction_read_only is ON — fixing...');
+      await client.query('SET default_transaction_read_only = off');
+      await client.query(
+        `ALTER DATABASE ${pgConfig.database || 'defaultdb'} SET default_transaction_read_only = off`
+      );
+      console.log('PostgreSQL default_transaction_read_only fixed to OFF');
+    }
+
     client.release();
     return pool;
   } catch (err) {
