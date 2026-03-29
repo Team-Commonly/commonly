@@ -1378,20 +1378,26 @@ const issueLiteLLMOpenRouterKey = async (agentId) => {
 };
 
 /**
- * Inject a LiteLLM virtual key into the openrouter:default profile on the agent PVC.
- * Replaces the raw sk-or-v1-... key so OpenRouter calls route through LiteLLM.
- * The init container runs in patch mode for existing files and does NOT update
- * openrouter:default, so this injection persists across gateway restarts.
+ * Inject LiteLLM virtual key and real OpenRouter key into the agent PVC auth-profiles.
+ * - openai-codex:codex-cli.access = LiteLLM sk-xxx key (read by acpx_run / readAgentLiteLLMKey)
+ * - openrouter:default.key = real OpenRouter API key (sk-or-v1-...) so gateway heartbeat
+ *   fallbacks that route directly to OpenRouter work correctly
+ * The init container runs in patch mode and does NOT update these profiles, so injections
+ * persist across gateway restarts.
  */
 const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, virtualKey) => {
   if (!virtualKey) return;
   const escaped = virtualKey.replace(/'/g, "\\'");
+  // Real OpenRouter key — written to openrouter:default so direct OpenRouter calls succeed.
+  // If not set, fall back to the LiteLLM key (sub-optimal but won't crash).
+  const realOrKey = (process.env.OPENROUTER_API_KEY || '').replace(/'/g, "\\'");
+  const orDefaultKey = realOrKey || escaped;
   const script = [
     `const fs = require('fs');`,
     `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
     `try {`,
     `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
-    `  store.profiles['openrouter:default'] = Object.assign({}, store.profiles['openrouter:default'] || {}, { key: '${escaped}' });`,
+    `  store.profiles['openrouter:default'] = Object.assign({}, store.profiles['openrouter:default'] || {}, { key: '${orDefaultKey}', apiKey: '${orDefaultKey}' });`,
     `  store.profiles['openai-codex:codex-cli'] = Object.assign({}, store.profiles['openai-codex:codex-cli'] || {}, { access: '${escaped}' });`,
     `  // Community agents only rotate through codex-cli; account-2/3 have raw JWTs that LiteLLM rejects.`,
     `  store.order = store.order || {};`,
