@@ -1,7 +1,7 @@
 ---
 name: prod-agent-ops
 description: Production E2E testing, monitoring, and debugging for agent runtime reliability (queue health, context permissions, model/auth fallbacks, gateway/runtime recovery).
-last_updated: 2026-03-25 (rev5)
+last_updated: 2026-03-29 (rev6)
 ---
 
 # Prod Agent Ops
@@ -574,6 +574,55 @@ const req=http.request({host:'litellm',port:4000,path:'/chat/completions',method
   res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{console.log(res.statusCode,d.slice(0,150));process.exit(0);});});
 req.write(body);req.end();"
 # Expect: 200 {"choices":[{"message":{"content":"Hi"...
+```
+
+**Symptom: LiteLLM CrashLoopBackOff — Aiven PG disk full (P1017)**
+
+LiteLLM tries to run Prisma migrations on every startup when `DATABASE_URL` env var is set. If Aiven PG is in disk-full recovery mode, Prisma fails with `P1017: Server has closed the connection` → pod goes into `CrashLoopBackOff`.
+
+Diagnosis:
+```bash
+kubectl logs -n commonly-dev -l app=litellm --tail=30 | grep -E "P1017|Error|CrashLoop|Restart"
+# Look for: "P1017" or "Server has closed the connection"
+# Also check: kubectl get pods -n commonly-dev | grep litellm  → RESTARTS column
+```
+
+**Emergency fix — disable DB:**
+```bash
+# 1. Comment out database_url + store_model_in_db in litellm-config.yaml
+# 2. Comment out PG_PASSWORD + DATABASE_URL env vars in litellm-deployment.yaml
+#    (CRITICAL: DATABASE_URL env var alone triggers Prisma, even if config file is silent)
+# 3. helm upgrade:
+helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev \
+  -f k8s/helm/commonly/values.yaml -f k8s/helm/commonly/values-dev.yaml
+kubectl rollout status deployment/litellm -n commonly-dev --timeout=120s
+```
+
+While DB is disabled: provisioner falls back to LiteLLM master key for all agents (still routes through LiteLLM, still has logging, but no per-agent spend attribution).
+
+**Re-enable after PG disk recovery:**
+```bash
+# 1. Uncomment database_url + store_model_in_db in litellm-config.yaml
+# 2. Uncomment PG_PASSWORD + DATABASE_URL in litellm-deployment.yaml
+# 3. helm upgrade (same command as above)
+# 4. Verify clean startup (no P1017):
+kubectl logs -n commonly-dev -l app=litellm --tail=20
+# 5. Reprovision-all to restore per-agent virtual keys:
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "$BASE_URL/api/registry/admin/installations/reprovision-all"
+```
+
+**Verify key restoration after reprovision:**
+```bash
+GW_POD=$(kubectl get pods -n commonly-dev -l app=clawdbot-gateway -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n commonly-dev $GW_POD -- node -e "
+const fs=require('fs');
+['theo','nova','liz','tom'].forEach(a=>{
+  const p=JSON.parse(fs.readFileSync('/state/agents/'+a+'/agent/auth-profiles.json','utf8'));
+  const k=p.profiles?.['openai-codex:codex-cli']?.access||'MISSING';
+  console.log(a+': '+k.slice(0,15)+'...');
+});"
+# Expected: each agent has a unique sk-xxx key (not all the same master key)
 ```
 
 See `docs/development/LITELLM.md` for full architecture and token management details.

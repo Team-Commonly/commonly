@@ -34,15 +34,13 @@ spec:
             secretKeyRef:
               name: api-keys
               key: litellm-master-key
-        # DATABASE_URL disabled: Aiven PG in recovery mode causes Prisma startup failure.
-        # Re-enable PG_PASSWORD + DATABASE_URL after Aiven PG recovers.
-        # - name: PG_PASSWORD
-        #   valueFrom:
-        #     secretKeyRef:
-        #       name: database-credentials
-        #       key: postgres-password
-        # - name: DATABASE_URL
-        #   value: "postgresql://{{ .Values.backend.env.pgUser }}:$(PG_PASSWORD)@{{ .Values.backend.env.pgHost }}:{{ .Values.backend.env.pgPort }}/{{ .Values.backend.env.pgDatabase }}?sslmode=require&schema=litellm"
+        - name: PG_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: postgres-password
+        - name: DATABASE_URL
+          value: "postgresql://{{ .Values.backend.env.pgUser }}:$(PG_PASSWORD)@{{ .Values.backend.env.pgHost }}:{{ .Values.backend.env.pgPort }}/{{ .Values.backend.env.pgDatabase }}?sslmode=require&schema=litellm"
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:

@@ -1,27 +1,86 @@
-# LiteLLM config (dev)
-# Docs: https://docs.litellm.ai/docs/
+# LiteLLM proxy config (dev)
+# Docs: https://docs.litellm.ai/docs/proxy/configs
+#
+# This file is kept in sync with:
+#   k8s/helm/commonly/templates/configmaps/litellm-config.yaml
+#
+# Local dev usage:
+#   docker run -e LITELLM_MASTER_KEY=sk-dev -e GEMINI_API_KEY=... \
+#     -v $(pwd)/external/litellm/config.yaml:/app/config.yaml \
+#     -p 4000:4000 ghcr.io/berriai/litellm:main-stable --config /app/config.yaml
 
 model_list:
-  - model_name: gpt-4o
+  # --- Gemini (direct google provider) ---
+  - model_name: google/gemini-2.5-flash
     litellm_params:
-      model: openai/gpt-4o
-      api_key: os.environ/OPENAI_API_KEY
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
 
+  - model_name: google/gemini-2.5-flash-lite
+    litellm_params:
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: google/gemini-2.0-flash
+    litellm_params:
+      model: gemini/gemini-2.0-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  # Alias for backend llmService default model name
   - model_name: gemini-2.5-flash
     litellm_params:
       model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
 
+  # --- OpenRouter (free tier, community agents) ---
+  - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: openrouter/arcee-ai/trinity-large-preview:free
+    litellm_params:
+      model: openrouter/arcee-ai/trinity-large-preview:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # --- ChatGPT / Codex (native chatgpt/ provider) ---
+  # auth.json is seeded by the codex-auth-seed init container from k8s secrets.
+  # LiteLLM reads CHATGPT_TOKEN_DIR/auth.json and auto-refreshes via refresh_token.
+  # model_name "gpt-5.4" = what OpenClaw sends after stripping the "openai-codex/" prefix.
+  - model_name: gpt-5.4
+    model_info:
+      mode: responses
+    litellm_params:
+      model: chatgpt/gpt-5.4
+
+  # Full-name alias used when model is specified as "openai-codex/gpt-5.4" directly
+  - model_name: openai-codex/gpt-5.4
+    model_info:
+      mode: responses
+    litellm_params:
+      model: chatgpt/gpt-5.4
+
+  # --- OpenAI (optional, for embeddings) ---
   - model_name: text-embedding-3-large
     litellm_params:
       model: openai/text-embedding-3-large
       api_key: os.environ/OPENAI_API_KEY
 
-  # GLM-4.5 via OpenRouter (free tier)
-  - model_name: glm-4.5-air
+  - model_name: gpt-4o
     litellm_params:
-      model: openrouter/zhipu-ai/glm-4.5-air:free
-      api_key: os.environ/OPENROUTER_API_KEY
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+router_settings:
+  routing_strategy: least-busy
+  enable_pre_call_checks: true
+
+litellm_settings:
+  store_prompts_in_spend_logs: true
+  drop_params: true
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+  ui_access_mode: "all"
