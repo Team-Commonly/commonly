@@ -78,6 +78,22 @@ export class CommonlyClient {
   }
 
   /**
+   * Returns env vars to inject into acpx subprocess so shell scripts in
+   * HEARTBEAT.md tasks can authenticate against the Commonly API.
+   */
+  getApiEnv(): Record<string, string> {
+    const env: Record<string, string> = {};
+    if (this.config.baseUrl) env.COMMONLY_API_URL = this.config.baseUrl;
+    const token = this.config.runtimeToken?.trim();
+    if (token) env.COMMONLY_API_TOKEN = token;
+    return env;
+  }
+
+  getInstanceId(): string | undefined {
+    return this.config.instanceId;
+  }
+
+  /**
    * Health check
    */
   async healthCheck(): Promise<boolean> {
@@ -414,6 +430,174 @@ export class CommonlyClient {
     }
     return res.json();
   }
+
+  /**
+   * List tasks for a pod
+   */
+  async getTasks(
+    podId: string,
+    params: { assignee?: string; status?: string } = {},
+  ): Promise<Array<Record<string, unknown>>> {
+    const url = new URL(`${this.config.baseUrl}/api/v1/tasks/${podId}`);
+    if (params.assignee) url.searchParams.append('assignee', params.assignee);
+    if (params.status) url.searchParams.append('status', params.status);
+    const res = await fetch(url.toString(), { headers: this.userHeaders });
+    if (!res.ok) {
+      console.warn(`Failed to get tasks: ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    return data.tasks || [];
+  }
+
+  /**
+   * Create a task in a pod
+   */
+  async createTask(
+    podId: string,
+    data: {
+      title: string;
+      assignee?: string;
+      dep?: string;
+      depMockOk?: boolean;
+      source?: string;
+      sourceRef?: string;
+      githubIssueNumber?: number;
+      githubIssueUrl?: string;
+      createGithubIssue?: boolean;
+    },
+  ): Promise<Record<string, unknown>> {
+    const res = await fetch(`${this.config.baseUrl}/api/v1/tasks/${podId}`, {
+      method: 'POST',
+      headers: this.userHeaders,
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`Failed to create task: ${res.status}`);
+    // Returns { task, alreadyExists? } — pass through so tools.ts can inspect alreadyExists
+    return res.json();
+  }
+
+  /**
+   * Atomically claim a pending task
+   */
+  async claimTask(
+    podId: string,
+    taskId: string,
+  ): Promise<{ task?: Record<string, unknown>; error?: string; claimedBy?: string; status?: string }> {
+    const res = await fetch(
+      `${this.config.baseUrl}/api/v1/tasks/${podId}/${taskId}/claim`,
+      { method: 'POST', headers: this.userHeaders },
+    );
+    const data = await res.json();
+    if (res.status === 409) return { error: data.error, claimedBy: data.claimedBy, status: data.status };
+    if (!res.ok) throw new Error(`Failed to claim task: ${res.status}`);
+    return { task: data.task };
+  }
+
+  /**
+   * Mark a task as done
+   */
+  async completeTask(
+    podId: string,
+    taskId: string,
+    data: { prUrl?: string; notes?: string } = {},
+  ): Promise<Record<string, unknown>> {
+    const res = await fetch(
+      `${this.config.baseUrl}/api/v1/tasks/${podId}/${taskId}/complete`,
+      {
+        method: 'POST',
+        headers: this.userHeaders,
+        body: JSON.stringify(data),
+      },
+    );
+    if (!res.ok) throw new Error(`Failed to complete task: ${res.status}`);
+    const result = await res.json();
+    return result.task;
+  }
+
+  /**
+   * Append a progress update to a task (visible in the UI activity log)
+   */
+  async addTaskUpdate(
+    podId: string,
+    taskId: string,
+    text: string,
+  ): Promise<Record<string, unknown>> {
+    const res = await fetch(
+      `${this.config.baseUrl}/api/v1/tasks/${podId}/${taskId}/updates`,
+      {
+        method: 'POST',
+        headers: this.userHeaders,
+        body: JSON.stringify({ text }),
+      },
+    );
+    if (!res.ok) throw new Error(`Failed to add task update: ${res.status}`);
+    const result = await res.json();
+    return result.task;
+  }
+
+  /**
+   * Update task fields
+   */
+  async updateTask(
+    podId: string,
+    taskId: string,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const res = await fetch(
+      `${this.config.baseUrl}/api/v1/tasks/${podId}/${taskId}`,
+      {
+        method: 'PATCH',
+        headers: this.userHeaders,
+        body: JSON.stringify(data),
+      },
+    );
+    if (!res.ok) throw new Error(`Failed to update task: ${res.status}`);
+    const result = await res.json();
+    return result.task;
+  }
+
+  // ─── GitHub Issues ──────────────────────────────────────────────────────
+
+  /**
+   * List open GitHub issues (excludes pull requests).
+   */
+  async listGithubIssues(
+    options?: { owner?: string; repo?: string; perPage?: number },
+  ): Promise<Array<{ number: number; title: string; body: string; url: string; labels: string[] }>> {
+    const params = new URLSearchParams();
+    if (options?.owner) params.set('owner', options.owner);
+    if (options?.repo) params.set('repo', options.repo);
+    if (options?.perPage) params.set('per_page', String(options.perPage));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${this.config.baseUrl}/api/github/issues${qs}`, {
+      headers: this.userHeaders,
+    });
+    if (!res.ok) throw new Error(`Failed to list GitHub issues: ${res.status}`);
+    const result = await res.json();
+    return result.issues;
+  }
+
+  /**
+   * Create a new GitHub issue. Returns { number, title, url }.
+   */
+  async createGithubIssue(data: {
+    title: string;
+    body?: string;
+    labels?: string[];
+    owner?: string;
+    repo?: string;
+  }): Promise<{ number: number; title: string; url: string }> {
+    const res = await fetch(`${this.config.baseUrl}/api/github/issues`, {
+      method: 'POST',
+      headers: this.userHeaders,
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`Failed to create GitHub issue: ${res.status}`);
+    return res.json();
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
 
   /**
    * Report ensemble response
