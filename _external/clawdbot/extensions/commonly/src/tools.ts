@@ -170,6 +170,9 @@ async function runAcpx(
         return null;
       }
     })();
+    let litellmResult: string | null = null;
+    let litellmErr: { msg: string; rateLimit: boolean } | null = null;
+
     try {
       writeFileSync(
         CODEX_AUTH_PATH,
@@ -180,20 +183,14 @@ async function runAcpx(
         ...(extraEnv ?? {}),
         OPENAI_BASE_URL: `${litellmBase}/v1`,
         OPENAI_API_KEY: agentLiteLLMKey,
+        OPENAI_MODEL: "gpt-5.4",
+        CODEX_MODEL: "gpt-5.4",
       };
-      const output = await spawnAcpx(agentId, task, timeoutMs, litellmEnv);
-      // LiteLLM exhausted (all Codex + OpenRouter fallbacks failed) — surface the error.
-      if (isRateLimitError(output)) {
-        throw new Error(`LiteLLM routing exhausted: ${output}`);
-      }
-      return output;
+      litellmResult = await spawnAcpx(agentId, task, timeoutMs, litellmEnv);
     } catch (err: unknown) {
       const acpxErr = err as AcpxError;
-      const errMsg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
-      if (isRateLimitError(errMsg)) {
-        throw new Error(`LiteLLM routing exhausted: ${errMsg}`);
-      }
-      throw err;
+      const msg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
+      litellmErr = { msg, rateLimit: isRateLimitError(msg) };
     } finally {
       if (originalAuth) {
         try {
@@ -203,6 +200,20 @@ async function runAcpx(
         }
       }
     }
+
+    if (litellmResult !== null) {
+      // LiteLLM exhausted (all Codex + OpenRouter fallbacks failed) — surface the error.
+      if (isRateLimitError(litellmResult)) {
+        throw new Error(`LiteLLM routing exhausted: ${litellmResult}`);
+      }
+      return litellmResult;
+    }
+    if (litellmErr!.rateLimit) {
+      throw new Error(`LiteLLM routing exhausted: ${litellmErr!.msg}`);
+    }
+    // Non-rate-limit failure (401 orphaned key, timeout, connection refused) — fall through
+    // to direct OAuth rotation so the agent can still do work.
+    console.warn(`[acpx] LiteLLM path failed (non-rate-limit): ${litellmErr!.msg}. Falling back to direct OAuth.`);
   }
 
   // Fallback: direct chatgpt auth rotation (used when LiteLLM is not configured or key missing).
