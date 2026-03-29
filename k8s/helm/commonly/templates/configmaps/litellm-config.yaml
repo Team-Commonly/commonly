@@ -205,10 +205,8 @@ data:
 
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY
-      # database_url disabled: Aiven PG in recovery mode causes Prisma P1017 on startup.
-      # Re-enable after PG recovers and run reprovision-all to restore virtual keys.
-      # database_url: os.environ/DATABASE_URL
-      # store_model_in_db: true
+      database_url: os.environ/DATABASE_URL
+      store_model_in_db: true
       # Allow UI access
       ui_access_mode: "all"
 {{- end }}
