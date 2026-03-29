@@ -1826,8 +1826,25 @@ const provisionOpenClawAccount = async ({
           { profileId: 'openai-codex:account-3', credential: codexCredential },
         ]);
       } else {
-        // LiteLLM key generation failed — fall back to raw OAuth token injection
-        await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+        // LiteLLM key generation failed (e.g. DB disabled) — use master key so agents
+        // still route through LiteLLM instead of burning raw Codex OAuth tokens directly.
+        const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
+        if (masterKey) {
+          const masterCredential = {
+            type: 'oauth',
+            provider: 'openai-codex',
+            access: masterKey,
+            expires: Date.now() + 365 * 24 * 3600 * 1000,
+          };
+          await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, [
+            { profileId: 'openai-codex:codex-cli', credential: masterCredential },
+            { profileId: 'openai-codex:account-2', credential: masterCredential },
+            { profileId: 'openai-codex:account-3', credential: masterCredential },
+          ]);
+        } else {
+          // No master key either — fall back to raw OAuth token injection
+          await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+        }
       }
     } else {
       await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
