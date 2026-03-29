@@ -145,21 +145,21 @@ async function runAcpx(
   timeoutMs: number,
   extraEnv?: Record<string, string>,
 ): Promise<string> {
-  // Prefer LiteLLM path: use the per-agent virtual key (stored at openai-codex:codex-cli.access
-  // in auth-profiles.json) so that all Codex calls flow through LiteLLM's routing layer.
+  // Prefer LiteLLM path: use the per-agent virtual key (stored at openrouter:default in
+  // auth-profiles.json) so that all Codex calls flow through LiteLLM's routing layer.
   // LiteLLM handles 3-account rotation, OpenRouter fallback, and logging internally.
   // We switch the auth.json to openai mode so codex-acp respects OPENAI_BASE_URL.
   const litellmBase = process.env.LITELLM_BASE_URL;
   const agentLiteLLMKey = litellmBase ? readAgentLiteLLMKey(agentId) : null;
 
   if (litellmBase && agentLiteLLMKey) {
+    // Capture result/error separately so the finally block (auth.json restore) runs before
+    // we decide whether to throw or fall through to the direct OAuth rotation path.
     const originalAuth = (() => {
-      try {
-        return readFileSync(CODEX_AUTH_PATH, "utf8");
-      } catch {
-        return null;
-      }
+      try { return readFileSync(CODEX_AUTH_PATH, "utf8"); } catch { return null; }
     })();
+    let litellmResult: string | null = null;
+    let litellmErr: { msg: string; rateLimit: boolean } | null = null;
     try {
       writeFileSync(
         CODEX_AUTH_PATH,
@@ -173,28 +173,31 @@ async function runAcpx(
         OPENAI_MODEL: "gpt-5.4",
         CODEX_MODEL: "gpt-5.4",
       };
-      const output = await spawnAcpx(agentId, task, timeoutMs, litellmEnv);
-      // LiteLLM exhausted (all Codex + OpenRouter fallbacks failed) — surface the error.
-      if (isRateLimitError(output)) {
-        throw new Error(`LiteLLM routing exhausted: ${output}`);
-      }
-      return output;
+      litellmResult = await spawnAcpx(agentId, task, timeoutMs, litellmEnv);
     } catch (err: unknown) {
       const acpxErr = err as AcpxError;
-      const errMsg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
-      if (isRateLimitError(errMsg)) {
-        throw new Error(`LiteLLM routing exhausted: ${errMsg}`);
-      }
-      throw err;
+      const msg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
+      litellmErr = { msg, rateLimit: isRateLimitError(msg) };
     } finally {
       if (originalAuth) {
-        try {
-          writeFileSync(CODEX_AUTH_PATH, originalAuth, "utf8");
-        } catch {
-          /* ignore */
-        }
+        try { writeFileSync(CODEX_AUTH_PATH, originalAuth, "utf8"); } catch { /* ignore */ }
       }
     }
+
+    if (litellmResult !== null) {
+      // LiteLLM exhausted (all Codex + OpenRouter fallbacks failed) — surface the error.
+      if (isRateLimitError(litellmResult)) {
+        throw new Error(`LiteLLM routing exhausted: ${litellmResult}`);
+      }
+      return litellmResult;
+    }
+    // litellmErr is set
+    if (litellmErr!.rateLimit) {
+      throw new Error(`LiteLLM routing exhausted: ${litellmErr!.msg}`);
+    }
+    // Non-rate-limit failure (401 orphaned key, timeout, connection refused) — fall through
+    // to direct OAuth rotation below so the agent can still complete the task.
+    console.warn(`[acpx] LiteLLM path failed (non-rate-limit): ${litellmErr!.msg}. Falling back to direct OAuth.`);
   }
 
   // Fallback: direct chatgpt auth rotation (used when LiteLLM is not configured or key missing).
