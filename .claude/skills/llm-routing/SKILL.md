@@ -2,7 +2,7 @@
 
 name: llm-routing
 description: LLM routing and provider config (LiteLLM gateway, OpenRouter, Gemini direct), env flags, and fallback behavior.
-last_updated: 2026-03-28
+last_updated: 2026-03-29
 ---
 
 # LLM Routing
@@ -160,7 +160,12 @@ The key is written to **both** profiles:
 
 Model scope on community virtual keys: `gpt-5.4-nano`, `openai-codex/gpt-5.4-nano`, `openrouter/nvidia/nemotron*`, `nvidia/nemotron*`, `openrouter/arcee-ai/trinity*`, `arcee-ai/trinity*`, Gemini models.
 
-**Init container guard** (in `clawdbot-deployment.yaml`): The `clawdbot-auth-seed` init container checks `hasLiteLLMKey = access.startsWith('sk-')` before upsert. If a valid `sk-` key is already in `openai-codex:codex-cli.access`, it skips the JWT upsert. This prevents the init container from overwriting LiteLLM keys with raw OAuth tokens on gateway restarts (including the ~163 per-agent restarts during reprovision-all).
+**Init container guard** (in `clawdbot-deployment.yaml`): The `clawdbot-auth-seed` init container checks `hasLiteLLMKey = access.startsWith('sk-')` before upsert. When `hasLiteLLMKey=true`:
+- Skips the `codex-cli` JWT upsert (prevents overwriting the LiteLLM key with a raw OAuth token)
+- **Also skips account-2 and account-3 upsert entirely** — no raw JWTs written to ANY `openai-codex` profile
+- `codexOrder` only gets `openai-codex:codex-cli` (no account-2/3 added to rotation)
+
+This prevents raw OAuth tokens from appearing in any `openai-codex` profile when a LiteLLM key is in place, on every gateway restart (including the ~163 per-agent restarts during reprovision-all).
 
 Dev agents reuse their Codex virtual key for OpenRouter (already includes OpenRouter scope).
 
@@ -175,6 +180,47 @@ done
 ```
 
 **If a key shows as invalid (404 from LiteLLM):** trigger `reprovision-all` — the provisioner validates the key and issues a fresh one, then a clean gateway restart applies it.
+
+### LiteLLM DB Connection — Disable / Re-enable (Aiven PG recovery)
+
+LiteLLM connects to the shared Aiven PostgreSQL instance (`litellm` schema) for virtual key management and spend logging. If Aiven PG enters recovery mode (e.g. disk full), Prisma migrations fail at startup (P1017 "Server has closed the connection") and LiteLLM goes into `CrashLoopBackOff`.
+
+**Disabling DB (emergency — lets LiteLLM boot without PG):**
+
+Edit `k8s/helm/commonly/templates/configmaps/litellm-config.yaml` — comment out under `general_settings`:
+```yaml
+# database_url: os.environ/DATABASE_URL
+# store_model_in_db: true
+```
+
+Edit `k8s/helm/commonly/templates/agents/litellm-deployment.yaml` — comment out:
+```yaml
+# - name: PG_PASSWORD
+#   valueFrom: ...
+# - name: DATABASE_URL
+#   value: "postgresql://..."
+```
+
+Then `helm upgrade commonly-dev ...`. LiteLLM starts immediately without DB.
+
+**IMPORTANT**: `DATABASE_URL` env var is the trigger — LiteLLM auto-runs Prisma migrations the moment it sees the env var, regardless of the config file. Both must be disabled.
+
+**Provisioner behavior when DB is disabled**: `issueLiteLLMVirtualKey` returns `null` → provisioner falls back to writing the LiteLLM master key (`LITELLM_MASTER_KEY` env var from `api-keys` secret) to `openai-codex:codex-cli.access`. All agents share the master key but all calls still route through LiteLLM with logging.
+
+**Re-enabling DB (after PG disk recovery):**
+
+1. Uncomment `database_url` + `store_model_in_db` in `litellm-config.yaml`
+2. Uncomment `PG_PASSWORD` + `DATABASE_URL` in `litellm-deployment.yaml`
+3. `helm upgrade commonly-dev ...` → verify LiteLLM pod starts cleanly (no P1017 in logs)
+4. Run `reprovision-all` → provisioner issues per-agent virtual keys (replaces master key)
+
+**Verify PG connection:**
+```bash
+kubectl logs -n commonly-dev -l app=litellm --tail=20 | grep -E "200 OK|Prisma|P1017|ERROR"
+# Should show only "200 OK" health check lines after successful startup
+```
+
+**Aiven PG disk monitoring**: If disk fills again, Aiven sends alerts. Increase disk size in Aiven console: Services → your-pg → Settings → Storage. Current: 8GB. Note: Disk expansion is permanent (cannot shrink).
 
 ### LiteLLM Log Retention & Prompt Logging
 
