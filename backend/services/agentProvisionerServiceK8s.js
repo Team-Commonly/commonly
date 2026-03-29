@@ -1399,7 +1399,6 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, v
     `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
     `  store.profiles['openrouter:default'] = Object.assign({}, store.profiles['openrouter:default'] || {}, { key: '${orDefaultKey}', apiKey: '${orDefaultKey}' });`,
     `  store.profiles['openai-codex:codex-cli'] = Object.assign({}, store.profiles['openai-codex:codex-cli'] || {}, { access: '${escaped}' });`,
-    `  // Community agents only rotate through codex-cli; account-2/3 have raw JWTs that LiteLLM rejects.`,
     `  store.order = store.order || {};`,
     `  store.order['openai-codex'] = ['openai-codex:codex-cli'];`,
     `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
