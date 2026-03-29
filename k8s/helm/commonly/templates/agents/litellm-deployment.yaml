@@ -34,14 +34,15 @@ spec:
             secretKeyRef:
               name: api-keys
               key: litellm-master-key
-        # Build DATABASE_URL from parts; $(PG_PASSWORD) is substituted by K8s at runtime
-        - name: PG_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: database-credentials
-              key: postgres-password
-        - name: DATABASE_URL
-          value: "postgresql://{{ .Values.backend.env.pgUser }}:$(PG_PASSWORD)@{{ .Values.backend.env.pgHost }}:{{ .Values.backend.env.pgPort }}/{{ .Values.backend.env.pgDatabase }}?sslmode=require"
+        # DATABASE_URL disabled: Aiven PG in recovery mode causes Prisma startup failure.
+        # Re-enable PG_PASSWORD + DATABASE_URL after Aiven PG recovers.
+        # - name: PG_PASSWORD
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: database-credentials
+        #       key: postgres-password
+        # - name: DATABASE_URL
+        #   value: "postgresql://{{ .Values.backend.env.pgUser }}:$(PG_PASSWORD)@{{ .Values.backend.env.pgHost }}:{{ .Values.backend.env.pgPort }}/{{ .Values.backend.env.pgDatabase }}?sslmode=require&schema=litellm"
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -66,9 +67,28 @@ spec:
               name: api-keys
               key: anthropic-api-key
               optional: true
+        # Codex account-2 and account-3 tokens — used as api_key in litellm_params,
+        # bypassing auth.json so each account independently authenticates to chatgpt.com.
+        - name: OPENAI_CODEX_ACCESS_TOKEN_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token-2
+              optional: true
+        - name: OPENAI_CODEX_ACCESS_TOKEN_3
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token-3
+              optional: true
         # chatgpt/ provider reads auth.json from CHATGPT_TOKEN_DIR (written by init container)
         - name: CHATGPT_TOKEN_DIR
           value: /chatgpt-auth
+        # Force prompt/response storage in spend logs regardless of runtime general_settings.
+        # The config-file setting (store_prompts_in_spend_logs: true) is sometimes shadowed by
+        # the in-memory general_settings dict at startup; the env var is the reliable fallback.
+        - name: STORE_PROMPTS_IN_SPEND_LOGS
+          value: "true"
         volumeMounts:
         - name: litellm-config
           mountPath: /app/config.yaml
@@ -116,7 +136,37 @@ spec:
         - |
           import os, sys, base64, json, datetime
 
-          access = os.environ.get('OPENAI_CODEX_ACCESS_TOKEN', '')
+          # Pick the active Codex account. Priority:
+          # 1. OPENAI_CODEX_ACTIVE_ACCOUNT env var ("1", "2", or "3") — set by daily refresh job
+          # 2. Account-2 if its token is present AND not expired
+          # 3. Account-1 as fallback
+          # NOTE: Account-1 and Account-3 share the same OAuth token (same ChatGPT user).
+          def token_exp(suffix):
+              tok = os.environ.get(f'OPENAI_CODEX_ACCESS_TOKEN{suffix}', '')
+              if not tok:
+                  return 0
+              try:
+                  b = tok.split('.')[1]
+                  b += '=' * (4 - len(b) % 4)
+                  return int(json.loads(base64.b64decode(b.replace('-', '+').replace('_', '/'))).get('exp', 0))
+              except Exception:
+                  return 0
+
+          now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+          active = os.environ.get('OPENAI_CODEX_ACTIVE_ACCOUNT', '').strip()
+          if active not in ('1', '2', '3'):
+              # Auto-detect: prefer account-2 if token is present AND not expired
+              exp2 = token_exp('_2')
+              if exp2 and exp2 > now_ts:
+                  active = '2'
+              else:
+                  if exp2 and exp2 <= now_ts:
+                      print(f'Account-2 token expired at {exp2}, falling back to account-1')
+                  active = '1'
+          suffix = '' if active == '1' else f'_{active}'
+          print(f'Using Codex account-{active} (suffix={suffix!r})')
+
+          access = os.environ.get(f'OPENAI_CODEX_ACCESS_TOKEN{suffix}', '')
           if not access:
               with open('/chatgpt-auth/auth.json', 'w') as f:
                   json.dump({}, f)
@@ -138,8 +188,8 @@ spec:
               exp = 0
 
           out = {'access_token': access, 'expires_at': exp}
-          refresh = os.environ.get('OPENAI_CODEX_REFRESH_TOKEN', '')
-          id_tok = os.environ.get('OPENAI_CODEX_ID_TOKEN', '')
+          refresh = os.environ.get(f'OPENAI_CODEX_REFRESH_TOKEN{suffix}', '')
+          id_tok = os.environ.get(f'OPENAI_CODEX_ID_TOKEN{suffix}', '')
           if refresh:
               out['refresh_token'] = refresh
           if id_tok:
@@ -148,11 +198,16 @@ spec:
           with open('/chatgpt-auth/auth.json', 'w') as f:
               json.dump(out, f)
 
-          now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
           exp_str = datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat() if exp else 'unknown'
           status = 'VALID' if exp > now_ts else 'EXPIRED — refresh job will restart pod with fresh token'
           print(f'auth.json written — expires_at={exp} ({exp_str}) [{status}]')
         env:
+        - name: OPENAI_CODEX_ACTIVE_ACCOUNT
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-active-account
+              optional: true
         - name: OPENAI_CODEX_ACCESS_TOKEN
           valueFrom:
             secretKeyRef:
@@ -170,6 +225,36 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openai-codex-id-token
+              optional: true
+        - name: OPENAI_CODEX_ACCESS_TOKEN_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token-2
+              optional: true
+        - name: OPENAI_CODEX_REFRESH_TOKEN_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-refresh-token-2
+              optional: true
+        - name: OPENAI_CODEX_ACCESS_TOKEN_3
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token-3
+              optional: true
+        - name: OPENAI_CODEX_REFRESH_TOKEN_3
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-refresh-token-3
+              optional: true
+        - name: OPENAI_CODEX_ID_TOKEN_3
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-id-token-3
               optional: true
         volumeMounts:
         - name: chatgpt-auth

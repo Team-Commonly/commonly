@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
-    tag: "20260329003026"
+    tag: "20260329114852"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -99,7 +99,7 @@ agents:
     enabled: true
     image:
       repository: gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway
-      tag: "20260329013903"
+      tag: "20260329113759"
       pullPolicy: IfNotPresent
     strategy:
       type: Recreate

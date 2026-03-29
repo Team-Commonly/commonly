@@ -205,14 +205,10 @@ data:
 
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY
-      # Persist logs to Aiven PostgreSQL — LiteLLM creates its own tables (LiteLLM_SpendLogs etc.)
-      database_url: os.environ/DATABASE_URL
-      store_model_in_db: true
+      # database_url disabled: Aiven PG in recovery mode causes Prisma P1017 on startup.
+      # Re-enable after PG recovers and run reprovision-all to restore virtual keys.
+      # database_url: os.environ/DATABASE_URL
+      # store_model_in_db: true
       # Allow UI access
       ui_access_mode: "all"
-      # Auto-purge spend logs older than 2 days to keep Aiven PG storage small
-      max_request_log_retention_days: 2
-      # Store full prompt/response bodies in LiteLLM_SpendLogs for UI inspection
-      # NOTE: must be under general_settings (not litellm_settings) — that's where the code reads it
-      store_prompts_in_spend_logs: true
 {{- end }}
