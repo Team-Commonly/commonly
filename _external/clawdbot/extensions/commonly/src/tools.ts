@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants, readFileSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { Type } from "@sinclair/typebox";
 
@@ -105,9 +105,19 @@ function spawnAcpx(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const bin = resolveAcpxBin();
-    const args = [agentId, "exec", task];
+    const args = [
+      "--cwd", `/workspace/${agentId}`,
+      "--agent", "npx @zed-industries/codex-acp -c model=gpt-5.4",
+      "--approve-all",
+      "--non-interactive-permissions", "deny",
+      "exec", task,
+    ];
+    // Use agent workspace as cwd only if it exists — missing dir causes spawn ENOENT even
+    // when the binary itself is valid (Node.js reports ENOENT against the binary path).
+    const agentWorkspace = `/workspace/${agentId}`;
+    const spawnCwd = existsSync(agentWorkspace) ? agentWorkspace : "/workspace";
     const child = spawn(bin, args, {
-      cwd: "/workspace",
+      cwd: spawnCwd,
       env: { ...process.env, ...extraEnv },
     });
     let stdout = "";
@@ -153,13 +163,13 @@ async function runAcpx(
   const agentLiteLLMKey = litellmBase ? readAgentLiteLLMKey(agentId) : null;
 
   if (litellmBase && agentLiteLLMKey) {
-    // Capture result/error separately so the finally block (auth.json restore) runs before
-    // we decide whether to throw or fall through to the direct OAuth rotation path.
     const originalAuth = (() => {
-      try { return readFileSync(CODEX_AUTH_PATH, "utf8"); } catch { return null; }
+      try {
+        return readFileSync(CODEX_AUTH_PATH, "utf8");
+      } catch {
+        return null;
+      }
     })();
-    let litellmResult: string | null = null;
-    let litellmErr: { msg: string; rateLimit: boolean } | null = null;
     try {
       writeFileSync(
         CODEX_AUTH_PATH,
@@ -170,34 +180,29 @@ async function runAcpx(
         ...(extraEnv ?? {}),
         OPENAI_BASE_URL: `${litellmBase}/v1`,
         OPENAI_API_KEY: agentLiteLLMKey,
-        OPENAI_MODEL: "gpt-5.4",
-        CODEX_MODEL: "gpt-5.4",
       };
-      litellmResult = await spawnAcpx(agentId, task, timeoutMs, litellmEnv);
+      const output = await spawnAcpx(agentId, task, timeoutMs, litellmEnv);
+      // LiteLLM exhausted (all Codex + OpenRouter fallbacks failed) — surface the error.
+      if (isRateLimitError(output)) {
+        throw new Error(`LiteLLM routing exhausted: ${output}`);
+      }
+      return output;
     } catch (err: unknown) {
       const acpxErr = err as AcpxError;
-      const msg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
-      litellmErr = { msg, rateLimit: isRateLimitError(msg) };
+      const errMsg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
+      if (isRateLimitError(errMsg)) {
+        throw new Error(`LiteLLM routing exhausted: ${errMsg}`);
+      }
+      throw err;
     } finally {
       if (originalAuth) {
-        try { writeFileSync(CODEX_AUTH_PATH, originalAuth, "utf8"); } catch { /* ignore */ }
+        try {
+          writeFileSync(CODEX_AUTH_PATH, originalAuth, "utf8");
+        } catch {
+          /* ignore */
+        }
       }
     }
-
-    if (litellmResult !== null) {
-      // LiteLLM exhausted (all Codex + OpenRouter fallbacks failed) — surface the error.
-      if (isRateLimitError(litellmResult)) {
-        throw new Error(`LiteLLM routing exhausted: ${litellmResult}`);
-      }
-      return litellmResult;
-    }
-    // litellmErr is set
-    if (litellmErr!.rateLimit) {
-      throw new Error(`LiteLLM routing exhausted: ${litellmErr!.msg}`);
-    }
-    // Non-rate-limit failure (401 orphaned key, timeout, connection refused) — fall through
-    // to direct OAuth rotation below so the agent can still complete the task.
-    console.warn(`[acpx] LiteLLM path failed (non-rate-limit): ${litellmErr!.msg}. Falling back to direct OAuth.`);
   }
 
   // Fallback: direct chatgpt auth rotation (used when LiteLLM is not configured or key missing).
@@ -811,7 +816,12 @@ export class CommonlyTools {
           // Inject COMMONLY_API_URL + COMMONLY_API_TOKEN so shell scripts in
           // HEARTBEAT.md tasks can authenticate against the Commonly API.
           const apiEnv = client.getApiEnv();
-          const output = await runAcpx(agentId, task, timeoutSeconds * 1000, apiEnv);
+          // The agentId parameter is the ACP sub-agent type ("codex", "claude", etc.).
+          // For workspace and auth-profiles lookup we need the CALLING agent's instanceId
+          // (e.g. "pixel"), not the sub-agent type — the workspace /workspace/codex does
+          // not exist, causing Node.js spawn to throw ENOENT against the binary path.
+          const callerInstanceId = client.getInstanceId() ?? agentId;
+          const output = await runAcpx(callerInstanceId, task, timeoutSeconds * 1000, apiEnv);
           return jsonResult({ ok: true, output });
         },
       },
