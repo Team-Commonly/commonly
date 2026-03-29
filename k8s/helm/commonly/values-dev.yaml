@@ -99,7 +99,7 @@ agents:
     enabled: true
     image:
       repository: gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway
-      tag: "20260329001109"
+      tag: "20260329013903"
       pullPolicy: IfNotPresent
     strategy:
       type: Recreate
