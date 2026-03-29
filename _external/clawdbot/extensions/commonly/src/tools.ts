@@ -34,16 +34,26 @@ const CODEX_AUTH2_PATH = "/state/.codex/auth-2.json";
 const CODEX_AUTH3_PATH = "/state/.codex/auth-3.json";
 
 // Read the per-agent LiteLLM virtual key from the agent's auth-profiles.json.
-// The provisioner writes the sk-xxx key to profiles['openrouter:default'].key (not .apiKey).
+// The provisioner writes the sk-xxx LiteLLM key to profiles['openai-codex:codex-cli'].access
+// for both dev agents (injectLiteLLMVirtualKey) and community agents
+// (injectOpenRouterKeyToAgentAuthProfiles). We read from there so that openrouter:default.key
+// can hold the real OpenRouter API key (sk-or-v1-...) without being confused for LiteLLM.
 function readAgentLiteLLMKey(agentId: string): string | null {
   try {
     const profilesPath = `/state/agents/${agentId}/agent/auth-profiles.json`;
     const profiles = JSON.parse(readFileSync(profilesPath, "utf8")) as {
-      profiles?: Record<string, { key?: string; apiKey?: string }>;
+      profiles?: Record<string, { key?: string; apiKey?: string; access?: string }>;
     };
+    // Primary: openai-codex:codex-cli.access — LiteLLM virtual key written by provisioner
+    const codexKey = profiles?.profiles?.["openai-codex:codex-cli"]?.access;
+    if (typeof codexKey === "string" && codexKey.startsWith("sk-")) return codexKey;
+    // Fallback: legacy location — openrouter:default.key, but only if it's a LiteLLM key
+    // (LiteLLM keys are sk-xxx; real OpenRouter keys are sk-or-v1-xxx)
     const orProfile = profiles?.profiles?.["openrouter:default"];
-    const key = orProfile?.key ?? orProfile?.apiKey;
-    return typeof key === "string" && key.startsWith("sk-") ? key : null;
+    const orKey = orProfile?.key ?? orProfile?.apiKey;
+    return typeof orKey === "string" && orKey.startsWith("sk-") && !orKey.startsWith("sk-or-v1-")
+      ? orKey
+      : null;
   } catch {
     return null;
   }
@@ -143,9 +153,13 @@ async function runAcpx(
   const agentLiteLLMKey = litellmBase ? readAgentLiteLLMKey(agentId) : null;
 
   if (litellmBase && agentLiteLLMKey) {
+    // Capture result/error separately so the finally block (auth.json restore) runs before
+    // we decide whether to throw or fall through to the direct OAuth rotation path.
     const originalAuth = (() => {
       try { return readFileSync(CODEX_AUTH_PATH, "utf8"); } catch { return null; }
     })();
+    let litellmResult: string | null = null;
+    let litellmErr: { msg: string; rateLimit: boolean } | null = null;
     try {
       writeFileSync(
         CODEX_AUTH_PATH,
@@ -159,24 +173,31 @@ async function runAcpx(
         OPENAI_MODEL: "gpt-5.4",
         CODEX_MODEL: "gpt-5.4",
       };
-      const output = await spawnAcpx(agentId, task, timeoutMs, litellmEnv);
-      // LiteLLM exhausted (all Codex + OpenRouter fallbacks failed) — surface the error.
-      if (isRateLimitError(output)) {
-        throw new Error(`LiteLLM routing exhausted: ${output}`);
-      }
-      return output;
+      litellmResult = await spawnAcpx(agentId, task, timeoutMs, litellmEnv);
     } catch (err: unknown) {
       const acpxErr = err as AcpxError;
-      const errMsg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
-      if (isRateLimitError(errMsg)) {
-        throw new Error(`LiteLLM routing exhausted: ${errMsg}`);
-      }
-      throw err;
+      const msg = acpxErr.acpxOutput ?? acpxErr.message ?? "";
+      litellmErr = { msg, rateLimit: isRateLimitError(msg) };
     } finally {
       if (originalAuth) {
         try { writeFileSync(CODEX_AUTH_PATH, originalAuth, "utf8"); } catch { /* ignore */ }
       }
     }
+
+    if (litellmResult !== null) {
+      // LiteLLM exhausted (all Codex + OpenRouter fallbacks failed) — surface the error.
+      if (isRateLimitError(litellmResult)) {
+        throw new Error(`LiteLLM routing exhausted: ${litellmResult}`);
+      }
+      return litellmResult;
+    }
+    // litellmErr is set
+    if (litellmErr!.rateLimit) {
+      throw new Error(`LiteLLM routing exhausted: ${litellmErr!.msg}`);
+    }
+    // Non-rate-limit failure (401 orphaned key, timeout, connection refused) — fall through
+    // to direct OAuth rotation below so the agent can still complete the task.
+    console.warn(`[acpx] LiteLLM path failed (non-rate-limit): ${litellmErr!.msg}. Falling back to direct OAuth.`);
   }
 
   // Fallback: direct chatgpt auth rotation (used when LiteLLM is not configured or key missing).
