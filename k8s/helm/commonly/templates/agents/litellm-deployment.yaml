@@ -65,8 +65,17 @@ spec:
               name: api-keys
               key: anthropic-api-key
               optional: true
-        # Codex account-2 and account-3 tokens — used as api_key in litellm_params,
-        # bypassing auth.json so each account independently authenticates to chatgpt.com.
+        # chatgpt/ provider reads auth.json from CHATGPT_TOKEN_DIR (written by init container).
+        # Account-1 token is written to auth.json; accounts 2 & 3 use api_key in litellm_params.
+        - name: CHATGPT_TOKEN_DIR
+          value: /chatgpt-auth
+        # Codex account tokens — account-1 goes to auth.json; accounts 2 & 3 use api_key.
+        - name: OPENAI_CODEX_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token
+              optional: true
         - name: OPENAI_CODEX_ACCESS_TOKEN_2
           valueFrom:
             secretKeyRef:
@@ -79,9 +88,6 @@ spec:
               name: api-keys
               key: openai-codex-access-token-3
               optional: true
-        # chatgpt/ provider reads auth.json from CHATGPT_TOKEN_DIR (written by init container)
-        - name: CHATGPT_TOKEN_DIR
-          value: /chatgpt-auth
         # Force prompt/response storage in spend logs regardless of runtime general_settings.
         # The config-file setting (store_prompts_in_spend_logs: true) is sometimes shadowed by
         # the in-memory general_settings dict at startup; the env var is the reliable fallback.
@@ -117,15 +123,10 @@ spec:
           periodSeconds: 30
           failureThreshold: 3
       initContainers:
-      # Seed auth.json for LiteLLM's chatgpt/ provider from k8s secrets.
-      # The chatgpt/ provider ignores litellm_params.api_key; it reads CHATGPT_TOKEN_DIR/auth.json.
-      #
-      # CRITICAL: expires_at must equal the real JWT exp claim (Unix seconds), not "now+1day".
-      # LiteLLM trusts expires_at, not the JWT — if expires_at is future but the JWT is expired,
-      # every call returns 401. If expires_at is 0 or past, LiteLLM triggers interactive device
-      # auth at STARTUP and the pod never becomes Ready. Parsing the real exp avoids both bugs.
-      # The daily refresh job (refreshCodexOAuthTokenIfNeeded) restarts this pod when it refreshes
-      # the token, so the init container always picks up fresh credentials.
+      # Write the best available (non-expired) Codex token to auth.json for LiteLLM's chatgpt/ provider.
+      # Account-1 entries in litellm-config have no api_key — the chatgpt/ provider reads
+      # CHATGPT_TOKEN_DIR/auth.json at startup. Accounts 2 & 3 use api_key in litellm_params directly.
+      # Priority: account-1 if valid, else account-3 (same user), else empty (disables chatgpt/ provider).
       - name: codex-auth-seed
         image: python:3-alpine
         command:
@@ -134,13 +135,7 @@ spec:
         - |
           import os, sys, base64, json, datetime
 
-          # Pick the active Codex account. Priority:
-          # 1. OPENAI_CODEX_ACTIVE_ACCOUNT env var ("1", "2", or "3") — set by daily refresh job
-          # 2. Account-2 if its token is present AND not expired
-          # 3. Account-1 as fallback
-          # NOTE: Account-1 and Account-3 share the same OAuth token (same ChatGPT user).
-          def token_exp(suffix):
-              tok = os.environ.get(f'OPENAI_CODEX_ACCESS_TOKEN{suffix}', '')
+          def token_exp(tok):
               if not tok:
                   return 0
               try:
@@ -151,43 +146,31 @@ spec:
                   return 0
 
           now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-          active = os.environ.get('OPENAI_CODEX_ACTIVE_ACCOUNT', '').strip()
-          if active not in ('1', '2', '3'):
-              # Auto-detect: prefer account-2 if token is present AND not expired
-              exp2 = token_exp('_2')
-              if exp2 and exp2 > now_ts:
-                  active = '2'
-              else:
-                  if exp2 and exp2 <= now_ts:
-                      print(f'Account-2 token expired at {exp2}, falling back to account-1')
-                  active = '1'
-          suffix = '' if active == '1' else f'_{active}'
-          print(f'Using Codex account-{active} (suffix={suffix!r})')
+          candidates = [
+              ('', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN', '')),
+              ('3', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN_3', '')),
+          ]
 
-          access = os.environ.get(f'OPENAI_CODEX_ACCESS_TOKEN{suffix}', '')
-          if not access:
+          chosen = None
+          for (suffix, access, refresh, id_tok) in candidates:
+              if not access:
+                  continue
+              exp = token_exp(access)
+              if exp > now_ts:
+                  chosen = (suffix, access, refresh, id_tok, exp)
+                  print(f'Using account-{"1" if suffix == "" else suffix} token (expires {exp})')
+                  break
+              else:
+                  print(f'Account-{"1" if suffix == "" else suffix} token expired at {exp}, skipping')
+
+          if not chosen:
               with open('/chatgpt-auth/auth.json', 'w') as f:
                   json.dump({}, f)
-              print('No Codex token configured, wrote empty auth.json')
+              print('No valid Codex token found, wrote empty auth.json — chatgpt/ provider disabled')
               sys.exit(0)
 
-          try:
-              # Decode JWT payload (middle section, base64url-encoded) to get real exp
-              payload_b64 = access.split('.')[1]
-              padding = 4 - len(payload_b64) % 4
-              if padding != 4:
-                  payload_b64 += '=' * padding
-              payload = json.loads(base64.b64decode(
-                  payload_b64.replace('-', '+').replace('_', '/')
-              ))
-              exp = int(payload.get('exp', 0))
-          except Exception as e:
-              print(f'JWT parse error: {e}', file=sys.stderr)
-              exp = 0
-
+          suffix, access, refresh, id_tok, exp = chosen
           out = {'access_token': access, 'expires_at': exp}
-          refresh = os.environ.get(f'OPENAI_CODEX_REFRESH_TOKEN{suffix}', '')
-          id_tok = os.environ.get(f'OPENAI_CODEX_ID_TOKEN{suffix}', '')
           if refresh:
               out['refresh_token'] = refresh
           if id_tok:
@@ -196,16 +179,9 @@ spec:
           with open('/chatgpt-auth/auth.json', 'w') as f:
               json.dump(out, f)
 
-          exp_str = datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat() if exp else 'unknown'
-          status = 'VALID' if exp > now_ts else 'EXPIRED — refresh job will restart pod with fresh token'
-          print(f'auth.json written — expires_at={exp} ({exp_str}) [{status}]')
+          exp_str = datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat()
+          print(f'auth.json written — expires_at={exp} ({exp_str})')
         env:
-        - name: OPENAI_CODEX_ACTIVE_ACCOUNT
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-active-account
-              optional: true
         - name: OPENAI_CODEX_ACCESS_TOKEN
           valueFrom:
             secretKeyRef:
@@ -223,18 +199,6 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openai-codex-id-token
-              optional: true
-        - name: OPENAI_CODEX_ACCESS_TOKEN_2
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-access-token-2
-              optional: true
-        - name: OPENAI_CODEX_REFRESH_TOKEN_2
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-refresh-token-2
               optional: true
         - name: OPENAI_CODEX_ACCESS_TOKEN_3
           valueFrom:
