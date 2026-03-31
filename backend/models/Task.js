@@ -20,7 +20,7 @@ const TaskSchema = new mongoose.Schema(
     prUrl: { type: String, default: null },
     notes: { type: String, default: null },
     source: { type: String, default: 'human' }, // 'github' | 'human' | 'agent'
-    sourceRef: { type: String, default: null }, // e.g. 'GH#1'
+    sourceRef: { type: String }, // e.g. 'GH#1' — absent (not null) when unset, to keep sparse unique index working
     githubIssueNumber: { type: Number, default: null }, // linked GH issue number for auto-close
     githubIssueUrl: { type: String, default: null }, // e.g. https://github.com/Team-Commonly/commonly/issues/1
     updates: [

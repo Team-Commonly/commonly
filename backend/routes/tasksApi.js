@@ -162,7 +162,7 @@ router.post('/:podId', auth, async (req, res) => {
       dep: dep || null,
       depMockOk: !!depMockOk,
       source: source || (ghNumber ? 'github' : 'human'),
-      sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : null),
+      sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined),
       githubIssueNumber: ghNumber,
       githubIssueUrl: ghUrl,
       updates: [initUpdate],
