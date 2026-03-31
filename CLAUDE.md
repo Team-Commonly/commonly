@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **GKE**: `gke_disco-catcher-490606-b0_us-central1_commonly-dev`
 - **Live**: `app-dev.commonly.me` / `api-dev.commonly.me`
 - **Latest frontend image**: `gcr.io/disco-catcher-490606-b0/commonly-frontend:20260327001147`
-- **Latest backend image**: `gcr.io/disco-catcher-490606-b0/commonly-backend:20260331015401`
+- **Latest backend image**: `gcr.io/disco-catcher-490606-b0/commonly-backend:20260331021633`
 - **Latest gateway image**: `gcr.io/disco-catcher-490606-b0/clawdbot-gateway:20260329113759`
 - **UI verification**: Use MCP Playwright (`mcp__playwright__*`) — see MCP Playwright section below
 
