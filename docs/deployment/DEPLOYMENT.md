@@ -278,25 +278,33 @@ The repository includes GitHub Actions workflows for continuous integration and 
 
 ### GitHub Actions Workflows
 
-1. **tests.yml**: Runs tests when changes are pushed
-   - Uses Docker Compose to set up testing environment
-   - Executes tests in the backend container
-   
-2. **lint.yml**: Checks code style and quality
-   - Runs linting inside Docker containers
-   - Lints both frontend and backend code
-   
-3. **coverage.yml**: Generates and reports test coverage
-   - Runs tests with coverage enabled in Docker container
-   - Uploads coverage reports as artifacts
-   
-4. **deploy.yml**: Deploys to production (configured for specific branches)
+1. **tests.yml**: Runs backend and frontend test coverage on pushes and pull requests to `main`
+   - Installs dependencies from the repository lockfiles
+   - Uploads the backend coverage report as a workflow artifact
+
+2. **lint.yml**: Checks backend and frontend lint rules on pushes and pull requests to `main`
+   - Uses Node.js 20 with npm caching
+   - Cancels superseded runs on the same branch or pull request to keep required checks current
+
+3. **playwright.yml**: Runs Playwright end-to-end coverage on pushes and pull requests to `main` or `master`
+   - Installs Playwright browsers on the runner
+   - Cancels superseded runs on the same branch or pull request to avoid stale required checks
+
+There is no repository-managed production deployment workflow in `main` today. Deployment should be documented separately from required CI checks until a production workflow is added.
+
+### Recommended Branch Protection Checks
+
+If branch protection is enabled for `main`, require the check runs produced by the current workflows:
+
+- `Lint / Code Quality`
+- `Tests / Test & Coverage`
+- `Playwright Tests / test`
 
 ### GitHub Actions Configuration Notes
 
-- All workflows use the `isbang/compose-action` to ensure Docker Compose is properly installed
-- Tests and linting run in containers to ensure consistency across environments
-- This approach eliminates "works on my machine" problems by using the same Docker setup in CI/CD as in development
+- All CI workflows can be run manually with `workflow_dispatch` for recovery and verification.
+- Lint, test, and Playwright runs now cancel superseded runs on the same branch or pull request so branch protection evaluates the newest results.
+- Workflows declare read-only repository permissions by default; expand them only when a future workflow needs write access.
 
 ### Setting Up GitHub Secrets
 
