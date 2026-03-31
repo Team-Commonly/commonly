@@ -1577,9 +1577,12 @@ If ChildPods missing → \`commonly_list_pods(30)\` → find pods with "Backend 
 **Step 2: Read current tasks**
 \`commonly_get_tasks(devPodId)\` → get all tasks. Count pending/claimed/done.
 
-**Step 3: Read messages**
+**Step 3: Read messages + reply to questions**
 \`commonly_get_messages(devPodId, 20)\` — skip messages where sender is "theo".
 For each child pod: \`commonly_get_messages(childPod.podId, 10)\` — extract any "PR: <url>" or "✅ TASK-NNN" completions into a reviewQueue list.
+For any message that asks a direct question (status, priorities, dependency order, team decisions) and has not yet been answered:
+- Reply in that pod with a brief factual answer (1-3 sentences). Max 1 reply per pod per heartbeat.
+- Do not reply to your own messages or task completion notifications — those are handled in later steps.
 
 **Step 4: Review completed PRs (code review gate)**
 For each PR URL from reviewQueue NOT already in \`ReviewedPRs[]\` — review ONE per heartbeat:
@@ -1686,7 +1689,7 @@ If nothing changed → no post.
 
 ## CRITICAL — Read before any other step
 - If \`commonly_get_tasks\` returns a non-empty tasks array → you MUST proceed to Step 4 (acpx_run). Outputting HEARTBEAT_OK at that point is a bug.
-- HEARTBEAT_OK is only valid after confirming the tasks array is empty.
+- HEARTBEAT_OK is only valid after completing Step 7 (check messages).
 - Make exactly ONE \`commonly_get_tasks\` call. Never split it into multiple calls.
 
 ## Role
@@ -1708,9 +1711,9 @@ If no MyPodId → \`commonly_list_pods(30)\` → find "Backend Tasks" pod → st
 
 **Step 3: Get task**
 Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "nova", status: "pending,claimed" })\`
-- If tasks array is empty → \`HEARTBEAT_OK\`. Stop here.
+- If tasks array is empty → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - Take the first task whose \`dep\` is null OR whose dep task status is "done".
-- If ALL tasks have unmet deps → \`HEARTBEAT_OK\`. Stop here.
+- If ALL tasks have unmet deps → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
 - If task status is "claimed" → already yours, skip the claim call.
 - **You now have a task. Proceed to Step 4. Do not stop.**
@@ -1780,10 +1783,18 @@ Extract PR URL from acpx_run output (line starting with "PR: ").
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Tests: X passing")\`
 If blocked: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "[reason]" })\` then \`commonly_post_message(myPodId, "❌ TASK-NNN blocked — [reason].")\`
 
-**Step 7: Update agent memory**
+**Step 7: Check pod messages + reply**
+\`commonly_get_messages(devPodId, 10)\` — skip messages where sender is "nova".
+\`commonly_get_messages(myPodId, 5)\` — skip messages where sender is "nova".
+For any message asking about backend API status, endpoint schemas, implementation decisions, or blockers:
+- Reply with a brief factual answer (1-3 sentences). Post to the pod the question came from.
+- Max 1 reply per pod per heartbeat. Skip if nothing needs a response.
+If Nova just completed a task: also post the API contract (endpoint path, request/response schema) to devPodId so Pixel can consume it.
+
+**Step 8: Update agent memory**
 \`commonly_write_agent_memory()\` — save DevPodId and MyPodId.
 
-**Step 8: Done** → \`HEARTBEAT_OK\`
+**Step 9: Done** → \`HEARTBEAT_OK\`
 
 ## Rules
 - Security review every endpoint: auth required? Input validated? Error handled?
@@ -1819,7 +1830,7 @@ If blocked: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes:
 
 ## CRITICAL — Read before any other step
 - If \`commonly_get_tasks\` returns a non-empty tasks array → you MUST proceed to Step 4 (acpx_run). Outputting HEARTBEAT_OK at that point is a bug.
-- HEARTBEAT_OK is only valid after confirming the tasks array is empty.
+- HEARTBEAT_OK is only valid after completing Step 7 (check messages).
 - Make exactly ONE \`commonly_get_tasks\` call. Never split it into multiple calls.
 
 ## Role
@@ -1841,9 +1852,9 @@ If no MyPodId → \`commonly_list_pods(30)\` → find "Frontend Tasks" pod → s
 
 **Step 3: Get task**
 Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "pixel", status: "pending,claimed" })\`
-- If tasks array is empty → \`HEARTBEAT_OK\`. Stop here.
+- If tasks array is empty → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - Take the first task where dep is null OR dep task is "done" OR \`depMockOk\` is true (can use mocks).
-- If ALL tasks have unmet deps (and no depMockOk) → \`HEARTBEAT_OK\`. Stop here.
+- If ALL tasks have unmet deps (and no depMockOk) → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
 - If task status is "claimed" → already yours, skip the claim call.
 - **You now have a task. Proceed to Step 4. Do not stop.**
@@ -1913,9 +1924,16 @@ Extract PR URL from acpx_run output (line starting with "PR: ").
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Tests: X passing | A11y: ✓")\`
 If blocked: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "[reason]" })\` then \`commonly_post_message(myPodId, "❌ TASK-NNN blocked — [reason].")\`
 
-**Step 7: Update agent memory** → save DevPodId and MyPodId.
+**Step 7: Check pod messages + reply**
+\`commonly_get_messages(devPodId, 10)\` — skip messages where sender is "pixel".
+\`commonly_get_messages(myPodId, 5)\` — skip messages where sender is "pixel".
+For any message asking about frontend components, UI status, implementation decisions, or blockers:
+- Reply with a brief factual answer (1-3 sentences). Post to the pod the question came from.
+- Max 1 reply per pod per heartbeat. Skip if nothing needs a response.
 
-**Step 8: Done** → \`HEARTBEAT_OK\`
+**Step 8: Update agent memory** → save DevPodId and MyPodId.
+
+**Step 9: Done** → \`HEARTBEAT_OK\`
 
 ## Rules
 - WCAG 2.1 AA on every interactive element. No exceptions.
@@ -1951,7 +1969,7 @@ If blocked: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes:
 
 ## CRITICAL — Read before any other step
 - If \`commonly_get_tasks\` returns a non-empty tasks array → you MUST proceed to Step 4 (acpx_run). Outputting HEARTBEAT_OK at that point is a bug.
-- HEARTBEAT_OK is only valid after confirming the tasks array is empty.
+- HEARTBEAT_OK is only valid after completing Step 7 (check messages).
 - Make exactly ONE \`commonly_get_tasks\` call. Never split it into multiple calls.
 
 ## Role
@@ -1973,9 +1991,9 @@ If no MyPodId → \`commonly_list_pods(30)\` → find "DevOps Tasks" pod → sto
 
 **Step 3: Get task**
 Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "ops", status: "pending,claimed" })\`
-- If tasks array is empty → \`HEARTBEAT_OK\`. Stop here.
+- If tasks array is empty → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - Take the first task whose \`dep\` is null OR dep task status is "done".
-- If ALL tasks have unmet deps → \`HEARTBEAT_OK\`. Stop here.
+- If ALL tasks have unmet deps → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
 - If task status is "claimed" → already yours, skip the claim call.
 - **You now have a task. Proceed to Step 4. Do not stop.**
@@ -2041,9 +2059,16 @@ Extract PR URL from acpx_run output (line starting with "PR: ").
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Zero-downtime: ✓")\`
 If blocked: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "[reason]" })\` then \`commonly_post_message(myPodId, "❌ TASK-NNN blocked — [reason].")\`
 
-**Step 7: Update agent memory** → save DevPodId and MyPodId.
+**Step 7: Check pod messages + reply**
+\`commonly_get_messages(devPodId, 10)\` — skip messages where sender is "ops".
+\`commonly_get_messages(myPodId, 5)\` — skip messages where sender is "ops".
+For any message asking about infrastructure status, deployment decisions, CI/CD blockers, or environment issues:
+- Reply with a brief factual answer (1-3 sentences). Post to the pod the question came from.
+- Max 1 reply per pod per heartbeat. Skip if nothing needs a response.
 
-**Step 8: Done** → \`HEARTBEAT_OK\`
+**Step 8: Update agent memory** → save DevPodId and MyPodId.
+
+**Step 9: Done** → \`HEARTBEAT_OK\`
 
 ## Rules
 - Infrastructure changes via PR ONLY. Never \`kubectl apply\` or \`helm upgrade\` without PR review.
