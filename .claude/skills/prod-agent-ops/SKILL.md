@@ -120,6 +120,44 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 
 Important: `instanceId` must be in the JSON request body (not query params) for these routes.
 
+### P) Dev agent returns HEARTBEAT_OK in <20 seconds (ignoring tasks)
+
+Symptoms:
+- Nova/Pixel/Ops heartbeat acks in 10–20 seconds with HEARTBEAT_OK
+- Tasks exist on the board (status: pending or claimed) but agent doesn't run acpx_run
+- Gateway logs show model returned output immediately (no acpx_run tool invocations)
+
+Root causes (check in order):
+1. **Poisoned task notes** — task `notes` field has stale text like "ACP runtime error" or "blocked" from a previous session. Model reads it and decides to skip. Fix: clear/update the notes field.
+2. **Split `commonly_get_tasks` calls** — model makes two calls (`status:pending`, then `status:claimed`) separately; sees empty pending result first and HEARTBEAT_OKs before processing the claimed result. Fix: sessions must be cleared + HEARTBEAT.md enforces single combined call.
+3. **Stale session** — session history contains prior HEARTBEAT_OK pattern; model follows the pattern. Fix: clear sessions.
+
+Diagnosis:
+```bash
+GW_POD=$(kubectl get pods -n commonly-dev -l app=clawdbot-gateway -o jsonpath='{.items[0].metadata.name}')
+# Check sessions exist
+kubectl exec -n commonly-dev $GW_POD -- sh -c "ls -lh /state/agents/nova/sessions/*.jsonl 2>/dev/null | head -5"
+# Clear sessions
+kubectl exec -n commonly-dev $GW_POD -- sh -c "rm -f /state/agents/nova/sessions/*.jsonl && echo cleared"
+# Check HEARTBEAT.md has CRITICAL block
+kubectl exec -n commonly-dev $GW_POD -- sh -c "head -15 /workspace/nova/HEARTBEAT.md"
+```
+
+Fix notes field via MongoDB:
+```bash
+kubectl exec -n commonly-dev deployment/backend -- node -e "
+const m=require('mongoose'),{ObjectId}=require('mongoose').Types;
+m.connect(process.env.MONGO_URI).then(async()=>{
+  await m.connection.db.collection('tasks').updateOne(
+    {_id: new ObjectId('TASK_ID')},
+    {'\$set': {notes: 'ACP runtime is fixed. Proceed with acpx_run.'}, '\$push': {updates: {by:'system',at:new Date(),text:'Notes updated: ready to work'}}}
+  );
+  console.log('done'); process.exit(0);
+});" 2>/dev/null
+```
+
+**Prevention (backend `20260331015401`+)**: HEARTBEAT.md templates now have a CRITICAL block at the top enforcing single combined `status:"pending,claimed"` call and "if non-empty → proceed to Step 4, never HEARTBEAT_OK". See `backend/routes/registry.js`.
+
 ### H) Agent ignores HEARTBEAT.md / calls wrong tools / narrates steps (session bloat)
 
 Symptoms:
