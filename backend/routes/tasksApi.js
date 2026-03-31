@@ -30,7 +30,7 @@ async function resolveAuthor(req) {
   if (agentInstance) return agentInstance;
 
   // Human user: look up username
-  const userId = req.userId || req.user?._id || req.user?.id;
+  const userId = req.userId || req.user?._id || req.user?.id || req.agentUser?._id;
   if (userId) {
     const u = await User.findById(userId).select('username').lean();
     if (u?.username) return u.username;
@@ -81,7 +81,7 @@ async function nextTaskId(podId) {
 router.get('/:podId', auth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const userId = req.userId || req.user?._id;
+    const userId = req.userId || req.user?._id || req.agentUser?._id;
     const { assignee, status } = req.query;
 
     const access = await requirePodMember(podId, userId);
@@ -112,7 +112,7 @@ router.get('/:podId', auth, async (req, res) => {
 router.post('/:podId', auth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const userId = req.userId || req.user?._id;
+    const userId = req.userId || req.user?._id || req.agentUser?._id;
     const {
       title, assignee, dep, depMockOk, source, sourceRef,
       githubIssueNumber, githubIssueUrl, createGithubIssue,
@@ -182,7 +182,7 @@ router.post('/:podId', auth, async (req, res) => {
 router.post('/:podId/:taskId/claim', auth, async (req, res) => {
   try {
     const { podId, taskId } = req.params;
-    const userId = req.userId || req.user?._id;
+    const userId = req.userId || req.user?._id || req.agentUser?._id;
     const agentId = resolveAgentInstanceId(req);
     const claimedBy = agentId || userId.toString();
 
@@ -218,7 +218,7 @@ router.post('/:podId/:taskId/claim', auth, async (req, res) => {
 router.post('/:podId/:taskId/complete', auth, async (req, res) => {
   try {
     const { podId, taskId } = req.params;
-    const userId = req.userId || req.user?._id;
+    const userId = req.userId || req.user?._id || req.agentUser?._id;
     const { prUrl, notes } = req.body;
     const author = await resolveAuthor(req);
 
@@ -267,7 +267,7 @@ router.post('/:podId/:taskId/complete', auth, async (req, res) => {
 router.post('/:podId/:taskId/updates', auth, async (req, res) => {
   try {
     const { podId, taskId } = req.params;
-    const userId = req.userId || req.user?._id;
+    const userId = req.userId || req.user?._id || req.agentUser?._id;
     const { text } = req.body;
 
     if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
@@ -299,7 +299,7 @@ router.post('/:podId/:taskId/updates', auth, async (req, res) => {
 router.patch('/:podId/:taskId', auth, async (req, res) => {
   try {
     const { podId, taskId } = req.params;
-    const userId = req.userId || req.user?._id;
+    const userId = req.userId || req.user?._id || req.agentUser?._id;
     const allowed = ['title', 'assignee', 'dep', 'depMockOk', 'status', 'notes', 'prUrl'];
     const fieldUpdates = {};
     allowed.forEach((k) => {
