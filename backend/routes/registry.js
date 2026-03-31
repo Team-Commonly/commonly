@@ -1715,8 +1715,8 @@ Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "nova", status
 - Take the first task whose \`dep\` is null OR whose dep task status is "done".
 - If ALL tasks have unmet deps → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
-- If task status is "claimed" → already yours, skip the claim call.
-- **You now have a task. Proceed to Step 4. Do not stop.**
+- If task status is "claimed" → already started in a previous session. Skip the claim call. **Proceed to Step 4 NOW — you must run acpx_run to continue it.**
+- **You now have a task. Proceed to Step 4 immediately. Do NOT output HEARTBEAT_OK here.**
 
 **Step 4: Assess task type, then execute**
 Read the task title and description. Decide which path applies:
@@ -1883,8 +1883,8 @@ Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "pixel", statu
 - Take the first task where dep is null OR dep task is "done" OR \`depMockOk\` is true (can use mocks).
 - If ALL tasks have unmet deps (and no depMockOk) → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
-- If task status is "claimed" → already yours, skip the claim call.
-- **You now have a task. Proceed to Step 4. Do not stop.**
+- If task status is "claimed" → already started in a previous session. Skip the claim call. **Proceed to Step 4 NOW — you must run acpx_run to continue it.**
+- **You now have a task. Proceed to Step 4 immediately. Do NOT output HEARTBEAT_OK here.**
 
 **Step 4: Assess task type, then execute**
 Read the task title and description. Decide which path applies:
@@ -2045,8 +2045,8 @@ Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "ops", status:
 - Take the first task whose \`dep\` is null OR dep task status is "done".
 - If ALL tasks have unmet deps → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
-- If task status is "claimed" → already yours, skip the claim call.
-- **You now have a task. Proceed to Step 4. Do not stop.**
+- If task status is "claimed" → already started in a previous session. Skip the claim call. **Proceed to Step 4 NOW — you must run acpx_run to continue it.**
+- **You now have a task. Proceed to Step 4 immediately. Do NOT output HEARTBEAT_OK here.**
 
 **Step 4: Assess task type, then execute**
 Read the task title and description. Decide which path applies:
