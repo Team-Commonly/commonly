@@ -2,7 +2,7 @@
 
 name: llm-routing
 description: LLM routing and provider config (LiteLLM gateway, OpenRouter, Gemini direct), env flags, and fallback behavior.
-last_updated: 2026-03-29
+last_updated: 2026-03-30
 ---
 
 # LLM Routing
@@ -126,7 +126,7 @@ kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
 
 **WARNING**: Do NOT change global default primary to Gemini. If Codex fails, all dev agents fall back to Gemini simultaneously → Gemini rate limited → FailoverError cascade. The heartbeat stagger (`schedulerService.js`) prevents simultaneous cold-start fires. See prod-agent-ops skill section I for incident playbook.
 
-**Codex OAuth token** auto-refreshes daily at 3AM UTC via `refreshCodexOAuthTokenIfNeeded` (threshold: 3 days before expiry). Token stored in `api-keys` secret as `openai-codex-access-token` + `openai-codex-expires-at`. If refresh fails: use `~/.codex/auth.json` (from local `npx @openai/codex login`) → patch `api-keys` k8s secret + GCP SM → restart LiteLLM pod. Refresh job also triggers `kubectl rollout restart deployment/litellm` when `LITELLM_BASE_URL` is set so the init container re-runs with fresh tokens.
+**Codex OAuth token** auto-refreshes daily at 3AM UTC via `refreshCodexOAuthTokenIfNeeded` (threshold: 3 days before expiry). Token stored in GCP SM as `commonly-dev-openai-codex-access-token[-2|-3]` + refresh/id tokens. **Refresh token bug fixed (2026-03-30)**: `addSecretVersion` calls previously had a silent `.catch()` that swallowed GCP SM write failures — ESO reverted k8s secret to old consumed refresh token, permanently breaking the chain. Now errors propagate and LiteLLM restarts for ALL account refreshes (not just account-1). If refresh fails: `npx @openai/codex@0.117.0 login --device-auth` → store tokens in GCP SM → `kubectl annotate externalsecret api-keys force-sync=$(date +%s) -n commonly-dev --overwrite` → helm upgrade (restarts LiteLLM).
 
 ### LiteLLM Virtual Key Lifecycle (2026-03-25)
 
@@ -245,12 +245,27 @@ p.query('SELECT \"user\",model,SUM(total_tokens)::int AS tokens,COUNT(*)::int AS
 Full dashboard: `https://litellm-dev.commonly.me/ui` → Logs tab (filter by User = agent ID).
 See `docs/development/LITELLM.md` for complete SQL query library.
 
-### LiteLLM Codex Init Container (2026-03-25)
+### LiteLLM Codex Init Container (2026-03-30)
 
-The `codex-auth-seed` init container in `litellm-deployment.yaml` must write the correct `expires_at` to `auth.json`:
-- **CORRECT**: parse real JWT `exp` claim from the access token payload (base64url decode `token.split('.')[1]`)
-- **WRONG**: `now + 86400` → token expired but LiteLLM trusts expires_at → silent 401 on every call
-- **WRONG**: `expires_at = 0` → LiteLLM triggers interactive device auth at startup → pod stuck `0/1`
+The `codex-auth-seed` init container in `litellm-deployment.yaml` writes `auth.json` for LiteLLM's `chatgpt/` provider. **The chatgpt/ provider ignores `api_key` in litellm_params** — it requires `CHATGPT_TOKEN_DIR/auth.json` on disk. Without it, LiteLLM triggers interactive device auth at startup → pod stuck `0/1`.
+
+**Current simplified logic** (helm rev 122):
+- Candidates: account-1 (`OPENAI_CODEX_ACCESS_TOKEN`) → account-3 (`OPENAI_CODEX_ACCESS_TOKEN_3`). Account-2 is expired and skipped.
+- For each candidate: decode JWT `exp` claim. If `exp > now`, use it. Otherwise skip.
+- Writes `auth.json` with `{access_token, expires_at, refresh_token?, id_token?}`.
+- If no valid token found: writes `{}` (disables chatgpt/ provider, LiteLLM still boots).
+
+**Key rules**:
+- `expires_at` MUST be the real JWT `exp` claim (not `now + 86400` which causes silent 401s)
+- Accounts 2 & 3 use `api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_2/3` in litellm_params (no auth.json needed for them)
+- Account-1 has NO `api_key` in litellm_params — relies entirely on auth.json
+
+**Current account status** (2026-03-30):
+| Account | Email | Expires | Auth Method |
+|---------|-------|---------|-------------|
+| 1 | ls111@rice.edu | Apr 10 | auth.json (init container) |
+| 2 | xcjsam@gmail.com | Mar 28 (expired) | api_key env var |
+| 3 | xcjsam@g.ucla.edu | Apr 10 | api_key env var |
 
 `LITELLM_BASE_URL` env var must be set in backend-deployment.yaml for provisioner to route agents through LiteLLM (checks `!!process.env.LITELLM_BASE_URL`). Currently set to `http://litellm:4000`.
 
