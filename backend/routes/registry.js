@@ -2279,6 +2279,7 @@ const reprovisionInstallation = async ({
   force = true,
   runtimeTokenCache = new Map(),
   userTokenCache = new Map(),
+  skipRuntimeRestart = false,
 } = {}) => {
   if (!installation) {
     throw new Error('Installation is required');
@@ -2412,7 +2413,7 @@ const reprovisionInstallation = async ({
   }
 
   let runtimeRestart = null;
-  if (provisioned.restartRequired) {
+  if (provisioned.restartRequired && !skipRuntimeRestart) {
     try {
       runtimeRestart = await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
     } catch (restartError) {
@@ -3740,6 +3741,7 @@ router.post('/admin/installations/reprovision-all', auth, adminAuth, async (req,
     const runtimeTokenCache = new Map();
     const userTokenCache = new Map();
     const items = [];
+    const sharedRuntimesNeedingRestart = new Set();
     for (const installation of activeInstallations) {
       try {
         const result = await reprovisionInstallation({
@@ -3747,7 +3749,10 @@ router.post('/admin/installations/reprovision-all', auth, adminAuth, async (req,
           force: true,
           runtimeTokenCache,
           userTokenCache,
+          skipRuntimeRestart: true,
         });
+        // Track which shared runtimes need a single deferred restart
+        if (result.runtimeType === 'moltbot') sharedRuntimesNeedingRestart.add('moltbot');
         items.push({
           installationId: result.installationId,
           agentName: result.agentName,
@@ -3755,9 +3760,9 @@ router.post('/admin/installations/reprovision-all', auth, adminAuth, async (req,
           podId: result.podId,
           success: true,
           runtimeStarted: result.runtimeStarted,
-          runtimeRestarted: result.runtimeRestarted,
+          runtimeRestarted: false,
           runtimeStartError: result.runtimeStartError,
-          runtimeRestartError: result.runtimeRestartError,
+          runtimeRestartError: null,
         });
       } catch (error) {
         items.push({
@@ -3769,6 +3774,13 @@ router.post('/admin/installations/reprovision-all', auth, adminAuth, async (req,
           error: error.message,
         });
       }
+    }
+
+    // Single gateway restart after all agents provisioned (instead of one per agent)
+    if (sharedRuntimesNeedingRestart.has('moltbot')) {
+      await restartAgentRuntime('moltbot', 'default', {}).catch((err) => {
+        console.warn('[reprovision-all] Failed to restart gateway:', err.message);
+      });
     }
 
     const succeeded = items.filter((item) => item.success).length;
