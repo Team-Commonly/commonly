@@ -1718,7 +1718,27 @@ Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "nova", status
 - If task status is "claimed" → already yours, skip the claim call.
 - **You now have a task. Proceed to Step 4. Do not stop.**
 
-**Step 4: Implement via codex**
+**Step 4: Assess task type, then execute**
+Read the task title and description. Decide which path applies:
+
+**Path A — Audit/research/planning task** (keywords: audit, analyze, review, plan, map, document, design, coupling, boundaries, architecture, research):
+Call \`acpx_run\` to explore the codebase and produce a written deliverable:
+- agentId: "codex"
+- timeoutSeconds: 300
+- task: |
+    # Clone/update repo (read-only exploration, no branch needed)
+    if [ ! -d /workspace/nova/repo ]; then git clone https://x-access-token:\${GITHUB_PAT}@github.com/Team-Commonly/commonly.git /workspace/nova/repo; fi
+    cd /workspace/nova/repo && git fetch origin && git reset --hard origin/main
+
+    # Perform the audit/analysis and write findings to stdout
+    # e.g. list files, read service code, map dependencies
+    # End with: echo "AUDIT_COMPLETE: <1-paragraph summary of findings and recommendations>"
+
+After acpx_run, post the findings as a GitHub issue comment:
+\`curl -s -X POST https://api.github.com/repos/Team-Commonly/commonly/issues/ISSUE_NUM/comments -H "Authorization: Bearer \${GITHUB_PAT}" -H "Content-Type: application/json" -d '{"body":"[findings]"}'\`
+Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary of findings]" })\` — no prUrl needed.
+
+**Path B — Implementation task** (code changes, new feature, bug fix, test addition):
 Call \`acpx_run\`:
 - agentId: "codex"
 - timeoutSeconds: 600
@@ -1775,10 +1795,10 @@ Call \`acpx_run\`:
       fi
     fi
 
-**Step 5: Mark task complete**
+**Step 5: Mark task complete (Path B only)**
 Extract PR URL from acpx_run output (line starting with "PR: ").
 - **If PR URL found**: \`commonly_complete_task(devPodId, taskId, { prUrl, notes: "Tests: X passing | CI: ✓" })\`
-- **If PR URL NOT found** (acpx_run failed or PR creation failed): \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "acpx_run did not produce a PR URL — [reason from output]" })\`. Do NOT call complete_task without a real PR URL.
+- **If PR URL NOT found**: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "PR creation failed — [reason from acpx_run output]" })\`. Do NOT call complete_task without a real PR URL.
 
 **Step 6: Post result to myPodId**
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Tests: X passing")\`
@@ -1860,7 +1880,26 @@ Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "pixel", statu
 - If task status is "claimed" → already yours, skip the claim call.
 - **You now have a task. Proceed to Step 4. Do not stop.**
 
-**Step 4: Implement via codex**
+**Step 4: Assess task type, then execute**
+Read the task title and description. Decide which path applies:
+
+**Path A — Audit/research/planning task** (keywords: audit, analyze, review, plan, map, document, design, ux, accessibility, coupling, architecture, research):
+Call \`acpx_run\` to explore the codebase and produce written findings:
+- agentId: "codex"
+- timeoutSeconds: 300
+- task: |
+    # Clone/update repo (read-only, no branch needed)
+    if [ ! -d /workspace/pixel/repo ]; then git clone https://x-access-token:\${GITHUB_PAT}@github.com/Team-Commonly/commonly.git /workspace/pixel/repo; fi
+    cd /workspace/pixel/repo && git fetch origin && git reset --hard origin/main
+
+    # Perform the audit/analysis and write findings to stdout
+    # End with: echo "AUDIT_COMPLETE: <1-paragraph summary>"
+
+After acpx_run, post findings as a GitHub issue comment:
+\`curl -s -X POST https://api.github.com/repos/Team-Commonly/commonly/issues/ISSUE_NUM/comments -H "Authorization: Bearer \${GITHUB_PAT}" -H "Content-Type: application/json" -d '{"body":"[findings]"}'\`
+Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary]" })\` — no prUrl needed.
+
+**Path B — Implementation task** (code changes, new feature, bug fix, test addition):
 Call \`acpx_run\`:
 - agentId: "codex"
 - timeoutSeconds: 600
@@ -1917,10 +1956,10 @@ Call \`acpx_run\`:
       fi
     fi
 
-**Step 5: Mark task complete**
+**Step 5: Mark task complete (Path B only)**
 Extract PR URL from acpx_run output (line starting with "PR: ").
 - **If PR URL found**: \`commonly_complete_task(devPodId, taskId, { prUrl, notes: "Tests: X passing | A11y: ✓ | CI: ✓" })\`
-- **If PR URL NOT found** (acpx_run failed or PR creation failed): \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "acpx_run did not produce a PR URL — [reason from output]" })\`. Do NOT call complete_task without a real PR URL.
+- **If PR URL NOT found**: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "PR creation failed — [reason from acpx_run output]" })\`. Do NOT call complete_task without a real PR URL.
 
 **Step 6: Post result to myPodId**
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Tests: X passing | A11y: ✓")\`
@@ -2000,7 +2039,26 @@ Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "ops", status:
 - If task status is "claimed" → already yours, skip the claim call.
 - **You now have a task. Proceed to Step 4. Do not stop.**
 
-**Step 4: Implement via codex**
+**Step 4: Assess task type, then execute**
+Read the task title and description. Decide which path applies:
+
+**Path A — Audit/research/planning task** (keywords: audit, analyze, review, plan, map, document, design, coupling, architecture, research, assess, evaluate):
+Call \`acpx_run\` to explore the repo and produce written findings:
+- agentId: "codex"
+- timeoutSeconds: 300
+- task: |
+    # Clone/update repo (read-only, no branch needed)
+    if [ ! -d /workspace/ops/repo ]; then git clone https://x-access-token:\${GITHUB_PAT}@github.com/Team-Commonly/commonly.git /workspace/ops/repo; fi
+    cd /workspace/ops/repo && git fetch origin && git reset --hard origin/main
+
+    # Perform the audit/analysis and write findings to stdout
+    # End with: echo "AUDIT_COMPLETE: <1-paragraph summary>"
+
+After acpx_run, post findings as a GitHub issue comment:
+\`curl -s -X POST https://api.github.com/repos/Team-Commonly/commonly/issues/ISSUE_NUM/comments -H "Authorization: Bearer \${GITHUB_PAT}" -H "Content-Type: application/json" -d '{"body":"[findings]"}'\`
+Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary]" })\` — no prUrl needed.
+
+**Path B — Implementation task** (code/config changes, new workflow, Dockerfile, Helm update):
 Call \`acpx_run\`:
 - agentId: "codex"
 - timeoutSeconds: 600
@@ -2053,10 +2111,10 @@ Call \`acpx_run\`:
       fi
     fi
 
-**Step 5: Mark task complete**
+**Step 5: Mark task complete (Path B only)**
 Extract PR URL from acpx_run output (line starting with "PR: ").
 - **If PR URL found**: \`commonly_complete_task(devPodId, taskId, { prUrl, notes: "Zero-downtime: ✓ | Rollback: <plan> | CI: ✓" })\`
-- **If PR URL NOT found** (acpx_run failed or PR creation failed): \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "acpx_run did not produce a PR URL — [reason from output]" })\`. Do NOT call complete_task without a real PR URL.
+- **If PR URL NOT found**: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "PR creation failed — [reason from acpx_run output]" })\`. Do NOT call complete_task without a real PR URL.
 
 **Step 6: Post result to myPodId**
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Zero-downtime: ✓")\`
