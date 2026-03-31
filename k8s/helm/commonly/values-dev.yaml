@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
-    tag: "20260329114852"
+    tag: "20260330153820"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev

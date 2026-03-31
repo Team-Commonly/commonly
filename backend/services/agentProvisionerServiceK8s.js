@@ -2679,17 +2679,19 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
     };
     await Promise.all(
       Object.entries(toUpdate).map(([key, value]) =>
-        smClient
-          .addSecretVersion({
-            parent: `projects/${project}/secrets/commonly-dev-${key}`,
-            payload: { data: Buffer.from(value) },
-          })
-          .catch((e) => console.warn(`[codex-refresh${suffix}] GCP SM update failed for ${key}: ${e.message}`)),
+        smClient.addSecretVersion({
+          parent: `projects/${project}/secrets/commonly-dev-${key}`,
+          payload: { data: Buffer.from(value) },
+        }),
       ),
     );
     console.log(`[codex-refresh${suffix}] GCP Secret Manager updated.`);
   } catch (err) {
-    console.warn(`[codex-refresh${suffix}] GCP Secret Manager update skipped: ${err.message}`);
+    // Re-throw so the caller knows GCP SM failed — silent swallow causes ESO to revert
+    // the k8s secret to the old (consumed) refresh token on next 1h sync, permanently
+    // breaking the refresh chain.
+    console.error(`[codex-refresh${suffix}] GCP Secret Manager update FAILED: ${err.message}`);
+    throw err;
   }
 
   // Re-inject into all agent auth-profiles.json on the gateway PVC.
@@ -2786,10 +2788,9 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
     console.warn(`[codex-refresh${suffix}] auth files re-inject skipped: ${err.message}`);
   }
 
-  // When LiteLLM proxies Codex, restart it so the codex-auth-seed init container re-reads
-  // the freshly patched api-keys secret and writes a valid auth.json. Only account 1 needs
-  // to trigger this (LiteLLM uses a single shared auth.json, not per-account).
-  if (useLiteLLM && isAccount1) {
+  // When LiteLLM proxies Codex, restart it so it picks up the freshly patched api-keys secret.
+  // All accounts need this since all 3 accounts now use api_key from env vars directly (no auth.json).
+  if (useLiteLLM) {
     try {
       await k8sAppsApi.patchNamespacedDeployment(
         'litellm',
