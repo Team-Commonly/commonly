@@ -60,12 +60,10 @@ data:
           api_key: os.environ/OPENROUTER_API_KEY
 
       # --- Codex (chatgpt/ provider, 3 accounts for independent rate-limit pools) ---
-      # Account-1: token written to /chatgpt-auth/auth.json by codex-auth-seed init container.
-      # Accounts 2 & 3: tokens passed via api_key in litellm_params (env var, no auth.json needed).
-      # All three serve the same model names — LiteLLM's least-busy routing distributes requests
-      # and falls back to accounts 2 or 3 automatically when account-1 hits 429.
-      # Note: accounts 1 & 2 share the same ChatGPT team plan; account-3 is a separate plan
-      # with a fully independent weekly rate-limit pool.
+      # Account-1: uses auth.json written by init container (chatgpt/ provider requires it for primary)
+      # Account-2: api_key in litellm_params (env var, bypasses auth.json)
+      # Account-3: api_key in litellm_params (env var, bypasses auth.json)
+      # LiteLLM's least-busy routing distributes requests and falls back automatically on 429.
       - model_name: gpt-5.4
         model_info:
           mode: responses
@@ -95,8 +93,7 @@ data:
           api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_3
 
       # --- gpt-5.4-mini (30% of quota vs full gpt-5.4, used for dev agent heartbeat orchestration) ---
-      # Same 3-account rotation as full gpt-5.4 so the mini model also benefits from
-      # account-3's independent rate-limit pool when accounts 1 & 2 are busy.
+      # Same 3-account rotation as full gpt-5.4.
       - model_name: gpt-5.4-mini
         model_info:
           mode: responses
