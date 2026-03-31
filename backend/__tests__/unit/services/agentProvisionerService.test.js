@@ -13,11 +13,13 @@ describe('agentProvisionerService', () => {
     if (fs.existsSync(commonlyConfigPath)) fs.unlinkSync(commonlyConfigPath);
     process.env.OPENCLAW_CONFIG_PATH = openclawConfigPath;
     process.env.COMMONLY_BOT_CONFIG_PATH = commonlyConfigPath;
+    process.env.OPENCLAW_WORKSPACE_ROOT = '/home/node/clawd';
   });
 
   afterAll(() => {
     delete process.env.OPENCLAW_CONFIG_PATH;
     delete process.env.COMMONLY_BOT_CONFIG_PATH;
+    delete process.env.OPENCLAW_WORKSPACE_ROOT;
   });
 
   it('writes OpenClaw account config', () => {

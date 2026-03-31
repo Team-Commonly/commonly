@@ -57,7 +57,7 @@ describe('AgentMentionService', () => {
 
     const res = await AgentMentionService.enqueueMentions({
       podId: 'pod-1',
-      message: { content: 'Hi @commonly-bot' },
+      message: { content: 'Hi @commonly-summarizer' },
       userId: 'user-1',
       username: 'alice',
     });
@@ -93,7 +93,7 @@ describe('AgentMentionService', () => {
 
     const res = await AgentMentionService.enqueueMentions({
       podId: 'pod-1',
-      message: { content: 'Hi @commonly-bot', id: 'msg-1' },
+      message: { content: 'Hi @commonly-summarizer', id: 'msg-1' },
       userId: 'user-1',
       username: 'alice',
     });

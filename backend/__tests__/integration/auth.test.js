@@ -19,16 +19,19 @@ jest.mock('@sendgrid/mail', () => ({
 
 describe('Auth Routes Integration Tests', () => {
   let app;
+  let originalNodeEnv;
 
   // Setup and teardown for MongoDB and Express app
   beforeAll(async () => {
     await setupMongoDb();
+    originalNodeEnv = process.env.NODE_ENV;
 
     // Create a minimal Express app for testing
     app = express();
     app.use(express.json());
 
     // Set environment variables for testing
+    process.env.NODE_ENV = 'production';
     process.env.JWT_SECRET = 'test-jwt-secret';
     process.env.FRONTEND_URL = 'http://localhost:3000';
     process.env.SENDGRID_FROM_EMAIL = 'test@example.com';
@@ -38,6 +41,7 @@ describe('Auth Routes Integration Tests', () => {
   });
 
   afterAll(async () => {
+    process.env.NODE_ENV = originalNodeEnv;
     await closeMongoDb();
   });
 

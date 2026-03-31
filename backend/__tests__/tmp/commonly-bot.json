@@ -1,0 +1,10 @@
+{
+  "accounts": {
+    "default": {
+      "runtimeToken": "cm_agent_summary",
+      "userToken": null,
+      "agentName": "commonly-summarizer",
+      "instanceId": "default"
+    }
+  }
+}
