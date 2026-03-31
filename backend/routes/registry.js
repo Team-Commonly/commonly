@@ -1732,11 +1732,17 @@ Call \`acpx_run\` to explore the codebase and produce a written deliverable:
 
     # Perform the audit/analysis and write findings to stdout
     # e.g. list files, read service code, map dependencies
-    # End with: echo "AUDIT_COMPLETE: <1-paragraph summary of findings and recommendations>"
+    # End with these two lines:
+    # echo "AUDIT_COMPLETE: <1-paragraph summary of findings>"
+    # echo "SUBTASKS: <task1 title>|<assignee>||<task2 title>|<assignee>" (pipe-separated pairs, double-pipe between tasks)
 
-After acpx_run, post the findings as a GitHub issue comment:
-\`curl -s -X POST https://api.github.com/repos/Team-Commonly/commonly/issues/ISSUE_NUM/comments -H "Authorization: Bearer \${GITHUB_PAT}" -H "Content-Type: application/json" -d '{"body":"[findings]"}'\`
-Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary of findings]" })\` — no prUrl needed.
+After acpx_run, extract findings and sub-tasks from output:
+- Post findings to GitHub issue: \`curl -s -X POST https://api.github.com/repos/Team-Commonly/commonly/issues/ISSUE_NUM/comments -H "Authorization: Bearer \${GITHUB_PAT}" -H "Content-Type: application/json" -d '{"body":"[findings]"}'\`
+- For each sub-task from the SUBTASKS line, call \`commonly_create_task(devPodId, { title, assignee, dep: currentTaskId, parentTask: currentTaskId, source: "agent" })\`
+  - Use \`dep: currentTaskId\` so the sub-task is blocked until this audit task is done
+  - Use \`parentTask: currentTaskId\` to link it as a child in the board UI
+  - If the GH issue number is known, also pass \`createGithubIssue: true\` so it gets a GH issue
+- Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary] — N sub-tasks created" })\` — no prUrl needed.
 
 **Path B — Implementation task** (code changes, new feature, bug fix, test addition):
 Call \`acpx_run\`:
@@ -1893,11 +1899,14 @@ Call \`acpx_run\` to explore the codebase and produce written findings:
     cd /workspace/pixel/repo && git fetch origin && git reset --hard origin/main
 
     # Perform the audit/analysis and write findings to stdout
-    # End with: echo "AUDIT_COMPLETE: <1-paragraph summary>"
+    # End with these two lines:
+    # echo "AUDIT_COMPLETE: <1-paragraph summary>"
+    # echo "SUBTASKS: <task1 title>|<assignee>||<task2 title>|<assignee>"
 
-After acpx_run, post findings as a GitHub issue comment:
-\`curl -s -X POST https://api.github.com/repos/Team-Commonly/commonly/issues/ISSUE_NUM/comments -H "Authorization: Bearer \${GITHUB_PAT}" -H "Content-Type: application/json" -d '{"body":"[findings]"}'\`
-Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary]" })\` — no prUrl needed.
+After acpx_run, extract findings and sub-tasks:
+- Post findings to GitHub issue comment (same curl pattern as nova).
+- For each sub-task from SUBTASKS line: \`commonly_create_task(devPodId, { title, assignee, dep: currentTaskId, parentTask: currentTaskId, source: "agent" })\`
+- Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary] — N sub-tasks created" })\` — no prUrl needed.
 
 **Path B — Implementation task** (code changes, new feature, bug fix, test addition):
 Call \`acpx_run\`:
@@ -2052,11 +2061,14 @@ Call \`acpx_run\` to explore the repo and produce written findings:
     cd /workspace/ops/repo && git fetch origin && git reset --hard origin/main
 
     # Perform the audit/analysis and write findings to stdout
-    # End with: echo "AUDIT_COMPLETE: <1-paragraph summary>"
+    # End with these two lines:
+    # echo "AUDIT_COMPLETE: <1-paragraph summary>"
+    # echo "SUBTASKS: <task1 title>|<assignee>||<task2 title>|<assignee>"
 
-After acpx_run, post findings as a GitHub issue comment:
-\`curl -s -X POST https://api.github.com/repos/Team-Commonly/commonly/issues/ISSUE_NUM/comments -H "Authorization: Bearer \${GITHUB_PAT}" -H "Content-Type: application/json" -d '{"body":"[findings]"}'\`
-Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary]" })\` — no prUrl needed.
+After acpx_run, extract findings and sub-tasks:
+- Post findings to GitHub issue comment (same curl pattern as nova).
+- For each sub-task from SUBTASKS line: \`commonly_create_task(devPodId, { title, assignee, dep: currentTaskId, parentTask: currentTaskId, source: "agent" })\`
+- Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary] — N sub-tasks created" })\` — no prUrl needed.
 
 **Path B — Implementation task** (code/config changes, new workflow, Dockerfile, Helm update):
 Call \`acpx_run\`:

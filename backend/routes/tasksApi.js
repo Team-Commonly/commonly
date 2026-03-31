@@ -114,7 +114,7 @@ router.post('/:podId', auth, async (req, res) => {
     const { podId } = req.params;
     const userId = req.userId || req.user?._id || req.agentUser?._id;
     const {
-      title, assignee, dep, depMockOk, source, sourceRef,
+      title, assignee, dep, depMockOk, parentTask, source, sourceRef,
       githubIssueNumber, githubIssueUrl, createGithubIssue,
     } = req.body;
 
@@ -137,7 +137,11 @@ router.post('/:podId', auth, async (req, res) => {
     let ghUrl = githubIssueUrl || null;
     if (createGithubIssue && title && GitHubAppService.isPatConfigured()) {
       try {
-        const issue = await GitHubAppService.createIssue({ title, body: assignee ? `Assigned to: ${assignee}` : undefined });
+        const bodyParts = [];
+        if (assignee) bodyParts.push(`Assigned to: ${assignee}`);
+        if (parentTask) bodyParts.push(`Parent task: ${parentTask}`);
+        if (dep) bodyParts.push(`Blocked by: ${dep}`);
+        const issue = await GitHubAppService.createIssue({ title, body: bodyParts.join('\n') || undefined });
         ghNumber = issue.number;
         ghUrl = issue.html_url;
       } catch (ghErr) {
@@ -152,6 +156,7 @@ router.post('/:podId', auth, async (req, res) => {
     if (assignee) initUpdate.text = `Created by ${author} · assigned to ${assignee}`;
     if (sourceRef) initUpdate.text = `Created by ${author} from ${sourceRef}${assignee ? ` · assigned to ${assignee}` : ''}`;
     if (ghNumber) initUpdate.text += ` · GH#${ghNumber}`;
+    if (parentTask) initUpdate.text += ` · sub-task of ${parentTask}`;
 
     const task = await Task.create({
       podId,
@@ -161,12 +166,32 @@ router.post('/:podId', auth, async (req, res) => {
       assignee: assignee || null,
       dep: dep || null,
       depMockOk: !!depMockOk,
+      parentTask: parentTask || null,
       source: source || (ghNumber ? 'github' : 'human'),
       sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined),
       githubIssueNumber: ghNumber,
       githubIssueUrl: ghUrl,
       updates: [initUpdate],
     });
+
+    // If this sub-task has a parent that links to a GH issue, comment there
+    if (parentTask && GitHubAppService.isPatConfigured()) {
+      try {
+        const parent = await Task.findOne({
+          podId: mongoose.Types.ObjectId.createFromHexString(podId),
+          taskId: parentTask,
+        }).lean();
+        if (parent?.githubIssueNumber) {
+          const depNote = dep ? ` (blocked by ${dep})` : '';
+          GitHubAppService.addIssueComment({
+            issueNumber: parent.githubIssueNumber,
+            comment: `**Sub-task created:** ${taskId} — ${title}${depNote}\nAssigned to: ${assignee || 'unassigned'}`,
+          }).catch((e) => console.warn('GH sub-task comment failed:', e.message));
+        }
+      } catch (e) {
+        console.warn('Parent GH lookup failed (non-fatal):', e.message);
+      }
+    }
 
     return res.status(201).json({ task });
   } catch (err) {
@@ -243,13 +268,28 @@ router.post('/:podId/:taskId/complete', auth, async (req, res) => {
       return res.status(409).json({ error: 'Task is already done', status: existing.status });
     }
 
-    // Auto-close linked GitHub issue when task is completed
+    // Auto-close linked GitHub issue when task is completed; include sub-tasks in comment
     if (task.githubIssueNumber && GitHubAppService.isPatConfigured()) {
-      const closeComment = prUrl
-        ? `Completed via ${prUrl}`
-        : `Completed by ${author}`;
-      GitHubAppService.closeIssue({ issueNumber: task.githubIssueNumber, comment: closeComment })
-        .catch((err) => console.warn(`Failed to auto-close GH#${task.githubIssueNumber}:`, err.message));
+      (async () => {
+        try {
+          const subTasks = await Task.find({
+            podId: mongoose.Types.ObjectId.createFromHexString(podId),
+            parentTask: task.taskId,
+          }).select('taskId title status prUrl').lean();
+
+          let closeComment = prUrl ? `Completed via ${prUrl}` : `Completed by ${author}`;
+          if (subTasks.length > 0) {
+            const subLines = subTasks.map((s) => {
+              const icon = s.status === 'done' ? '✅' : s.status === 'blocked' ? '❌' : '⏳';
+              return `${icon} ${s.taskId}: ${s.title}${s.prUrl ? ` — [PR](${s.prUrl})` : ''}`;
+            });
+            closeComment += `\n\n**Sub-tasks:**\n${subLines.join('\n')}`;
+          }
+          await GitHubAppService.closeIssue({ issueNumber: task.githubIssueNumber, comment: closeComment });
+        } catch (err) {
+          console.warn(`Failed to auto-close GH#${task.githubIssueNumber}:`, err.message);
+        }
+      })();
     }
 
     return res.json({ task });
@@ -300,7 +340,7 @@ router.patch('/:podId/:taskId', auth, async (req, res) => {
   try {
     const { podId, taskId } = req.params;
     const userId = req.userId || req.user?._id || req.agentUser?._id;
-    const allowed = ['title', 'assignee', 'dep', 'depMockOk', 'status', 'notes', 'prUrl'];
+    const allowed = ['title', 'assignee', 'dep', 'depMockOk', 'parentTask', 'status', 'notes', 'prUrl'];
     const fieldUpdates = {};
     allowed.forEach((k) => {
       if (req.body[k] !== undefined) fieldUpdates[k] = req.body[k];
@@ -320,6 +360,7 @@ router.patch('/:podId/:taskId', auth, async (req, res) => {
     if (fieldUpdates.assignee !== undefined) changeParts.push(`reassigned to ${fieldUpdates.assignee || 'unassigned'}`);
     if (fieldUpdates.status !== undefined) changeParts.push(`status → ${fieldUpdates.status}`);
     if (fieldUpdates.dep !== undefined) changeParts.push(`dep → ${fieldUpdates.dep || 'none'}`);
+    if (fieldUpdates.parentTask !== undefined) changeParts.push(`parent → ${fieldUpdates.parentTask || 'none'}`);
     if (fieldUpdates.prUrl !== undefined) changeParts.push(`PR: ${fieldUpdates.prUrl}`);
     if (fieldUpdates.notes !== undefined) changeParts.push('notes updated');
     if (fieldUpdates.title !== undefined) changeParts.push('title updated');
