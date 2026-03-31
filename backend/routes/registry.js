@@ -1777,11 +1777,12 @@ Call \`acpx_run\`:
 
 **Step 5: Mark task complete**
 Extract PR URL from acpx_run output (line starting with "PR: ").
-\`commonly_complete_task(devPodId, taskId, { prUrl, notes: "Tests: X passing | CI: ✓" })\`
+- **If PR URL found**: \`commonly_complete_task(devPodId, taskId, { prUrl, notes: "Tests: X passing | CI: ✓" })\`
+- **If PR URL NOT found** (acpx_run failed or PR creation failed): \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "acpx_run did not produce a PR URL — [reason from output]" })\`. Do NOT call complete_task without a real PR URL.
 
 **Step 6: Post result to myPodId**
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Tests: X passing")\`
-If blocked: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "[reason]" })\` then \`commonly_post_message(myPodId, "❌ TASK-NNN blocked — [reason].")\`
+If blocked: \`commonly_post_message(myPodId, "❌ TASK-NNN blocked — [reason].")\`
 
 **Step 7: Check pod messages + reply**
 \`commonly_get_messages(devPodId, 10)\` — skip messages where sender is "nova".
@@ -1918,11 +1919,12 @@ Call \`acpx_run\`:
 
 **Step 5: Mark task complete**
 Extract PR URL from acpx_run output (line starting with "PR: ").
-\`commonly_complete_task(devPodId, taskId, { prUrl, notes: "Tests: X passing | A11y: ✓ | CI: ✓" })\`
+- **If PR URL found**: \`commonly_complete_task(devPodId, taskId, { prUrl, notes: "Tests: X passing | A11y: ✓ | CI: ✓" })\`
+- **If PR URL NOT found** (acpx_run failed or PR creation failed): \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "acpx_run did not produce a PR URL — [reason from output]" })\`. Do NOT call complete_task without a real PR URL.
 
 **Step 6: Post result to myPodId**
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Tests: X passing | A11y: ✓")\`
-If blocked: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "[reason]" })\` then \`commonly_post_message(myPodId, "❌ TASK-NNN blocked — [reason].")\`
+If blocked: \`commonly_post_message(myPodId, "❌ TASK-NNN blocked — [reason].")\`
 
 **Step 7: Check pod messages + reply**
 \`commonly_get_messages(devPodId, 10)\` — skip messages where sender is "pixel".
@@ -2053,11 +2055,12 @@ Call \`acpx_run\`:
 
 **Step 5: Mark task complete**
 Extract PR URL from acpx_run output (line starting with "PR: ").
-\`commonly_complete_task(devPodId, taskId, { prUrl, notes: "Zero-downtime: ✓ | Rollback: <plan> | CI: ✓" })\`
+- **If PR URL found**: \`commonly_complete_task(devPodId, taskId, { prUrl, notes: "Zero-downtime: ✓ | Rollback: <plan> | CI: ✓" })\`
+- **If PR URL NOT found** (acpx_run failed or PR creation failed): \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "acpx_run did not produce a PR URL — [reason from output]" })\`. Do NOT call complete_task without a real PR URL.
 
 **Step 6: Post result to myPodId**
 \`commonly_post_message(myPodId, "✅ TASK-NNN — [summary]. PR: <url> | Zero-downtime: ✓")\`
-If blocked: \`commonly_update_task(devPodId, taskId, { status: "blocked", notes: "[reason]" })\` then \`commonly_post_message(myPodId, "❌ TASK-NNN blocked — [reason].")\`
+If blocked: \`commonly_post_message(myPodId, "❌ TASK-NNN blocked — [reason].")\`
 
 **Step 7: Check pod messages + reply**
 \`commonly_get_messages(devPodId, 10)\` — skip messages where sender is "ops".
