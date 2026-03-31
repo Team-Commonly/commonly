@@ -105,6 +105,8 @@ const Pod = () => {
     }, [tabValue, podType, getPodType]);
     
     // Filter pods based on search query and tab value
+    const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+
     const filteredPods = React.useMemo(() => {
         const currentPodType = getPodType();
         return pods.filter(pod => {
@@ -112,12 +114,15 @@ const Pod = () => {
             const podTypeMatch = pod.type === currentPodType;
             
             // Filter by search query
-            const searchMatch = pod.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                               pod.description.toLowerCase().includes(searchQuery.toLowerCase());
+            const podName = (pod.name || '').toLowerCase();
+            const podDescription = (pod.description || '').toLowerCase();
+            const searchMatch = !normalizedSearchQuery
+                || podName.includes(normalizedSearchQuery)
+                || podDescription.includes(normalizedSearchQuery);
             
             return podTypeMatch && searchMatch;
         });
-    }, [pods, searchQuery, getPodType]);
+    }, [pods, normalizedSearchQuery, getPodType]);
     
     // Handle creating a new room
     const handleCreateRoom = async () => {
@@ -302,22 +307,37 @@ const Pod = () => {
                             <Box className="pod-empty">
                                 <PeopleIcon sx={{ fontSize: 60, mb: 2 }} />
                                 <Typography variant="h5" gutterBottom>
-                                    No pods found in this category
+                                    {normalizedSearchQuery
+                                        ? `No pods match "${searchQuery.trim()}"`
+                                        : 'No pods found in this category'}
                                 </Typography>
                                 <Typography variant="body1" color="textSecondary" paragraph>
-                                    {getPodType() === 'agent-ensemble'
-                                        ? 'Create a new agent ensemble pod to orchestrate multi-agent conversations.'
-                                        : 'Create a new pod to start chatting with others!'}
+                                    {normalizedSearchQuery
+                                        ? 'Try a different search or clear the current filter to browse all pods in this category.'
+                                        : getPodType() === 'agent-ensemble'
+                                            ? 'Create a new agent ensemble pod to orchestrate multi-agent conversations.'
+                                            : 'Create a new pod to start chatting with others!'}
                                 </Typography>
-                                <Button
-                                    variant="contained"
-                                    color="primary"
-                                    size="large"
-                                    startIcon={<AddIcon />}
-                                    onClick={() => setOpenDialog(true)}
-                                >
-                                    Create New Pod
-                                </Button>
+                                {normalizedSearchQuery ? (
+                                    <Button
+                                        variant="outlined"
+                                        color="primary"
+                                        size="large"
+                                        onClick={() => setSearchQuery('')}
+                                    >
+                                        Clear Search
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        size="large"
+                                        startIcon={<AddIcon />}
+                                        onClick={() => setOpenDialog(true)}
+                                    >
+                                        Create New Pod
+                                    </Button>
+                                )}
                             </Box>
                         </Grid>
                     ) : (

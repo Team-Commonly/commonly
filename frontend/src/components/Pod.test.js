@@ -322,6 +322,32 @@ test('search filters pods', async () => {
   fireEvent.change(searchInput, { target: { value: 'None' } });
   
   await waitFor(() => {
-    expect(screen.getByText('No pods found in this category')).toBeInTheDocument();
+    expect(screen.getByText('No pods match "None"')).toBeInTheDocument();
+    expect(screen.getByText('Clear Search')).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByText('Clear Search'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Room')).toBeInTheDocument();
+    expect(screen.getByText('Other')).toBeInTheDocument();
+  });
+});
+
+test('search handles pods without descriptions', async () => {
+  const podWithoutDescription = { ...mockPod, _id: '2', name: 'Minimal', description: null, type: 'chat' };
+  axios.get.mockResolvedValueOnce({ data: [mockPod, podWithoutDescription] });
+
+  renderPodWithRouter(<Pod />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Minimal')).toBeInTheDocument();
+  });
+
+  fireEvent.change(screen.getByPlaceholderText('Search pods...'), { target: { value: 'minimal' } });
+
+  await waitFor(() => {
+    expect(screen.getByText('Minimal')).toBeInTheDocument();
+    expect(screen.queryByText('Room')).not.toBeInTheDocument();
   });
 });
