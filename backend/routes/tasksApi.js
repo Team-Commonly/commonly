@@ -89,7 +89,7 @@ router.get('/:podId', auth, async (req, res) => {
 
     const query = { podId: mongoose.Types.ObjectId.createFromHexString(podId) };
     if (assignee) query.assignee = assignee;
-    if (status) query.status = status;
+    if (status) query.status = status.includes(',') ? { $in: status.split(',') } : status;
 
     const tasks = await Task.find(query).sort({ taskNum: 1 }).lean();
     return res.json({ tasks });
