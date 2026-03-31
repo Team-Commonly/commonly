@@ -3631,6 +3631,31 @@ const ChatRoom = () => {
                                                                         <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.68rem' }}>{task.updates.length} update{task.updates.length !== 1 ? 's' : ''}</Typography>
                                                                     </Box>
                                                                 )}
+                                                                {/* Relationship indicators */}
+                                                                {task.parentTask && (
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.3 }}>
+                                                                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.68rem' }}>
+                                                                            ↳ sub-task of {task.parentTask}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                )}
+                                                                {task.dep && (
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.3 }}>
+                                                                        <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.68rem' }}>
+                                                                            ⛔ blocked by {task.dep}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                )}
+                                                                {(() => {
+                                                                    const childCount = tasks.filter(t => t.parentTask === task.taskId).length;
+                                                                    return childCount > 0 ? (
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.3 }}>
+                                                                            <Typography variant="caption" sx={{ fontSize: '0.68rem', color: 'info.main' }}>
+                                                                                {childCount} sub-task{childCount !== 1 ? 's' : ''}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    ) : null;
+                                                                })()}
                                                             </CardContent>
                                                         </Card>
                                                     ))}
@@ -3662,8 +3687,54 @@ const ChatRoom = () => {
                                                         />
                                                     </Box>
                                                     <Typography variant="subtitle2" sx={{ fontWeight: 600, lineHeight: 1.4 }}>{selectedTask.title}</Typography>
-                                                    {selectedTask.dep && (
-                                                        <Typography variant="caption" color="text.secondary">Depends on: {selectedTask.dep}</Typography>
+                                                    {/* Relationship block */}
+                                                    {(selectedTask.dep || selectedTask.parentTask || tasks.some(t => t.parentTask === selectedTask.taskId) || tasks.some(t => t.dep === selectedTask.taskId)) && (
+                                                        <Box sx={{ mt: 0.75, display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+                                                            {selectedTask.parentTask && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem' }}>
+                                                                        ↳ Sub-task of:
+                                                                    </Typography>
+                                                                    <Chip
+                                                                        label={selectedTask.parentTask}
+                                                                        size="small"
+                                                                        sx={{ height: 18, fontSize: '0.68rem', cursor: 'pointer' }}
+                                                                        onClick={() => {
+                                                                            const parent = tasks.find(t => t.taskId === selectedTask.parentTask);
+                                                                            if (parent) handleOpenTask(parent);
+                                                                        }}
+                                                                    />
+                                                                </Box>
+                                                            )}
+                                                            {selectedTask.dep && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.72rem' }}>⛔ Blocked by:</Typography>
+                                                                    <Chip
+                                                                        label={selectedTask.dep}
+                                                                        size="small"
+                                                                        color="warning"
+                                                                        variant="outlined"
+                                                                        sx={{ height: 18, fontSize: '0.68rem', cursor: 'pointer' }}
+                                                                        onClick={() => {
+                                                                            const depTask = tasks.find(t => t.taskId === selectedTask.dep);
+                                                                            if (depTask) handleOpenTask(depTask);
+                                                                        }}
+                                                                    />
+                                                                    {(() => {
+                                                                        const depTask = tasks.find(t => t.taskId === selectedTask.dep);
+                                                                        return depTask ? <Chip label={depTask.status} size="small" color={depTask.status === 'done' ? 'success' : 'default'} sx={{ height: 18, fontSize: '0.68rem' }} /> : null;
+                                                                    })()}
+                                                                </Box>
+                                                            )}
+                                                            {tasks.some(t => t.dep === selectedTask.taskId) && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem' }}>🔒 Blocks:</Typography>
+                                                                    {tasks.filter(t => t.dep === selectedTask.taskId).map(t => (
+                                                                        <Chip key={t.taskId} label={t.taskId} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.68rem', cursor: 'pointer' }} onClick={() => handleOpenTask(t)} />
+                                                                    ))}
+                                                                </Box>
+                                                            )}
+                                                        </Box>
                                                     )}
                                                 </Box>
                                                 <IconButton size="small" onClick={() => setTaskDrawerOpen(false)}><CloseIcon fontSize="small" /></IconButton>
@@ -3705,6 +3776,30 @@ const ChatRoom = () => {
 
                                             {/* Activity timeline */}
                                             <Box sx={{ flex: 1, overflowY: 'auto', px: 2, py: 1.5 }}>
+                                                {/* Sub-tasks section */}
+                                                {tasks.some(t => t.parentTask === selectedTask.taskId) && (
+                                                    <Box sx={{ mb: 2 }}>
+                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.6, fontSize: '0.68rem', display: 'block', mb: 0.75 }}>
+                                                            Sub-tasks
+                                                        </Typography>
+                                                        {tasks.filter(t => t.parentTask === selectedTask.taskId).map(st => (
+                                                            <Box
+                                                                key={st.taskId}
+                                                                onClick={() => handleOpenTask(st)}
+                                                                sx={{ display: 'flex', alignItems: 'center', gap: 0.75, p: '6px 8px', mb: 0.5, borderRadius: 1, cursor: 'pointer', border: '1px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.hover' } }}
+                                                            >
+                                                                <Chip label={st.taskId} size="small" sx={{ height: 16, fontSize: '0.65rem' }} />
+                                                                <Typography variant="caption" sx={{ flex: 1, fontSize: '0.75rem', lineHeight: 1.3 }}>{st.title}</Typography>
+                                                                <Chip
+                                                                    label={st.status}
+                                                                    size="small"
+                                                                    color={st.status === 'done' ? 'success' : st.status === 'blocked' ? 'error' : st.status === 'claimed' ? 'primary' : 'default'}
+                                                                    sx={{ height: 16, fontSize: '0.65rem' }}
+                                                                />
+                                                            </Box>
+                                                        ))}
+                                                    </Box>
+                                                )}
                                                 <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.6, fontSize: '0.68rem', display: 'block', mb: 1 }}>
                                                     Activity
                                                 </Typography>
