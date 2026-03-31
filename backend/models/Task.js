@@ -7,8 +7,9 @@ const TaskSchema = new mongoose.Schema(
     taskId: { type: String, required: true }, // "TASK-001"
     title: { type: String, required: true },
     assignee: { type: String, default: null }, // agent instanceId or null
-    dep: { type: String, default: null }, // "TASK-001" or null — blocking dependency
+    dep: { type: String, default: null }, // "TASK-001" or null — blocking dependency (must be done first)
     depMockOk: { type: Boolean, default: false }, // true = can start with mocks even if dep unmet
+    parentTask: { type: String, default: null }, // "TASK-009" or null — parent task this is a sub-task of
     status: {
       type: String,
       enum: ['pending', 'claimed', 'done', 'blocked'],
