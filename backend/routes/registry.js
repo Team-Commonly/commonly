@@ -1665,13 +1665,15 @@ Define API contract (schema + response shape) BEFORE implementing — Pixel need
 If no DevPodId → \`commonly_list_pods(30)\` → find "Dev Team" pod → store ID.
 If no MyPodId → \`commonly_list_pods(30)\` → find "Backend Tasks" pod → store as MyPodId.
 
-**Step 3: Find pending tasks**
-\`commonly_get_tasks(devPodId, { assignee: "nova", status: "pending" })\`
-If no pending tasks → \`HEARTBEAT_OK\`.
+**Step 3: Find active tasks**
+\`commonly_get_tasks(devPodId, { assignee: "nova", status: "pending,claimed" })\`
+This returns both new (pending) and in-flight (claimed) tasks assigned to nova.
+If no tasks → \`HEARTBEAT_OK\`.
 
-**Step 4: Claim top task**
+**Step 4: Pick top task**
 Pick first task whose \`dep\` is either null OR whose dep task has status "done".
-\`commonly_claim_task(devPodId, taskId)\` → if ok:false (already claimed), pick next.
+- If task status is "claimed": it was already claimed in a previous heartbeat — skip the claim call and proceed directly to Step 5 (resume the work).
+- If task status is "pending": \`commonly_claim_task(devPodId, taskId)\` → if ok:false (already claimed by another), pick next.
 
 **Step 5: Implement via codex**
 Call \`acpx_run\`:
@@ -1755,13 +1757,15 @@ Reusable components over one-offs. Performance: sub-3s page loads, no unnecessar
 If no DevPodId → \`commonly_list_pods(30)\` → find "Dev Team" pod → store ID.
 If no MyPodId → \`commonly_list_pods(30)\` → find "Frontend Tasks" pod → store as MyPodId.
 
-**Step 3: Find pending tasks**
-\`commonly_get_tasks(devPodId, { assignee: "pixel", status: "pending" })\`
-If no pending tasks → \`HEARTBEAT_OK\`.
+**Step 3: Find active tasks**
+\`commonly_get_tasks(devPodId, { assignee: "pixel", status: "pending,claimed" })\`
+This returns both new (pending) and in-flight (claimed) tasks assigned to pixel.
+If no tasks → \`HEARTBEAT_OK\`.
 
-**Step 4: Claim top task**
+**Step 4: Pick top task**
 Pick first task where dep is null OR dep task is "done" OR \`depMockOk\` is true (can use mocks).
-\`commonly_claim_task(devPodId, taskId)\` → if ok:false (already claimed), pick next.
+- If task status is "claimed": already claimed in a previous heartbeat — skip the claim call and proceed directly to Step 5 (resume the work).
+- If task status is "pending": \`commonly_claim_task(devPodId, taskId)\` → if ok:false (already claimed by another), pick next.
 
 **Step 5: Implement via codex**
 Call \`acpx_run\`:
@@ -1844,13 +1848,15 @@ All changes to k8s/, helm/, .github/workflows/, Dockerfile go through a PR. No d
 If no DevPodId → \`commonly_list_pods(30)\` → find "Dev Team" pod → store ID.
 If no MyPodId → \`commonly_list_pods(30)\` → find "DevOps Tasks" pod → store as MyPodId.
 
-**Step 3: Find pending tasks**
-\`commonly_get_tasks(devPodId, { assignee: "ops", status: "pending" })\`
-If no pending tasks → \`HEARTBEAT_OK\`.
+**Step 3: Find active tasks**
+\`commonly_get_tasks(devPodId, { assignee: "ops", status: "pending,claimed" })\`
+This returns both new (pending) and in-flight (claimed) tasks assigned to ops.
+If no tasks → \`HEARTBEAT_OK\`.
 
-**Step 4: Claim top task**
+**Step 4: Pick top task**
 Pick first task whose dep is null OR dep task has status "done".
-\`commonly_claim_task(devPodId, taskId)\` → if ok:false (already claimed), pick next.
+- If task status is "claimed": already claimed in a previous heartbeat — skip the claim call and proceed directly to Step 5 (resume the work).
+- If task status is "pending": \`commonly_claim_task(devPodId, taskId)\` → if ok:false (already claimed by another), pick next.
 
 **Step 5: Implement via codex**
 Call \`acpx_run\`:
