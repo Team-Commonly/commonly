@@ -19,6 +19,8 @@ const k8sExec = new k8s.Exec(kc);
 
 const NAMESPACE = process.env.K8S_NAMESPACE || 'commonly';
 const BACKEND_SERVICE_URL = process.env.COMMONLY_API_URL || 'http://backend.commonly.svc.cluster.local:5000';
+// Default PR target branch — keep in sync with DEFAULT_BRANCH in backend/routes/registry.js
+const DEFAULT_BRANCH = process.env.COMMONLY_DEFAULT_BRANCH || 'v1.0.x';
 const OPENCLAW_BUNDLED_SKILLS_DIR = '/app/skills';
 const AGENT_NODE_POOL = String(process.env.AGENT_PROVISIONER_NODE_POOL || '').trim();
 const AGENT_NODE_SELECTOR = (() => {
@@ -488,6 +490,12 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
     '',
     'EOF',
     '  fi',
+    // Inject/update the default branch note — sed replaces if present, appends if not
+    `  if grep -q "## Git workflow" "${toolsPath}"; then`,
+    `    sed -i "s|Default PR target branch: \`[^${'`'}]*\`|Default PR target branch: \`${DEFAULT_BRANCH}\`|g" "${toolsPath}" || true`,
+    `  else`,
+    `    printf '\\n## Git workflow\\n\\n- Default PR target branch: \\`${DEFAULT_BRANCH}\\`\\n- All PRs must target this branch. Update when the release branch changes.\\n' >> "${toolsPath}"`,
+    `  fi`,
     `fi`,
     `if [ -f "${commonlySkillPath}" ]; then`,
     `  sed -i "s|## Recent Messages (user token)|## Recent Messages (runtime token)|g" "${commonlySkillPath}" || true`,

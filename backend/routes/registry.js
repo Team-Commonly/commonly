@@ -571,6 +571,9 @@ const binLooksInstalled = (binName, dockerCapabilities) => {
   return aptSet.has(packageName) || pythonSet.has(packageName);
 };
 
+// Default git branch for PRs — change here when the target branch changes (e.g. v2.0.x, main)
+const DEFAULT_BRANCH = 'v1.0.x';
+
 const PRESET_DEFINITIONS = [
   {
     id: 'research-analyst',
@@ -1728,7 +1731,7 @@ Call \`acpx_run\` to explore the codebase and produce a written deliverable:
 - task: |
     # Clone/update repo (read-only exploration, no branch needed)
     if [ ! -d /workspace/nova/repo ]; then git clone https://x-access-token:\${GITHUB_PAT}@github.com/Team-Commonly/commonly.git /workspace/nova/repo; fi
-    cd /workspace/nova/repo && git fetch origin && git reset --hard origin/main
+    cd /workspace/nova/repo && git fetch origin && git reset --hard origin/${DEFAULT_BRANCH}
 
     # Perform the audit/analysis and write findings to stdout
     # e.g. list files, read service code, map dependencies
@@ -1759,7 +1762,7 @@ Call \`acpx_run\`:
     git remote set-url origin https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git
     git fetch origin
     git stash -u 2>/dev/null
-    git checkout main && git reset --hard origin/main
+    git checkout ${DEFAULT_BRANCH} && git reset --hard origin/${DEFAULT_BRANCH}
 
     # Branch (continue existing if present)
     BRANCH="nova/task-NNN-short-name"
@@ -1778,7 +1781,7 @@ Call \`acpx_run\`:
     PR_URL=\$(GH_TOKEN=\$GH_TOKEN gh pr create --repo Team-Commonly/commonly \
       --title "feat(NNN): description" \
       --body "Resolves TASK-NNN\n\nChanges:\n- [what changed]\n\nTests: X passing\nSecurity: ✓ Auth checked, inputs validated" \
-      --base main 2>&1)
+      --base ${DEFAULT_BRANCH} 2>&1)
     echo "PR: \$PR_URL"
 
     # CI check — wait up to 3 min for checks to start, fix immediate failures
@@ -1896,7 +1899,7 @@ Call \`acpx_run\` to explore the codebase and produce written findings:
 - task: |
     # Clone/update repo (read-only, no branch needed)
     if [ ! -d /workspace/pixel/repo ]; then git clone https://x-access-token:\${GITHUB_PAT}@github.com/Team-Commonly/commonly.git /workspace/pixel/repo; fi
-    cd /workspace/pixel/repo && git fetch origin && git reset --hard origin/main
+    cd /workspace/pixel/repo && git fetch origin && git reset --hard origin/${DEFAULT_BRANCH}
 
     # Perform the audit/analysis and write findings to stdout
     # End with these two lines:
@@ -1923,7 +1926,7 @@ Call \`acpx_run\`:
     git remote set-url origin https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git
     git fetch origin
     git stash -u 2>/dev/null
-    git checkout main && git reset --hard origin/main
+    git checkout ${DEFAULT_BRANCH} && git reset --hard origin/${DEFAULT_BRANCH}
 
     # Branch (continue existing if present)
     BRANCH="pixel/task-NNN-short-name"
@@ -1943,7 +1946,7 @@ Call \`acpx_run\`:
     PR_URL=\$(GH_TOKEN=\$GH_TOKEN gh pr create --repo Team-Commonly/commonly \
       --title "feat(NNN): description" \
       --body "Resolves TASK-NNN\n\nComponent: ...\nA11y: ✓ WCAG 2.1 AA\nTests: X passing" \
-      --base main 2>&1)
+      --base ${DEFAULT_BRANCH} 2>&1)
     echo "PR: \$PR_URL"
 
     # CI check — wait up to 3 min for checks to start, fix immediate failures
@@ -2058,7 +2061,7 @@ Call \`acpx_run\` to explore the repo and produce written findings:
 - task: |
     # Clone/update repo (read-only, no branch needed)
     if [ ! -d /workspace/ops/repo ]; then git clone https://x-access-token:\${GITHUB_PAT}@github.com/Team-Commonly/commonly.git /workspace/ops/repo; fi
-    cd /workspace/ops/repo && git fetch origin && git reset --hard origin/main
+    cd /workspace/ops/repo && git fetch origin && git reset --hard origin/${DEFAULT_BRANCH}
 
     # Perform the audit/analysis and write findings to stdout
     # End with these two lines:
@@ -2085,7 +2088,7 @@ Call \`acpx_run\`:
     git remote set-url origin https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git
     git fetch origin
     git stash -u 2>/dev/null
-    git checkout main && git reset --hard origin/main
+    git checkout ${DEFAULT_BRANCH} && git reset --hard origin/${DEFAULT_BRANCH}
 
     # Branch (continue existing if present)
     BRANCH="ops/task-NNN-short-name"
@@ -2101,7 +2104,7 @@ Call \`acpx_run\`:
     PR_URL=\$(GH_TOKEN=\$GH_TOKEN gh pr create --repo Team-Commonly/commonly \
       --title "ops(NNN): description" \
       --body "Resolves TASK-NNN\n\nChange: ...\nRollback plan: ...\nMonitoring: ..." \
-      --base main 2>&1)
+      --base ${DEFAULT_BRANCH} 2>&1)
     echo "PR: \$PR_URL"
 
     # CI check — wait up to 3 min for checks to start, fix immediate failures
