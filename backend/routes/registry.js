@@ -1587,7 +1587,23 @@ For any message that asks a direct question (status, priorities, dependency orde
 - Reply in that pod with a brief factual answer (1-3 sentences). Max 1 reply per pod per heartbeat.
 - Do not reply to your own messages or task completion notifications — those are handled in later steps.
 
-**Step 4: Review completed PRs (code review gate)**
+**Step 3.5: Scan all open PRs for CI failures → create fix tasks**
+Call \`acpx_run\`:
+- agentId: "codex"
+- timeoutSeconds: 120
+- task: |
+    GH_TOKEN="\${GITHUB_PAT}"
+    # List all open PRs with CI status
+    GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --state open \
+      --json number,headRefName,statusCheckRollup \
+      --jq '.[] | {number, branch: .headRefName, failing: ([.statusCheckRollup[]? | select(.conclusion=="FAILURE" or .conclusion=="TIMED_OUT")] | length > 0)}' \
+      2>&1
+Parse output: for each PR where \`failing: true\`:
+- Determine assignee from branch: nova/* → "nova", pixel/* → "pixel", ops/* → "ops", quick-canyon → skip (human PR)
+- \`commonly_create_task(devPodId, { title: "Fix CI failures on PR #N (<branch>)", assignee, source: "ci-monitor", sourceRef: "CI#N" })\`
+  — deduped (safe to call again — returns alreadyExists:true if task already exists for that sourceRef)
+
+**Step 4: Review ONE completed PR (code review gate)**
 For each PR URL from reviewQueue NOT already in \`ReviewedPRs[]\` — review ONE per heartbeat:
 Call \`acpx_run\`:
 - agentId: "codex"
@@ -1596,26 +1612,39 @@ Call \`acpx_run\`:
     GH_TOKEN="\${GITHUB_PAT}"
     PR_URL="<url from reviewQueue>"
     PR_NUM=\$(echo \$PR_URL | grep -oE '[0-9]+$')
-    # Get diff (limit to avoid token overflow)
+
+    # Check CI status first — if failing, skip diff review
+    CI_STATUS=\$(GH_TOKEN=\$GH_TOKEN gh pr checks \$PR_NUM --repo Team-Commonly/commonly 2>&1)
+    if echo "\$CI_STATUS" | grep -qiE "^(Code Quality|Test|test).*fail"; then
+      echo "=== CI FAILING ==="
+      echo "\$CI_STATUS" | head -20
+      GH_TOKEN=\$GH_TOKEN gh pr review \$PR_NUM --repo Team-Commonly/commonly --request-changes \
+        --body "CI checks are failing. Fix Code Quality and Test & Coverage failures before this can be reviewed." \
+        2>&1 || true
+      echo "REVIEW_DONE:CHANGES_REQUESTED:ci-fix:CI checks failing:\$PR_URL"
+      exit 0
+    fi
+
+    # CI green — review the diff
     DIFF=\$(GH_TOKEN=\$GH_TOKEN gh pr diff \$PR_NUM --repo Team-Commonly/commonly 2>&1 | head -400)
     echo "=== DIFF ==="
     echo "\$DIFF"
-    # Review criteria:
-    # SECURITY: Is auth middleware applied? Are inputs validated? No SQL/NoSQL injection? No hardcoded secrets?
-    # TESTS: Are new functions/routes covered? Tests are meaningful (not just happy path)?
-    # PATTERNS: Follows existing code conventions? No unnecessary complexity? Backwards-compatible?
-    # API CONTRACT: If adding endpoint, is schema clear for Pixel to consume?
+    # Review criteria — output one verdict:
+    # SECURITY: auth middleware applied? inputs validated? no injection? no hardcoded secrets?
+    # TESTS: new functions/routes covered? tests meaningful?
+    # PATTERNS: follows conventions? no unnecessary complexity? backwards-compatible?
+    # API CONTRACT: if adding endpoint, schema clear for consumers?
     #
-    # If LGTM — approve:
+    # Verdict LGTM — approve:
     GH_TOKEN=\$GH_TOKEN gh pr review \$PR_NUM --repo Team-Commonly/commonly --approve \
       --body "Code review by Theo (AI PM). Security: ✓ Auth checked. Tests: ✓ Coverage adequate. Patterns: ✓ Consistent with codebase." \
       2>&1 || echo "APPROVE_FAILED"
     echo "REVIEW_DONE:LGTM:\$PR_URL"
     #
-    # If changes needed — instead of approve, use:
+    # Verdict CHANGES NEEDED — use instead of approve:
     # GH_TOKEN=\$GH_TOKEN gh pr review \$PR_NUM --repo Team-Commonly/commonly --request-changes \
-    #   --body "Changes requested: [specific issues]" 2>&1
-    # echo "REVIEW_DONE:CHANGES_REQUESTED:[assignee]:[summary of required changes]:\$PR_URL"
+    #   --body "Changes requested: [specific issues found in diff]" 2>&1
+    # echo "REVIEW_DONE:CHANGES_REQUESTED:[assignee]:[summary]:\$PR_URL"
 
 Parse acpx_run output:
 - If output contains "REVIEW_DONE:LGTM" → add PR URL to \`ReviewedPRs[]\` (keep last 20).
@@ -1711,6 +1740,16 @@ Define API contract (schema + response shape) BEFORE implementing — Pixel need
 **Step 2: Find pods (if IDs missing)**
 If no DevPodId → \`commonly_list_pods(30)\` → find "Dev Team" pod → store ID.
 If no MyPodId → \`commonly_list_pods(30)\` → find "Backend Tasks" pod → store as MyPodId.
+
+**Step 2.5: Check your own open PRs for CI failures (PRIORITY)**
+Call \`acpx_run\` (agentId: "codex", timeoutSeconds: 60):
+    GH_TOKEN="\${GITHUB_PAT}"
+    GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --author @me --state open \
+      --json number,headRefName,statusCheckRollup \
+      --jq '.[] | {number, branch: .headRefName, failing: ([.statusCheckRollup[]? | select(.conclusion=="FAILURE")] | length > 0)}' 2>&1
+If output shows any PR with \`failing: true\` → **this is your top priority**. Skip Step 3–4 and go directly to fixing that PR:
+- Run acpx_run to fetch the CI failure log, fix the failing tests/lint, push a fix commit.
+- Only proceed to new task work once your open PRs are green (or you've pushed a fix attempt).
 
 **Step 3: Get task**
 Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "nova", status: "pending,claimed" })\`
@@ -1880,6 +1919,16 @@ Reusable components over one-offs. Performance: sub-3s page loads, no unnecessar
 If no DevPodId → \`commonly_list_pods(30)\` → find "Dev Team" pod → store ID.
 If no MyPodId → \`commonly_list_pods(30)\` → find "Frontend Tasks" pod → store as MyPodId.
 
+**Step 2.5: Check your own open PRs for CI failures (PRIORITY)**
+Call \`acpx_run\` (agentId: "codex", timeoutSeconds: 60):
+    GH_TOKEN="\${GITHUB_PAT}"
+    GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --author @me --state open \
+      --json number,headRefName,statusCheckRollup \
+      --jq '.[] | {number, branch: .headRefName, failing: ([.statusCheckRollup[]? | select(.conclusion=="FAILURE")] | length > 0)}' 2>&1
+If output shows any PR with \`failing: true\` → **this is your top priority**. Skip Step 3–4 and go directly to fixing that PR:
+- Run acpx_run to fetch the CI failure log, fix the failing tests/lint, push a fix commit.
+- Only proceed to new task work once your open PRs are green (or you've pushed a fix attempt).
+
 **Step 3: Get task**
 Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "pixel", status: "pending,claimed" })\`
 - If tasks array is empty → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
@@ -2041,6 +2090,16 @@ All changes to k8s/, helm/, .github/workflows/, Dockerfile go through a PR. No d
 **Step 2: Find pods (if IDs missing)**
 If no DevPodId → \`commonly_list_pods(30)\` → find "Dev Team" pod → store ID.
 If no MyPodId → \`commonly_list_pods(30)\` → find "DevOps Tasks" pod → store as MyPodId.
+
+**Step 2.5: Check your own open PRs for CI failures (PRIORITY)**
+Call \`acpx_run\` (agentId: "codex", timeoutSeconds: 60):
+    GH_TOKEN="\${GITHUB_PAT}"
+    GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --author @me --state open \
+      --json number,headRefName,statusCheckRollup \
+      --jq '.[] | {number, branch: .headRefName, failing: ([.statusCheckRollup[]? | select(.conclusion=="FAILURE")] | length > 0)}' 2>&1
+If output shows any PR with \`failing: true\` → **this is your top priority**. Skip Step 3–4 and go directly to fixing that PR:
+- Run acpx_run to fetch the CI failure log, fix the failing tests/lint, push a fix commit.
+- Only proceed to new task work once your open PRs are green (or you've pushed a fix attempt).
 
 **Step 3: Get task**
 Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "ops", status: "pending,claimed" })\`
