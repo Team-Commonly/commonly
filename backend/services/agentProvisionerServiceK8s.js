@@ -1315,12 +1315,14 @@ const issueLiteLLMOpenRouterKey = async (agentId) => {
     const axios = require('axios');
     const headers = { Authorization: `Bearer ${masterKey}` };
 
-    // Read existing key from openrouter:default.key on the agent PVC
+    // Read existing key from openai-codex:codex-cli.access on the agent PVC.
+    // We read from codex-cli.access (not openrouter:default.key) because openrouter:default
+    // may hold the real OpenRouter API key (sk-or-v1-...) which is not a LiteLLM virtual key.
     let existingKey = null;
     try {
       const gwPod = await waitForReadyGatewayPod(10000, 2000);
       if (gwPod) {
-        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openrouter:default'];process.stdout.write(p&&p.key?p.key:'');} catch(e){}"`;
+        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openai-codex:codex-cli'];process.stdout.write(p&&p.access?p.access:'');} catch(e){}"`;
         const out = await new Promise((resolve) => {
           const chunks = [];
           const s = new stream.PassThrough();
@@ -1334,7 +1336,8 @@ const issueLiteLLMOpenRouterKey = async (agentId) => {
       }
     } catch (_) { /* best-effort */ }
 
-    if (existingKey) {
+    if (existingKey && existingKey !== masterKey) {
+      // Safety: never delete the master key even if found on PVC
       try {
         const check = await axios.get(`${baseUrl}/key/info?key=${existingKey}`, { headers });
         const info = check.data?.info;
@@ -1388,10 +1391,10 @@ const issueLiteLLMOpenRouterKey = async (agentId) => {
 const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, virtualKey) => {
   if (!virtualKey) return;
   const escaped = virtualKey.replace(/'/g, "\\'");
-  // Real OpenRouter key — written to openrouter:default so direct OpenRouter calls succeed.
-  // If not set, fall back to the LiteLLM key (sub-optimal but won't crash).
-  const realOrKey = (process.env.OPENROUTER_API_KEY || '').replace(/'/g, "\\'");
-  const orDefaultKey = realOrKey || escaped;
+  // OpenRouter calls are proxied through LiteLLM (openrouter.baseUrl = http://litellm:4000/v1).
+  // LiteLLM expects a virtual key for authorization — always use the LiteLLM key for openrouter:default.
+  // LiteLLM uses its own litellm_params.api_key (the real OR key) when forwarding to OpenRouter.
+  const orDefaultKey = escaped;
   const script = [
     `const fs = require('fs');`,
     `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
@@ -1857,9 +1860,10 @@ const provisionOpenClawAccount = async ({
   // Dev agents reuse their Codex virtual key (it already grants OpenRouter model access).
   // Community agents get a separate key scoped to OpenRouter models only (no Codex).
   if (process.env.LITELLM_BASE_URL) {
+    const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
     const openRouterKey = isDevAgent
       ? codexVirtualKey // reuse — already has openrouter/* in models scope
-      : await issueLiteLLMOpenRouterKey(accountId);
+      : (await issueLiteLLMOpenRouterKey(accountId)) || masterKey || null;
     if (openRouterKey) {
       await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
     }
