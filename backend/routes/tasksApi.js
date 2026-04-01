@@ -123,13 +123,31 @@ router.post('/:podId', auth, async (req, res) => {
     const access = await requirePodMember(podId, userId, { write: true });
     if (access.error) return res.status(access.status).json({ error: access.error });
 
-    // Dedup: don't create a second task for the same GitHub issue
+    // Dedup: don't create a second task for the same GitHub issue.
+    // Exception: if the existing task is 'done', reset it to 'pending' so the
+    // issue gets picked up again (e.g. PR was closed without merging).
     if (sourceRef) {
       const existing = await Task.findOne({
         podId: mongoose.Types.ObjectId.createFromHexString(podId),
         sourceRef,
-      }).lean();
-      if (existing) return res.json({ task: existing, alreadyExists: true });
+      });
+      if (existing) {
+        if (existing.status === 'done') {
+          existing.status = 'pending';
+          existing.assignee = assignee || null;
+          existing.claimedAt = null;
+          existing.notes = 'Reopened — previously completed but issue is still open.';
+          existing.updates.push({
+            text: 'Reopened: task was done but linked issue is still open — picking up again.',
+            author: 'system',
+            authorId: null,
+            createdAt: new Date(),
+          });
+          await existing.save();
+          return res.json({ task: existing.toObject(), alreadyExists: false, reopened: true });
+        }
+        return res.json({ task: existing.toObject(), alreadyExists: true });
+      }
     }
 
     // Board → GitHub: optionally create a GH issue so humans can track it there too
