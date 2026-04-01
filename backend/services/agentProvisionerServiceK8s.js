@@ -494,7 +494,7 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
     `  if grep -q "## Git workflow" "${toolsPath}"; then`,
     `    sed -i "s|Default PR target branch: \`[^${'`'}]*\`|Default PR target branch: \`${DEFAULT_BRANCH}\`|g" "${toolsPath}" || true`,
     `  else`,
-    `    printf '\\n## Git workflow\\n\\n- Default PR target branch: \\`${DEFAULT_BRANCH}\\`\\n- All PRs must target this branch. Update when the release branch changes.\\n' >> "${toolsPath}"`,
+    `    printf '\\n## Git workflow\\n\\n- Default PR target branch: \`${DEFAULT_BRANCH}\`\\n- All PRs must target this branch. Update when the release branch changes.\\n' >> "${toolsPath}"`,
     `  fi`,
     `fi`,
     `if [ -f "${commonlySkillPath}" ]; then`,
