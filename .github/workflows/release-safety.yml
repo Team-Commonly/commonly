@@ -33,7 +33,6 @@ jobs:
             }
 
             const sensitiveMatchers = [
-              /^\.github\/workflows\//,
               /^cloudbuild.*\.ya?ml$/,
               /^docker-compose.*\.ya?ml$/,
               /^backend\/docker-compose.*\.ya?ml$/,
