@@ -1788,27 +1788,59 @@ If empty, also call \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { status: "
 Read the task title and description. Decide which path applies:
 
 **Path A — Audit/research/planning task** (keywords: audit, analyze, review, plan, map, document, design, coupling, boundaries, architecture, research):
-Call \`acpx_run\` to explore the codebase and produce a written deliverable:
+Call \`acpx_run\` to explore the codebase and produce a written deliverable committed to the repo:
 - agentId: "codex"
 - timeoutSeconds: 300
 - task: |
-    # Clone/update repo (read-only exploration, no branch needed)
-    if [ ! -d /workspace/nova/repo ]; then git clone https://x-access-token:\${GITHUB_PAT}@github.com/Team-Commonly/commonly.git /workspace/nova/repo; fi
-    cd /workspace/nova/repo && git fetch origin && git reset --hard origin/${DEFAULT_BRANCH}
+    GH_TOKEN="\${GITHUB_PAT}"
+    git config --global user.name "Nova (Commonly Agent)"
+    git config --global user.email "nova-agent@users.noreply.github.com"
 
-    # Perform the audit/analysis and write findings to stdout
-    # e.g. list files, read service code, map dependencies
-    # End with these two lines:
-    # echo "AUDIT_COMPLETE: <1-paragraph summary of findings>"
-    # echo "SUBTASKS: <task1 title>|<assignee>||<task2 title>|<assignee>" (pipe-separated pairs, double-pipe between tasks)
+    if [ ! -d /workspace/nova/repo ]; then git clone https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/nova/repo; fi
+    cd /workspace/nova/repo
+    git remote set-url origin https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git
+    git fetch origin && git checkout ${DEFAULT_BRANCH} && git reset --hard origin/${DEFAULT_BRANCH}
 
-After acpx_run, extract findings and sub-tasks from output:
-- Post findings to GitHub issue: \`curl -s -X POST https://api.github.com/repos/Team-Commonly/commonly/issues/ISSUE_NUM/comments -H "Authorization: Bearer \${GITHUB_PAT}" -H "Content-Type: application/json" -d '{"body":"[findings]"}'\`
+    # Create audit doc branch
+    BRANCH="nova/audit-TASK-NNN-short-slug"
+    git checkout \$BRANCH 2>/dev/null || git checkout -b \$BRANCH
+
+    # Perform the audit/analysis
+    # Explore files, read code, map dependencies, draw conclusions
+
+    # Write findings to docs/audits/
+    mkdir -p docs/audits
+    cat > docs/audits/TASK-NNN-short-slug.md << 'DOCEOF'
+    # Audit: <title>
+    **Task**: TASK-NNN | **Agent**: Nova | **Date**: $(date +%Y-%m-%d)
+
+    ## Summary
+    <1-paragraph summary>
+
+    ## Findings
+    <detailed findings, file paths, patterns observed>
+
+    ## Recommendations
+    <actionable next steps>
+
+    ## Sub-tasks Created
+    <list of sub-tasks>
+    DOCEOF
+
+    git add docs/audits/ && git commit -m "docs(audit): TASK-NNN <short title>"
+    PR_URL=\$(GH_TOKEN=\$GH_TOKEN gh pr create --repo Team-Commonly/commonly \
+      --title "docs(audit): TASK-NNN <short title>" \
+      --body "Audit findings for TASK-NNN.\n\nSee docs/audits/TASK-NNN-*.md for full report." \
+      --base ${DEFAULT_BRANCH} --head \$BRANCH)
+    git push origin \$BRANCH
+    echo "PR_URL=\$PR_URL"
+    echo "AUDIT_COMPLETE: <1-paragraph summary of findings>"
+    echo "SUBTASKS: <task1 title>|<assignee>||<task2 title>|<assignee>"
+
+After acpx_run, extract findings, sub-tasks, and PR URL from output:
+- Parse \`PR_URL=https://...\` line from output
 - For each sub-task from the SUBTASKS line, call \`commonly_create_task(devPodId, { title, assignee, dep: currentTaskId, parentTask: currentTaskId, source: "agent" })\`
-  - Use \`dep: currentTaskId\` so the sub-task is blocked until this audit task is done
-  - Use \`parentTask: currentTaskId\` to link it as a child in the board UI
-  - If the GH issue number is known, also pass \`createGithubIssue: true\` so it gets a GH issue
-- Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary] — N sub-tasks created" })\` — no prUrl needed.
+- Then: \`commonly_complete_task(devPodId, taskId, { prUrl: "<pr_url>", notes: "[1-sentence summary] — N sub-tasks created, doc: docs/audits/TASK-NNN-*.md" })\`
 
 **Path B — Implementation task** (code changes, new feature, bug fix, test addition):
 Call \`acpx_run\`:
@@ -1983,23 +2015,56 @@ If empty, also call \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { status: "
 Read the task title and description. Decide which path applies:
 
 **Path A — Audit/research/planning task** (keywords: audit, analyze, review, plan, map, document, design, ux, accessibility, coupling, architecture, research):
-Call \`acpx_run\` to explore the codebase and produce written findings:
+Call \`acpx_run\` to explore the codebase and produce written findings committed to the repo:
 - agentId: "codex"
 - timeoutSeconds: 300
 - task: |
-    # Clone/update repo (read-only, no branch needed)
-    if [ ! -d /workspace/pixel/repo ]; then git clone https://x-access-token:\${GITHUB_PAT}@github.com/Team-Commonly/commonly.git /workspace/pixel/repo; fi
-    cd /workspace/pixel/repo && git fetch origin && git reset --hard origin/${DEFAULT_BRANCH}
+    GH_TOKEN="\${GITHUB_PAT}"
+    git config --global user.name "Pixel (Commonly Agent)"
+    git config --global user.email "pixel-agent@users.noreply.github.com"
 
-    # Perform the audit/analysis and write findings to stdout
-    # End with these two lines:
-    # echo "AUDIT_COMPLETE: <1-paragraph summary>"
-    # echo "SUBTASKS: <task1 title>|<assignee>||<task2 title>|<assignee>"
+    if [ ! -d /workspace/pixel/repo ]; then git clone https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/pixel/repo; fi
+    cd /workspace/pixel/repo
+    git remote set-url origin https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git
+    git fetch origin && git checkout ${DEFAULT_BRANCH} && git reset --hard origin/${DEFAULT_BRANCH}
 
-After acpx_run, extract findings and sub-tasks:
-- Post findings to GitHub issue comment (same curl pattern as nova).
+    BRANCH="pixel/audit-TASK-NNN-short-slug"
+    git checkout \$BRANCH 2>/dev/null || git checkout -b \$BRANCH
+
+    # Perform the audit/analysis (read files, inspect components, identify patterns)
+
+    mkdir -p docs/audits
+    cat > docs/audits/TASK-NNN-short-slug.md << 'DOCEOF'
+    # Audit: <title>
+    **Task**: TASK-NNN | **Agent**: Pixel | **Date**: $(date +%Y-%m-%d)
+
+    ## Summary
+    <1-paragraph summary>
+
+    ## Findings
+    <detailed findings, component names, UX issues, patterns>
+
+    ## Recommendations
+    <actionable next steps>
+
+    ## Sub-tasks Created
+    <list of sub-tasks>
+    DOCEOF
+
+    git add docs/audits/ && git commit -m "docs(audit): TASK-NNN <short title>"
+    git push origin \$BRANCH
+    PR_URL=\$(GH_TOKEN=\$GH_TOKEN gh pr create --repo Team-Commonly/commonly \
+      --title "docs(audit): TASK-NNN <short title>" \
+      --body "Audit findings for TASK-NNN.\n\nSee docs/audits/TASK-NNN-*.md for full report." \
+      --base ${DEFAULT_BRANCH} --head \$BRANCH)
+    echo "PR_URL=\$PR_URL"
+    echo "AUDIT_COMPLETE: <1-paragraph summary>"
+    echo "SUBTASKS: <task1 title>|<assignee>||<task2 title>|<assignee>"
+
+After acpx_run, extract findings, sub-tasks, and PR URL:
+- Parse \`PR_URL=https://...\` line from output
 - For each sub-task from SUBTASKS line: \`commonly_create_task(devPodId, { title, assignee, dep: currentTaskId, parentTask: currentTaskId, source: "agent" })\`
-- Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary] — N sub-tasks created" })\` — no prUrl needed.
+- Then: \`commonly_complete_task(devPodId, taskId, { prUrl: "<pr_url>", notes: "[1-sentence summary] — N sub-tasks created, doc: docs/audits/TASK-NNN-*.md" })\`
 
 **Path B — Implementation task** (code changes, new feature, bug fix, test addition):
 Call \`acpx_run\`:
@@ -2170,23 +2235,56 @@ If empty, also call \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { status: "
 Read the task title and description. Decide which path applies:
 
 **Path A — Audit/research/planning task** (keywords: audit, analyze, review, plan, map, document, design, coupling, architecture, research, assess, evaluate):
-Call \`acpx_run\` to explore the repo and produce written findings:
+Call \`acpx_run\` to explore the repo and produce written findings committed to the repo:
 - agentId: "codex"
 - timeoutSeconds: 300
 - task: |
-    # Clone/update repo (read-only, no branch needed)
-    if [ ! -d /workspace/ops/repo ]; then git clone https://x-access-token:\${GITHUB_PAT}@github.com/Team-Commonly/commonly.git /workspace/ops/repo; fi
-    cd /workspace/ops/repo && git fetch origin && git reset --hard origin/${DEFAULT_BRANCH}
+    GH_TOKEN="\${GITHUB_PAT}"
+    git config --global user.name "Ops (Commonly Agent)"
+    git config --global user.email "ops-agent@users.noreply.github.com"
 
-    # Perform the audit/analysis and write findings to stdout
-    # End with these two lines:
-    # echo "AUDIT_COMPLETE: <1-paragraph summary>"
-    # echo "SUBTASKS: <task1 title>|<assignee>||<task2 title>|<assignee>"
+    if [ ! -d /workspace/ops/repo ]; then git clone https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git /workspace/ops/repo; fi
+    cd /workspace/ops/repo
+    git remote set-url origin https://x-access-token:\${GH_TOKEN}@github.com/Team-Commonly/commonly.git
+    git fetch origin && git checkout ${DEFAULT_BRANCH} && git reset --hard origin/${DEFAULT_BRANCH}
 
-After acpx_run, extract findings and sub-tasks:
-- Post findings to GitHub issue comment (same curl pattern as nova).
+    BRANCH="ops/audit-TASK-NNN-short-slug"
+    git checkout \$BRANCH 2>/dev/null || git checkout -b \$BRANCH
+
+    # Perform the audit/analysis (inspect workflows, infra, configs, deployment)
+
+    mkdir -p docs/audits
+    cat > docs/audits/TASK-NNN-short-slug.md << 'DOCEOF'
+    # Audit: <title>
+    **Task**: TASK-NNN | **Agent**: Ops | **Date**: $(date +%Y-%m-%d)
+
+    ## Summary
+    <1-paragraph summary>
+
+    ## Findings
+    <detailed findings, config files, workflow gaps, infra observations>
+
+    ## Recommendations
+    <actionable next steps>
+
+    ## Sub-tasks Created
+    <list of sub-tasks>
+    DOCEOF
+
+    git add docs/audits/ && git commit -m "docs(audit): TASK-NNN <short title>"
+    git push origin \$BRANCH
+    PR_URL=\$(GH_TOKEN=\$GH_TOKEN gh pr create --repo Team-Commonly/commonly \
+      --title "docs(audit): TASK-NNN <short title>" \
+      --body "Audit findings for TASK-NNN.\n\nSee docs/audits/TASK-NNN-*.md for full report." \
+      --base ${DEFAULT_BRANCH} --head \$BRANCH)
+    echo "PR_URL=\$PR_URL"
+    echo "AUDIT_COMPLETE: <1-paragraph summary>"
+    echo "SUBTASKS: <task1 title>|<assignee>||<task2 title>|<assignee>"
+
+After acpx_run, extract findings, sub-tasks, and PR URL:
+- Parse \`PR_URL=https://...\` line from output
 - For each sub-task from SUBTASKS line: \`commonly_create_task(devPodId, { title, assignee, dep: currentTaskId, parentTask: currentTaskId, source: "agent" })\`
-- Then: \`commonly_complete_task(devPodId, taskId, { notes: "[1-sentence summary] — N sub-tasks created" })\` — no prUrl needed.
+- Then: \`commonly_complete_task(devPodId, taskId, { prUrl: "<pr_url>", notes: "[1-sentence summary] — N sub-tasks created, doc: docs/audits/TASK-NNN-*.md" })\`
 
 **Path B — Implementation task** (code/config changes, new workflow, Dockerfile, Helm update):
 Call \`acpx_run\`:
