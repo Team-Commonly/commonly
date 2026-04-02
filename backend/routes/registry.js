@@ -1659,8 +1659,16 @@ For each new human message describing work not already in tasks:
 - \`commonly_create_task(devPodId, { title, assignee, dep?, depMockOk?, source: "human" })\`
 - Reply: which engineer, dependency order, ONE clarifying question if ambiguous
 
-**Step 6: Auto-source from GitHub if board is empty**
-If ALL tasks are done/blocked (no pending or claimed) AND no new human work requests:
+**Step 6: Assign unassigned tasks + auto-source from GitHub**
+6a. \`commonly_get_tasks(devPodId, { status: "pending" })\` → look for tasks where assignee is null/missing.
+- For each unassigned task: classify by title/description and call \`commonly_update_task(devPodId, taskId, { assignee })\`:
+  - API/routes/services/models/tests → "nova"
+  - UI/components/pages/CSS/frontend → "pixel"
+  - deploy/infra/k8s/CI/Dockerfile → "ops"
+  - Ambiguous → "nova"
+- If any tasks were assigned → skip to Step 7.
+
+6b. Only if ALL tasks are done/blocked (no pending or claimed) AND no new human work requests:
 1. \`commonly_list_github_issues()\` → get open issues (excludes PRs). If empty → skip to Step 7.
 2. For each issue, classify and call \`commonly_create_task\` (deduped — safe to call again):
    - API/routes/services/models/tests → assignee "nova"
@@ -1752,8 +1760,9 @@ If output shows any PR with \`failing: true\` → **this is your top priority**.
 - Only proceed to new task work once your open PRs are green (or you've pushed a fix attempt).
 
 **Step 3: Get task**
-Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "nova", status: "pending,claimed" })\`
-- If tasks array is empty → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
+Call \`commonly_get_tasks(devPodId, { assignee: "nova", status: "pending,claimed" })\`.
+If empty, also call \`commonly_get_tasks(devPodId, { status: "pending" })\` and take the first unassigned task (assignee null/missing) that fits your role (backend/API/tests/services).
+- If still no task → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - Take the first task whose \`dep\` is null OR whose dep task status is "done".
 - If ALL tasks have unmet deps → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
@@ -1930,8 +1939,9 @@ If output shows any PR with \`failing: true\` → **this is your top priority**.
 - Only proceed to new task work once your open PRs are green (or you've pushed a fix attempt).
 
 **Step 3: Get task**
-Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "pixel", status: "pending,claimed" })\`
-- If tasks array is empty → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
+Call \`commonly_get_tasks(devPodId, { assignee: "pixel", status: "pending,claimed" })\`.
+If empty, also call \`commonly_get_tasks(devPodId, { status: "pending" })\` and take the first unassigned task (assignee null/missing) that fits your role (UI/frontend/CSS/components/UX).
+- If still no task → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - Take the first task where dep is null OR dep task is "done" OR \`depMockOk\` is true (can use mocks).
 - If ALL tasks have unmet deps (and no depMockOk) → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
@@ -2102,8 +2112,9 @@ If output shows any PR with \`failing: true\` → **this is your top priority**.
 - Only proceed to new task work once your open PRs are green (or you've pushed a fix attempt).
 
 **Step 3: Get task**
-Make exactly ONE call: \`commonly_get_tasks(devPodId, { assignee: "ops", status: "pending,claimed" })\`
-- If tasks array is empty → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
+Call \`commonly_get_tasks(devPodId, { assignee: "ops", status: "pending,claimed" })\`.
+If empty, also call \`commonly_get_tasks(devPodId, { status: "pending" })\` and take the first unassigned task (assignee null/missing) that fits your role (deploy/infra/k8s/CI/Dockerfile/devops).
+- If still no task → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - Take the first task whose \`dep\` is null OR dep task status is "done".
 - If ALL tasks have unmet deps → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
