@@ -1738,13 +1738,13 @@ DO NOT change the parameters. DO NOT omit assignee/status. DO NOT use exec to re
 ## DECISION POINT — Execute immediately after receiving results from mandatory calls:
 
 **If result from call #2 has tasks (length > 0):**
-- You are in WORK MODE. SKIP Steps 2.5 and 3. Go directly to **Step 4** below.
-- Extract task._id, taskId, title, status from tasks[0].
-- If status="pending" → call commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId) FIRST, then Step 4.
-- If status="claimed" → go to Step 4 immediately.
-- Step 4 is where you call acpx_run with the ACTUAL task work.
-- Do NOT run the PR-check acpx_run from Step 2.5 — that is only for when there are NO tasks.
-- Do NOT output HEARTBEAT_OK until the task is complete or marked blocked.
+⚠️ WORK MODE ACTIVE. HEARTBEAT_OK is FORBIDDEN. Only tool calls are allowed.
+
+- Take `tasks[0]`. Note `taskId`, `title`, `status`.
+- **REOPENED TASK**: If task has `completedAt` set but `status = "pending"` → a human reopened it after a failed/closed PR. It IS a pending task. Start fresh. Do NOT treat it as done.
+- **If `status = "pending"`**: YOUR IMMEDIATE NEXT TOOL CALL IS `commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)`. Make no other call first.
+- **If `status = "claimed"` OR after claiming**: YOUR IMMEDIATE NEXT TOOL CALL IS `acpx_run` (Step 4 below). Do NOT check PRs. Do NOT narrate.
+- HEARTBEAT_OK while tasks exist = a bug. Never do it.
 
 **If result from call #2 has no tasks:**
 - Check open PRs (Step 2.5), then check messages (Steps 5-7)
@@ -1932,13 +1932,13 @@ DO NOT change the parameters. DO NOT omit assignee/status. DO NOT use exec to re
 ## DECISION POINT — Execute immediately after receiving results from mandatory calls:
 
 **If result from call #2 has tasks (length > 0):**
-- You are in WORK MODE. SKIP Steps 2.5 and 3. Go directly to **Step 4** below.
-- Extract task._id, taskId, title, status from tasks[0].
-- If status="pending" → call commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId) FIRST, then Step 4.
-- If status="claimed" → go to Step 4 immediately.
-- Step 4 is where you call acpx_run with the ACTUAL task work.
-- Do NOT run the PR-check acpx_run from Step 2.5 — that is only for when there are NO tasks.
-- Do NOT output HEARTBEAT_OK until the task is complete or marked blocked.
+⚠️ WORK MODE ACTIVE. HEARTBEAT_OK is FORBIDDEN. Only tool calls are allowed.
+
+- Take `tasks[0]`. Note `taskId`, `title`, `status`.
+- **REOPENED TASK**: If task has `completedAt` set but `status = "pending"` → a human reopened it after a failed/closed PR. It IS a pending task. Start fresh. Do NOT treat it as done.
+- **If `status = "pending"`**: YOUR IMMEDIATE NEXT TOOL CALL IS `commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)`. Make no other call first.
+- **If `status = "claimed"` OR after claiming**: YOUR IMMEDIATE NEXT TOOL CALL IS `acpx_run` (Step 4 below). Do NOT check PRs. Do NOT narrate.
+- HEARTBEAT_OK while tasks exist = a bug. Never do it.
 
 **If result from call #2 has no tasks:**
 - Check open PRs (Step 2.5), then check messages (Steps 5-7)
@@ -2121,13 +2121,13 @@ DO NOT change the parameters. DO NOT omit assignee/status. DO NOT use exec to re
 ## DECISION POINT — Execute immediately after receiving results from mandatory calls:
 
 **If result from call #2 has tasks (length > 0):**
-- You are in WORK MODE. SKIP Steps 2.5 and 3. Go directly to **Step 4** below.
-- Extract task._id, taskId, title, status from tasks[0].
-- If status="pending" → call commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId) FIRST, then Step 4.
-- If status="claimed" → go to Step 4 immediately.
-- Step 4 is where you call acpx_run with the ACTUAL task work.
-- Do NOT run the PR-check acpx_run from Step 2.5 — that is only for when there are NO tasks.
-- Do NOT output HEARTBEAT_OK until the task is complete or marked blocked.
+⚠️ WORK MODE ACTIVE. HEARTBEAT_OK is FORBIDDEN. Only tool calls are allowed.
+
+- Take `tasks[0]`. Note `taskId`, `title`, `status`.
+- **REOPENED TASK**: If task has `completedAt` set but `status = "pending"` → a human reopened it after a failed/closed PR. It IS a pending task. Start fresh. Do NOT treat it as done.
+- **If `status = "pending"`**: YOUR IMMEDIATE NEXT TOOL CALL IS `commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)`. Make no other call first.
+- **If `status = "claimed"` OR after claiming**: YOUR IMMEDIATE NEXT TOOL CALL IS `acpx_run` (Step 4 below). Do NOT check PRs. Do NOT narrate.
+- HEARTBEAT_OK while tasks exist = a bug. Never do it.
 
 **If result from call #2 has no tasks:**
 - Check open PRs (Step 2.5), then check messages (Steps 5-7)
