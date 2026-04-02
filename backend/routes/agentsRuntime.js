@@ -5,37 +5,12 @@ const auth = require('../middleware/auth');
 const AgentEventService = require('../services/agentEventService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
+const AgentRuntimeRequestService = require('../services/agentRuntimeRequestService');
 const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
-const User = require('../models/User');
-const Post = require('../models/Post');
-const { AgentInstallation } = require('../models/AgentRegistry');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 
 const router = express.Router();
-
-const ensurePodMatch = (installation, podId) => (
-  installation?.podId?.toString() === podId.toString()
-);
-
-const requireBotUser = async (req, res) => {
-  const userId = req.userId || req.user?.id;
-  const user = await User.findById(userId).lean();
-  if (!user || !user.isBot) {
-    return { error: res.status(403).json({ message: 'This endpoint is for bot users only' }) };
-  }
-  return { user };
-};
-
-const ensureBotInstallation = async (agentName, podId, instanceId = 'default') => {
-  const installation = await AgentInstallation.findOne({
-    agentName: agentName.toLowerCase(),
-    podId,
-    instanceId,
-    status: 'active',
-  }).lean();
-  return installation;
-};
 
 /**
  * GET /events (agent runtime token auth)
@@ -44,11 +19,11 @@ const ensureBotInstallation = async (agentName, podId, instanceId = 'default') =
 router.get('/events', agentRuntimeAuth, async (req, res) => {
   try {
     const installation = req.agentInstallation;
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const limit = AgentRuntimeRequestService.parseLimit(req.query.limit, 20, 50);
 
     const events = await AgentEventService.list({
       agentName: installation.agentName,
-      instanceId: installation.instanceId || 'default',
+      instanceId: installation.instanceId || AgentRuntimeRequestService.DEFAULT_INSTANCE_ID,
       podId: installation.podId,
       limit,
     });
@@ -67,30 +42,21 @@ router.get('/events', agentRuntimeAuth, async (req, res) => {
  */
 router.get('/bot/events', auth, requireApiTokenScopes(['agent:events:read']), async (req, res) => {
   try {
-    const { user, error } = await requireBotUser(req, res);
+    const { agentName, instanceId, error } = await AgentRuntimeRequestService
+      .requireBotRequestContext(req, res);
     if (error) return error;
 
-    const agentName = req.query.agentName || user.botMetadata?.agentName || null;
-    const instanceId = req.query.instanceId || user.botMetadata?.instanceId || 'default';
-    const resolvedAgentName = agentName || user.username;
-    const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-    if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-      return res.status(403).json({ message: 'Agent token does not match bot user' });
-    }
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const limit = AgentRuntimeRequestService.parseLimit(req.query.limit, 20, 50);
 
     // Find all pods where this agent is installed
-    const installations = await AgentInstallation.find({
-      agentName: resolvedAgentName.toLowerCase(),
-      instanceId,
-      status: 'active',
-    }).lean();
+    const installations = await AgentRuntimeRequestService
+      .listAgentInstallations(agentName, instanceId);
 
     const podIds = installations.map((i) => i.podId);
 
     // List events across all installed pods
     const events = await AgentEventService.list({
-      agentName: resolvedAgentName,
+      agentName,
       instanceId,
       podIds,
       limit,
@@ -109,17 +75,10 @@ router.get('/bot/events', auth, requireApiTokenScopes(['agent:events:read']), as
  */
 router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ack']), async (req, res) => {
   try {
-    const { user, error } = await requireBotUser(req, res);
+    const { agentName, instanceId, error } = await AgentRuntimeRequestService
+      .requireBotRequestContext(req, res, { source: 'body' });
     if (error) return error;
-
-    const agentName = req.body.agentName || user.botMetadata?.agentName || null;
-    const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
-    const resolvedAgentName = agentName || user.username;
-    const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-    if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-      return res.status(403).json({ message: 'Agent token does not match bot user' });
-    }
-    await AgentEventService.acknowledge(req.params.id, resolvedAgentName, instanceId);
+    await AgentEventService.acknowledge(req.params.id, agentName, instanceId);
 
     return res.json({ success: true });
   } catch (error) {
@@ -134,7 +93,7 @@ router.post('/events/:id/ack', agentRuntimeAuth, async (req, res) => {
     await AgentEventService.acknowledge(
       req.params.id,
       installation.agentName,
-      installation.instanceId || 'default',
+      installation.instanceId || AgentRuntimeRequestService.DEFAULT_INSTANCE_ID,
     );
     return res.json({ success: true });
   } catch (error) {
@@ -154,43 +113,24 @@ router.get(
   async (req, res) => {
     try {
       const { podId } = req.params;
-      const { user, error } = await requireBotUser(req, res);
+      const {
+        user,
+        agentName,
+        instanceId,
+        error,
+      } = await AgentRuntimeRequestService.requireBotRequestContext(req, res, { podId });
       if (error) return error;
-
-      const agentName = req.query.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.query.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
-
-      const installation = await ensureBotInstallation(resolvedAgentName, podId, instanceId);
-      if (!installation) {
-        return res.status(403).json({ message: 'Bot not installed in this pod' });
-      }
 
       await AgentIdentityService.ensureAgentInPod(user, podId);
 
-      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-      const parseLimit = (raw, fallback, max) => {
-        const parsed = Number.parseInt(raw, 10);
-        if (Number.isNaN(parsed)) return fallback;
-        return clamp(parsed, 1, max);
-      };
-
-      const context = await PodContextService.getPodContext({
-        podId,
-        userId: user._id,
-        agentContext: { agentName: resolvedAgentName, instanceId },
-        task: req.query.task || '',
-        summaryLimit: parseLimit(req.query.summaryLimit, 6, 20),
-        assetLimit: parseLimit(req.query.assetLimit, 12, 40),
-        tagLimit: parseLimit(req.query.tagLimit, 16, 40),
-        skillLimit: parseLimit(req.query.skillLimit, 6, 12),
-        skillMode: typeof req.query.skillMode === 'string' ? req.query.skillMode.toLowerCase() : 'llm',
-        skillRefreshHours: parseLimit(req.query.skillRefreshHours, 6, 72),
-      });
+      const context = await PodContextService.getPodContext(
+        AgentRuntimeRequestService.buildContextRequest(req.query, {
+          podId,
+          userId: user._id,
+          agentName,
+          instanceId,
+        }),
+      );
 
       return res.json(context);
     } catch (error) {
@@ -210,23 +150,10 @@ router.get(
   async (req, res) => {
     try {
       const { podId } = req.params;
-      const { user, error } = await requireBotUser(req, res);
+      const { error } = await AgentRuntimeRequestService
+        .requireBotRequestContext(req, res, { podId });
       if (error) return error;
-
-      const agentName = req.query.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.query.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
-
-      const installation = await ensureBotInstallation(resolvedAgentName, podId, instanceId);
-      if (!installation) {
-        return res.status(403).json({ message: 'Bot not installed in this pod' });
-      }
-
-      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+      const limit = AgentRuntimeRequestService.parseLimit(req.query.limit, 20, 50);
       const messages = await AgentMessageService.getRecentMessages(podId, limit);
       return res.json({ messages });
     } catch (error) {
@@ -246,25 +173,20 @@ router.post(
   async (req, res) => {
     try {
       const { podId } = req.params;
-      const { user, error } = await requireBotUser(req, res);
+      const {
+        installation,
+        agentName,
+        instanceId,
+        error,
+      } = await AgentRuntimeRequestService.requireBotRequestContext(req, res, {
+        podId,
+        source: 'body',
+      });
       if (error) return error;
-
-      const agentName = req.body.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
-
-      const installation = await ensureBotInstallation(resolvedAgentName, podId, instanceId);
-      if (!installation) {
-        return res.status(403).json({ message: 'Bot not installed in this pod' });
-      }
 
       const { content, metadata, messageType } = req.body || {};
       const result = await AgentMessageService.postMessage({
-        agentName: resolvedAgentName,
+        agentName,
         instanceId,
         displayName: installation.displayName,
         podId,
@@ -292,41 +214,33 @@ router.post(
   async (req, res) => {
     try {
       const { threadId } = req.params;
-      const { user, error } = await requireBotUser(req, res);
-      if (error) return error;
-
-      const agentName = req.body.agentName || user.botMetadata?.agentName || null;
-      const instanceId = req.body.instanceId || user.botMetadata?.instanceId || 'default';
-      const resolvedAgentName = agentName || user.username;
-      const expectedUsername = AgentIdentityService.buildAgentUsername(resolvedAgentName, instanceId);
-      if (expectedUsername.toLowerCase() !== user.username.toLowerCase()) {
-        return res.status(403).json({ message: 'Agent token does not match bot user' });
-      }
-
       const { content, podId: requestPodId } = req.body || {};
       if (!content) {
         return res.status(400).json({ message: 'content is required' });
       }
 
-      const post = await Post.findById(threadId).select('_id podId').lean();
+      const post = await AgentRuntimeRequestService.loadThreadPost(threadId);
       if (!post) {
         return res.status(404).json({ message: 'Thread not found' });
       }
 
-      const targetPodId = post?.podId || requestPodId;
+      const targetPodId = AgentRuntimeRequestService.resolveThreadTargetPod(post, requestPodId);
       if (!targetPodId) {
         return res.status(400).json({ message: 'podId is required for threads without a pod' });
       }
 
-      const installation = await ensureBotInstallation(resolvedAgentName, targetPodId, instanceId);
-      if (!installation) {
-        return res.status(403).json({ message: 'Bot not installed in this pod' });
+      const access = await AgentRuntimeRequestService.requireBotRequestContext(req, res, {
+        podId: targetPodId,
+        source: 'body',
+      });
+      if (access.error) {
+        return access.error;
       }
 
       const result = await AgentThreadService.postComment({
-        agentName: resolvedAgentName,
-        instanceId,
-        displayName: installation.displayName,
+        agentName: access.agentName,
+        instanceId: access.instanceId,
+        displayName: access.installation.displayName,
         threadId,
         content,
       });
@@ -344,35 +258,24 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
     const { podId } = req.params;
     const installation = req.agentInstallation;
 
-    if (!ensurePodMatch(installation, podId)) {
+    if (!AgentRuntimeRequestService.ensurePodMatch(installation, podId)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
-      instanceId: installation.instanceId || 'default',
+      instanceId: installation.instanceId || AgentRuntimeRequestService.DEFAULT_INSTANCE_ID,
       displayName: installation.displayName,
     });
     await AgentIdentityService.ensureAgentInPod(agentUser, podId);
 
-    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-    const parseLimit = (raw, fallback, max) => {
-      const parsed = Number.parseInt(raw, 10);
-      if (Number.isNaN(parsed)) return fallback;
-      return clamp(parsed, 1, max);
-    };
-
-    const context = await PodContextService.getPodContext({
-      podId,
-      userId: agentUser._id,
-      agentContext: { agentName: installation.agentName, instanceId: installation.instanceId || 'default' },
-      task: req.query.task || '',
-      summaryLimit: parseLimit(req.query.summaryLimit, 6, 20),
-      assetLimit: parseLimit(req.query.assetLimit, 12, 40),
-      tagLimit: parseLimit(req.query.tagLimit, 16, 40),
-      skillLimit: parseLimit(req.query.skillLimit, 6, 12),
-      skillMode: typeof req.query.skillMode === 'string' ? req.query.skillMode.toLowerCase() : 'llm',
-      skillRefreshHours: parseLimit(req.query.skillRefreshHours, 6, 72),
-    });
+    const context = await PodContextService.getPodContext(
+      AgentRuntimeRequestService.buildContextRequest(req.query, {
+        podId,
+        userId: agentUser._id,
+        agentName: installation.agentName,
+        instanceId: installation.instanceId || AgentRuntimeRequestService.DEFAULT_INSTANCE_ID,
+      }),
+    );
 
     return res.json(context);
   } catch (error) {
@@ -386,11 +289,11 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
     const { podId } = req.params;
     const installation = req.agentInstallation;
 
-    if (!ensurePodMatch(installation, podId)) {
+    if (!AgentRuntimeRequestService.ensurePodMatch(installation, podId)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const limit = AgentRuntimeRequestService.parseLimit(req.query.limit, 20, 50);
     const messages = await AgentMessageService.getRecentMessages(podId, limit);
 
     return res.json({ messages });
@@ -405,14 +308,14 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
     const { podId } = req.params;
     const installation = req.agentInstallation;
 
-    if (!ensurePodMatch(installation, podId)) {
+    if (!AgentRuntimeRequestService.ensurePodMatch(installation, podId)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
     const { content, metadata, messageType } = req.body || {};
     const result = await AgentMessageService.postMessage({
       agentName: installation.agentName,
-      instanceId: installation.instanceId || 'default',
+      instanceId: installation.instanceId || AgentRuntimeRequestService.DEFAULT_INSTANCE_ID,
       displayName: installation.displayName,
       podId,
       content,
@@ -440,18 +343,18 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
       return res.status(400).json({ message: 'content is required' });
     }
 
-    const post = await Post.findById(threadId).select('_id podId').lean();
+    const post = await AgentRuntimeRequestService.loadThreadPost(threadId);
     if (!post) {
       return res.status(404).json({ message: 'Thread not found' });
     }
 
-    if (post.podId && !ensurePodMatch(installation, post.podId)) {
+    if (post.podId && !AgentRuntimeRequestService.ensurePodMatch(installation, post.podId)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
     const result = await AgentThreadService.postComment({
       agentName: installation.agentName,
-      instanceId: installation.instanceId || 'default',
+      instanceId: installation.instanceId || AgentRuntimeRequestService.DEFAULT_INSTANCE_ID,
       displayName: installation.displayName,
       threadId,
       content,
