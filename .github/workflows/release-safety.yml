@@ -1,0 +1,92 @@
+name: Release Safety
+
+on:
+  pull_request:
+    branches: [ v1.0.x ]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    branches: [ v1.0.x ]
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  release-safety:
+    name: Release Branch Guard
+    if: github.event.pull_request.base.ref == 'v1.0.x'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release-sensitive changes are reviewed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request || context.payload.review?.pull_request;
+            if (!pr) {
+              core.setFailed('This workflow requires pull request context.');
+              return;
+            }
+
+            const sensitiveMatchers = [
+              /^\.github\/workflows\//,
+              /^cloudbuild.*\.ya?ml$/,
+              /^docker-compose.*\.ya?ml$/,
+              /^backend\/docker-compose.*\.ya?ml$/,
+              /^backend\/Dockerfile(\..+)?$/,
+              /^frontend\/Dockerfile(\..+)?$/,
+              /^k8s\//,
+            ];
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const sensitiveFiles = files
+              .map((file) => file.filename)
+              .filter((filename) => sensitiveMatchers.some((pattern) => pattern.test(filename)));
+
+            if (sensitiveFiles.length === 0) {
+              core.notice('No release-sensitive files changed in this pull request.');
+              return;
+            }
+
+            if (pr.draft) {
+              core.setFailed(
+                `Release-sensitive changes cannot merge from draft PRs. Files: ${sensitiveFiles.join(', ')}`
+              );
+              return;
+            }
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const latestReviewByUser = new Map();
+            for (const review of reviews) {
+              latestReviewByUser.set(review.user.login, review.state);
+            }
+
+            const approvals = Array.from(latestReviewByUser.values()).filter((state) => state === 'APPROVED').length;
+            const changeRequests = Array.from(latestReviewByUser.values()).filter((state) => state === 'CHANGES_REQUESTED').length;
+
+            core.notice(`Release-sensitive files: ${sensitiveFiles.join(', ')}`);
+
+            if (changeRequests > 0) {
+              core.setFailed('Release-sensitive changes still have an active change request review.');
+              return;
+            }
+
+            if (approvals < 1) {
+              core.setFailed('Release-sensitive changes require at least one approving review before merge.');
+            }
