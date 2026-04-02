@@ -1,0 +1,260 @@
+# Local / OSS development values for Commonly
+#
+# Deploys a fully self-contained stack with no cloud dependencies:
+#   - In-cluster MongoDB and PostgreSQL (no Aiven)
+#   - No GCP Secret Manager / ExternalSecrets
+#   - No Cloudflare tunnel
+#   - No agent runtime (clawdbot/litellm) — enable manually if needed
+#
+# Requires: kind, kubectl, helm
+#
+# Quick start:
+#   kind create cluster --name commonly-local
+#   helm upgrade --install commonly k8s/helm/commonly \
+#     -f k8s/helm/commonly/values.yaml \
+#     -f k8s/helm/commonly/values-local.yaml \
+#     --create-namespace -n commonly-local
+#
+# To pass your own API keys without editing this file:
+#   helm upgrade ... --set localSecrets.geminiApiKey=AIza...
+#
+# See: docs/deployment/LOCAL_K8S.md
+
+global:
+  namespace: commonly-local
+  environment: local
+
+# ── Core services ─────────────────────────────────────────────────────────────
+
+backend:
+  replicaCount: 1
+  image:
+    # Replace with your locally built image after: docker build -t commonly-backend:local ./backend
+    # Then load into kind: kind load docker-image commonly-backend:local --name commonly-local
+    repository: commonly-backend
+    tag: local
+    pullPolicy: IfNotPresent
+  env:
+    nodeEnv: development
+    registrationInviteOnly: "0"           # open registration locally
+    agentProvisionerK8s: "0"             # disable k8s agent provisioning
+    agentProvisionerDocker: "0"
+    agentProvisionerNodePool: ""
+    frontendUrl: "http://localhost:3000"
+    backendUrl: "http://localhost:5000"
+    commonlyApiUrl: ""
+    clawdbotGatewayUrl: ""
+    moltbotGatewayUrl: ""
+    # In-cluster Postgres (no Aiven, no SSL)
+    pgHost: ""                           # empty → defaults to postgres.<namespace>.svc.cluster.local
+    pgPort: "5432"
+    pgDatabase: "commonly"
+    pgUser: "postgres"
+    pgSslEnabled: "false"
+    pgCaCertPath: "/app/certs/ca.pem"   # mounted but unused when SSL disabled
+    marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
+    logLevel: debug
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  nodeSelector: {}
+  tolerations: []
+  # Faster probes for local startup
+  livenessProbe:
+    enabled: true
+    path: /api/health/live
+    initialDelaySeconds: 20
+    periodSeconds: 10
+  readinessProbe:
+    enabled: true
+    path: /api/health/live
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: commonly-frontend
+    tag: local
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+  nodeSelector: {}
+  tolerations: []
+
+redis:
+  enabled: true
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "25m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+  nodeSelector: {}
+  tolerations: []
+
+# ── In-cluster databases ───────────────────────────────────────────────────────
+# These replace the external Aiven instances used in production.
+
+mongodb:
+  enabled: true
+  image:
+    repository: mongo
+    tag: "7"
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    storageClass: standard      # kind default StorageClass
+    size: 2Gi
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  nodeSelector: {}
+  tolerations: []
+
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "15"
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    storageClass: standard      # kind default StorageClass
+    size: 2Gi
+    accessMode: ReadWriteOnce
+  database: commonly
+  username: postgres
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "250m"
+  nodeSelector: {}
+  tolerations: []
+
+# ── Secrets (no GCP SM) ───────────────────────────────────────────────────────
+# ExternalSecrets disabled — local-secrets.yaml creates k8s Secrets directly.
+# Override individual keys via --set localSecrets.<key>=<value>
+
+externalSecrets:
+  enabled: false
+
+# Default placeholder values. Safe for local dev — NOT for production.
+# To use real API keys: --set localSecrets.geminiApiKey=AIza...
+localSecrets:
+  jwtSecret: "local-dev-jwt-secret-change-in-prod"
+  sessionSecret: "local-dev-session-secret-change-in-prod"
+  mongoPassword: "locally"
+  postgresPassword: "locally"
+  # mongoUri auto-constructed from mongoPassword if left empty
+  mongoUri: ""
+  # AI/integration keys — leave empty to run without those features
+  geminiApiKey: ""
+  openrouterApiKey: ""
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  litellmMasterKey: ""
+  discordBotToken: ""
+  discordClientId: ""
+  discordClientSecret: ""
+  discordGuildId: ""
+  googleClientId: ""
+  googleClientSecret: ""
+  githubClientId: ""
+  githubClientSecret: ""
+  githubPat: ""
+  xOauthClientId: ""
+  xOauthClientSecret: ""
+  slackBotToken: ""
+  groupmeBotId: ""
+  telegramBotToken: ""
+  braveApiKey: ""
+  braveApiKey2: ""
+  firecrawlApiKey: ""
+  deepgramApiKey: ""
+  clawdbotGatewayToken: "local-gateway-token"
+  commonlyBotRuntimeToken: "local-bot-token"
+
+# ── Disabled cloud-only services ──────────────────────────────────────────────
+
+agents:
+  clawdbot:
+    enabled: false       # enable manually: --set agents.clawdbot.enabled=true
+    persistence:
+      config:
+        enabled: false   # no PVCs needed when clawdbot is disabled
+      workspace:
+        enabled: false
+  commonlyBot:
+    enabled: false
+
+litellm:
+  enabled: false
+
+cloudflared:
+  enabled: false
+
+backup:
+  mongodb:
+    enabled: false
+  postgresql:
+    enabled: false
+
+# ── No ingress (use kubectl port-forward) ─────────────────────────────────────
+# Access the app:
+#   kubectl port-forward -n commonly-local svc/backend 5000:5000
+#   kubectl port-forward -n commonly-local svc/frontend 3000:80
+
+ingress:
+  enabled: false
+
+# ── ConfigMaps ────────────────────────────────────────────────────────────────
+
+configMaps:
+  marketplaceManifest:
+    enabled: true
+  skillsCatalog:
+    enabled: true
+  postgresCA:
+    enabled: true     # template creates empty placeholder secret when ESO disabled
+
+# Disable PVC-based skills catalog download (use ConfigMap fallback instead)
+skillsCatalogStorage:
+  enabled: false
+
+# ── RBAC (agent provisioner SA still needed for backend startup) ──────────────
+
+rbac:
+  create: true
+
+agentProvisioning:
+  enabled: true
+  createWorkspacePvc: false
+
+# ── Autoscaling / monitoring off ──────────────────────────────────────────────
+
+autoscaling:
+  backend:
+    enabled: false
+
+monitoring:
+  prometheus:
+    enabled: false
