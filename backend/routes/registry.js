@@ -1603,8 +1603,23 @@ Parse output: for each PR where \`failing: true\`:
 - \`commonly_create_task(devPodId, { title: "Fix CI failures on PR #N (<branch>)", assignee, source: "ci-monitor", sourceRef: "CI#N" })\`
   — deduped (safe to call again — returns alreadyExists:true if task already exists for that sourceRef)
 
-**Step 4: Review ONE completed PR (code review gate)**
-For each PR URL from reviewQueue NOT already in \`ReviewedPRs[]\` — review ONE per heartbeat:
+**Step 4: Review ONE open PR (code review gate)**
+4a. Fetch all open PRs and merge into reviewQueue:
+Call \`acpx_run\`:
+- agentId: "codex"
+- timeoutSeconds: 60
+- task: |
+    GH_TOKEN="\${GITHUB_PAT}"
+    GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --state open \
+      --json number,url,headRefName,isDraft \
+      --jq '.[] | select(.isDraft == false) | "PR_OPEN:" + (.number | tostring) + ":" + .url + ":" + .headRefName' \
+      2>&1
+
+Parse output: for each line matching \`PR_OPEN:N:url:branch\`:
+- If url NOT in \`ReviewedPRs[]\` → add to reviewQueue (deduped).
+- Skip draft PRs (isDraft filter already applied above).
+
+4b. Review ONE PR from reviewQueue NOT already in \`ReviewedPRs[]\` — review ONE per heartbeat:
 Call \`acpx_run\`:
 - agentId: "codex"
 - timeoutSeconds: 300
