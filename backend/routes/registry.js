@@ -1740,10 +1740,10 @@ DO NOT change the parameters. DO NOT omit assignee/status. DO NOT use exec to re
 **If result from call #2 has tasks (length > 0):**
 ⚠️ WORK MODE ACTIVE. HEARTBEAT_OK is FORBIDDEN. Only tool calls are allowed.
 
-- Take `tasks[0]`. Note `taskId`, `title`, `status`.
-- **REOPENED TASK**: If task has `completedAt` set but `status = "pending"` → a human reopened it after a failed/closed PR. It IS a pending task. Start fresh. Do NOT treat it as done.
-- **If `status = "pending"`**: YOUR IMMEDIATE NEXT TOOL CALL IS `commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)`. Make no other call first.
-- **If `status = "claimed"` OR after claiming**: YOUR IMMEDIATE NEXT TOOL CALL IS `acpx_run` (Step 4 below). Do NOT check PRs. Do NOT narrate.
+- Take \`tasks[0]\`. Note \`taskId\`, \`title\`, \`status\`.
+- **REOPENED TASK**: If task has \`completedAt\` set but \`status = "pending"\` → a human reopened it after a failed/closed PR. It IS a pending task. Start fresh. Do NOT treat it as done.
+- **If \`status = "pending"\`**: YOUR IMMEDIATE NEXT TOOL CALL IS \`commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)\`. Make no other call first.
+- **If \`status = "claimed"\` OR after claiming**: YOUR IMMEDIATE NEXT TOOL CALL IS \`acpx_run\` (Step 4 below). Do NOT check PRs. Do NOT narrate.
 - HEARTBEAT_OK while tasks exist = a bug. Never do it.
 
 **If result from call #2 has no tasks:**
@@ -1934,10 +1934,10 @@ DO NOT change the parameters. DO NOT omit assignee/status. DO NOT use exec to re
 **If result from call #2 has tasks (length > 0):**
 ⚠️ WORK MODE ACTIVE. HEARTBEAT_OK is FORBIDDEN. Only tool calls are allowed.
 
-- Take `tasks[0]`. Note `taskId`, `title`, `status`.
-- **REOPENED TASK**: If task has `completedAt` set but `status = "pending"` → a human reopened it after a failed/closed PR. It IS a pending task. Start fresh. Do NOT treat it as done.
-- **If `status = "pending"`**: YOUR IMMEDIATE NEXT TOOL CALL IS `commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)`. Make no other call first.
-- **If `status = "claimed"` OR after claiming**: YOUR IMMEDIATE NEXT TOOL CALL IS `acpx_run` (Step 4 below). Do NOT check PRs. Do NOT narrate.
+- Take \`tasks[0]\`. Note \`taskId\`, \`title\`, \`status\`.
+- **REOPENED TASK**: If task has \`completedAt\` set but \`status = "pending"\` → a human reopened it after a failed/closed PR. It IS a pending task. Start fresh. Do NOT treat it as done.
+- **If \`status = "pending"\`**: YOUR IMMEDIATE NEXT TOOL CALL IS \`commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)\`. Make no other call first.
+- **If \`status = "claimed"\` OR after claiming**: YOUR IMMEDIATE NEXT TOOL CALL IS \`acpx_run\` (Step 4 below). Do NOT check PRs. Do NOT narrate.
 - HEARTBEAT_OK while tasks exist = a bug. Never do it.
 
 **If result from call #2 has no tasks:**
@@ -2123,10 +2123,10 @@ DO NOT change the parameters. DO NOT omit assignee/status. DO NOT use exec to re
 **If result from call #2 has tasks (length > 0):**
 ⚠️ WORK MODE ACTIVE. HEARTBEAT_OK is FORBIDDEN. Only tool calls are allowed.
 
-- Take `tasks[0]`. Note `taskId`, `title`, `status`.
-- **REOPENED TASK**: If task has `completedAt` set but `status = "pending"` → a human reopened it after a failed/closed PR. It IS a pending task. Start fresh. Do NOT treat it as done.
-- **If `status = "pending"`**: YOUR IMMEDIATE NEXT TOOL CALL IS `commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)`. Make no other call first.
-- **If `status = "claimed"` OR after claiming**: YOUR IMMEDIATE NEXT TOOL CALL IS `acpx_run` (Step 4 below). Do NOT check PRs. Do NOT narrate.
+- Take \`tasks[0]\`. Note \`taskId\`, \`title\`, \`status\`.
+- **REOPENED TASK**: If task has \`completedAt\` set but \`status = "pending"\` → a human reopened it after a failed/closed PR. It IS a pending task. Start fresh. Do NOT treat it as done.
+- **If \`status = "pending"\`**: YOUR IMMEDIATE NEXT TOOL CALL IS \`commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)\`. Make no other call first.
+- **If \`status = "claimed"\` OR after claiming**: YOUR IMMEDIATE NEXT TOOL CALL IS \`acpx_run\` (Step 4 below). Do NOT check PRs. Do NOT narrate.
 - HEARTBEAT_OK while tasks exist = a bug. Never do it.
 
 **If result from call #2 has no tasks:**
