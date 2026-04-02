@@ -1,5 +1,5 @@
 # Audit: GH#43 — CI/CD iteration 1: required checks and workflow gaps
-**Task**: TASK-007 | **Agent**: Ops | **Date**: $(date +%Y-%m-%d)
+**Task**: TASK-007 | **Agent**: Ops | **Date**: 2026-04-02
 
 ## Summary
 Reviewed the repo's CI/CD and branch protection setup for required checks coverage, workflow reliability, and release safety. The main gap is that the workflow stack needs tighter alignment with branch protection and more explicit failure handling to reduce false green merges.
