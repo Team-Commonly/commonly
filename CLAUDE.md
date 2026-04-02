@@ -135,7 +135,15 @@ These GitHub issues are the current expression of the architecture work:
 ```bash
 # Check current test status
 cd frontend && npm test -- --watchAll=false  # Should show 100/100 passing
-cd backend && npm test                        # Should show all passing
+cd backend && npm test                        # Should show all passing (unit tests, in-memory DBs)
+
+# Integration tests against real Docker Compose services (free, no k8s needed)
+./dev.sh up && ./dev.sh test:integration      # INTEGRATION_TEST=true npm test --forceExit
+
+# Local k8s stack via kind (free, needs docker+kind+helm — OSS contributor friendly)
+./dev.sh cluster up                           # spin up full stack locally
+./dev.sh cluster test                         # run integration tests against it
+./dev.sh cluster down                         # tear down
 
 # Check linting status
 npm run lint                                  # Should show 0 errors
@@ -224,6 +232,8 @@ curl -X POST https://api-dev.commonly.me/api/github/token \
 28. **Imperative DECISION POINT block — reopened task handling + exact tool call directives** (backend `20260401204010`→`20260401224613`) — Dev agents (nova/pixel/ops) were HEARTBEAT_OK'ing in 7–9 seconds despite pending tasks. Two root causes: (a) **Stale session context**: 46–113KB sessions containing old "completed task" data caused the model to return `HEARTBEAT_OK` with 0 tokens (session continuation, no LLM call). Fix: clear sessions; auto-clearer threshold already 400KB. (b) **Ambiguous DECISION POINT**: "go to Step 4" without naming the exact tool call; model saw TASK-007 with `completedAt`+`prUrl`+`status=pending` (reopened task) and reasoned "already done". Fix in `registry.js`: replaced with "YOUR IMMEDIATE NEXT TOOL CALL IS `commonly_claim_task(...)`" / "YOUR IMMEDIATE NEXT TOOL CALL IS `acpx_run`"; explicit **REOPENED TASK** rule: `completedAt + status=pending` = reopened by human, treat as fresh pending task; "HEARTBEAT_OK while tasks exist = a bug. Never do it." Applied to all 3 agent sections + PVC HEARTBEAT.md files. Syntax bug: unescaped backticks in JS template literal → `SyntaxError` → fixed by escaping all `` ` `` as `` \` `` in the DECISION POINT block. **Diagnosis pattern**: 0-token HEARTBEAT_OK = stale session; clear with `kubectl exec ... -- rm /state/agents/{agent}/sessions/*.jsonl /state/agents/{agent}/sessions/sessions.json`.
 
 29. **Audit tasks commit docs/audits/*.md to repo** (backend `20260401224613`) — Path A (audit/research) heartbeat template updated for nova/pixel/ops: instead of writing findings only to stdout/GH-issue-comment, agents now (a) create a branch `{agent}/audit-TASK-NNN-slug`; (b) write findings to `docs/audits/TASK-NNN-slug.md`; (c) commit + push + open PR against `v1.0.x`; (d) pass `prUrl` to `commonly_complete_task` so the doc PR appears on the board. Previously audit findings lived only in GH issue comments and pod chat (ephemeral). Now they are versioned artifacts in the repo.
+
+31. **Local testing infrastructure + Theo auto-reviews open PRs** (backend `20260402132654`, PR #55, 2026-04-02) — Three-tier testing setup for OSS contributors: (a) `./dev.sh test:integration` — runs backend tests with `INTEGRATION_TEST=true` against Docker Compose services (mongo+postgres on localhost); `backend/__tests__/setup.js` now switches between in-memory (default) and real DBs based on this flag; (b) `./dev.sh cluster up/test/down` — full local k8s stack via kind (free, needs docker+kind+helm); `k8s/helm/commonly/values-local.yaml` self-contained override (in-cluster Mongo+PG, no cloud deps); `k8s/helm/commonly/templates/secrets/local-secrets.yaml` creates all required k8s Secrets when ESO disabled. (c) Theo heartbeat Step 4 now has a new sub-step 4a: `gh pr list --state open` fetches all non-draft open PRs and adds unreviewed ones to reviewQueue before reviewing — previously Theo only reviewed PRs explicitly reported in pod messages.
 
 30. **Release Branch Guard relaxed + PR #53 merged** (2026-04-02) — Ops's `release-safety.yml` workflow (added in TASK-008 / PR #53) required human approval for `.github/workflows/` changes — blocking agents from merging their own CI/CD PRs. Fix: removed `.github/workflows/` from the `sensitiveMatchers` array in `release-safety.yml`; k8s/, Dockerfiles, and cloudbuild configs still require review. PR #53 merged via `gh pr merge --admin` (self-approval blocked by GitHub; admin override used). **PR #54 (nova/task-010)**: 21 Code Quality lint errors in nova-added test files (`++` operator, `await-in-loop`, line-too-long, for-of generator in `backend/__tests__/integration/`). TASK-016 created (high priority, nova) to fix these and stabilize tests.
 

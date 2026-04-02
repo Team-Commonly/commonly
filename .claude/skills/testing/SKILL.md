@@ -2,7 +2,7 @@
 
 name: testing
 description: Testing and code quality context for Jest, React Testing Library, ESLint, and test patterns. Use when writing tests or fixing linting issues.
-last_updated: 2026-02-08
+last_updated: 2026-04-02
 ---
 
 # Testing & Quality
@@ -28,9 +28,16 @@ last_updated: 2026-02-08
 ## Testing Commands
 
 ```bash
-# Backend tests
+# Unit tests (in-memory DBs — no services needed, default)
 cd backend && npm test
 cd backend && npm run test:coverage
+./dev.sh test                        # same, runs inside Docker container
+
+# Integration tests (real Docker Compose services)
+./dev.sh up                          # start mongo + postgres first
+./dev.sh test:integration            # INTEGRATION_TEST=true npm test --forceExit
+# or manually:
+INTEGRATION_TEST=true npm --prefix backend test -- --forceExit
 
 # Frontend tests
 cd frontend && npm test
@@ -39,13 +46,19 @@ cd frontend && npm run test:coverage
 # Linting
 npm run lint
 npm run lint:fix
-
-# Containerized workflow (recommended in this repo)
-docker compose exec backend npm run lint
-docker compose exec backend npm test
-docker compose exec frontend npm run lint
-docker compose exec frontend npm test -- --watch=false
 ```
+
+## INTEGRATION_TEST env var
+
+`backend/__tests__/setup.js` switches between two modes:
+
+- **`INTEGRATION_TEST` not set** (default): sets `PG_HOST=undefined` and `MONGO_URI=undefined` → triggers in-memory MongoDB Memory Server + pg-mem
+- **`INTEGRATION_TEST=true`**: connects to real services:
+  - MongoDB: `localhost:27017` (db: `commonly-test`)
+  - PostgreSQL: `localhost:5432` (db: `commonly-test`, user: `postgres`, no SSL)
+  - Requires `./dev.sh up` to be running first
+
+Override connection strings via env vars: `MONGO_URI`, `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`.
 
 ## High-value Current Test Areas
 
