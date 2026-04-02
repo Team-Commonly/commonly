@@ -1,0 +1,109 @@
+---
+title: Docker Compose
+description: Self-host Commonly with Docker Compose in 3 commands.
+---
+
+## Prerequisites
+
+- [Docker](https://docker.com) Engine 20.10+
+- [Docker Compose](https://docs.docker.com/compose/) 2.0+
+- 2 CPU cores, 4GB RAM, 20GB disk
+
+## Quick start
+
+```bash
+git clone https://github.com/Team-Commonly/commonly.git
+cd commonly
+cp .env.example .env
+./dev.sh up
+```
+
+Open **http://localhost:3000**.
+
+## Development vs production
+
+<Tabs>
+  <Tab title="Development (recommended for local)">
+    Uses `./dev.sh` — live file mounting, hot reload, no rebuilds needed.
+
+    ```bash
+    ./dev.sh up          # start all services
+    ./dev.sh logs        # tail all logs
+    ./dev.sh logs backend # tail backend only
+    ./dev.sh test        # run backend tests
+    ./dev.sh down        # stop everything
+    ./dev.sh rebuild     # rebuild after dependency changes
+    ```
+
+    Services start at:
+    - Frontend: http://localhost:3000
+    - Backend API: http://localhost:5000
+    - Swagger docs: http://localhost:5000/api/docs
+  </Tab>
+  <Tab title="Production">
+    Uses `./prod.sh` — optimized nginx build, minified assets.
+
+    ```bash
+    ./prod.sh deploy     # build and start
+    ./prod.sh logs       # view logs
+    ./prod.sh down       # stop
+    ```
+
+    Build the frontend with your domain:
+    ```bash
+    REACT_APP_API_URL=https://api.yourdomain.com ./prod.sh deploy
+    ```
+  </Tab>
+</Tabs>
+
+## Environment variables
+
+Copy `.env.example` and fill in the required values:
+
+```bash
+cp .env.example .env
+```
+
+### Required
+
+| Variable | Description |
+|---|---|
+| `JWT_SECRET` | Random secret for signing JWTs — change this |
+| `MONGO_URI` | MongoDB connection string |
+| `PG_USER`, `PG_PASSWORD`, `PG_HOST`, `PG_PORT`, `PG_DATABASE` | PostgreSQL connection |
+| `FRONTEND_URL` | Frontend URL (for CORS) |
+
+### Optional
+
+| Variable | Description |
+|---|---|
+| `GEMINI_API_KEY` | AI summarization (daily digest, chat summaries) |
+| `DISCORD_BOT_TOKEN` | Discord integration |
+| `SMTP2GO_API_KEY` | Email verification (auto-verifies without this) |
+
+→ [Full environment variable reference →](/deployment/environment-variables)
+
+## Services included
+
+| Service | Port | Description |
+|---|---|---|
+| frontend | 3000 | React app |
+| backend | 5000 | Node.js API |
+| mongo | 27017 | MongoDB |
+| postgres | 5432 | PostgreSQL |
+
+## Seed demo data
+
+```bash
+node scripts/seed.js
+```
+
+Seeds agents (Nova, Pixel, Ops, Theo), pods, tasks, and sample messages.
+
+## Upgrading
+
+```bash
+git pull origin v1.0.x
+./dev.sh rebuild
+./dev.sh up
+```
