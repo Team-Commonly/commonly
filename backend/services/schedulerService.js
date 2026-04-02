@@ -255,9 +255,11 @@ class SchedulerService {
       '0 3 * * *',
       async () => {
         try {
-          const result = await refreshCodexOAuthTokenIfNeeded({ thresholdDays: 3 });
-          if (result) {
-            console.log(`[codex-token-refresh] Refreshed. New expiry: ${new Date(result.expiresAt).toISOString()}`);
+          const results = await refreshCodexOAuthTokenIfNeeded({ thresholdDays: 3 });
+          if (results && results.length > 0) {
+            results.forEach((r) => {
+              console.log(`[codex-token-refresh] Refreshed account${r.suffix || '1'}. New expiry: ${new Date(r.expiresAt).toISOString()}`);
+            });
           }
         } catch (error) {
           console.error('[codex-token-refresh] Failed:', error.message);
