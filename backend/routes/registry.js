@@ -1578,7 +1578,7 @@ If DevPodId missing → \`commonly_list_pods(30)\` → find "Dev Team" pod → s
 If ChildPods missing → \`commonly_list_pods(30)\` → find pods with "Backend Tasks"/"Frontend Tasks"/"DevOps Tasks" in name → store as ChildPods JSON array.
 
 **Step 2: Read current tasks**
-\`commonly_get_tasks(devPodId)\` → get all tasks. Count pending/claimed/done.
+IMPORTANT: Tasks are in the Dev Team pod. Always use the literal ID: \`commonly_get_tasks("69b7ddff0ce64c9648365fc4")\` → get all tasks. Count pending/claimed/done.
 
 **Step 3: Read messages + reply to questions**
 \`commonly_get_messages(devPodId, 20)\` — skip messages where sender is "theo".
@@ -1660,8 +1660,8 @@ For each new human message describing work not already in tasks:
 - Reply: which engineer, dependency order, ONE clarifying question if ambiguous
 
 **Step 6: Assign unassigned tasks + auto-source from GitHub**
-6a. \`commonly_get_tasks(devPodId, { status: "pending" })\` → look for tasks where assignee is null/missing.
-- For each unassigned task: classify by title/description and call \`commonly_update_task(devPodId, taskId, { assignee })\`:
+6a. \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { status: "pending" })\` → look for tasks where assignee is null/missing.
+- For each unassigned task: classify by title/description and call \`commonly_update_task("69b7ddff0ce64c9648365fc4", taskId, { assignee })\`:
   - API/routes/services/models/tests → "nova"
   - UI/components/pages/CSS/frontend → "pixel"
   - deploy/infra/k8s/CI/Dockerfile → "ops"
@@ -1760,12 +1760,13 @@ If output shows any PR with \`failing: true\` → **this is your top priority**.
 - Only proceed to new task work once your open PRs are green (or you've pushed a fix attempt).
 
 **Step 3: Get task**
-Call \`commonly_get_tasks(devPodId, { assignee: "nova", status: "pending,claimed" })\`.
-If empty, also call \`commonly_get_tasks(devPodId, { status: "pending" })\` and take the first unassigned task (assignee null/missing) that fits your role (backend/API/tests/services).
+IMPORTANT: Tasks are stored in the Dev Team pod, NOT your MyPodId. Always use devPodId = "69b7ddff0ce64c9648365fc4" for task queries.
+Call \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { assignee: "nova", status: "pending,claimed" })\`.
+If empty, also call \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { status: "pending" })\` and take the first unassigned task (assignee null/missing) that fits your role (backend/API/tests/services).
 - If still no task → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - Take the first task whose \`dep\` is null OR whose dep task status is "done".
 - If ALL tasks have unmet deps → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
-- If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
+- If task status is "pending" → \`commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)\`. If claim fails → try next task.
 - If task status is "claimed" → already started in a previous session. Skip the claim call. **Proceed to Step 4 NOW — you must run acpx_run to continue it.**
 - **You now have a task. Proceed to Step 4 immediately. Do NOT output HEARTBEAT_OK here.**
 
@@ -1939,12 +1940,13 @@ If output shows any PR with \`failing: true\` → **this is your top priority**.
 - Only proceed to new task work once your open PRs are green (or you've pushed a fix attempt).
 
 **Step 3: Get task**
-Call \`commonly_get_tasks(devPodId, { assignee: "pixel", status: "pending,claimed" })\`.
-If empty, also call \`commonly_get_tasks(devPodId, { status: "pending" })\` and take the first unassigned task (assignee null/missing) that fits your role (UI/frontend/CSS/components/UX).
+IMPORTANT: Tasks are stored in the Dev Team pod, NOT your MyPodId. Always use devPodId = "69b7ddff0ce64c9648365fc4" for task queries.
+Call \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { assignee: "pixel", status: "pending,claimed" })\`.
+If empty, also call \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { status: "pending" })\` and take the first unassigned task (assignee null/missing) that fits your role (UI/frontend/CSS/components/UX).
 - If still no task → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - Take the first task where dep is null OR dep task is "done" OR \`depMockOk\` is true (can use mocks).
 - If ALL tasks have unmet deps (and no depMockOk) → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
-- If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
+- If task status is "pending" → \`commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)\`. If claim fails → try next task.
 - If task status is "claimed" → already started in a previous session. Skip the claim call. **Proceed to Step 4 NOW — you must run acpx_run to continue it.**
 - **You now have a task. Proceed to Step 4 immediately. Do NOT output HEARTBEAT_OK here.**
 
@@ -2112,12 +2114,13 @@ If output shows any PR with \`failing: true\` → **this is your top priority**.
 - Only proceed to new task work once your open PRs are green (or you've pushed a fix attempt).
 
 **Step 3: Get task**
-Call \`commonly_get_tasks(devPodId, { assignee: "ops", status: "pending,claimed" })\`.
-If empty, also call \`commonly_get_tasks(devPodId, { status: "pending" })\` and take the first unassigned task (assignee null/missing) that fits your role (deploy/infra/k8s/CI/Dockerfile/devops).
+IMPORTANT: Tasks are stored in the Dev Team pod, NOT your MyPodId. Always use devPodId = "69b7ddff0ce64c9648365fc4" for task queries.
+Call \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { assignee: "ops", status: "pending,claimed" })\`.
+If empty, also call \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { status: "pending" })\` and take the first unassigned task (assignee null/missing) that fits your role (deploy/infra/k8s/CI/Dockerfile/devops).
 - If still no task → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
 - Take the first task whose \`dep\` is null OR dep task status is "done".
 - If ALL tasks have unmet deps → proceed to Step 7 (check messages). Do not HEARTBEAT_OK yet.
-- If task status is "pending" → \`commonly_claim_task(devPodId, taskId)\`. If claim fails → try next task.
+- If task status is "pending" → \`commonly_claim_task("69b7ddff0ce64c9648365fc4", taskId)\`. If claim fails → try next task.
 - If task status is "claimed" → already started in a previous session. Skip the claim call. **Proceed to Step 4 NOW — you must run acpx_run to continue it.**
 - **You now have a task. Proceed to Step 4 immediately. Do NOT output HEARTBEAT_OK here.**
 
