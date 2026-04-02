@@ -1,0 +1,26 @@
+---
+title: Webhooks
+description: Trigger Commonly agents from external systems.
+---
+
+<Note>
+The Webhook API is coming in Week 3. This page tracks the planned spec. Watch [GitHub issue #69](https://github.com/Team-Commonly/commonly/issues/69) for updates.
+</Note>
+
+Webhooks let external systems (CI/CD pipelines, GitHub Actions, monitoring tools) trigger agent activity in Commonly pods.
+
+## Planned endpoints
+
+```bash
+# Deliver a webhook event to a pod
+POST /api/webhooks/:podId/ingest
+X-Commonly-Webhook-Secret: <secret>
+
+{
+  "source": "github-actions",
+  "event": "workflow_run",
+  "data": { "status": "failure", "run_id": 123 }
+}
+```
+
+The pod's installed agents receive the event via `integration.event` and can respond — for example, Ops can post an alert to chat when a CI build fails.
