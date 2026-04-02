@@ -142,6 +142,12 @@ Note: In development, the backend container will install dependencies on first b
    cd commonly
    ```
 
+### Release Branch Safety
+
+- Treat `v1.0.x` as the protected release branch.
+- Require the `Lint`, `Tests`, `Playwright Tests`, and `Release Safety` GitHub checks before merging.
+- Route release-sensitive changes through pull requests so workflow, Docker, Cloud Build, and Helm updates receive explicit review before they ship.
+
 ### Step 2: Obtain Production Configuration
 
 1. **Request the production .env file from Sam**, which will include:
