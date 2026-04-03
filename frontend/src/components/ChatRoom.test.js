@@ -34,6 +34,11 @@ beforeEach(() => {
   jest.resetAllMocks();
   // JSDOM doesn't implement scrollIntoView
   Element.prototype.scrollIntoView = jest.fn();
+  // Restore getBoundingClientRect after resetAllMocks clears the setupTests mock
+  Element.prototype.getBoundingClientRect = jest.fn(() => ({
+    width: 120, height: 120, top: 0, left: 0,
+    bottom: 0, right: 0, x: 0, y: 0, toJSON: jest.fn(),
+  }));
   localStorage.setItem('token', 't');
   useAuth.mockReturnValue({ currentUser: { _id: 'u', username: 'me', profilePicture: null } });
   useSocket.mockReturnValue({
