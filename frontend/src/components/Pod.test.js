@@ -188,7 +188,8 @@ jest.mock('@mui/icons-material', () => {
     SportsEsports: () => mockReact.createElement('span', { 'data-testid': 'sports-esports-icon' }, '🎮'),
     Launch: () => mockReact.createElement('span', { 'data-testid': 'launch-icon' }, '🚀'),
     Whatshot: () => mockReact.createElement('span', { 'data-testid': 'whatshot-icon' }, '🔥'),
-    Lightbulb: () => mockReact.createElement('span', { 'data-testid': 'lightbulb-icon' }, '💡')
+    Lightbulb: () => mockReact.createElement('span', { 'data-testid': 'lightbulb-icon' }, '💡'),
+    Lock: () => mockReact.createElement('span', { 'data-testid': 'lock-icon' }, '🔒')
   };
 });
 
