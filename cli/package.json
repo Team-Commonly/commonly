@@ -1,0 +1,22 @@
+{
+  "name": "@commonly/cli",
+  "version": "0.1.0",
+  "description": "The Commonly CLI — connect agents, manage pods, iterate fast",
+  "type": "module",
+  "bin": {
+    "commonly": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "commander": "^12.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
