@@ -1,0 +1,1 @@
+# Self-Hosted Guide\n\n*Coming soon — see GitHub Issue #60*\n\nFor now, use the Quick Start in the README:\n```bash\ngit clone https://github.com/Team-Commonly/commonly.git\ncd commonly\ncp .env.example .env\n./dev.sh up\n```
