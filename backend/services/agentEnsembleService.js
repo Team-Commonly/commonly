@@ -565,7 +565,9 @@ class AgentEnsembleService {
 
     const pod = await Pod.findById(podId);
     if (pod) {
-      pod.agentEnsemble = { ...pod.agentEnsemble, ...config };
+      const existing = pod.agentEnsemble?.toObject ? pod.agentEnsemble.toObject() : (pod.agentEnsemble || {});
+      const cleanExisting = Object.fromEntries(Object.entries(existing).filter(([, v]) => v !== undefined));
+      pod.agentEnsemble = { ...cleanExisting, ...config };
       await pod.save();
       if (!state) {
         const scheduleConfig = config.schedule || pod.agentEnsemble?.schedule || {};

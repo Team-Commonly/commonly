@@ -2258,6 +2258,9 @@ const provisionAgentRuntime = async ({
     });
     deploymentName = `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
     await cleanupLegacyInternalDeployment(deploymentName);
+  } else if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
+    // External runtimes — no K8s deployment; agent manages its own compute
+    return { provisioned: true, external: true, runtimeType };
   } else {
     throw new Error(`Provisioning not supported for runtime: ${runtimeType}`);
   }
@@ -2301,6 +2304,9 @@ const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   if (runtimeType === 'internal') {
     return { started: true, managedExternally: true, reason: 'internal runtime is config-only on k8s' };
   }
+  if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
+    return { started: false, external: true, reason: 'external runtime — agent manages its own process' };
+  }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
   try {
@@ -2328,6 +2334,9 @@ const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   }
   if (runtimeType === 'internal') {
     return { stopped: true, managedExternally: true, reason: 'internal runtime is config-only on k8s' };
+  }
+  if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
+    return { stopped: false, external: true, reason: 'external runtime — agent manages its own process' };
   }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
 
@@ -2378,6 +2387,9 @@ const restartAgentRuntime = async (runtimeType, instanceId, options = {}) => {
  * Get agent runtime status
  */
 const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
+  if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
+    return { status: 'external', reason: 'agent manages its own compute' };
+  }
   if (runtimeType === 'moltbot') {
     const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
     try {

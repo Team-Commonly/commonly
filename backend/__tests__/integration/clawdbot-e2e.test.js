@@ -161,6 +161,8 @@ describe('Clawdbot E2E Integration Tests', () => {
     await AgentProfile.deleteMany({});
     await Message.deleteMany({});
     await Summary.deleteMany({});
+    // Reset agent runtime tokens so each beforeEach gets a fresh token
+    await User.updateMany({ isBot: true }, { $set: { agentRuntimeTokens: [] } });
   });
 
   describe('1. Agent Registry and Discovery', () => {
@@ -433,9 +435,9 @@ describe('Clawdbot E2E Integration Tests', () => {
         .set('Authorization', `Bearer ${authToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.tokens.length).toBe(2);
+      // Second POST returns existing token — only one token per agent
+      expect(res.body.tokens.length).toBe(1);
       expect(res.body.tokens[0].label).toBe('Token 1');
-      expect(res.body.tokens[1].label).toBe('Token 2');
       // Should not expose tokenHash
       expect(res.body.tokens[0].tokenHash).toBeUndefined();
     });
@@ -462,9 +464,13 @@ describe('Clawdbot E2E Integration Tests', () => {
       expect(revokeRes.status).toBe(200);
       expect(revokeRes.body.success).toBe(true);
 
-      // Verify revoked
-      const installation = await AgentInstallation.findById(installationId);
-      expect(installation.runtimeTokens.length).toBe(0);
+      // Verify revoked — runtime tokens are primarily on the agent User now
+      const agentUsername = AgentIdentityService.buildAgentUsername(
+        AgentIdentityService.resolveAgentType('clawdbot-bridge'),
+        'default',
+      );
+      const agentUser = await User.findOne({ username: agentUsername, isBot: true });
+      expect(agentUser.agentRuntimeTokens.length).toBe(0);
     });
   });
 
@@ -689,8 +695,11 @@ describe('Clawdbot E2E Integration Tests', () => {
           messageType: 'text',
         });
 
-      expect(res.status).toBe(500);
-      expect(res.body.message).toContain('content is required');
+      // Empty content is silently skipped (not an error)
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.skipped).toBe(true);
+      expect(res.body.reason).toBe('silent_or_empty');
     });
   });
 
@@ -800,9 +809,8 @@ describe('Clawdbot E2E Integration Tests', () => {
 
     test('should handle multiple events in sequence', async () => {
       // Enqueue multiple events
-      const events = [];
-      for (let i = 1; i <= 3; i++) {
-        const event = await AgentEventService.enqueue({
+      const events = await Promise.all(
+        [1, 2, 3].map((i) => AgentEventService.enqueue({
           agentName: 'clawdbot-bridge',
           podId: testPod._id,
           type: 'integration.summary',
@@ -812,12 +820,12 @@ describe('Clawdbot E2E Integration Tests', () => {
               messageCount: i * 5,
             },
           },
-        });
-        events.push(event);
-      }
+        })),
+      );
 
-      // Process each event
-      for (let i = 0; i < events.length; i++) {
+      // Process each event sequentially (intentional: each poll depends on prior ack)
+      /* eslint-disable no-await-in-loop */
+      for (let i = 0; i < events.length; i += 1) {
         // Poll (should get remaining events)
         const pollRes = await request(app)
           .get('/api/agents/runtime/events')
@@ -839,6 +847,7 @@ describe('Clawdbot E2E Integration Tests', () => {
           .post(`/api/agents/runtime/events/${events[i]._id}/ack`)
           .set('Authorization', `Bearer ${agentToken}`);
       }
+      /* eslint-enable no-await-in-loop */
 
       // Verify all events processed
       const finalPollRes = await request(app)
@@ -972,14 +981,12 @@ describe('Clawdbot E2E Integration Tests', () => {
       ];
 
       // Create messages in MongoDB (simulating chat activity)
-      for (const msg of userMessages) {
-        await Message.create({
-          content: msg.content,
-          userId: msg.userId,
-          podId: testPod._id,
-          messageType: 'text',
-        });
-      }
+      await Promise.all(userMessages.map((msg) => Message.create({
+        content: msg.content,
+        userId: msg.userId,
+        podId: testPod._id,
+        messageType: 'text',
+      })));
 
       // Verify messages were created
       const messageCount = await Message.countDocuments({ podId: testPod._id });

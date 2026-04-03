@@ -43,10 +43,12 @@ describe('registry persona generator', () => {
   });
 
   it('returns generated persona data', async () => {
-    Pod.findById.mockResolvedValue({
-      _id: 'pod-1',
-      createdBy: 'user-1',
-      members: ['user-1'],
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1',
+        createdBy: 'user-1',
+        members: ['user-1'],
+      }),
     });
     AgentInstallation.findOne.mockResolvedValue({
       agentName: 'openclaw',
@@ -54,9 +56,11 @@ describe('registry persona generator', () => {
       instanceId: 'default',
       displayName: 'Cuz',
     });
-    AgentProfile.findOne.mockResolvedValue({
-      name: 'Cuz',
-      purpose: 'Helpful teammate',
+    AgentProfile.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        name: 'Cuz',
+        purpose: 'Helpful teammate',
+      }),
     });
     generateText.mockResolvedValue(JSON.stringify({
       tone: 'curious',
