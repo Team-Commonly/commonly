@@ -1,0 +1,42 @@
+title = "Commonly Secret Scanner"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist for known-safe patterns"
+
+# Placeholder values in example/template files
+regexes = [
+  # Generic placeholder patterns
+  '''your[_-](api[_-]?key|token|secret|password|key)''',
+  '''<your[_-]''',
+  # nip.io test/local URLs (not secrets)
+  '''\.nip\.io''',
+  # xapp-1-... Slack example format in .env.example comments
+  '''xapp-1-\.\.\.',
+  '''xoxb-\.\.\.',
+]
+
+paths = [
+  # Example/template files — contain placeholder values intentionally
+  '''backend/\.env\.example''',
+  '''frontend/\.env\.example''',
+  '''_external/clawdbot/\.env\.example''',
+  # Docs that document revoked/example keys explicitly
+  '''docs/''',
+  # Audit trail docs (contain references for historical context)
+  '''docs/deployment/GCP_MIGRATION\.md''',
+]
+
+[[rules]]
+id = "commonly-agent-token"
+description = "Commonly agent runtime token"
+regex = '''cm_agent_[0-9a-f]{64}'''
+tags = ["token", "commonly"]
+
+[[rules]]
+id = "commonly-api-token"
+description = "Commonly user API token"
+regex = '''cm_[0-9a-f]{64}'''
+tags = ["token", "commonly"]

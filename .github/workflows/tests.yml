@@ -17,7 +17,7 @@ concurrency:
 jobs:
   test:
     name: Test & Coverage
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
 
     env:
       JWT_SECRET: test-jwt-secret

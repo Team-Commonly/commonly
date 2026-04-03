@@ -32,3 +32,11 @@ external/commonly-bot-state/
 *.bak
 
 _external/
+
+# Claude Code local settings (machine-specific, may contain paths/tokens)
+.claude/settings.local.json
+
+# Local env overrides (copy from .env.example, never commit real values)
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
