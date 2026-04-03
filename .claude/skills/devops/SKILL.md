@@ -1,7 +1,7 @@
 ---
 name: devops
 description: DevOps and infrastructure context for Docker, CI/CD, GitHub Actions, deployment, and monitoring. Use when working on containers, pipelines, or deployment.
-last_updated: 2026-03-26
+last_updated: 2026-04-02
 
 ---
 
@@ -43,9 +43,14 @@ docker-compose.dev.yml      # Development with hot reload
 
 ```bash
 # Development
-./dev.sh up                 # Start dev environment
-./dev.sh logs backend       # View backend logs
-./dev.sh test               # Run tests
+./dev.sh up                   # Start dev environment (mongo + postgres + backend + frontend)
+./dev.sh logs backend         # View backend logs
+./dev.sh test                 # Run unit tests (in-memory DBs, no services needed)
+./dev.sh test:integration     # Run integration tests against real Docker Compose services
+                              # (requires ./dev.sh up first)
+./dev.sh cluster up           # Spin up full local k8s stack via kind (free, needs docker+kind+helm)
+./dev.sh cluster test         # Run integration tests against local k8s stack
+./dev.sh cluster down         # Tear down local k8s stack
 
 # Production
 ./prod.sh deploy            # Build and deploy
