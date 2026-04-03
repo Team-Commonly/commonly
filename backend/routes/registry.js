@@ -4380,6 +4380,95 @@ router.delete('/admin/installations/:installationId', auth, adminAuth, async (re
 });
 
 /**
+ * POST /api/registry/admin/agents/claude-code/session-token
+ *
+ * Issue a session-scoped runtime token for a Claude Code agent (e.g. a Happy session).
+ * Each call issues a fresh token — tokens expire after `expiresIn` seconds (default 24h).
+ *
+ * This is Phase 1 of CAP (Commonly Agent Protocol): closes the dev loop so Claude Code
+ * can post to the Dev Team pod alongside Theo/Nova/Pixel without a full webhook adapter.
+ *
+ * Body: { podId, instanceId?, displayName?, expiresIn? }
+ * Response: { token, agentName, instanceId, podId, podName, expiresAt }
+ */
+router.post('/admin/agents/claude-code/session-token', auth, adminAuth, async (req, res) => {
+  try {
+    const { podId, instanceId: requestedInstanceId, displayName, expiresIn } = req.body;
+
+    if (!podId) {
+      return res.status(400).json({ error: 'podId is required' });
+    }
+
+    const pod = await Pod.findById(podId);
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    // Use provided instanceId or generate a unique one per session
+    const instanceId = requestedInstanceId || `sess-${randomSecret(8)}`;
+
+    // Get or create the claude-code agent user
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser('claude-code', {
+      instanceId,
+      displayName: displayName || 'Claude Code',
+    });
+
+    // Ensure pod membership — plain ObjectId array per Pod.members invariant
+    const isMember = pod.members?.some((m) => m.toString() === agentUser._id.toString());
+    if (!isMember) {
+      pod.members.push(agentUser._id);
+      await pod.save();
+    }
+
+    // Upsert AgentInstallation so agentRuntimeAuth authorizes this pod for the token
+    await AgentInstallation.findOneAndUpdate(
+      { agentName: 'claude-code', podId, instanceId },
+      {
+        $setOnInsert: {
+          agentName: 'claude-code',
+          podId,
+          instanceId,
+          version: '1.0.0',
+          installedBy: req.user._id,
+          scopes: ['context:read', 'messages:write', 'memory:read'],
+          config: { runtime: { runtimeType: 'claude-code' } },
+        },
+        $set: { status: 'active' },
+      },
+      { upsert: true, new: true },
+    );
+
+    // Always issue a fresh token for this session (never reuse — each session is independent)
+    const expiresInSeconds = Number(expiresIn) || 86400; // default 24h
+    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+    const rawToken = `cm_agent_${randomSecret(32)}`;
+
+    agentUser.agentRuntimeTokens = agentUser.agentRuntimeTokens || [];
+    agentUser.agentRuntimeTokens.push({
+      tokenHash: hash(rawToken),
+      label: `Session: ${instanceId}`,
+      createdAt: new Date(),
+      expiresAt,
+    });
+    await agentUser.save();
+
+    console.log(`Issued claude-code session token: instanceId=${instanceId} pod=${pod.name} expires=${expiresAt.toISOString()}`);
+
+    return res.json({
+      token: rawToken,
+      agentName: 'claude-code',
+      instanceId,
+      podId: pod._id,
+      podName: pod.name,
+      expiresAt,
+    });
+  } catch (error) {
+    console.error('Error issuing claude-code session token:', error);
+    return res.status(500).json({ error: 'Failed to issue session token' });
+  }
+});
+
+/**
  * GET /api/registry/pods/:podId/agents/:name/user-token
  * Get metadata for the agent's designated user token (no raw token returned)
  */

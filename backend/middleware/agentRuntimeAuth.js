@@ -59,6 +59,12 @@ module.exports = async (req, res, next) => {
     });
 
     if (agentUser) {
+      // Reject expired session tokens
+      const tokenRecord = agentUser.agentRuntimeTokens.find((t) => t.tokenHash === tokenHash);
+      if (tokenRecord?.expiresAt && tokenRecord.expiresAt < new Date()) {
+        return res.status(401).json({ message: 'Session token expired' });
+      }
+
       // Update last used timestamp on User
       try {
         await User.updateOne(

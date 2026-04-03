@@ -2,7 +2,7 @@ const controller = require('../../../controllers/pgStatusController');
 const { pool } = require('../../../config/db-pg');
 const User = require('../../../models/User');
 
-jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
+jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn().mockResolvedValue({ rowCount: 1 }) } }));
 jest.mock('../../../models/User');
 
 describe('pgStatusController', () => {
