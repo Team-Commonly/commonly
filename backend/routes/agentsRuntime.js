@@ -5,6 +5,7 @@ const auth = require('../middleware/auth');
 const AgentEventService = require('../services/agentEventService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
+const AgentMentionService = require('../services/agentMentionService');
 const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
 const GlobalModelConfigService = require('../services/globalModelConfigService');
@@ -935,6 +936,15 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
       messageType,
       installationConfig: installation.config || null,
     });
+
+    if (result.message) {
+      AgentMentionService.enqueueMentions({
+        podId,
+        message: result.message,
+        userId: req.agentUser?._id,
+        username: installation.displayName || installation.instanceId || installation.agentName,
+      }).catch((err) => console.warn('enqueueMentions failed for agent post:', err.message));
+    }
 
     return res.json(result);
   } catch (error) {
