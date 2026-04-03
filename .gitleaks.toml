@@ -33,6 +33,15 @@ paths = [
   # Submodule contents are not scanned; this covers the historical commits
   # before the submodule conversion (when files were tracked directly).
   '''_external/''',
+  # Playwright browser state committed before gitignore was added — see issue #88
+  '''state\.json''',
+  # README curl examples with placeholder auth headers
+  '''README\.md''',
+  # Frontend component showing API token UI (not storing real tokens)
+  '''frontend/src/components/UserProfile\.js''',
+  '''frontend/src/components/ApiDevPage\.js''',
+  # Integration test with hardcoded test constant (not a real key)
+  '''backend/__tests__/integration/integrations-e2e\.test\.js''',
 ]
 
 [[rules]]
