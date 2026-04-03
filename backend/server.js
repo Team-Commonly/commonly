@@ -345,6 +345,42 @@ const emitPresence = async (podId) => {
   }
 };
 
+const isPodMember = (pod, userId) => {
+  if (!pod || !userId) {
+    return false;
+  }
+
+  return (pod.members || []).some((member) => member?.toString() === userId.toString());
+};
+
+const authorizeSocketPodAccess = async (socket, podId, action) => {
+  if (!podId) {
+    console.warn(`Socket tried to ${action} without podId`);
+    socket.emit('error', { message: 'Pod ID is required' });
+    return null;
+  }
+
+  const pod = await Pod.findById(podId);
+  if (!pod) {
+    console.error(`Socket error: Pod not found during ${action}`, { podId });
+    socket.emit('error', { message: 'Pod not found' });
+    return null;
+  }
+
+  if (!isPodMember(pod, socket.userId)) {
+    console.error(`Socket error: Not authorized to ${action} for this pod`, {
+      podId,
+      userId: socket.userId,
+    });
+    socket.emit('error', {
+      message: `Not authorized to ${action} for this pod`,
+    });
+    return null;
+  }
+
+  return pod;
+};
+
 // Socket.io event handlers
 io.on('connection', (socket) => {
   console.log(
@@ -354,13 +390,14 @@ io.on('connection', (socket) => {
 
   // Join a pod room
   socket.on('joinPod', async (podId) => {
-    if (!podId) {
-      console.warn('Socket tried to join pod without podId');
+    const pod = await authorizeSocketPodAccess(socket, podId, 'join');
+    if (!pod) {
       return;
     }
+
     socket.join(`pod_${podId}`);
     socket.data.joinedPods.add(podId);
-    console.log(`User ${socket.userId} joined pod room: pod_${podId}`);
+    console.log(`User ${socket.userId} joined pod room: pod_${pod.id || podId}`);
     await emitPresence(podId);
   });
 
@@ -381,41 +418,40 @@ io.on('connection', (socket) => {
     'sendMessage',
     async ({ podId, content, userId, messageType = 'text', replyToMessageId = null }) => {
       try {
+        const socketUserId = socket.userId;
+
         // Validate required parameters - content must be present
-        if (!podId || !content || !userId) {
+        if (!podId || !content || !socketUserId) {
           console.error(
             'Socket error: Missing required parameters for sendMessage',
-            { podId, userId },
+            { podId, userId: socketUserId },
           );
           socket.emit('error', { message: 'Missing required parameters' });
+          return;
+        }
+
+        if (userId && userId !== socketUserId) {
+          console.error('Socket error: User ID mismatch for sendMessage', {
+            podId,
+            userId,
+            socketUserId,
+          });
+          socket.emit('error', {
+            message: 'Not authorized to send messages for another user',
+          });
           return;
         }
 
         console.log('Socket sendMessage received:', {
           podId,
           content,
-          userId,
+          userId: socketUserId,
           messageType,
         });
 
         let message;
-        // Check pod membership in MongoDB (always), but store messages in PostgreSQL if available
-        const podInstance = await Pod.findById(podId);
+        const podInstance = await authorizeSocketPodAccess(socket, podId, 'post');
         if (!podInstance) {
-          console.error('Socket error: Pod not found', { podId });
-          socket.emit('error', { message: 'Pod not found' });
-          return;
-        }
-
-        // Check membership using MongoDB pod model
-        if (!podInstance.members.includes(userId)) {
-          console.error('Socket error: Not authorized to post in this pod', {
-            podId,
-            userId,
-          });
-          socket.emit('error', {
-            message: 'Not authorized to post in this pod',
-          });
           return;
         }
 
@@ -425,13 +461,13 @@ io.on('connection', (socket) => {
             // Create message in PostgreSQL
             console.log('Creating message in PostgreSQL:', {
               podId,
-              userId,
+              userId: socketUserId,
               content,
               messageType,
             });
             const newMessage = await PGMessage.create(
               podId,
-              userId,
+              socketUserId,
               content,
               messageType,
               replyToMessageId,
@@ -447,10 +483,10 @@ io.on('connection', (socket) => {
             );
             try {
               // Create message in MongoDB
-              const user = await User.findById(userId);
+              const user = await User.findById(socketUserId);
               const newMessage = new Message({
                 podId,
-                userId,
+                userId: socketUserId,
                 content,
                 messageType,
               });
@@ -482,10 +518,10 @@ io.on('connection', (socket) => {
           console.log('Using MongoDB for messages (PostgreSQL not available)');
           try {
             // Create message in MongoDB
-            const user = await User.findById(userId);
+            const user = await User.findById(socketUserId);
             const newMessage = new Message({
               podId,
-              userId,
+              userId: socketUserId,
               content,
               messageType,
             });
@@ -536,14 +572,14 @@ io.on('connection', (socket) => {
           await AgentMentionService.enqueueMentions({
             podId,
             message: formattedMessage,
-            userId,
+            userId: socketUserId,
             username: mentionUsername,
           });
           if (podInstance.type === 'agent-admin') {
             await AgentMentionService.enqueueDmEvent({
               podId,
               message: formattedMessage,
-              userId,
+              userId: socketUserId,
               username: mentionUsername,
             });
           }
@@ -578,7 +614,7 @@ io.on('connection', (socket) => {
 
         io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
       } catch (err) {
-        console.error('Socket error:', err.message, { podId, userId });
+        console.error('Socket error:', err.message, { podId, userId: socket.userId });
         socket.emit('error', { message: 'Server error' });
       }
     },
@@ -604,4 +640,9 @@ if (require.main === module) {
   server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
-module.exports = { app, server };
+module.exports = {
+  app,
+  server,
+  isPodMember,
+  authorizeSocketPodAccess,
+};
