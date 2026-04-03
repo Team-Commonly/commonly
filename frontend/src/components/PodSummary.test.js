@@ -34,6 +34,8 @@ describe('PodSummary', () => {
   });
 
   test('toggle switches to existing summary without forcing refresh', async () => {
+    // Start in description mode so the "Show AI summary" button is visible
+    localStorage.setItem('pod-summary-view:pod-1', 'description');
     render(
       <PodSummary
         podId="pod-1"
@@ -68,6 +70,8 @@ describe('PodSummary', () => {
   });
 
   test('preserves summary view preference across remounts', async () => {
+    // Start in description mode so the "Show AI summary" button is visible
+    localStorage.setItem('pod-summary-view:pod-1', 'description');
     const { unmount } = render(
       <PodSummary
         podId="pod-1"

@@ -489,11 +489,11 @@ const Pod = () => {
                 <Toolbar sx={{ flexWrap: { xs: 'wrap', sm: 'nowrap' }, gap: 1.5 }}>
                     <Box className="pod-header-title-wrap">
                         <Typography variant="h6" className="pod-title">
-                            {isAgentAdminView ? 'Agent Admin' : 'Pods'}
+                            {isAgentAdminView ? 'Agent DMs' : 'Pods'}
                         </Typography>
                         <Typography variant="body2" className="pod-subtitle">
                             {isAgentAdminView
-                                ? 'Shared admin channels for your agents. All admins and owners share each channel.'
+                                ? 'Direct message conversations with your installed agents.'
                                 : 'Browse, preview, and join conversations before entering.'}
                         </Typography>
                     </Box>
@@ -608,11 +608,11 @@ const Pod = () => {
                             <Box className="pod-empty">
                                 <PeopleIcon sx={{ fontSize: 60, mb: 2 }} />
                                 <Typography variant="h5" gutterBottom>
-                                    {isAgentAdminView ? 'No agent admin channels yet' : 'No pods found in this category'}
+                                    {isAgentAdminView ? 'No agent DMs yet' : 'No pods found in this category'}
                                 </Typography>
                                 <Typography variant="body1" color="textSecondary" paragraph>
                                     {isAgentAdminView
-                                        ? 'Admin channels are created automatically when agents are provisioned.'
+                                        ? 'Open a DM from the Agents page.'
                                         : getPodType() === 'agent-ensemble'
                                         ? 'Create a new agent ensemble pod to orchestrate multi-agent conversations.'
                                         : 'Create a new pod to start chatting with others!'}
