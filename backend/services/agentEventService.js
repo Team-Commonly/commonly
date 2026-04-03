@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const AgentEvent = require('../models/AgentEvent');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const Integration = require('../models/Integration');
@@ -9,6 +10,98 @@ const {
   restartAgentRuntime,
   resolveOpenClawAccountId,
 } = require('./agentProvisionerService');
+
+// Normalize Mongoose Map config to plain object
+const normalizeConfig = (config) => {
+  if (!config) return {};
+  if (config instanceof Map) return Object.fromEntries(config.entries());
+  return config;
+};
+
+/**
+ * Deliver an event to a webhook agent via HTTP POST.
+ * Signs the payload with HMAC-SHA256 using the installation's webhookSecret.
+ * Handles inline response: { outcome, content? } — posts message if content provided.
+ * Fire-and-forget: errors are logged but never throw to avoid blocking event queue.
+ */
+const deliverEventViaWebhook = async (installation, event) => {
+  const runtimeConfig = normalizeConfig(installation.config)?.runtime || {};
+  const { webhookUrl, webhookSecret } = runtimeConfig;
+  if (!webhookUrl) return;
+
+  const payload = JSON.stringify({
+    _id: event._id,
+    type: event.type,
+    podId: event.podId,
+    agentName: event.agentName,
+    instanceId: event.instanceId,
+    createdAt: event.createdAt,
+    payload: event.payload,
+  });
+
+  const signature = webhookSecret
+    ? `sha256=${crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex')}`
+    : undefined;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Commonly-Event': event.type,
+        'X-Commonly-Delivery': String(event._id),
+        ...(signature ? { 'X-Commonly-Signature': signature } : {}),
+      },
+      body: payload,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      console.warn(`[webhook] ${event.agentName} ${webhookUrl} → HTTP ${res.status}`);
+      return;
+    }
+
+    let response = {};
+    try { response = await res.json(); } catch (_) { /* no body is fine */ }
+
+    const { outcome = 'acknowledged', content } = response;
+
+    // Post message to pod on agent's behalf if outcome is 'posted' with content
+    if (outcome === 'posted' && content) {
+      try {
+        // Lazy-load to avoid circular dependency
+        // eslint-disable-next-line global-require
+        const agentMessageService = require('./agentMessageService');
+        await agentMessageService.postAgentMessage({
+          agentName: event.agentName,
+          instanceId: event.instanceId,
+          podId: event.podId,
+          content: String(content),
+        });
+      } catch (postErr) {
+        console.warn(`[webhook] Failed to post message for ${event.agentName}:`, postErr.message);
+      }
+    }
+
+    // Acknowledge the event
+    await AgentEvent.findByIdAndUpdate(event._id, {
+      status: 'delivered',
+      deliveredAt: new Date(),
+      'delivery.outcome': outcome,
+      'delivery.updatedAt': new Date(),
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      console.warn(`[webhook] ${event.agentName} ${webhookUrl} timed out after 10s`);
+    } else {
+      console.warn(`[webhook] ${event.agentName} ${webhookUrl} error:`, err.message);
+    }
+  }
+};
 
 // Lazy-loaded to avoid circular dependency
 let agentWebSocketService = null;
@@ -464,6 +557,23 @@ class AgentEventService {
         createdAt: event.createdAt,
       });
     }
+
+    // Deliver via webhook if any active installation for this agent has a webhookUrl
+    AgentInstallation.find({
+      agentName: event.agentName,
+      instanceId,
+      podId,
+      status: 'active',
+    }).lean().then((installations) => {
+      for (const inst of installations) {
+        const runtimeConfig = normalizeConfig(inst.config)?.runtime || {};
+        if (runtimeConfig.webhookUrl) {
+          deliverEventViaWebhook(inst, event);
+        }
+      }
+    }).catch((err) => {
+      console.warn('[webhook] Failed to look up webhook installations:', err.message);
+    });
 
     return event;
   }
