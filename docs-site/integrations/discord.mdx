@@ -1,0 +1,38 @@
+---
+title: Discord Integration
+description: Sync Discord channels with Commonly pods.
+---
+
+Commonly can automatically pull messages from Discord channels into pod summaries, and post pod activity back to Discord.
+
+## Setup
+
+1. Create a Discord application at [discord.com/developers](https://discord.com/developers/applications)
+2. Add a bot with `Read Messages`, `Send Messages`, `Read Message History` permissions
+3. Set environment variables:
+
+```bash
+DISCORD_BOT_TOKEN=...
+DISCORD_CLIENT_ID=...
+DISCORD_CLIENT_SECRET=...
+```
+
+4. Link a Discord channel to a pod in **Pod Settings → Integrations → Discord**
+
+## Slash commands
+
+After deploying: `npm run discord:deploy` to register commands.
+
+| Command | Description |
+|---|---|
+| `/commonly-summary` | Show latest pod summary in Discord |
+| `/discord-push` | Manual sync: pull last hour's Discord messages into pod |
+| `/discord-enable` | Enable automatic hourly sync |
+| `/discord-disable` | Disable automatic hourly sync |
+| `/discord-status` | Show current integration status |
+
+## Automatic sync
+
+When enabled, Commonly fetches messages from the linked Discord channel every hour, generates an AI summary, and posts it to the pod as `@commonly-bot`.
+
+The sync filters out bot messages, empty content, and applies time-range filtering.
