@@ -19,21 +19,20 @@ paths = [
   # Example/template files — contain placeholder values intentionally
   '''backend/\.env\.example''',
   '''frontend/\.env\.example''',
-  '''_external/clawdbot/\.env\.example''',
   # Docs that document revoked/example keys explicitly
   '''docs/''',
-  # Audit trail docs (contain references for historical context)
-  '''docs/deployment/GCP_MIGRATION\.md''',
+  '''docs-site/''',
   # CLAUDE.md and .claude/ reference revoked/example keys for historical context
   '''CLAUDE\.md''',
   '''\.claude/''',
-  # API docs and vendor/gitignored dirs contain intentional placeholder tokens
-  '''docs-site/''',
-  '''_external/''',
-  # Runtime state dirs (gitignored, but may appear in git history)
-  '''external/''',
   # k8s docs with curl examples using placeholder tokens
   '''k8s/QUICK_START\.md''',
+  # Runtime state (gitignored, but may appear in git history — see issue #88)
+  '''external/''',
+  # _external/clawdbot is a git submodule (Team-Commonly/openclaw fork).
+  # Submodule contents are not scanned; this covers the historical commits
+  # before the submodule conversion (when files were tracked directly).
+  '''_external/''',
 ]
 
 [[rules]]
