@@ -1,7 +1,6 @@
 import React, { act } from 'react';
 import ReactDOM from 'react-dom/client';
 
-jest.mock('axios', () => ({ get: jest.fn(), post: jest.fn() }));
 
 jest.mock('./context/AuthContext', () => ({
   AuthProvider: ({ children }) => <>{children}</>,
