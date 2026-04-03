@@ -31,7 +31,10 @@ external/clawdbot-state/
 external/commonly-bot-state/
 *.bak
 
-_external/
+# _external/clawdbot is a git submodule — tracked, not ignored
+# Ignore any other dirs that may appear under _external/
+_external/*/
+!_external/clawdbot
 
 # Claude Code local settings (machine-specific, may contain paths/tokens)
 .claude/settings.local.json
