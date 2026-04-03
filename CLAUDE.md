@@ -119,7 +119,7 @@ These GitHub issues are the current expression of the architecture work:
 - **GKE**: `gke_disco-catcher-490606-b0_us-central1_commonly-dev`
 - **Live**: `app-dev.commonly.me` / `api-dev.commonly.me`
 - **Latest frontend image**: `gcr.io/disco-catcher-490606-b0/commonly-frontend:20260327001147`
-- **Latest backend image**: `gcr.io/disco-catcher-490606-b0/commonly-backend:20260402132654`
+- **Latest backend image**: `gcr.io/disco-catcher-490606-b0/commonly-backend:20260402180421`
 - **Latest gateway image**: `gcr.io/disco-catcher-490606-b0/clawdbot-gateway:20260329113759`
 - **UI verification**: Use MCP Playwright (`mcp__playwright__*`) — see MCP Playwright section below
 
@@ -236,6 +236,8 @@ curl -X POST https://api-dev.commonly.me/api/github/token \
 31. **Local testing infrastructure + Theo auto-reviews open PRs** (backend `20260402132654`, PR #55, 2026-04-02) — Three-tier testing setup for OSS contributors: (a) `./dev.sh test:integration` — runs backend tests with `INTEGRATION_TEST=true` against Docker Compose services (mongo+postgres on localhost); `backend/__tests__/setup.js` now switches between in-memory (default) and real DBs based on this flag; (b) `./dev.sh cluster up/test/down` — full local k8s stack via kind (free, needs docker+kind+helm); `k8s/helm/commonly/values-local.yaml` self-contained override (in-cluster Mongo+PG, no cloud deps); `k8s/helm/commonly/templates/secrets/local-secrets.yaml` creates all required k8s Secrets when ESO disabled. (c) Theo heartbeat Step 4 now has a new sub-step 4a: `gh pr list --state open` fetches all non-draft open PRs and adds unreviewed ones to reviewQueue before reviewing — previously Theo only reviewed PRs explicitly reported in pod messages.
 
 30. **Release Branch Guard relaxed + PR #53 merged** (2026-04-02) — Ops's `release-safety.yml` workflow (added in TASK-008 / PR #53) required human approval for `.github/workflows/` changes — blocking agents from merging their own CI/CD PRs. Fix: removed `.github/workflows/` from the `sensitiveMatchers` array in `release-safety.yml`; k8s/, Dockerfiles, and cloudbuild configs still require review. PR #53 merged via `gh pr merge --admin` (self-approval blocked by GitHub; admin override used). **PR #54 (nova/task-010)**: 21 Code Quality lint errors in nova-added test files (`++` operator, `await-in-loop`, line-too-long, for-of generator in `backend/__tests__/integration/`). TASK-016 created (high priority, nova) to fix these and stabilize tests.
+
+31. **GitHub issue unconditional sync + milestone routing** (backend `20260402180421`, 2026-04-02) — Theo's Step 6b was gated on "ALL tasks done/blocked" — with TASK-016 always pending, 20+ open GitHub issues with milestones never synced to the board. Fixes: (a) `github.js` GET `/api/github/issues` now includes `milestone: i.milestone?.title || null` in each issue object; (b) `registry.js` Theo Step 6b now runs EVERY heartbeat unconditionally — `commonly_list_github_issues(50)` called always, dedup via `sourceRef: "GH#N"` makes it safe; milestone prefix added to task title e.g. `[Week 1: OSS Launch] GH#42 — Fix auth bug`; routing by label (backend→nova, frontend→pixel, devops→ops); (c) openclaw `client.ts` return type updated to include `milestone: string | null`. **Branch protection**: `v1.0.x` requires GitHub Pro/Team for private repos — blocked at 403. Options: make repo public (OSS anyway) or upgrade plan.
 
 ### Recent Major Fixes (January 2025)
 1. **Comprehensive ESLint fixes** - Resolved 57 linting errors systematically
