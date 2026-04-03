@@ -45,7 +45,7 @@ describe('agent ensemble config access', () => {
         agentEnsemble: { enabled: true },
       });
 
-    User.findById.mockResolvedValue({ _id: 'user-1', role: 'admin' });
+    User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'user-1', role: 'admin' }) });
 
     const res = await request(app)
       .patch('/api/pods/pod-1/ensemble/config')
@@ -62,7 +62,7 @@ describe('agent ensemble config access', () => {
       createdBy: 'creator-1',
     });
 
-    User.findById.mockResolvedValue({ _id: 'user-1', role: 'member' });
+    User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'user-1', role: 'member' }) });
 
     const res = await request(app)
       .patch('/api/pods/pod-1/ensemble/config')

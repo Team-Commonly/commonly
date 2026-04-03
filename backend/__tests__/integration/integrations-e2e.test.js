@@ -14,6 +14,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 
+const axios = require('axios');
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 // Models
@@ -67,7 +68,6 @@ jest.mock('../../services/podAssetService', () => ({
 
 // Mock axios for external API calls (GroupMe)
 jest.mock('axios');
-const axios = require('axios');
 
 // Mock global fetch for Discord webhook calls
 global.fetch = jest.fn();
@@ -148,6 +148,8 @@ describe('Integrations E2E Tests', () => {
     await DiscordIntegration.deleteMany({});
     await Message.deleteMany({});
     await Summary.deleteMany({});
+    // Reset agent runtime tokens so each test's beforeEach gets a fresh token
+    await User.updateMany({ isBot: true }, { $set: { agentRuntimeTokens: [] } });
   });
 
   describe('1. Commonly-Bot Installation and Operations', () => {
@@ -822,7 +824,7 @@ describe('Integrations E2E Tests', () => {
 
       // Create integration with many messages
       const messages = [];
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i < 100; i += 1) {
         messages.push({
           messageId: `hv-msg-${i}`,
           authorId: `user-${i % 10}`,
@@ -916,12 +918,19 @@ describe('Integrations E2E Tests', () => {
     });
 
     test('should use AI summarization for 3+ messages', async () => {
+      // eslint-disable-next-line global-require
       const summarizerService = require('../../services/summarizerService');
 
       const messages = [
-        { messageId: '1', authorId: 'u1', authorName: 'A', content: 'First', timestamp: new Date() },
-        { messageId: '2', authorId: 'u2', authorName: 'B', content: 'Second', timestamp: new Date() },
-        { messageId: '3', authorId: 'u3', authorName: 'C', content: 'Third', timestamp: new Date() },
+        {
+          messageId: '1', authorId: 'u1', authorName: 'A', content: 'First', timestamp: new Date(), 
+        },
+        {
+          messageId: '2', authorId: 'u2', authorName: 'B', content: 'Second', timestamp: new Date(), 
+        },
+        {
+          messageId: '3', authorId: 'u3', authorName: 'C', content: 'Third', timestamp: new Date(), 
+        },
       ];
 
       const integration = {
@@ -1030,7 +1039,9 @@ describe('Integrations E2E Tests', () => {
           channelId: 'channel',
           webhookListenerEnabled: true,
           messageBuffer: [
-            { messageId: '1', authorId: 'u', authorName: 'U', content: 'Hi', timestamp: new Date() },
+            {
+              messageId: '1', authorId: 'u', authorName: 'U', content: 'Hi', timestamp: new Date(), 
+            },
           ],
         },
         createdBy: testUser._id,
@@ -1051,6 +1062,7 @@ describe('Integrations E2E Tests', () => {
     });
 
     describe('GroupMe Outbound Messages', () => {
+      // eslint-disable-next-line global-require
       const groupmeService = require('../../services/groupmeService');
 
       test('should send message to GroupMe via bot API', async () => {
@@ -1113,8 +1125,8 @@ describe('Integrations E2E Tests', () => {
     });
 
     describe('Discord Webhook Outbound Messages', () => {
+      // eslint-disable-next-line global-require
       const DiscordService = require('../../services/discordService');
-      const DiscordIntegration = require('../../models/DiscordIntegration');
 
       // Helper to create full DiscordIntegration with all required fields
       const createDiscordIntegration = async (integrationId, overrides = {}) => {
@@ -1262,6 +1274,7 @@ describe('Integrations E2E Tests', () => {
     });
 
     describe('Full Outbound Flow Simulation', () => {
+      // eslint-disable-next-line global-require
       const groupmeService = require('../../services/groupmeService');
 
       test('should simulate GroupMe command → summary → outbound message flow', async () => {
@@ -1392,303 +1405,303 @@ describe('Integrations E2E Tests', () => {
       });
     });
 
-  describe('6. Agent Runtime Integration Access Endpoints', () => {
-    beforeEach(() => {
-      axios.get.mockReset();
-    });
-
-    test('should list agent-accessible integrations with integration:read scope', async () => {
-      await request(app)
-        .post('/api/registry/install')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({
-          agentName: 'commonly-bot',
-          podId: testPod._id.toString(),
-          scopes: ['context:read', 'summaries:read', 'integration:read'],
-        });
-
-      const tokenRes = await request(app)
-        .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({ label: 'Integration Access Token' });
-
-      await Integration.create({
-        podId: testPod._id,
-        type: 'discord',
-        status: 'connected',
-        config: {
-          channelId: 'discord-channel-123',
-          channelName: 'general',
-          botToken: 'discord-bot-token',
-          agentAccessEnabled: true,
-        },
-        createdBy: testUser._id,
-        isActive: true,
+    describe('6. Agent Runtime Integration Access Endpoints', () => {
+      beforeEach(() => {
+        axios.get.mockReset();
       });
 
-      await Integration.create({
-        podId: testPod._id,
-        type: 'groupme',
-        status: 'connected',
-        config: {
-          groupId: 'groupme-group-456',
-          groupName: 'GroupMe Test',
-          accessToken: 'groupme-access-token',
-          agentAccessEnabled: false,
-        },
-        createdBy: testUser._id,
-        isActive: true,
-      });
+      test('should list agent-accessible integrations with integration:read scope', async () => {
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read', 'integration:read'],
+          });
 
-      const res = await request(app)
-        .get(`/api/agents/runtime/pods/${testPod._id}/integrations`)
-        .set('Authorization', `Bearer ${tokenRes.body.token}`);
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Integration Access Token' });
 
-      expect(res.status).toBe(200);
-      expect(res.body.integrations).toHaveLength(1);
-      expect(res.body.integrations[0].type).toBe('discord');
-      expect(res.body.integrations[0].botToken).toBe('discord-bot-token');
-    });
-
-    test('should include availableIntegrations in heartbeat payload for eligible agents', async () => {
-      await request(app)
-        .post('/api/registry/install')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({
-          agentName: 'commonly-bot',
-          podId: testPod._id.toString(),
-          scopes: ['context:read', 'summaries:read'],
+        await Integration.create({
+          podId: testPod._id,
+          type: 'discord',
+          status: 'connected',
+          config: {
+            channelId: 'discord-channel-123',
+            channelName: 'general',
+            botToken: 'discord-bot-token',
+            agentAccessEnabled: true,
+          },
+          createdBy: testUser._id,
+          isActive: true,
         });
 
-      const tokenRes = await request(app)
-        .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({ label: 'Heartbeat Token' });
+        await Integration.create({
+          podId: testPod._id,
+          type: 'groupme',
+          status: 'connected',
+          config: {
+            groupId: 'groupme-group-456',
+            groupName: 'GroupMe Test',
+            accessToken: 'groupme-access-token',
+            agentAccessEnabled: false,
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
 
-      await Integration.create({
-        podId: testPod._id,
-        type: 'discord',
-        status: 'connected',
-        config: {
+        const res = await request(app)
+          .get(`/api/agents/runtime/pods/${testPod._id}/integrations`)
+          .set('Authorization', `Bearer ${tokenRes.body.token}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.integrations).toHaveLength(1);
+        expect(res.body.integrations[0].type).toBe('discord');
+        expect(res.body.integrations[0].botToken).toBe('discord-bot-token');
+      });
+
+      test('should include availableIntegrations in heartbeat payload for eligible agents', async () => {
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read'],
+          });
+
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Heartbeat Token' });
+
+        await Integration.create({
+          podId: testPod._id,
+          type: 'discord',
+          status: 'connected',
+          config: {
+            channelId: 'discord-channel-heartbeat',
+            channelName: 'ops',
+            botToken: 'discord-token-heartbeat',
+            agentAccessEnabled: true,
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        await Integration.create({
+          podId: testPod._id,
+          type: 'groupme',
+          status: 'connected',
+          config: {
+            groupId: 'groupme-heartbeat-private',
+            accessToken: 'groupme-token-heartbeat-private',
+            agentAccessEnabled: false,
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        await AgentEventService.enqueue({
+          agentName: 'commonly-bot',
+          podId: testPod._id,
+          instanceId: 'default',
+          type: 'heartbeat',
+          payload: {
+            triggerReason: 'test',
+          },
+        });
+
+        const pollRes = await request(app)
+          .get('/api/agents/runtime/events')
+          .set('Authorization', `Bearer ${tokenRes.body.token}`);
+
+        expect(pollRes.status).toBe(200);
+        const heartbeat = pollRes.body.events.find((event) => event.type === 'heartbeat');
+        expect(heartbeat).toBeDefined();
+        expect(Array.isArray(heartbeat.payload.availableIntegrations)).toBe(true);
+        expect(heartbeat.payload.availableIntegrations).toHaveLength(1);
+        expect(heartbeat.payload.availableIntegrations[0]).toMatchObject({
+          type: 'discord',
           channelId: 'discord-channel-heartbeat',
           channelName: 'ops',
-          botToken: 'discord-token-heartbeat',
-          agentAccessEnabled: true,
-        },
-        createdBy: testUser._id,
-        isActive: true,
-      });
-
-      await Integration.create({
-        podId: testPod._id,
-        type: 'groupme',
-        status: 'connected',
-        config: {
-          groupId: 'groupme-heartbeat-private',
-          accessToken: 'groupme-token-heartbeat-private',
-          agentAccessEnabled: false,
-        },
-        createdBy: testUser._id,
-        isActive: true,
-      });
-
-      await AgentEventService.enqueue({
-        agentName: 'commonly-bot',
-        podId: testPod._id,
-        instanceId: 'default',
-        type: 'heartbeat',
-        payload: {
-          triggerReason: 'test',
-        },
-      });
-
-      const pollRes = await request(app)
-        .get('/api/agents/runtime/events')
-        .set('Authorization', `Bearer ${tokenRes.body.token}`);
-
-      expect(pollRes.status).toBe(200);
-      const heartbeat = pollRes.body.events.find((event) => event.type === 'heartbeat');
-      expect(heartbeat).toBeDefined();
-      expect(Array.isArray(heartbeat.payload.availableIntegrations)).toBe(true);
-      expect(heartbeat.payload.availableIntegrations).toHaveLength(1);
-      expect(heartbeat.payload.availableIntegrations[0]).toMatchObject({
-        type: 'discord',
-        channelId: 'discord-channel-heartbeat',
-        channelName: 'ops',
-      });
-    });
-
-    test('should accept legacy integrations:read scope alias', async () => {
-      await request(app)
-        .post('/api/registry/install')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({
-          agentName: 'commonly-bot',
-          podId: testPod._id.toString(),
-          scopes: ['context:read', 'summaries:read', 'integrations:read'],
         });
-
-      const tokenRes = await request(app)
-        .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({ label: 'Legacy Scope Token' });
-
-      const res = await request(app)
-        .get(`/api/agents/runtime/pods/${testPod._id}/integrations`)
-        .set('Authorization', `Bearer ${tokenRes.body.token}`);
-
-      expect(res.status).toBe(200);
-      expect(Array.isArray(res.body.integrations)).toBe(true);
-    });
-
-    test('should fetch Discord integration messages with integration:messages:read scope', async () => {
-      await request(app)
-        .post('/api/registry/install')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({
-          agentName: 'commonly-bot',
-          podId: testPod._id.toString(),
-          scopes: ['context:read', 'summaries:read', 'integration:messages:read'],
-        });
-
-      const tokenRes = await request(app)
-        .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({ label: 'Discord Messages Token' });
-
-      const integration = await Integration.create({
-        podId: testPod._id,
-        type: 'discord',
-        status: 'connected',
-        config: {
-          channelId: 'discord-channel-abc',
-          botToken: 'discord-token-abc',
-          agentAccessEnabled: true,
-        },
-        createdBy: testUser._id,
-        isActive: true,
       });
 
-      axios.get.mockResolvedValueOnce({
-        data: [
-          {
-            id: 'msg-1',
-            content: 'hello',
-            timestamp: new Date().toISOString(),
-            author: { id: 'u-1', username: 'alice', bot: false },
-            attachments: [],
-            reactions: [],
+      test('should accept legacy integrations:read scope alias', async () => {
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read', 'integrations:read'],
+          });
+
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Legacy Scope Token' });
+
+        const res = await request(app)
+          .get(`/api/agents/runtime/pods/${testPod._id}/integrations`)
+          .set('Authorization', `Bearer ${tokenRes.body.token}`);
+
+        expect(res.status).toBe(200);
+        expect(Array.isArray(res.body.integrations)).toBe(true);
+      });
+
+      test('should fetch Discord integration messages with integration:messages:read scope', async () => {
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read', 'integration:messages:read'],
+          });
+
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Discord Messages Token' });
+
+        const integration = await Integration.create({
+          podId: testPod._id,
+          type: 'discord',
+          status: 'connected',
+          config: {
+            channelId: 'discord-channel-abc',
+            botToken: 'discord-token-abc',
+            agentAccessEnabled: true,
           },
-        ],
-      });
-
-      const res = await request(app)
-        .get(`/api/agents/runtime/pods/${testPod._id}/integrations/${integration._id}/messages?limit=10`)
-        .set('Authorization', `Bearer ${tokenRes.body.token}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.messages).toHaveLength(1);
-      expect(res.body.messages[0].authorName).toBe('alice');
-    });
-
-    test('should reject integration message fetch for pod the agent is not installed in', async () => {
-      await request(app)
-        .post('/api/registry/install')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({
-          agentName: 'commonly-bot',
-          podId: testPod._id.toString(),
-          scopes: ['context:read', 'summaries:read', 'integration:messages:read'],
+          createdBy: testUser._id,
+          isActive: true,
         });
 
-      const tokenRes = await request(app)
-        .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({ label: 'Cross Pod Token' });
-
-      const otherPod = await Pod.create({
-        name: 'Other Pod',
-        description: 'Different pod',
-        type: 'chat',
-        createdBy: testUser._id,
-        members: [testUser._id],
-      });
-
-      const integration = await Integration.create({
-        podId: otherPod._id,
-        type: 'discord',
-        status: 'connected',
-        config: {
-          channelId: 'discord-channel-other',
-          botToken: 'discord-token-other',
-          agentAccessEnabled: true,
-        },
-        createdBy: testUser._id,
-        isActive: true,
-      });
-
-      const res = await request(app)
-        .get(`/api/agents/runtime/pods/${otherPod._id}/integrations/${integration._id}/messages`)
-        .set('Authorization', `Bearer ${tokenRes.body.token}`);
-
-      expect(res.status).toBe(403);
-      expect(res.body.message).toBe('Agent token not authorized for this pod');
-    });
-
-    test('should fetch GroupMe messages when access token is configured', async () => {
-      await request(app)
-        .post('/api/registry/install')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({
-          agentName: 'commonly-bot',
-          podId: testPod._id.toString(),
-          scopes: ['context:read', 'summaries:read', 'integration:messages:read'],
+        axios.get.mockResolvedValueOnce({
+          data: [
+            {
+              id: 'msg-1',
+              content: 'hello',
+              timestamp: new Date().toISOString(),
+              author: { id: 'u-1', username: 'alice', bot: false },
+              attachments: [],
+              reactions: [],
+            },
+          ],
         });
 
-      const tokenRes = await request(app)
-        .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({ label: 'GroupMe Messages Token' });
+        const res = await request(app)
+          .get(`/api/agents/runtime/pods/${testPod._id}/integrations/${integration._id}/messages?limit=10`)
+          .set('Authorization', `Bearer ${tokenRes.body.token}`);
 
-      const integration = await Integration.create({
-        podId: testPod._id,
-        type: 'groupme',
-        status: 'connected',
-        config: {
-          groupId: 'group-xyz',
-          accessToken: 'groupme-token-xyz',
-          agentAccessEnabled: true,
-        },
-        createdBy: testUser._id,
-        isActive: true,
+        expect(res.status).toBe(200);
+        expect(res.body.messages).toHaveLength(1);
+        expect(res.body.messages[0].authorName).toBe('alice');
       });
 
-      axios.get.mockResolvedValueOnce({
-        data: {
-          response: {
-            messages: [
-              {
-                id: 'gm-1',
-                text: 'groupme hello',
-                user_id: 'gm-user-1',
-                name: 'bob',
-                sender_type: 'user',
-                created_at: Math.floor(Date.now() / 1000),
-                attachments: [],
-              },
-            ],
+      test('should reject integration message fetch for pod the agent is not installed in', async () => {
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read', 'integration:messages:read'],
+          });
+
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'Cross Pod Token' });
+
+        const otherPod = await Pod.create({
+          name: 'Other Pod',
+          description: 'Different pod',
+          type: 'chat',
+          createdBy: testUser._id,
+          members: [testUser._id],
+        });
+
+        const integration = await Integration.create({
+          podId: otherPod._id,
+          type: 'discord',
+          status: 'connected',
+          config: {
+            channelId: 'discord-channel-other',
+            botToken: 'discord-token-other',
+            agentAccessEnabled: true,
           },
-        },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        const res = await request(app)
+          .get(`/api/agents/runtime/pods/${otherPod._id}/integrations/${integration._id}/messages`)
+          .set('Authorization', `Bearer ${tokenRes.body.token}`);
+
+        expect(res.status).toBe(403);
+        expect(res.body.message).toBe('Agent token not authorized for this pod');
       });
 
-      const res = await request(app)
-        .get(`/api/agents/runtime/pods/${testPod._id}/integrations/${integration._id}/messages?limit=20`)
-        .set('Authorization', `Bearer ${tokenRes.body.token}`);
+      test('should fetch GroupMe messages when access token is configured', async () => {
+        await request(app)
+          .post('/api/registry/install')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
+            agentName: 'commonly-bot',
+            podId: testPod._id.toString(),
+            scopes: ['context:read', 'summaries:read', 'integration:messages:read'],
+          });
 
-      expect(res.status).toBe(200);
-      expect(res.body.messages).toHaveLength(1);
-      expect(res.body.messages[0].authorName).toBe('bob');
+        const tokenRes = await request(app)
+          .post(`/api/registry/pods/${testPod._id}/agents/commonly-bot/runtime-tokens`)
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({ label: 'GroupMe Messages Token' });
+
+        const integration = await Integration.create({
+          podId: testPod._id,
+          type: 'groupme',
+          status: 'connected',
+          config: {
+            groupId: 'group-xyz',
+            accessToken: 'groupme-token-xyz',
+            agentAccessEnabled: true,
+          },
+          createdBy: testUser._id,
+          isActive: true,
+        });
+
+        axios.get.mockResolvedValueOnce({
+          data: {
+            response: {
+              messages: [
+                {
+                  id: 'gm-1',
+                  text: 'groupme hello',
+                  user_id: 'gm-user-1',
+                  name: 'bob',
+                  sender_type: 'user',
+                  created_at: Math.floor(Date.now() / 1000),
+                  attachments: [],
+                },
+              ],
+            },
+          },
+        });
+
+        const res = await request(app)
+          .get(`/api/agents/runtime/pods/${testPod._id}/integrations/${integration._id}/messages?limit=20`)
+          .set('Authorization', `Bearer ${tokenRes.body.token}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.messages).toHaveLength(1);
+        expect(res.body.messages[0].authorName).toBe('bob');
+      });
     });
-  });
   });
 });

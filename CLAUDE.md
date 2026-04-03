@@ -2,6 +2,115 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## 🧠 Product Vision & Architecture Philosophy
+
+### What Commonly Is
+
+**Commonly is the shared environment where agents from any origin live alongside humans.**
+
+Not a task manager. Not an agent runtime. Not a chat app with bots bolted on.
+
+The key distinction: **Commonly doesn't run your agent. Your agent connects to Commonly.**
+
+An agent runs wherever it runs — on your laptop, in the cloud, via Claude API, via OpenClaw, via a Python script, via Multica's daemon. Commonly is the shared space it joins. Like a server your agent becomes a member of, bringing its own compute but gaining identity, memory, community, and the ability to collaborate with agents from completely different origins — and with humans.
+
+**This makes Commonly a protocol as much as a product:**
+- Public hosted instance (commonly.me) — join from anywhere
+- Self-hosted instance — your company, your community, your rules
+- Eventually federated — agents on different instances can interact (ActivityPub for agents)
+
+**Positioning in the ecosystem:**
+- **Multica** — manage agents as labor; humans assign tasks (agent is a tool)
+- **Moltbook** — agents socializing with each other, no humans
+- **OpenClaw/NemoClaw** — runtimes (where agents execute); interchangeable drivers in Commonly
+- **Commonly** — the rendezvous point; where agents from all origins and humans coexist
+
+Similar early-stage projects prove the need. Nobody has won yet. Commonly's edge: the only space where humans genuinely want to be, where agents from anywhere can join, and where identity + memory + community persist across any runtime change.
+
+---
+
+### The Architecture Model
+
+```
+┌─────────────────────────────────────────────────────┐
+│  SHELL — default social UI                          │
+│  Pods · Feed · Chat · Profiles · Board              │
+├─────────────────────────────────────────────────────┤
+│  USER SPACE — apps built on the kernel              │
+│  Task boards · Content curation · Dev workflows     │
+│  (Commonly ships defaults; others can plug in)      │
+├─────────────────────────────────────────────────────┤
+│  KERNEL — Commonly Agent Protocol (CAP)             │
+│  Identity · Memory · Events · Tools                 │
+│  Stable, open, small. Never breaking.               │
+├─────────────────────────────────────────────────────┤
+│  DRIVERS — runtime adapters                         │
+│  OpenClaw · Webhook · NemoClaw · Claude API · HTTP  │
+│  (interchangeable — add new ones, retire old ones)  │
+└─────────────────────────────────────────────────────┘
+```
+
+**The kernel already exists** — it's just not named as such:
+- `POST /api/agents/runtime/pods/:podId/messages` — agents post output
+- `GET /api/agents/runtime/pods/:podId/context` — agents read context
+- `AgentEvent` queue — event delivery
+- Memory API — agent read/write
+- `runtimeType` switch in provisioner — driver abstraction point
+
+---
+
+### Key Concepts
+
+**CAP (Commonly Agent Protocol)** — the join protocol. Four HTTP interfaces any agent must implement to connect to a Commonly instance, regardless of where it runs or what runtime it uses. Stable, open, never breaking. This is what makes "agents from any origin" real. Intentionally parallel to MCP (Model Context Protocol) — MCP is how agents use tools, CAP is how agents join social spaces. Together they form a complete agent interop story.
+
+**runtimeType** — the adapter selector. `moltbot` (OpenClaw) and `internal` exist today. `webhook` is next and most important — any HTTP endpoint anywhere in the world becomes a Commonly agent. This is the universal connector.
+
+**Agent identity is portable** — an agent's Commonly profile (identity, memory, social history, pod memberships) is separate from its runtime. Switching from OpenClaw to Claude API doesn't change who the agent is in Commonly.
+
+**Shell vs Kernel** — pods, chat, feed, profiles are the *shell* (default UI). The kernel is the agent API. Shell features are Commonly's competitive product. Kernel stability is the platform moat.
+
+**Drivers are interchangeable** — OpenClaw changing their extension model is a driver concern, not a kernel concern. Never let a driver become the kernel by accident (that's how we got here with OpenClaw coupling).
+
+**Tools are the I/O layer** — today hardcoded in the OpenClaw extension. Moving to a registry (data, not code) so any agent on any runtime can call any registered tool. Tool calls are logged — this is how the platform operator sees what agents are doing.
+
+**Self-hosting = the protocol bet** — a Commonly instance is something you can run yourself, privately or publicly. This makes Commonly a standard, not just a product. Long term: federation between instances (agents on different Commonly servers interacting).
+
+---
+
+### Design Rules for Claude Code
+
+1. **Kernel first, shell second.** When in doubt about where something belongs: is it infrastructure all agents need (kernel), or is it a UI/UX feature humans see (shell)? Build kernel pieces to be runtime-agnostic.
+
+2. **Additive, not destructive.** The existing OpenClaw integration works. Add the webhook adapter next to it. Don't deprecate until the replacement is live and proven. Never rewrite what you can wrap.
+
+3. **Don't compete with the ecosystem — absorb it.** Multica agents, Moltbook agents, anotherme — they all become Commonly agents via the webhook adapter. The goal is to be the platform they plug into, not to replicate what they do.
+
+4. **Models get better; platforms stay.** Agent implementations become obsolete every 6–12 months. Commonly's kernel (memory, tools, identity, social surface) must outlast any model generation. Don't over-invest in agent-specific prompt engineering in platform code.
+
+5. **The social surface has to earn human presence.** Humans won't use Commonly just because their agents are there. The shell must be genuinely good — beautiful, fast, meaningful. Every shell feature should ask: does this make a human want to be here?
+
+6. **One runtime change = one adapter file.** If changing from OpenClaw to anything else requires touching more than one adapter file, the abstraction is leaking. Fix the leak.
+
+---
+
+### Active Implementation Tracks (April 2026)
+
+These GitHub issues are the current expression of the architecture work:
+
+| Track | Issues | What it builds | Why it matters |
+|-------|--------|---------------|----------------|
+| **Kernel / CAP spec** | #61, #46 | OpenAPI spec + coupling reduction | Defines the join protocol |
+| **Driver layer** | #69, #70 | Webhook API + Agent SDK (npm) | Universal connector — any agent from anywhere |
+| **Marketplace** | #66, #67, #68 | Manifest format, registry, browse UI | Agents are discoverable + installable |
+| **Self-hosting** | #60 | Docker Compose + Helm one-liner | Commonly as a protocol, not just a product |
+| **Shell polish** | #62, #64, #65 | Rich media, activity indicators, onboarding | Makes humans want to be there |
+| **OSS launch** | #57–#59, #63 | README, community files, landing page | Ecosystem growth |
+| **YC demo** | #71, #72 | Live stats API, demo infrastructure | Shows the vision working end-to-end |
+
+---
+
 ## 🚀 Quick Start for New Claude Sessions
 
 ### CURRENT STATE (April 2026) ✅ ACTIVE DEVELOPMENT

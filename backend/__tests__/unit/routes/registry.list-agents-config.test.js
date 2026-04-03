@@ -28,6 +28,9 @@ jest.mock('../../../models/AgentProfile', () => ({
 jest.mock('../../../models/AgentTemplate', () => ({
   find: jest.fn(),
 }));
+jest.mock('../../../models/AgentEvent', () => ({
+  aggregate: jest.fn().mockResolvedValue([]),
+}));
 
 const Pod = require('../../../models/Pod');
 const AgentProfile = require('../../../models/AgentProfile');

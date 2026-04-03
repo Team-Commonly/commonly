@@ -30,7 +30,7 @@ describe('PG Message model', () => {
     expect(pool.query).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('INSERT INTO messages'),
-      ['p', 'u', 'c', 'text'],
+      ['p', 'u', 'c', 'text', null],
     );
     expect(pool.query).toHaveBeenNthCalledWith(
       2,

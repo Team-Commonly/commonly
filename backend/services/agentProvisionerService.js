@@ -1166,6 +1166,11 @@ const provisionAgentRuntime = async ({
     });
   }
 
+  // External runtimes — no process to provision; agent manages its own compute
+  if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
+    return { provisioned: true, external: true, runtimeType };
+  }
+
   throw new Error(`Provisioning not supported for runtime: ${runtimeType}`);
 };
 
@@ -1371,6 +1376,9 @@ const restartDockerRuntime = async (runtimeType) => {
 };
 
 const getDockerRuntimeStatus = async (runtimeType) => {
+  if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
+    return { status: 'external', reason: 'agent manages its own compute' };
+  }
   if (!isDockerProvisioningEnabled()) {
     return { status: 'disabled', reason: 'docker provisioning disabled' };
   }

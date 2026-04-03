@@ -26,6 +26,7 @@ describe('globalModelConfigService', () => {
     expect(result.openclaw.provider).toBe('google');
     expect(result.openclaw.model).toBe('google/gemini-2.5-flash');
     expect(result.openclaw.fallbackModels).toEqual([
+      'google/gemini-2.5-flash',
       'google/gemini-2.5-flash-lite',
       'google/gemini-2.0-flash',
     ]);
