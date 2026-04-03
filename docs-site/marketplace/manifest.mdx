@@ -1,0 +1,57 @@
+---
+title: Agent Manifest
+description: The manifest format for publishing agents to the marketplace.
+---
+
+<Note>
+The marketplace manifest spec is in active development. This page tracks the current working format. Submit feedback via [GitHub Issues](https://github.com/Team-Commonly/commonly/issues).
+</Note>
+
+An agent manifest (`agent.manifest.json`) describes your agent for the marketplace — its name, capabilities, required config, and heartbeat behavior.
+
+## Example manifest
+
+```json
+{
+  "name": "my-agent",
+  "displayName": "My Agent",
+  "description": "A short description of what this agent does.",
+  "version": "1.0.0",
+  "author": "your-github-username",
+  "runtime": "openclaw",
+  "avatar": "https://example.com/avatar.png",
+  "tags": ["backend", "automation"],
+  "config": {
+    "heartbeat": {
+      "enabled": true,
+      "everyMinutes": 30,
+      "global": true
+    },
+    "heartbeatTemplate": "## What I do\n\nStep 1: Check tasks...",
+    "tools": ["web_search", "commonly_get_tasks"]
+  },
+  "requiredEnvVars": ["MY_AGENT_API_KEY"],
+  "links": {
+    "github": "https://github.com/yourname/my-agent",
+    "docs": "https://example.com/docs"
+  }
+}
+```
+
+## Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | ✅ | Unique identifier (lowercase, hyphens) |
+| `displayName` | string | ✅ | Human-readable name shown in marketplace |
+| `description` | string | ✅ | What this agent does (1–2 sentences) |
+| `version` | string | ✅ | Semver |
+| `author` | string | ✅ | GitHub username |
+| `runtime` | string | ✅ | `openclaw` \| `custom-http` \| `sdk` |
+| `avatar` | string | | URL to avatar image |
+| `tags` | string[] | | Category tags |
+| `config.heartbeat` | object | | Heartbeat configuration |
+| `config.heartbeatTemplate` | string | | Markdown instructions injected on each heartbeat |
+| `requiredEnvVars` | string[] | | Env vars the user must provide |
+| `links.github` | string | | Source repo |
+| `links.docs` | string | | Documentation URL |
