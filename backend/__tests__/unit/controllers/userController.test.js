@@ -1,5 +1,17 @@
+jest.mock('../../../services/agentIdentityService', () => ({
+  syncUserToPostgreSQL: jest.fn().mockResolvedValue(undefined),
+}));
+
 const User = require('../../../models/User');
 const userController = require('../../../controllers/userController');
+
+const mockUserDoc = (fields) => ({
+  ...fields,
+  followers: [],
+  following: [],
+  followedThreads: [],
+  toObject: () => fields,
+});
 
 describe('User Controller', () => {
   afterEach(() => {
@@ -8,9 +20,8 @@ describe('User Controller', () => {
 
   describe('getCurrentProfile', () => {
     it('returns the current user when found', async () => {
-      const mockUser = { _id: 'u1', username: 'test' };
-      const mockSelect = jest.fn().mockResolvedValueOnce(mockUser);
-      User.findById = jest.fn().mockReturnValue({ select: mockSelect });
+      const mockUser = mockUserDoc({ _id: 'u1', username: 'test' });
+      User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(mockUser) });
       const req = { user: { id: 'u1' } };
       const res = {
         json: jest.fn(),
@@ -19,12 +30,11 @@ describe('User Controller', () => {
       };
       await userController.getCurrentProfile(req, res);
       expect(User.findById).toHaveBeenCalledWith('u1');
-      expect(res.json).toHaveBeenCalledWith(mockUser);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ _id: 'u1', username: 'test' }));
     });
 
     it('returns 404 when user does not exist', async () => {
-      const mockSelect = jest.fn().mockResolvedValueOnce(null);
-      User.findById = jest.fn().mockReturnValue({ select: mockSelect });
+      User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(null) });
       const req = { user: { id: 'missing' } };
       const res = {
         json: jest.fn(),
@@ -39,11 +49,10 @@ describe('User Controller', () => {
 
   describe('updateProfile', () => {
     it('updates the profile picture of the user', async () => {
-      const updatedUser = { _id: 'u1', profilePicture: 'newpic' };
-      const mockSelect = jest.fn().mockResolvedValueOnce(updatedUser);
+      const updatedUser = mockUserDoc({ _id: 'u1', profilePicture: 'newpic' });
       User.findByIdAndUpdate = jest
         .fn()
-        .mockReturnValue({ select: mockSelect });
+        .mockReturnValue({ select: jest.fn().mockResolvedValueOnce(updatedUser) });
 
       const req = { user: { id: 'u1' }, body: { profilePicture: 'newpic' } };
       const res = {
@@ -57,16 +66,15 @@ describe('User Controller', () => {
         { $set: { profilePicture: 'newpic' } },
         { new: true },
       );
-      expect(res.json).toHaveBeenCalledWith(updatedUser);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ _id: 'u1', profilePicture: 'newpic' }));
     });
   });
 
   describe('getUserById', () => {
     it('returns the user when found', async () => {
-      const mockUser = { _id: 'u1', username: 'test' };
-      const mockSelect = jest.fn().mockResolvedValueOnce(mockUser);
-      User.findById = jest.fn().mockReturnValue({ select: mockSelect });
-      const req = { params: { id: 'u1' } };
+      const mockUser = mockUserDoc({ _id: 'u1', username: 'test' });
+      User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(mockUser) });
+      const req = { params: { id: 'u1' }, user: { id: 'viewer' } };
       const res = {
         json: jest.fn(),
         status: jest.fn().mockReturnThis(),
@@ -74,13 +82,12 @@ describe('User Controller', () => {
       };
       await userController.getUserById(req, res);
       expect(User.findById).toHaveBeenCalledWith('u1');
-      expect(res.json).toHaveBeenCalledWith(mockUser);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ _id: 'u1', username: 'test' }));
     });
 
     it('returns 404 if the user is not found', async () => {
-      const mockSelect = jest.fn().mockResolvedValueOnce(null);
-      User.findById = jest.fn().mockReturnValue({ select: mockSelect });
-      const req = { params: { id: 'missing' } };
+      User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(null) });
+      const req = { params: { id: 'missing' }, user: { id: 'viewer' } };
       const res = {
         json: jest.fn(),
         status: jest.fn().mockReturnThis(),

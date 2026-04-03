@@ -13,6 +13,7 @@ jest.mock('../../../controllers/postController', () => ({
   followThread: jest.fn((req, res) => res.status(200).end()),
   unfollowThread: jest.fn((req, res) => res.status(200).end()),
   getFollowedThreads: jest.fn((req, res) => res.status(200).end()),
+  toggleAgentComments: jest.fn((req, res) => res.status(200).end()),
 }));
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());

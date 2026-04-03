@@ -267,17 +267,17 @@ describe('agentProvisionerServiceK8s', () => {
     const config = JSON.parse(raw);
     const agentEntry = config.agents.list.find((agent) => agent.id === 'cuz');
 
-    expect(agentEntry.heartbeat.prompt).toContain('read current pod activity');
-    expect(agentEntry.heartbeat.prompt).toContain('commonly tools');
+    expect(agentEntry.heartbeat.prompt).toContain('Read current pod activity');
+    expect(agentEntry.heartbeat.prompt).toContain('runtime-token');
     expect(agentEntry.heartbeat.session).toBe('heartbeat');
     expect(config.agents.defaults.memorySearch.enabled).toBe(true);
     expect(config.agents.defaults.memorySearch.sources).toEqual(['memory']);
     expect(config.agents.defaults.contextPruning.mode).toBe('cache-ttl');
     expect(config.agents.defaults.contextPruning.ttl).toBe('90m');
     expect(config.agents.defaults.contextPruning.keepLastAssistants).toBe(2);
-    expect(config.agents.defaults.model.primary).toBe('google/gemini-2.5-flash');
+    expect(config.agents.defaults.model.primary).toBe('openai-codex/gpt-5.4-nano');
     expect(config.agents.defaults.model.fallbacks).toEqual(
-      expect.arrayContaining(['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash']),
+      expect.arrayContaining(['openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'google/gemini-2.5-flash']),
     );
   });
 });

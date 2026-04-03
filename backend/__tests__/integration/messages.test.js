@@ -114,6 +114,7 @@ describe('Message Routes Integration Tests', () => {
       user._id.toString(),
       'Hi there',
       'text',
+      null,
     );
   });
 
