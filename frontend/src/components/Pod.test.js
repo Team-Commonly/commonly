@@ -192,10 +192,7 @@ jest.mock('@mui/icons-material', () => {
   };
 });
 
-jest.mock('axios', () => ({
-  __esModule: true,
-  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() }
-}));
+
 jest.mock('../context/AuthContext', () => ({ useAuth: jest.fn() }));
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
