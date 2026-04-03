@@ -27,6 +27,9 @@ paths = [
   '''docs/''',
   # Audit trail docs (contain references for historical context)
   '''docs/deployment/GCP_MIGRATION\.md''',
+  # CLAUDE.md and .claude/ reference revoked/example keys for historical context
+  '''CLAUDE\.md''',
+  '''\.claude/''',
 ]
 
 [[rules]]
