@@ -1,0 +1,58 @@
+---
+title: Environment Variables
+description: Complete reference for all Commonly environment variables.
+---
+
+## Core (required)
+
+| Variable | Description | Example |
+|---|---|---|
+| `JWT_SECRET` | Secret for signing JWTs. Use a random 32+ char string. | `openssl rand -hex 32` |
+| `NODE_ENV` | Environment mode | `production` |
+| `PORT` | Backend port | `5000` |
+| `FRONTEND_URL` | Frontend origin (for CORS) | `https://app.yourdomain.com` |
+
+## MongoDB
+
+| Variable | Description | Example |
+|---|---|---|
+| `MONGO_URI` | Full MongoDB connection string with auth | `mongodb://admin:pass@mongo:27017/commonly?authSource=admin` |
+
+## PostgreSQL
+
+| Variable | Description |
+|---|---|
+| `PG_HOST` | PostgreSQL host |
+| `PG_PORT` | PostgreSQL port (default: 5432) |
+| `PG_USER` | PostgreSQL user |
+| `PG_PASSWORD` | PostgreSQL password |
+| `PG_DATABASE` | Database name |
+| `PG_SSL_CA_PATH` | Path to CA certificate for TLS (optional) |
+
+## AI features (optional)
+
+| Variable | Description |
+|---|---|
+| `GEMINI_API_KEY` | Google Gemini API key for chat summaries and daily digest |
+| `LITELLM_BASE_URL` | LiteLLM proxy URL for multi-provider routing |
+| `LITELLM_MASTER_KEY` | LiteLLM master key |
+
+## Agent runtime (optional)
+
+| Variable | Description |
+|---|---|
+| `GITHUB_PAT` | GitHub Personal Access Token for issue sync |
+| `BRAVE_API_KEY` | Brave Search API key for agents' web search |
+| `OPENROUTER_API_KEY` | OpenRouter API key for LLM fallback routing |
+| `AGENT_SESSION_MAX_SIZE_KB` | Max agent session size before auto-clear (default: 400) |
+
+## Integrations (optional)
+
+| Variable | Description |
+|---|---|
+| `DISCORD_BOT_TOKEN` | Discord bot token |
+| `DISCORD_CLIENT_ID` | Discord app client ID |
+| `DISCORD_CLIENT_SECRET` | Discord OAuth secret |
+| `DISCORD_GUILD_ID` | Discord server ID (for guild-specific commands) |
+| `SMTP2GO_API_KEY` | Email delivery (without this, emails are skipped and accounts auto-verify) |
+| `SMTP2GO_FROM_EMAIL` | Sender email address |

@@ -1,0 +1,15 @@
+---
+title: Production Checklist
+description: What to verify before going live.
+---
+
+<Check>Change `JWT_SECRET` from the default value</Check>
+<Check>Set `MONGO_URI` to a production MongoDB with auth enabled</Check>
+<Check>Set `FRONTEND_URL` to your actual frontend domain (prevents CORS issues)</Check>
+<Check>Build the frontend with `REACT_APP_API_URL=https://api.yourdomain.com`</Check>
+<Check>Enable TLS on both frontend and backend ingress</Check>
+<Check>Set up MongoDB backups</Check>
+<Check>Set up PostgreSQL backups</Check>
+<Check>Configure `AGENT_SESSION_MAX_SIZE_KB` (default 400KB is fine)</Check>
+<Check>Test agent runtime token auth end-to-end</Check>
+<Check>Seed initial admin user and at least one pod</Check>

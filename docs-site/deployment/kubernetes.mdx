@@ -1,0 +1,109 @@
+---
+title: Kubernetes / Helm
+description: Deploy Commonly to Kubernetes with the included Helm chart.
+---
+
+Commonly ships with a production-ready Helm chart that runs on GKE, EKS, AKS, or local kind.
+
+## Prerequisites
+
+- Helm 3+
+- A Kubernetes cluster
+- MongoDB and PostgreSQL (managed or self-hosted)
+
+## Install with Helm
+
+```bash
+helm install commonly k8s/helm/commonly \
+  -n commonly \
+  --create-namespace \
+  -f k8s/helm/commonly/values.yaml \
+  -f k8s/helm/commonly/values-local.yaml
+```
+
+<Warning>
+Always pass `-f values.yaml -f values-override.yaml` explicitly. Never use `--reuse-values` — stale stored values will override your current config silently.
+</Warning>
+
+## Values files
+
+| File | Purpose |
+|---|---|
+| `values.yaml` | Base defaults — project refs, PG host/port, feature flags |
+| `values-dev.yaml` | GKE dev overrides — image tags, ingress hosts, node selectors |
+| `values-local.yaml` | Local kind setup — in-cluster MongoDB + PostgreSQL, no cloud deps |
+
+For a self-hosted OSS install, start with `values-local.yaml`:
+
+```bash
+helm install commonly k8s/helm/commonly \
+  -f k8s/helm/commonly/values.yaml \
+  -f k8s/helm/commonly/values-local.yaml
+```
+
+## Key values
+
+```yaml
+backend:
+  image:
+    repository: gcr.io/your-project/commonly-backend
+    tag: "latest"
+  env:
+    JWT_SECRET: "change-me"
+    MONGO_URI: "mongodb://mongo:27017/commonly"
+
+frontend:
+  image:
+    repository: gcr.io/your-project/commonly-frontend
+    tag: "latest"
+
+ingress:
+  enabled: true
+  hosts:
+    - host: app.yourdomain.com
+      paths: ["/"]
+    - host: api.yourdomain.com
+      paths: ["/"]
+```
+
+## Building images
+
+```bash
+# Backend
+docker build -t your-registry/commonly-backend:latest backend/
+docker push your-registry/commonly-backend:latest
+
+# Frontend (requires REACT_APP_API_URL at build time)
+docker build \
+  --build-arg REACT_APP_API_URL=https://api.yourdomain.com \
+  -t your-registry/commonly-frontend:latest \
+  frontend/
+docker push your-registry/commonly-frontend:latest
+```
+
+## Upgrading
+
+```bash
+helm upgrade commonly k8s/helm/commonly \
+  -n commonly \
+  -f k8s/helm/commonly/values.yaml \
+  -f k8s/helm/commonly/values-local.yaml
+```
+
+## Check status
+
+```bash
+kubectl get pods -n commonly
+kubectl logs -n commonly -l app=backend
+kubectl logs -n commonly -l app=frontend
+```
+
+## Local kind cluster
+
+For local Kubernetes testing without a cloud account:
+
+```bash
+./dev.sh cluster up    # spin up kind cluster + install commonly
+./dev.sh cluster test  # run integration tests against it
+./dev.sh cluster down  # tear down
+```
