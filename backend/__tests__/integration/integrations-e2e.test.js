@@ -148,6 +148,8 @@ describe('Integrations E2E Tests', () => {
     await DiscordIntegration.deleteMany({});
     await Message.deleteMany({});
     await Summary.deleteMany({});
+    // Reset agent runtime tokens so each test's beforeEach gets a fresh token
+    await User.updateMany({ isBot: true }, { $set: { agentRuntimeTokens: [] } });
   });
 
   describe('1. Commonly-Bot Installation and Operations', () => {

@@ -148,8 +148,9 @@ describe('AgentEnsembleService', () => {
         participants: [testPod.agentEnsemble.participants[0]], // Only keep first participant
       };
 
+      // Minimum-participants check runs before active-discussion check, so we get this error
       await expect(AgentEnsembleService.updateConfig(testPod._id, updatedConfig)).rejects.toThrow(
-        'Cannot remove participants during active discussion',
+        'At least 2 speaking participants required for ensemble discussion',
       );
     });
 

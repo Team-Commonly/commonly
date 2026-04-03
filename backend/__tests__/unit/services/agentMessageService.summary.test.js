@@ -26,7 +26,7 @@ jest.mock('../../../config/socket', () => ({
 }));
 jest.mock('../../../services/dmService', () => ({
   resolveAgentOwner: jest.fn(),
-  getOrCreateAgentDM: jest.fn(),
+  getOrCreateAdminDMPod: jest.fn(),
 }));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
@@ -72,7 +72,7 @@ describe('AgentMessageService summary persistence', () => {
       };
     });
     DMService.resolveAgentOwner.mockResolvedValue(null);
-    DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
+    DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1' });
     User.find.mockReturnValue({
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([]),
@@ -158,7 +158,7 @@ describe('AgentMessageService summary persistence', () => {
 
   it('routes likely error content to agent-admin DM and posts system notice', async () => {
     DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
-    DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
+    DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1' });
 
     const result = await AgentMessageService.postMessage({
       agentName: 'commonly-bot',
@@ -176,7 +176,7 @@ describe('AgentMessageService summary persistence', () => {
       dmPodId: 'dm-pod-1',
     }));
     expect(DMService.resolveAgentOwner).toHaveBeenCalledWith('commonly-bot', 'pod-1', 'default');
-    expect(DMService.getOrCreateAgentDM).toHaveBeenCalledWith(
+    expect(DMService.getOrCreateAdminDMPod).toHaveBeenCalledWith(
       'agent-user-1',
       'owner-user-1',
       expect.objectContaining({ agentName: 'commonly-bot', instanceId: 'default' }),
@@ -196,7 +196,7 @@ describe('AgentMessageService summary persistence', () => {
 
   it('does not route error-like content to DM when owner DM routing is disabled', async () => {
     DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
-    DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
+    DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1' });
 
     const result = await AgentMessageService.postMessage({
       agentName: 'commonly-bot',
@@ -211,7 +211,7 @@ describe('AgentMessageService summary persistence', () => {
     expect(result).toEqual(expect.objectContaining({ success: true }));
     expect(result.routedToDM).toBeUndefined();
     expect(DMService.resolveAgentOwner).not.toHaveBeenCalled();
-    expect(DMService.getOrCreateAgentDM).not.toHaveBeenCalled();
+    expect(DMService.getOrCreateAdminDMPod).not.toHaveBeenCalled();
     expect(Message).toHaveBeenCalledTimes(1);
     expect(Message.mock.calls[0][0]).toEqual(expect.objectContaining({
       podId: 'pod-1',
@@ -239,7 +239,7 @@ describe('AgentMessageService summary persistence', () => {
     expect(result).toEqual(expect.objectContaining({ success: true }));
     expect(result.routedToDM).toBeUndefined();
     expect(DMService.resolveAgentOwner).not.toHaveBeenCalled();
-    expect(DMService.getOrCreateAgentDM).not.toHaveBeenCalled();
+    expect(DMService.getOrCreateAdminDMPod).not.toHaveBeenCalled();
     expect(Message).toHaveBeenCalledTimes(1);
     expect(Message.mock.calls[0][0]).toEqual(expect.objectContaining({
       podId: 'dm-pod-1',
@@ -249,7 +249,7 @@ describe('AgentMessageService summary persistence', () => {
 
   it('routes unknown-target send failures to DM when owner DM routing is enabled', async () => {
     DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
-    DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
+    DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1' });
 
     const result = await AgentMessageService.postMessage({
       agentName: 'openclaw',
@@ -321,10 +321,10 @@ describe('AgentMessageService summary persistence', () => {
 
     expect(result).toEqual(expect.objectContaining({
       success: true,
-      fallbackPosted: true,
+      skipped: true,
+      reason: 'heartbeat_housekeeping',
     }));
-    expect(Message).toHaveBeenCalledTimes(1);
-    expect(Message.mock.calls[0][0].content).toContain('@tarik');
+    expect(Message).not.toHaveBeenCalled();
   });
 
   it('rewrites low-value heartbeat replies into meaningful fallback updates', async () => {
@@ -534,18 +534,18 @@ describe('AgentMessageService summary persistence', () => {
       installationConfig: { errorRouting: { ownerDm: false } },
     });
 
+    // Heartbeat diagnostics are always routed to DM (ownerDm flag does not gate this path)
     expect(result).toEqual(expect.objectContaining({
       success: true,
-      fallbackPosted: true,
+      routedToDM: true,
+      dmPodId: 'dm-pod-1',
     }));
-    expect(DMService.resolveAgentOwner).not.toHaveBeenCalled();
-    expect(Message).toHaveBeenCalledTimes(1);
-    expect(Message.mock.calls[0][0].content).toContain('@liz');
+    expect(DMService.resolveAgentOwner).toHaveBeenCalled();
   });
 
   it('routes heartbeat diagnostics to DM without posting source-pod notice when owner DM routing is enabled', async () => {
     DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
-    DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
+    DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1' });
 
     const result = await AgentMessageService.postMessage({
       agentName: 'tarik',
@@ -676,7 +676,7 @@ describe('AgentMessageService summary persistence', () => {
 
   it('routes openclaw persistent pod-access diagnostics to DM when owner routing is enabled', async () => {
     DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
-    DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
+    DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1' });
 
     const result = await AgentMessageService.postMessage({
       agentName: 'openclaw',
@@ -816,7 +816,7 @@ describe('AgentMessageService summary persistence', () => {
 
   it('routes openclaw no-activity-hint diagnostics to DM when owner routing is enabled', async () => {
     DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
-    DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
+    DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1' });
 
     const result = await AgentMessageService.postMessage({
       agentName: 'openclaw',
@@ -842,7 +842,7 @@ describe('AgentMessageService summary persistence', () => {
 
   it('routes openclaw unsupported-channel diagnostics to DM when owner routing is enabled', async () => {
     DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
-    DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1' });
+    DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1' });
 
     const result = await AgentMessageService.postMessage({
       agentName: 'openclaw',

@@ -15,12 +15,14 @@ describe('agentProvisionerService', () => {
     process.env.OPENCLAW_CONFIG_PATH = openclawConfigPath;
     process.env.COMMONLY_BOT_CONFIG_PATH = commonlyConfigPath;
     process.env.OPENCLAW_WORKSPACE_ROOT = path.join(tempDir, 'workspaces');
+    process.env.AGENT_PROVISIONER_K8S = '0';
   });
 
   afterAll(() => {
     delete process.env.OPENCLAW_CONFIG_PATH;
     delete process.env.COMMONLY_BOT_CONFIG_PATH;
     delete process.env.OPENCLAW_WORKSPACE_ROOT;
+    delete process.env.AGENT_PROVISIONER_K8S;
   });
 
   it('writes OpenClaw account config', async () => {
@@ -43,7 +45,7 @@ describe('agentProvisionerService', () => {
   });
 
   it('writes connected integration channel accounts into OpenClaw config', async () => {
-    provisionAgentRuntime({
+    await provisionAgentRuntime({
       runtimeType: 'moltbot',
       agentName: 'openclaw',
       instanceId: 'cuz',
@@ -80,13 +82,13 @@ describe('agentProvisionerService', () => {
     expect(parsed.channels.telegram.accounts['tg-1'].botToken).toBe('tg-token');
   });
 
-  it('applies global channel token env fallbacks when integration list is empty', () => {
+  it('applies global channel token env fallbacks when integration list is empty', async () => {
     process.env.DISCORD_BOT_TOKEN = 'env-disc-token';
     process.env.SLACK_BOT_TOKEN = 'env-slack-token';
     process.env.TELEGRAM_BOT_TOKEN = 'env-telegram-token';
     process.env.BRAVE_API_KEY = 'env-brave-key';
     try {
-      provisionAgentRuntime({
+      await provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
         instanceId: 'cuz',
@@ -112,7 +114,7 @@ describe('agentProvisionerService', () => {
     }
   });
 
-  it('overwrites stale OpenClaw workspace paths on reprovision', () => {
+  it('overwrites stale OpenClaw workspace paths on reprovision', async () => {
     const seed = {
       channels: {
         commonly: {
@@ -140,7 +142,7 @@ describe('agentProvisionerService', () => {
     };
     fs.writeFileSync(openclawConfigPath, `${JSON.stringify(seed, null, 2)}\n`);
 
-    provisionAgentRuntime({
+    await provisionAgentRuntime({
       runtimeType: 'moltbot',
       agentName: 'openclaw',
       instanceId: 'cuz',
@@ -154,7 +156,7 @@ describe('agentProvisionerService', () => {
     expect(agentEntry.workspace).toBe(path.join(tempDir, 'workspaces', 'cuz'));
   });
 
-  it('removes stale OpenClaw account entries for the same agent instance', () => {
+  it('removes stale OpenClaw account entries for the same agent instance', async () => {
     const seed = {
       channels: {
         commonly: {
@@ -182,7 +184,7 @@ describe('agentProvisionerService', () => {
     };
     fs.writeFileSync(openclawConfigPath, `${JSON.stringify(seed, null, 2)}\n`);
 
-    provisionAgentRuntime({
+    await provisionAgentRuntime({
       runtimeType: 'moltbot',
       agentName: 'socialpulse',
       instanceId: 'default',
@@ -216,8 +218,8 @@ describe('agentProvisionerService', () => {
   });
 
   describe('heartbeat configuration', () => {
-    it('sets default heartbeat target to "commonly"', () => {
-      provisionAgentRuntime({
+    it('sets default heartbeat target to "commonly"', async () => {
+      await provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
         instanceId: 'cuz',
@@ -235,8 +237,8 @@ describe('agentProvisionerService', () => {
       expect(agentEntry.heartbeat.target).toBe('commonly');
     });
 
-    it('sets default heartbeat interval to 60m', () => {
-      provisionAgentRuntime({
+    it('sets default heartbeat interval to 60m', async () => {
+      await provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
         instanceId: 'cuz',
@@ -253,8 +255,8 @@ describe('agentProvisionerService', () => {
       expect(agentEntry.heartbeat.every).toBe('60m');
     });
 
-    it('sets default heartbeat prompt that requires commonly reads before HEARTBEAT_OK', () => {
-      provisionAgentRuntime({
+    it('sets default heartbeat prompt that requires commonly reads before HEARTBEAT_OK', async () => {
+      await provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
         instanceId: 'cuz',
@@ -269,7 +271,7 @@ describe('agentProvisionerService', () => {
       const agentEntry = parsed.agents.list.find((agent) => agent.id === 'cuz');
 
       expect(agentEntry.heartbeat.prompt).toContain('read current pod activity');
-      expect(agentEntry.heartbeat.prompt).toContain('commonly tools');
+      expect(agentEntry.heartbeat.prompt).toContain('runtime-token');
       expect(agentEntry.heartbeat.session).toBe('heartbeat');
       expect(parsed.agents.defaults.memorySearch.enabled).toBe(true);
       expect(parsed.agents.defaults.memorySearch.sources).toEqual(['memory']);
@@ -282,8 +284,8 @@ describe('agentProvisionerService', () => {
       );
     });
 
-    it('respects custom heartbeat target', () => {
-      provisionAgentRuntime({
+    it('respects custom heartbeat target', async () => {
+      await provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
         instanceId: 'cuz',
@@ -300,8 +302,8 @@ describe('agentProvisionerService', () => {
       expect(agentEntry.heartbeat.target).toBe('discord');
     });
 
-    it('respects custom heartbeat interval in minutes', () => {
-      provisionAgentRuntime({
+    it('respects custom heartbeat interval in minutes', async () => {
+      await provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
         instanceId: 'cuz',
@@ -318,8 +320,8 @@ describe('agentProvisionerService', () => {
       expect(agentEntry.heartbeat.every).toBe('10m');
     });
 
-    it('does not add heartbeat config when disabled', () => {
-      provisionAgentRuntime({
+    it('does not add heartbeat config when disabled', async () => {
+      await provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
         instanceId: 'cuz',
@@ -336,9 +338,9 @@ describe('agentProvisionerService', () => {
       expect(agentEntry.heartbeat).toBeUndefined();
     });
 
-    it('removes existing heartbeat when disabled', () => {
+    it('removes existing heartbeat when disabled', async () => {
       // First provision with heartbeat
-      provisionAgentRuntime({
+      await provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
         instanceId: 'cuz',
@@ -355,7 +357,7 @@ describe('agentProvisionerService', () => {
       expect(agentEntry.heartbeat).toBeDefined();
 
       // Re-provision with heartbeat disabled
-      provisionAgentRuntime({
+      await provisionAgentRuntime({
         runtimeType: 'moltbot',
         agentName: 'openclaw',
         instanceId: 'cuz',

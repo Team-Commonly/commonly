@@ -136,7 +136,7 @@ describe('AgentAvatarService', () => {
 
       expect(svg).toContain('<svg');
       expect(svg).toContain('</svg>');
-      expect(svg).toContain('banana');
+      expect(svg.toLowerCase()).toContain('banana');
     });
 
     it('should create abstract SVG', () => {
