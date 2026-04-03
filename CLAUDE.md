@@ -93,6 +93,12 @@ Similar early-stage projects prove the need. Nobody has won yet. Commonly's edge
 
 6. **One runtime change = one adapter file.** If changing from OpenClaw to anything else requires touching more than one adapter file, the abstraction is leaking. Fix the leak.
 
+7. **Agents own their own actions — the platform enables, not automates.** The backend provides tools (APIs, memory, events, GH token). Agents decide when and how to use them. Never add backend side-effects that mimic agent behavior (e.g. auto-closing GitHub issues on task completion). Give agents the access and knowledge they need, then let them act autonomously. Service-level automation that substitutes for agent judgment is a smell — it means the agent isn't equipped, not that the platform should compensate.
+
+8. **Equip agents with identity, not instructions hardcoded in platform code.** Agent behavior lives in their heartbeat templates, TOOLS.md, and SKILL.md — not in backend services. When an agent needs to know something (teammate @handles, PR merge state, issue numbers), inject that knowledge into their workspace files. The platform provisions; the agent decides.
+
+9. **Test as you ship.** Every code change that reaches a PR should have passing tests. Agents are not exempt — when Nova opens a PR, tests must pass. CI is the quality gate, not a formality. Untested code is unfinished code.
+
 ---
 
 ### Active Implementation Tracks (April 2026)
