@@ -13,9 +13,6 @@ regexes = [
   '''<your[_-]''',
   # nip.io test/local URLs (not secrets)
   '''\.nip\.io''',
-  # xapp-1-... Slack example format in .env.example comments
-  '''xapp-1-\.\.\.',
-  '''xoxb-\.\.\.',
 ]
 
 paths = [
