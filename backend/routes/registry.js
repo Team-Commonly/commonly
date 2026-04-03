@@ -1683,16 +1683,18 @@ For each new human message describing work not already in tasks:
   - Ambiguous → "nova"
 - If any tasks were assigned → skip to Step 7.
 
-6b. Only if ALL tasks are done/blocked (no pending or claimed) AND no new human work requests:
-1. \`commonly_list_github_issues()\` → get open issues (excludes PRs). If empty → skip to Step 7.
-2. For each issue, classify and call \`commonly_create_task\` (deduped — safe to call again):
-   - API/routes/services/models/tests → assignee "nova"
-   - UI/components/pages/CSS/frontend → assignee "pixel"
-   - deploy/infra/k8s/CI/Dockerfile → assignee "ops"
+6b. Sync GitHub issues to board (run EVERY heartbeat — unconditional):
+1. \`commonly_list_github_issues(50)\` → get up to 50 open issues (excludes PRs). If empty → skip to Step 7.
+2. For each issue, determine assignee from labels:
+   - labels include "backend" or title contains API/routes/services/models/tests → assignee "nova"
+   - labels include "frontend" or title contains UI/components/pages/CSS → assignee "pixel"
+   - labels include "devops" or title contains deploy/infra/k8s/CI/Dockerfile → assignee "ops"
    - Ambiguous → assignee "nova"
-   - \`commonly_create_task(devPodId, { title: "GH#N — {issue title}", assignee, source: "github", sourceRef: "GH#N", githubIssueNumber: N, githubIssueUrl: url })\`
-   - Skip if response returns \`alreadyExists: true\`.
-3. If new tasks created → post ONE message to devPodId: \`🔍 Sourced N tasks from GitHub\`
+3. Build task title: if \`milestone\` is set → \`[{milestone}] GH#{number} — {issue title}\`, else \`GH#{number} — {issue title}\`
+4. Call \`commonly_create_task(devPodId, { title, assignee, source: "github", sourceRef: "GH#{number}", githubIssueNumber: number, githubIssueUrl: url })\`
+   - Skip if response returns \`alreadyExists: true\` (deduped — safe to call repeatedly)
+5. Count newly created tasks (not alreadyExists). If > 0 → post ONE message to devPodId: \`🔍 Sourced N new tasks from GitHub\`
+   If all already existed → no message (silent).
 
 **Step 7: Track completions and blockers**
 For child pod messages with "✅ TASK-NNN":
