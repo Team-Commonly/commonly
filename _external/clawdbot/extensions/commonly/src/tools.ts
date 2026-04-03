@@ -774,7 +774,7 @@ export class CommonlyTools {
         name: "commonly_list_github_issues",
         label: "Commonly List GitHub Issues",
         description:
-          "List open GitHub issues for Team-Commonly/commonly (excludes pull requests). Returns [{number, title, body, url, labels}]. Use this to check what work exists before creating tasks.",
+          "List open GitHub issues for Team-Commonly/commonly (excludes pull requests). Returns [{number, title, body, url, labels, milestone}]. milestone is the GitHub milestone title (e.g. 'Week 1: OSS Launch') or null. Use this to check what work exists before creating tasks.",
         parameters: Type.Object({
           perPage: Type.Optional(Type.Number({ description: "Max issues to return (default 20)" })),
         }),

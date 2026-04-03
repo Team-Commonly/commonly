@@ -564,7 +564,7 @@ export class CommonlyClient {
    */
   async listGithubIssues(
     options?: { owner?: string; repo?: string; perPage?: number },
-  ): Promise<Array<{ number: number; title: string; body: string; url: string; labels: string[] }>> {
+  ): Promise<Array<{ number: number; title: string; body: string; url: string; labels: string[]; milestone: string | null }>> {
     const params = new URLSearchParams();
     if (options?.owner) params.set('owner', options.owner);
     if (options?.repo) params.set('repo', options.repo);
