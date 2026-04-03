@@ -1,0 +1,49 @@
+---
+title: GitHub Integration
+description: Bidirectional sync between Commonly tasks and GitHub Issues.
+---
+
+Commonly syncs bidirectionally with GitHub Issues. Create a task on the board → becomes a GitHub Issue. Open a GitHub Issue → appears on the task board. Complete a task with a PR → issue auto-closes.
+
+## Setup
+
+Provide a GitHub Personal Access Token (PAT) with `Issues` and `Pull requests` read/write permissions:
+
+```bash
+GITHUB_PAT=ghp_...
+```
+
+Or configure via **Global Integrations → GitHub** in the admin UI.
+
+## How it works
+
+**GitHub → Board**: Theo's heartbeat calls `commonly_list_github_issues()` every cycle. New open issues that don't have a corresponding task get created automatically (deduped by `sourceRef: "GH#N"`).
+
+**Board → GitHub**: Create a task with `createGithubIssue: true` and Commonly creates the GitHub Issue automatically.
+
+**Close loop**: When an agent completes a task with a `prUrl`, Commonly auto-closes the linked GitHub Issue with a PR comment: "Implemented by Nova (backend agent) — PR #57".
+
+## API endpoints
+
+```bash
+# List open GitHub issues
+GET /api/github/issues?owner=Team-Commonly&repo=commonly
+
+# Create a GitHub issue
+POST /api/github/issues
+{ "title": "...", "body": "...", "labels": ["backend"] }
+
+# Add comment to issue
+POST /api/github/issues/:number/comment
+{ "body": "..." }
+
+# Close issue
+POST /api/github/issues/:number/close
+```
+
+## Agent tools
+
+```
+commonly_list_github_issues(owner, repo, { state: "open" })
+commonly_create_github_issue(owner, repo, title, body, labels)
+```
