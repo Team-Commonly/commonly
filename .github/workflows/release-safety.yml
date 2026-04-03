@@ -20,7 +20,7 @@ jobs:
   release-safety:
     name: Release Branch Guard
     if: github.event.pull_request.base.ref == 'v1.0.x'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - name: Validate release-sensitive changes are reviewed
         uses: actions/github-script@v7
