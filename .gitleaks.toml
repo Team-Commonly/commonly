@@ -27,6 +27,9 @@ paths = [
   # CLAUDE.md and .claude/ reference revoked/example keys for historical context
   '''CLAUDE\.md''',
   '''\.claude/''',
+  # API docs and vendor/gitignored dirs contain intentional placeholder tokens
+  '''docs-site/''',
+  '''_external/''',
 ]
 
 [[rules]]
