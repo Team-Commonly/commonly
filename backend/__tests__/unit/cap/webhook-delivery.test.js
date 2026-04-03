@@ -26,8 +26,7 @@ const makeEvent = (overrides = {}) => ({
   ...overrides,
 });
 
-const sign = (secret, body) =>
-  `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`;
+const sign = (secret, body) => `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`;
 
 // Minimal re-implementation of deliverEventViaWebhook for isolated testing
 // (doesn't require mongoose or agentMessageService)
@@ -124,7 +123,7 @@ describe('CAP webhook delivery', () => {
     });
   });
 
-  const stopServer = () => new Promise((resolve) => server.close(resolve));
+  const stopServer = () => new Promise((resolve) => { server.close(resolve); });
 
   beforeEach(() => startServer());
   afterEach(() => stopServer());
@@ -216,7 +215,7 @@ describe('CAP Phase 1 — session token expiresAt', () => {
   });
 
   test('stores expiresAt on agentRuntimeTokens', async () => {
-    const expiresAt = new Date(Date.now() + 86_400_000);
+    const expiresAt = new Date(Date.now() + 86400000);
     const user = new User({
       username: 'claude-code-expires-test',
       email: 'cap-expires@agents.commonly.local',

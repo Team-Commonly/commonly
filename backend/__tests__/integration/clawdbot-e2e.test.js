@@ -809,9 +809,8 @@ describe('Clawdbot E2E Integration Tests', () => {
 
     test('should handle multiple events in sequence', async () => {
       // Enqueue multiple events
-      const events = [];
-      for (let i = 1; i <= 3; i++) {
-        const event = await AgentEventService.enqueue({
+      const events = await Promise.all(
+        [1, 2, 3].map((i) => AgentEventService.enqueue({
           agentName: 'clawdbot-bridge',
           podId: testPod._id,
           type: 'integration.summary',
@@ -821,12 +820,12 @@ describe('Clawdbot E2E Integration Tests', () => {
               messageCount: i * 5,
             },
           },
-        });
-        events.push(event);
-      }
+        })),
+      );
 
-      // Process each event
-      for (let i = 0; i < events.length; i++) {
+      // Process each event sequentially (intentional: each poll depends on prior ack)
+      /* eslint-disable no-await-in-loop */
+      for (let i = 0; i < events.length; i += 1) {
         // Poll (should get remaining events)
         const pollRes = await request(app)
           .get('/api/agents/runtime/events')
@@ -848,6 +847,7 @@ describe('Clawdbot E2E Integration Tests', () => {
           .post(`/api/agents/runtime/events/${events[i]._id}/ack`)
           .set('Authorization', `Bearer ${agentToken}`);
       }
+      /* eslint-enable no-await-in-loop */
 
       // Verify all events processed
       const finalPollRes = await request(app)
@@ -981,14 +981,12 @@ describe('Clawdbot E2E Integration Tests', () => {
       ];
 
       // Create messages in MongoDB (simulating chat activity)
-      for (const msg of userMessages) {
-        await Message.create({
-          content: msg.content,
-          userId: msg.userId,
-          podId: testPod._id,
-          messageType: 'text',
-        });
-      }
+      await Promise.all(userMessages.map((msg) => Message.create({
+        content: msg.content,
+        userId: msg.userId,
+        podId: testPod._id,
+        messageType: 'text',
+      })));
 
       // Verify messages were created
       const messageCount = await Message.countDocuments({ podId: testPod._id });

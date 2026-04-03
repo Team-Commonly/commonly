@@ -116,9 +116,9 @@ describe('POST /api/registry/admin/agents/claude-code/session-token', () => {
     expect(res.body.instanceId).toBeTruthy();
 
     const expiresAt = new Date(res.body.expiresAt).getTime();
-    const expected24h = before + 86_400_000;
-    expect(expiresAt).toBeGreaterThanOrEqual(expected24h - 10_000);
-    expect(expiresAt).toBeLessThanOrEqual(expected24h + 10_000);
+    const expected24h = before + 86400000;
+    expect(expiresAt).toBeGreaterThanOrEqual(expected24h - 10000);
+    expect(expiresAt).toBeLessThanOrEqual(expected24h + 10000);
   });
 
   test('stores the token as SHA-256 hash (not plaintext) on agentRuntimeTokens', async () => {
@@ -201,9 +201,9 @@ describe('POST /api/registry/admin/agents/claude-code/session-token', () => {
     expect(res.status).toBe(200);
 
     const expiresAt = new Date(res.body.expiresAt).getTime();
-    const expected1h = before + 3_600_000;
-    expect(expiresAt).toBeGreaterThanOrEqual(expected1h - 10_000);
-    expect(expiresAt).toBeLessThanOrEqual(expected1h + 10_000);
+    const expected1h = before + 3600000;
+    expect(expiresAt).toBeGreaterThanOrEqual(expected1h - 10000);
+    expect(expiresAt).toBeLessThanOrEqual(expected1h + 10000);
   });
 
   test('returns 400 when podId is missing', async () => {
