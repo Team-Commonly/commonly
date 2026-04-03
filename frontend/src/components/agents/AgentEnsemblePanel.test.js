@@ -2,13 +2,21 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import AgentEnsemblePanel from './AgentEnsemblePanel';
 
-const axios = require('axios').default;
-
 jest.mock('axios', () => ({
-  get: jest.fn(),
-  post: jest.fn(),
-  patch: jest.fn(),
+  __esModule: true,
+  default: {
+    defaults: { baseURL: '', headers: { common: {} } },
+    interceptors: {
+      request: { use: jest.fn(), eject: jest.fn() },
+      response: { use: jest.fn(), eject: jest.fn() },
+    },
+    get: jest.fn(),
+    post: jest.fn(),
+    patch: jest.fn(),
+  },
 }));
+
+const axios = require('axios').default;
 
 describe('AgentEnsemblePanel', () => {
   beforeEach(() => {

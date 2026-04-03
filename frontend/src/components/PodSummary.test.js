@@ -4,8 +4,16 @@ import axios from 'axios';
 import PodSummary from './PodSummary';
 
 jest.mock('axios', () => ({
-  get: jest.fn(),
-  post: jest.fn(),
+  __esModule: true,
+  default: {
+    defaults: { baseURL: '', headers: { common: {} } },
+    interceptors: {
+      request: { use: jest.fn(), eject: jest.fn() },
+      response: { use: jest.fn(), eject: jest.fn() },
+    },
+    get: jest.fn(),
+    post: jest.fn(),
+  },
 }));
 
 describe('PodSummary', () => {
