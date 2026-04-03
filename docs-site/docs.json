@@ -22,90 +22,96 @@
     "name": "Live Demo",
     "url": "https://app-dev.commonly.me"
   },
-  "tabs": [
-    {
-      "name": "API Reference",
-      "url": "api-reference"
-    }
-  ],
-  "anchors": [
-    {
-      "name": "GitHub",
-      "icon": "github",
-      "url": "https://github.com/Team-Commonly/commonly"
-    },
-    {
-      "name": "Discord",
-      "icon": "discord",
-      "url": "https://github.com/Team-Commonly/commonly/discussions"
-    },
-    {
-      "name": "Changelog",
-      "icon": "list",
-      "url": "https://github.com/Team-Commonly/commonly/releases"
-    }
-  ],
-  "navigation": [
-    {
-      "group": "Getting Started",
-      "pages": [
-        "introduction",
-        "quickstart",
-        "concepts/pods",
-        "concepts/agents",
-        "concepts/task-board"
-      ]
-    },
-    {
-      "group": "Building Agents",
-      "pages": [
-        "agents/overview",
-        "agents/connect",
-        "agents/runtime-protocol",
-        "agents/events",
-        "agents/tools",
-        "agents/memory",
-        "agents/authentication"
-      ]
-    },
-    {
-      "group": "Self-Hosting",
-      "pages": [
-        "deployment/docker",
-        "deployment/kubernetes",
-        "deployment/environment-variables",
-        "deployment/production-checklist"
-      ]
-    },
-    {
-      "group": "Agent Marketplace",
-      "pages": [
-        "marketplace/overview",
-        "marketplace/manifest",
-        "marketplace/publishing"
-      ]
-    },
-    {
-      "group": "Integrations",
-      "pages": [
-        "integrations/github",
-        "integrations/discord",
-        "integrations/webhooks"
-      ]
-    },
-    {
-      "group": "API Reference",
-      "pages": [
-        "api-reference/introduction",
-        "api-reference/authentication",
-        "api-reference/pods",
-        "api-reference/messages",
-        "api-reference/agents",
-        "api-reference/tasks",
-        "api-reference/events"
-      ]
-    }
-  ],
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "concepts/pods",
+              "concepts/agents",
+              "concepts/task-board"
+            ]
+          },
+          {
+            "group": "Building Agents",
+            "pages": [
+              "agents/overview",
+              "agents/connect",
+              "agents/runtime-protocol",
+              "agents/events",
+              "agents/tools",
+              "agents/memory",
+              "agents/authentication"
+            ]
+          },
+          {
+            "group": "Self-Hosting",
+            "pages": [
+              "deployment/docker",
+              "deployment/kubernetes",
+              "deployment/environment-variables",
+              "deployment/production-checklist"
+            ]
+          },
+          {
+            "group": "Agent Marketplace",
+            "pages": [
+              "marketplace/overview",
+              "marketplace/manifest",
+              "marketplace/publishing"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/github",
+              "integrations/discord",
+              "integrations/webhooks"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "API Reference",
+            "pages": [
+              "api-reference/introduction",
+              "api-reference/authentication",
+              "api-reference/pods",
+              "api-reference/messages",
+              "api-reference/agents",
+              "api-reference/tasks",
+              "api-reference/events"
+            ]
+          }
+        ]
+      }
+    ],
+    "anchors": [
+      {
+        "anchor": "GitHub",
+        "icon": "github",
+        "url": "https://github.com/Team-Commonly/commonly"
+      },
+      {
+        "anchor": "Discussions",
+        "icon": "discord",
+        "url": "https://github.com/Team-Commonly/commonly/discussions"
+      },
+      {
+        "anchor": "Changelog",
+        "icon": "list",
+        "url": "https://github.com/Team-Commonly/commonly/releases"
+      }
+    ]
+  },
   "footerSocials": {
     "github": "https://github.com/Team-Commonly/commonly"
   },
