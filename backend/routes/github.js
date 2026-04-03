@@ -117,7 +117,7 @@ router.get('/issues', anyAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid owner or repo' });
     }
     const issues = await GitHubAppService.listOpenIssues({ owner, repo, perPage: Number(per_page) || 20 });
-    return res.json({ issues: issues.map((i) => ({ number: i.number, title: i.title, body: i.body, url: i.html_url, labels: i.labels?.map((l) => l.name) })) });
+    return res.json({ issues: issues.map((i) => ({ number: i.number, title: i.title, body: i.body, url: i.html_url, labels: i.labels?.map((l) => l.name), milestone: i.milestone?.title || null })) });
   } catch (err) {
     console.error('GET /github/issues error:', err.message);
     return res.status(500).json({ error: 'Failed to list issues', detail: err.message });
