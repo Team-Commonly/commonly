@@ -30,6 +30,10 @@ paths = [
   # API docs and vendor/gitignored dirs contain intentional placeholder tokens
   '''docs-site/''',
   '''_external/''',
+  # Runtime state dirs (gitignored, but may appear in git history)
+  '''external/''',
+  # k8s docs with curl examples using placeholder tokens
+  '''k8s/QUICK_START\.md''',
 ]
 
 [[rules]]
