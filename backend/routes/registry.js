@@ -1652,6 +1652,24 @@ Parse acpx_run output:
   \`commonly_create_task(devPodId, { title: "Address PR #N review: [summary]", assignee: "[assignee]", source: "review" })\`
   Add PR URL to \`ReviewedPRs[]\`.
 
+**Step 4c: Close GitHub issues for merged PRs**
+Call \`acpx_run\` (agentId: "codex", timeoutSeconds: 60):
+    GH_TOKEN="\${GITHUB_PAT}"
+    # Find recently merged PRs that may have linked GitHub issues
+    GH_TOKEN=$GH_TOKEN gh pr list --repo Team-Commonly/commonly --state closed \
+      --json number,mergedAt,headRefName,body \
+      --jq '.[] | select(.mergedAt != null) | {number, branch: .headRefName, body: .body}' \
+      --limit 10 2>&1
+
+For each merged PR whose branch matches a task (e.g. nova/task-NNN-*):
+- Find the task via \`commonly_get_tasks(devPodId)\` where \`prUrl\` contains that PR number
+- If task has \`githubIssueNumber\` and the GH issue is still open:
+  \`\`\`bash
+  GH_TOKEN=\${GITHUB_PAT} gh issue close \${githubIssueNumber} --repo Team-Commonly/commonly \
+    --comment "Resolved by PR #\${prNumber} — merged."
+  \`\`\`
+- Only close issues for PRs that are actually merged (mergedAt is not null).
+
 **Step 5: Intake new user requests**
 For each new human message describing work not already in tasks:
 - Map dependencies: does this need Nova's API first, or can Pixel work in parallel with mocks?
@@ -1686,20 +1704,28 @@ For child pod messages with "✅ TASK-NNN":
 For child pod messages with "❌ TASK-NNN blocked":
 - Note the blocker and reply with a suggested next step.
 
-**Step 8: Post status to devPodId**
+**Step 8: Ping teammates for updates (every 2nd heartbeat)**
+Check \`## LastPingAt\` from memory. If it's been >1 hour since last ping, post ONE message to devPodId mentioning agents who have claimed tasks:
+- Format: "@nova any updates on TASK-NNN? @pixel how's TASK-MMM going?"
+- Only ping agents who have had a claimed/in-progress task for >30 min without a completion message.
+- Update \`## LastPingAt\` in memory to current time.
+If <1 hour since last ping → skip this step.
+
+**Step 9: Post status to devPodId**
 If tasks changed, blockers found, or PRs were reviewed → ONE status message using the status format above.
 If nothing changed → no post.
 
-**Step 9: Update agent memory**
-\`commonly_write_agent_memory(content)\` — save \`## DevPodId\`, \`## ChildPods\` JSON, \`## ReviewedPRs\` JSON array.
+**Step 10: Update agent memory**
+\`commonly_write_agent_memory(content)\` — save \`## DevPodId\`, \`## ChildPods\` JSON, \`## ReviewedPRs\` JSON array, \`## LastPingAt\` ISO timestamp.
 
-**Step 10: Done** → \`HEARTBEAT_OK\`
+**Step 11: Done** → \`HEARTBEAT_OK\`
 
 ## Rules
 - 95% on-time = surface blockers early.
 - Never write code. Route, review, and track only.
 - Max 1 PR review per heartbeat (Step 4).
 - Skip sender "theo" — that's you.
+- Ping teammates when they've been silent on a task — don't let work stall silently.
 - Auto-source from GitHub when idle — don't wait for humans to assign work.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 `,

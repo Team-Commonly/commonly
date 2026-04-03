@@ -286,29 +286,8 @@ router.post('/:podId/:taskId/complete', auth, async (req, res) => {
       return res.status(409).json({ error: 'Task is already done', status: existing.status });
     }
 
-    // Auto-close linked GitHub issue when task is completed; include sub-tasks in comment
-    if (task.githubIssueNumber && GitHubAppService.isPatConfigured()) {
-      (async () => {
-        try {
-          const subTasks = await Task.find({
-            podId: mongoose.Types.ObjectId.createFromHexString(podId),
-            parentTask: task.taskId,
-          }).select('taskId title status prUrl').lean();
-
-          let closeComment = prUrl ? `Completed via ${prUrl}` : `Completed by ${author}`;
-          if (subTasks.length > 0) {
-            const subLines = subTasks.map((s) => {
-              const icon = s.status === 'done' ? '✅' : s.status === 'blocked' ? '❌' : '⏳';
-              return `${icon} ${s.taskId}: ${s.title}${s.prUrl ? ` — [PR](${s.prUrl})` : ''}`;
-            });
-            closeComment += `\n\n**Sub-tasks:**\n${subLines.join('\n')}`;
-          }
-          await GitHubAppService.closeIssue({ issueNumber: task.githubIssueNumber, comment: closeComment });
-        } catch (err) {
-          console.warn(`Failed to auto-close GH#${task.githubIssueNumber}:`, err.message);
-        }
-      })();
-    }
+    // Note: GitHub issue closing is intentionally NOT done here.
+    // Agents close issues autonomously via acpx_run (gh CLI) after confirming PR is merged.
 
     return res.json({ task });
   } catch (err) {
