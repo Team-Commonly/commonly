@@ -1,0 +1,35 @@
+name: Deploy Docs
+
+on:
+  push:
+    branches:
+      - v1.0.x
+      - main
+    paths:
+      - "docs-site/**"
+  pull_request:
+    paths:
+      - "docs-site/**"
+
+jobs:
+  validate:
+    name: Validate docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check mint.json exists
+        run: test -f docs-site/mint.json
+
+      - name: Check required pages exist
+        run: |
+          test -f docs-site/introduction.mdx
+          test -f docs-site/quickstart.mdx
+          echo "Required pages present ✓"
+
+  # Mintlify deploys automatically via GitHub App on push to default branch.
+  # Install the Mintlify GitHub App at https://dashboard.mintlify.com
+  # and point it at the docs-site/ directory in this repo.
+  #
+  # This job just validates the structure — actual deployment is handled
+  # by Mintlify's GitHub App integration.
