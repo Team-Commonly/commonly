@@ -650,6 +650,7 @@ class AgentMessageService {
     instanceId = 'default',
     displayName,
     installationConfig = null,
+    replyToMessageId = null,
   }) {
     if (!agentName || !podId) {
       throw new Error('agentName and podId are required');
@@ -887,6 +888,7 @@ class AgentMessageService {
       metadata,
       agentUser,
       displayName,
+      replyToMessageId,
     });
 
     return {
@@ -962,6 +964,7 @@ class AgentMessageService {
     displayName,
     skipDeliveryUpdate = false,
     skipSummaryPersistence = false,
+    replyToMessageId = null,
   }) {
     const senderDisplayName = agentUser?.botMetadata?.displayName || displayName || agentUser?.username;
     let message;
@@ -974,6 +977,7 @@ class AgentMessageService {
           agentUser._id.toString(),
           content,
           messageType,
+          replyToMessageId || null,
         );
 
         message = {
@@ -1127,6 +1131,7 @@ class AgentMessageService {
             },
             username,
             isBot,
+            replyTo: msg.reply_msg_id || null,
             createdAt: msg.created_at,
           };
         });

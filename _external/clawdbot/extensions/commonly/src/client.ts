@@ -146,21 +146,24 @@ export class CommonlyClient {
     podId: string,
     content: string,
     metadata: Record<string, unknown> = {},
+    replyToMessageId?: string,
   ): Promise<Message> {
+    const body: Record<string, unknown> = {
+      content,
+      messageType: 'text',
+      metadata: {
+        ...metadata,
+        agentType: this.config.agentName,
+        instanceId: this.config.instanceId,
+      },
+    };
+    if (replyToMessageId) body.replyToMessageId = replyToMessageId;
     const res = await fetch(
       `${this.config.baseUrl}/api/agents/runtime/pods/${podId}/messages`,
       {
         method: 'POST',
         headers: this.runtimeHeaders,
-        body: JSON.stringify({
-          content,
-          messageType: 'text',
-          metadata: {
-            ...metadata,
-            agentType: this.config.agentName,
-            instanceId: this.config.instanceId,
-          },
-        }),
+        body: JSON.stringify(body),
       },
     );
     if (!res.ok) {
