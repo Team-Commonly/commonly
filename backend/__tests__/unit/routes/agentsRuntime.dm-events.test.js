@@ -24,7 +24,7 @@ jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/dmService', () => ({
-  getOrCreateAgentDM: jest.fn(),
+  getOrCreateAdminDMPod: jest.fn(),
 }));
 jest.mock('../../../models/Pod', () => ({
   find: jest.fn(),
@@ -107,7 +107,7 @@ describe('agentsRuntime DM and event pod coverage', () => {
       lean: jest.fn().mockResolvedValue([]),
     });
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue({ _id: 'bot-user-1' });
-    DMService.getOrCreateAgentDM.mockResolvedValue({ _id: 'dm-pod-1', type: 'agent-admin' });
+    DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1', type: 'agent-admin' });
 
     const req = {
       userId: 'user-1',
@@ -125,8 +125,8 @@ describe('agentsRuntime DM and event pod coverage', () => {
       instanceId: 'liz',
       status: 'active',
     }));
-    expect(AgentIdentityService.getOrCreateAgentUser).toHaveBeenCalledWith('openclaw', 'liz');
-    expect(DMService.getOrCreateAgentDM).toHaveBeenCalledWith('bot-user-1', 'user-1', {
+    expect(AgentIdentityService.getOrCreateAgentUser).toHaveBeenCalledWith('openclaw', { instanceId: 'liz' });
+    expect(DMService.getOrCreateAdminDMPod).toHaveBeenCalledWith('bot-user-1', 'user-1', {
       agentName: 'openclaw',
       instanceId: 'liz',
     });

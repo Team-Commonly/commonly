@@ -253,7 +253,7 @@ router.get('/pods', auth, async (req, res) => {
     }
 
     const podIdArray = podIds.split(',').map((id) => id.trim());
-    const podSummaries = await ChatSummarizerService.getMultiplePodSummaries(podIdArray);
+    const podSummaries = await chatSummarizerService.getMultiplePodSummaries(podIdArray);
     res.json(podSummaries);
   } catch (error) {
     console.error('Error fetching pod summaries:', error);

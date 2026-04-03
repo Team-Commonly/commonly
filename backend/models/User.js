@@ -88,6 +88,7 @@ const userSchema = new mongoose.Schema({
       label: { type: String },
       createdAt: { type: Date, default: Date.now },
       lastUsedAt: { type: Date },
+      expiresAt: { type: Date }, // null = never expires; set for session-scoped tokens
     },
   ],
 

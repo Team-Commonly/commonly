@@ -38,10 +38,12 @@ describe('registry heartbeat file updates', () => {
   });
 
   it('writes heartbeat file for openclaw agents', async () => {
-    Pod.findById.mockResolvedValue({
-      _id: 'pod-1',
-      createdBy: 'user-1',
-      members: ['user-1'],
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1',
+        createdBy: 'user-1',
+        members: ['user-1'],
+      }),
     });
     AgentInstallation.findOne.mockResolvedValue({
       agentName: 'openclaw',

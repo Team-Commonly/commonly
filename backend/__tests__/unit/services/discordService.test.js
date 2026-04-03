@@ -364,15 +364,19 @@ describe('DiscordService', () => {
 
       axios.get.mockResolvedValue(mockApiResponse);
 
-      const result = await discordService.fetchMessages({ limit: 10 });
+      const result = await discordService.fetchMessages({
+        channelId: mockIntegration.config.channelId,
+        botToken: 'test-bot-token',
+        limit: 10,
+      });
 
       expect(result).toHaveLength(1);
-      expect(result[0].author).toBe('user1');
+      expect(result[0].authorName).toBe('user1');
       expect(axios.get).toHaveBeenCalledWith(
         'https://discord.com/api/v10/channels/channel123/messages',
         expect.objectContaining({
           headers: expect.objectContaining({
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            Authorization: 'Bot test-bot-token',
           }),
         }),
       );
@@ -381,7 +385,10 @@ describe('DiscordService', () => {
     it('should handle API errors', async () => {
       axios.get.mockRejectedValue(new Error('API error'));
 
-      await expect(discordService.fetchMessages()).rejects.toThrow('API error');
+      await expect(discordService.fetchMessages({
+        channelId: 'channel123',
+        botToken: 'test-bot-token',
+      })).rejects.toThrow('API error');
     });
   });
 
