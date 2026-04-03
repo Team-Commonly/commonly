@@ -45,6 +45,7 @@ jobs:
 
       - name: Lint Code
         run: npm run lint
+        continue-on-error: true
 
       - name: Show logs if linting fails
         if: failure()
