@@ -99,7 +99,7 @@ agents:
     enabled: true
     image:
       repository: gcr.io/disco-catcher-490606-b0/clawdbot-gateway
-      tag: "20260404141626"
+      tag: "20260404154652"
       pullPolicy: IfNotPresent
     strategy:
       type: Recreate
