@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/disco-catcher-490606-b0/commonly-backend
-    tag: "20260402180421"
+    tag: "20260404124621"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -47,7 +47,7 @@ frontend:
   replicaCount: 1
   image:
     repository: gcr.io/disco-catcher-490606-b0/commonly-frontend
-    tag: "20260331031934"
+    tag: "20260404124621"
     pullPolicy: Always
   nodeSelector:
     pool: dev
@@ -99,7 +99,7 @@ agents:
     enabled: true
     image:
       repository: gcr.io/disco-catcher-490606-b0/clawdbot-gateway
-      tag: "20260329113759"
+      tag: "20260404124621"
       pullPolicy: IfNotPresent
     strategy:
       type: Recreate
