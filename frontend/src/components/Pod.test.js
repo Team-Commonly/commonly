@@ -24,10 +24,17 @@ jest.mock('@mui/material', () => {
         onClick,
         // TextField-specific props we need
         placeholder, type,
+        // Dialog open prop — prevent hidden dialogs from polluting the DOM
+        open,
         // Other props to keep
         children, className, style, 'data-testid': dataTestId
         // Filter out all other MUI props with rest operator
       } = props;
+
+      // Dialogs should not render their children when closed
+      if (componentName === 'Dialog' && !open) {
+        return mockReact.createElement('div', { style: { display: 'none' } });
+      }
 
       // Create appropriate DOM element based on component type
       let elementType = 'div';
@@ -188,7 +195,8 @@ jest.mock('@mui/icons-material', () => {
     SportsEsports: () => mockReact.createElement('span', { 'data-testid': 'sports-esports-icon' }, '🎮'),
     Launch: () => mockReact.createElement('span', { 'data-testid': 'launch-icon' }, '🚀'),
     Whatshot: () => mockReact.createElement('span', { 'data-testid': 'whatshot-icon' }, '🔥'),
-    Lightbulb: () => mockReact.createElement('span', { 'data-testid': 'lightbulb-icon' }, '💡')
+    Lightbulb: () => mockReact.createElement('span', { 'data-testid': 'lightbulb-icon' }, '💡'),
+    Lock: () => mockReact.createElement('span', { 'data-testid': 'lock-icon' }, '🔒')
   };
 });
 
@@ -283,7 +291,7 @@ test('tab change navigates', async () => {
   
   // Get all tabs and click the second one (Study tab)
   const tabs = screen.getAllByRole('tab');
-  expect(tabs).toHaveLength(4); // Chat, Study, Games, Ensemble
+  expect(tabs).toHaveLength(5); // Chat, Study, Games, Ensemble, Teams
   
   const studyTab = tabs[1]; // Study is the second tab
   expect(studyTab).toHaveTextContent('Study');
