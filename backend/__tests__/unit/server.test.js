@@ -3,6 +3,9 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../../config/db', () => jest.fn());
+jest.mock('../../models/Pod', () => ({
+  findById: jest.fn(),
+}));
 
 const mockConnectPG = jest.fn().mockResolvedValue(null);
 jest.mock('../../config/db-pg', () => ({ connectPG: mockConnectPG }));
@@ -90,5 +93,75 @@ describe('server pg status route', () => {
     });
     const res = await request(app).get('/api/pg/status');
     expect(res.body).toEqual({ available: false });
+  });
+});
+
+describe('server websocket authorization helpers', () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+  });
+
+  it('treats string and ObjectId-like members as valid pod members', () => {
+    jest.resetModules();
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const { isPodMember } = require('../../server');
+
+    expect(
+      isPodMember(
+        {
+          members: [
+            { toString: () => 'user-1' },
+            { toString: () => 'user-2' },
+          ],
+        },
+        'user-2',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects socket pod joins for non-members', async () => {
+    jest.resetModules();
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const Pod = require('../../models/Pod');
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const { authorizeSocketPodAccess } = require('../../server');
+    Pod.findById.mockResolvedValue({
+      _id: 'pod-1',
+      members: [{ toString: () => 'user-2' }],
+    });
+    const socket = {
+      userId: 'user-1',
+      emit: jest.fn(),
+    };
+
+    const result = await authorizeSocketPodAccess(socket, 'pod-1', 'join');
+
+    expect(result).toBeNull();
+    expect(socket.emit).toHaveBeenCalledWith('error', {
+      message: 'Not authorized to join for this pod',
+    });
+  });
+
+  it('allows socket pod access for members', async () => {
+    jest.resetModules();
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const Pod = require('../../models/Pod');
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const { authorizeSocketPodAccess } = require('../../server');
+    const pod = {
+      _id: 'pod-1',
+      members: [{ toString: () => 'user-1' }],
+    };
+    Pod.findById.mockResolvedValue(pod);
+    const socket = {
+      userId: 'user-1',
+      emit: jest.fn(),
+    };
+
+    const result = await authorizeSocketPodAccess(socket, 'pod-1', 'post');
+
+    expect(result).toBe(pod);
+    expect(socket.emit).not.toHaveBeenCalled();
   });
 });
