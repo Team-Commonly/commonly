@@ -572,7 +572,7 @@ const binLooksInstalled = (binName, dockerCapabilities) => {
 };
 
 // Default git branch for PRs — change here when the target branch changes (e.g. v2.0.x, main)
-const DEFAULT_BRANCH = 'v1.0.x';
+const DEFAULT_BRANCH = 'main';
 
 const PRESET_DEFINITIONS = [
   {
