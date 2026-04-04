@@ -4,3 +4,4 @@
 [submodule "_external/clawdbot"]
 	path = _external/clawdbot
 	url = https://github.com/Team-Commonly/openclaw
+	branch = rebase-2026.3.29
