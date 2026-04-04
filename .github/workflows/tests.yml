@@ -17,7 +17,7 @@ concurrency:
 jobs:
   test:
     name: Test & Coverage
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
 
     env:
       JWT_SECRET: test-jwt-secret
@@ -48,12 +48,12 @@ jobs:
       - name: Run backend tests with coverage
         run: |
           cd backend
-          npm run test:coverage
+          npx jest --coverage --forceExit
 
       - name: Run frontend tests with coverage
         run: |
           cd frontend
-          npm run test:coverage
+          npx react-scripts test --coverage --watchAll=false --forceExit
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
