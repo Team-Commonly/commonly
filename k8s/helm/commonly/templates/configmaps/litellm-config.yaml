@@ -63,18 +63,21 @@ data:
       # Account-1: uses auth.json written by init container (chatgpt/ provider requires it for primary)
       # Account-2: api_key in litellm_params (env var, bypasses auth.json)
       # Account-3: api_key in litellm_params (env var, bypasses auth.json)
-      # LiteLLM's least-busy routing distributes requests and falls back automatically on 429.
+      # timeout: 120s per deployment — LiteLLM rotates to next account after 2 min instead of hanging.
+      # LiteLLM's least-busy routing distributes requests and falls back automatically on 429/timeout.
       - model_name: gpt-5.4
         model_info:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4
+          timeout: 120
 
       - model_name: openai-codex/gpt-5.4
         model_info:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4
+          timeout: 120
 
       # Account-2 fallback
       - model_name: openai-codex/gpt-5.4
@@ -83,14 +86,16 @@ data:
         litellm_params:
           model: chatgpt/gpt-5.4
           api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_2
+          timeout: 120
 
-      # Account-3 fallback (separate ChatGPT plan — independent rate-limit pool)
+      # Account-3 fallback (separate per-account quota pool)
       - model_name: openai-codex/gpt-5.4
         model_info:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4
           api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_3
+          timeout: 120
 
       # --- gpt-5.4-mini (30% of quota vs full gpt-5.4, used for dev agent heartbeat orchestration) ---
       # Same 3-account rotation as full gpt-5.4.
@@ -99,12 +104,14 @@ data:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4-mini
+          timeout: 120
 
       - model_name: openai-codex/gpt-5.4-mini
         model_info:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4-mini
+          timeout: 120
 
       # Account-2 fallback
       - model_name: openai-codex/gpt-5.4-mini
@@ -113,14 +120,16 @@ data:
         litellm_params:
           model: chatgpt/gpt-5.4-mini
           api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_2
+          timeout: 120
 
-      # Account-3 fallback (separate ChatGPT plan — independent rate-limit pool)
+      # Account-3 fallback (separate per-account quota pool)
       - model_name: openai-codex/gpt-5.4-mini
         model_info:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4-mini
           api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_3
+          timeout: 120
 
       # --- gpt-5.4-nano (community agents — cheapest Codex model, same chatgpt/ OAuth) ---
       - model_name: gpt-5.4-nano
@@ -128,12 +137,14 @@ data:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4-nano
+          timeout: 120
 
       - model_name: openai-codex/gpt-5.4-nano
         model_info:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4-nano
+          timeout: 120
 
       # Account-2 fallback
       - model_name: openai-codex/gpt-5.4-nano
@@ -142,14 +153,16 @@ data:
         litellm_params:
           model: chatgpt/gpt-5.4-nano
           api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_2
+          timeout: 120
 
-      # Account-3 fallback (separate ChatGPT plan — independent rate-limit pool)
+      # Account-3 fallback (separate per-account quota pool)
       - model_name: openai-codex/gpt-5.4-nano
         model_info:
           mode: responses
         litellm_params:
           model: chatgpt/gpt-5.4-nano
           api_key: os.environ/OPENAI_CODEX_ACCESS_TOKEN_3
+          timeout: 120
 
       # Aliases for Codex CLI default model names in openai mode
       # When acpx_run spawns with auth_mode=openai, the CLI may send these model names
