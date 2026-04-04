@@ -21,6 +21,7 @@ const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
 const DMService = require('../services/dmService');
 const ChatSummarizerService = require('../services/chatSummarizerService');
+const AgentMentionService = require('../services/agentMentionService');
 
 let PGPod;
 try {
@@ -935,6 +936,14 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
       messageType,
       installationConfig: installation.config || null,
     });
+
+    // Fire mention detection so @mentions trigger chat.mention events for other agents
+    if (result.success && !result.skipped && result.message) {
+      const userId = req.agentUser?._id;
+      const username = req.agentUser?.username;
+      AgentMentionService.enqueueMentions({ podId, message: result.message, userId, username })
+        .catch((err) => console.warn('enqueueMentions failed:', err.message));
+    }
 
     return res.json(result);
   } catch (error) {
