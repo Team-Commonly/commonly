@@ -1,0 +1,57 @@
+title = "Commonly Secret Scanner"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist for known-safe patterns"
+
+# Placeholder values in example/template files
+regexes = [
+  # Generic placeholder patterns
+  '''your[_-](api[_-]?key|token|secret|password|key)''',
+  '''<your[_-]''',
+  # nip.io test/local URLs (not secrets)
+  '''\.nip\.io''',
+]
+
+paths = [
+  # Example/template files — contain placeholder values intentionally
+  '''backend/\.env\.example''',
+  '''frontend/\.env\.example''',
+  # Docs that document revoked/example keys explicitly
+  '''docs/''',
+  '''docs-site/''',
+  # CLAUDE.md and .claude/ reference revoked/example keys for historical context
+  '''CLAUDE\.md''',
+  '''\.claude/''',
+  # k8s docs with curl examples using placeholder tokens
+  '''k8s/QUICK_START\.md''',
+  # Runtime state (gitignored, but may appear in git history — see issue #88)
+  '''external/''',
+  # _external/clawdbot is a git submodule (Team-Commonly/openclaw fork).
+  # Submodule contents are not scanned; this covers the historical commits
+  # before the submodule conversion (when files were tracked directly).
+  '''_external/''',
+  # Playwright browser state committed before gitignore was added — see issue #88
+  '''state\.json''',
+  # README curl examples with placeholder auth headers
+  '''README\.md''',
+  # Frontend component showing API token UI (not storing real tokens)
+  '''frontend/src/components/UserProfile\.js''',
+  '''frontend/src/components/ApiDevPage\.js''',
+  # Integration test with hardcoded test constant (not a real key)
+  '''backend/__tests__/integration/integrations-e2e\.test\.js''',
+]
+
+[[rules]]
+id = "commonly-agent-token"
+description = "Commonly agent runtime token"
+regex = '''cm_agent_[0-9a-f]{64}'''
+tags = ["token", "commonly"]
+
+[[rules]]
+id = "commonly-api-token"
+description = "Commonly user API token"
+regex = '''cm_[0-9a-f]{64}'''
+tags = ["token", "commonly"]

@@ -1,3 +1,6 @@
 [submodule "external/awesome-openclaw-skills"]
 	path = external/awesome-openclaw-skills
 	url = https://github.com/VoltAgent/awesome-openclaw-skills
+[submodule "_external/clawdbot"]
+	path = _external/clawdbot
+	url = https://github.com/Team-Commonly/openclaw

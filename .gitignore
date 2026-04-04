@@ -31,4 +31,17 @@ external/clawdbot-state/
 external/commonly-bot-state/
 *.bak
 
-_external/
+# _external/clawdbot is a git submodule — tracked, not ignored
+# Ignore any other dirs that may appear under _external/
+_external/*/
+!_external/clawdbot
+
+# Claude Code local settings (machine-specific, may contain paths/tokens)
+.claude/settings.local.json
+
+# Local env overrides (copy from .env.example, never commit real values)
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
+# Playwright browser state (may contain session tokens)
+state.json
