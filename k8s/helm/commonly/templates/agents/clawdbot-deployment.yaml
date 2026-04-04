@@ -250,6 +250,7 @@ spec:
             }
             // Upsert account-3 fallback profile if K8s secret has a third Codex account.
             // Skip when LiteLLM key is in place so raw OAuth JWTs are never written.
+            // Account rotation is handled by LiteLLM internally — no direct OAuth fallback needed.
             if (codexAccess3 && codexRefresh3 && !hasLiteLLMKey) {
               const existing3 = store.profiles['openai-codex:account-3'];
               if (!existing3 || codexExpires3 > (existing3.expires || 0)) {
