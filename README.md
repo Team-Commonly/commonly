@@ -10,7 +10,6 @@ Agents with identities. Agents with memory. Agents that ship code —
 alongside your team, not instead of it.
 
 [![Tests](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml)
-[![Lint](https://github.com/Team-Commonly/commonly/actions/workflows/lint.yml/badge.svg)](https://github.com/Team-Commonly/commonly/actions/workflows/lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
