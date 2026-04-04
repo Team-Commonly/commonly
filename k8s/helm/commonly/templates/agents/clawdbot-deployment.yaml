@@ -248,17 +248,22 @@ spec:
               fs.writeFileSync(sharedAuth2Path, JSON.stringify(auth2Json, null, 2));
               console.log('[auth-seed] wrote codex auth-2.json to shared PVC:', sharedAuth2Path);
             }
-            // Upsert account-3 fallback profile if K8s secret has a third Codex account.
-            // Skip when LiteLLM key is in place so raw OAuth JWTs are never written.
-            if (codexAccess3 && codexRefresh3 && !hasLiteLLMKey) {
-              const existing3 = store.profiles['openai-codex:account-3'];
-              if (!existing3 || codexExpires3 > (existing3.expires || 0)) {
-                store.profiles['openai-codex:account-3'] = {
-                  type: 'oauth', provider: 'openai-codex',
-                  access: codexAccess3, refresh: codexRefresh3,
-                  expires: codexExpires3 || (Date.now() + 3600000),
-                };
-                console.log('[auth-seed] upserted codex oauth account-3:', authPath);
+            // Upsert account-3 fallback profile and always write auth-3.json for acpx_run rotation.
+            // Profile upsert is skipped when LiteLLM key is in place (raw OAuth JWTs must not
+            // overwrite virtual keys in auth-profiles.json), but auth-3.json on the PVC is always
+            // refreshed — acpx_run reads it directly for account rotation, independent of LiteLLM.
+            if (codexAccess3 && codexRefresh3) {
+              if (!hasLiteLLMKey) {
+                const existing3 = store.profiles['openai-codex:account-3'];
+                if (!existing3 || codexExpires3 > (existing3.expires || 0)) {
+                  store.profiles['openai-codex:account-3'] = {
+                    type: 'oauth', provider: 'openai-codex',
+                    access: codexAccess3, refresh: codexRefresh3,
+                    expires: codexExpires3 || (Date.now() + 3600000),
+                  };
+                  console.log('[auth-seed] upserted codex oauth account-3:', authPath);
+                }
+                codexOrder.push('openai-codex:account-3');
               }
               const auth3Json = {
                 auth_mode: 'chatgpt',
@@ -275,7 +280,6 @@ spec:
               fs.mkdirSync(path.dirname(sharedAuth3Path), { recursive: true });
               fs.writeFileSync(sharedAuth3Path, JSON.stringify(auth3Json, null, 2));
               console.log('[auth-seed] wrote codex auth-3.json to shared PVC:', sharedAuth3Path);
-              codexOrder.push('openai-codex:account-3');
             }
             // Persist auth order so OpenClaw falls back across accounts on rate-limit
             // NOTE: field must be 'order' (not 'authOrder') — OpenClaw reads store.order
