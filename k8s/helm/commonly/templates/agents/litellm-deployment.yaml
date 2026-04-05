@@ -23,7 +23,20 @@ spec:
       - name: litellm
         image: "{{ .Values.litellm.image.repository }}:{{ .Values.litellm.image.tag }}"
         imagePullPolicy: IfNotPresent
-        args: ["--config", "/app/config.yaml"]
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            python3 -c "
+            f='/usr/lib/python3.13/site-packages/litellm/llms/openai/responses/transformation.py'
+            s=open(f).read()
+            old='        # Input is expected to be either str or List, no single BaseModel expected\n        return input'
+            new='        # Input is expected to be either str or List, no single BaseModel expected\n        if isinstance(input, str):\n            return [{\"role\": \"user\", \"content\": input}]\n        return input'
+            if old in s:
+                open(f,'w').write(s.replace(old,new))
+                print('LiteLLM patch applied: string input -> list for chatgpt responses API')
+            else:
+                print('LiteLLM patch: pattern not found, may already be fixed upstream')
+            " && exec litellm --config /app/config.yaml
         ports:
         - name: http
           containerPort: 4000
