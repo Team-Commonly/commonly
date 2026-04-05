@@ -320,6 +320,27 @@ const readOpenClawIdentityFile = async (accountId, { gateway } = {}) => {
   }
 };
 
+const ensureWorkspaceSoulFile = async (accountId, content, { gateway } = {}) => {
+  if (!content || !String(content).trim()) return null;
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
+  const workspacePath = '/workspace';
+  const soulPath = `${workspacePath}/${accountId}/SOUL.md`;
+  const normalized = String(content).trim();
+  const encoded = Buffer.from(`${normalized}\n`, 'utf8').toString('base64');
+  const script = [
+    'set -eu',
+    `mkdir -p "${workspacePath}/${accountId}"`,
+    `printf '%s' '${encoded}' | base64 -d > "${soulPath}"`,
+    `echo "${soulPath}"`,
+  ].join('\n');
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    command: ['sh', '-lc', script],
+  });
+  return result.stdout.trim() || soulPath;
+};
+
 const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway, customContent, forceOverwrite } = {}) => {
   if (!heartbeat || heartbeat.enabled === false) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
@@ -1986,6 +2007,14 @@ const provisionOpenClawAccount = async ({
     console.warn('[k8s-provisioner] Failed to ensure HEARTBEAT.md template:', error.message);
   }
   try {
+    const soulPath = await ensureWorkspaceSoulFile(accountId, heartbeat?.soulContent, { gateway });
+    if (soulPath) {
+      console.log(`[k8s-provisioner] wrote SOUL.md for ${accountId}: ${soulPath}`);
+    }
+  } catch (error) {
+    console.warn('[k8s-provisioner] Failed to write SOUL.md:', error.message);
+  }
+  try {
     const normalizedPath = await normalizeWorkspaceDocs(accountId, { gateway });
     if (normalizedPath) {
       console.log(`[k8s-provisioner] normalized workspace docs for ${accountId}: ${normalizedPath}`);
@@ -2891,6 +2920,7 @@ module.exports = {
   readOpenClawIdentityFile,
   writeWorkspaceIdentityFile,
   ensureWorkspaceIdentityFile,
+  ensureWorkspaceSoulFile,
   ensureHeartbeatTemplate,
   syncOpenClawSkills,
   getGatewaySkillEntries,
