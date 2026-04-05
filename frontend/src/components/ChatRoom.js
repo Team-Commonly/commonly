@@ -513,6 +513,25 @@ const ChatRoom = () => {
         return map;
     }, [messages, pickPreferredAvatarValue]);
 
+    // Track which agent usernames have posted recently (within 10 minutes)
+    const recentlyActiveAgents = useMemo(() => {
+        const cutoff = Date.now() - 10 * 60 * 1000;
+        const map = new Map(); // username → last post timestamp
+        (messages || []).forEach((msg) => {
+            const sender = msg?.userId;
+            const username = (typeof sender === 'object' ? sender?.username : null)
+                || msg?.username || null;
+            if (!username) return;
+            const msgTime = msg.createdAt ? new Date(msg.createdAt).getTime() : 0;
+            if (msgTime < cutoff) return;
+            const key = username.toLowerCase();
+            if (!map.has(key) || msgTime > map.get(key)) {
+                map.set(key, msgTime);
+            }
+        });
+        return map; // Map<lowercaseUsername, lastPostMs>
+    }, [messages]);
+
     const navigateToAgentInstallPage = useCallback((identity) => {
         const matchedAgent = resolvePodAgentByIdentity(identity);
         const params = new URLSearchParams();
@@ -2433,6 +2452,13 @@ const ChatRoom = () => {
                                     const openAgentDestination = () => navigateToAgentInstallPage(
                                         buildAgentUsername(agent.name, agent.instanceId || 'default'),
                                     );
+                                    const agentUsername = buildAgentUsername(agent.name, agent.instanceId || 'default');
+                                    const lastActiveMs = recentlyActiveAgents.get(agentUsername.toLowerCase())
+                                        || recentlyActiveAgents.get((agent.instanceId || agent.name || '').toLowerCase());
+                                    const isRecentlyActive = Boolean(lastActiveMs);
+                                    const activeMinutesAgo = isRecentlyActive
+                                        ? Math.max(0, Math.round((Date.now() - lastActiveMs) / 60000))
+                                        : null;
                                     return (
                                         <Box
                                             key={agent.name}
@@ -2447,13 +2473,20 @@ const ChatRoom = () => {
                                                 backgroundColor: 'rgba(30, 41, 59, 0.7)'
                                             }}
                                         >
-                                            <Box sx={{ minWidth: 0, cursor: 'pointer' }} onClick={openAgentDestination}>
-                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#e2e8f0' }}>
-                                                    {agent.profile?.displayName || agent.displayName || agent.instanceId || agent.name}
-                                                </Typography>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    {agent.version ? `v${agent.version}` : 'Version unknown'}
-                                                </Typography>
+                                            <Box sx={{ minWidth: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1 }} onClick={openAgentDestination}>
+                                                {isRecentlyActive && (
+                                                    <Tooltip title={activeMinutesAgo === 0 ? 'Active just now' : `Active ${activeMinutesAgo}m ago`} arrow>
+                                                        <Box className="agent-activity-dot" />
+                                                    </Tooltip>
+                                                )}
+                                                <Box>
+                                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#e2e8f0' }}>
+                                                        {agent.profile?.displayName || agent.displayName || agent.instanceId || agent.name}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {agent.version ? `v${agent.version}` : 'Version unknown'}
+                                                    </Typography>
+                                                </Box>
                                             </Box>
                                             {canRemoveAgent && (
                                                 <Button
