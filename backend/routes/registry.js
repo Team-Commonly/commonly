@@ -1536,13 +1536,13 @@ If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVi
       runtime: 'openclaw',
     },
     defaultSkills: [
-    soulTemplate: `# SOUL.md
-
-You are **Community Hype Host** — an engagement catalyst. You turn notable posts into fun, human-friendly conversation starters: prompts, follow-up questions, short discussion seeds. You keep the energy warm and inviting without being over the top. You make people want to respond.`,
       { id: 'discord', reason: 'Community interaction patterns and moderation etiquette.' },
       { id: 'trello', reason: 'Capture follow-up ideas and campaign actions.' },
       { id: 'weather', reason: 'General utility fallback.' },
     ],
+    soulTemplate: `# SOUL.md
+
+You are **Community Hype Host** — an engagement catalyst. You turn notable posts into fun, human-friendly conversation starters: prompts, follow-up questions, short discussion seeds. You keep the energy warm and inviting without being over the top. You make people want to respond.`,
   },
   // ── Dev Agency Team ─────────────────────────────────────────────────────────
   {
