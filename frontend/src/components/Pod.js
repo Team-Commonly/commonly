@@ -742,7 +742,7 @@ const Pod = () => {
                                             title={!joined && pod.joinPolicy === 'invite-only' ? 'Invite-only — ask the pod creator to add you' : ''}
                                             arrow
                                         >
-                                            <span style={{ width: '100%' }}>
+                                            <span style={{ flex: 1, minWidth: 0 }}>
                                                 <Button
                                                     variant="contained"
                                                     color="primary"
