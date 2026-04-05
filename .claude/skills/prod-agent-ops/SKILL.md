@@ -1,7 +1,7 @@
 ---
 name: prod-agent-ops
 description: Production E2E testing, monitoring, and debugging for agent runtime reliability (queue health, context permissions, model/auth fallbacks, gateway/runtime recovery).
-last_updated: 2026-03-29 (rev6)
+last_updated: 2026-04-05 (rev7)
 ---
 
 # Prod Agent Ops
@@ -157,6 +157,50 @@ m.connect(process.env.MONGO_URI).then(async()=>{
 ```
 
 **Prevention (backend `20260331015401`+)**: HEARTBEAT.md templates now have a CRITICAL block at the top enforcing single combined `status:"pending,claimed"` call and "if non-empty → proceed to Step 4, never HEARTBEAT_OK". See `backend/routes/registry.js`.
+
+### Q) `acpx_run` fails: "Failed to spawn agent command" (ENOENT)
+
+Symptoms:
+- Gateway logs: `[tools] acpx_run failed: Failed to spawn agent command: npx @zed-industries/codex-acp@0.10.0 -c model=gpt-5.4`
+- Fails in ~3 seconds (too fast for any LLM call)
+- Agent posts "ACP spawn is still failing" repeatedly
+
+Root causes (all fixed as of gateway `20260404182744`):
+
+**A. Wrong agentId parameter** (primary, most common): The `acpx_run` tool used to require an `agentId` param described as `"codex, claude, pi, gemini..."` — models naturally passed `"codex"`, causing `--cwd /workspace/codex` which doesn't exist → ENOENT. **Fixed**: `agentId` removed from tool params entirely; auto-injected from `client.config.instanceId`. Agents no longer need to provide it.
+
+**B. Non-existent workspace dir**: If `--cwd /workspace/<instanceId>` doesn't exist, same ENOENT. Verify workspace exists:
+```bash
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- ls /workspace/
+# Should show: nova pixel ops theo liz tom fakesam tarik x-curator ...
+```
+
+**C. codex-acp version drift** (fixed): `0.11.x` uses Realtime API (`/v1/realtime` WebSocket) which LiteLLM can't proxy. Pin is `0.10.0` in `CODEX_ACP_VERSION` in `tools.ts`. Gateway image pre-caches it via `RUN npx @zed-industries/codex-acp@0.10.0 --version` in Dockerfile.
+
+**D. Missing `--approve-all` flag** (fixed): codex-acp requests filesystem permissions interactively; without this flag it hangs or gets cancelled.
+
+**E. `OPENAI_API_KEY=placeholder` clobbering auth.json** (fixed): Gateway container has `OPENAI_API_KEY=placeholder` in env. `spawnAcpx` now strips it unless LiteLLM creds are being injected via extraEnv.
+
+**F. LiteLLM /v1/responses string input bug** (patched): LiteLLM 1.82.3 passes string `input` as-is to ChatGPT Responses API which requires a list. Startup patch in `litellm-deployment.yaml` wraps string → `[{"role":"user","content":...}]`. Upstream issue open, no released fix.
+
+Diagnosis:
+```bash
+# Confirm acpx_run is actually being called (not just session memory response)
+kubectl logs -n commonly-dev -l app=clawdbot-gateway -c clawdbot-gateway --tail=50 | grep -E "acpx_run|spawn"
+# If no acpx_run attempt → stale session, clear it:
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- sh -c \
+  "rm -f /state/agents/pixel/sessions/*.jsonl /state/agents/pixel/sessions/sessions.json"
+# Test acpx manually from Node context (should work):
+kubectl exec -n commonly-dev deployment/clawdbot-gateway -- node -e "
+const {spawn}=require('child_process');
+const c=spawn('/app/extensions/acpx/node_modules/.bin/acpx',
+  ['--cwd','/workspace/pixel','--agent','npx @zed-industries/codex-acp@0.10.0 -c model=gpt-5.4','--approve-all','exec','say hi'],
+  {env:{...process.env,OPENAI_BASE_URL:'http://litellm:4000/v1',OPENAI_API_KEY:'sk-310bbd9cc668a6018a81e58ea15d61e3'}});
+let o='';c.stdout.on('data',d=>o+=d);c.on('close',code=>console.log('EXIT:',code,'OUT:',o.slice(0,100)));
+setTimeout(()=>c.kill(),15000);"
+```
+
+**Also watch for**: Agents responding from session memory ("ACP is still failing") without actually calling `acpx_run`. The chat.mention event body now includes TOOL_ROUTING_HINT (gateway `20260404174514`+), but stale sessions override this. Always clear sessions after fixing an acpx issue before re-testing with @mention.
 
 ### H) Agent ignores HEARTBEAT.md / calls wrong tools / narrates steps (session bloat)
 
