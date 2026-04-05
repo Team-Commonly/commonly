@@ -13,12 +13,12 @@ last_updated: 2026-03-22
 
 | Field | Value |
 |-------|-------|
-| Account | `YOUR_GCP_ACCOUNT` |
-| Project | `YOUR_GCP_PROJECT_ID` (name: commonly) |
+| Account | `<your-gcp-account>` |
+| Project | `<your-gcp-project>` (name: commonly) |
 | Cluster | `commonly-dev` (us-central1) |
-| kubectl context | `gke_YOUR_GCP_PROJECT_ID_us-central1_commonly-dev` |
-| Registry | `gcr.io/YOUR_GCP_PROJECT_ID/` |
-| GCS bucket | `gs://YOUR_GCP_PROJECT_ID_cloudbuild/` |
+| kubectl context | `gke_<your-gcp-project>_us-central1_commonly-dev` |
+| Registry | `gcr.io/<your-gcp-project>/` |
+| GCS bucket | `gs://<your-gcp-project>_cloudbuild/` |
 
 ## Migration Phases
 
@@ -66,9 +66,9 @@ The frontend bakes the API URL at build time. After migration it will still poin
 FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
 gcloud builds submit frontend \
   --config frontend/cloudbuild.yaml \
-  --project YOUR_GCP_PROJECT_ID --account YOUR_GCP_ACCOUNT \
-  --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend:${FRONTEND_TAG}"
-kubectl set image deployment/frontend frontend=gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+  --project <your-gcp-project> --account <your-gcp-account> \
+  --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/<your-gcp-project>/commonly-frontend:${FRONTEND_TAG}"
+kubectl set image deployment/frontend frontend=gcr.io/<your-gcp-project>/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
 ```
 Note: `gcloud builds submit --tag` does NOT support `--build-arg`. Always use `--config` + `--substitutions`.
 
@@ -96,8 +96,8 @@ Tunnel ID `YOUR_CLOUDFLARE_TUNNEL_ID` stays the same. Just restore the `cloudfla
 
 ```bash
 TAG=$(date +%Y%m%d%H%M%S)
-PROJECT=YOUR_GCP_PROJECT_ID
-ACCOUNT=YOUR_GCP_ACCOUNT
+PROJECT=<your-gcp-project>
+ACCOUNT=<your-gcp-account>
 
 # Backend
 gcloud builds submit backend \
