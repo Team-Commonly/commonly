@@ -139,7 +139,9 @@ spec:
       # Write the best available (non-expired) Codex token to auth.json for LiteLLM's chatgpt/ provider.
       # Account-1 entries in litellm-config have no api_key — the chatgpt/ provider reads
       # CHATGPT_TOKEN_DIR/auth.json at startup. Accounts 2 & 3 use api_key in litellm_params directly.
-      # Priority: account-1 if valid, else account-3 (same user), else empty (disables chatgpt/ provider).
+      # Priority: account-3 first (quota available), then account-1 as fallback, else empty (disables chatgpt/ provider).
+      # NOTE: chatgpt/ provider ignores api_key in litellm_params — all accounts share this single auth.json.
+      # There is no per-deployment rotation; whichever account is written here is used for ALL chatgpt/ calls.
       - name: codex-auth-seed
         image: python:3-alpine
         command:
@@ -160,8 +162,8 @@ spec:
 
           now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
           candidates = [
-              ('', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN', '')),
               ('3', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN_3', '')),
+              ('', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN', '')),
           ]
 
           chosen = None
