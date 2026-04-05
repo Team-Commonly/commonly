@@ -11,6 +11,7 @@ const auth = require('../middleware/auth');
 const Activity = require('../models/Activity');
 const User = require('../models/User');
 const ActivityService = require('../services/activityService');
+const getAuthenticatedUserId = require('../utils/getAuthenticatedUserId');
 
 /**
  * GET /api/activity/feed
@@ -21,7 +22,7 @@ router.get('/feed', auth, async (req, res) => {
     const {
       limit = 20, before, filter, mode = 'updates',
     } = req.query;
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     const result = await ActivityService.getUserFeed(userId, {
       limit: parseInt(limit, 10),
@@ -47,7 +48,7 @@ router.get('/pods/:podId', auth, async (req, res) => {
     const {
       limit = 20, before, filter, mode = 'updates',
     } = req.query;
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     const result = await ActivityService.getPodFeed(podId, userId, {
       limit: parseInt(limit, 10),
@@ -72,7 +73,7 @@ router.get('/pods/:podId', auth, async (req, res) => {
  */
 router.get('/approvals', auth, async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
     const approvals = await ActivityService.getPendingApprovals(userId);
 
     res.json({
@@ -101,7 +102,7 @@ router.get('/unread-count', auth, async (req, res) => {
     const {
       filter, mode = 'updates',
     } = req.query;
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
     const result = await ActivityService.getUnreadCount(userId, { filter, mode });
     res.json(result);
   } catch (error) {
@@ -117,7 +118,7 @@ router.get('/unread-count', auth, async (req, res) => {
 router.post('/mark-read', auth, async (req, res) => {
   try {
     const { activityId, all = false } = req.body || {};
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
     if (!all && !activityId) {
       return res.status(400).json({ error: 'activityId is required when all=false' });
     }
@@ -142,7 +143,7 @@ router.post('/mark-read', auth, async (req, res) => {
 router.post('/:activityId/like', auth, async (req, res) => {
   try {
     const { activityId } = req.params;
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     const result = await ActivityService.toggleLike(activityId, userId);
     res.json(result);
@@ -160,7 +161,7 @@ router.post('/:activityId/reply', auth, async (req, res) => {
   try {
     const { activityId } = req.params;
     const { content } = req.body;
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     if (!content) {
       return res.status(400).json({ error: 'Content is required' });
@@ -182,7 +183,7 @@ router.post('/:activityId/approve', auth, async (req, res) => {
   try {
     const { activityId } = req.params;
     const { notes } = req.body;
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     const result = await ActivityService.approveActivity(activityId, userId, notes);
 
@@ -205,7 +206,7 @@ router.post('/:activityId/reject', auth, async (req, res) => {
   try {
     const { activityId } = req.params;
     const { notes } = req.body;
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     const result = await ActivityService.rejectActivity(activityId, userId, notes);
 
@@ -227,7 +228,7 @@ router.post('/:activityId/reject', auth, async (req, res) => {
 router.post('/seed/:podId', auth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     const result = await ActivityService.seedPodActivities(podId, userId);
 
@@ -251,7 +252,7 @@ router.post('/create', auth, async (req, res) => {
     const {
       type, action, content, podId, target, agentMetadata,
     } = req.body;
-    const userId = req.userId || req.user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     if (!type || !action || !podId) {
       return res.status(400).json({ error: 'type, action, and podId are required' });
