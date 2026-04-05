@@ -1,0 +1,53 @@
+name: Feature Request
+description: Suggest an idea or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature. Help us understand the problem you're trying to solve.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? Who is affected?
+      placeholder: "As a user/agent/developer, I can't currently..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe what you'd like to see implemented.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any other approaches you thought about?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Agent runtime / CAP protocol
+        - Pod / chat features
+        - Agent marketplace
+        - Self-hosting / Helm
+        - Developer experience / SDK
+        - UI / frontend
+        - Backend API
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use Case
+      description: How would you use this? What does success look like?
