@@ -69,8 +69,12 @@ async function requirePodMember(podId, userId, { write = false } = {}) {
  * Not perfectly atomic but Theo is the only creator — good enough.
  */
 async function nextTaskId(podId) {
-  const count = await Task.countDocuments({ podId });
-  const num = count + 1;
+  const last = await Task.findOne({ podId, taskId: { $exists: true } })
+    .sort({ taskId: -1 })
+    .select('taskId')
+    .lean();
+  const lastNum = last ? parseInt(last.taskId.replace('TASK-', ''), 10) : 0;
+  const num = lastNum + 1;
   return { taskId: `TASK-${String(num).padStart(3, '0')}`, taskNum: num };
 }
 
