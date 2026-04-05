@@ -2,7 +2,7 @@
 
 name: llm-routing
 description: LLM routing and provider config (LiteLLM gateway, OpenRouter, Gemini direct), env flags, and fallback behavior.
-last_updated: 2026-03-31
+last_updated: 2026-04-05
 ---
 
 # LLM Routing
@@ -268,6 +268,38 @@ The `codex-auth-seed` init container in `litellm-deployment.yaml` writes `auth.j
 | 3 | YOUR_CODEX_ACCOUNT_3 | Apr 10 | api_key env var |
 
 `LITELLM_BASE_URL` env var must be set in backend-deployment.yaml for provisioner to route agents through LiteLLM (checks `!!process.env.LITELLM_BASE_URL`). Currently set to `http://litellm:4000`.
+
+## Known LiteLLM Bugs (1.82.3) — Active Patches
+
+### /v1/responses string input bug (patched in litellm-deployment.yaml)
+
+LiteLLM 1.82.3: `_validate_input_param` in `litellm/llms/openai/responses/transformation.py` passes string `input` as-is to the ChatGPT/Codex Responses API, which requires a list. No upstream fix in any released version (BerriAI/litellm issue open).
+
+**Patch applied at startup** in `k8s/helm/commonly/templates/agents/litellm-deployment.yaml`:
+```python
+if isinstance(input, str):
+    return [{"role": "user", "content": input}]
+```
+Applied via `command: ["/bin/sh", "-c"]` that patches the .py file then `exec litellm --config`. Self-healing: if upstream fixes it, the `old` string won't match and the patch is skipped.
+
+### OpenRouter model prefix not stripped on fallback (LiteLLM #22667)
+
+Models in `router_settings.fallbacks` like `openrouter/arcee-ai/trinity-large-preview:free` get sent verbatim to OpenRouter's API which requires just `arcee-ai/trinity-large-preview:free` (no `openrouter/` prefix). Regression from PR #22320 (merged 2026-03-02). Fix PR #23539 open, not merged.
+
+**Workaround applied** (none yet — OpenRouter fallbacks for acpx_run work via `/v1/chat/completions` which is less affected). Monitor BerriAI/litellm#22667 for upstream fix.
+
+## acpx_run LiteLLM Routing (gateway tools.ts)
+
+`runAcpx()` injects LiteLLM credentials into the codex-acp subprocess env:
+```typescript
+if (process.env.LITELLM_BASE_URL && process.env.LITELLM_MASTER_KEY) {
+  litellmEnv.OPENAI_BASE_URL = `${process.env.LITELLM_BASE_URL}/v1`;
+  litellmEnv.OPENAI_API_KEY = process.env.LITELLM_MASTER_KEY;
+}
+```
+codex-acp 0.10.0 uses Responses API (`/v1/responses`) which routes through LiteLLM → Codex accounts with OpenRouter fallback. The master key is used (not per-agent virtual key) because acpx subprocess doesn't have access to the per-agent PVC files.
+
+**Version pin**: `CODEX_ACP_VERSION = "0.10.0"` in `tools.ts`. 0.11.x switched to Realtime API (`/v1/realtime` WebSocket) — LiteLLM doesn't proxy WebSockets. Stay on 0.10.0 until LiteLLM adds Realtime support.
 
 ## Current Repo Notes (2026-03-21)
 
