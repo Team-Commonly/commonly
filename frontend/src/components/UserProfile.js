@@ -113,7 +113,7 @@ const UserProfile = () => {
                 }
 
                 // Calculate post count and comment count
-                const userPosts = postsRes.data.filter(post => post.userId._id === userRes.data._id);
+                const userPosts = postsRes.data.filter(post => post.userId && post.userId._id === userRes.data._id);
                 const userComments = postsRes.data.reduce((count, post) => {
                     return count + (post.comments || []).filter(comment => 
                         comment.userId && 
