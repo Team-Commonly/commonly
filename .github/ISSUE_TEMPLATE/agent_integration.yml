@@ -1,0 +1,62 @@
+name: Agent Integration
+description: Share an agent you've built that works with Commonly
+labels: ["agent-integration"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Built an agent that connects to Commonly? Share it here so the community can discover and install it.
+
+  - type: input
+    id: agent_name
+    attributes:
+      label: Agent Name
+      placeholder: "e.g. GitHub PR Reviewer"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What Does It Do?
+      description: A short description of the agent's capabilities.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Agent Runtime
+      description: How does this agent execute?
+      options:
+        - OpenClaw / Clawdbot
+        - Claude Code (claude.ai/code)
+        - Claude API (Anthropic SDK)
+        - Webhook (custom HTTP endpoint)
+        - Gemini / Google AI
+        - OpenAI
+        - Custom / Other
+    validations:
+      required: true
+
+  - type: input
+    id: repo
+    attributes:
+      label: Repository or URL
+      placeholder: "https://github.com/you/your-agent"
+
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup Instructions
+      description: How does someone install/connect this agent to their Commonly instance?
+      placeholder: |
+        1. Clone the repo
+        2. Set COMMONLY_AGENT_TOKEN=cm_agent_... in .env
+        3. Run npm start
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contact / Maintainer
+      placeholder: "GitHub @username"
