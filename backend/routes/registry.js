@@ -1589,7 +1589,7 @@ For any message that asks a direct question (status, priorities, dependency orde
 
 **Step 3.5: Scan all open PRs for CI failures → create fix tasks**
 Call \`acpx_run\`:
-- agentId: "codex"
+- agentId: "nova"
 - timeoutSeconds: 120
 - task: |
     GH_TOKEN="\${GITHUB_PAT}"
@@ -1606,8 +1606,8 @@ Parse output: for each PR where \`failing: true\`:
 **Step 4: Review ONE open PR (code review gate)**
 4a. Fetch all open PRs and merge into reviewQueue:
 Call \`acpx_run\`:
-- agentId: "codex"
-- timeoutSeconds: 60
+- agentId: "nova"
+- timeoutSeconds: 300
 - task: |
     GH_TOKEN="\${GITHUB_PAT}"
     GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --state open \
@@ -1621,7 +1621,7 @@ Parse output: for each line matching \`PR_OPEN:N:url:branch\`:
 
 4b. Review ONE PR from reviewQueue NOT already in \`ReviewedPRs[]\` — review ONE per heartbeat:
 Call \`acpx_run\`:
-- agentId: "codex"
+- agentId: "nova"
 - timeoutSeconds: 300
 - task: |
     GH_TOKEN="\${GITHUB_PAT}"
@@ -1781,7 +1781,7 @@ Target: <200ms API response. 99.9%+ uptime. Backwards-compatible changes only.
 **Step 1-2: Already done** — mandatory parallel calls above handle memory read + task fetch.
 
 **Step 2.5: Check your own open PRs for CI failures (PRIORITY)**
-Call \`acpx_run\` (agentId: "codex", timeoutSeconds: 60):
+Call \`acpx_run\` (agentId: "nova", timeoutSeconds: 300):
     GH_TOKEN="\${GITHUB_PAT}"
     GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --author @me --state open \
       --json number,headRefName,statusCheckRollup \
@@ -1806,7 +1806,7 @@ Read the task title and description. Decide which path applies:
 
 **Path A — Audit/research/planning task** (keywords: audit, analyze, review, plan, map, document, design, coupling, boundaries, architecture, research):
 Call \`acpx_run\` to explore the codebase and produce a written deliverable committed to the repo:
-- agentId: "codex"
+- agentId: "nova"
 - timeoutSeconds: 300
 - task: |
     GH_TOKEN="\${GITHUB_PAT}"
@@ -1861,8 +1861,8 @@ After acpx_run, extract findings, sub-tasks, and PR URL from output:
 
 **Path B — Implementation task** (code changes, new feature, bug fix, test addition):
 Call \`acpx_run\`:
-- agentId: "codex"
-- timeoutSeconds: 600
+- agentId: "nova"
+- timeoutSeconds: 3000
 - task: |
     GH_TOKEN="\${GITHUB_PAT}"
     git config --global user.name "Nova (Commonly Agent)"
@@ -2008,7 +2008,7 @@ Reusable components over one-offs. Performance: sub-3s page loads, no unnecessar
 **Step 1-2: Already done** — mandatory parallel calls above handle memory read + task fetch.
 
 **Step 2.5: Check your own open PRs for CI failures (PRIORITY)**
-Call \`acpx_run\` (agentId: "codex", timeoutSeconds: 60):
+Call \`acpx_run\` (agentId: "nova", timeoutSeconds: 300):
     GH_TOKEN="\${GITHUB_PAT}"
     GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --author @me --state open \
       --json number,headRefName,statusCheckRollup \
@@ -2033,7 +2033,7 @@ Read the task title and description. Decide which path applies:
 
 **Path A — Audit/research/planning task** (keywords: audit, analyze, review, plan, map, document, design, ux, accessibility, coupling, architecture, research):
 Call \`acpx_run\` to explore the codebase and produce written findings committed to the repo:
-- agentId: "codex"
+- agentId: "nova"
 - timeoutSeconds: 300
 - task: |
     GH_TOKEN="\${GITHUB_PAT}"
@@ -2085,8 +2085,8 @@ After acpx_run, extract findings, sub-tasks, and PR URL:
 
 **Path B — Implementation task** (code changes, new feature, bug fix, test addition):
 Call \`acpx_run\`:
-- agentId: "codex"
-- timeoutSeconds: 600
+- agentId: "nova"
+- timeoutSeconds: 3000
 - task: |
     GH_TOKEN="\${GITHUB_PAT}"
     git config --global user.name "Pixel (Commonly Agent)"
@@ -2228,7 +2228,7 @@ All changes to k8s/, helm/, .github/workflows/, Dockerfile go through a PR. No d
 ## Steps (only reached when mandatory calls return no tasks)
 
 **Step 2.5: Check your own open PRs for CI failures (PRIORITY)**
-Call \`acpx_run\` (agentId: "codex", timeoutSeconds: 60):
+Call \`acpx_run\` (agentId: "nova", timeoutSeconds: 300):
     GH_TOKEN="\${GITHUB_PAT}"
     GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --author @me --state open \
       --json number,headRefName,statusCheckRollup \
@@ -2253,7 +2253,7 @@ Read the task title and description. Decide which path applies:
 
 **Path A — Audit/research/planning task** (keywords: audit, analyze, review, plan, map, document, design, coupling, architecture, research, assess, evaluate):
 Call \`acpx_run\` to explore the repo and produce written findings committed to the repo:
-- agentId: "codex"
+- agentId: "nova"
 - timeoutSeconds: 300
 - task: |
     GH_TOKEN="\${GITHUB_PAT}"
@@ -2305,8 +2305,8 @@ After acpx_run, extract findings, sub-tasks, and PR URL:
 
 **Path B — Implementation task** (code/config changes, new workflow, Dockerfile, Helm update):
 Call \`acpx_run\`:
-- agentId: "codex"
-- timeoutSeconds: 600
+- agentId: "nova"
+- timeoutSeconds: 3000
 - task: |
     GH_TOKEN="\${GITHUB_PAT}"
     git config --global user.name "Ops (Commonly Agent)"
