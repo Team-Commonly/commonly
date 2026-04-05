@@ -11,6 +11,7 @@ const auth = require('../middleware/auth');
 const PodLink = require('../models/PodLink');
 const FederationService = require('../services/federationService');
 const Pod = require('../models/Pod');
+const getAuthenticatedUserId = require('../utils/getAuthenticatedUserId');
 
 /**
  * GET /api/federation/pods/:podId/links
@@ -20,7 +21,7 @@ router.get('/pods/:podId/links', auth, async (req, res) => {
   try {
     const { podId } = req.params;
     const { direction = 'both' } = req.query;
-    const userId = req.user._id;
+    const userId = getAuthenticatedUserId(req);
 
     // Verify access
     const pod = await Pod.findById(podId).lean();
@@ -67,7 +68,7 @@ router.get('/pods/:podId/links', auth, async (req, res) => {
 router.get('/pods/:podId/requests', auth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const userId = req.user._id;
+    const userId = getAuthenticatedUserId(req);
 
     // Verify admin access
     const pod = await Pod.findById(podId).lean();
@@ -116,7 +117,7 @@ router.post('/links', auth, async (req, res) => {
     const {
       sourcePodId, targetPodId, scopes, message,
     } = req.body;
-    const userId = req.user._id;
+    const userId = getAuthenticatedUserId(req);
 
     if (!sourcePodId || !targetPodId || !scopes || scopes.length === 0) {
       return res.status(400).json({ error: 'sourcePodId, targetPodId, and scopes are required' });
@@ -169,7 +170,7 @@ router.post('/links', auth, async (req, res) => {
 router.post('/links/:linkId/approve', auth, async (req, res) => {
   try {
     const { linkId } = req.params;
-    const userId = req.user._id;
+    const userId = getAuthenticatedUserId(req);
 
     const link = await PodLink.findById(linkId);
     if (!link) {
@@ -206,7 +207,7 @@ router.post('/links/:linkId/revoke', auth, async (req, res) => {
   try {
     const { linkId } = req.params;
     const { reason } = req.body;
-    const userId = req.user._id;
+    const userId = getAuthenticatedUserId(req);
 
     const link = await PodLink.findById(linkId);
     if (!link) {
@@ -244,7 +245,7 @@ router.post('/query', auth, async (req, res) => {
     const {
       sourcePodId, targetPodId, queryType, filters = {}, limit = 10,
     } = req.body;
-    const userId = req.user._id;
+    const userId = getAuthenticatedUserId(req);
 
     if (!sourcePodId || !targetPodId || !queryType) {
       return res.status(400).json({ error: 'sourcePodId, targetPodId, and queryType are required' });
@@ -285,7 +286,7 @@ router.post('/query', auth, async (req, res) => {
 router.get('/pods/:podId/accessible', auth, async (req, res) => {
   try {
     const { podId } = req.params;
-    const userId = req.user._id;
+    const userId = getAuthenticatedUserId(req);
 
     // Verify access
     const pod = await Pod.findById(podId).lean();
@@ -316,7 +317,7 @@ router.post('/search', auth, async (req, res) => {
     const {
       sourcePodId, query, queryTypes = ['skills', 'assets'], limit = 10,
     } = req.body;
-    const userId = req.user._id;
+    const userId = getAuthenticatedUserId(req);
 
     if (!sourcePodId || !query) {
       return res.status(400).json({ error: 'sourcePodId and query are required' });
@@ -357,7 +358,7 @@ router.get('/links/:linkId/audit', auth, async (req, res) => {
   try {
     const { linkId } = req.params;
     const { limit = 50 } = req.query;
-    const userId = req.user._id;
+    const userId = getAuthenticatedUserId(req);
 
     const link = await PodLink.findById(linkId)
       .populate('auditLog.actorId', 'username')
