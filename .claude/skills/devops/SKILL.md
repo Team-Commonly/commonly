@@ -56,10 +56,10 @@ docker-compose.dev.yml      # Development with hot reload
 ./prod.sh deploy            # Build and deploy
 ./prod.sh logs              # View logs
 
-# GKE deploy (project: YOUR_GCP_PROJECT_ID, account: YOUR_GCP_ACCOUNT)
+# GKE deploy (project: <your-gcp-project>, account: <your-gcp-account>)
 TAG=$(date +%Y%m%d%H%M%S)
-PROJECT=YOUR_GCP_PROJECT_ID
-ACCOUNT=YOUR_GCP_ACCOUNT
+PROJECT=<your-gcp-project>
+ACCOUNT=<your-gcp-account>
 
 gcloud builds submit backend \
   --tag gcr.io/${PROJECT}/commonly-backend:${TAG} \
@@ -134,9 +134,9 @@ pnpm canvas:a2ui:bundle   # generates src/canvas-host/a2ui/a2ui.bundle.js (requi
 ```bash
 CLAWDBOT_TAG=$(date +%Y%m%d%H%M%S)
 gcloud builds submit _external/clawdbot \
-  --tag gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway:${CLAWDBOT_TAG} \
-  --project YOUR_GCP_PROJECT_ID --account YOUR_GCP_ACCOUNT --machine-type=e2-highcpu-8
-kubectl set image deployment/clawdbot-gateway clawdbot-gateway=gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway:${CLAWDBOT_TAG} -n commonly-dev
+  --tag gcr.io/<your-gcp-project>/clawdbot-gateway:${CLAWDBOT_TAG} \
+  --project <your-gcp-project> --account <your-gcp-account> --machine-type=e2-highcpu-8
+kubectl set image deployment/clawdbot-gateway clawdbot-gateway=gcr.io/<your-gcp-project>/clawdbot-gateway:${CLAWDBOT_TAG} -n commonly-dev
 kubectl rollout status deployment/clawdbot-gateway -n commonly-dev --timeout=180s
 # Repeat for -n commonly (prod)
 ```
