@@ -195,7 +195,7 @@ kubectl exec -n commonly-dev deployment/clawdbot-gateway -- node -e "
 const {spawn}=require('child_process');
 const c=spawn('/app/extensions/acpx/node_modules/.bin/acpx',
   ['--cwd','/workspace/pixel','--agent','npx @zed-industries/codex-acp@0.10.0 -c model=gpt-5.4','--approve-all','exec','say hi'],
-  {env:{...process.env,OPENAI_BASE_URL:'http://litellm:4000/v1',OPENAI_API_KEY:'sk-REDACTED'}});
+  {env:{...process.env,OPENAI_BASE_URL:'http://litellm:4000/v1',OPENAI_API_KEY:'sk-<litellm-master-key>'}});
 let o='';c.stdout.on('data',d=>o+=d);c.on('close',code=>console.log('EXIT:',code,'OUT:',o.slice(0,100)));
 setTimeout(()=>c.kill(),15000);"
 ```

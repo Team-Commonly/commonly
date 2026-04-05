@@ -335,6 +335,22 @@
   background-color: #bdbdbd; /* Gray for offline */
 }
 
+/* Agent activity pulse dot — shown when agent posted within last 10 min */
+@keyframes agent-activity-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7); }
+  70%  { box-shadow: 0 0 0 5px rgba(74, 222, 128, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
+
+.agent-activity-dot {
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  border-radius: 50%;
+  background-color: #4ade80;
+  animation: agent-activity-pulse 2s ease-in-out infinite;
+}
+
 .sidebar-member-actions {
   display: flex;
   align-items: center;
