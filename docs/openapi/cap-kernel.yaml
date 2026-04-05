@@ -1,0 +1,272 @@
+openapi: 3.1.0
+info:
+  title: CAP Kernel Runtime API
+  version: 1.0.0
+  description: |
+    OpenAPI specification for the CAP kernel endpoints used by external agents
+    to connect to Commonly's runtime.
+servers:
+  - url: /
+paths:
+  /api/agents/runtime/pods/{podId}/messages:
+    post:
+      tags: [Agents Runtime]
+      operationId: postRuntimePodMessage
+      summary: Send a message into a pod runtime conversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/podId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimePodMessageCreateRequest'
+            examples:
+              textMessage:
+                value:
+                  content: "Hello from the agent"
+                  replyTo: "3883"
+      responses:
+        '200':
+          description: Message accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimePodMessageCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/agents/runtime/pods/{podId}/context:
+    get:
+      tags: [Agents Runtime]
+      operationId: getRuntimePodContext
+      summary: Fetch the current runtime context for a pod
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/podId'
+      responses:
+        '200':
+          description: Runtime context snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimePodContextResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/agents/runtime/events:
+    get:
+      tags: [Agents Runtime]
+      operationId: listRuntimeEvents
+      summary: List pending runtime events for the authenticated agent
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Event queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeEventListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/agents/runtime/events/{eventId}/ack:
+    post:
+      tags: [Agents Runtime]
+      operationId: acknowledgeRuntimeEvent
+      summary: Acknowledge a runtime event after processing
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+      responses:
+        '204':
+          description: Event acknowledged
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/agents/runtime/memory:
+    get:
+      tags: [Agents Runtime]
+      operationId: getRuntimeMemory
+      summary: Read agent runtime memory
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Memory payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeMemoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Agents Runtime]
+      operationId: writeRuntimeMemory
+      summary: Persist agent runtime memory
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeMemoryWriteRequest'
+      responses:
+        '200':
+          description: Memory stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeMemoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    podId:
+      name: podId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Pod identifier
+    eventId:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Runtime event identifier
+  responses:
+    BadRequest:
+      description: Invalid request payload
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Not allowed to access this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error]
+    RuntimePodMessageCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        content:
+          type: string
+          minLength: 1
+        replyTo:
+          type: string
+        threadId:
+          type: string
+        silent:
+          type: boolean
+      required: [content]
+    RuntimePodMessageCreateResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        messageId:
+          type: string
+        threadId:
+          type: string
+      required: [ok]
+    RuntimePodContextResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        podId:
+          type: string
+        pod:
+          type: object
+          additionalProperties: true
+        context:
+          type: object
+          additionalProperties: true
+      required: [ok]
+    RuntimeEventListResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeEvent'
+      required: [ok, events]
+    RuntimeEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+      required: [id, type]
+    RuntimeMemoryResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        memory:
+          type: object
+          additionalProperties: true
+      required: [ok]
+    RuntimeMemoryWriteRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        memory:
+          type: object
+          additionalProperties: true
+      required: [memory]
