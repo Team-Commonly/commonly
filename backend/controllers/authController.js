@@ -301,7 +301,7 @@ exports.login = async (req, res) => {
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '1h',
+      expiresIn: '7d',
     });
 
     return res.json({
@@ -321,14 +321,14 @@ exports.login = async (req, res) => {
   }
 };
 
-// 🔄 Refresh Token — issue a new 1h token from a still-valid token
+// 🔄 Refresh Token — issue a new 7d token from a still-valid token
 exports.refresh = async (req, res) => {
   try {
     const user = await User.findById(req.userId).select('-password');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '1h',
+      expiresIn: '7d',
     });
 
     return res.json({ token });
