@@ -21,6 +21,7 @@ const Gateway = require('../models/Gateway');
 const Integration = require('../models/Integration');
 const AgentTemplate = require('../models/AgentTemplate');
 const AgentIdentityService = require('../services/agentIdentityService');
+const AgentEventService = require('../services/agentEventService');
 const DMService = require('../services/dmService');
 const { generateText } = require('../services/llmService');
 const {
@@ -4531,6 +4532,60 @@ router.post('/admin/agents/claude-code/session-token', auth, adminAuth, async (r
   } catch (error) {
     console.error('Error issuing claude-code session token:', error);
     return res.status(500).json({ error: 'Failed to issue session token' });
+  }
+});
+
+/**
+ * POST /api/registry/admin/agents/:agentName/trigger-heartbeat
+ *
+ * Immediately fire a heartbeat for a named agent — bypasses the 30-minute
+ * scheduler interval. Used during demo recordings so the human can manually
+ * advance the demo without waiting. Admin auth required.
+ *
+ * Body: { instanceId? }  — defaults to 'default'
+ * Response: { enqueued: number, agentName, instanceId, podId? }
+ */
+router.post('/admin/agents/:agentName/trigger-heartbeat', auth, adminAuth, async (req, res) => {
+  try {
+    const { agentName } = req.params;
+    const { instanceId = 'default' } = req.body || {};
+
+    if (!agentName) {
+      return res.status(400).json({ error: 'agentName is required' });
+    }
+
+    // Find active installations for this agent
+    const installations = await AgentInstallation.find({
+      agentName: agentName.toLowerCase(),
+      instanceId,
+      status: 'active',
+    }).select('agentName instanceId podId config.heartbeat').lean();
+
+    if (!installations.length) {
+      return res.status(404).json({
+        error: `No active installation found for agent '${agentName}' instanceId '${instanceId}'`,
+      });
+    }
+
+    // Fire the heartbeat — respect global:true by picking one pod, or fire for all
+    const installation = installations[0];
+    await AgentEventService.enqueue({
+      agentName: installation.agentName,
+      instanceId: installation.instanceId,
+      podId: installation.podId,
+      type: 'heartbeat',
+      payload: { trigger: 'admin-manual' },
+    });
+
+    return res.json({
+      enqueued: 1,
+      agentName: installation.agentName,
+      instanceId: installation.instanceId,
+      podId: installation.podId?.toString(),
+    });
+  } catch (error) {
+    console.error('Error triggering manual heartbeat:', error);
+    return res.status(500).json({ error: 'Failed to trigger heartbeat' });
   }
 });
 
