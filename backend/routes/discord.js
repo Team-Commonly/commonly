@@ -2,10 +2,13 @@ const express = require('express');
 const axios = require('axios');
 const nacl = require('tweetnacl');
 const auth = require('../middleware/auth');
+const adminAuth = require('../middleware/adminAuth');
 
 const router = express.Router();
 const Integration = require('../models/Integration');
 const DiscordIntegration = require('../models/DiscordIntegration');
+const Pod = require('../models/Pod');
+const User = require('../models/User');
 const DiscordService = require('../services/discordService');
 const {
   runDiscordCommandForIntegrations,
@@ -50,6 +53,42 @@ function verifySignature(req) {
     console.error('Error verifying signature:', error);
     return false;
   }
+}
+
+async function canManagePod(podId, userId) {
+  const [user, pod] = await Promise.all([
+    User.findById(userId),
+    Pod.findById(podId),
+  ]);
+
+  if (!user || !pod) {
+    return false;
+  }
+
+  if (user.role === 'admin') {
+    return true;
+  }
+
+  return pod.createdBy?.toString() === userId.toString();
+}
+
+async function canManageIntegration(integration, userId) {
+  const user = await User.findById(userId);
+
+  if (!user || !integration) {
+    return false;
+  }
+
+  if (user.role === 'admin') {
+    return true;
+  }
+
+  if (integration.createdBy?.toString() === userId.toString()) {
+    return true;
+  }
+
+  const pod = await Pod.findById(integration.podId);
+  return pod?.createdBy?.toString() === userId.toString();
 }
 
 // Handle Discord installation events
@@ -320,10 +359,15 @@ router.post('/interactions', async (req, res) => {
 });
 
 // Generate installation link for a chat pod
-router.get('/install-link/:podId', async (req, res) => {
+router.get('/install-link/:podId', auth, async (req, res) => {
   try {
     const { podId } = req.params;
     const { clientId = process.env.DISCORD_CLIENT_ID } = req.query;
+
+    const canManage = await canManagePod(podId, req.user.id);
+    if (!canManage) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     if (!clientId) {
       return res.status(400).json({ error: 'Discord client ID is required' });
@@ -350,9 +394,14 @@ router.get('/install-link/:podId', async (req, res) => {
 });
 
 // Get Discord binding for a specific chat pod
-router.get('/binding/:podId', async (req, res) => {
+router.get('/binding/:podId', auth, async (req, res) => {
   try {
     const { podId } = req.params;
+
+    const canManage = await canManagePod(podId, req.user.id);
+    if (!canManage) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     const integration = await Integration.findOne({
       podId,
@@ -381,13 +430,18 @@ router.get('/binding/:podId', async (req, res) => {
 });
 
 // Remove Discord integration
-router.delete('/uninstall/:installationId', async (req, res) => {
+router.delete('/uninstall/:installationId', auth, async (req, res) => {
   try {
     const { installationId } = req.params;
 
     const integration = await Integration.findOne({ installationId });
     if (!integration) {
       return res.status(404).json({ error: 'Integration not found' });
+    }
+
+    const canManage = await canManageIntegration(integration, req.user.id);
+    if (!canManage) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     // Delete Discord-specific integration
@@ -406,7 +460,7 @@ router.delete('/uninstall/:installationId', async (req, res) => {
 });
 
 // Register slash commands for a Discord integration
-router.post('/register-commands/:integrationId', async (req, res) => {
+router.post('/register-commands/:integrationId', auth, async (req, res) => {
   try {
     const { integrationId } = req.params;
 
@@ -419,6 +473,11 @@ router.post('/register-commands/:integrationId', async (req, res) => {
       return res
         .status(400)
         .json({ error: 'Integration is not a Discord integration' });
+    }
+
+    const canManage = await canManageIntegration(integration, req.user.id);
+    if (!canManage) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     const guildId = integration.config.serverId;
@@ -530,7 +589,7 @@ router.get('/health', async (req, res) => {
  * Bulk command registration endpoint
  * POST /api/discord/register-all
  */
-router.post('/register-all', async (req, res) => {
+router.post('/register-all', auth, adminAuth, async (req, res) => {
   try {
     // eslint-disable-next-line global-require
     const DiscordServiceClass = require('../services/discordService');
