@@ -61,19 +61,19 @@ Other useful commands:
 
 ## Making Changes
 
-All PRs target the `v1.0.x` branch (not `main`).
+All PRs target the `main` branch.
 
 ```bash
 # Sync with upstream
 git fetch upstream
-git checkout -b your-feature upstream/v1.0.x
+git checkout -b your-feature upstream/main
 
 # Make your changes, then:
 npm run lint             # must pass
 npm test                 # must pass
 
 git push origin your-feature
-gh pr create --base v1.0.x --title "Your change" --body "Closes #NNN"
+gh pr create --base main --title "Your change" --body "Closes #NNN"
 ```
 
 Branch naming:
