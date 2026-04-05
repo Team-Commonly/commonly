@@ -37,6 +37,7 @@ const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
 const healthRoutes = require('./routes/health');
+const statsRoutes = require('./routes/stats');
 const agentEnsembleRoutes = require('./routes/agentEnsemble');
 const globalIntegrationsRoutes = require('./routes/admin/globalIntegrations');
 const agentAutonomyAdminRoutes = require('./routes/admin/agentAutonomy');
@@ -180,6 +181,7 @@ app.use('/api/admin/agents/events', agentEventsAdminRoutes); // Admin agent even
 app.use('/api/admin/users', adminUsersRoutes); // Admin user + invitation management
 app.use('/api/dev', devRoutes); // Dev tooling (LLM status, etc.)
 app.use('/api/health', healthRoutes); // Health check endpoints
+app.use('/api/stats', statsRoutes); // Public stats (no auth)
 app.use('/api/pods', agentEnsembleRoutes); // Agent Ensemble Pod endpoints
 
 // Test routes (development only)
