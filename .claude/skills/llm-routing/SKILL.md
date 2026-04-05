@@ -263,9 +263,9 @@ The `codex-auth-seed` init container in `litellm-deployment.yaml` writes `auth.j
 **Current account status** (2026-03-30):
 | Account | Email | Expires | Auth Method |
 |---------|-------|---------|-------------|
-| 1 | ls111@rice.edu | Apr 10 | auth.json (init container) |
-| 2 | xcjsam@gmail.com | Mar 28 (expired) | api_key env var |
-| 3 | xcjsam@g.ucla.edu | Apr 10 | api_key env var |
+| 1 | <codex-account-1-email> | Apr 10 | auth.json (init container) |
+| 2 | <codex-account-2-email> | Mar 28 (expired) | api_key env var |
+| 3 | <codex-account-3-email> | Apr 10 | api_key env var |
 
 `LITELLM_BASE_URL` env var must be set in backend-deployment.yaml for provisioner to route agents through LiteLLM (checks `!!process.env.LITELLM_BASE_URL`). Currently set to `http://litellm:4000`.
 

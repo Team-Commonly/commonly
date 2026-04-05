@@ -131,12 +131,12 @@ Key file: `k8s/helm/commonly/templates/agents/litellm-deployment.yaml` — `DATA
 
 ## PostgreSQL (Aiven) — TLS / CA Cert (2026-03-22)
 
-- **Host**: `commonly-psql-commonly.b.aivencloud.com:25450`
+- **Host**: `<your-postgres-host>:<port>`
 - **SSL required**: Aiven uses a self-signed Project CA. Must set `PG_SSL_CA_PATH=/app/certs/ca.pem`.
 - **CA cert storage**: GCP Secret Manager key `commonly-pg-ca-cert` → ESO ExternalSecret `postgres-ca-cert` → mounted at `/app/certs/ca.pem` in backend pod.
 - **Template**: `k8s/helm/commonly/templates/configmaps/backend-config.yaml` — uses ESO when `externalSecrets.enabled: true` (do NOT use file-based `configs/ca.pem`; `*.pem` is gitignored and will be empty).
 - **If CA cert is missing/empty**: backend logs `self-signed certificate in certificate chain` → PG skipped → messages fall back to MongoDB.
-- **Extracting the cert** (if ever needed again): `openssl s_client -connect commonly-psql-commonly.b.aivencloud.com:25450 -starttls postgres -showcerts 2>/dev/null` → second cert in chain is the Aiven Project CA (issuer = subject).
+- **Extracting the cert** (if ever needed again): `openssl s_client -connect <your-postgres-host>:<port> -starttls postgres -showcerts 2>/dev/null` → second cert in chain is the Aiven Project CA (issuer = subject).
 - **MongoDB fallback**: `backend/config/db-pg.js` skips pool init when `PG_HOST` is empty; `messageController.js` and `server.js` catch PG errors and fall back to MongoDB.
 
 ## Current Repo Notes (2026-02-04)

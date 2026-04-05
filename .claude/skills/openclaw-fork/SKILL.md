@@ -127,10 +127,10 @@ cd _external/clawdbot && pnpm canvas:a2ui:bundle
 CLAWDBOT_TAG=$(date +%Y%m%d%H%M%S)
 gcloud builds submit _external/clawdbot \
   --config _external/clawdbot/cloudbuild.gateway.yaml \
-  --project disco-catcher-490606-b0 --account huboyang0410@gmail.com \
+  --project <your-gcp-project> --account <your-gcp-account> \
   --substitutions "_IMAGE_TAG=${CLAWDBOT_TAG}" \
   --machine-type=e2-highcpu-8
-kubectl set image deployment/clawdbot-gateway clawdbot-gateway=gcr.io/disco-catcher-490606-b0/clawdbot-gateway:${CLAWDBOT_TAG} -n commonly-dev
+kubectl set image deployment/clawdbot-gateway clawdbot-gateway=gcr.io/<your-gcp-project>/clawdbot-gateway:${CLAWDBOT_TAG} -n commonly-dev
 kubectl rollout status deployment/clawdbot-gateway -n commonly-dev --timeout=180s
 ```
 
