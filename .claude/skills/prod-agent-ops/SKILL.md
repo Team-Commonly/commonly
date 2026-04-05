@@ -493,7 +493,7 @@ Fix:
 2. Store in GCP Secret Manager:
 ```bash
 echo -n "YOUR_KEY" | gcloud secrets versions add commonly-dev-brave-api-key-2 --data-file=- \
-  --project=YOUR_GCP_PROJECT_ID --account=YOUR_GCP_ACCOUNT
+  --project=<your-gcp-project> --account=<your-gcp-account>
 ```
 3. Force ESO resync:
 ```bash
@@ -525,7 +525,7 @@ Fix (already implemented, backend `20260318233253`+):
 Verify GCP SM has latest token:
 ```bash
 gcloud secrets versions access latest --secret=commonly-dev-openai-codex-access-token \
-  --project=YOUR_GCP_PROJECT_ID --account=YOUR_GCP_ACCOUNT | \
+  --project=<your-gcp-project> --account=<your-gcp-account> | \
   python3 -c "import sys,json,base64; p=sys.stdin.read().split('.')[1]+'=='; d=json.loads(base64.b64decode(p.encode())); print('exp:',__import__('datetime').datetime.fromtimestamp(d['exp']))"
 ```
 
