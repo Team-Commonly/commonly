@@ -47,7 +47,7 @@ frontend:
   replicaCount: 1
   image:
     repository: gcr.io/disco-catcher-490606-b0/commonly-frontend
-    tag: "20260404203326"
+    tag: "20260405064005"
     pullPolicy: Always
   nodeSelector:
     pool: dev
