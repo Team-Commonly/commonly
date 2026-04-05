@@ -512,7 +512,7 @@
 
   .pod-card-actions {
     padding: 10px 12px !important;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .pod-card-actions .MuiButton-root {
