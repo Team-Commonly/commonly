@@ -35,14 +35,28 @@ describe('AgentEnsembleService', () => {
   let testPod;
 
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryServer.create({
+      binary: {
+        version: '7.0.11',
+        skipMD5: true,
+      },
+      instance: {
+        dbName: 'agent-ensemble-service-test',
+      },
+    });
     const uri = mongoServer.getUri();
     await mongoose.connect(uri);
   });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await mongoServer.stop();
+    if (mongoServer) {
+      try {
+        await mongoServer.stop();
+      } catch (error) {
+        // Ignore cleanup errors so a failed in-memory server startup does not mask the test result.
+      }
+    }
   });
 
   beforeEach(async () => {
