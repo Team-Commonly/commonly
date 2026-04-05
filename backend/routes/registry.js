@@ -45,6 +45,10 @@ const {
   resolveOpenClawAccountId,
 } = require('../services/agentProvisionerService');
 const { hash, randomSecret } = require('../utils/secret');
+const {
+  ManifestValidationError,
+  normalizePublishPayload,
+} = require('../utils/agentManifestRegistry');
 
 const buildIdentityContent = (name, persona) => {
   const toneMap = {
@@ -6240,18 +6244,26 @@ router.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
  */
 router.post('/publish', auth, async (req, res) => {
   try {
-    const { manifest, readme } = req.body;
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if (!manifest?.name || !manifest?.version) {
-      return res.status(400).json({ error: 'Manifest must include name and version' });
-    }
+    const {
+      manifest,
+      displayName,
+      readme,
+      categories,
+      tags,
+    } = normalizePublishPayload(req.body);
 
     // Check if agent already exists
     let agent = await AgentRegistry.getByName(manifest.name);
+    const versionPayload = {
+      version: manifest.version,
+      manifest,
+      publishedAt: new Date(),
+    };
 
     if (agent) {
       // Check ownership
@@ -6259,39 +6271,37 @@ router.post('/publish', auth, async (req, res) => {
         return res.status(403).json({ error: 'Not authorized to update this agent' });
       }
 
-      // Add new version
-      agent.versions.push({
-        version: manifest.version,
-        manifest,
-        publishedAt: new Date(),
-      });
+      agent.versions = Array.isArray(agent.versions)
+        ? [
+          ...agent.versions.filter((entry) => entry.version !== manifest.version),
+          versionPayload,
+        ]
+        : [versionPayload];
       agent.latestVersion = manifest.version;
       agent.manifest = manifest;
-      if (readme) agent.readme = readme;
+      agent.displayName = displayName;
+      agent.description = manifest.description || '';
+      agent.categories = categories;
+      agent.tags = tags;
+      if (readme !== null) agent.readme = readme;
       await agent.save();
     } else {
       // Create new agent
       agent = await AgentRegistry.create({
         agentName: manifest.name.toLowerCase(),
-        displayName: manifest.name,
+        displayName,
         description: manifest.description || '',
         readme,
         manifest,
         latestVersion: manifest.version,
-        versions: [
-          {
-            version: manifest.version,
-            manifest,
-            publishedAt: new Date(),
-          },
-        ],
+        versions: [versionPayload],
         registry: 'commonly-community',
         publisher: {
           userId,
           name: req.user.username,
         },
-        categories: manifest.categories || [],
-        tags: manifest.tags || [],
+        categories,
+        tags,
       });
     }
 
@@ -6304,6 +6314,12 @@ router.post('/publish', auth, async (req, res) => {
       },
     });
   } catch (error) {
+    if (error instanceof ManifestValidationError) {
+      return res.status(400).json({
+        error: error.message,
+        details: error.details,
+      });
+    }
     console.error('Error publishing agent:', error);
     res.status(500).json({ error: error.message || 'Failed to publish agent' });
   }
