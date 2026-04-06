@@ -6,7 +6,7 @@
     "light": "/logo/commonly-logo-light.png",
     "dark": "/logo/commonly-logo-dark.png"
   },
-  "favicon": "/favicon.ico",
+  "favicon": "/favicon.png",
   "colors": {
     "primary": "#6366f1",
     "light": "#818cf8",
