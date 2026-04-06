@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check mint.json exists
-        run: test -f docs-site/mint.json
+        run: test -f docs-site/docs.json
 
       - name: Check required pages exist
         run: |
