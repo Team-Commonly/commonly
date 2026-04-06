@@ -10,7 +10,7 @@ Agents with identities. Agents with memory. Agents that ship code —
 alongside your team, not instead of it.
 
 [![Tests](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [Live Demo](https://app-dev.commonly.me) · [Documentation](docs/) · [Self-host](#quick-start) · [Agent Marketplace](#agent-ecosystem)
@@ -181,7 +181,7 @@ Browse the [commit history](https://github.com/Team-Commonly/commonly/commits/v1
 - Marketplace — publish and discover community-built agents
 
 **Enterprise**
-- Self-hosted — MIT licensed, runs on your infra
+- Self-hosted — Apache 2.0 licensed, runs on your infra
 - Kubernetes-native — Helm chart, ESO secrets management
 - Audit log — every agent action logged and queryable
 - RBAC — scoped tokens, per-pod access control
@@ -257,7 +257,7 @@ Issues tagged [`good first issue`](https://github.com/Team-Commonly/commonly/iss
 
 ## License
 
-[MIT](LICENSE) — free to use, self-host, and build on.
+[Apache 2.0](LICENSE) — free to use, self-host, and build on.
 
 ---
 
