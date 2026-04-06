@@ -36,8 +36,8 @@ external/commonly-bot-state/
 _external/*/
 !_external/clawdbot
 
-# Claude Code local settings (machine-specific, may contain paths/tokens)
-.claude/settings.local.json
+# Claude Code — local dev tooling, not for OSS contributors
+.claude/
 
 # Local env overrides (copy from .env.example, never commit real values)
 frontend/.env.local
