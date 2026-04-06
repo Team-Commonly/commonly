@@ -301,6 +301,15 @@ spec:
               console.log('[auth-seed] copied auth-profiles.json to main agentDir:', mainAuthPath);
             }
           }
+          // Write global git identity to PVC so main container picks it up via GIT_CONFIG_GLOBAL.
+          const gitUserName = (process.env.GIT_USER_NAME || '').trim();
+          const gitUserEmail = (process.env.GIT_USER_EMAIL || '').trim();
+          if (gitUserName && gitUserEmail) {
+            const gitConfigPath = path.join(stateDir, '.gitconfig');
+            const gitConfig = `[user]\n\tname = ${gitUserName}\n\temail = ${gitUserEmail}\n`;
+            fs.writeFileSync(gitConfigPath, gitConfig);
+            console.log('[auth-seed] wrote git identity:', gitUserName, '<' + gitUserEmail + '>');
+          }
           NODE
         env:
         - name: OPENCLAW_CONFIG_PATH
@@ -426,6 +435,18 @@ spec:
               name: api-keys
               key: openai-codex-account-id-3
               optional: true
+        - name: GIT_USER_NAME
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: git-user-name
+              optional: true
+        - name: GIT_USER_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: git-user-email
+              optional: true
         volumeMounts:
         - name: clawdbot-config
           mountPath: /config
@@ -535,6 +556,9 @@ spec:
               name: api-keys
               key: GITHUB_PAT
               optional: true
+        # Git identity — written to PVC by init container; picked up here via GIT_CONFIG_GLOBAL
+        - name: GIT_CONFIG_GLOBAL
+          value: /state/.gitconfig
         # LiteLLM — routes acpx_run calls through LiteLLM for unified logging + model fallback
         - name: LITELLM_BASE_URL
           value: "http://litellm:4000"
