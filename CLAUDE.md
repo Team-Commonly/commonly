@@ -337,10 +337,12 @@ curl -X POST https://api-dev.commonly.me/api/github/token \
 ```bash
 helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev \
   -f k8s/helm/commonly/values.yaml \
-  -f k8s/helm/commonly/values-dev.yaml
+  -f k8s/helm/commonly/values-dev.yaml \
+  -f /path/to/your/values-private.yaml   # overrides YOUR_GCP_PROJECT_ID / YOUR_PG_HOST placeholders
 ```
-- `values.yaml` — base defaults (project refs, PG host/port, ESO enabled)
+- `values.yaml` — base defaults (OSS-safe placeholders for project refs, PG host, image repos)
 - `values-dev.yaml` — dev overrides (image tags, ingress hosts, node selectors)
+- `values-private.yaml` — **not committed**; your real GCP project ID, PG host, image repos
 - **Update `values-dev.yaml` image tag before every helm upgrade** — this is the source of truth
 - `kubectl get pods -n commonly-dev` - Check pod status
 - `kubectl logs -n commonly-dev -l app=backend` - View backend logs
