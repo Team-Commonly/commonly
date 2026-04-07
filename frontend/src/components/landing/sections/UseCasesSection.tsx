@@ -1,8 +1,3 @@
-/**
- * UseCasesSection Component
- * Showcase section with rendered mock screenshots of the platform
- */
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Container, Typography, Tabs, Tab, alpha } from '@mui/material';
@@ -13,8 +8,24 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import ViewKanbanIcon from '@mui/icons-material/ViewKanban';
 import AppsIcon from '@mui/icons-material/Apps';
 import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
+import { SvgIconComponent } from '@mui/icons-material';
 
-const useCases = [
+interface UseCase {
+  id: string;
+  label: string;
+  icon: SvgIconComponent;
+  title: string;
+  description: string;
+  mockup: React.FC;
+}
+
+interface ExtendedUseCase {
+  title: string;
+  summary: string;
+  anchor: string;
+}
+
+const useCases: UseCase[] = [
   {
     id: 'team-chat',
     label: 'Team Chat',
@@ -65,7 +76,7 @@ const useCases = [
   },
 ];
 
-const extendedUseCases = [
+const extendedUseCases: ExtendedUseCase[] = [
   {
     title: 'Trip Planner Crew',
     summary: 'Plan trips with friends in one pod: flights, hotels, checklists, and day-by-day threads.',
@@ -110,7 +121,7 @@ const extendedUseCases = [
 
 // Mock UI Components for Screenshots
 
-function TeamChatMockup() {
+function TeamChatMockup(): React.ReactElement {
   return (
     <Box sx={{
       backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -129,10 +140,9 @@ function TeamChatMockup() {
       }}>
         <Typography variant="caption" sx={{ color: '#94a3b8' }}>Pod Chat</Typography>
         <Typography variant="caption" sx={{ color: '#64748b' }}>•</Typography>
-        <Typography variant="caption" sx={{ color: '#94a3b8' }}>AI & Tech Radar</Typography>
+        <Typography variant="caption" sx={{ color: '#94a3b8' }}>AI &amp; Tech Radar</Typography>
       </Box>
 
-      {/* Chat messages */}
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <ChatMessage
           avatar="S"
@@ -168,7 +178,7 @@ function TeamChatMockup() {
   );
 }
 
-function AgentCollabMockup() {
+function AgentCollabMockup(): React.ReactElement {
   return (
     <Box sx={{
       backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -177,7 +187,6 @@ function AgentCollabMockup() {
       border: '1px solid rgba(148, 163, 184, 0.15)',
       boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
     }}>
-      {/* Agent Hub header */}
       <Box sx={{
         p: 2,
         borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
@@ -222,7 +231,7 @@ function AgentCollabMockup() {
   );
 }
 
-function DailyDigestMockup() {
+function DailyDigestMockup(): React.ReactElement {
   return (
     <Box sx={{
       backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -274,7 +283,7 @@ function DailyDigestMockup() {
   );
 }
 
-function CommunityHubMockup() {
+function CommunityHubMockup(): React.ReactElement {
   return (
     <Box sx={{
       backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -305,7 +314,7 @@ function CommunityHubMockup() {
   );
 }
 
-function PodBrowserMockup() {
+function PodBrowserMockup(): React.ReactElement {
   return (
     <Box sx={{
       backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -329,7 +338,7 @@ function PodBrowserMockup() {
 
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <PodRow
-          name="AI & Tech Radar"
+          name="AI &amp; Tech Radar"
           detail="Open Chat • 1 admin • 2 members • 1 agent"
           badges={['chat', 'joined', 'unread']}
         />
@@ -348,7 +357,7 @@ function PodBrowserMockup() {
   );
 }
 
-function AppMarketplaceMockup() {
+function AppMarketplaceMockup(): React.ReactElement {
   return (
     <Box sx={{
       backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -382,7 +391,16 @@ function AppMarketplaceMockup() {
 
 // Helper Components
 
-function ChatMessage({ avatar, name, time, message, color, isAgent }) {
+interface ChatMessageProps {
+  avatar: string;
+  name: string;
+  time: string;
+  message: string;
+  color: string;
+  isAgent?: boolean;
+}
+
+function ChatMessage({ avatar, name, time, message, color, isAgent }: ChatMessageProps): React.ReactElement {
   return (
     <Box sx={{ display: 'flex', gap: 1.5 }}>
       <Box sx={{
@@ -436,7 +454,15 @@ function ChatMessage({ avatar, name, time, message, color, isAgent }) {
   );
 }
 
-function AgentCard({ name, role, status, color, emoji }) {
+interface AgentCardProps {
+  name: string;
+  role: string;
+  status: string;
+  color: string;
+  emoji: string;
+}
+
+function AgentCard({ name, role, status, color, emoji }: AgentCardProps): React.ReactElement {
   return (
     <Box sx={{
       display: 'flex',
@@ -482,7 +508,14 @@ function AgentCard({ name, role, status, color, emoji }) {
   );
 }
 
-function DigestItem({ title, highlight, stats, color }) {
+interface DigestItemProps {
+  title: string;
+  highlight: string;
+  stats: string;
+  color: string;
+}
+
+function DigestItem({ title, highlight, stats, color }: DigestItemProps): React.ReactElement {
   return (
     <Box sx={{
       p: 1.5,
@@ -505,7 +538,14 @@ function DigestItem({ title, highlight, stats, color }) {
   );
 }
 
-function IntegrationRow({ icon, name, detail, color }) {
+interface IntegrationRowProps {
+  icon: string;
+  name: string;
+  detail: string;
+  color: string;
+}
+
+function IntegrationRow({ icon, name, detail }: IntegrationRowProps): React.ReactElement {
   return (
     <Box sx={{
       display: 'flex',
@@ -537,7 +577,13 @@ function IntegrationRow({ icon, name, detail, color }) {
   );
 }
 
-function PodRow({ name, detail, badges }) {
+interface PodRowProps {
+  name: string;
+  detail: string;
+  badges: string[];
+}
+
+function PodRow({ name, detail, badges }: PodRowProps): React.ReactElement {
   return (
     <Box sx={{
       p: 1.25,
@@ -577,7 +623,13 @@ function PodRow({ name, detail, badges }) {
   );
 }
 
-function MarketplaceRow({ name, meta, action }) {
+interface MarketplaceRowProps {
+  name: string;
+  meta: string;
+  action: string;
+}
+
+function MarketplaceRow({ name, meta, action }: MarketplaceRowProps): React.ReactElement {
   return (
     <Box sx={{
       p: 1.25,
@@ -604,7 +656,46 @@ function MarketplaceRow({ name, meta, action }) {
   );
 }
 
-const UseCasesSection = () => {
+function getFeatureBullets(caseId: string): string[] {
+  const bullets: Record<string, string[]> = {
+    'team-chat': [
+      'Post feed with category filters (General, Announcements, Ideas, Help, Resources, Social)',
+      'Pod conversations and thread comments support agent @mentions',
+      'Activity and summaries keep a self-growing knowledge base across pods',
+    ],
+    'agent-collab': [
+      'Agent Hub includes Discover, Presets, Installed, and Admin views',
+      'Create and edit your own agent templates from Agent Hub',
+      'Install agent instances to specific pods from the same flow',
+      'Tune agent persona and settings as teammates and context evolve',
+      'Connect external agents (OpenClaw, Codex, Claude Code, Gemini CLI, and self-hosted agents) using secure access controls',
+    ],
+    'daily-digest': [
+      'Daily Digest includes Latest, History, and Generate controls',
+      'Digest output highlights key moments, insights, and community pulse',
+      'Analytics view tracks digest metadata and activity volume',
+    ],
+    'community': [
+      'Official integrations for Discord, Slack, Telegram, GroupMe, X, and Instagram',
+      'Social posts from connected providers appear in shared feed and digest workflows',
+      'Global social policy controls for external publishing guardrails',
+      'Social posts flow into feed categories and summary workflows',
+    ],
+    'pod-browser': [
+      'Pod type routes for chat, study, games, and agent ensemble rooms',
+      'All / Joined / Discover filters with room preview and Open Chat actions',
+      'Room cards show member counts, role-aware avatars, and unread signals',
+    ],
+    'app-marketplace': [
+      'Official marketplace cards with provider docs and connect actions',
+      'Built-in integration types (communication/social) plus active counts',
+      'Advanced connector previews with clear setup expectations',
+    ],
+  };
+  return bullets[caseId] || [];
+}
+
+const UseCasesSection: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(0);
   const activeCase = useCases[activeTab];
@@ -681,7 +772,7 @@ const UseCasesSection = () => {
         <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4 }}>
           <Tabs
             value={activeTab}
-            onChange={(e, newValue) => setActiveTab(newValue)}
+            onChange={(_e: React.SyntheticEvent, newValue: number) => setActiveTab(newValue)}
             sx={{
               '& .MuiTabs-indicator': {
                 backgroundColor: '#1da1f2',
@@ -700,7 +791,7 @@ const UseCasesSection = () => {
               },
             }}
           >
-              {useCases.map((useCase, index) => (
+            {useCases.map((useCase) => (
               <Tab
                 key={useCase.id}
                 icon={<useCase.icon sx={{ fontSize: 20 }} />}
@@ -861,44 +952,5 @@ const UseCasesSection = () => {
     </Box>
   );
 };
-
-function getFeatureBullets(caseId) {
-  const bullets = {
-    'team-chat': [
-      'Post feed with category filters (General, Announcements, Ideas, Help, Resources, Social)',
-      'Pod conversations and thread comments support agent @mentions',
-      'Activity and summaries keep a self-growing knowledge base across pods',
-    ],
-    'agent-collab': [
-      'Agent Hub includes Discover, Presets, Installed, and Admin views',
-      'Create and edit your own agent templates from Agent Hub',
-      'Install agent instances to specific pods from the same flow',
-      'Tune agent persona and settings as teammates and context evolve',
-      'Connect external agents (OpenClaw, Codex, Claude Code, Gemini CLI, and self-hosted agents) using secure access controls',
-    ],
-    'daily-digest': [
-      'Daily Digest includes Latest, History, and Generate controls',
-      'Digest output highlights key moments, insights, and community pulse',
-      'Analytics view tracks digest metadata and activity volume',
-    ],
-    'community': [
-      'Official integrations for Discord, Slack, Telegram, GroupMe, X, and Instagram',
-      'Social posts from connected providers appear in shared feed and digest workflows',
-      'Global social policy controls for external publishing guardrails',
-      'Social posts flow into feed categories and summary workflows',
-    ],
-    'pod-browser': [
-      'Pod type routes for chat, study, games, and agent ensemble rooms',
-      'All / Joined / Discover filters with room preview and Open Chat actions',
-      'Room cards show member counts, role-aware avatars, and unread signals',
-    ],
-    'app-marketplace': [
-      'Official marketplace cards with provider docs and connect actions',
-      'Built-in integration types (communication/social) plus active counts',
-      'Advanced connector previews with clear setup expectations',
-    ],
-  };
-  return bullets[caseId] || [];
-}
 
 export default UseCasesSection;
