@@ -28,19 +28,79 @@ import {
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { useAuth } from '../../context/AuthContext';
 
-const getAuthHeaders = () => {
+interface CatalogItem {
+  id?: string;
+  name?: string;
+  description?: string;
+  category?: string;
+  tags?: string[];
+  sourceUrl?: string;
+  license?: { name?: string; text?: string; path?: string } | string;
+  stars?: number;
+  type?: string;
+}
+
+interface Pod {
+  _id: string;
+  name: string;
+}
+
+interface PodAgent {
+  name: string;
+  instanceId: string;
+  displayName?: string;
+}
+
+interface Gateway {
+  _id: string;
+  name: string;
+}
+
+interface GatewayEntryInfo {
+  envKeys?: string[];
+  apiKeyPresent?: boolean;
+}
+
+interface LicenseState {
+  title: string;
+  text: string;
+  path: string;
+}
+
+interface ImportState {
+  podId: string;
+  scope: string;
+  agentKey: string;
+  name: string;
+  tags: string;
+  sourceUrl: string;
+  license: string;
+  description: string;
+}
+
+interface GatewayForm {
+  name: string;
+  slug: string;
+  mode: string;
+  baseUrl: string;
+  configPath: string;
+  namespace: string;
+  image: string;
+}
+
+const getAuthHeaders = (): { headers: { Authorization: string } } => {
   const token = localStorage.getItem('token');
   return { headers: { Authorization: `Bearer ${token}` } };
 };
 
-const SkillsCatalogPage = () => {
-  const [catalogItems, setCatalogItems] = useState([]);
+const SkillsCatalogPage: React.FC = () => {
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState('');
   const [catalogPage, setCatalogPage] = useState(1);
   const [catalogTotalPages, setCatalogTotalPages] = useState(1);
   const [catalogTotalItems, setCatalogTotalItems] = useState(0);
-  const [categories, setCategories] = useState([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [sortBy, setSortBy] = useState('default');
@@ -49,27 +109,27 @@ const SkillsCatalogPage = () => {
   const { currentUser } = useAuth();
   const isGlobalAdmin = currentUser?.role === 'admin';
 
-  const [pods, setPods] = useState([]);
+  const [pods, setPods] = useState<Pod[]>([]);
   const [selectedPodId, setSelectedPodId] = useState('');
-  const [podAgents, setPodAgents] = useState([]);
+  const [podAgents, setPodAgents] = useState<PodAgent[]>([]);
 
   const [importOpen, setImportOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
-  const [licenseState, setLicenseState] = useState({ title: '', text: '', path: '' });
+  const [licenseState, setLicenseState] = useState<LicenseState>({ title: '', text: '', path: '' });
   const [requirementsLoading, setRequirementsLoading] = useState(false);
   const [requirementsError, setRequirementsError] = useState('');
-  const [requirementsList, setRequirementsList] = useState([]);
+  const [requirementsList, setRequirementsList] = useState<string[]>([]);
   const [gatewayLoading, setGatewayLoading] = useState(false);
   const [gatewayError, setGatewayError] = useState('');
-  const [gatewayEntries, setGatewayEntries] = useState({});
+  const [gatewayEntries, setGatewayEntries] = useState<Record<string, GatewayEntryInfo>>({});
   const [gatewayId, setGatewayId] = useState('');
   const [gatewaySkillKey, setGatewaySkillKey] = useState('');
   const [gatewayHintLoading, setGatewayHintLoading] = useState(false);
   const [gatewayHintError, setGatewayHintError] = useState('');
-  const [gatewayHintList, setGatewayHintList] = useState([]);
+  const [gatewayHintList, setGatewayHintList] = useState<string[]>([]);
   const [gatewayPrimaryEnv, setGatewayPrimaryEnv] = useState('');
-  const [gatewayEnvInputs, setGatewayEnvInputs] = useState({});
-  const [gatewayEnvClears, setGatewayEnvClears] = useState(new Set());
+  const [gatewayEnvInputs, setGatewayEnvInputs] = useState<Record<string, string>>({});
+  const [gatewayEnvClears, setGatewayEnvClears] = useState<Set<string>>(new Set());
   const [gatewayApiKeyInput, setGatewayApiKeyInput] = useState('');
   const [gatewayApiKeyClear, setGatewayApiKeyClear] = useState(false);
   const [gatewayAdvancedOpen, setGatewayAdvancedOpen] = useState(false);
@@ -77,9 +137,9 @@ const SkillsCatalogPage = () => {
   const [gatewayCustomKey, setGatewayCustomKey] = useState('');
   const [gatewayCustomValue, setGatewayCustomValue] = useState('');
   const [gatewaySaving, setGatewaySaving] = useState(false);
-  const [gatewayList, setGatewayList] = useState([]);
+  const [gatewayList, setGatewayList] = useState<Gateway[]>([]);
   const [gatewayDialogOpen, setGatewayDialogOpen] = useState(false);
-  const [gatewayForm, setGatewayForm] = useState({
+  const [gatewayForm, setGatewayForm] = useState<GatewayForm>({
     name: '',
     slug: '',
     mode: 'local',
@@ -90,9 +150,9 @@ const SkillsCatalogPage = () => {
   });
   const [gatewayCreateLoading, setGatewayCreateLoading] = useState(false);
   const [gatewayCreateError, setGatewayCreateError] = useState('');
-  const [importedSkills, setImportedSkills] = useState(new Set());
-  const [installedItems, setInstalledItems] = useState([]);
-  const [importState, setImportState] = useState({
+  const [importedSkills, setImportedSkills] = useState<Set<string>>(new Set());
+  const [installedItems, setInstalledItems] = useState<CatalogItem[]>([]);
+  const [importState, setImportState] = useState<ImportState>({
     podId: '',
     scope: 'pod',
     agentKey: '',
@@ -113,10 +173,10 @@ const SkillsCatalogPage = () => {
     return podAgents.find((agent) => `${agent.name}:${agent.instanceId}` === importState.agentKey);
   }, [podAgents, importState.agentKey]);
 
-  const normalizeSkillKey = (value) => String(value || '').trim().toLowerCase();
+  const normalizeSkillKey = (value: unknown): string => String(value || '').trim().toLowerCase();
 
   const catalogSkillOptions = useMemo(() => {
-    const map = new Map();
+    const map = new Map<string, CatalogItem>();
     catalogItems.forEach((item) => {
       if (!item?.name) return;
       const key = normalizeSkillKey(item.name);
@@ -129,7 +189,7 @@ const SkillsCatalogPage = () => {
 
   const gatewaySkillOptions = useMemo(() => {
     if (selectedPodId && installedItems.length > 0) {
-      const map = new Map();
+      const map = new Map<string, CatalogItem>();
       installedItems.forEach((item) => {
         if (!item?.name) return;
         const key = normalizeSkillKey(item.name);
@@ -142,7 +202,7 @@ const SkillsCatalogPage = () => {
     return catalogSkillOptions;
   }, [selectedPodId, installedItems, catalogSkillOptions]);
 
-  const getCategory = (item) => {
+  const getCategory = (item: CatalogItem): string => {
     if (item?.category) return item.category;
     return 'Other';
   };
@@ -161,22 +221,27 @@ const SkillsCatalogPage = () => {
     if (!groupByCategory) {
       return [{ category: 'All Skills', items: filteredItems }];
     }
-    const groups = new Map();
+    const groups = new Map<string, CatalogItem[]>();
     filteredItems.forEach((item) => {
       const category = getCategory(item);
       if (!groups.has(category)) groups.set(category, []);
-      groups.get(category).push(item);
+      groups.get(category)!.push(item);
     });
     return Array.from(groups.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([category, items]) => ({ category, items }));
   }, [filteredItems, groupByCategory]);
 
-  const fetchCatalog = async () => {
+  const fetchCatalog = async (): Promise<void> => {
     setCatalogLoading(true);
     setCatalogError('');
     try {
-      const response = await axios.get('/api/skills/catalog', {
+      const response = await axios.get<{
+        items?: CatalogItem[];
+        totalPages?: number;
+        total?: number;
+        categories?: string[];
+      }>('/api/skills/catalog', {
         ...getAuthHeaders(),
         params: {
           source: 'awesome',
@@ -191,67 +256,77 @@ const SkillsCatalogPage = () => {
       setCatalogTotalPages(response.data?.totalPages || 1);
       setCatalogTotalItems(response.data?.total || 0);
       setCategories(response.data?.categories || []);
-    } catch (error) {
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } } };
       console.error('Failed to fetch skills catalog:', error);
-      setCatalogError(error.response?.data?.error || 'Failed to load catalog');
+      setCatalogError(axiosErr.response?.data?.error || 'Failed to load catalog');
       setCatalogItems([]);
     } finally {
       setCatalogLoading(false);
     }
   };
 
-  const fetchPods = async () => {
+  const fetchPods = async (): Promise<void> => {
     try {
-      const response = await axios.get('/api/pods', getAuthHeaders());
+      const response = await axios.get<Pod[]>('/api/pods', getAuthHeaders());
       setPods(response.data || []);
     } catch (error) {
       console.error('Failed to fetch pods:', error);
     }
   };
 
-  const fetchPodAgents = async (podId) => {
+  const fetchPodAgents = async (podId: string): Promise<void> => {
     if (!podId) {
       setPodAgents([]);
       return;
     }
     try {
-      const response = await axios.get(`/api/registry/pods/${podId}/agents`, getAuthHeaders());
+      const response = await axios.get<{ agents?: PodAgent[] }>(
+        `/api/registry/pods/${podId}/agents`,
+        getAuthHeaders(),
+      );
       setPodAgents(response.data?.agents || []);
-    } catch (error) {
-      console.warn('Failed to fetch pod agents:', error.response?.status);
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { status?: number } };
+      console.warn('Failed to fetch pod agents:', axiosErr.response?.status);
       setPodAgents([]);
     }
   };
 
-  const fetchImportedSkills = async (podId, scope, agent) => {
+  const fetchImportedSkills = async (
+    podId: string,
+    scope: string,
+    agent: PodAgent | null | undefined,
+  ): Promise<void> => {
     if (!podId) {
       setImportedSkills(new Set());
       return;
     }
     try {
-      const params = { scope };
+      const params: Record<string, string | undefined> = { scope };
       if (scope === 'agent') {
         params.agentName = agent?.name;
         params.instanceId = agent?.instanceId;
       }
-      const response = await axios.get(`/api/skills/pods/${podId}/imported`, {
-        ...getAuthHeaders(),
-        params,
-      });
+      const response = await axios.get<{ items?: CatalogItem[] }>(
+        `/api/skills/pods/${podId}/imported`,
+        { ...getAuthHeaders(), params },
+      );
       const items = response.data?.items || [];
       const names = items
         .map((item) => (item?.name || '').toLowerCase())
         .filter(Boolean);
       setImportedSkills(new Set(names));
       setInstalledItems(items);
-    } catch (error) {
-      console.warn('Failed to fetch imported skills:', error.response?.status);
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { status?: number } };
+      console.warn('Failed to fetch imported skills:', axiosErr.response?.status);
       setImportedSkills(new Set());
       setInstalledItems([]);
     }
   };
 
-  const fetchSkillRequirements = async (sourceUrl) => {
+  const fetchSkillRequirements = async (sourceUrl: string): Promise<void> => {
     if (!sourceUrl) {
       setRequirementsList([]);
       setRequirementsError('');
@@ -260,50 +335,57 @@ const SkillsCatalogPage = () => {
     setRequirementsLoading(true);
     setRequirementsError('');
     try {
-      const response = await axios.get('/api/skills/requirements', {
-        ...getAuthHeaders(),
-        params: { sourceUrl },
-      });
+      const response = await axios.get<{ requirements?: string[] }>(
+        '/api/skills/requirements',
+        { ...getAuthHeaders(), params: { sourceUrl } },
+      );
       const requirements = response.data?.requirements || [];
       setRequirementsList(requirements);
-    } catch (error) {
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } } };
       console.warn('Failed to fetch skill requirements:', error);
-      setRequirementsError(error.response?.data?.error || 'Failed to detect credentials');
+      setRequirementsError(axiosErr.response?.data?.error || 'Failed to detect credentials');
       setRequirementsList([]);
     } finally {
       setRequirementsLoading(false);
     }
   };
 
-  const fetchGatewayCredentials = async () => {
+  const fetchGatewayCredentials = async (): Promise<void> => {
     if (!isGlobalAdmin) return;
     setGatewayLoading(true);
     setGatewayError('');
     try {
-      const gatewaysResponse = await axios.get('/api/gateways', getAuthHeaders());
+      const gatewaysResponse = await axios.get<{ gateways?: Gateway[] }>(
+        '/api/gateways',
+        getAuthHeaders(),
+      );
       const gateways = gatewaysResponse.data?.gateways || [];
       setGatewayList(gateways);
-      const selectedGatewayId = gateways.find((g) => g._id === gatewayId)?._id
-        || gateways[0]?._id
-        || '';
+      const selectedGatewayId =
+        gateways.find((g) => g._id === gatewayId)?._id || gateways[0]?._id || '';
       if (selectedGatewayId && !gatewayId) {
         setGatewayId(selectedGatewayId);
       }
-      const response = await axios.get('/api/skills/gateway-credentials', {
-        ...getAuthHeaders(),
-        params: selectedGatewayId ? { gatewayId: selectedGatewayId } : {},
-      });
+      const response = await axios.get<{ entries?: Record<string, GatewayEntryInfo> }>(
+        '/api/skills/gateway-credentials',
+        {
+          ...getAuthHeaders(),
+          params: selectedGatewayId ? { gatewayId: selectedGatewayId } : {},
+        },
+      );
       setGatewayEntries(response.data?.entries || {});
-    } catch (error) {
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } } };
       console.warn('Failed to load gateway credentials:', error);
-      setGatewayError(error.response?.data?.error || 'Failed to load gateway credentials');
+      setGatewayError(axiosErr.response?.data?.error || 'Failed to load gateway credentials');
       setGatewayEntries({});
     } finally {
       setGatewayLoading(false);
     }
   };
 
-  const fetchGatewayHints = async (skillName) => {
+  const fetchGatewayHints = async (skillName: string): Promise<void> => {
     if (!skillName) return;
     setGatewayHintLoading(true);
     setGatewayHintError('');
@@ -319,23 +401,24 @@ const SkillsCatalogPage = () => {
         setGatewayHintLoading(false);
         return;
       }
-      const response = await axios.get('/api/skills/requirements', {
-        ...getAuthHeaders(),
-        params: { sourceUrl },
-      });
+      const response = await axios.get<{ requirements?: string[]; primaryEnv?: string }>(
+        '/api/skills/requirements',
+        { ...getAuthHeaders(), params: { sourceUrl } },
+      );
       const requirements = response.data?.requirements || [];
       const primaryEnv = response.data?.primaryEnv || '';
       setGatewayPrimaryEnv(primaryEnv);
       setGatewayHintList(requirements.filter((hint) => hint !== primaryEnv));
-    } catch (error) {
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } } };
       console.warn('Failed to load gateway hints:', error);
-      setGatewayHintError(error.response?.data?.error || 'Failed to detect credentials');
+      setGatewayHintError(axiosErr.response?.data?.error || 'Failed to detect credentials');
     } finally {
       setGatewayHintLoading(false);
     }
   };
 
-  const updateGatewayEnvInput = (key, value) => {
+  const updateGatewayEnvInput = (key: string, value: string): void => {
     setGatewayEnvInputs((prev) => ({ ...prev, [key]: value }));
     setGatewayEnvClears((prev) => {
       const next = new Set(prev);
@@ -346,7 +429,7 @@ const SkillsCatalogPage = () => {
     });
   };
 
-  const markGatewayClear = (key) => {
+  const markGatewayClear = (key: string): void => {
     setGatewayEnvClears((prev) => new Set([...prev, key]));
     setGatewayEnvInputs((prev) => {
       const next = { ...prev };
@@ -355,12 +438,12 @@ const SkillsCatalogPage = () => {
     });
   };
 
-  const markGatewayApiKeyClear = () => {
+  const markGatewayApiKeyClear = (): void => {
     setGatewayApiKeyInput('');
     setGatewayApiKeyClear(true);
   };
 
-  const addGatewayCustomEnv = () => {
+  const addGatewayCustomEnv = (): void => {
     const key = gatewayCustomKey.trim();
     if (!key) return;
     updateGatewayEnvInput(key, gatewayCustomValue.trim());
@@ -368,7 +451,7 @@ const SkillsCatalogPage = () => {
     setGatewayCustomValue('');
   };
 
-  const saveGatewayCredentials = async () => {
+  const saveGatewayCredentials = async (): Promise<void> => {
     if (!gatewayId || !gatewaySkillKey) return;
     const trimmedAdvanced = gatewayAdvancedJson.trim();
     if (gatewayAdvancedOpen) {
@@ -376,24 +459,30 @@ const SkillsCatalogPage = () => {
         alert('Advanced JSON is enabled. Provide a JSON entry to save.');
         return;
       }
-      let parsed = null;
+      let parsed: unknown = null;
       try {
         parsed = JSON.parse(trimmedAdvanced);
       } catch (error) {
         alert('Advanced JSON must be valid JSON.');
         return;
       }
-      let entry = null;
-      if (parsed?.skills?.entries && typeof parsed.skills.entries === 'object') {
-        entry = parsed.skills.entries[normalizeSkillKey(gatewaySkillKey)]
-          || parsed.skills.entries[gatewaySkillKey]
-          || null;
-      } else if (parsed?.entries && typeof parsed.entries === 'object') {
-        entry = parsed.entries[normalizeSkillKey(gatewaySkillKey)]
-          || parsed.entries[gatewaySkillKey]
-          || null;
+      const parsedObj = parsed as Record<string, unknown>;
+      let entry: Record<string, unknown> | null = null;
+      if (
+        parsedObj?.skills &&
+        typeof (parsedObj.skills as Record<string, unknown>).entries === 'object'
+      ) {
+        const entries = (parsedObj.skills as Record<string, unknown>).entries as Record<string, unknown>;
+        entry = (entries[normalizeSkillKey(gatewaySkillKey)] ||
+          entries[gatewaySkillKey] ||
+          null) as Record<string, unknown> | null;
+      } else if (parsedObj?.entries && typeof parsedObj.entries === 'object') {
+        const entries = parsedObj.entries as Record<string, unknown>;
+        entry = (entries[normalizeSkillKey(gatewaySkillKey)] ||
+          entries[gatewaySkillKey] ||
+          null) as Record<string, unknown> | null;
       } else {
-        entry = parsed;
+        entry = parsedObj;
       }
       if (!entry || typeof entry !== 'object') {
         alert('Advanced JSON must be an object representing the skill entry.');
@@ -401,28 +490,33 @@ const SkillsCatalogPage = () => {
       }
       setGatewaySaving(true);
       try {
-        await axios.patch('/api/skills/gateway-credentials', {
-          gatewayId,
-          entries: {
-            [gatewaySkillKey]: { __raw: true, ...entry },
+        await axios.patch(
+          '/api/skills/gateway-credentials',
+          {
+            gatewayId,
+            entries: {
+              [gatewaySkillKey]: { __raw: true, ...entry },
+            },
           },
-        }, getAuthHeaders());
+          getAuthHeaders(),
+        );
         await fetchGatewayCredentials();
         setGatewayEnvInputs({});
         setGatewayEnvClears(new Set());
         setGatewayApiKeyInput('');
         setGatewayApiKeyClear(false);
         return;
-      } catch (error) {
+      } catch (error: unknown) {
+        const axiosErr = error as { response?: { data?: { error?: string } } };
         console.error('Failed to save gateway credentials:', error);
-        alert(error.response?.data?.error || 'Failed to save credentials');
+        alert(axiosErr.response?.data?.error || 'Failed to save credentials');
         return;
       } finally {
         setGatewaySaving(false);
       }
     }
 
-    const env = {};
+    const env: Record<string, string> = {};
     Object.entries(gatewayEnvInputs).forEach(([key, value]) => {
       if (value) env[key] = value;
     });
@@ -437,7 +531,7 @@ const SkillsCatalogPage = () => {
     }
     setGatewaySaving(true);
     try {
-      const payloadEntry = {};
+      const payloadEntry: Record<string, unknown> = {};
       const payloadEnv = { ...env };
       if (hasPrimaryEnv) {
         if (gatewayApiKeyInput) payloadEnv[gatewayPrimaryEnv] = gatewayApiKeyInput;
@@ -451,35 +545,38 @@ const SkillsCatalogPage = () => {
       if (shouldSendApiKey) {
         payloadEntry.apiKey = gatewayApiKeyInput ? gatewayApiKeyInput : '';
       }
-      await axios.patch('/api/skills/gateway-credentials', {
-        gatewayId,
-        entries: {
-          [gatewaySkillKey]: payloadEntry,
+      await axios.patch(
+        '/api/skills/gateway-credentials',
+        {
+          gatewayId,
+          entries: { [gatewaySkillKey]: payloadEntry },
         },
-      }, getAuthHeaders());
+        getAuthHeaders(),
+      );
       await fetchGatewayCredentials();
       setGatewayEnvInputs({});
       setGatewayEnvClears(new Set());
       setGatewayApiKeyInput('');
       setGatewayApiKeyClear(false);
-    } catch (error) {
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } } };
       console.error('Failed to save gateway credentials:', error);
-      alert(error.response?.data?.error || 'Failed to save credentials');
+      alert(axiosErr.response?.data?.error || 'Failed to save credentials');
     } finally {
       setGatewaySaving(false);
     }
   };
 
-  const openGatewayDialog = () => {
+  const openGatewayDialog = (): void => {
     setGatewayCreateError('');
     setGatewayDialogOpen(true);
   };
 
-  const closeGatewayDialog = () => {
+  const closeGatewayDialog = (): void => {
     setGatewayDialogOpen(false);
   };
 
-  const handleCreateGateway = async () => {
+  const handleCreateGateway = async (): Promise<void> => {
     if (!gatewayForm.name.trim()) {
       setGatewayCreateError('Name is required.');
       return;
@@ -510,9 +607,10 @@ const SkillsCatalogPage = () => {
         namespace: 'commonly-dev',
         image: '',
       });
-    } catch (error) {
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } } };
       console.error('Failed to create gateway:', error);
-      setGatewayCreateError(error.response?.data?.error || 'Failed to create gateway');
+      setGatewayCreateError(axiosErr.response?.data?.error || 'Failed to create gateway');
     } finally {
       setGatewayCreateLoading(false);
     }
@@ -521,6 +619,7 @@ const SkillsCatalogPage = () => {
   useEffect(() => {
     fetchCatalog();
     fetchPods();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -529,12 +628,14 @@ const SkillsCatalogPage = () => {
 
   useEffect(() => {
     fetchCatalog();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, selectedCategory, sortBy, catalogPage]);
 
   useEffect(() => {
     if (activeTab === 'gateway') {
       fetchGatewayCredentials();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   useEffect(() => {
@@ -542,6 +643,7 @@ const SkillsCatalogPage = () => {
       fetchPodAgents(selectedPodId);
       fetchImportedSkills(selectedPodId, 'pod', null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPodId]);
 
   useEffect(() => {
@@ -555,11 +657,13 @@ const SkillsCatalogPage = () => {
       fetchPodAgents(importState.podId);
       fetchImportedSkills(importState.podId, importState.scope, selectedAgent);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [importState.podId, importState.scope, selectedAgent]);
 
   useEffect(() => {
     if (!importOpen) return;
     fetchSkillRequirements(importState.sourceUrl);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [importOpen, importState.sourceUrl]);
 
   useEffect(() => {
@@ -571,7 +675,7 @@ const SkillsCatalogPage = () => {
   useEffect(() => {
     if (activeTab !== 'gateway') return;
     if (!gatewaySkillKey && gatewaySkillOptions.length > 0) {
-      setGatewaySkillKey(gatewaySkillOptions[0].name);
+      setGatewaySkillKey(gatewaySkillOptions[0].name ?? '');
     }
   }, [activeTab, gatewaySkillKey, gatewaySkillOptions]);
 
@@ -584,15 +688,20 @@ const SkillsCatalogPage = () => {
     setGatewayApiKeyInput('');
     setGatewayApiKeyClear(false);
     setGatewayAdvancedJson('');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, gatewaySkillKey]);
 
   useEffect(() => {
     if (activeTab !== 'gateway') return;
     if (!gatewayId) return;
     fetchGatewayCredentials();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, gatewayId]);
 
-  const openImportDialog = (item) => {
+  const openImportDialog = (item: CatalogItem): void => {
+    const license = item?.license;
+    const licenseStr =
+      typeof license === 'object' ? license?.name || '' : license || '';
     setImportState({
       podId: selectedPodId || '',
       scope: 'pod',
@@ -600,38 +709,38 @@ const SkillsCatalogPage = () => {
       name: item?.name || '',
       tags: (item?.tags || []).join(', '),
       sourceUrl: item?.sourceUrl || '',
-      license: item?.license?.name || item?.license || '',
+      license: licenseStr,
       description: item?.description || '',
     });
     setImportOpen(true);
   };
 
-  const openLicenseDialog = (item) => {
-    const license = item?.license || {};
-    const title = license.name || 'License';
-    const text = license.text || 'No license text available.';
-    const path = license.path || '';
+  const openLicenseDialog = (item: CatalogItem): void => {
+    const license = item?.license;
+    const title = typeof license === 'object' ? license?.name || 'License' : 'License';
+    const text = typeof license === 'object' ? license?.text || 'No license text available.' : 'No license text available.';
+    const path = typeof license === 'object' ? license?.path || '' : '';
     setLicenseState({ title, text, path });
     setLicenseOpen(true);
   };
 
-  const closeLicenseDialog = () => {
+  const closeLicenseDialog = (): void => {
     setLicenseOpen(false);
   };
 
-  const closeImportDialog = () => {
+  const closeImportDialog = (): void => {
     setImportOpen(false);
     setRequirementsList([]);
     setRequirementsError('');
     setRequirementsLoading(false);
   };
 
-  const isImported = (itemName) => {
+  const isImported = (itemName?: string): boolean => {
     if (!itemName) return false;
     return importedSkills.has(itemName.toLowerCase());
   };
 
-  const handleImport = async () => {
+  const handleImport = async (): Promise<void> => {
     const payload = {
       podId: importState.podId,
       name: importState.name,
@@ -657,16 +766,17 @@ const SkillsCatalogPage = () => {
         return next;
       });
       closeImportDialog();
-    } catch (error) {
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } } };
       console.error('Failed to import skill:', error);
-      alert(error.response?.data?.error || 'Failed to import skill');
+      alert(axiosErr.response?.data?.error || 'Failed to import skill');
     }
   };
 
-  const handleUninstall = async (itemName) => {
+  const handleUninstall = async (itemName?: string): Promise<void> => {
     if (!importState.podId || !itemName) return;
     try {
-      const params = {
+      const params: Record<string, string | undefined> = {
         name: itemName,
         scope: importState.scope,
       };
@@ -684,10 +794,17 @@ const SkillsCatalogPage = () => {
         next.delete(String(itemName || '').toLowerCase());
         return next;
       });
-    } catch (error) {
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } } };
       console.error('Failed to uninstall skill:', error);
-      alert(error.response?.data?.error || 'Failed to uninstall skill');
+      alert(axiosErr.response?.data?.error || 'Failed to uninstall skill');
     }
+  };
+
+  const getLicenseLabel = (item: CatalogItem): string => {
+    if (!item.license) return '';
+    if (typeof item.license === 'object') return item.license.name || 'License';
+    return item.license;
   };
 
   return (
@@ -763,7 +880,7 @@ const SkillsCatalogPage = () => {
           }
           label="Group by category"
         />
-        <Tabs value={activeTab} onChange={(event, value) => setActiveTab(value)}>
+        <Tabs value={activeTab} onChange={(_event, value: string) => setActiveTab(value)}>
           <Tab value="catalog" label={`Catalog (${catalogTotalItems})`} />
           <Tab value="installed" label={`Installed (${importedSkills.size})`} />
           {isGlobalAdmin && <Tab value="gateway" label="Gateway Credentials" />}
@@ -780,106 +897,106 @@ const SkillsCatalogPage = () => {
       )}
 
       {activeTab === 'catalog' && (
-      <Stack spacing={3}>
-        {groupedItems.map((group) => (
-          <Box key={group.category}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-              <Typography variant="h6" sx={{ textTransform: 'capitalize' }}>
-                {group.category}
-              </Typography>
-              <Chip size="small" label={`${group.items.length} skills`} />
-            </Stack>
-            <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-              {group.items.map((item) => (
-                <Card key={item.id || item.name}>
-                  <CardContent>
-                    <Typography variant="h6">{item.name}</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      {item.description || 'No description'}
-                    </Typography>
-                    {Number.isFinite(item.stars) && item.stars >= 0 && (
-                      <Chip
-                        size="small"
-                        label={`★ ${item.stars.toLocaleString()}`}
-                        sx={{ mb: 1 }}
-                      />
-                    )}
-                    {item.type && (
-                      <Chip
-                        size="small"
-                        label={item.type === 'plugin' ? 'Plugin' : 'Skill'}
-                        sx={{ mb: 1 }}
-                      />
-                    )}
-                    {item.license && (
-                      <Chip
-                        size="small"
-                        label={`License: ${item.license.name || item.license}`}
-                        onClick={() => openLicenseDialog(item)}
-                        sx={{ mb: 1, cursor: 'pointer' }}
-                      />
-                    )}
-                    {item.tags?.length ? (
-                      <Stack direction="row" spacing={1} flexWrap="wrap">
-                        {item.tags.map((tag) => (
-                          <Chip key={tag} size="small" label={tag} />
-                        ))}
-                      </Stack>
-                    ) : null}
-                  </CardContent>
-                  <Divider />
-                  <CardActions sx={{ justifyContent: 'space-between' }}>
-                    <Button
-                      size="small"
-                      href={item.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      View Source
-                    </Button>
-                    {item.license && (
+        <Stack spacing={3}>
+          {groupedItems.map((group) => (
+            <Box key={group.category}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                <Typography variant="h6" sx={{ textTransform: 'capitalize' }}>
+                  {group.category}
+                </Typography>
+                <Chip size="small" label={`${group.items.length} skills`} />
+              </Stack>
+              <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+                {group.items.map((item) => (
+                  <Card key={item.id || item.name}>
+                    <CardContent>
+                      <Typography variant="h6">{item.name}</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        {item.description || 'No description'}
+                      </Typography>
+                      {Number.isFinite(item.stars) && (item.stars ?? -1) >= 0 && (
+                        <Chip
+                          size="small"
+                          label={`★ ${item.stars!.toLocaleString()}`}
+                          sx={{ mb: 1 }}
+                        />
+                      )}
+                      {item.type && (
+                        <Chip
+                          size="small"
+                          label={item.type === 'plugin' ? 'Plugin' : 'Skill'}
+                          sx={{ mb: 1 }}
+                        />
+                      )}
+                      {item.license && (
+                        <Chip
+                          size="small"
+                          label={`License: ${getLicenseLabel(item)}`}
+                          onClick={() => openLicenseDialog(item)}
+                          sx={{ mb: 1, cursor: 'pointer' }}
+                        />
+                      )}
+                      {item.tags?.length ? (
+                        <Stack direction="row" spacing={1} flexWrap="wrap">
+                          {item.tags.map((tag) => (
+                            <Chip key={tag} size="small" label={tag} />
+                          ))}
+                        </Stack>
+                      ) : null}
+                    </CardContent>
+                    <Divider />
+                    <CardActions sx={{ justifyContent: 'space-between' }}>
                       <Button
                         size="small"
-                        variant="text"
-                        onClick={() => openLicenseDialog(item)}
+                        href={item.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
                       >
-                        View License
+                        View Source
                       </Button>
-                    )}
-                    <Button
-                      size="small"
-                      variant="contained"
-                      disabled={!selectedPodId || item.type === 'plugin' || isImported(item.name)}
-                      onClick={() => openImportDialog(item)}
-                    >
-                      {isImported(item.name) ? 'Imported' : (item.type === 'plugin' ? 'Plugin' : 'Import')}
-                    </Button>
-                  </CardActions>
-                </Card>
-              ))}
+                      {item.license && (
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => openLicenseDialog(item)}
+                        >
+                          View License
+                        </Button>
+                      )}
+                      <Button
+                        size="small"
+                        variant="contained"
+                        disabled={!selectedPodId || item.type === 'plugin' || isImported(item.name)}
+                        onClick={() => openImportDialog(item)}
+                      >
+                        {isImported(item.name) ? 'Imported' : item.type === 'plugin' ? 'Plugin' : 'Import'}
+                      </Button>
+                    </CardActions>
+                  </Card>
+                ))}
+              </Box>
             </Box>
-          </Box>
-        ))}
-        <Stack direction="row" spacing={2} alignItems="center" justifyContent="flex-end">
-          <Button
-            size="small"
-            disabled={catalogPage <= 1}
-            onClick={() => setCatalogPage((prev) => Math.max(1, prev - 1))}
-          >
-            Prev
-          </Button>
-          <Typography variant="body2">
-            Page {catalogPage} of {catalogTotalPages}
-          </Typography>
-          <Button
-            size="small"
-            disabled={catalogPage >= catalogTotalPages}
-            onClick={() => setCatalogPage((prev) => Math.min(catalogTotalPages, prev + 1))}
-          >
-            Next
-          </Button>
+          ))}
+          <Stack direction="row" spacing={2} alignItems="center" justifyContent="flex-end">
+            <Button
+              size="small"
+              disabled={catalogPage <= 1}
+              onClick={() => setCatalogPage((prev) => Math.max(1, prev - 1))}
+            >
+              Prev
+            </Button>
+            <Typography variant="body2">
+              Page {catalogPage} of {catalogTotalPages}
+            </Typography>
+            <Button
+              size="small"
+              disabled={catalogPage >= catalogTotalPages}
+              onClick={() => setCatalogPage((prev) => Math.min(catalogTotalPages, prev + 1))}
+            >
+              Next
+            </Button>
+          </Stack>
         </Stack>
-      </Stack>
       )}
 
       {activeTab === 'installed' && (
@@ -890,36 +1007,33 @@ const SkillsCatalogPage = () => {
           {selectedPodId && importedSkills.size === 0 && (
             <Typography color="text.secondary">No imported skills yet.</Typography>
           )}
-          {selectedPodId && installedItems.map((item) => (
-            <Card key={item.name}>
-              <CardContent>
-                <Typography variant="h6">{item.name}</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  {item.description || 'No description'}
-                </Typography>
-                {item.sourceUrl && (
-                  <Button
-                    size="small"
-                    href={item.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    View Source
+          {selectedPodId &&
+            installedItems.map((item) => (
+              <Card key={item.name}>
+                <CardContent>
+                  <Typography variant="h6">{item.name}</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    {item.description || 'No description'}
+                  </Typography>
+                  {item.sourceUrl && (
+                    <Button
+                      size="small"
+                      href={item.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View Source
+                    </Button>
+                  )}
+                </CardContent>
+                <Divider />
+                <CardActions sx={{ justifyContent: 'flex-end' }}>
+                  <Button size="small" color="error" onClick={() => handleUninstall(item.name)}>
+                    Uninstall
                   </Button>
-                )}
-              </CardContent>
-              <Divider />
-              <CardActions sx={{ justifyContent: 'flex-end' }}>
-                <Button
-                  size="small"
-                  color="error"
-                  onClick={() => handleUninstall(item.name)}
-                >
-                  Uninstall
-                </Button>
-              </CardActions>
-            </Card>
-          ))}
+                </CardActions>
+              </Card>
+            ))}
         </Stack>
       )}
 
@@ -929,15 +1043,15 @@ const SkillsCatalogPage = () => {
             <Typography variant="h6" sx={{ mb: 1 }}>
               Gateway Skill Credentials
             </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                These credentials apply to all agents running on this host gateway. Store only what you intend
-                to share across agents.
-              </Typography>
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-                <Button variant="outlined" onClick={openGatewayDialog}>
-                  Add Gateway
-                </Button>
-              </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              These credentials apply to all agents running on this host gateway. Store only what
+              you intend to share across agents.
+            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+              <Button variant="outlined" onClick={openGatewayDialog}>
+                Add Gateway
+              </Button>
+            </Box>
             {gatewayLoading && <Typography>Loading gateway credentials...</Typography>}
             {gatewayError && <Typography color="error">{gatewayError}</Typography>}
             {!gatewayLoading && (
@@ -952,20 +1066,20 @@ const SkillsCatalogPage = () => {
                   </Typography>
                 )}
                 <FormControl fullWidth>
-                <InputLabel id="gateway-select-label">Gateway</InputLabel>
-                <Select
-                  labelId="gateway-select-label"
-                  label="Gateway"
-                  value={gatewayId}
-                  onChange={(event) => setGatewayId(event.target.value)}
-                >
-                  {gatewayList.map((gateway) => (
-                    <MenuItem key={gateway._id} value={gateway._id}>
-                      {gateway.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+                  <InputLabel id="gateway-select-label">Gateway</InputLabel>
+                  <Select
+                    labelId="gateway-select-label"
+                    label="Gateway"
+                    value={gatewayId}
+                    onChange={(event) => setGatewayId(event.target.value)}
+                  >
+                    {gatewayList.map((gateway) => (
+                      <MenuItem key={gateway._id} value={gateway._id}>
+                        {gateway.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
                 <FormControl fullWidth>
                   <InputLabel id="gateway-skill-label">Skill</InputLabel>
                   <Select
@@ -1026,10 +1140,18 @@ const SkillsCatalogPage = () => {
                         }}
                         sx={{ mt: 1 }}
                       />
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                        This value is saved to `skills.entries.{normalizeSkillKey(gatewaySkillKey)}.{gatewayPrimaryEnv}`.
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: 'block', mt: 1 }}
+                      >
+                        {`This value is saved to \`skills.entries.${normalizeSkillKey(gatewaySkillKey)}.${gatewayPrimaryEnv}\`.`}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: 'block', mt: 0.5 }}
+                      >
                         Use the Advanced JSON option to store keys directly under the skill entry.
                       </Typography>
                       <Box
@@ -1052,21 +1174,24 @@ const SkillsCatalogPage = () => {
                 <Box>
                   <Typography variant="subtitle2">Existing keys</Typography>
                   <Stack spacing={1} sx={{ mt: 1 }}>
-                    {(gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.envKeys || []).length === 0
-                      && !gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.apiKeyPresent && (
-                      <Typography variant="body2" color="text.secondary">
-                        No keys stored for this skill yet.
-                      </Typography>
+                    {(gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.envKeys || []).length ===
+                      0 &&
+                      !gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.apiKeyPresent && (
+                        <Typography variant="body2" color="text.secondary">
+                          No keys stored for this skill yet.
+                        </Typography>
+                      )}
+                    {(gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.envKeys || []).map(
+                      (key) => (
+                        <Box key={key} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                          <Typography variant="body2">{key}</Typography>
+                          <Chip size="small" label="set" />
+                          <Button size="small" onClick={() => markGatewayClear(key)}>
+                            Clear
+                          </Button>
+                        </Box>
+                      ),
                     )}
-                    {(gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.envKeys || []).map((key) => (
-                      <Box key={key} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <Typography variant="body2">{key}</Typography>
-                        <Chip size="small" label="set" />
-                        <Button size="small" onClick={() => markGatewayClear(key)}>
-                          Clear
-                        </Button>
-                      </Box>
-                    ))}
                     {gatewayEntries[normalizeSkillKey(gatewaySkillKey)]?.apiKeyPresent && (
                       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                         <Typography variant="body2">apiKey</Typography>
@@ -1101,12 +1226,12 @@ const SkillsCatalogPage = () => {
                 </Box>
                 <Box>
                   <FormControlLabel
-                    control={(
+                    control={
                       <Switch
                         checked={gatewayAdvancedOpen}
                         onChange={(event) => setGatewayAdvancedOpen(event.target.checked)}
                       />
-                    )}
+                    }
                     label="Advanced JSON entry"
                   />
                   {gatewayAdvancedOpen && (
@@ -1116,12 +1241,16 @@ const SkillsCatalogPage = () => {
                         multiline
                         minRows={4}
                         label="Custom entry JSON"
-                        placeholder={`{\n  \"${gatewayPrimaryEnv || 'TAVILY_API_KEY'}\": \"${gatewayPrimaryEnv ? '...' : '...'}\"\n}`}
+                        placeholder={`{\n  "${gatewayPrimaryEnv || 'TAVILY_API_KEY'}": "${gatewayPrimaryEnv ? '...' : '...'}"\n}`}
                         value={gatewayAdvancedJson}
                         onChange={(event) => setGatewayAdvancedJson(event.target.value)}
                       />
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                        This replaces the fields above and is saved as `skills.entries.{normalizeSkillKey(gatewaySkillKey)}`.
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: 'block', mt: 1 }}
+                      >
+                        {`This replaces the fields above and is saved as \`skills.entries.${normalizeSkillKey(gatewaySkillKey)}\`.`}
                       </Typography>
                     </Box>
                   )}
@@ -1156,7 +1285,9 @@ const SkillsCatalogPage = () => {
               labelId="import-pod-label"
               value={importState.podId}
               label="Pod"
-              onChange={(event) => setImportState((prev) => ({ ...prev, podId: event.target.value }))}
+              onChange={(event) =>
+                setImportState((prev) => ({ ...prev, podId: event.target.value }))
+              }
             >
               {pods.map((pod) => (
                 <MenuItem key={pod._id} value={pod._id}>
@@ -1172,7 +1303,9 @@ const SkillsCatalogPage = () => {
               labelId="scope-label"
               value={importState.scope}
               label="Scope"
-              onChange={(event) => setImportState((prev) => ({ ...prev, scope: event.target.value }))}
+              onChange={(event) =>
+                setImportState((prev) => ({ ...prev, scope: event.target.value }))
+              }
             >
               <MenuItem value="pod">Pod</MenuItem>
               <MenuItem value="agent">Agent</MenuItem>
@@ -1186,7 +1319,9 @@ const SkillsCatalogPage = () => {
                 labelId="agent-label"
                 value={importState.agentKey}
                 label="Agent Instance"
-                onChange={(event) => setImportState((prev) => ({ ...prev, agentKey: event.target.value }))}
+                onChange={(event) =>
+                  setImportState((prev) => ({ ...prev, agentKey: event.target.value }))
+                }
               >
                 {podAgents.map((agent) => (
                   <MenuItem
@@ -1203,25 +1338,33 @@ const SkillsCatalogPage = () => {
           <TextField
             label="Skill Name"
             value={importState.name}
-            onChange={(event) => setImportState((prev) => ({ ...prev, name: event.target.value }))}
+            onChange={(event) =>
+              setImportState((prev) => ({ ...prev, name: event.target.value }))
+            }
             fullWidth
           />
           <TextField
             label="Description"
             value={importState.description}
-            onChange={(event) => setImportState((prev) => ({ ...prev, description: event.target.value }))}
+            onChange={(event) =>
+              setImportState((prev) => ({ ...prev, description: event.target.value }))
+            }
             fullWidth
           />
           <TextField
             label="Tags (comma separated)"
             value={importState.tags}
-            onChange={(event) => setImportState((prev) => ({ ...prev, tags: event.target.value }))}
+            onChange={(event) =>
+              setImportState((prev) => ({ ...prev, tags: event.target.value }))
+            }
             fullWidth
           />
           <TextField
             label="Source URL"
             value={importState.sourceUrl}
-            onChange={(event) => setImportState((prev) => ({ ...prev, sourceUrl: event.target.value }))}
+            onChange={(event) =>
+              setImportState((prev) => ({ ...prev, sourceUrl: event.target.value }))
+            }
             fullWidth
           />
           <Box>
@@ -1252,9 +1395,15 @@ const SkillsCatalogPage = () => {
           <TextField
             label="License"
             value={importState.license}
-            onChange={(event) => setImportState((prev) => ({ ...prev, license: event.target.value }))}
+            onChange={(event) =>
+              setImportState((prev) => ({ ...prev, license: event.target.value }))
+            }
             fullWidth
-            helperText={importState.license ? 'License info from the catalog (editable).' : 'No license info available.'}
+            helperText={
+              importState.license
+                ? 'License info from the catalog (editable).'
+                : 'No license info available.'
+            }
           />
         </DialogContent>
         <DialogActions>
@@ -1262,11 +1411,7 @@ const SkillsCatalogPage = () => {
           <Button
             variant="contained"
             onClick={handleImport}
-            disabled={
-              !importState.podId
-              || !importState.name
-              || !importState.sourceUrl
-            }
+            disabled={!importState.podId || !importState.name || !importState.sourceUrl}
           >
             Import
           </Button>
@@ -1304,13 +1449,17 @@ const SkillsCatalogPage = () => {
           <TextField
             label="Name"
             value={gatewayForm.name}
-            onChange={(event) => setGatewayForm((prev) => ({ ...prev, name: event.target.value }))}
+            onChange={(event) =>
+              setGatewayForm((prev) => ({ ...prev, name: event.target.value }))
+            }
             fullWidth
           />
           <TextField
             label="Slug (optional)"
             value={gatewayForm.slug}
-            onChange={(event) => setGatewayForm((prev) => ({ ...prev, slug: event.target.value }))}
+            onChange={(event) =>
+              setGatewayForm((prev) => ({ ...prev, slug: event.target.value }))
+            }
             fullWidth
           />
           <FormControl fullWidth>
@@ -1319,7 +1468,9 @@ const SkillsCatalogPage = () => {
               labelId="gateway-mode-label"
               label="Mode"
               value={gatewayForm.mode}
-              onChange={(event) => setGatewayForm((prev) => ({ ...prev, mode: event.target.value }))}
+              onChange={(event) =>
+                setGatewayForm((prev) => ({ ...prev, mode: event.target.value }))
+              }
             >
               <MenuItem value="local">Local (host-managed)</MenuItem>
               <MenuItem value="remote">Remote</MenuItem>
@@ -1329,31 +1480,43 @@ const SkillsCatalogPage = () => {
           <TextField
             label="Base URL (optional)"
             value={gatewayForm.baseUrl}
-            onChange={(event) => setGatewayForm((prev) => ({ ...prev, baseUrl: event.target.value }))}
+            onChange={(event) =>
+              setGatewayForm((prev) => ({ ...prev, baseUrl: event.target.value }))
+            }
             fullWidth
           />
           <TextField
             label="Config path (local gateway)"
             value={gatewayForm.configPath}
-            onChange={(event) => setGatewayForm((prev) => ({ ...prev, configPath: event.target.value }))}
+            onChange={(event) =>
+              setGatewayForm((prev) => ({ ...prev, configPath: event.target.value }))
+            }
             fullWidth
           />
           <TextField
             label="K8s namespace"
             value={gatewayForm.namespace}
-            onChange={(event) => setGatewayForm((prev) => ({ ...prev, namespace: event.target.value }))}
+            onChange={(event) =>
+              setGatewayForm((prev) => ({ ...prev, namespace: event.target.value }))
+            }
             fullWidth
           />
           <TextField
             label="Gateway image (placeholder)"
             value={gatewayForm.image}
-            onChange={(event) => setGatewayForm((prev) => ({ ...prev, image: event.target.value }))}
+            onChange={(event) =>
+              setGatewayForm((prev) => ({ ...prev, image: event.target.value }))
+            }
             fullWidth
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={closeGatewayDialog}>Cancel</Button>
-          <Button variant="contained" onClick={handleCreateGateway} disabled={gatewayCreateLoading}>
+          <Button
+            variant="contained"
+            onClick={handleCreateGateway}
+            disabled={gatewayCreateLoading}
+          >
             {gatewayCreateLoading ? 'Creating...' : 'Create'}
           </Button>
         </DialogActions>

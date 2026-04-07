@@ -8,31 +8,62 @@ import {
   MenuItem,
   CircularProgress,
   Alert,
-  Chip
+  Chip,
 } from '@mui/material';
 import * as d3 from 'd3';
 import axios from 'axios';
 
-const KeywordCloud = ({ timeRange = '24h' }) => {
-  const [keywordData, setKeywordData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [viewType, setViewType] = useState('cloud');
-  const svgRef = useRef();
+interface KeywordItem {
+  word: string;
+  frequency: number;
+  weight: number;
+  sentiment?: string;
+  context?: string;
+  source?: string;
+}
 
-  const fetchKeywordData = async () => {
+interface KeywordData {
+  keywords: KeywordItem[];
+  totalSummaries: number;
+}
+
+interface WordDatum {
+  text: string;
+  size: number;
+  frequency: number;
+  weight: number;
+  sentiment?: string;
+  context?: string;
+  x?: number;
+  y?: number;
+}
+
+interface KeywordCloudProps {
+  timeRange?: string;
+}
+
+const KeywordCloud: React.FC<KeywordCloudProps> = ({ timeRange = '24h' }) => {
+  const [keywordData, setKeywordData] = useState<KeywordData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [viewType, setViewType] = useState('cloud');
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const fetchKeywordData = async (): Promise<void> => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      
-      const response = await axios.get(`/api/analytics/keywords?timeRange=${timeRange}&maxKeywords=30`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
+
+      const response = await axios.get<KeywordData>(
+        `/api/analytics/keywords?timeRange=${timeRange}&maxKeywords=30`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
       setKeywordData(response.data);
       setError(null);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to fetch keyword data');
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      setError(axiosErr.response?.data?.error || 'Failed to fetch keyword data');
       console.error('Error fetching keyword data:', err);
     } finally {
       setLoading(false);
@@ -41,25 +72,27 @@ const KeywordCloud = ({ timeRange = '24h' }) => {
 
   useEffect(() => {
     fetchKeywordData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeRange]);
 
-  const renderWordCloud = () => {
+  const renderWordCloud = (): void => {
     if (!keywordData?.keywords || keywordData.keywords.length === 0) return;
 
     const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
+    svg.selectAll('*').remove();
 
     const width = 500;
     const height = 300;
-    const margin = { top: 20, right: 20, bottom: 20, left: 20 };
 
-    svg.attr("width", width).attr("height", height);
+    svg.attr('width', width).attr('height', height);
 
-    const words = keywordData.keywords.map(d => ({
+    const words: WordDatum[] = keywordData.keywords.map((d) => ({
       text: d.word,
-      size: Math.max(12, Math.min(40, d.frequency * 2)), // Scale font size by frequency
+      size: Math.max(12, Math.min(40, d.frequency * 2)),
       frequency: d.frequency,
-      weight: d.weight
+      weight: d.weight,
+      sentiment: d.sentiment,
+      context: d.context,
     }));
 
     // Simple word cloud layout - spiral positioning
@@ -68,80 +101,84 @@ const KeywordCloud = ({ timeRange = '24h' }) => {
 
     words.forEach((word, i) => {
       const angle = (i / words.length) * 2 * Math.PI;
-      const radius = Math.min(width, height) / 4 + (i * 5);
-      
+      const radius = Math.min(width, height) / 4 + i * 5;
+
       word.x = centerX + Math.cos(angle) * (radius * 0.3);
       word.y = centerY + Math.sin(angle) * (radius * 0.3);
     });
 
     // Color scale based on frequency
-    const colorScale = d3.scaleOrdinal()
-      .domain(words.map(d => d.frequency))
+    const colorScale = d3
+      .scaleOrdinal<number, string>()
+      .domain(words.map((d) => d.frequency))
       .range(['#1da1f2', '#4caf50', '#ff9800', '#9c27b0', '#f44336', '#607d8b']);
 
-    const g = svg.append("g");
+    const g = svg.append('g');
 
-    const wordElements = g.selectAll("text")
+    const wordElements = g
+      .selectAll<SVGTextElement, WordDatum>('text')
       .data(words)
       .enter()
-      .append("text")
-      .style("font-size", d => `${d.size}px`)
-      .style("font-family", "Arial, sans-serif")
-      .style("font-weight", "bold")
-      .style("fill", d => colorScale(d.frequency))
-      .style("text-anchor", "middle")
-      .style("cursor", "pointer")
-      .attr("x", d => d.x)
-      .attr("y", d => d.y)
-      .text(d => d.text)
-      .on("mouseover", function(event, d) {
-        d3.select(this)
-          .style("opacity", 0.7)
-          .style("transform", "scale(1.1)");
-        
+      .append('text')
+      .style('font-size', (d) => `${d.size}px`)
+      .style('font-family', 'Arial, sans-serif')
+      .style('font-weight', 'bold')
+      .style('fill', (d) => colorScale(d.frequency))
+      .style('text-anchor', 'middle')
+      .style('cursor', 'pointer')
+      .attr('x', (d) => d.x ?? 0)
+      .attr('y', (d) => d.y ?? 0)
+      .text((d) => d.text)
+      .on('mouseover', function (event: MouseEvent, d: WordDatum) {
+        d3.select(this).style('opacity', 0.7).style('transform', 'scale(1.1)');
+
         // Show tooltip
-        const tooltip = d3.select("body").append("div")
-          .attr("class", "tooltip")
-          .style("position", "absolute")
-          .style("background", "rgba(0,0,0,0.8)")
-          .style("color", "white")
-          .style("padding", "8px")
-          .style("border-radius", "4px")
-          .style("font-size", "12px")
-          .style("pointer-events", "none")
-          .style("z-index", "1000")
-          .html(`<strong>${d.text}</strong><br/>Frequency: ${d.frequency}<br/>Weight: ${d.weight.toFixed(3)}${d.sentiment ? `<br/>Sentiment: ${d.sentiment}` : ''}${d.context ? `<br/>Context: ${d.context}` : ''}`);
-        
-        tooltip.style("left", (event.pageX + 10) + "px")
-          .style("top", (event.pageY - 10) + "px");
+        const tooltip = d3
+          .select('body')
+          .append('div')
+          .attr('class', 'tooltip')
+          .style('position', 'absolute')
+          .style('background', 'rgba(0,0,0,0.8)')
+          .style('color', 'white')
+          .style('padding', '8px')
+          .style('border-radius', '4px')
+          .style('font-size', '12px')
+          .style('pointer-events', 'none')
+          .style('z-index', '1000')
+          .html(
+            `<strong>${d.text}</strong><br/>Frequency: ${d.frequency}<br/>Weight: ${d.weight.toFixed(3)}${d.sentiment ? `<br/>Sentiment: ${d.sentiment}` : ''}${d.context ? `<br/>Context: ${d.context}` : ''}`,
+          );
+
+        tooltip
+          .style('left', `${event.pageX + 10}px`)
+          .style('top', `${event.pageY - 10}px`);
       })
-      .on("mouseout", function() {
-        d3.select(this)
-          .style("opacity", 1)
-          .style("transform", "scale(1)");
-        
-        d3.selectAll(".tooltip").remove();
+      .on('mouseout', function () {
+        d3.select(this).style('opacity', 1).style('transform', 'scale(1)');
+
+        d3.selectAll('.tooltip').remove();
       });
 
     // Add animation
     wordElements
-      .style("opacity", 0)
+      .style('opacity', 0)
       .transition()
       .duration(1000)
-      .delay((d, i) => i * 50)
-      .style("opacity", 1);
+      .delay((_d, i) => i * 50)
+      .style('opacity', 1);
   };
 
   useEffect(() => {
     if (viewType === 'cloud' && keywordData?.keywords) {
       renderWordCloud();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keywordData, viewType]);
 
-  const renderChipView = () => {
+  const renderChipView = (): React.ReactNode => {
     if (!keywordData?.keywords) return null;
 
-    const getSentimentColor = (sentiment) => {
+    const getSentimentColor = (sentiment?: string): string => {
       switch (sentiment) {
         case 'positive': return 'success.main';
         case 'negative': return 'error.main';
@@ -160,8 +197,16 @@ const KeywordCloud = ({ timeRange = '24h' }) => {
             variant="outlined"
             sx={{
               fontSize: `${Math.max(0.75, Math.min(1.2, keyword.frequency * 0.05))}rem`,
-              color: keyword.sentiment ? getSentimentColor(keyword.sentiment) : (index % 2 === 0 ? 'primary.main' : 'secondary.main'),
-              borderColor: keyword.sentiment ? getSentimentColor(keyword.sentiment) : (index % 2 === 0 ? 'primary.main' : 'secondary.main')
+              color: keyword.sentiment
+                ? getSentimentColor(keyword.sentiment)
+                : index % 2 === 0
+                  ? 'primary.main'
+                  : 'secondary.main',
+              borderColor: keyword.sentiment
+                ? getSentimentColor(keyword.sentiment)
+                : index % 2 === 0
+                  ? 'primary.main'
+                  : 'secondary.main',
             }}
             title={keyword.context || `Frequency: ${keyword.frequency}`}
           />
@@ -176,7 +221,7 @@ const KeywordCloud = ({ timeRange = '24h' }) => {
         <Typography variant="h6" component="h3">
           ☁️ Keyword Analysis
         </Typography>
-        
+
         <FormControl size="small" sx={{ minWidth: 120 }}>
           <Select
             value={viewType}
@@ -212,12 +257,12 @@ const KeywordCloud = ({ timeRange = '24h' }) => {
               {viewType === 'chips' && renderChipView()}
             </>
           ) : (
-            <Box sx={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              alignItems: 'center', 
+            <Box sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
               height: '100%',
-              color: 'text.secondary'
+              color: 'text.secondary',
             }}>
               <Typography>No keywords found for this time period</Typography>
             </Box>

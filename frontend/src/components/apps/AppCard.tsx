@@ -26,22 +26,49 @@ import {
   Apps as AppsIcon,
   VerifiedUser as VerifiedIcon,
 } from '@mui/icons-material';
+import { SvgIconComponent } from '@mui/icons-material';
 
-const typeIcons = {
+export interface AppCardApp {
+  id?: string;
+  _id?: string;
+  name?: string;
+  displayName?: string;
+  description?: string;
+  type?: string;
+  verified?: boolean;
+  rating?: number;
+  ratingCount?: number;
+  installs?: number;
+  category?: string;
+  scopes?: string[];
+  logo?: string;
+  avatar?: string;
+}
+
+interface AppCardProps {
+  app: AppCardApp;
+  installed?: boolean;
+  onInstall?: (app: AppCardApp) => void;
+  onRemove?: (app: AppCardApp) => void;
+  loading?: boolean;
+  showScopes?: boolean;
+}
+
+const typeIcons: Record<string, SvgIconComponent> = {
   agent: AgentIcon,
   integration: IntegrationIcon,
   webhook: WebhookIcon,
   default: AppsIcon,
 };
 
-const typeColors = {
+const typeColors: Record<string, string> = {
   agent: '#0d9488',
   integration: '#5865F2',
   webhook: '#f59e0b',
   default: '#1d9bf0',
 };
 
-const AppCard = ({
+const AppCard: React.FC<AppCardProps> = ({
   app,
   installed = false,
   onInstall,
@@ -69,7 +96,6 @@ const AppCard = ({
     );
   }
 
-  const id = app.id || app._id || app.name;
   const displayName = app.displayName || app.name || 'Unknown App';
   const appName = app.name || '';
   const description = app.description || '';
