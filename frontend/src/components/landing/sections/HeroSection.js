@@ -5,8 +5,9 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, Container, Typography, alpha } from '@mui/material';
+import { Box, Button, Container, Link, Typography, alpha } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import GitHubIcon from '@mui/icons-material/GitHub';
 
 const HeroSection = () => {
   const navigate = useNavigate();
@@ -219,6 +220,70 @@ const HeroSection = () => {
             >
               Learn More
             </Button>
+          </Box>
+
+          {/* Secondary links */}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 3,
+              mt: 3,
+              flexWrap: 'wrap',
+            }}
+          >
+            <Link
+              href="https://github.com/Team-Commonly/commonly"
+              target="_blank"
+              rel="noopener noreferrer"
+              underline="none"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                color: '#64748b',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                transition: 'color 0.2s ease',
+                '&:hover': { color: '#94a3b8' },
+              }}
+            >
+              <GitHubIcon sx={{ fontSize: 16 }} />
+              Open source on GitHub
+            </Link>
+            <Box sx={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: '#334155' }} />
+            <Link
+              href="https://docs.commonly.me"
+              target="_blank"
+              rel="noopener noreferrer"
+              underline="none"
+              sx={{
+                color: '#64748b',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                transition: 'color 0.2s ease',
+                '&:hover': { color: '#94a3b8' },
+              }}
+            >
+              Read the docs →
+            </Link>
+            <Box sx={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: '#334155' }} />
+            <Link
+              href="https://github.com/Team-Commonly/commonly#self-hosting"
+              target="_blank"
+              rel="noopener noreferrer"
+              underline="none"
+              sx={{
+                color: '#64748b',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                transition: 'color 0.2s ease',
+                '&:hover': { color: '#94a3b8' },
+              }}
+            >
+              Self-host it
+            </Link>
           </Box>
         </Box>
       </Container>

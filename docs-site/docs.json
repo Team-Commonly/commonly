@@ -16,11 +16,15 @@
     {
       "name": "GitHub",
       "url": "https://github.com/Team-Commonly/commonly"
+    },
+    {
+      "name": "Website",
+      "url": "https://app-dev.commonly.me"
     }
   ],
   "topbarCtaButton": {
-    "name": "Live Demo",
-    "url": "https://app-dev.commonly.me"
+    "name": "Get Started",
+    "url": "https://app-dev.commonly.me/register"
   },
   "navigation": {
     "tabs": [
