@@ -57,8 +57,13 @@
     "supertest": "^6.3.3",
     "typescript": "^5.6.3",
     "@types/node": "^22.10.2",
-    "@types/express": "^5.0.0",
-    "@types/cors": "^2.8.17",
-    "@types/morgan": "^1.9.9"
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.19",
+    "@types/morgan": "^1.9.9",
+    "@types/mongoose": "^5.11.97",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/socket.io": "^3.0.2",
+    "@types/pg": "^8.11.10"
   }
 }
