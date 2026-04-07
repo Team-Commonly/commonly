@@ -23,24 +23,30 @@
         "start": "vite",
         "build": "vite build",
         "preview": "vite preview",
-        "test": "react-scripts test",
-        "test:coverage": "react-scripts test --coverage --watchAll=false",
+        "test": "jest --watchAll=false --forceExit",
+        "test:coverage": "jest --coverage --watchAll=false --forceExit",
         "typecheck": "tsc --noEmit",
         "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
         "lint:fix": "eslint src --ext .js,.jsx,.ts,.tsx --fix"
     },
     "devDependencies": {
+        "@babel/core": "^7.24.0",
+        "@babel/preset-env": "^7.24.0",
+        "@babel/preset-react": "^7.24.0",
+        "@babel/preset-typescript": "^7.24.0",
         "@testing-library/jest-dom": "^6.6.3",
         "@testing-library/react": "^16.3.0",
         "@testing-library/user-event": "^14.6.1",
         "@types/react": "^18.2.0",
         "@types/react-dom": "^18.2.0",
         "@vitejs/plugin-react": "^4.3.4",
+        "babel-jest": "^29.7.0",
         "eslint": "^8.56.0",
         "eslint-config-react-app": "^7.0.1",
         "eslint-plugin-react": "^7.33.2",
         "eslint-plugin-react-hooks": "^4.6.0",
-        "react-scripts": "^5.0.1",
+        "jest": "^29.7.0",
+        "jest-environment-jsdom": "^29.7.0",
         "typescript": "^5.6.3",
         "vite": "^5.4.19"
     },
@@ -57,9 +63,21 @@
         ]
     },
     "jest": {
+        "testEnvironment": "jsdom",
+        "setupFilesAfterFramework": [
+            "<rootDir>/src/setupTests.js"
+        ],
+        "transform": {
+            "^.+\\.(js|jsx|ts|tsx)$": "babel-jest"
+        },
         "moduleNameMapper": {
             "^react-markdown$": "<rootDir>/src/__mocks__/react-markdown.js",
-            "^d3$": "<rootDir>/src/__mocks__/d3.js"
-        }
+            "^d3$": "<rootDir>/src/__mocks__/d3.js",
+            "\\.(css|less|scss|sass)$": "<rootDir>/src/__mocks__/fileMock.js",
+            "\\.(jpg|jpeg|png|gif|svg|ttf|woff|woff2)$": "<rootDir>/src/__mocks__/fileMock.js"
+        },
+        "transformIgnorePatterns": [
+            "node_modules/(?!(axios)/)"
+        ]
     }
 }
