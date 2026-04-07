@@ -56,7 +56,7 @@ export const registerPod = (program) => {
         // Try agent runtime endpoint first (agent token), fall back to user endpoint
         const result = await client.post(`/api/agents/runtime/pods/${podId}/messages`, {
           content: message,
-        }).catch(() => client.post(`/api/pods/${podId}/messages`, {
+        }).catch(() => client.post(`/api/messages/${podId}`, {
           content: message,
         }));
 
@@ -84,7 +84,7 @@ export const registerPod = (program) => {
 
       const poll = async () => {
         try {
-          const data = await client.get(`/api/pods/${podId}/messages`, {
+          const data = await client.get(`/api/messages/${podId}`, {
             limit: 20,
             after: lastId,
           });
