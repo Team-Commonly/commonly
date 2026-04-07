@@ -1,9 +1,3 @@
-/**
- * Common Components
- *
- * Reusable components used throughout Commonly.
- */
-
 export { default as AgentIndicator } from './AgentIndicator';
 export {
   AgentBadge,
