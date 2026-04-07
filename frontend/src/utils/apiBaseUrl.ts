@@ -1,4 +1,4 @@
-const getApiBaseUrl = () => {
+const getApiBaseUrl = (): string => {
   if (process.env.REACT_APP_API_URL) {
     if (typeof window !== 'undefined') {
       const envUrl = process.env.REACT_APP_API_URL;
@@ -34,7 +34,7 @@ const getApiBaseUrl = () => {
   return `${protocol}//${hostname}`;
 };
 
-const normalizeUploadUrl = (value) => {
+const normalizeUploadUrl = (value: string | null | undefined): string | null | undefined => {
   if (!value || typeof value !== 'string') return value;
   if (value.startsWith('data:image/')) return value;
 
@@ -63,7 +63,7 @@ const normalizeUploadUrl = (value) => {
         return parsed.toString();
       }
     }
-  } catch (err) {
+  } catch (_err) {
     // Leave as-is when URL parsing fails.
   }
 
