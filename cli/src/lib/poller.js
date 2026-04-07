@@ -41,8 +41,7 @@ export const startPoller = ({
 
         // Acknowledge the event
         try {
-          await client.post('/api/agents/runtime/events/acknowledge', {
-            eventId: event._id,
+          await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
             result,
           });
         } catch (ackErr) {

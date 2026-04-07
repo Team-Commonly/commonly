@@ -308,8 +308,8 @@ describe('poller.js', () => {
     stop();
 
     expect(mockPost).toHaveBeenCalledWith(
-      '/api/agents/runtime/events/acknowledge',
-      expect.objectContaining({ eventId: 'ack-1' }),
+      '/api/agents/runtime/events/ack-1/ack',
+      expect.objectContaining({ result: { outcome: 'acknowledged' } }),
     );
   });
 

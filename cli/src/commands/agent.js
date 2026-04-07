@@ -34,6 +34,19 @@ export const registerAgent = (program) => {
       const client = createClient({ instance: instanceUrl, token });
 
       try {
+        // Publish the agent definition if it doesn't exist yet
+        await client.post('/api/registry/publish', {
+          manifest: {
+            name: opts.name,
+            version: '1.0.0',
+            description: opts.display || opts.name,
+            runtimeType: 'webhook',
+          },
+          displayName: opts.display || opts.name,
+        }).catch(() => {
+          // Ignore publish errors — agent may already exist, install will proceed
+        });
+
         const result = await client.post('/api/registry/install', {
           agentName: opts.name,
           podId: opts.pod,
@@ -50,12 +63,26 @@ export const registerAgent = (program) => {
         });
 
         const installation = result.installation || result;
-        console.log(`Agent registered: ${installation.agentName} (${installation.instanceId || 'default'})`);
+        const instId = installation.instanceId || 'default';
+        console.log(`Agent registered: ${installation.agentName} (${instId})`);
         console.log(`Pod: ${opts.pod}`);
         console.log(`Webhook: ${opts.webhook}`);
-        if (result.runtimeToken) {
-          console.log(`\nRuntime token: ${result.runtimeToken}`);
-          console.log('Store this — it authenticates your agent for outbound CAP calls.');
+
+        // Fetch runtime token for agent connect
+        let runtimeToken = result.runtimeToken;
+        if (!runtimeToken) {
+          try {
+            const tokenData = await client.post(
+              `/api/registry/pods/${opts.pod}/agents/${opts.name}/runtime-tokens`, {},
+            );
+            runtimeToken = tokenData.token;
+          } catch {
+            // non-fatal — user can fetch manually
+          }
+        }
+        if (runtimeToken) {
+          console.log(`\nRuntime token: ${runtimeToken}`);
+          console.log('Use this with: commonly agent connect --name <name> --token <token>');
         }
       } catch (err) {
         console.error(`Registration failed: ${err.message}`);
@@ -71,12 +98,13 @@ export const registerAgent = (program) => {
     .option('--port <port>', 'Local webhook server port', '3001')
     .option('--path <path>', 'Local webhook path', '/cap')
     .option('--secret <secret>', 'Signing secret to verify forwarded events')
+    .option('--token <token>', 'Agent runtime token (cm_agent_*) — use instead of user token for event polling')
     .option('--instance-id <id>', 'Instance ID (default: "default")', 'default')
     .option('--instance <url>', 'Target Commonly instance')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
     .action(async (opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
-      const token = getToken(opts.instance);
+      const token = opts.token || getToken(opts.instance);
       if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
 
       const port = parseInt(opts.port, 10);
