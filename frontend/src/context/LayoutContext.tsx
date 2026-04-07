@@ -1,19 +1,25 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
 
-// Create the context
-const LayoutContext = createContext();
+interface LayoutContextValue {
+  isDashboardCollapsed: boolean;
+  toggleDashboard: () => void;
+}
 
-// Custom hook to use the layout context
-export const useLayout = () => {
-  return useContext(LayoutContext);
+const LayoutContext = createContext<LayoutContextValue | undefined>(undefined);
+
+export const useLayout = (): LayoutContextValue => {
+  const ctx = useContext(LayoutContext);
+  if (!ctx) throw new Error('useLayout must be used within LayoutProvider');
+  return ctx;
 };
 
-// Provider component
-export const LayoutProvider = ({ children }) => {
+interface LayoutProviderProps {
+  children: React.ReactNode;
+}
+
+export const LayoutProvider: React.FC<LayoutProviderProps> = ({ children }) => {
   const [isDashboardCollapsed, setIsDashboardCollapsed] = useState(false);
 
-  // Load initial state from localStorage on mount
   useEffect(() => {
     const savedState = localStorage.getItem('dashboardCollapsed');
     let initialState = savedState === 'true';
@@ -27,7 +33,6 @@ export const LayoutProvider = ({ children }) => {
     }
     setIsDashboardCollapsed(initialState);
 
-    // Apply class to body based on initial state
     if (initialState) {
       document.body.classList.add('dashboard-collapsed');
     } else {
@@ -35,36 +40,22 @@ export const LayoutProvider = ({ children }) => {
     }
   }, []);
 
-  // Toggle dashboard visibility
-  const toggleDashboard = () => {
-    setIsDashboardCollapsed(prev => {
+  const toggleDashboard = (): void => {
+    setIsDashboardCollapsed((prev) => {
       const newState = !prev;
-      localStorage.setItem('dashboardCollapsed', newState);
-
-      // Apply or remove class to/from body element
+      localStorage.setItem('dashboardCollapsed', String(newState));
       if (newState) {
         document.body.classList.add('dashboard-collapsed');
       } else {
         document.body.classList.remove('dashboard-collapsed');
       }
-
       return newState;
     });
   };
 
-  // Value to be provided to consumers
-  const value = {
-    isDashboardCollapsed,
-    toggleDashboard
-  };
-  
   return (
-    <LayoutContext.Provider value={value}>
+    <LayoutContext.Provider value={{ isDashboardCollapsed, toggleDashboard }}>
       {children}
     </LayoutContext.Provider>
   );
 };
-
-LayoutProvider.propTypes = {
-  children: PropTypes.node.isRequired
-}; 
