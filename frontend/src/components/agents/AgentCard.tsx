@@ -33,7 +33,7 @@ import {
 import { normalizeUploadUrl } from '../../utils/apiBaseUrl';
 
 // Agent type colors
-const agentTypeColors = {
+const agentTypeColors: Record<string, string> = {
   personal: '#8b5cf6',
   utility: '#06b6d4',
   analytics: '#ec4899',
@@ -43,7 +43,7 @@ const agentTypeColors = {
 };
 
 // Agent type icons
-const agentTypeIcons = {
+const agentTypeIcons: Record<string, string> = {
   personal: '🤖',
   utility: '🔧',
   analytics: '📊',
@@ -52,9 +52,71 @@ const agentTypeIcons = {
   default: '🤖',
 };
 
-const AgentCard = ({
+interface AgentStats {
+  installs?: number;
+  podsJoined?: number;
+  messagesProcessed?: number;
+}
+
+interface AgentManifest {
+  capabilities?: Array<{ name: string }>;
+}
+
+interface AgentInstallation {
+  instanceId?: string;
+}
+
+interface AgentProfile {
+  instanceId?: string;
+  iconUrl?: string;
+  avatarUrl?: string;
+}
+
+export interface Agent {
+  id?: string;
+  _id?: string;
+  name?: string;
+  displayName?: string;
+  agentName?: string;
+  instanceId?: string;
+  installation?: AgentInstallation;
+  profile?: AgentProfile;
+  description?: string;
+  type?: string;
+  categories?: string[];
+  verified?: boolean;
+  installs?: number;
+  capabilities?: string[];
+  manifest?: AgentManifest;
+  stats?: AgentStats;
+  lastHeartbeatAt?: string | null;
+  iconUrl?: string;
+}
+
+interface AgentCardProps {
+  agent: Agent;
+  variant?: 'default' | 'compact' | 'featured';
+  installed?: boolean;
+  onInstall?: (agent: Agent) => void;
+  onConfigure?: (agent: Agent) => void;
+  onRemove?: (agent: Agent) => void;
+  onMessage?: (agent: Agent) => void;
+  onEdit?: (agent: Agent) => void;
+  onViewProfile?: (agent: Agent) => void;
+  canRemove?: boolean;
+  canConfigure?: boolean;
+  installedActionLabel?: string;
+  canEdit?: boolean;
+  loading?: boolean;
+}
+
+interface AgentCardSkeletonProps {
+  variant: string;
+}
+
+const AgentCard: React.FC<AgentCardProps> = ({
   agent,
-  variant = 'default', // 'default', 'compact', 'featured'
+  variant = 'default',
   installed = false,
   onInstall,
   onConfigure,
@@ -75,7 +137,6 @@ const AgentCard = ({
   }
 
   // Handle both mock data and real API data formats
-  const id = agent.id || agent._id || agent.name;
   const displayName = agent.displayName || agent.name || 'Unknown Agent';
   const agentName = agent.agentName || agent.name || '';
   const instanceId = agent.instanceId || agent.installation?.instanceId || agent.profile?.instanceId || '';
@@ -83,12 +144,12 @@ const AgentCard = ({
   const type = agent.type || (agent.categories && agent.categories[0]) || 'default';
   const verified = agent.verified || false;
   const installs = agent.installs || agent.stats?.installs || 0;
-  const capabilities = agent.capabilities || agent.manifest?.capabilities?.map(c => c.name) || [];
+  const capabilities = agent.capabilities || agent.manifest?.capabilities?.map((c) => c.name) || [];
   const stats = agent.stats || {};
   const lastHeartbeatAt = agent.lastHeartbeatAt || null;
   const iconUrl = agent.iconUrl || agent.profile?.iconUrl || agent.profile?.avatarUrl || null;
 
-  const formatHeartbeat = (ts) => {
+  const formatHeartbeat = (ts: string | null): string | null => {
     if (!ts) return null;
     const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
     if (diff < 60) return `${diff}s ago`;
@@ -245,9 +306,9 @@ const AgentCard = ({
                   </Tooltip>
                 )}
               </Box>
-          <Typography variant="body2" color="text.secondary">
-            @{agentName}{instanceId ? ` • id:${instanceId}` : ''}
-          </Typography>
+              <Typography variant="body2" color="text.secondary">
+                @{agentName}{instanceId ? ` • id:${instanceId}` : ''}
+              </Typography>
             </Box>
           </Box>
 
@@ -525,7 +586,7 @@ const AgentCard = ({
 };
 
 // Loading skeleton
-const AgentCardSkeleton = ({ variant }) => {
+const AgentCardSkeleton: React.FC<AgentCardSkeletonProps> = ({ variant }) => {
   if (variant === 'compact') {
     return (
       <Card

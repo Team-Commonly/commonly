@@ -25,7 +25,54 @@ import axios from '../../utils/axiosConfig';
 
 const DEFAULT_PAGE_SIZE = 5;
 
-const AdminUsers = ({ embedded = false }) => {
+interface User {
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+  verified: boolean;
+}
+
+interface Invitation {
+  id: string;
+  code: string;
+  isActive: boolean;
+  useCount: number;
+  maxUses: number;
+  note?: string;
+  expiresAt?: string;
+}
+
+interface InvitationCode {
+  code: string;
+}
+
+interface WaitlistRequest {
+  id: string;
+  email: string;
+  status: string;
+  name?: string;
+  note?: string;
+  invitationCode?: InvitationCode;
+}
+
+interface InviteForm {
+  code: string;
+  note: string;
+  maxUses: number | string;
+  expiresAt: string;
+}
+
+interface FetchDataOptions {
+  nextInvitationsPage?: number;
+  nextWaitlistPage?: number;
+}
+
+interface AdminUsersProps {
+  embedded?: boolean;
+}
+
+const AdminUsers: React.FC<AdminUsersProps> = ({ embedded = false }) => {
   const [loading, setLoading] = useState(false);
   const [savingRoleId, setSavingRoleId] = useState('');
   const [deletingUserId, setDeletingUserId] = useState('');
@@ -36,9 +83,9 @@ const AdminUsers = ({ embedded = false }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const [users, setUsers] = useState([]);
-  const [invitations, setInvitations] = useState([]);
-  const [waitlistRequests, setWaitlistRequests] = useState([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [waitlistRequests, setWaitlistRequests] = useState<WaitlistRequest[]>([]);
   const [userQuery, setUserQuery] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('all');
   const [invitationsPage, setInvitationsPage] = useState(1);
@@ -46,14 +93,14 @@ const AdminUsers = ({ embedded = false }) => {
   const [waitlistPage, setWaitlistPage] = useState(1);
   const [waitlistTotalPages, setWaitlistTotalPages] = useState(1);
 
-  const [inviteForm, setInviteForm] = useState({
+  const [inviteForm, setInviteForm] = useState<InviteForm>({
     code: '',
     note: '',
     maxUses: 1,
     expiresAt: '',
   });
 
-  const fetchData = async ({ nextInvitationsPage, nextWaitlistPage } = {}) => {
+  const fetchData = async ({ nextInvitationsPage, nextWaitlistPage }: FetchDataOptions = {}): Promise<void> => {
     try {
       setLoading(true);
       setError('');
@@ -80,13 +127,14 @@ const AdminUsers = ({ embedded = false }) => {
         }),
       ]);
 
-      setUsers(usersRes.data?.users || []);
-      setInvitations(invitationsRes.data?.invitations || []);
-      setInvitationsTotalPages(Math.max(1, invitationsRes.data?.totalPages || 1));
-      setWaitlistRequests(waitlistRes.data?.requests || []);
-      setWaitlistTotalPages(Math.max(1, waitlistRes.data?.totalPages || 1));
+      setUsers((usersRes.data as { users?: User[] })?.users || []);
+      setInvitations((invitationsRes.data as { invitations?: Invitation[] })?.invitations || []);
+      setInvitationsTotalPages(Math.max(1, (invitationsRes.data as { totalPages?: number })?.totalPages || 1));
+      setWaitlistRequests((waitlistRes.data as { requests?: WaitlistRequest[] })?.requests || []);
+      setWaitlistTotalPages(Math.max(1, (waitlistRes.data as { totalPages?: number })?.totalPages || 1));
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to load admin users data');
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error || 'Failed to load admin users data');
     } finally {
       setLoading(false);
     }
@@ -96,7 +144,7 @@ const AdminUsers = ({ embedded = false }) => {
     fetchData();
   }, [invitationsPage, waitlistPage]);
 
-  const handleChangeRole = async (userId, role) => {
+  const handleChangeRole = async (userId: string, role: string): Promise<void> => {
     try {
       setSavingRoleId(userId);
       setError('');
@@ -105,13 +153,14 @@ const AdminUsers = ({ embedded = false }) => {
       setSuccess('User role updated.');
       await fetchData();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to update user role');
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error || 'Failed to update user role');
     } finally {
       setSavingRoleId('');
     }
   };
 
-  const handleDeleteUser = async (userToDelete) => {
+  const handleDeleteUser = async (userToDelete: User): Promise<void> => {
     const confirmed = window.confirm(`Delete user "${userToDelete.username}"? This cannot be undone.`);
     if (!confirmed) return;
 
@@ -123,13 +172,14 @@ const AdminUsers = ({ embedded = false }) => {
       setSuccess('User deleted.');
       await fetchData();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to delete user');
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error || 'Failed to delete user');
     } finally {
       setDeletingUserId('');
     }
   };
 
-  const handleCreateInvitation = async (e) => {
+  const handleCreateInvitation = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     try {
       setSavingInvite(true);
@@ -151,13 +201,14 @@ const AdminUsers = ({ embedded = false }) => {
       setInvitationsPage(1);
       await fetchData({ nextInvitationsPage: 1 });
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create invitation code');
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error || 'Failed to create invitation code');
     } finally {
       setSavingInvite(false);
     }
   };
 
-  const handleRevokeInvitation = async (invitationId) => {
+  const handleRevokeInvitation = async (invitationId: string): Promise<void> => {
     try {
       setRevokingInviteId(invitationId);
       setError('');
@@ -166,13 +217,14 @@ const AdminUsers = ({ embedded = false }) => {
       setSuccess('Invitation code revoked.');
       await fetchData();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to revoke invitation code');
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error || 'Failed to revoke invitation code');
     } finally {
       setRevokingInviteId('');
     }
   };
 
-  const handleSendWaitlistInvite = async (requestId) => {
+  const handleSendWaitlistInvite = async (requestId: string): Promise<void> => {
     try {
       setSendingWaitlistId(requestId);
       setError('');
@@ -183,13 +235,14 @@ const AdminUsers = ({ embedded = false }) => {
       setSuccess('Invitation code generated and emailed to waitlist requester.');
       await fetchData();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to send invitation email');
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error || 'Failed to send invitation email');
     } finally {
       setSendingWaitlistId('');
     }
   };
 
-  const handleUpdateWaitlistStatus = async (requestId, status) => {
+  const handleUpdateWaitlistStatus = async (requestId: string, status: string): Promise<void> => {
     try {
       setUpdatingWaitlistId(requestId);
       setError('');
@@ -198,7 +251,8 @@ const AdminUsers = ({ embedded = false }) => {
       setSuccess('Waitlist request updated.');
       await fetchData();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to update waitlist request');
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error || 'Failed to update waitlist request');
     } finally {
       setUpdatingWaitlistId('');
     }
@@ -244,7 +298,7 @@ const AdminUsers = ({ embedded = false }) => {
                   <MenuItem value="admin">Admins</MenuItem>
                   <MenuItem value="user">Users</MenuItem>
                 </TextField>
-                <Button variant="outlined" onClick={fetchData}>
+                <Button variant="outlined" onClick={() => fetchData()}>
                   Refresh
                 </Button>
               </Stack>
@@ -412,7 +466,7 @@ const AdminUsers = ({ embedded = false }) => {
                 <Pagination
                   page={waitlistPage}
                   count={waitlistTotalPages}
-                  onChange={(_event, page) => setWaitlistPage(page)}
+                  onChange={(_event: React.ChangeEvent<unknown>, page: number) => setWaitlistPage(page)}
                   size="small"
                 />
               </Box>
@@ -525,7 +579,7 @@ const AdminUsers = ({ embedded = false }) => {
                 <Pagination
                   page={invitationsPage}
                   count={invitationsTotalPages}
-                  onChange={(_event, page) => setInvitationsPage(page)}
+                  onChange={(_event: React.ChangeEvent<unknown>, page: number) => setInvitationsPage(page)}
                   size="small"
                 />
               </Box>
