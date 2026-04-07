@@ -1,0 +1,316 @@
+// eslint-disable-next-line global-require
+const PodAsset = require('../models/PodAsset');
+// eslint-disable-next-line global-require
+const PodAssetService = require('./podAssetService');
+// eslint-disable-next-line global-require
+const PodContextService = require('./podContextService');
+
+const MAX_LIMIT = 40;
+const DEFAULT_LIMIT = 8;
+const MAX_EXCERPT_LINES = 100;
+const DEFAULT_EXCERPT_LINES = 12;
+const MAX_SNIPPET_CHARS = 320;
+const MAX_EXCERPT_CHARS = 2000;
+
+interface CodedError extends Error {
+  code: string;
+  status: number;
+}
+
+interface AssetDoc {
+  _id: unknown;
+  title?: string;
+  type?: string;
+  tags?: string[];
+  content?: string;
+  score?: number;
+  sourceType?: string | null;
+  sourceRef?: Record<string, unknown>;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+interface SearchOptions {
+  podId: string;
+  userId: string;
+  agentContext?: unknown;
+  query: string;
+  limit?: number;
+  includeSkills?: boolean;
+  types?: string[];
+}
+
+interface SearchResult {
+  assetId: string;
+  title?: string;
+  type?: string;
+  tags: string[];
+  score: number;
+  snippet: string;
+  sourceType: string | null;
+  sourceRef: Record<string, unknown>;
+  createdAt: unknown;
+  updatedAt: unknown;
+}
+
+interface SearchResponse {
+  query: string;
+  usedTextSearch: boolean;
+  results: SearchResult[];
+}
+
+interface ExcerptOptions {
+  podId: string;
+  userId: string;
+  agentContext?: unknown;
+  assetId: string;
+  from?: number;
+  lines?: number;
+}
+
+interface ExcerptResult {
+  assetId: string;
+  title?: string;
+  type?: string;
+  tags: string[];
+  sourceType: string | null;
+  sourceRef: Record<string, unknown>;
+  createdAt: unknown;
+  updatedAt: unknown;
+  text: string;
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+}
+
+interface SnippetOptions {
+  content: string;
+  query: string;
+  maxChars?: number;
+}
+
+interface ExcerptParts {
+  text: string;
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+}
+
+function buildError(code: string, message: string, status: number): CodedError {
+  const error = new Error(message) as CodedError;
+  error.code = code;
+  error.status = status;
+  return error;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function escapeRegex(input: string): string {
+  return String(input || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeText(value: string): string {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function buildSnippet({ content, query, maxChars = MAX_SNIPPET_CHARS }: SnippetOptions): string {
+  const normalized = normalizeText(content);
+  if (!normalized) return '';
+  const needle = String(query || '').trim().toLowerCase();
+  if (!needle) return normalized.slice(0, maxChars);
+  const haystack = normalized.toLowerCase();
+  const index = haystack.indexOf(needle);
+  if (index === -1) {
+    return normalized.slice(0, maxChars);
+  }
+  const half = Math.floor(maxChars / 2);
+  const start = Math.max(0, index - half);
+  const end = Math.min(normalized.length, start + maxChars);
+  let snippet = normalized.slice(start, end).trim();
+  if (start > 0) snippet = `…${snippet}`;
+  if (end < normalized.length) snippet = `${snippet}…`;
+  return snippet;
+}
+
+function buildExcerpt(content: string, from: number, lines: number): ExcerptParts {
+  const text = String(content || '');
+  if (!text) {
+    return {
+      text: '',
+      startLine: 0,
+      endLine: 0,
+      totalLines: 0,
+    };
+  }
+  const rows = text.split(/\r?\n/);
+  const totalLines = rows.length;
+  const safeFrom = clamp(from, 1, totalLines);
+  const safeLines = clamp(lines, 1, MAX_EXCERPT_LINES);
+  const startIndex = safeFrom - 1;
+  const endIndex = Math.min(totalLines, startIndex + safeLines);
+  let excerpt = rows.slice(startIndex, endIndex).join('\n');
+  if (excerpt.length > MAX_EXCERPT_CHARS) {
+    excerpt = `${excerpt.slice(0, MAX_EXCERPT_CHARS - 1)}…`;
+  }
+  return {
+    text: excerpt,
+    startLine: safeFrom,
+    endLine: endIndex,
+    totalLines,
+  };
+}
+
+function computeFallbackScore(asset: AssetDoc, tokens: string[]): number {
+  if (!tokens.length) return 0;
+  const title = String(asset.title || '').toLowerCase();
+  const content = String(asset.content || '').toLowerCase();
+  const tags = (asset.tags || []).map((tag) => String(tag).toLowerCase());
+  let score = 0;
+  tokens.forEach((token) => {
+    if (tags.includes(token)) score += 4;
+    if (title.includes(token)) score += 3;
+    if (content.includes(token)) score += 1;
+  });
+  return score;
+}
+
+class PodMemorySearchService {
+  static async searchPodMemory({
+    podId,
+    userId,
+    agentContext = null,
+    query,
+    limit = DEFAULT_LIMIT,
+    includeSkills = false,
+    types = [],
+  }: SearchOptions): Promise<SearchResponse> {
+    await PodContextService.loadPodForMember({ podId, userId });
+
+    const cleanedQuery = String(query || '').trim();
+    if (!cleanedQuery) {
+      throw buildError('QUERY_REQUIRED', 'Query is required', 400);
+    }
+
+    const safeLimit = clamp(Number(limit) || DEFAULT_LIMIT, 1, MAX_LIMIT);
+    const filter = PodAssetService.applyVisibilityFilter(
+      {
+        podId,
+        status: 'active',
+      },
+      PodAssetService.buildAgentScopeFilter(agentContext),
+    );
+
+    if (Array.isArray(types) && types.length) {
+      filter.type = { $in: types };
+    } else if (!includeSkills) {
+      filter.type = { $ne: 'skill' };
+    }
+
+    let assets: AssetDoc[] = [];
+    let usedTextSearch = true;
+
+    try {
+      assets = await PodAsset.find(
+        { ...filter, $text: { $search: cleanedQuery } },
+        { score: { $meta: 'textScore' } },
+      )
+        .sort({ score: { $meta: 'textScore' }, updatedAt: -1 })
+        .limit(safeLimit)
+        .lean();
+    } catch {
+      usedTextSearch = false;
+    }
+
+    if (!usedTextSearch) {
+      const tokens: string[] = PodAssetService.extractKeywords(cleanedQuery, { limit: 8 });
+      const pattern = tokens.length
+        ? tokens.map(escapeRegex).join('|')
+        : escapeRegex(cleanedQuery);
+      const regex = new RegExp(pattern, 'i');
+      assets = await PodAsset.find({
+        ...filter,
+        $or: [
+          { title: regex },
+          { content: regex },
+          { tags: regex },
+        ],
+      })
+        .sort({ updatedAt: -1 })
+        .limit(safeLimit)
+        .lean();
+      assets = assets.map((asset: AssetDoc) => ({
+        ...asset,
+        score: computeFallbackScore(asset, tokens),
+      }))
+        .sort((a: AssetDoc, b: AssetDoc) => {
+          if ((b.score || 0) !== (a.score || 0)) {
+            return (b.score || 0) - (a.score || 0);
+          }
+          return new Date(b.updatedAt as string || 0).getTime() - new Date(a.updatedAt as string || 0).getTime();
+        })
+        .slice(0, safeLimit);
+    }
+
+    const results: SearchResult[] = assets.map((asset) => ({
+      assetId: (asset._id as { toString?: () => string })?.toString?.() || String(asset._id),
+      title: asset.title,
+      type: asset.type,
+      tags: asset.tags || [],
+      score: Number(asset.score || 0),
+      snippet: buildSnippet({ content: asset.content || asset.title || '', query: cleanedQuery }),
+      sourceType: asset.sourceType || null,
+      sourceRef: asset.sourceRef || {},
+      createdAt: asset.createdAt || null,
+      updatedAt: asset.updatedAt || null,
+    }));
+
+    return {
+      query: cleanedQuery,
+      usedTextSearch,
+      results,
+    };
+  }
+
+  static async getAssetExcerpt({
+    podId,
+    userId,
+    agentContext = null,
+    assetId,
+    from = 1,
+    lines = DEFAULT_EXCERPT_LINES,
+  }: ExcerptOptions): Promise<ExcerptResult> {
+    await PodContextService.loadPodForMember({ podId, userId });
+
+    const assetQuery = PodAssetService.applyVisibilityFilter(
+      {
+        _id: assetId,
+        podId,
+        status: 'active',
+      },
+      PodAssetService.buildAgentScopeFilter(agentContext),
+    );
+    const asset: AssetDoc | null = await PodAsset.findOne(assetQuery).lean();
+
+    if (!asset) {
+      throw buildError('ASSET_NOT_FOUND', 'Asset not found', 404);
+    }
+
+    const excerpt = buildExcerpt(asset.content || '', Number(from) || 1, Number(lines) || DEFAULT_EXCERPT_LINES);
+
+    return {
+      assetId: (asset._id as { toString?: () => string })?.toString?.() || String(asset._id),
+      title: asset.title,
+      type: asset.type,
+      tags: asset.tags || [],
+      sourceType: asset.sourceType || null,
+      sourceRef: asset.sourceRef || {},
+      createdAt: asset.createdAt || null,
+      updatedAt: asset.updatedAt || null,
+      ...excerpt,
+    };
+  }
+}
+
+export default PodMemorySearchService;
