@@ -114,7 +114,11 @@ exports.searchPosts = async (req, res) => {
 
 exports.getPosts = async (req, res) => {
   try {
-    const { podId, category } = req.query;
+    const { podId, category, sort = 'recent', page = 1, limit = 20 } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
     const filter = {};
     if (podId) {
       if (podId === 'global' || podId === 'none') {
@@ -127,13 +131,40 @@ exports.getPosts = async (req, res) => {
       filter.category = category;
     }
 
-    const posts = await Post.find(filter)
+    const populate = (q) => q
       .populate('userId', 'username profilePicture isBot botMetadata')
       .populate('comments.userId', 'username profilePicture isBot botMetadata')
       .populate('podId', 'name type')
-      .populate('likedBy', '_id')
-      .sort({ createdAt: -1 });
-    res.json(posts);
+      .populate('likedBy', '_id');
+
+    let posts;
+    if (sort === 'hot') {
+      // Score = likeCount / (ageHours + 2)^1.5 — time-decayed popularity
+      const scoredIds = await Post.aggregate([
+        { $match: filter },
+        { $addFields: {
+          likeCount: { $size: { $ifNull: ['$likedBy', []] } },
+          ageHours: { $divide: [{ $subtract: [new Date(), '$createdAt'] }, 3600000] },
+        } },
+        { $addFields: {
+          heatScore: { $divide: ['$likeCount', { $pow: [{ $add: ['$ageHours', 2] }, 1.5] }] },
+        } },
+        { $sort: { heatScore: -1, createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limitNum },
+        { $project: { _id: 1 } },
+      ]);
+      const idList = scoredIds.map((d) => d._id);
+      const byId = {};
+      const docs = await populate(Post.find({ _id: { $in: idList } }));
+      docs.forEach((d) => { byId[d._id.toString()] = d; });
+      posts = idList.map((id) => byId[id.toString()]).filter(Boolean);
+    } else {
+      posts = await populate(Post.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum));
+    }
+
+    const total = await Post.countDocuments(filter);
+    res.json({ posts, hasMore: skip + posts.length < total, total, page: pageNum });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
