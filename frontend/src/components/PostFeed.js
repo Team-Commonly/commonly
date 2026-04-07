@@ -891,17 +891,23 @@ const PostFeed = () => {
                 filteredPosts.map((post, _idx, arr) => {
                     const author = getPostAuthor(post);
                     const postContent = typeof post?.content === 'string' ? post.content : '';
-                    const likeCount = post.likedBy?.length || post.likes || 0;
-                    const ageHours = (Date.now() - new Date(post.createdAt).getTime()) / 3600000;
-                    const heatScore = likeCount / Math.pow(ageHours + 2, 1.5);
+
+                    const computeScore = (p) => {
+                        const lc = p.likedBy?.length || p.likes || 0;
+                        const cc = p.comments?.length || 0;
+                        const lastReply = p.comments?.length
+                            ? Math.max(...p.comments.map((c) => new Date(c.createdAt).getTime()), new Date(p.createdAt).getTime())
+                            : new Date(p.createdAt).getTime();
+                        const ah = (Date.now() - lastReply) / 3600000;
+                        return (lc + cc * 3) / Math.pow(ah + 2, 1.2);
+                    };
+
+                    const heatScore = computeScore(post);
                     const maxHeat = sortMode === 'hot'
-                        ? Math.max(...arr.map((p) => {
-                            const lc = p.likedBy?.length || p.likes || 0;
-                            const ah = (Date.now() - new Date(p.createdAt).getTime()) / 3600000;
-                            return lc / Math.pow(ah + 2, 1.5);
-                        }), 0.001)
+                        ? Math.max(...arr.map(computeScore), 0.001)
                         : 1;
                     const heatLevel = Math.min(heatScore / maxHeat, 1);
+                    const likeCount = post.likedBy?.length || post.likes || 0;
                     const hotBorderColor = heatLevel > 0.66 ? '#ef4444' : heatLevel > 0.33 ? '#f97316' : '#3b82f6';
                     return (
                     <Paper
@@ -1050,7 +1056,7 @@ const PostFeed = () => {
                                 )}
                                 
                                 <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }} className="post-actions">
-                                    <Box 
+                                    <Box
                                         sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
                                         className={`action-button like-button ${likedPosts[post._id] ? 'active' : ''}`}
                                         onClick={(e) => {
@@ -1058,8 +1064,8 @@ const PostFeed = () => {
                                             handleLike(post._id);
                                         }}
                                     >
-                                        <IconButton 
-                                            size="small" 
+                                        <IconButton
+                                            size="small"
                                             color="inherit"
                                         >
                                             {likedPosts[post._id] ? <Favorite /> : <FavoriteBorder />}
@@ -1068,7 +1074,7 @@ const PostFeed = () => {
                                             {post.likes || 0}
                                         </Typography>
                                     </Box>
-                                    <Box 
+                                    <Box
                                         sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
                                         className="action-button"
                                         onClick={(e) => {
@@ -1076,7 +1082,7 @@ const PostFeed = () => {
                                             navigate(`/thread/${post._id}`);
                                         }}
                                     >
-                                        <IconButton 
+                                        <IconButton
                                             size="small"
                                             color="inherit"
                                         >
@@ -1086,19 +1092,30 @@ const PostFeed = () => {
                                             {post.comments ? post.comments.length : 0}
                                         </Typography>
                                     </Box>
+                                    {sortMode === 'hot' && (
+                                        <Box
+                                            sx={{ display: 'flex', alignItems: 'flex-end', gap: '3px', ml: 'auto', pr: 0.5 }}
+                                            title={`Activity: ${heatLevel > 0.66 ? 'High' : heatLevel > 0.33 ? 'Medium' : heatLevel > 0 ? 'Low' : 'None'}`}
+                                        >
+                                            {[0, 1, 2].map((i) => (
+                                                <Box
+                                                    key={i}
+                                                    sx={{
+                                                        width: 4,
+                                                        height: 7 + i * 5,
+                                                        borderRadius: '2px',
+                                                        backgroundColor: heatLevel > i * 0.33
+                                                            ? hotBorderColor
+                                                            : 'action.disabledBackground',
+                                                        transition: 'background-color 0.3s',
+                                                    }}
+                                                />
+                                            ))}
+                                        </Box>
+                                    )}
                                 </Box>
                             </Box>
                         </Box>
-                        {sortMode === 'hot' && heatLevel > 0 && (
-                            <Box sx={{ mt: 1.5, mx: -2, mb: -2, height: 2, backgroundColor: 'action.hover' }}>
-                                <Box sx={{
-                                    height: '100%',
-                                    width: `${Math.max(heatLevel * 100, 4)}%`,
-                                    backgroundColor: hotBorderColor,
-                                    transition: 'width 0.4s ease',
-                                }} />
-                            </Box>
-                        )}
                     </Paper>
                     );
                 })

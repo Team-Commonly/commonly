@@ -293,6 +293,33 @@ async generateAllDailyDigests() {
 }
 ```
 
+## 🐛 **Known Fixes**
+
+### Empty Digest Persistence (fixed 2026-04-06)
+
+When a user had no pod activity in the last 24 hours, `generateUserDailyDigest` returned a plain
+object from `createEmptyDigest()` without saving it to MongoDB. The `GET /daily-digest` endpoint
+then returned 404 for those users on quiet days.
+
+**Fix**: the empty-activity branch now calls `Summary.create()` so an "empty" digest record is
+always persisted:
+
+```javascript
+if (summaries.length === 0) {
+  const emptyData = DailyDigestService.createEmptyDigest(user, startTime, endTime);
+  return Summary.create({
+    type: 'daily-digest',
+    title: emptyData.title,
+    content: emptyData.content,
+    timeRange: { start: startTime, end: endTime },
+    metadata: { totalItems: 0, topTags: [], topUsers: [], subscribedPods: podIds.length, userId: userId.toString() },
+    analytics: emptyData.analytics,
+  });
+}
+```
+
+---
+
 ## 🎯 **API Endpoints**
 
 ### **User Digest Management**
