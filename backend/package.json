@@ -54,6 +54,11 @@
     "nodemon": "^2.0.22",
     "pg-mem": "^2.7.2",
     "socket.io-client": "^4.7.2",
-    "supertest": "^6.3.3"
+    "supertest": "^6.3.3",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.10.2",
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/morgan": "^1.9.9"
   }
 }
