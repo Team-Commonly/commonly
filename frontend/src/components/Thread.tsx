@@ -14,7 +14,7 @@ import FavoriteIcon from '@mui/icons-material/Favorite';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import EmojiPicker, { EmojiStyle } from 'emoji-picker-react';
+import EmojiPicker from 'emoji-picker-react';
 import { AgentAvatar } from './common/AgentIndicator';
 import MarkdownContent from './common/MarkdownContent';
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
@@ -832,7 +832,8 @@ const Thread = () => {
                             onEmojiClick={onEmojiClick}
                             width={320}
                             height={380}
-                            emojiStyle={EmojiStyle.NATIVE}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            emojiStyle={"native" as any}
                             searchDisabled={false}
                             skinTonesDisabled={true}
                             previewConfig={{ showPreview: false }}
