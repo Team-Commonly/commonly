@@ -13,7 +13,7 @@ import {
 import axios from '../utils/axiosConfig';
 import commonlyLogo from '../assets/commonly-logo.png';
 
-const RegistrationInviteRequired = () => {
+const RegistrationInviteRequired: React.FC = () => {
   const navigate = useNavigate();
   const [invitationCode, setInvitationCode] = useState('');
   const [waitlistEmail, setWaitlistEmail] = useState('');
@@ -23,20 +23,20 @@ const RegistrationInviteRequired = () => {
   const [waitlistError, setWaitlistError] = useState('');
   const [waitlistSuccess, setWaitlistSuccess] = useState('');
 
-  const onContinue = (e) => {
+  const onContinue = (e: React.FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     const trimmed = invitationCode.trim();
     if (!trimmed) return;
     navigate(`/register?invite=${encodeURIComponent(trimmed)}`);
   };
 
-  const onWaitlistSubmit = async (e) => {
+  const onWaitlistSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setWaitlistError('');
     setWaitlistSuccess('');
     try {
       setWaitlistLoading(true);
-      const res = await axios.post('/api/auth/waitlist', {
+      const res = await axios.post<{ message?: string }>('/api/auth/waitlist', {
         email: waitlistEmail,
         name: waitlistName,
         note: waitlistNote,
@@ -44,8 +44,9 @@ const RegistrationInviteRequired = () => {
       setWaitlistSuccess(res.data?.message || 'Waitlist request submitted.');
       setWaitlistName('');
       setWaitlistNote('');
-    } catch (err) {
-      setWaitlistError(err.response?.data?.error || 'Failed to submit waitlist request');
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } } };
+      setWaitlistError(e.response?.data?.error || 'Failed to submit waitlist request');
     } finally {
       setWaitlistLoading(false);
     }
@@ -163,7 +164,8 @@ const RegistrationInviteRequired = () => {
             </Box>
           </Box>
           <Typography variant="body2" sx={{ mt: 2.5, color: 'rgba(226, 232, 240, 0.85)' }}>
-            Already have an account? <Link to="/login" style={{ color: '#93c5fd' }}>Login here</Link>
+            Already have an account?{' '}
+            <Link to="/login" style={{ color: '#93c5fd' }}>Login here</Link>
           </Typography>
         </Paper>
       </Container>
