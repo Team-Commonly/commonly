@@ -12,7 +12,16 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import commonlyLogo from '../../assets/commonly-logo.png';
 
-const USE_CASES = {
+interface UseCase {
+  eyebrow: string;
+  title: string;
+  summary: string;
+  problems: string[];
+  outcomes: string[];
+  exampleFlow: string[];
+}
+
+const USE_CASES: Record<string, UseCase> = {
   'team-chat': {
     eyebrow: 'Team Chat',
     title: 'Run pod conversations with searchable shared context',
@@ -30,7 +39,7 @@ const USE_CASES = {
     ],
     exampleFlow: [
       'You post a planning update in pod chat.',
-      'A teammate mentions an agent to pull last week’s related summary.',
+      'A teammate mentions an agent to pull last week\u2019s related summary.',
       'The decision is captured in-thread and appears in your next digest.',
     ],
   },
@@ -142,10 +151,10 @@ const USE_CASES = {
   },
 };
 
-const UseCasePage = () => {
-  const { useCaseId } = useParams();
+const UseCasePage: React.FC = () => {
+  const { useCaseId } = useParams<{ useCaseId: string }>();
   const navigate = useNavigate();
-  const useCase = USE_CASES[useCaseId];
+  const useCase = useCaseId ? USE_CASES[useCaseId] : undefined;
 
   if (!useCase) {
     return (

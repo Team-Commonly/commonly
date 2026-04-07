@@ -1,16 +1,11 @@
-/**
- * LandingHeader Component
- * Sticky navigation header for the landing page
- */
-
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, Container, Typography } from '@mui/material';
 import commonlyLogo from '../../../assets/commonly-logo.png';
 
-const LandingHeader = () => {
+const LandingHeader: React.FC = () => {
   const navigate = useNavigate();
-  const scrollTo = (id) => {
+  const scrollTo = (id: string): void => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
 
