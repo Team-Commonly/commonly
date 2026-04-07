@@ -66,7 +66,7 @@ async function renderFeed(appCtx = {}) {
   useLocation.mockReturnValue({ search: '' });
   axios.get.mockImplementation((url) => {
     if (url === '/api/posts') {
-      return Promise.resolve({ data: [mockPost] });
+      return Promise.resolve({ data: { posts: [mockPost], hasMore: false, total: 1, page: 1 } });
     }
     if (url === '/api/pods') {
       return Promise.resolve({ data: [] });
@@ -81,7 +81,7 @@ async function renderFeed(appCtx = {}) {
 
 test('fetches posts and displays them', async () => {
   await renderFeed();
-  expect(axios.get).toHaveBeenCalledWith('/api/posts', { headers: { Authorization: 'Bearer t' }, params: {} });
+  expect(axios.get).toHaveBeenCalledWith('/api/posts', { headers: { Authorization: 'Bearer t' }, params: { sort: 'hot', page: 1, limit: 20 } });
   expect(container.textContent).toContain('hello');
 });
 
