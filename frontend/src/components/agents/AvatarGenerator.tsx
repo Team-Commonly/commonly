@@ -22,7 +22,53 @@ import {
 import RefreshIcon from '@mui/icons-material/Refresh';
 import axios from 'axios';
 
-const AvatarGenerator = ({
+interface StyleOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
+interface PersonalityOption {
+  value: string;
+  label: string;
+  emoji: string;
+}
+
+interface GenderOption {
+  value: string;
+  label: string;
+}
+
+interface ColorSchemeOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
+interface GenerationInfo {
+  source?: string;
+  model?: string;
+  fallbackUsed?: boolean;
+}
+
+interface AvatarSelection {
+  style: string;
+  personality: string;
+  colorScheme: string;
+  gender: string;
+  customPrompt: string;
+  generationInfo: GenerationInfo | null;
+}
+
+interface AvatarGeneratorProps {
+  open: boolean;
+  onClose: () => void;
+  onSelect: (avatar: string | null, selection: AvatarSelection) => void;
+  agentName?: string;
+  targetType?: 'agent' | 'user';
+}
+
+const AvatarGenerator: React.FC<AvatarGeneratorProps> = ({
   open,
   onClose,
   onSelect,
@@ -30,16 +76,16 @@ const AvatarGenerator = ({
   targetType = 'agent',
 }) => {
   const [loading, setLoading] = useState(false);
-  const [avatar, setAvatar] = useState(null);
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [style, setStyle] = useState('realistic');
   const [personality, setPersonality] = useState('friendly');
   const [colorScheme, setColorScheme] = useState('vibrant');
   const [gender, setGender] = useState('neutral');
   const [promptPreset, setPromptPreset] = useState('professional');
   const [customPrompt, setCustomPrompt] = useState('professional profile portrait, natural lighting, clean studio backdrop');
-  const [generationInfo, setGenerationInfo] = useState(null);
+  const [generationInfo, setGenerationInfo] = useState<GenerationInfo | null>(null);
 
-  const styles = [
+  const styles: StyleOption[] = [
     {
       value: 'realistic',
       label: 'Photo Realistic',
@@ -67,7 +113,7 @@ const AvatarGenerator = ({
     },
   ];
 
-  const personalities = [
+  const personalities: PersonalityOption[] = [
     { value: 'friendly', label: 'Friendly', emoji: '😊' },
     { value: 'professional', label: 'Professional', emoji: '💼' },
     { value: 'playful', label: 'Playful', emoji: '🎉' },
@@ -75,13 +121,13 @@ const AvatarGenerator = ({
     { value: 'creative', label: 'Creative', emoji: '🎨' },
   ];
 
-  const genders = [
+  const genders: GenderOption[] = [
     { value: 'neutral', label: 'Neutral' },
     { value: 'female', label: 'Female' },
     { value: 'male', label: 'Male' },
   ];
 
-  const colorSchemes = [
+  const colorSchemes: ColorSchemeOption[] = [
     {
       value: 'vibrant',
       label: 'Vibrant',
@@ -104,20 +150,20 @@ const AvatarGenerator = ({
     },
   ];
 
-  const promptPresets = {
+  const promptPresets: Record<string, string> = {
     professional: 'professional profile portrait, natural lighting, clean studio backdrop',
     friendly: 'friendly approachable portrait, soft smile, warm lighting, clean background',
     creator: 'creative modern portrait, expressive but natural look, soft cinematic light',
     executive: 'confident executive portrait, neat attire, premium neutral background',
   };
 
-  const handlePresetChange = (_, value) => {
+  const handlePresetChange = (_: React.MouseEvent, value: string): void => {
     if (!value) return;
     setPromptPreset(value);
     setCustomPrompt(promptPresets[value]);
   };
 
-  const generateAvatar = async () => {
+  const generateAvatar = async (): Promise<void> => {
     setLoading(true);
     try {
       const response = await axios.post('/api/registry/generate-avatar', {
@@ -132,8 +178,9 @@ const AvatarGenerator = ({
       setGenerationInfo(response.data.metadata || null);
     } catch (error) {
       console.error('Failed to generate avatar:', error);
+      const err = error as { response?: { data?: { error?: string } } };
       alert(
-        error.response?.data?.error
+        err.response?.data?.error
           || 'Failed to generate avatar. Please try again.',
       );
     } finally {
@@ -141,7 +188,7 @@ const AvatarGenerator = ({
     }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = (): void => {
     onSelect(avatar, {
       style,
       personality,
@@ -153,7 +200,7 @@ const AvatarGenerator = ({
     onClose();
   };
 
-  const handleClose = () => {
+  const handleClose = (): void => {
     setAvatar(null);
     setGenerationInfo(null);
     onClose();
