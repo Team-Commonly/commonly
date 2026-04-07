@@ -42,7 +42,7 @@ jobs:
           cd backend
           npm ci --include=dev
           cd ../frontend
-          npm ci --include=dev
+          npm install --legacy-peer-deps
           cd ..
 
       - name: Run backend tests with coverage
