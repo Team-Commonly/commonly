@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { 
-    List, ListItem, ListItemIcon, ListItemText, Typography, 
+import {
+    List, ListItemButton, ListItemIcon, ListItemText, Typography,
     Avatar, Divider, Box, Skeleton, IconButton, useMediaQuery, useTheme
 } from '@mui/material';
 import {
@@ -23,7 +23,7 @@ import { useAppContext } from '../context/AppContext';
 import { useLayout } from '../context/LayoutContext';
 import './Dashboard.css';
 
-const Dashboard = () => {
+const Dashboard: React.FC = () => {
     const { currentUser, userLoading, refreshData } = useAppContext();
     const { isDashboardCollapsed, toggleDashboard } = useLayout();
     const location = useLocation();
@@ -31,14 +31,14 @@ const Dashboard = () => {
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
     // Function to handle navigation with refresh
-    const handleNavigation = (path) => {
+    const handleNavigation = (path: string): void => {
         // Refresh data to ensure we have the latest state
         refreshData();
 
         if (isMobile && !isDashboardCollapsed) {
             toggleDashboard();
         }
-        
+
         // Use window.location for a full page refresh
         window.location.href = path;
     };
@@ -56,12 +56,12 @@ const Dashboard = () => {
                             </>
                         ) : currentUser ? (
                             <>
-                                <Avatar 
-                                    sx={{ 
-                                        width: 64, 
-                                        height: 64, 
+                                <Avatar
+                                    sx={{
+                                        width: 64,
+                                        height: 64,
                                         mb: 1,
-                                        bgcolor: getAvatarColor(currentUser.profilePicture), 
+                                        bgcolor: getAvatarColor(currentUser.profilePicture),
                                         cursor: 'pointer'
                                     }}
                                     src={getAvatarSrc(currentUser.profilePicture)}
@@ -79,11 +79,11 @@ const Dashboard = () => {
                         ) : null}
                     </Box>
                 )}
-                
+
                 {isDashboardCollapsed && (
-                    <IconButton 
-                        onClick={toggleDashboard} 
-                        sx={{ 
+                    <IconButton
+                        onClick={toggleDashboard}
+                        sx={{
                             my: 1,
                             color: 'primary.main'
                         }}
@@ -96,8 +96,7 @@ const Dashboard = () => {
             <Divider />
 
             <List component="nav">
-                <ListItem 
-                    button 
+                <ListItemButton
                     onClick={() => handleNavigation('/feed')}
                     selected={location.pathname === '/feed'}
                 >
@@ -105,10 +104,9 @@ const Dashboard = () => {
                         <HomeIcon />
                     </ListItemIcon>
                     <ListItemText primary="Feed" />
-                </ListItem>
-                
-                <ListItem 
-                    button 
+                </ListItemButton>
+
+                <ListItemButton
                     onClick={() => handleNavigation('/profile')}
                     selected={location.pathname === '/profile'}
                 >
@@ -116,10 +114,9 @@ const Dashboard = () => {
                         <PersonIcon />
                     </ListItemIcon>
                     <ListItemText primary="Profile" />
-                </ListItem>
-                
-                <ListItem 
-                    button 
+                </ListItemButton>
+
+                <ListItemButton
                     onClick={() => handleNavigation('/digest')}
                     selected={location.pathname === '/digest'}
                 >
@@ -127,10 +124,9 @@ const Dashboard = () => {
                         <EmailIcon />
                     </ListItemIcon>
                     <ListItemText primary="Daily Digest" />
-                </ListItem>
-                
-                <ListItem
-                    button
+                </ListItemButton>
+
+                <ListItemButton
                     onClick={() => handleNavigation('/pods')}
                     selected={location.pathname.startsWith('/pods') && !location.pathname.includes('agent-admin')}
                 >
@@ -138,9 +134,8 @@ const Dashboard = () => {
                         <ChatIcon />
                     </ListItemIcon>
                     <ListItemText primary="Pods" />
-                </ListItem>
-                <ListItem
-                    button
+                </ListItemButton>
+                <ListItemButton
                     onClick={() => handleNavigation('/pods/agent-admin')}
                     selected={location.pathname === '/pods/agent-admin'}
                 >
@@ -148,10 +143,9 @@ const Dashboard = () => {
                         <ForumIcon />
                     </ListItemIcon>
                     <ListItemText primary="Agent Admin" />
-                </ListItem>
+                </ListItemButton>
 
-                <ListItem
-                    button
+                <ListItemButton
                     onClick={() => handleNavigation('/agents')}
                     selected={location.pathname === '/agents'}
                 >
@@ -159,10 +153,9 @@ const Dashboard = () => {
                         <AgentsIcon />
                     </ListItemIcon>
                     <ListItemText primary="Agents" />
-                </ListItem>
+                </ListItemButton>
 
-                <ListItem
-                    button
+                <ListItemButton
                     onClick={() => handleNavigation('/skills')}
                     selected={location.pathname === '/skills'}
                 >
@@ -170,10 +163,9 @@ const Dashboard = () => {
                         <SkillsIcon />
                     </ListItemIcon>
                     <ListItemText primary="Skills" />
-                </ListItem>
+                </ListItemButton>
 
-                <ListItem
-                    button
+                <ListItemButton
                     onClick={() => handleNavigation('/apps')}
                     selected={location.pathname === '/apps'}
                 >
@@ -181,10 +173,9 @@ const Dashboard = () => {
                         <AppsIcon />
                     </ListItemIcon>
                     <ListItemText primary="Apps" />
-                </ListItem>
+                </ListItemButton>
 
-                <ListItem
-                    button
+                <ListItemButton
                     onClick={() => handleNavigation('/activity')}
                     selected={location.pathname === '/activity'}
                 >
@@ -192,12 +183,11 @@ const Dashboard = () => {
                         <ActivityIcon />
                     </ListItemIcon>
                     <ListItemText primary="Activity" />
-                </ListItem>
+                </ListItemButton>
 
                 {currentUser?.role === 'admin' && (
                     <>
-                        <ListItem
-                            button
+                        <ListItemButton
                             onClick={() => handleNavigation('/admin/integrations/global')}
                             selected={location.pathname === '/admin/integrations/global'}
                         >
@@ -205,15 +195,13 @@ const Dashboard = () => {
                                 <AdminIcon />
                             </ListItemIcon>
                             <ListItemText primary="Global Integrations" />
-                        </ListItem>
-
+                        </ListItemButton>
                     </>
                 )}
 
                 <Divider sx={{ my: 2 }} />
-                
-                <ListItem 
-                    button 
+
+                <ListItemButton
                     onClick={() => {
                         localStorage.removeItem('token');
                         window.location.href = '/';
@@ -223,7 +211,7 @@ const Dashboard = () => {
                         <LogoutIcon />
                     </ListItemIcon>
                     <ListItemText primary="Logout" />
-                </ListItem>
+                </ListItemButton>
             </List>
         </div>
     );

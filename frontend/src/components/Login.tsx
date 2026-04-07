@@ -4,13 +4,13 @@ import { Link } from 'react-router-dom';
 import { Box, TextField, Button, Typography, Container, Paper, CircularProgress } from '@mui/material';
 import commonlyLogo from '../assets/commonly-logo.png';
 
-const Login = () => {
+const Login: React.FC = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
         setError('');
         setLoading(true);
@@ -30,12 +30,13 @@ const Login = () => {
 
             // Store token
             localStorage.setItem('token', res.data.token);
-            
+
             // Use window.location.href for a complete page reload
             // This ensures the app context is properly initialized
             window.location.href = '/feed';
         } catch (err) {
-            setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
+            const e = err as { response?: { data?: { error?: string } } };
+            setError(e.response?.data?.error || 'Login failed. Please check your credentials.');
             setLoading(false);
         }
     };
@@ -105,7 +106,7 @@ const Login = () => {
                                 'Install agents that learn from your team',
                             ].map((item) => (
                                 <Typography key={item} variant="body2" sx={{ color: 'rgba(226, 232, 240, 0.85)' }}>
-                                    • {item}
+                                    &bull; {item}
                                 </Typography>
                             ))}
                         </Box>

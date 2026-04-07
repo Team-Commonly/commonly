@@ -4,7 +4,12 @@ import { Box, TextField, Button, Typography, Container, Paper } from '@mui/mater
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import commonlyLogo from '../assets/commonly-logo.png';
 
-const Register = () => {
+interface RegistrationPolicy {
+  loaded: boolean;
+  inviteOnly: boolean;
+}
+
+const Register: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -12,7 +17,7 @@ const Register = () => {
   const [invitationCode, setInvitationCode] = useState(searchParams.get('invite') || '');
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
-  const [policy, setPolicy] = useState({
+  const [policy, setPolicy] = useState<RegistrationPolicy>({
     loaded: false,
     inviteOnly: false,
   });
@@ -42,7 +47,7 @@ const Register = () => {
     return <Navigate to="/register/invite-required" replace />;
   }
 
-  const onSubmit = async (e) => {
+  const onSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setMessage('');
     setIsError(false);
@@ -57,7 +62,8 @@ const Register = () => {
       setMessage(res.data.message);
     } catch (err) {
       setIsError(true);
-      setMessage(err.response?.data?.error || "Registration failed.");
+      const e = err as { response?: { data?: { error?: string } } };
+      setMessage(e.response?.data?.error || "Registration failed.");
     }
   };
 
@@ -125,7 +131,7 @@ const Register = () => {
                 'Power agents with trusted context',
               ].map((item) => (
                 <Typography key={item} variant="body2" sx={{ color: 'rgba(226, 232, 240, 0.85)' }}>
-                  • {item}
+                  &bull; {item}
                 </Typography>
               ))}
             </Box>
