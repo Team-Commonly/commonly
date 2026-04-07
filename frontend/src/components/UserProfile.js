@@ -76,7 +76,7 @@ const UserProfile = () => {
                     axios.get(profilePath, {
                         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                     }),
-                    axios.get('/api/posts'),
+                    axios.get('/api/posts', { params: { limit: 50 } }),
                     !profileId ? axios.get('/api/auth/api-token', {
                         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                     }).catch(() => ({ data: { hasToken: false } })) : Promise.resolve({ data: { hasToken: false } })
@@ -113,8 +113,9 @@ const UserProfile = () => {
                 }
 
                 // Calculate post count and comment count
-                const userPosts = postsRes.data.filter(post => post.userId && post.userId._id === userRes.data._id);
-                const userComments = postsRes.data.reduce((count, post) => {
+                const allPosts = postsRes.data.posts || postsRes.data;
+                const userPosts = allPosts.filter(post => post.userId && post.userId._id === userRes.data._id);
+                const userComments = allPosts.reduce((count, post) => {
                     return count + (post.comments || []).filter(comment => 
                         comment.userId && 
                         comment.userId._id && 
