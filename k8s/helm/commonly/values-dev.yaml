@@ -47,7 +47,7 @@ frontend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
-    tag: "20260405070807"
+    tag: "20260406205503"
     pullPolicy: Always
   nodeSelector:
     pool: dev
