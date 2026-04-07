@@ -106,6 +106,42 @@ const LandingHeader = () => {
             </Button>
             <Button
               variant="text"
+              component="a"
+              href="https://docs.commonly.me"
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{
+                color: '#94a3b8',
+                fontWeight: 500,
+                display: { xs: 'none', md: 'inline-flex' },
+                '&:hover': {
+                  color: '#e2e8f0',
+                  backgroundColor: 'rgba(148, 163, 184, 0.08)',
+                },
+              }}
+            >
+              Docs
+            </Button>
+            <Button
+              variant="text"
+              component="a"
+              href="https://github.com/Team-Commonly/commonly"
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{
+                color: '#94a3b8',
+                fontWeight: 500,
+                display: { xs: 'none', md: 'inline-flex' },
+                '&:hover': {
+                  color: '#e2e8f0',
+                  backgroundColor: 'rgba(148, 163, 184, 0.08)',
+                },
+              }}
+            >
+              GitHub
+            </Button>
+            <Button
+              variant="text"
               onClick={() => navigate('/login')}
               sx={{
                 color: '#94a3b8',
