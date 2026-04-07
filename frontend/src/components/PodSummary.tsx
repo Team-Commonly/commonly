@@ -4,9 +4,21 @@ import { Lightbulb as LightbulbIcon, Refresh as RefreshIcon } from '@mui/icons-m
 import axios from 'axios';
 import './PodSummary.css';
 
-const PodSummary = ({ podId, title, originalDescription }) => {
+interface SummaryData {
+  _id?: string;
+  content?: string;
+  summary?: SummaryData;
+}
+
+interface PodSummaryProps {
+  podId: string;
+  title?: string;
+  originalDescription?: string;
+}
+
+const PodSummary: React.FC<PodSummaryProps> = ({ podId, title, originalDescription }) => {
     const viewPreferenceKey = `pod-summary-view:${podId}`;
-    const [summary, setSummary] = useState(null);
+    const [summary, setSummary] = useState<SummaryData | null>(null);
     const [loading, setLoading] = useState(false);
     const [showSummary, setShowSummary] = useState(() => {
         try {
@@ -17,14 +29,15 @@ const PodSummary = ({ podId, title, originalDescription }) => {
     });
     const [summaryError, setSummaryError] = useState('');
 
-    const normalizeSummary = (payload) => {
+    const normalizeSummary = (payload: unknown): SummaryData | null => {
         if (!payload) return null;
-        if (payload.summary && typeof payload.summary === 'object') return payload.summary;
-        if (typeof payload === 'object' && (payload.content || payload._id)) return payload;
+        const p = payload as SummaryData;
+        if (p.summary && typeof p.summary === 'object') return p.summary;
+        if (typeof p === 'object' && (p.content || p._id)) return p;
         return null;
     };
 
-    const fetchSummary = async () => {
+    const fetchSummary = async (): Promise<void> => {
         try {
             setLoading(true);
             setSummaryError('');
@@ -39,13 +52,14 @@ const PodSummary = ({ podId, title, originalDescription }) => {
         } catch (error) {
             console.error('Error fetching pod summary:', error);
             setSummary(null);
-            setSummaryError(error?.response?.data?.error || 'Could not load summary');
+            const err = error as { response?: { data?: { error?: string } } };
+            setSummaryError(err?.response?.data?.error || 'Could not load summary');
         } finally {
             setLoading(false);
         }
     };
 
-    const refreshSummary = async () => {
+    const refreshSummary = async (): Promise<void> => {
         try {
             setLoading(true);
             setSummaryError('');
@@ -65,7 +79,8 @@ const PodSummary = ({ podId, title, originalDescription }) => {
             }
         } catch (error) {
             console.error('Error refreshing pod summary:', error);
-            setSummaryError(error?.response?.data?.error || 'Could not refresh summary');
+            const err = error as { response?: { data?: { error?: string } } };
+            setSummaryError(err?.response?.data?.error || 'Could not refresh summary');
             await fetchSummary();
             // Keep toggle behavior predictable: show summary view even when refresh fails.
             setShowSummary(true);
@@ -79,7 +94,7 @@ const PodSummary = ({ podId, title, originalDescription }) => {
         }
     };
 
-    const handleToggleSummary = async (e) => {
+    const handleToggleSummary = async (e: React.MouseEvent): Promise<void> => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -100,7 +115,7 @@ const PodSummary = ({ podId, title, originalDescription }) => {
         }
     };
 
-    const handleRefresh = async (e) => {
+    const handleRefresh = async (e: React.MouseEvent): Promise<void> => {
         e.preventDefault();
         e.stopPropagation();
         await refreshSummary();
@@ -108,6 +123,7 @@ const PodSummary = ({ podId, title, originalDescription }) => {
 
     useEffect(() => {
         fetchSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [podId]);
 
     return (
@@ -120,8 +136,8 @@ const PodSummary = ({ podId, title, originalDescription }) => {
                 ) : <Box />}
                 <Box className="summary-controls">
                     <Tooltip title={showSummary ? "Show description" : "Show AI summary"}>
-                        <IconButton 
-                            size="small" 
+                        <IconButton
+                            size="small"
                             onClick={handleToggleSummary}
                             disabled={loading}
                             className={`summary-toggle ${showSummary ? 'active' : ''}`}
@@ -136,8 +152,8 @@ const PodSummary = ({ podId, title, originalDescription }) => {
                     </Tooltip>
                     {showSummary && (
                         <Tooltip title="Refresh summary">
-                            <IconButton 
-                                size="small" 
+                            <IconButton
+                                size="small"
                                 onClick={handleRefresh}
                                 disabled={loading}
                                 className="refresh-btn"
@@ -148,7 +164,7 @@ const PodSummary = ({ podId, title, originalDescription }) => {
                         </Tooltip>
                     )}
                 </Box>
-            </Box>        
+            </Box>
             <Box className="summary-content">
                 {showSummary ? (
                     summary ? (
@@ -184,4 +200,4 @@ const PodSummary = ({ podId, title, originalDescription }) => {
     );
 };
 
-export default PodSummary; 
+export default PodSummary;

@@ -19,17 +19,17 @@ jest.mock('axios', () => ({
 }));
 
 // Mock IntersectionObserver
-global.IntersectionObserver = class IntersectionObserver {
-  disconnect() {}
-  observe() {}
-  unobserve() {}
+(global as unknown as Record<string, unknown>).IntersectionObserver = class {
+  disconnect(): void {}
+  observe(): void {}
+  unobserve(): void {}
 };
 
 // Mock ResizeObserver
-global.ResizeObserver = class ResizeObserver {
-  disconnect() {}
-  observe() {}
-  unobserve() {}
+(global as unknown as Record<string, unknown>).ResizeObserver = class {
+  disconnect(): void {}
+  observe(): void {}
+  unobserve(): void {}
 };
 
 // Mock getBoundingClientRect
@@ -47,8 +47,8 @@ Element.prototype.getBoundingClientRect = jest.fn(() => ({
 
 // Mock getComputedStyle for DOM accessibility API
 Object.defineProperty(window, 'getComputedStyle', {
-  value: (_element) => ({
-    getPropertyValue: (property) => {
+  value: (_element: Element) => ({
+    getPropertyValue: (property: string) => {
       // Return appropriate values for common CSS properties
       if (property === 'display') return 'block';
       if (property === 'visibility') return 'visible';
@@ -93,13 +93,13 @@ Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
 // Mock createPortal to avoid portal-related issues
 jest.mock('react-dom', () => ({
   ...jest.requireActual('react-dom'),
-  createPortal: (node) => node,
+  createPortal: (node: React.ReactNode) => node,
 }));
 
 // Mock TextareaAutosize to prevent JSDOM compatibility issues
 jest.mock('@mui/material/TextareaAutosize', () => {
   const React = require('react');
-  const MockTextareaAutosize = React.forwardRef((props, ref) => {
+  const MockTextareaAutosize = React.forwardRef((props: Record<string, unknown>, ref: React.Ref<HTMLTextAreaElement>) => {
     const { minRows, ...otherProps } = props;
     return React.createElement('textarea', {
       ...otherProps,
@@ -115,12 +115,12 @@ jest.mock('@mui/material/TextareaAutosize', () => {
 });
 
 // Set up React testing environment
-global.IS_REACT_ACT_ENVIRONMENT = true;
+(global as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 // Comprehensive console.error suppression for test warnings
 const originalError = console.error;
 beforeAll(() => {
-  console.error = (...args) => {
+  console.error = (...args: unknown[]) => {
     const message = args[0];
     if (typeof message === 'string') {
       // Suppress all React warnings that don't indicate actual test failures
@@ -139,4 +139,4 @@ beforeAll(() => {
 
 afterAll(() => {
   console.error = originalError;
-}); 
+});

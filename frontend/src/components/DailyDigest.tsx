@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Paper, 
-  Box, 
-  Typography, 
-  Button, 
-  CircularProgress, 
+import {
+  Paper,
+  Box,
+  Typography,
+  Button,
+  CircularProgress,
   Alert,
   Card,
   CardContent,
@@ -22,7 +22,7 @@ import {
   Tabs,
   Tab
 } from '@mui/material';
-import { 
+import {
   Refresh as RefreshIcon,
   History as HistoryIcon,
   Email as EmailIcon,
@@ -37,17 +37,40 @@ import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import AnalyticsDashboard from './analytics/AnalyticsDashboard';
 
-const DailyDigest = () => {
-  const [digest, setDigest] = useState(null);
+interface DigestAnalytics {
+  quotes?: unknown[];
+  insights?: unknown[];
+  timeline?: unknown[];
+  atmosphere?: {
+    overall_sentiment?: string;
+  };
+}
+
+interface DigestMetadata {
+  totalItems?: number;
+  subscribedPods?: number;
+}
+
+interface DigestData {
+  _id?: string;
+  title?: string;
+  content?: string;
+  createdAt?: string;
+  metadata?: DigestMetadata;
+  analytics?: DigestAnalytics;
+}
+
+const DailyDigest: React.FC = () => {
+  const [digest, setDigest] = useState<DigestData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [digestHistory, setDigestHistory] = useState([]);
+  const [digestHistory, setDigestHistory] = useState<DigestData[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
 
-  const fetchLatestDigest = async () => {
+  const fetchLatestDigest = async (): Promise<void> => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
@@ -55,23 +78,24 @@ const DailyDigest = () => {
       const response = await axios.get('/api/summaries/daily-digest', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       setDigest(response.data);
       setError(null);
     } catch (err) {
-      if (err.response?.status === 404) {
+      const e = err as { response?: { status?: number; data?: { error?: string } } };
+      if (e.response?.status === 404) {
         setDigest(null);
         setError('No daily digest found. Generate your first one or wait for the next ' +
           'scheduled generation at 6 AM UTC.');
       } else {
-        setError(err.response?.data?.error || 'Failed to fetch daily digest');
+        setError(e.response?.data?.error || 'Failed to fetch daily digest');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const generateDigest = async () => {
+  const generateDigest = async (): Promise<void> => {
     try {
       setGenerating(true);
       setError(null);
@@ -82,27 +106,28 @@ const DailyDigest = () => {
       });
 
       setDigest(response.data.digest);
-      
+
       // Show success message
       setTimeout(() => {
         setError(null);
       }, 3000);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to generate daily digest');
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error || 'Failed to generate daily digest');
     } finally {
       setGenerating(false);
     }
   };
 
-  const fetchDigestHistory = async () => {
+  const fetchDigestHistory = async (): Promise<void> => {
     try {
       setHistoryLoading(true);
       const token = localStorage.getItem('token');
-      
+
       const response = await axios.get('/api/summaries/daily-digest/history?limit=10', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       setDigestHistory(response.data);
     } catch (err) {
       console.error('Failed to fetch digest history:', err);
@@ -111,18 +136,19 @@ const DailyDigest = () => {
     }
   };
 
-  const openHistory = () => {
+  const openHistory = (): void => {
     setHistoryOpen(true);
     fetchDigestHistory();
   };
 
-  const viewHistoricalDigest = (historicalDigest) => {
+  const viewHistoricalDigest = (historicalDigest: DigestData): void => {
     setDigest(historicalDigest);
     setHistoryOpen(false);
   };
 
   useEffect(() => {
     fetchLatestDigest();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
@@ -157,7 +183,7 @@ const DailyDigest = () => {
                 />
               )}
             </Box>
-            
+
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
               <Button
                 size="small"
@@ -174,7 +200,7 @@ const DailyDigest = () => {
                 onClick={generateDigest}
                 disabled={generating}
               >
-                {generating ? 'Generating…' : 'Generate'}
+                {generating ? 'Generating\u2026' : 'Generate'}
               </Button>
             </Box>
           </Box>
@@ -185,7 +211,7 @@ const DailyDigest = () => {
               <Chip
                 size="small"
                 icon={<ScheduleIcon sx={{ fontSize: 14 }} />}
-                label={formatDistanceToNow(new Date(digest.createdAt), { addSuffix: true })}
+                label={formatDistanceToNow(new Date(digest.createdAt!), { addSuffix: true })}
                 variant="outlined"
                 sx={{ fontSize: '0.7rem', height: 22 }}
               />
@@ -224,14 +250,14 @@ const DailyDigest = () => {
           {activeTab === 0 && (
             <>
               {error && (
-                <Alert 
-                  severity={digest ? "info" : "warning"} 
+                <Alert
+                  severity={digest ? "info" : "warning"}
                   sx={{ mb: 2 }}
                   action={
                     !digest && (
-                      <Button 
-                        color="inherit" 
-                        size="small" 
+                      <Button
+                        color="inherit"
+                        size="small"
                         onClick={generateDigest}
                         disabled={generating}
                       >
@@ -259,8 +285,8 @@ const DailyDigest = () => {
                 <Typography variant="h5" component="h3" sx={{ mb: 2, color: 'primary.main' }}>
                   {digest.title}
                 </Typography>
-                
-                <Box sx={{ 
+
+                <Box sx={{
                   '& h1': { fontSize: '1.5rem', fontWeight: 600, mt: 3, mb: 2, color: 'primary.main' },
                   '& h2': { fontSize: '1.25rem', fontWeight: 600, mt: 2, mb: 1.5, color: 'text.primary' },
                   '& h3': { fontSize: '1.1rem', fontWeight: 600, mt: 2, mb: 1, color: 'text.primary' },
@@ -287,17 +313,17 @@ const DailyDigest = () => {
                   '& strong': { fontWeight: 600 },
                   '& em': { fontStyle: 'italic' }
                 }}>
-                  <ReactMarkdown>{digest.content}</ReactMarkdown>
+                  <ReactMarkdown>{digest.content ?? ''}</ReactMarkdown>
                 </Box>
 
                 {/* Analytics Preview */}
                 {digest.analytics && (
                   (() => {
-                    const hasQuotes = digest.analytics.quotes?.length > 0;
-                    const hasInsights = digest.analytics.insights?.length > 0;
-                    const hasTimeline = digest.analytics.timeline?.length > 0;
+                    const hasQuotes = (digest.analytics.quotes?.length ?? 0) > 0;
+                    const hasInsights = (digest.analytics.insights?.length ?? 0) > 0;
+                    const hasTimeline = (digest.analytics.timeline?.length ?? 0) > 0;
                     const hasMood = digest.analytics.atmosphere?.overall_sentiment;
-                    
+
                     // Only show analytics if there's meaningful data
                     if (hasQuotes || hasInsights || hasTimeline || hasMood) {
                       return (
@@ -309,7 +335,7 @@ const DailyDigest = () => {
                             {hasQuotes && (
                               <Chip
                                 size="small"
-                                label={`${digest.analytics.quotes.length} quotes`}
+                                label={`${digest.analytics.quotes!.length} quotes`}
                                 variant="outlined"
                                 sx={{ fontSize: '0.7rem', height: 20 }}
                               />
@@ -317,7 +343,7 @@ const DailyDigest = () => {
                             {hasInsights && (
                               <Chip
                                 size="small"
-                                label={`${digest.analytics.insights.length} insights`}
+                                label={`${digest.analytics.insights!.length} insights`}
                                 variant="outlined"
                                 sx={{ fontSize: '0.7rem', height: 20 }}
                               />
@@ -325,7 +351,7 @@ const DailyDigest = () => {
                             {hasTimeline && (
                               <Chip
                                 size="small"
-                                label={`${digest.analytics.timeline.length} events`}
+                                label={`${digest.analytics.timeline!.length} events`}
                                 variant="outlined"
                                 sx={{ fontSize: '0.7rem', height: 20 }}
                               />
@@ -333,8 +359,8 @@ const DailyDigest = () => {
                             {hasMood && (
                               <Chip
                                 size="small"
-                                label={`${digest.analytics.atmosphere.overall_sentiment} mood`}
-                                color={digest.analytics.atmosphere.overall_sentiment.includes('positive') ? 
+                                label={`${digest.analytics.atmosphere!.overall_sentiment} mood`}
+                                color={digest.analytics.atmosphere!.overall_sentiment!.includes('positive') ?
                                 'success' : 'default'}
                                 variant="outlined"
                                 sx={{ fontSize: '0.7rem', height: 20 }}
@@ -371,7 +397,7 @@ const DailyDigest = () => {
           )}
             </>
           )}
-          
+
           {activeTab === 1 && (
             <AnalyticsDashboard defaultTimeRange="24h" />
           )}
@@ -408,7 +434,7 @@ const DailyDigest = () => {
                 <React.Fragment key={historicalDigest._id || index}>
                   <ListItem
                     onClick={() => viewHistoricalDigest(historicalDigest)}
-                    sx={{ 
+                    sx={{
                       borderRadius: 1,
                       mb: 1,
                       cursor: 'pointer',
@@ -422,7 +448,7 @@ const DailyDigest = () => {
                       secondary={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
                           <Typography variant="caption">
-                            {formatDistanceToNow(new Date(historicalDigest.createdAt), { addSuffix: true })}
+                            {formatDistanceToNow(new Date(historicalDigest.createdAt!), { addSuffix: true })}
                           </Typography>
                           {historicalDigest.metadata?.totalItems && (
                             <Chip

@@ -22,6 +22,52 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
+interface ToneOption {
+  value: string;
+  label: string;
+  description: string;
+  example: string;
+}
+
+interface BehaviorOption {
+  value: string;
+  label: string;
+  description: string;
+  icon: string;
+}
+
+interface ResponseStyleOption {
+  value: string;
+  label: string;
+  description: string;
+  icon: string;
+}
+
+interface PersonalityConfig {
+  tone: string;
+  interests: string[];
+  behavior: string;
+  responseStyle: string;
+  specialties: string[];
+  boundaries: string[];
+  customInstructions: string;
+}
+
+interface GeneratedConfig {
+  tone?: string;
+  specialties?: string[];
+  boundaries?: string[];
+  customInstructions?: string;
+}
+
+interface PersonalityBuilderProps {
+  initialConfig?: Partial<PersonalityConfig>;
+  onSave: (config: PersonalityConfig) => void;
+  agentName?: string;
+  onAutoGenerate?: () => Promise<GeneratedConfig | null | undefined>;
+  autoGenerating?: boolean;
+}
+
 /**
  * Enhanced PersonalityBuilder Component
  *
@@ -32,14 +78,14 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
  * - Response styles
  * - Auto-generation option
  */
-const PersonalityBuilder = ({
+const PersonalityBuilder: React.FC<PersonalityBuilderProps> = ({
   initialConfig = {},
   onSave,
   agentName,
   onAutoGenerate,
   autoGenerating = false,
 }) => {
-  const [config, setConfig] = useState({
+  const [config, setConfig] = useState<PersonalityConfig>({
     tone: 'friendly',
     interests: [],
     behavior: 'reactive',
@@ -56,9 +102,10 @@ const PersonalityBuilder = ({
 
   useEffect(() => {
     setConfig({ ...config, ...initialConfig });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConfig]);
 
-  const tones = [
+  const tones: ToneOption[] = [
     {
       value: 'friendly',
       label: 'Friendly 😊',
@@ -91,7 +138,7 @@ const PersonalityBuilder = ({
     },
   ];
 
-  const behaviors = [
+  const behaviors: BehaviorOption[] = [
     {
       value: 'reactive',
       label: 'Reactive',
@@ -112,7 +159,7 @@ const PersonalityBuilder = ({
     },
   ];
 
-  const responseStyles = [
+  const responseStyles: ResponseStyleOption[] = [
     {
       value: 'concise',
       label: 'Concise',
@@ -133,7 +180,7 @@ const PersonalityBuilder = ({
     },
   ];
 
-  const addInterest = () => {
+  const addInterest = (): void => {
     if (interestInput && !config.interests.includes(interestInput)) {
       setConfig({
         ...config,
@@ -143,14 +190,14 @@ const PersonalityBuilder = ({
     }
   };
 
-  const removeInterest = (interest) => {
+  const removeInterest = (interest: string): void => {
     setConfig({
       ...config,
       interests: config.interests.filter((i) => i !== interest),
     });
   };
 
-  const addSpecialty = () => {
+  const addSpecialty = (): void => {
     if (specialtyInput && !config.specialties.includes(specialtyInput)) {
       setConfig({
         ...config,
@@ -160,14 +207,14 @@ const PersonalityBuilder = ({
     }
   };
 
-  const removeSpecialty = (specialty) => {
+  const removeSpecialty = (specialty: string): void => {
     setConfig({
       ...config,
       specialties: config.specialties.filter((s) => s !== specialty),
     });
   };
 
-  const addBoundary = () => {
+  const addBoundary = (): void => {
     if (boundaryInput && !config.boundaries.includes(boundaryInput)) {
       setConfig({
         ...config,
@@ -177,14 +224,14 @@ const PersonalityBuilder = ({
     }
   };
 
-  const removeBoundary = (boundary) => {
+  const removeBoundary = (boundary: string): void => {
     setConfig({
       ...config,
       boundaries: config.boundaries.filter((b) => b !== boundary),
     });
   };
 
-  const handleAutoGenerate = async () => {
+  const handleAutoGenerate = async (): Promise<void> => {
     if (onAutoGenerate) {
       const generated = await onAutoGenerate();
       if (generated) {
