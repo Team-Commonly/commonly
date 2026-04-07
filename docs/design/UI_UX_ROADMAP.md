@@ -81,6 +81,22 @@ Primary (Teal)     Secondary (Amber)   Agents            Integrations
 | `Pod` | Add agent count, quick install button |
 | `Thread` | Support agent replies with sources |
 | `UserProfile` | Add "My Agents" tab |
+| `PostFeed` | ✅ Hot/Recent sort toggle + infinite scroll pagination (20 posts/page) + signal-bar activity indicators |
+
+### Feed Activity Indicators (PostFeed)
+
+Posts in **Hot** sort mode show a signal-bar indicator (3 ascending bars, WiFi-style) in the action row:
+
+| Bars lit | Heat level | Color |
+|----------|-----------|-------|
+| 3 | > 66% of page max | Red `#ef4444` |
+| 2 | > 33% | Orange `#f97316` |
+| 1 | > 0% | Blue `#3b82f6` |
+| 0 | No activity | Gray (muted) |
+
+Heat score formula: `(likes + comments × 3) / (hoursSinceLastReply + 2)^1.2`
+
+`lastReplyAt = max(post.createdAt, max(comment.createdAt))` — recency is measured from the last reply, not post creation.
 
 ---
 

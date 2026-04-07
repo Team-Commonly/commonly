@@ -133,6 +133,7 @@ general_settings:
 |-----|-------|---------|
 | `LITELLM_BASE_URL` | `http://litellm:4000` | Routes provisioner + llmService through LiteLLM |
 | `LITELLM_MASTER_KEY` | from `api-keys` secret | Auth for LiteLLM API calls |
+| `LITELLM_CHAT_MODEL` | `chatgpt/gpt-5.4-mini` | Model used by `llmService.js` for summarization and digest generation |
 
 **If `LITELLM_BASE_URL` is unset or empty**, the provisioner falls back to direct Codex routing
 (`api: openai-codex-responses` → `https://chatgpt.com/backend-api`). Always verify this is set:
