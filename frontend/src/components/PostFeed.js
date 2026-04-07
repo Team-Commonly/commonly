@@ -1,20 +1,22 @@
 /* eslint-disable max-len */
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 import {
     Typography, Avatar, Box, Button, Container, IconButton, Menu, MenuItem, Chip,
-    Paper, TextField, Divider, CircularProgress, Skeleton, Autocomplete
+    Paper, TextField, Divider, CircularProgress, Skeleton, Autocomplete, ToggleButton, ToggleButtonGroup
 } from '@mui/material';
-import { 
-    ChatBubbleOutline, 
-    FavoriteBorder, 
-    Favorite, 
+import {
+    ChatBubbleOutline,
+    FavoriteBorder,
+    Favorite,
     MoreVert,
     EmojiEmotions as EmojiEmotionsIcon,
     Image as ImageIcon,
     Send as SendIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    Whatshot as WhatshotIcon,
+    AccessTime as AccessTimeIcon,
 } from '@mui/icons-material';
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { normalizeUploadUrl } from '../utils/apiBaseUrl';
@@ -58,6 +60,11 @@ const PostFeed = () => {
     const [lightboxImage, setLightboxImage] = useState(null);
     const [lightboxAlt, setLightboxAlt] = useState('');
     const [lightboxZoomed, setLightboxZoomed] = useState(false);
+    const [sortMode, setSortMode] = useState('hot');
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const sentinelRef = useRef(null);
     const fileInputRef = React.useRef(null);
     const emojiButtonRef = React.useRef(null);
 
@@ -327,66 +334,90 @@ const PostFeed = () => {
         }
     };
 
+    const PAGE_SIZE = 20;
+
+    const buildLikedStatus = useCallback((postList) => {
+        if (!currentUser) return {};
+        const status = {};
+        postList.forEach((post) => {
+            status[post._id] = post.likedBy?.some(
+                (u) => (u._id || u) === currentUser._id
+            ) || false;
+        });
+        return status;
+    }, [currentUser]);
+
     // Define the fetch posts function
-    const fetchPosts = useCallback(async () => {
+    const fetchPosts = useCallback(async (targetPage = 1, append = false) => {
         try {
-            const params = {};
-            if (activePodParam) {
-                params.podId = activePodParam;
-            }
-            if (activeCategoryParam) {
-                params.category = activeCategoryParam;
-            }
+            if (targetPage === 1 && !append) setPage(1);
+            if (append) setLoadingMore(true);
+            const params = { sort: sortMode, page: targetPage, limit: PAGE_SIZE };
+            if (activePodParam) params.podId = activePodParam;
+            if (activeCategoryParam) params.category = activeCategoryParam;
             const res = await axios.get('/api/posts', {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-                params
+                params,
             });
-            setPosts(res.data);
-            setContextPosts(res.data);
-            
-            // Check which posts the current user has liked
-            if (currentUser) {
-                const likedStatus = {};
-                res.data.forEach(post => {
-                    // Check if likedBy contains the current user's ID
-                    const isLiked = post.likedBy && post.likedBy.some(user => 
-                        user._id === currentUser._id || user === currentUser._id
-                    );
-                    likedStatus[post._id] = isLiked;
+            const incoming = res.data?.posts ?? res.data ?? [];
+            const more = res.data?.hasMore ?? false;
+            setHasMore(more);
+            if (append) {
+                setPosts((prev) => {
+                    const merged = [...prev, ...incoming];
+                    setContextPosts(merged);
+                    setLikedPosts((ls) => ({ ...ls, ...buildLikedStatus(incoming) }));
+                    return merged;
                 });
-                
-                setLikedPosts(likedStatus);
+            } else {
+                setPosts(incoming);
+                setContextPosts(incoming);
+                setLikedPosts(buildLikedStatus(incoming));
             }
         } catch (err) {
             setError('Failed to fetch posts. Please try again later.');
-            setPosts([]);
+            if (!append) setPosts([]);
+        } finally {
+            setLoadingMore(false);
         }
-    }, [currentUser, setContextPosts, activePodParam, activeCategoryParam]);
+    }, [currentUser, setContextPosts, activePodParam, activeCategoryParam, sortMode, buildLikedStatus]);
 
-    // If we have search results, use them
+    // Reset to page 1 when sort mode or filters change
+    useEffect(() => {
+        if (searchResults !== null) return;
+        if (!currentUser) return;
+        setPage(1);
+        setHasMore(true);
+        fetchPosts(1, false);
+    }, [sortMode, activePodParam, activeCategoryParam]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // If we have search results, use them; otherwise fetch
     useEffect(() => {
         if (searchResults !== null) {
             setPosts(searchResults);
-            
-            // Check which posts the current user has liked
-            if (currentUser) {
-                const likedStatus = {};
-                searchResults.forEach(post => {
-                    // Check if likedBy contains the current user's ID
-                    const isLiked = post.likedBy && post.likedBy.some(user => 
-                        user._id === currentUser._id || user === currentUser._id
-                    );
-                    likedStatus[post._id] = isLiked;
-                });
-                
-                setLikedPosts(likedStatus);
-            }
-        } 
-        // Otherwise, if we have the current user, fetch posts
-        else if (currentUser) {
-            fetchPosts();
+            setLikedPosts(buildLikedStatus(searchResults));
+        } else if (currentUser) {
+            fetchPosts(1, false);
         }
-    }, [searchResults, currentUser, setContextPosts, fetchPosts]);
+    }, [searchResults, currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Infinite scroll — load next page when sentinel enters viewport
+    useEffect(() => {
+        const el = sentinelRef.current;
+        if (!el) return undefined;
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting && hasMore && !loadingMore && !postsLoading) {
+                    const next = page + 1;
+                    setPage(next);
+                    fetchPosts(next, true);
+                }
+            },
+            { rootMargin: '200px' },
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [hasMore, loadingMore, postsLoading, page, fetchPosts]);
 
     const resolvePodId = (value) => {
         if (!value) return null;
@@ -794,8 +825,35 @@ const PostFeed = () => {
                 </Box>
             )}
             
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                <ToggleButtonGroup
+                    value={sortMode}
+                    exclusive
+                    onChange={(_, v) => v && setSortMode(v)}
+                    size="small"
+                    sx={{
+                        '& .MuiToggleButton-root': {
+                            fontSize: '0.75rem',
+                            px: 1.5,
+                            py: 0.5,
+                            textTransform: 'none',
+                            gap: 0.5,
+                        },
+                    }}
+                >
+                    <ToggleButton value="hot">
+                        <WhatshotIcon sx={{ fontSize: 14 }} />
+                        Hot
+                    </ToggleButton>
+                    <ToggleButton value="recent">
+                        <AccessTimeIcon sx={{ fontSize: 14 }} />
+                        Recent
+                    </ToggleButton>
+                </ToggleButtonGroup>
+            </Box>
+
             <Divider sx={{ mb: 3 }} />
-            
+
             {/* Posts Feed */}
             {postsLoading ? (
                 // Show skeleton loaders while posts are loading
@@ -830,17 +888,33 @@ const PostFeed = () => {
                     No posts yet!
                 </Typography>
             ) : (
-                filteredPosts.map((post) => {
+                filteredPosts.map((post, _idx, arr) => {
                     const author = getPostAuthor(post);
                     const postContent = typeof post?.content === 'string' ? post.content : '';
+                    const likeCount = post.likedBy?.length || post.likes || 0;
+                    const ageHours = (Date.now() - new Date(post.createdAt).getTime()) / 3600000;
+                    const heatScore = likeCount / Math.pow(ageHours + 2, 1.5);
+                    const maxHeat = sortMode === 'hot'
+                        ? Math.max(...arr.map((p) => {
+                            const lc = p.likedBy?.length || p.likes || 0;
+                            const ah = (Date.now() - new Date(p.createdAt).getTime()) / 3600000;
+                            return lc / Math.pow(ah + 2, 1.5);
+                        }), 0.001)
+                        : 1;
+                    const heatLevel = Math.min(heatScore / maxHeat, 1);
+                    const hotBorderColor = heatLevel > 0.66 ? '#ef4444' : heatLevel > 0.33 ? '#f97316' : '#3b82f6';
                     return (
-                    <Paper 
-                        key={post._id} 
-                        sx={{ 
-                            mb: 3, 
-                            p: 2, 
+                    <Paper
+                        key={post._id}
+                        sx={{
+                            mb: 3,
+                            p: 2,
                             borderRadius: 2,
-                            border: '1px solid #eaeaea'
+                            border: '1px solid #eaeaea',
+                            overflow: 'hidden',
+                            ...(sortMode === 'hot' && likeCount > 0 && {
+                                borderLeft: `3px solid ${hotBorderColor}`,
+                            }),
                         }}
                         className="post-card"
                         onClick={() => navigate(`/thread/${post._id}`)}
@@ -1015,11 +1089,34 @@ const PostFeed = () => {
                                 </Box>
                             </Box>
                         </Box>
+                        {sortMode === 'hot' && heatLevel > 0 && (
+                            <Box sx={{ mt: 1.5, mx: -2, mb: -2, height: 2, backgroundColor: 'action.hover' }}>
+                                <Box sx={{
+                                    height: '100%',
+                                    width: `${Math.max(heatLevel * 100, 4)}%`,
+                                    backgroundColor: hotBorderColor,
+                                    transition: 'width 0.4s ease',
+                                }} />
+                            </Box>
+                        )}
                     </Paper>
                     );
                 })
             )}
             
+            {/* Infinite scroll sentinel */}
+            <Box ref={sentinelRef} sx={{ height: 1 }} />
+            {loadingMore && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                    <CircularProgress size={24} />
+                </Box>
+            )}
+            {!hasMore && posts.length > 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', pb: 3 }}>
+                    All posts loaded
+                </Typography>
+            )}
+
             {/* Post Options Menu */}
             <Menu
                 id="post-menu"
