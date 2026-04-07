@@ -1,18 +1,50 @@
-/**
- * HeroSection Component
- * Main hero section with tagline, value prop, and CTAs
- */
-
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, Container, Link, Typography, alpha } from '@mui/material';
+import { Box, Button, Container, Link, Typography } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import GitHubIcon from '@mui/icons-material/GitHub';
 
-const HeroSection = () => {
+interface StatBadgeProps {
+  icon: string;
+  label: string;
+  detail: string;
+}
+
+const StatBadge: React.FC<StatBadgeProps> = ({ icon, label, detail }) => (
+  <Box
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 1.5,
+      px: 2,
+      py: 1,
+      borderRadius: '12px',
+      backgroundColor: 'rgba(15, 23, 42, 0.6)',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+    }}
+  >
+    <Box sx={{ fontSize: '1.25rem' }}>{icon}</Box>
+    <Box>
+      <Typography
+        variant="body2"
+        sx={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.8125rem', lineHeight: 1.2 }}
+      >
+        {label}
+      </Typography>
+      <Typography
+        variant="caption"
+        sx={{ color: '#64748b', fontSize: '0.6875rem' }}
+      >
+        {detail}
+      </Typography>
+    </Box>
+  </Box>
+);
+
+const HeroSection: React.FC = () => {
   const navigate = useNavigate();
 
-  const handleLearnMore = () => {
+  const handleLearnMore = (): void => {
     document.getElementById('use-cases')?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -330,38 +362,5 @@ const HeroSection = () => {
     </Box>
   );
 };
-
-function StatBadge({ icon, label, detail }) {
-  return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1.5,
-        px: 2,
-        py: 1,
-        borderRadius: '12px',
-        backgroundColor: 'rgba(15, 23, 42, 0.6)',
-        border: '1px solid rgba(148, 163, 184, 0.1)',
-      }}
-    >
-      <Box sx={{ fontSize: '1.25rem' }}>{icon}</Box>
-      <Box>
-        <Typography
-          variant="body2"
-          sx={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.8125rem', lineHeight: 1.2 }}
-        >
-          {label}
-        </Typography>
-        <Typography
-          variant="caption"
-          sx={{ color: '#64748b', fontSize: '0.6875rem' }}
-        >
-          {detail}
-        </Typography>
-      </Box>
-    </Box>
-  );
-}
 
 export default HeroSection;

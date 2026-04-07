@@ -1,9 +1,4 @@
-/**
- * LandingPage Component
- * Main landing page container with all sections
- */
-
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, TextField, Typography } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
@@ -15,30 +10,27 @@ import IntegrationsSection from './sections/IntegrationsSection';
 import CTASection from './sections/CTASection';
 import './LandingPage.css';
 
-const LandingPage = () => {
+const LandingPage: React.FC = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [contributorEmail, setContributorEmail] = React.useState('');
   const [contributorNote, setContributorNote] = React.useState('');
 
-  // Redirect authenticated users to feed
-  useEffect(() => {
+  React.useEffect(() => {
     if (!loading && user) {
       navigate('/feed');
     }
   }, [user, loading, navigate]);
 
-  // Show nothing while checking auth to prevent flash
   if (loading) {
     return null;
   }
 
-  // If user is logged in, we'll be redirecting - don't show landing
   if (user) {
     return null;
   }
 
-  const handleContributeSubmit = (e) => {
+  const handleContributeSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     const email = contributorEmail.trim();
     const note = contributorNote.trim();
