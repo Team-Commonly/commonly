@@ -157,36 +157,36 @@ const theme = createTheme({
 });
 
 // Component to handle navigation events
-function NavigationHandler() {
+function NavigationHandler(): null {
   const location = useLocation();
-  
+
   useEffect(() => {
     // Force a re-render when the location changes
-    const handleNavigation = () => {
+    const handleNavigation = (): void => {
       // Force a re-render by adding and removing a class
       document.body.classList.add('navigation-occurred');
       setTimeout(() => {
         document.body.classList.remove('navigation-occurred');
       }, 0);
     };
-    
+
     handleNavigation();
   }, [location]);
-  
+
   return null;
 }
 
-function App() {
+function App(): React.ReactElement {
   useEffect(() => {
     // Setup focus management to prevent accessibility issues
     setupFocusManagement();
-    
+
     // Check if a page refresh is needed
     checkAndRefresh();
-    
+
     // Add a class to the body for global styling
     document.body.classList.add('modern-ui');
-    
+
     return () => {
       document.body.classList.remove('modern-ui');
     };

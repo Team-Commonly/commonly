@@ -25,6 +25,41 @@ import {
 } from '@mui/icons-material';
 import { alpha, useTheme } from '@mui/material/styles';
 
+interface RuntimeToken {
+  id: string;
+  label?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+interface GatewayStatus {
+  connected?: boolean;
+  channels?: string[];
+}
+
+interface UserTokenMeta {
+  hasToken?: boolean;
+  createdAt?: string;
+}
+
+interface ClawdbotConfigPanelProps {
+  runtimeTokens?: RuntimeToken[];
+  runtimeTokenValue?: string;
+  onGenerateToken?: () => void;
+  onRevokeToken?: (id: string) => void;
+  tokenLoading?: boolean;
+  gatewayStatus?: GatewayStatus;
+  onRefreshStatus?: () => void;
+  userTokenValue?: string;
+  userTokenMeta?: UserTokenMeta;
+  userTokenScopes?: string[];
+  userTokenLoading?: boolean;
+  userTokenRevoking?: boolean;
+  onToggleUserScope?: (scopeId: string) => void;
+  onGenerateUserToken?: () => void;
+  onRevokeUserToken?: () => void;
+}
+
 /**
  * ClawdbotConfigPanel - Configuration panel for Clawdbot integration
  *
@@ -33,7 +68,7 @@ import { alpha, useTheme } from '@mui/material/styles';
  * 2. "Connect your own Clawdbot" with token + config snippet
  * 3. Channel status (future)
  */
-const ClawdbotConfigPanel = ({
+const ClawdbotConfigPanel: React.FC<ClawdbotConfigPanelProps> = ({
   runtimeTokens = [],
   runtimeTokenValue,
   onGenerateToken,
@@ -55,7 +90,7 @@ const ClawdbotConfigPanel = ({
   const [configCopied, setConfigCopied] = useState(false);
   const [showConfigSnippet, setShowConfigSnippet] = useState(false);
 
-  const copyToClipboard = async (text, setCopiedFn) => {
+  const copyToClipboard = async (text: string, setCopiedFn: React.Dispatch<React.SetStateAction<boolean>>): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedFn(true);
@@ -65,7 +100,7 @@ const ClawdbotConfigPanel = ({
     }
   };
 
-  const generateConfigSnippet = (runtimeToken, userToken) => {
+  const generateConfigSnippet = (runtimeToken: string | undefined, userToken: string | undefined): string => {
     return `{
   "channels": {
     "commonly": {
@@ -80,7 +115,7 @@ const ClawdbotConfigPanel = ({
 }`;
   };
 
-  const activeToken = runtimeTokenValue || (runtimeTokens.length > 0 ? '••••••••' : null);
+  const activeToken = runtimeTokenValue || (runtimeTokens.length > 0 ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : null);
   const hasUserToken = userTokenMeta?.hasToken;
 
   return (
@@ -185,7 +220,7 @@ const ClawdbotConfigPanel = ({
                 textOverflow: 'ellipsis',
               }}
             >
-              {runtimeTokenValue || '••••••••••••••••••••'}
+              {runtimeTokenValue || '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
             </Typography>
             {runtimeTokenValue && (
               <Tooltip title={copied ? 'Copied!' : 'Copy token'}>
@@ -294,13 +329,13 @@ const ClawdbotConfigPanel = ({
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   Created {new Date(token.createdAt).toLocaleDateString()}
-                  {token.lastUsedAt && ` • Last used ${new Date(token.lastUsedAt).toLocaleDateString()}`}
+                  {token.lastUsedAt && ` \u2022 Last used ${new Date(token.lastUsedAt).toLocaleDateString()}`}
                 </Typography>
               </Box>
               <Button
                 size="small"
                 color="error"
-                onClick={() => onRevokeToken(token.id)}
+                onClick={() => onRevokeToken?.(token.id)}
               >
                 Revoke
               </Button>
