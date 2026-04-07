@@ -34,45 +34,103 @@ import {
 } from '@mui/icons-material';
 import { AuthContext } from '../context/AuthContext';
 
-const AppsManagement = () => {
+interface IntegrationPodRef {
+  _id?: string;
+  name?: string;
+  type?: string;
+}
+
+interface IntegrationConfig {
+  channelName?: string;
+}
+
+interface Integration {
+  _id: string;
+  type: string;
+  status: string;
+  config?: IntegrationConfig;
+  podId?: IntegrationPodRef;
+  createdAt: string;
+}
+
+interface AppEntry {
+  _id: string;
+  name: string;
+}
+
+interface AppForm {
+  name: string;
+  webhookUrl: string;
+  description: string;
+}
+
+interface AppSecrets {
+  clientId: string;
+  clientSecret: string;
+  webhookSecret: string;
+}
+
+interface InstallForm {
+  appId: string;
+  targetType: string;
+  targetId: string;
+  scopes: string;
+  events: string;
+}
+
+interface InstallToken {
+  token: string;
+  tokenExpiresAt?: string;
+}
+
+interface IngestToken {
+  id: string;
+  label?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+const AppsManagement: React.FC = () => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
-  const [integrations, setIntegrations] = useState([]);
-  const [apps, setApps] = useState([]);
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [apps, setApps] = useState<AppEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selectedIntegration, setSelectedIntegration] = useState(null);
+  const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
-  const [appForm, setAppForm] = useState({ name: '', webhookUrl: '', description: '' });
-  const [appSecrets, setAppSecrets] = useState(null);
+  const [appForm, setAppForm] = useState<AppForm>({ name: '', webhookUrl: '', description: '' });
+  const [appSecrets, setAppSecrets] = useState<AppSecrets | null>(null);
   const [installing, setInstalling] = useState(false);
-  const [installForm, setInstallForm] = useState({
+  const [installForm, setInstallForm] = useState<InstallForm>({
     appId: '',
     targetType: 'pod',
     targetId: '',
     scopes: 'messages:read',
     events: 'message.created',
   });
-  const [installToken, setInstallToken] = useState(null);
+  const [installToken, setInstallToken] = useState<InstallToken | null>(null);
   const [ingestDialogOpen, setIngestDialogOpen] = useState(false);
-  const [ingestTokens, setIngestTokens] = useState([]);
+  const [ingestTokens, setIngestTokens] = useState<IngestToken[]>([]);
   const [ingestLoading, setIngestLoading] = useState(false);
   const [ingestError, setIngestError] = useState('');
   const [ingestLabel, setIngestLabel] = useState('');
-  const [newIngestToken, setNewIngestToken] = useState(null);
-  const [selectedIntegrationForTokens, setSelectedIntegrationForTokens] = useState(null);
+  const [newIngestToken, setNewIngestToken] = useState<string | null>(null);
+  const [selectedIntegrationForTokens, setSelectedIntegrationForTokens] = useState<Integration | null>(null);
 
-  const fetchIntegrations = async () => {
+  const fetchIntegrations = async (): Promise<void> => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      const endpoint = user?.role === 'admin' ? '/api/integrations/admin/all' : '/api/integrations/user/all';
+      const endpoint = (user as { role?: string })?.role === 'admin'
+        ? '/api/integrations/admin/all'
+        : '/api/integrations/user/all';
       const response = await axios.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setIntegrations(response.data);
+      setIntegrations(response.data as Integration[]);
       setError('');
     } catch (err) {
       console.error('Error fetching integrations:', err);
@@ -82,11 +140,11 @@ const AppsManagement = () => {
     }
   };
 
-  const fetchApps = async () => {
+  const fetchApps = async (): Promise<void> => {
     try {
       const token = localStorage.getItem('token');
       const res = await axios.get('/api/apps', { headers: { Authorization: `Bearer ${token}` } });
-      setApps(res.data);
+      setApps(res.data as AppEntry[]);
     } catch (err) {
       console.error('Error fetching apps:', err);
     }
@@ -97,12 +155,12 @@ const AppsManagement = () => {
     fetchApps();
   }, [user]);
 
-  const handleDeleteClick = (integration) => {
+  const handleDeleteClick = (integration: Integration): void => {
     setSelectedIntegration(integration);
     setDeleteDialogOpen(true);
   };
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = async (): Promise<void> => {
     if (!selectedIntegration) return;
     setDeleting(true);
     try {
@@ -115,14 +173,15 @@ const AppsManagement = () => {
       setDeleteDialogOpen(false);
       setSelectedIntegration(null);
     } catch (err) {
+      const e = err as { response?: { data?: { message?: string } } };
       console.error('Error deleting integration:', err);
-      setError(err.response?.data?.message || 'Failed to delete integration');
+      setError(e.response?.data?.message || 'Failed to delete integration');
     } finally {
       setDeleting(false);
     }
   };
 
-  const handleCreateApp = async () => {
+  const handleCreateApp = async (): Promise<void> => {
     if (!appForm.name || !appForm.webhookUrl) {
       setError('Name and webhook URL are required');
       return;
@@ -136,19 +195,20 @@ const AppsManagement = () => {
         { name: appForm.name, webhookUrl: appForm.webhookUrl, description: appForm.description },
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      setAppSecrets(res.data);
+      setAppSecrets(res.data as AppSecrets);
       setAppForm({ name: '', webhookUrl: '', description: '' });
       fetchApps();
       setError('');
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
       console.error('Error creating app:', err);
-      setError(err.response?.data?.error || 'Failed to create app');
+      setError(e.response?.data?.error || 'Failed to create app');
     } finally {
       setCreatingApp(false);
     }
   };
 
-  const handleCreateInstallation = async () => {
+  const handleCreateInstallation = async (): Promise<void> => {
     if (!installForm.appId || !installForm.targetId) {
       setError('App and target are required for installation');
       return;
@@ -168,17 +228,18 @@ const AppsManagement = () => {
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      setInstallToken(res.data);
+      setInstallToken(res.data as InstallToken);
       setError('');
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
       console.error('Error creating installation:', err);
-      setError(err.response?.data?.error || 'Failed to create installation');
+      setError(e.response?.data?.error || 'Failed to create installation');
     } finally {
       setInstalling(false);
     }
   };
 
-  const fetchIngestTokens = async (integrationId) => {
+  const fetchIngestTokens = async (integrationId: string): Promise<void> => {
     if (!integrationId) return;
     setIngestLoading(true);
     setIngestError('');
@@ -187,16 +248,17 @@ const AppsManagement = () => {
       const res = await axios.get(`/api/integrations/${integrationId}/ingest-tokens`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setIngestTokens(res.data.tokens || []);
+      setIngestTokens((res.data as { tokens?: IngestToken[] }).tokens || []);
     } catch (err) {
+      const e = err as { response?: { data?: { message?: string } } };
       console.error('Error fetching ingest tokens:', err);
-      setIngestError(err.response?.data?.message || 'Failed to load ingest tokens');
+      setIngestError(e.response?.data?.message || 'Failed to load ingest tokens');
     } finally {
       setIngestLoading(false);
     }
   };
 
-  const handleOpenIngestTokens = async (integration) => {
+  const handleOpenIngestTokens = async (integration: Integration): Promise<void> => {
     setSelectedIntegrationForTokens(integration);
     setIngestDialogOpen(true);
     setNewIngestToken(null);
@@ -204,7 +266,7 @@ const AppsManagement = () => {
     await fetchIngestTokens(integration._id);
   };
 
-  const handleCreateIngestToken = async () => {
+  const handleCreateIngestToken = async (): Promise<void> => {
     if (!selectedIntegrationForTokens) return;
     setIngestLoading(true);
     setIngestError('');
@@ -215,18 +277,19 @@ const AppsManagement = () => {
         { label: ingestLabel },
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      setNewIngestToken(res.data.token);
+      setNewIngestToken((res.data as { token?: string }).token || null);
       setIngestLabel('');
       await fetchIngestTokens(selectedIntegrationForTokens._id);
     } catch (err) {
+      const e = err as { response?: { data?: { message?: string } } };
       console.error('Error creating ingest token:', err);
-      setIngestError(err.response?.data?.message || 'Failed to create ingest token');
+      setIngestError(e.response?.data?.message || 'Failed to create ingest token');
     } finally {
       setIngestLoading(false);
     }
   };
 
-  const handleRevokeIngestToken = async (tokenId) => {
+  const handleRevokeIngestToken = async (tokenId: string): Promise<void> => {
     if (!selectedIntegrationForTokens || !tokenId) return;
     setIngestLoading(true);
     setIngestError('');
@@ -238,40 +301,31 @@ const AppsManagement = () => {
       );
       await fetchIngestTokens(selectedIntegrationForTokens._id);
     } catch (err) {
+      const e = err as { response?: { data?: { message?: string } } };
       console.error('Error revoking ingest token:', err);
-      setIngestError(err.response?.data?.message || 'Failed to revoke ingest token');
+      setIngestError(e.response?.data?.message || 'Failed to revoke ingest token');
     } finally {
       setIngestLoading(false);
     }
   };
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: string): 'success' | 'warning' | 'error' | 'info' | 'default' => {
     switch (status) {
-      case 'connected':
-        return 'success';
-      case 'disconnected':
-        return 'warning';
-      case 'error':
-        return 'error';
-      case 'pending':
-        return 'info';
-      default:
-        return 'default';
+      case 'connected': return 'success';
+      case 'disconnected': return 'warning';
+      case 'error': return 'error';
+      case 'pending': return 'info';
+      default: return 'default';
     }
   };
 
-  const getTypeIcon = (type) => {
+  const getTypeIcon = (type: string): string => {
     switch (type) {
-      case 'discord':
-        return '💬';
-      case 'telegram':
-        return '✈️';
-      case 'slack':
-        return '💬';
-      case 'messenger':
-        return '📩';
-      default:
-        return '🔗';
+      case 'discord': return '💬';
+      case 'telegram': return '✈️';
+      case 'slack': return '💬';
+      case 'messenger': return '📩';
+      default: return '🔗';
     }
   };
 
@@ -362,7 +416,7 @@ const AppsManagement = () => {
                     App Credentials (copy & store securely)
                   </Typography>
                   <Stack spacing={1}>
-                    {['clientId', 'clientSecret', 'webhookSecret'].map((field) => (
+                    {(['clientId', 'clientSecret', 'webhookSecret'] as const).map((field) => (
                       <Stack direction="row" spacing={1} alignItems="center" key={field}>
                         <TextField
                           label={field}
