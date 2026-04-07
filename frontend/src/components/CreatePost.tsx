@@ -8,13 +8,23 @@ import { IconButton, Box, Chip, TextField, Autocomplete } from '@mui/material';
 import { useAppContext } from '../context/AppContext';
 import { refreshPage } from '../utils/refreshUtils';
 
-const CreatePost = () => {
+interface PodOption {
+  _id: string;
+  name: string;
+}
+
+interface EmojiObject {
+  emoji?: string;
+  unified?: string;
+}
+
+const CreatePost: React.FC = () => {
     const { refreshData } = useAppContext();
     const [content, setContent] = useState('');
     const [error, setError] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [tags, setTags] = useState([]);
-    const [userPods, setUserPods] = useState([]);
+    const [tags, setTags] = useState<string[]>([]);
+    const [userPods, setUserPods] = useState<PodOption[]>([]);
     const [selectedPodId, setSelectedPodId] = useState('global');
     const [category, setCategory] = useState('General');
     const navigate = useNavigate();
@@ -40,10 +50,10 @@ const CreatePost = () => {
         fetchPods();
     }, []);
 
-    const podOptions = [{ _id: 'global', name: 'Global feed' }, ...(userPods || [])];
+    const podOptions: PodOption[] = [{ _id: 'global', name: 'Global feed' }, ...(userPods || [])];
     const selectedPodOption = podOptions.find((pod) => pod._id === selectedPodId) || podOptions[0];
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
         try {
             const resolvedPodId = selectedPodId && selectedPodId !== 'global' ? selectedPodId : null;
@@ -56,20 +66,20 @@ const CreatePost = () => {
             await axios.post('/api/posts', payload, {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
             });
-            
+
             // Refresh data to ensure consistency
             refreshData();
-            
+
             // Navigate to feed
             navigate('/feed');
-            
+
             // Trigger a page refresh after a short delay
             refreshPage(500);
         } catch (err) {
             setError('Failed to create post. Please try again later.');
         }
     };
-    const onEmojiClick = (emojiObj) => {
+    const onEmojiClick = (emojiObj: EmojiObject): void => {
         // Support both older and newer emoji-picker-react versions
         const emoji = emojiObj.emoji || (emojiObj.unified && String.fromCodePoint(parseInt(emojiObj.unified, 16)));
         if (emoji) {
@@ -97,7 +107,7 @@ const CreatePost = () => {
                     </IconButton>
                     {showEmojiPicker && (
                         <div className="emoji-picker-container">
-                            <EmojiPicker onEmojiClick={onEmojiClick} />
+                            <EmojiPicker onEmojiClick={onEmojiClick as Parameters<typeof EmojiPicker>[0]['onEmojiClick']} />
                         </div>
                     )}
                 </div>
@@ -116,11 +126,11 @@ const CreatePost = () => {
                         </Box>
                     )}
                     <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-                        <Autocomplete
+                        <Autocomplete<PodOption, false, true>
                             size="small"
                             options={podOptions}
                             value={selectedPodOption}
-                            onChange={(_, value) => setSelectedPodId(value?._id || 'global')}
+                            onChange={(_, value) => setSelectedPodId(value._id || 'global')}
                             getOptionLabel={(option) => option?.name || 'Global feed'}
                             isOptionEqualToValue={(option, value) => option._id === value._id}
                             disableClearable
