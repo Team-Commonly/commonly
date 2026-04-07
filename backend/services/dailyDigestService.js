@@ -46,7 +46,21 @@ class DailyDigestService {
         .lean();
 
       if (summaries.length === 0) {
-        return DailyDigestService.createEmptyDigest(user, startTime, endTime);
+        const emptyData = DailyDigestService.createEmptyDigest(user, startTime, endTime);
+        return Summary.create({
+          type: 'daily-digest',
+          title: emptyData.title,
+          content: emptyData.content,
+          timeRange: { start: startTime, end: endTime },
+          metadata: {
+            totalItems: 0,
+            topTags: [],
+            topUsers: [],
+            subscribedPods: podIds.length,
+            userId: userId.toString(),
+          },
+          analytics: emptyData.analytics,
+        });
       }
 
       // Organize summaries by pod and type

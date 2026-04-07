@@ -486,6 +486,25 @@ Be analytical but concise.`;
         {
           $limit: limit,
         },
+        {
+          $lookup: {
+            from: 'pods',
+            localField: 'podId',
+            foreignField: '_id',
+            as: '_pod',
+          },
+        },
+        {
+          $set: {
+            'metadata.podName': {
+              $ifNull: [
+                '$metadata.podName',
+                { $arrayElemAt: ['$_pod.name', 0] },
+              ],
+            },
+          },
+        },
+        { $unset: '_pod' },
       ];
 
       const summaries = await Summary.aggregate(pipeline);
