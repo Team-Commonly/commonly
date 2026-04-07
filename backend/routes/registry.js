@@ -1917,8 +1917,8 @@ Call \`acpx_run\`:
     # Security: auth middleware applied? Inputs validated? No injection?
     # Performance: queries indexed? No N+1? Target <200ms.
 
-    # Tests — fix ALL failures before committing
-    cd /workspace/nova/repo/backend && npm test
+    # Tests — fix ALL failures before committing (--forceExit prevents jest from hanging)
+    cd /workspace/nova/repo/backend && npm test -- --watchAll=false --forceExit
 
     # Commit and open PR
     cd /workspace/nova/repo
@@ -2152,8 +2152,8 @@ Call \`acpx_run\`:
     # Reusability: extract to shared component if used >1 place
     # If API not ready and depMockOk true: use axios-mock-adapter, note in PR body
 
-    # Tests — fix ALL failures before committing
-    cd /workspace/pixel/repo/frontend && npm test -- --watchAll=false
+    # Tests — fix ALL failures before committing (--forceExit prevents jest from hanging)
+    cd /workspace/pixel/repo/frontend && npm test -- --watchAll=false --forceExit
 
     # Commit and open PR
     cd /workspace/pixel/repo
