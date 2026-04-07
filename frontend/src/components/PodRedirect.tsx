@@ -8,23 +8,21 @@ import SportsEsportsIcon from '@mui/icons-material/SportsEsports';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import GroupsIcon from '@mui/icons-material/Groups';
 
-const PodRedirect = () => {
+const PodRedirect: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  
+
   useEffect(() => {
-    // Set loading to false after a short delay
     const timer = setTimeout(() => {
       setLoading(false);
     }, 500);
-    
     return () => clearTimeout(timer);
   }, []);
-  
-  const handleNavigate = (podType) => {
+
+  const handleNavigate = (podType: string): void => {
     navigate(`/pods/${podType}`);
   };
-  
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -32,7 +30,7 @@ const PodRedirect = () => {
       </Box>
     );
   }
-  
+
   return (
     <Container maxWidth="md" sx={{ mt: 8 }}>
       <Paper
@@ -51,7 +49,7 @@ const PodRedirect = () => {
         <Typography variant="body1" paragraph align="center" color="text.secondary">
           Select the type of pod you want to explore
         </Typography>
-        
+
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 3, mt: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
           <Button
             variant="contained"
@@ -63,7 +61,7 @@ const PodRedirect = () => {
           >
             Chat Pods
           </Button>
-          
+
           <Button
             variant="contained"
             color="secondary"
@@ -74,7 +72,7 @@ const PodRedirect = () => {
           >
             Study Pods
           </Button>
-          
+
           <Button
             variant="contained"
             color="success"
@@ -112,4 +110,4 @@ const PodRedirect = () => {
   );
 };
 
-export default PodRedirect; 
+export default PodRedirect;
