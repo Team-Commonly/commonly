@@ -1,5 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Paper, Box, Typography, CircularProgress, Chip, Divider, IconButton, Tooltip, Card, CardContent, Collapse, Alert } from '@mui/material';
+import {
+  Paper,
+  Box,
+  Typography,
+  CircularProgress,
+  Chip,
+  Divider,
+  IconButton,
+  Tooltip,
+  Card,
+  CardContent,
+  Collapse,
+  Alert,
+} from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -14,27 +27,81 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { formatDistanceToNowSafe, getTimeMs } from '../utils/dateUtils';
 
-const WhatsHappening = () => {
+interface SummaryMetadata {
+  totalItems?: number;
+  topTags?: string[];
+  podName?: string;
+}
+
+interface SummaryData {
+  _id?: string;
+  title?: string;
+  content?: string;
+  createdAt?: string;
+  metadata?: SummaryMetadata;
+  podId?: string;
+}
+
+interface RoomSummary extends SummaryData {
+  podId?: string;
+}
+
+interface RoomSummaryWithType extends RoomSummary {
+  chatType: string;
+}
+
+interface Summaries {
+  posts: SummaryData | null;
+  chats: SummaryData | null;
+  chatRooms: RoomSummary[];
+  studyRooms: RoomSummary[];
+  gameRooms: RoomSummary[];
+  allPosts: SummaryData | null;
+}
+
+interface ExpandedSections {
+  chatRooms: boolean;
+  studyRooms: boolean;
+  gameRooms: boolean;
+  [key: string]: boolean;
+}
+
+interface SummaryCardProps {
+  summary: SummaryData | null;
+  type: string;
+  icon: React.ReactNode;
+}
+
+interface PodSectionProps {
+  rooms: RoomSummary[] | null;
+  title: string;
+  icon: React.ReactNode;
+  podType: string;
+  color: string;
+  sectionKey: string;
+}
+
+const WhatsHappening: React.FC = () => {
   const navigate = useNavigate();
-  const [summaries, setSummaries] = useState({ 
-    posts: null, 
-    chats: null, 
-    chatRooms: [], 
+  const [summaries, setSummaries] = useState<Summaries>({
+    posts: null,
+    chats: null,
+    chatRooms: [],
     studyRooms: [],
     gameRooms: [],
-    allPosts: null 
+    allPosts: null
   });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNotice, setRefreshNotice] = useState('');
-  const [expandedSections, setExpandedSections] = useState({
+  const [expandedSections, setExpandedSections] = useState<ExpandedSections>({
     chatRooms: true,
     studyRooms: false,
     gameRooms: false
   });
 
-  const fetchSummaries = async (showRefreshing = false) => {
+  const fetchSummaries = async (showRefreshing = false): Promise<void> => {
     try {
       if (showRefreshing) setRefreshing(true);
       else setLoading(true);
@@ -48,8 +115,8 @@ const WhatsHappening = () => {
 
       // Fetch all pod types and summaries
       const [
-        latestResponse, 
-        chatRoomsResponse, 
+        latestResponse,
+        chatRoomsResponse,
         studyRoomsResponse,
         gameRoomsResponse,
         allPostsResponse
@@ -62,16 +129,17 @@ const WhatsHappening = () => {
       ]);
 
       setSummaries({
-        ...latestResponse.data,
-        chatRooms: chatRoomsResponse.data,
-        studyRooms: studyRoomsResponse.data,
-        gameRooms: gameRoomsResponse.data,
-        allPosts: allPostsResponse.data
+        ...(latestResponse.data as Omit<Summaries, 'chatRooms' | 'studyRooms' | 'gameRooms' | 'allPosts'>),
+        chatRooms: (chatRoomsResponse.data as RoomSummary[]),
+        studyRooms: (studyRoomsResponse.data as RoomSummary[]),
+        gameRooms: (gameRoomsResponse.data as RoomSummary[]),
+        allPosts: allPostsResponse.data as SummaryData
       });
       setError(null);
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
       console.error('Error fetching summaries:', err);
-      setError(err.response?.data?.error || 'Failed to fetch summaries');
+      setError(e.response?.data?.error || 'Failed to fetch summaries');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -80,7 +148,7 @@ const WhatsHappening = () => {
 
   useEffect(() => {
     fetchSummaries();
-    
+
     // Refresh summaries every 5 minutes
     const interval = setInterval(() => {
       fetchSummaries();
@@ -89,10 +157,10 @@ const WhatsHappening = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleRefresh = async () => {
+  const handleRefresh = async (): Promise<void> => {
     try {
       setRefreshing(true);
-      
+
       const token = localStorage.getItem('token');
       if (!token) {
         throw new Error('No authentication token found');
@@ -104,16 +172,17 @@ const WhatsHappening = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRefreshNotice('');
-      
+
       // Wait a moment for summaries to be generated
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
       // Then fetch the updated summaries
       await fetchSummaries(false);
-      
-    } catch (error) {
-      console.error('Error during refresh:', error);
-      if (error?.response?.status === 403) {
+
+    } catch (refreshError) {
+      const e = refreshError as { response?: { status?: number } };
+      console.error('Error during refresh:', refreshError);
+      if (e?.response?.status === 403) {
         setRefreshNotice('Only global admins can trigger fresh regeneration. Showing latest available summaries.');
       }
       // Fall back to just fetching existing summaries
@@ -123,18 +192,18 @@ const WhatsHappening = () => {
     }
   };
 
-  const handleTagClick = (tag) => {
+  const handleTagClick = (tag: string): void => {
     navigate(`/feed?q=${encodeURIComponent(tag)}`);
   };
 
-  const handlePodClick = (podId, podType) => {
+  const handlePodClick = (podId: string | undefined, podType: string): void => {
     if (!podId) {
       console.warn('No podId provided for navigation');
       return;
     }
-    
+
     console.log('Navigating to pod:', { podId, podType });
-    
+
     // Navigate to the specific pod
     if (podType === 'chat') {
       navigate(`/pods/chat/${podId}`);
@@ -148,18 +217,18 @@ const WhatsHappening = () => {
     }
   };
 
-  const handleViewAllPods = (podType) => {
+  const handleViewAllPods = (podType: string): void => {
     navigate(`/pods/${podType}`);
   };
 
-  const toggleSection = (sectionKey) => {
-    setExpandedSections(prev => ({
+  const toggleSection = (sectionKey: string): void => {
+    setExpandedSections((prev) => ({
       ...prev,
       [sectionKey]: !prev[sectionKey]
     }));
   };
 
-  const SummaryCard = ({ summary, type, icon }) => {
+  const SummaryCard: React.FC<SummaryCardProps> = ({ summary, type, icon }) => {
     if (!summary) {
       return (
         <Box sx={{ p: 2, opacity: 0.6 }}>
@@ -170,8 +239,8 @@ const WhatsHappening = () => {
             </Typography>
           </Box>
           <Typography variant="body2" color="text.secondary">
-            {type === 'posts' 
-              ? 'No new posts were shared in the last hour. The community is taking a peaceful break.' 
+            {type === 'posts'
+              ? 'No new posts were shared in the last hour. The community is taking a peaceful break.'
               : 'No chat activity in the last hour.'
             }
           </Typography>
@@ -184,10 +253,10 @@ const WhatsHappening = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
             {icon}
-            <Typography 
-              variant="subtitle2" 
-              sx={{ 
-                ml: 1, 
+            <Typography
+              variant="subtitle2"
+              sx={{
+                ml: 1,
                 fontWeight: 600,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -198,16 +267,16 @@ const WhatsHappening = () => {
               {summary.title}
             </Typography>
           </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ ml: 1, flexShrink: 0 }}>
-            {formatDistanceToNowSafe(summary.createdAt, { addSuffix: true })}
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 1, flexShrink: 0 }}>
+            {formatDistanceToNowSafe(summary.createdAt, { addSuffix: true }) as string}
           </Typography>
         </Box>
-        
-        <Typography 
-          variant="body2" 
-          color="text.secondary" 
-          sx={{ 
-            mb: 1.5, 
+
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{
+            mb: 1.5,
             lineHeight: 1.4,
             display: '-webkit-box',
             WebkitLineClamp: 3,
@@ -220,23 +289,23 @@ const WhatsHappening = () => {
 
         {summary.metadata && (
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: type === 'chats' ? 1 : 0 }}>
-            {summary.metadata.totalItems > 0 && (
-              <Chip 
-                size="small" 
+            {(summary.metadata.totalItems || 0) > 0 && (
+              <Chip
+                size="small"
                 label={`${summary.metadata.totalItems} ${type === 'posts' ? 'posts' : 'messages'}`}
                 variant="outlined"
                 sx={{ fontSize: '0.7rem', height: 20 }}
               />
             )}
             {summary.metadata.topTags?.slice(0, 2).map((tag, index) => (
-              <Chip 
+              <Chip
                 key={index}
-                size="small" 
+                size="small"
                 label={type === 'posts' ? `#${tag}` : tag}
                 color="primary"
                 variant="outlined"
-                sx={{ 
-                  fontSize: '0.7rem', 
+                sx={{
+                  fontSize: '0.7rem',
                   height: 20,
                   cursor: 'pointer',
                   '&:hover': {
@@ -262,27 +331,27 @@ const WhatsHappening = () => {
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
               {(() => {
                 // Combine all chat pod types (chat, study, games) and sort by activity
-                const allChatRooms = [
-                  ...(summaries.chatRooms || []).map(room => ({ ...room, chatType: 'chat' })),
-                  ...(summaries.studyRooms || []).map(room => ({ ...room, chatType: 'study' })),
-                  ...(summaries.gameRooms || []).map(room => ({ ...room, chatType: 'games' }))
+                const allChatRooms: RoomSummaryWithType[] = [
+                  ...(summaries.chatRooms || []).map((room) => ({ ...room, chatType: 'chat' })),
+                  ...(summaries.studyRooms || []).map((room) => ({ ...room, chatType: 'study' })),
+                  ...(summaries.gameRooms || []).map((room) => ({ ...room, chatType: 'games' }))
                 ]
-                .filter(room => room.metadata?.totalItems > 0) // Only rooms with activity
-                .sort((a, b) => (b.metadata?.totalItems || 0) - (a.metadata?.totalItems || 0)) // Sort by message count
-                .slice(0, 3); // Show top 3 most active
+                  .filter((room) => (room.metadata?.totalItems || 0) > 0) // Only rooms with activity
+                  .sort((a, b) => (b.metadata?.totalItems || 0) - (a.metadata?.totalItems || 0)) // Sort by message count
+                  .slice(0, 3); // Show top 3 most active
 
                 return allChatRooms.map((room, index) => {
                   const podId = room.podId || room._id;
                   const podName = room.metadata?.podName || `${room.chatType} Room`;
                   const messageCount = room.metadata?.totalItems || 0;
-                  
+
                   // Different colors for different chat pod types
-                  const chatTypeColors = {
+                  const chatTypeColors: Record<string, 'secondary' | 'success' | 'warning'> = {
                     chat: 'secondary',    // General chat rooms
-                    study: 'success',     // Study-focused chat rooms  
+                    study: 'success',     // Study-focused chat rooms
                     games: 'warning'      // Game-focused chat rooms
                   };
-                  
+
                   return (
                     <Chip
                       key={room._id || index}
@@ -312,12 +381,12 @@ const WhatsHappening = () => {
     );
   };
 
-  const PodSection = ({ rooms, title, icon, podType, color, sectionKey }) => {
+  const PodSection: React.FC<PodSectionProps> = ({ rooms, title, icon, podType, color, sectionKey }) => {
     if (!rooms || rooms.length === 0) return null;
 
     const isExpanded = expandedSections[sectionKey];
-    const sortedRooms = rooms
-      .sort((a, b) => getTimeMs(b.createdAt) - getTimeMs(a.createdAt))
+    const sortedRooms = [...rooms]
+      .sort((a, b) => (getTimeMs(b.createdAt) as number) - (getTimeMs(a.createdAt) as number))
       .slice(0, 5); // Show only top 5 most recent
 
     return (
@@ -325,19 +394,19 @@ const WhatsHappening = () => {
         <Divider sx={{ mx: 2, my: 1 }} />
         <Box sx={{ px: 2, pb: isExpanded ? 1 : 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Box 
-              sx={{ 
-                display: 'flex', 
+            <Box
+              sx={{
+                display: 'flex',
                 alignItems: 'center',
                 cursor: 'pointer',
                 '&:hover': { opacity: 0.8 }
               }}
               onClick={() => toggleSection(sectionKey)}
             >
-              <Typography 
-                variant="subtitle2" 
-                sx={{ 
-                  fontWeight: 600, 
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontWeight: 600,
                   color: `${color}.main`,
                   display: 'flex',
                   alignItems: 'center'
@@ -348,19 +417,19 @@ const WhatsHappening = () => {
                 <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
                   ({sortedRooms.length})
                 </Typography>
-                {isExpanded ? 
-                  <ExpandLessIcon sx={{ ml: 0.5, fontSize: 16 }} /> : 
+                {isExpanded ?
+                  <ExpandLessIcon sx={{ ml: 0.5, fontSize: 16 }} /> :
                   <ExpandMoreIcon sx={{ ml: 0.5, fontSize: 16 }} />
                 }
               </Typography>
             </Box>
-            <Chip 
+            <Chip
               size="small"
-              label={`View All`}
+              label="View All"
               variant="outlined"
-              color={color}
-              sx={{ 
-                fontSize: '0.65rem', 
+              color={color as 'info' | 'success' | 'warning'}
+              sx={{
+                fontSize: '0.65rem',
                 height: 18,
                 cursor: 'pointer',
                 '&:hover': {
@@ -371,30 +440,30 @@ const WhatsHappening = () => {
               icon={<LaunchIcon sx={{ fontSize: 12 }} />}
             />
           </Box>
-          
+
           <Collapse in={isExpanded}>
             <Box>
               {sortedRooms.map((roomSummary, index) => {
                 // The podId should be available directly on the summary object
                 const podId = roomSummary.podId || roomSummary._id;
                 const podName = roomSummary.metadata?.podName || `${title} Room`;
-                
-                console.log('Room summary data:', { 
-                  roomSummary, 
-                  podId, 
-                  podName, 
+
+                console.log('Room summary data:', {
+                  roomSummary,
+                  podId,
+                  podName,
                   podType,
-                  summaryId: roomSummary._id 
+                  summaryId: roomSummary._id
                 });
 
                 return (
-                  <Card 
-                    key={roomSummary._id || index} 
+                  <Card
+                    key={roomSummary._id || index}
                     variant="outlined"
-                    sx={{ 
-                      mb: 1, 
+                    sx={{
+                      mb: 1,
                       cursor: 'pointer',
-                      borderLeft: `3px solid`,
+                      borderLeft: '3px solid',
                       borderLeftColor: `${color}.main`,
                       '&:hover': {
                         boxShadow: 2,
@@ -407,9 +476,9 @@ const WhatsHappening = () => {
                   >
                     <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Typography 
-                          variant="subtitle2" 
-                          sx={{ 
+                        <Typography
+                          variant="subtitle2"
+                          sx={{
                             fontWeight: 600,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -420,14 +489,14 @@ const WhatsHappening = () => {
                           {podName}
                         </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ ml: 1, flexShrink: 0 }}>
-                          {formatDistanceToNowSafe(roomSummary.createdAt, { addSuffix: true })}
+                          {formatDistanceToNowSafe(roomSummary.createdAt, { addSuffix: true }) as string}
                         </Typography>
                       </Box>
-                      
-                      <Typography 
-                        variant="body2" 
-                        color="text.secondary" 
-                        sx={{ 
+
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{
                           mb: 0.5,
                           lineHeight: 1.3,
                           display: '-webkit-box',
@@ -438,13 +507,13 @@ const WhatsHappening = () => {
                       >
                         {roomSummary.content}
                       </Typography>
-                      
-                      {roomSummary.metadata?.totalItems > 0 && (
-                        <Chip 
-                          size="small" 
-                          label={`${roomSummary.metadata.totalItems} messages`}
+
+                      {(roomSummary.metadata?.totalItems || 0) > 0 && (
+                        <Chip
+                          size="small"
+                          label={`${roomSummary.metadata!.totalItems} messages`}
                           variant="outlined"
-                          color={color}
+                          color={color as 'info' | 'success' | 'warning'}
                           sx={{ fontSize: '0.65rem', height: 18 }}
                         />
                       )}
@@ -493,15 +562,15 @@ const WhatsHappening = () => {
                 transition: 'opacity 0.3s ease'
               }}
             >
-              <RefreshIcon 
-                sx={{ 
+              <RefreshIcon
+                sx={{
                   fontSize: 18,
                   animation: refreshing ? 'spin 1s linear infinite' : 'none',
                   '@keyframes spin': {
                     '0%': { transform: 'rotate(0deg)' },
                     '100%': { transform: 'rotate(360deg)' }
                   }
-                }} 
+                }}
               />
             </IconButton>
           </Tooltip>
@@ -524,22 +593,22 @@ const WhatsHappening = () => {
         </Box>
       ) : (
         <Box>
-          <SummaryCard 
-            summary={summaries.posts} 
-            type="posts" 
+          <SummaryCard
+            summary={summaries.posts}
+            type="posts"
             icon={<PostAddIcon sx={{ fontSize: 18, color: 'primary.main' }} />}
           />
-          
+
           <Divider sx={{ mx: 2 }} />
-          
-          <SummaryCard 
-            summary={summaries.chats} 
-            type="chats" 
+
+          <SummaryCard
+            summary={summaries.chats}
+            type="chats"
             icon={<ChatIcon sx={{ fontSize: 18, color: 'secondary.main' }} />}
           />
 
           {/* Active Pod Sections */}
-          <PodSection 
+          <PodSection
             rooms={summaries.chatRooms}
             title="Active Chat Rooms"
             icon={<ChatIcon sx={{ fontSize: 16, mr: 0.5 }} />}
@@ -548,7 +617,7 @@ const WhatsHappening = () => {
             sectionKey="chatRooms"
           />
 
-          <PodSection 
+          <PodSection
             rooms={summaries.studyRooms}
             title="Active Study Groups"
             icon={<SchoolIcon sx={{ fontSize: 16, mr: 0.5 }} />}
@@ -557,7 +626,7 @@ const WhatsHappening = () => {
             sectionKey="studyRooms"
           />
 
-          <PodSection 
+          <PodSection
             rooms={summaries.gameRooms}
             title="Active Game Rooms"
             icon={<SportsEsportsIcon sx={{ fontSize: 16, mr: 0.5 }} />}
@@ -570,11 +639,11 @@ const WhatsHappening = () => {
             <>
               <Divider sx={{ mx: 2, my: 1 }} />
               <Box sx={{ px: 2, pb: 1 }}>
-                <Typography 
-                  variant="subtitle2" 
-                  sx={{ 
-                    fontWeight: 600, 
-                    mb: 1, 
+                <Typography
+                  variant="subtitle2"
+                  sx={{
+                    fontWeight: 600,
+                    mb: 1,
                     color: 'text.primary',
                     display: 'flex',
                     alignItems: 'center'
@@ -583,10 +652,10 @@ const WhatsHappening = () => {
                   <PostAddIcon sx={{ fontSize: 16, mr: 0.5 }} />
                   Community Overview
                 </Typography>
-                <Card 
+                <Card
                   variant="outlined"
-                  sx={{ 
-                    borderLeft: '3px solid', 
+                  sx={{
+                    borderLeft: '3px solid',
                     borderLeftColor: 'primary.main',
                     backgroundColor: 'background.paper',
                     '&:hover': {
@@ -595,9 +664,9 @@ const WhatsHappening = () => {
                   }}
                 >
                   <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                    <Typography 
-                      variant="subtitle2" 
-                      sx={{ 
+                    <Typography
+                      variant="subtitle2"
+                      sx={{
                         fontWeight: 600,
                         mb: 0.5,
                         color: 'text.primary'
@@ -605,10 +674,10 @@ const WhatsHappening = () => {
                     >
                       {summaries.allPosts.title}
                     </Typography>
-                    
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
+
+                    <Typography
+                      variant="body2"
+                      sx={{
                         mb: 1,
                         lineHeight: 1.4,
                         color: 'text.secondary',
@@ -620,26 +689,26 @@ const WhatsHappening = () => {
                     >
                       {summaries.allPosts.content}
                     </Typography>
-                    
+
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {summaries.allPosts.metadata?.totalItems > 0 && (
-                        <Chip 
-                          size="small" 
-                          label={`${summaries.allPosts.metadata.totalItems} total posts`}
+                      {(summaries.allPosts.metadata?.totalItems || 0) > 0 && (
+                        <Chip
+                          size="small"
+                          label={`${summaries.allPosts.metadata!.totalItems} total posts`}
                           variant="outlined"
                           color="primary"
                           sx={{ fontSize: '0.65rem', height: 18 }}
                         />
                       )}
                       {summaries.allPosts.metadata?.topTags?.slice(0, 3).map((tag, index) => (
-                        <Chip 
+                        <Chip
                           key={index}
-                          size="small" 
+                          size="small"
                           label={`#${tag}`}
                           color="primary"
                           variant="filled"
-                          sx={{ 
-                            fontSize: '0.65rem', 
+                          sx={{
+                            fontSize: '0.65rem',
                             height: 18,
                             cursor: 'pointer',
                             '&:hover': {
@@ -671,4 +740,4 @@ const WhatsHappening = () => {
   );
 };
 
-export default WhatsHappening; 
+export default WhatsHappening;

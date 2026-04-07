@@ -30,45 +30,121 @@ const HUMAN_PARTICIPATION_OPTIONS = [
   { value: 'none', label: 'No humans' },
 ];
 
-const DEFAULT_STOP_CONDITIONS = {
+interface StopConditions {
+  maxMessages: number | string;
+  maxRounds: number | string;
+  maxDurationMinutes: number | string;
+}
+
+interface Schedule {
+  enabled: boolean;
+  frequencyMinutes: number | string;
+  timezone: string;
+}
+
+const DEFAULT_STOP_CONDITIONS: StopConditions = {
   maxMessages: 20,
   maxRounds: 5,
   maxDurationMinutes: 60,
 };
 
-const DEFAULT_SCHEDULE = {
+const DEFAULT_SCHEDULE: Schedule = {
   enabled: false,
   frequencyMinutes: 20,
   timezone: 'UTC',
 };
 
-const buildAgentKey = (agentType, instanceId = 'default') => `${agentType}::${instanceId}`;
+const buildAgentKey = (agentType: string, instanceId = 'default'): string => `${agentType}::${instanceId}`;
 
-const parseAgentKey = (value = '') => {
+const parseAgentKey = (value = ''): { agentType: string; instanceId: string } | null => {
   const [agentType, instanceId] = value.split('::');
   if (!agentType) return null;
   return { agentType, instanceId: instanceId || 'default' };
 };
 
-const clampNumber = (value, fallback) => {
-  const parsed = Number.parseInt(value, 10);
+const clampNumber = (value: number | string, fallback: number): number => {
+  const parsed = Number.parseInt(String(value), 10);
   if (Number.isNaN(parsed)) return fallback;
   return Math.max(parsed, 1);
 };
 
-const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
+interface Participant {
+  agentType: string;
+  instanceId: string;
+  role: string;
+}
+
+interface AgentOption {
+  key: string;
+  label: string;
+  agentType: string;
+  instanceId: string;
+}
+
+interface EnsembleTurnState {
+  currentAgent?: { agentType?: string };
+  roundNumber?: number;
+  turnNumber?: number;
+}
+
+interface EnsembleSummary {
+  content?: string;
+}
+
+interface EnsembleState {
+  id?: string;
+  status?: string;
+  participants?: Participant[];
+  turnState?: EnsembleTurnState;
+  stats?: Record<string, unknown>;
+  summary?: EnsembleSummary;
+  stopConditions?: Partial<StopConditions>;
+  schedule?: Partial<Schedule>;
+  topic?: string;
+  pausedAt?: string;
+  completionReason?: string;
+  totalMessages?: number;
+}
+
+interface PodConfig {
+  enabled?: boolean;
+  topic?: string;
+  participants?: Participant[];
+  stopConditions?: Partial<StopConditions>;
+  schedule?: Partial<Schedule>;
+  humanParticipation?: string;
+}
+
+interface PodAgent {
+  name: string;
+  instanceId?: string;
+  profile?: { displayName?: string };
+  displayName?: string;
+}
+
+interface AgentEnsemblePanelProps {
+  podId: string;
+  podAgents?: PodAgent[];
+  isPodAdmin?: boolean;
+}
+
+const AgentEnsemblePanel: React.FC<AgentEnsemblePanelProps> = ({
+  podId,
+  podAgents = [],
+  isPodAdmin = false,
+}) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
-  const [state, setState] = useState(null);
-  const [podConfig, setPodConfig] = useState(null);
+  const [state, setState] = useState<EnsembleState | null>(null);
+  const [podConfig, setPodConfig] = useState<PodConfig | null>(null);
 
   const [enabled, setEnabled] = useState(false);
   const [topic, setTopic] = useState('');
-  const [participants, setParticipants] = useState([]);
-  const [stopConditions, setStopConditions] = useState(DEFAULT_STOP_CONDITIONS);
-  const [schedule, setSchedule] = useState(DEFAULT_SCHEDULE);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [stopConditions, setStopConditions] = useState<StopConditions>(DEFAULT_STOP_CONDITIONS);
+  const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE);
   const [humanParticipation, setHumanParticipation] = useState('participate');
 
   const authHeaders = useMemo(() => {
@@ -76,7 +152,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, []);
 
-  const agentOptions = useMemo(() => (
+  const agentOptions: AgentOption[] = useMemo(() => (
     (podAgents || []).map((agent) => ({
       key: buildAgentKey(agent.name, agent.instanceId || 'default'),
       label: agent.profile?.displayName || agent.displayName || agent.name,
@@ -85,13 +161,13 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     }))
   ), [podAgents]);
 
-  const applyStatePatch = useCallback((patch) => {
+  const applyStatePatch = useCallback((patch: Partial<EnsembleState>): void => {
     if (!patch) return;
     setState((prev) => {
       if (!prev) {
-        return patch;
+        return patch as EnsembleState;
       }
-      const next = { ...prev, ...patch };
+      const next: EnsembleState = { ...prev, ...patch };
       if (patch.turnState) {
         next.turnState = { ...prev.turnState, ...patch.turnState };
       }
@@ -114,20 +190,22 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     });
   }, []);
 
-  const refreshState = useCallback(async () => {
-    if (!podId) return;
+  const refreshState = useCallback(async (): Promise<{ state?: EnsembleState; podConfig?: PodConfig } | null> => {
+    if (!podId) return null;
     setLoading(true);
     setError('');
     try {
       const response = await axios.get(`/api/pods/${podId}/ensemble/state`, {
         headers: authHeaders,
       });
-      setState(response.data?.state || null);
-      setPodConfig(response.data?.podConfig || {});
-      return response.data || null;
+      const data = response.data as { state?: EnsembleState; podConfig?: PodConfig };
+      setState(data?.state || null);
+      setPodConfig(data?.podConfig || {});
+      return data || null;
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
       console.error('Failed to load ensemble state:', err);
-      setError(err.response?.data?.error || 'Unable to load agent ensemble status.');
+      setError(e.response?.data?.error || 'Unable to load agent ensemble status.');
       return null;
     } finally {
       setLoading(false);
@@ -139,9 +217,9 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
   }, [refreshState]);
 
   useEffect(() => {
-    const configSource = podConfig || {};
-    const stateSource = state || {};
-    const useLiveState = ['active', 'paused'].includes(stateSource.status);
+    const configSource: PodConfig = podConfig || {};
+    const stateSource: EnsembleState = state || {};
+    const useLiveState = ['active', 'paused'].includes(stateSource.status || '');
     const mergedConfig = useLiveState
       ? {
         ...configSource,
@@ -176,11 +254,11 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     setSchedule({
       ...DEFAULT_SCHEDULE,
       ...(mergedConfig.schedule || {}),
-    });
+    } as Schedule);
     setHumanParticipation(configSource.humanParticipation || 'participate');
   }, [podConfig, state]);
 
-  const handleParticipantChange = (index, nextValue) => {
+  const handleParticipantChange = (index: number, nextValue: string): void => {
     setParticipants((prev) => {
       const updated = [...prev];
       const parsed = parseAgentKey(nextValue);
@@ -195,7 +273,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     });
   };
 
-  const handleRoleChange = (index, role) => {
+  const handleRoleChange = (index: number, role: string): void => {
     setParticipants((prev) => {
       const updated = [...prev];
       updated[index] = { ...updated[index], role };
@@ -208,18 +286,18 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     });
   };
 
-  const handleAddParticipant = () => {
+  const handleAddParticipant = (): void => {
     setParticipants((prev) => {
       const hasStarter = prev.some((item) => item.role === 'starter');
       return [...prev, { agentType: '', instanceId: 'default', role: hasStarter ? 'responder' : 'starter' }];
     });
   };
 
-  const handleRemoveParticipant = (index) => {
+  const handleRemoveParticipant = (index: number): void => {
     setParticipants((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  const validateParticipants = () => {
+  const validateParticipants = (): string | null => {
     const filtered = participants.filter((p) => p.agentType);
     if (filtered.length < 2) {
       return 'Add at least two agents to start an ensemble discussion.';
@@ -234,7 +312,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
     return null;
   };
 
-  const buildParticipantPayload = () => (
+  const buildParticipantPayload = (): Array<Participant & { displayName?: string }> => (
     participants
       .filter((p) => p.agentType)
       .map((p) => {
@@ -250,7 +328,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
       })
   );
 
-  const handleSaveConfig = async () => {
+  const handleSaveConfig = async (): Promise<void> => {
     if (!podId) return;
 
     if (state?.status === 'active') {
@@ -279,32 +357,34 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
           topic: topic.trim(),
           participants: buildParticipantPayload(),
           stopConditions: {
-            maxMessages: clampNumber(stopConditions.maxMessages, DEFAULT_STOP_CONDITIONS.maxMessages),
-            maxRounds: clampNumber(stopConditions.maxRounds, DEFAULT_STOP_CONDITIONS.maxRounds),
-            maxDurationMinutes: clampNumber(stopConditions.maxDurationMinutes, DEFAULT_STOP_CONDITIONS.maxDurationMinutes),
+            maxMessages: clampNumber(stopConditions.maxMessages, DEFAULT_STOP_CONDITIONS.maxMessages as number),
+            maxRounds: clampNumber(stopConditions.maxRounds, DEFAULT_STOP_CONDITIONS.maxRounds as number),
+            maxDurationMinutes: clampNumber(stopConditions.maxDurationMinutes, DEFAULT_STOP_CONDITIONS.maxDurationMinutes as number),
           },
           schedule: {
             enabled: Boolean(schedule.enabled),
-            frequencyMinutes: clampNumber(schedule.frequencyMinutes, DEFAULT_SCHEDULE.frequencyMinutes),
+            frequencyMinutes: clampNumber(schedule.frequencyMinutes, DEFAULT_SCHEDULE.frequencyMinutes as number),
             timezone: schedule.timezone || 'UTC',
           },
           humanParticipation,
         },
         { headers: authHeaders },
       );
-      if (response?.data?.config) {
-        setPodConfig(response.data.config);
+      const data = response?.data as { config?: PodConfig };
+      if (data?.config) {
+        setPodConfig(data.config);
       }
       await refreshState();
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
       console.error('Failed to save ensemble config:', err);
-      setError(err.response?.data?.error || 'Failed to save ensemble configuration.');
+      setError(e.response?.data?.error || 'Failed to save ensemble configuration.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleStart = async () => {
+  const handleStart = async (): Promise<void> => {
     const validationError = validateParticipants();
     if (validationError) {
       setError(validationError);
@@ -318,41 +398,44 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
         {
           topic: topic.trim(),
           participants: buildParticipantPayload(),
-          maxMessages: clampNumber(stopConditions.maxMessages, DEFAULT_STOP_CONDITIONS.maxMessages),
-          maxRounds: clampNumber(stopConditions.maxRounds, DEFAULT_STOP_CONDITIONS.maxRounds),
-          maxDurationMinutes: clampNumber(stopConditions.maxDurationMinutes, DEFAULT_STOP_CONDITIONS.maxDurationMinutes),
+          maxMessages: clampNumber(stopConditions.maxMessages, DEFAULT_STOP_CONDITIONS.maxMessages as number),
+          maxRounds: clampNumber(stopConditions.maxRounds, DEFAULT_STOP_CONDITIONS.maxRounds as number),
+          maxDurationMinutes: clampNumber(stopConditions.maxDurationMinutes, DEFAULT_STOP_CONDITIONS.maxDurationMinutes as number),
         },
         { headers: authHeaders },
       );
-      if (response?.data?.state) {
-        setState(response.data.state);
+      const data = response?.data as { state?: EnsembleState };
+      if (data?.state) {
+        setState(data.state);
       }
       const refreshed = await refreshState();
       if (refreshed?.state?.status && refreshed.state.status !== 'active') {
         setError('Server did not start the discussion. Please try again or refresh.');
       }
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
       console.error('Failed to start ensemble discussion:', err);
-      setError(err.response?.data?.error || 'Failed to start the discussion.');
+      setError(e.response?.data?.error || 'Failed to start the discussion.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handlePause = async () => {
+  const handlePause = async (): Promise<void> => {
     setActionLoading(true);
     setError('');
     try {
       const response = await axios.post(`/api/pods/${podId}/ensemble/pause`, {}, { headers: authHeaders });
-      if (response?.data?.state) {
+      const data = response?.data as { state?: EnsembleState & { pausedAt?: string; turnNumber?: number } };
+      if (data?.state) {
         applyStatePatch({
-          id: response.data.state.id,
-          status: response.data.state.status,
+          id: data.state.id,
+          status: data.state.status,
           stats: {
-            pausedAt: response.data.state.pausedAt,
+            pausedAt: data.state.pausedAt,
           },
           turnState: {
-            turnNumber: response.data.state.turnNumber,
+            turnNumber: data.state.turnNumber,
           },
         });
       }
@@ -361,25 +444,27 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
         setError('Pause request sent, but the server still reports the discussion as active.');
       }
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
       console.error('Failed to pause ensemble discussion:', err);
-      setError(err.response?.data?.error || 'Failed to pause the discussion.');
+      setError(e.response?.data?.error || 'Failed to pause the discussion.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleResume = async () => {
+  const handleResume = async (): Promise<void> => {
     setActionLoading(true);
     setError('');
     try {
       const response = await axios.post(`/api/pods/${podId}/ensemble/resume`, {}, { headers: authHeaders });
-      if (response?.data?.state) {
+      const data = response?.data as { state?: EnsembleState & { turnNumber?: number; currentAgent?: { agentType: string } } };
+      if (data?.state) {
         applyStatePatch({
-          id: response.data.state.id,
-          status: response.data.state.status,
+          id: data.state.id,
+          status: data.state.status,
           turnState: {
-            turnNumber: response.data.state.turnNumber,
-            currentAgent: response.data.state.currentAgent,
+            turnNumber: data.state.turnNumber,
+            currentAgent: data.state.currentAgent,
           },
         });
       }
@@ -388,26 +473,30 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
         setError('Resume request sent, but the server did not mark the discussion active.');
       }
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
       console.error('Failed to resume ensemble discussion:', err);
-      setError(err.response?.data?.error || 'Failed to resume the discussion.');
+      setError(e.response?.data?.error || 'Failed to resume the discussion.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleComplete = async () => {
+  const handleComplete = async (): Promise<void> => {
     setActionLoading(true);
     setError('');
     try {
       const response = await axios.post(`/api/pods/${podId}/ensemble/complete`, {}, { headers: authHeaders });
-      if (response?.data?.state) {
+      const data = response?.data as {
+        state?: EnsembleState & { completionReason?: string; totalMessages?: number }
+      };
+      if (data?.state) {
         applyStatePatch({
-          id: response.data.state.id,
-          status: response.data.state.status,
-          summary: response.data.state.summary,
+          id: data.state.id,
+          status: data.state.status,
+          summary: data.state.summary,
           stats: {
-            completionReason: response.data.state.completionReason,
-            totalMessages: response.data.state.totalMessages,
+            completionReason: data.state.completionReason,
+            totalMessages: data.state.totalMessages,
           },
         });
       }
@@ -416,8 +505,9 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
         setError('Complete request sent, but the server did not mark the discussion completed.');
       }
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
       console.error('Failed to complete ensemble discussion:', err);
-      setError(err.response?.data?.error || 'Failed to complete the discussion.');
+      setError(e.response?.data?.error || 'Failed to complete the discussion.');
     } finally {
       setActionLoading(false);
     }
@@ -537,7 +627,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
                     <Select
                       value={selectedKey}
                       label="Agent"
-                      onChange={(e) => handleParticipantChange(index, e.target.value)}
+                      onChange={(e) => handleParticipantChange(index, e.target.value as string)}
                       disabled={isLockedParticipant || configInputsDisabled}
                     >
                       {agentOptions.length === 0 && (
@@ -560,7 +650,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
                     <Select
                       value={participant.role || 'responder'}
                       label="Role"
-                      onChange={(e) => handleRoleChange(index, e.target.value)}
+                      onChange={(e) => handleRoleChange(index, e.target.value as string)}
                       disabled={configInputsDisabled}
                     >
                       {ROLE_OPTIONS.map((option) => (
@@ -643,7 +733,7 @@ const AgentEnsemblePanel = ({ podId, podAgents = [], isPodAdmin = false }) => {
               <Select
                 value={humanParticipation}
                 label="Access"
-                onChange={(e) => setHumanParticipation(e.target.value)}
+                onChange={(e) => setHumanParticipation(e.target.value as string)}
                 disabled={configInputsDisabled}
               >
                 {HUMAN_PARTICIPATION_OPTIONS.map((option) => (
