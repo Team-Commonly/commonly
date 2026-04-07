@@ -3,16 +3,20 @@ import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import { Box, Button, Typography } from '@mui/material';
 
-const VerifyEmail = () => {
+const VerifyEmail: React.FC = () => {
   const [message, setMessage] = useState('');
   const [searchParams] = useSearchParams();
-  const token = searchParams.get("token");
+  const token = searchParams.get('token');
 
   useEffect(() => {
     if (token) {
-      axios.get(`/api/auth/verify-email?token=${token}`)
+      axios
+        .get<{ message: string }>(`/api/auth/verify-email?token=${token}`)
         .then((res) => setMessage(res.data.message))
-        .catch((err) => setMessage(err.response?.data?.error || "Verification failed."));
+        .catch((err: unknown) => {
+          const e = err as { response?: { data?: { error?: string } } };
+          setMessage(e.response?.data?.error || 'Verification failed.');
+        });
     }
   }, [token]);
 
@@ -45,12 +49,7 @@ const VerifyEmail = () => {
           {message || 'Verifying your email...'}
         </Typography>
         {Boolean(message) && (
-          <Button
-            component="a"
-            href="/login"
-            variant="contained"
-            sx={{ fontWeight: 600 }}
-          >
+          <Button component="a" href="/login" variant="contained" sx={{ fontWeight: 600 }}>
             Go to Login
           </Button>
         )}
