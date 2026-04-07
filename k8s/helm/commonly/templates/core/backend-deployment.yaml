@@ -323,6 +323,8 @@ spec:
               optional: true
         - name: LITELLM_BASE_URL
           value: "http://litellm:4000"
+        - name: LITELLM_CHAT_MODEL
+          value: "chatgpt/gpt-5.4-mini"
         - name: SKILLS_CATALOG_PATH
           value: /app/docs/skills/awesome-agent-skills-index.json
         - name: MARKETPLACE_MANIFEST_PATH
