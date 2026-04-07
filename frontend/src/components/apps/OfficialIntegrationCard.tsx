@@ -20,7 +20,27 @@ import {
 } from '@mui/material';
 import { Link as LinkIcon } from '@mui/icons-material';
 
-const OfficialIntegrationCard = ({
+export interface OfficialIntegrationEntry {
+  id?: string;
+  name?: string;
+  description?: string;
+  type?: string;
+  category?: string;
+  accentColor?: string;
+  logoUrl?: string;
+  activeCount?: number;
+  capabilities?: string[];
+  docsUrl?: string;
+}
+
+interface OfficialIntegrationCardProps {
+  entry: OfficialIntegrationEntry;
+  onConnect?: (entry: OfficialIntegrationEntry) => void;
+  actionLabel?: string;
+  actionDisabled?: boolean;
+}
+
+const OfficialIntegrationCard: React.FC<OfficialIntegrationCardProps> = ({
   entry,
   onConnect,
   actionLabel,
@@ -94,7 +114,7 @@ const OfficialIntegrationCard = ({
             )}
           </Box>
 
-          {entry.capabilities?.length > 0 && (
+          {entry.capabilities && entry.capabilities.length > 0 && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
               {entry.capabilities.slice(0, 4).map((capability) => (
                 <Chip key={`${entry.id}-${capability}`} label={capability} size="small" />

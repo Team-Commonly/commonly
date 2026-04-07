@@ -19,7 +19,6 @@ import {
   ListItemIcon,
   ListItemText,
   Tooltip,
-  Badge,
   alpha,
   useTheme,
 } from '@mui/material';
@@ -38,7 +37,54 @@ import {
   NotificationsOff as MuteIcon,
 } from '@mui/icons-material';
 
-const PodHeader = ({
+interface PodData {
+  name: string;
+  description?: string;
+  type: string;
+  icon?: string;
+}
+
+interface PodMember {
+  id: string;
+  name?: string;
+  type?: string;
+  online?: boolean;
+  color?: string;
+}
+
+interface PodAgent {
+  id: string;
+  name?: string;
+  status?: string;
+}
+
+interface PodStats {
+  memoryCount?: number;
+  skillCount?: number;
+  summaryCount?: number;
+  linkedPods?: number;
+}
+
+interface PodHeaderProps {
+  pod: PodData;
+  members?: PodMember[];
+  agents?: PodAgent[];
+  stats?: PodStats;
+  onAddAgent?: () => void;
+  onInviteMember?: () => void;
+  onSettings?: () => void;
+  onLinkPod?: () => void;
+}
+
+interface StatItemProps {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  unit?: string;
+  action?: React.ReactNode;
+}
+
+const PodHeader: React.FC<PodHeaderProps> = ({
   pod,
   members = [],
   agents = [],
@@ -49,8 +95,7 @@ const PodHeader = ({
   onLinkPod,
 }) => {
   const theme = useTheme();
-  const [moreAnchor, setMoreAnchor] = useState(null);
-  const [agentsExpanded, setAgentsExpanded] = useState(false);
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
 
   const {
     name,
@@ -170,7 +215,7 @@ const PodHeader = ({
             }}
           >
             {humanMembers.slice(0, 5).map((member) => (
-              <Tooltip key={member.id} title={member.name}>
+              <Tooltip key={member.id} title={member.name ?? ''}>
                 <Avatar sx={{ backgroundColor: member.color || theme.palette.grey[400] }}>
                   {member.name?.charAt(0)}
                 </Avatar>
@@ -224,7 +269,7 @@ const PodHeader = ({
             }}
           >
             {agents.slice(0, 4).map((agent) => (
-              <Tooltip key={agent.id} title={agent.name}>
+              <Tooltip key={agent.id} title={agent.name ?? ''}>
                 <Avatar>🤖</Avatar>
               </Tooltip>
             ))}
@@ -310,9 +355,7 @@ const PodHeader = ({
 };
 
 // Stat item component
-const StatItem = ({ icon, label, value, unit, action }) => {
-  const theme = useTheme();
-
+const StatItem: React.FC<StatItemProps> = ({ icon, label, value, unit, action }) => {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <Box sx={{ color: 'text.secondary' }}>{icon}</Box>
