@@ -5,7 +5,7 @@
  * The core social experience of Commonly.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Paper,
@@ -19,7 +19,6 @@ import {
   alpha,
   useTheme,
   Collapse,
-  Divider,
 } from '@mui/material';
 import {
   VerifiedUser as VerifiedIcon,
@@ -36,28 +35,87 @@ import {
   SmartToy as AgentIcon,
   Person as HumanIcon,
 } from '@mui/icons-material';
+import { SvgIconComponent } from '@mui/icons-material';
+import { Theme } from '@mui/material/styles';
+
+interface Actor {
+  id?: string;
+  name?: string;
+  type?: string;
+  verified?: boolean;
+  profilePicture?: string;
+}
+
+interface Target {
+  title?: string;
+  preview?: string;
+  description?: string;
+}
+
+interface AgentMetadata {
+  sources?: Array<{ title?: string }>;
+}
+
+interface Pod {
+  id: string;
+  name: string;
+}
+
+interface Participant {
+  name?: string;
+  type?: string;
+}
+
+interface Reply {
+  actor: { name?: string; type?: string };
+  content?: string;
+}
+
+export interface Activity {
+  id: string;
+  type?: string;
+  actor: Actor;
+  action?: string;
+  content?: string;
+  preview?: string;
+  timestamp: string;
+  reactions?: { likes?: number; liked?: boolean };
+  replyCount?: number;
+  replies?: Reply[];
+  target?: Target;
+  involves?: Participant[];
+  agentMetadata?: AgentMetadata;
+  pod?: Pod | null;
+  read?: boolean;
+  approval?: { status?: string };
+  flags?: Record<string, boolean>;
+}
+
+interface ParticipantStyle {
+  avatarShape: 'circular' | 'rounded';
+  badgeIcon: SvgIconComponent | null;
+  glowColor: ((theme: Theme) => string) | null;
+}
 
 // Participant type styling
-const participantStyles = {
-  human: {
-    avatarShape: 'circular',
-    badgeIcon: null,
-    glowColor: null,
-  },
+const participantStyles: Record<string, ParticipantStyle> = {
+  human: { avatarShape: 'circular', badgeIcon: null, glowColor: null },
   agent: {
     avatarShape: 'rounded',
     badgeIcon: AgentIcon,
     glowColor: (theme) => theme.palette.primary.main,
   },
-  system: {
-    avatarShape: 'rounded',
-    badgeIcon: null,
-    glowColor: null,
-  },
+  system: { avatarShape: 'rounded', badgeIcon: null, glowColor: null },
 };
 
+interface ActivityTypeInfo {
+  icon: SvgIconComponent | null;
+  color: string;
+  label: string;
+}
+
 // Activity type icons and colors
-const activityTypes = {
+const activityTypes: Record<string, ActivityTypeInfo> = {
   message: { icon: null, color: 'text.primary', label: '' },
   reply: { icon: ReplyIcon, color: 'text.secondary', label: 'replied' },
   skill_created: { icon: SkillIcon, color: 'secondary.main', label: 'created a skill' },
@@ -74,9 +132,25 @@ const activityTypes = {
   user_followed: { icon: HumanIcon, color: 'success.main', label: 'followed' },
 };
 
+interface ActivityItemProps {
+  activity: Activity;
+  onLike?: (activity: Activity) => void;
+  onReply?: (activity: Activity, content?: string) => void;
+  onApprove?: (activity: Activity) => void;
+  onReject?: (activity: Activity) => void;
+  onMarkRead?: (activity: Activity) => void;
+  onActorClick?: (actorId: string) => void;
+}
+
 // Single activity item
-const ActivityItem = ({
-  activity, onLike, onReply, onApprove, onReject, onMarkRead, onActorClick,
+const ActivityItem: React.FC<ActivityItemProps> = ({
+  activity,
+  onLike,
+  onReply,
+  onApprove,
+  onReject,
+  onMarkRead,
+  onActorClick,
 }) => {
   const theme = useTheme();
   const [showReplies, setShowReplies] = useState(false);
@@ -100,13 +174,13 @@ const ActivityItem = ({
 
   const isAgent = actor.type === 'agent';
   const isUnread = !read;
-  const style = participantStyles[actor.type] || participantStyles.human;
-  const actionType = activityTypes[action] || activityTypes.message;
+  const style = participantStyles[actor.type ?? 'human'] || participantStyles.human;
+  const actionType = activityTypes[action ?? 'message'] || activityTypes.message;
 
-  const formatTime = (ts) => {
+  const formatTime = (ts: string): string => {
     const date = new Date(ts);
     const now = new Date();
-    const diff = (now - date) / 1000;
+    const diff = (now.getTime() - date.getTime()) / 1000;
 
     if (diff < 60) return 'now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m`;
@@ -114,7 +188,7 @@ const ActivityItem = ({
     return date.toLocaleDateString();
   };
 
-  const handleLike = () => {
+  const handleLike = (): void => {
     setIsLiked(!isLiked);
     onLike?.(activity);
   };
@@ -133,7 +207,9 @@ const ActivityItem = ({
           : theme.palette.background.paper,
         transition: 'all 0.2s ease',
         '&:hover': {
-          borderColor: isUnread ? alpha(theme.palette.error.main, 0.5) : theme.palette.grey[300],
+          borderColor: isUnread
+            ? alpha(theme.palette.error.main, 0.5)
+            : theme.palette.grey[300],
           backgroundColor: alpha(theme.palette.primary.main, 0.02),
         },
         opacity: read ? 0.92 : 1,
@@ -171,9 +247,7 @@ const ActivityItem = ({
                 p: 0.25,
               }}
             >
-              <VerifiedIcon
-                sx={{ fontSize: 14, color: theme.palette.primary.main }}
-              />
+              <VerifiedIcon sx={{ fontSize: 14, color: theme.palette.primary.main }} />
             </Box>
           )}
         </Box>
@@ -243,11 +317,7 @@ const ActivityItem = ({
                 label={pod.name}
                 size="small"
                 variant="outlined"
-                sx={{
-                  height: 18,
-                  fontSize: '0.625rem',
-                  ml: 0.5,
-                }}
+                sx={{ height: 18, fontSize: '0.625rem', ml: 0.5 }}
               />
             )}
             <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
@@ -259,11 +329,7 @@ const ActivityItem = ({
           {(content || preview) && (
             <Typography
               variant="body2"
-              sx={{
-                color: 'text.primary',
-                lineHeight: 1.6,
-                whiteSpace: 'pre-wrap',
-              }}
+              sx={{ color: 'text.primary', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}
             >
               {content || preview}
             </Typography>
@@ -338,7 +404,7 @@ const ActivityItem = ({
           )}
 
           {/* Agent metadata */}
-          {isAgent && agentMetadata?.sources?.length > 0 && (
+          {isAgent && agentMetadata?.sources && agentMetadata.sources.length > 0 && (
             <Box sx={{ mt: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
               <Typography variant="caption" color="text.secondary">
                 Sources:
@@ -376,10 +442,7 @@ const ActivityItem = ({
           size="small"
           startIcon={isLiked ? <LikeIcon /> : <LikeOutlinedIcon />}
           onClick={handleLike}
-          sx={{
-            color: isLiked ? 'primary.main' : 'text.secondary',
-            fontWeight: 500,
-          }}
+          sx={{ color: isLiked ? 'primary.main' : 'text.secondary', fontWeight: 500 }}
         >
           {(reactions.likes || 0) + (isLiked ? 1 : 0)}
         </Button>
@@ -443,8 +506,22 @@ const ActivityItem = ({
   );
 };
 
+interface ActivityFeedProps {
+  activities?: Activity[];
+  loading?: boolean;
+  onLike?: (activity: Activity) => void;
+  onReply?: (activity: Activity, content?: string) => void;
+  onApprove?: (activity: Activity) => void;
+  onReject?: (activity: Activity) => void;
+  onMarkRead?: (activity: Activity) => void;
+  onActorClick?: (actorId: string) => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  filter?: string;
+}
+
 // Main ActivityFeed component
-const ActivityFeed = ({
+const ActivityFeed: React.FC<ActivityFeedProps> = ({
   activities = [],
   loading = false,
   onLike,
@@ -455,10 +532,8 @@ const ActivityFeed = ({
   onActorClick,
   onLoadMore,
   hasMore = false,
-  filter = 'all', // 'all', 'humans', 'agents', 'skills'
+  filter = 'all',
 }) => {
-  const theme = useTheme();
-
   const filteredActivities = activities.filter((a) => {
     if (filter === 'all') return true;
     if (filter === 'humans') return a.actor.type === 'human';
@@ -479,13 +554,7 @@ const ActivityFeed = ({
 
   if (filteredActivities.length === 0) {
     return (
-      <Box
-        sx={{
-          textAlign: 'center',
-          py: 8,
-          color: 'text.secondary',
-        }}
-      >
+      <Box sx={{ textAlign: 'center', py: 8, color: 'text.secondary' }}>
         <Typography variant="h6" gutterBottom>
           No activity yet
         </Typography>
@@ -523,8 +592,11 @@ const ActivityFeed = ({
 };
 
 // Loading skeleton
-const ActivityItemSkeleton = () => (
-  <Paper elevation={0} sx={{ p: 2, mb: 1.5, borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
+const ActivityItemSkeleton: React.FC = () => (
+  <Paper
+    elevation={0}
+    sx={{ p: 2, mb: 1.5, borderRadius: 3, border: '1px solid', borderColor: 'divider' }}
+  >
     <Box sx={{ display: 'flex', gap: 1.5 }}>
       <Skeleton variant="circular" width={44} height={44} />
       <Box sx={{ flex: 1 }}>

@@ -35,37 +35,70 @@ import {
   Favorite as FollowingIcon,
   Chat as PodsIcon,
 } from '@mui/icons-material';
-import ActivityFeed from './ActivityFeed';
+import ActivityFeed, { Activity } from './ActivityFeed';
 import axios from 'axios';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
 
-const ActivityFeedPage = () => {
-  const [activities, setActivities] = useState([]);
+interface UserPod {
+  _id: string;
+  name: string;
+}
+
+interface QuickPod {
+  id: string;
+  name: string;
+}
+
+interface FollowedThread {
+  postId: string;
+  url: string;
+  preview?: string;
+  newReplies: number;
+}
+
+interface QuickData {
+  social?: { followers?: number; following?: number };
+  recentPods?: QuickPod[];
+  followedThreads?: FollowedThread[];
+}
+
+interface SnackbarState {
+  open: boolean;
+  message: string;
+  severity: 'info' | 'error' | 'success' | 'warning';
+}
+
+const ActivityFeedPage: React.FC = () => {
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState('updates');
   const [filter, setFilter] = useState('all');
   const [hasMore, setHasMore] = useState(true);
-  const [userPods, setUserPods] = useState([]);
-  const [quick, setQuick] = useState(null);
+  const [userPods, setUserPods] = useState<UserPod[]>([]);
+  const [quick, setQuick] = useState<QuickData | null>(null);
   const [liveUpdates, setLiveUpdates] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedPodId, setSelectedPodId] = useState('all');
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const [snackbar, setSnackbar] = useState<SnackbarState>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('token');
-    return { 'x-auth-token': token };
+    return { 'x-auth-token': token ?? '' };
   };
 
   // Fetch user's pods for the selector
   useEffect(() => {
-    const fetchUserPods = async () => {
+    const fetchUserPods = async (): Promise<void> => {
       try {
-        const response = await axios.get('/api/pods', {
+        const response = await axios.get<UserPod[]>('/api/pods', {
           headers: getAuthHeaders(),
         });
         setUserPods(response.data || []);
@@ -78,31 +111,31 @@ const ActivityFeedPage = () => {
 
   useEffect(() => {
     fetchActivities();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, filter, selectedPodId]);
 
   useEffect(() => {
     fetchUnreadCount();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, filter]);
 
-  const fetchUnreadCount = async () => {
+  const fetchUnreadCount = async (): Promise<void> => {
     try {
-      const response = await axios.get('/api/activity/unread-count', {
+      const response = await axios.get<{ unreadCount?: number }>('/api/activity/unread-count', {
         headers: getAuthHeaders(),
         params: { mode, filter },
       });
       setUnreadCount(response.data?.unreadCount || 0);
-    } catch (err) {
+    } catch {
       // keep current value
     }
   };
 
-  const fetchActivities = async () => {
+  const fetchActivities = async (): Promise<void> => {
     setLoading(true);
     try {
-      const params = { limit: 20 };
-      if (filter !== 'all') {
-        params.filter = filter;
-      }
+      const params: Record<string, unknown> = { limit: 20 };
+      if (filter !== 'all') params.filter = filter;
       params.mode = mode;
 
       let url = '/api/activity/feed';
@@ -110,7 +143,12 @@ const ActivityFeedPage = () => {
         url = `/api/activity/pods/${selectedPodId}`;
       }
 
-      const response = await axios.get(url, {
+      const response = await axios.get<{
+        activities?: Activity[];
+        hasMore?: boolean;
+        quick?: QuickData;
+        unreadCount?: number;
+      }>(url, {
         headers: getAuthHeaders(),
         params,
       });
@@ -136,28 +174,45 @@ const ActivityFeedPage = () => {
   };
 
   useEffect(() => {
-    if (!socket || !connected || !Array.isArray(userPods) || userPods.length === 0) return undefined;
+    if (!socket || !connected || !Array.isArray(userPods) || userPods.length === 0) {
+      return undefined;
+    }
     userPods.forEach((pod) => socket.emit('joinPod', pod._id));
 
-    const handleNewMessage = (message) => {
-      const pod = userPods.find((item) => item._id === (message.podId || message.pod_id));
-      const actorName = message.username || message.userId?.username || 'User';
-      const isAgent = actorName.toLowerCase().includes('bot') || actorName === 'commonly-ai-agent';
+    const handleNewMessage = (message: Record<string, unknown>): void => {
+      const pod = userPods.find(
+        (item) => item._id === (message.podId || message.pod_id),
+      );
+      const actorName =
+        (message.username as string) ||
+        ((message.userId as Record<string, unknown>)?.username as string) ||
+        'User';
+      const isAgent =
+        actorName.toLowerCase().includes('bot') || actorName === 'commonly-ai-agent';
 
-      const activity = {
-        id: `live_${message._id || message.id || Date.now()}`,
+      const activity: Activity = {
+        id: `live_${(message._id as string) || (message.id as string) || Date.now()}`,
         type: 'message',
         actor: {
-          id: message.userId?._id || message.userId || message.user_id,
+          id:
+            ((message.userId as Record<string, unknown>)?._id as string) ||
+            (message.userId as string) ||
+            (message.user_id as string),
           name: actorName,
           type: isAgent ? 'agent' : 'human',
           verified: isAgent,
-          profilePicture: message.profilePicture || message.profile_picture || message.userId?.profilePicture,
+          profilePicture:
+            (message.profilePicture as string) ||
+            (message.profile_picture as string) ||
+            ((message.userId as Record<string, unknown>)?.profilePicture as string),
         },
         action: 'message',
-        content: message.content || message.text || '',
-        preview: (message.content || message.text || '').slice(0, 200),
-        timestamp: message.createdAt || message.created_at || new Date().toISOString(),
+        content: (message.content as string) || (message.text as string) || '',
+        preview: ((message.content as string) || (message.text as string) || '').slice(0, 200),
+        timestamp:
+          (message.createdAt as string) ||
+          (message.created_at as string) ||
+          new Date().toISOString(),
         pod: pod ? { id: pod._id, name: pod.name } : null,
         reactions: { likes: 0, liked: false },
         replyCount: 0,
@@ -165,15 +220,19 @@ const ActivityFeedPage = () => {
         flags: {
           isAgentAction: isAgent,
           isMention: Boolean(
-            currentUser?.username
-            && (message.content || '').toLowerCase().includes(`@${currentUser.username.toLowerCase()}`),
+            currentUser?.username &&
+              ((message.content as string) || '').toLowerCase().includes(
+                `@${currentUser.username.toLowerCase()}`,
+              ),
           ),
           isFollowing: false,
           isThreadUpdate: false,
         },
       };
 
-      setActivities((prev) => [activity, ...prev.filter((item) => item.id !== activity.id)].slice(0, 50));
+      setActivities((prev) =>
+        [activity, ...prev.filter((item) => item.id !== activity.id)].slice(0, 50),
+      );
       setLiveUpdates((count) => count + 1);
       setUnreadCount((count) => count + 1);
     };
@@ -185,59 +244,50 @@ const ActivityFeedPage = () => {
     };
   }, [socket, connected, userPods, currentUser]);
 
-  const handleMarkRead = async (activity) => {
+  const handleMarkRead = async (activity: Activity): Promise<void> => {
     if (!activity?.id) return;
     try {
       await axios.post(
         '/api/activity/mark-read',
         { activityId: activity.id },
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
-      setActivities((prev) => prev.map((item) => (
-        item.id === activity.id ? { ...item, read: true } : item
-      )));
+      setActivities((prev) =>
+        prev.map((item) => (item.id === activity.id ? { ...item, read: true } : item)),
+      );
       setUnreadCount((count) => Math.max(0, count - 1));
-    } catch (err) {
+    } catch {
       setSnackbar({ open: true, message: 'Failed to mark as read', severity: 'error' });
     }
   };
 
-  const handleMarkAllRead = async () => {
+  const handleMarkAllRead = async (): Promise<void> => {
     try {
       await axios.post(
         '/api/activity/mark-read',
         { all: true },
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
       setActivities((prev) => prev.map((item) => ({ ...item, read: true })));
       setUnreadCount(0);
       setSnackbar({ open: true, message: 'All caught up', severity: 'success' });
-    } catch (err) {
+    } catch {
       setSnackbar({ open: true, message: 'Failed to mark all as read', severity: 'error' });
     }
   };
 
-  const handleLike = async (activity) => {
+  const handleLike = async (activity: Activity): Promise<void> => {
     try {
-      await axios.post(
-        `/api/activity/${activity.id}/like`,
-        {},
-        { headers: getAuthHeaders() }
-      );
-      // Optimistically update the UI
+      await axios.post(`/api/activity/${activity.id}/like`, {}, { headers: getAuthHeaders() });
       setActivities((prev) =>
         prev.map((a) =>
           a.id === activity.id
             ? {
                 ...a,
-                reactions: {
-                  ...a.reactions,
-                  likes: (a.reactions?.likes || 0) + 1,
-                  liked: true,
-                },
+                reactions: { ...a.reactions, likes: (a.reactions?.likes || 0) + 1, liked: true },
               }
-            : a
-        )
+            : a,
+        ),
       );
     } catch (err) {
       console.error('Error liking activity:', err);
@@ -245,26 +295,27 @@ const ActivityFeedPage = () => {
     }
   };
 
-  const handleReply = async (activity, content) => {
+  const handleReply = async (activity: Activity, content?: string): Promise<void> => {
     try {
-      const response = await axios.post(
+      const response = await axios.post<{ success: boolean; reply: unknown }>(
         `/api/activity/${activity.id}/reply`,
         { content },
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
-
       if (response.data.success) {
-        // Update the activity with the new reply
         setActivities((prev) =>
           prev.map((a) =>
             a.id === activity.id
               ? {
                   ...a,
                   replyCount: (a.replyCount || 0) + 1,
-                  replies: [...(a.replies || []), response.data.reply],
+                  replies: [
+                    ...(a.replies || []),
+                    response.data.reply as Activity['replies'][0],
+                  ],
                 }
-              : a
-          )
+              : a,
+          ),
         );
         setSnackbar({ open: true, message: 'Reply added', severity: 'success' });
       }
@@ -274,25 +325,20 @@ const ActivityFeedPage = () => {
     }
   };
 
-  const handleApprove = async (activity) => {
+  const handleApprove = async (activity: Activity): Promise<void> => {
     try {
-      const response = await axios.post(
+      const response = await axios.post<{ success: boolean }>(
         `/api/activity/${activity.id}/approve`,
         { notes: 'Approved via UI' },
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
-
       if (response.data.success) {
-        // Update the activity status
         setActivities((prev) =>
           prev.map((a) =>
             a.id === activity.id
-              ? {
-                  ...a,
-                  approval: { ...a.approval, status: 'approved' },
-                }
-              : a
-          )
+              ? { ...a, approval: { ...a.approval, status: 'approved' } }
+              : a,
+          ),
         );
         setSnackbar({ open: true, message: 'Approved successfully', severity: 'success' });
       }
@@ -302,25 +348,20 @@ const ActivityFeedPage = () => {
     }
   };
 
-  const handleReject = async (activity) => {
+  const handleReject = async (activity: Activity): Promise<void> => {
     try {
-      const response = await axios.post(
+      const response = await axios.post<{ success: boolean }>(
         `/api/activity/${activity.id}/reject`,
         { notes: 'Rejected via UI' },
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
-
       if (response.data.success) {
-        // Update the activity status
         setActivities((prev) =>
           prev.map((a) =>
             a.id === activity.id
-              ? {
-                  ...a,
-                  approval: { ...a.approval, status: 'rejected' },
-                }
-              : a
-          )
+              ? { ...a, approval: { ...a.approval, status: 'rejected' } }
+              : a,
+          ),
         );
         setSnackbar({ open: true, message: 'Rejected', severity: 'info' });
       }
@@ -330,15 +371,16 @@ const ActivityFeedPage = () => {
     }
   };
 
-  const handleLoadMore = async () => {
+  const handleLoadMore = async (): Promise<void> => {
     if (activities.length === 0 || loading) return;
 
     const lastActivity = activities[activities.length - 1];
     try {
-      const params = { limit: 20, before: lastActivity.timestamp };
-      if (filter !== 'all') {
-        params.filter = filter;
-      }
+      const params: Record<string, unknown> = {
+        limit: 20,
+        before: lastActivity.timestamp,
+      };
+      if (filter !== 'all') params.filter = filter;
       params.mode = mode;
 
       let url = '/api/activity/feed';
@@ -346,7 +388,7 @@ const ActivityFeedPage = () => {
         url = `/api/activity/pods/${selectedPodId}`;
       }
 
-      const response = await axios.get(url, {
+      const response = await axios.get<{ activities?: Activity[]; hasMore?: boolean }>(url, {
         headers: getAuthHeaders(),
         params,
       });
@@ -358,17 +400,21 @@ const ActivityFeedPage = () => {
     }
   };
 
-  const handleSeedActivities = async () => {
+  const handleSeedActivities = async (): Promise<void> => {
     if (selectedPodId === 'all') {
-      setSnackbar({ open: true, message: 'Select a specific pod to seed activities', severity: 'warning' });
+      setSnackbar({
+        open: true,
+        message: 'Select a specific pod to seed activities',
+        severity: 'warning',
+      });
       return;
     }
 
     try {
-      const response = await axios.post(
+      const response = await axios.post<{ success: boolean; count: number }>(
         `/api/activity/seed/${selectedPodId}`,
         {},
-        { headers: getAuthHeaders() }
+        { headers: getAuthHeaders() },
       );
 
       if (response.data.success) {
@@ -377,7 +423,6 @@ const ActivityFeedPage = () => {
           message: `Seeded ${response.data.count} demo activities`,
           severity: 'success',
         });
-        // Refresh the feed
         fetchActivities();
       }
     } catch (err) {
@@ -389,7 +434,9 @@ const ActivityFeedPage = () => {
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       {/* Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <Box
+        sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
+      >
         <Box>
           <Typography variant="h4" fontWeight={700} gutterBottom>
             Activity
@@ -427,11 +474,7 @@ const ActivityFeedPage = () => {
           >
             Refresh
           </Button>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={handleMarkAllRead}
-          >
+          <Button variant="contained" size="small" onClick={handleMarkAllRead}>
             Mark all read ({unreadCount})
           </Button>
         </Box>
@@ -444,8 +487,13 @@ const ActivityFeedPage = () => {
       )}
 
       {quick && (
-        <Paper elevation={0} sx={{ mb: 3, borderRadius: 2, p: 2, border: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>Quick View</Typography>
+        <Paper
+          elevation={0}
+          sx={{ mb: 3, borderRadius: 2, p: 2, border: '1px solid', borderColor: 'divider' }}
+        >
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Quick View
+          </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 1.5 }}>
             <Button size="small" variant="outlined" disableElevation>
               Followers: {quick.social?.followers || 0}
@@ -478,9 +526,12 @@ const ActivityFeedPage = () => {
                 key={thread.postId}
                 variant="body2"
                 sx={{ cursor: 'pointer' }}
-                onClick={() => { window.location.href = thread.url; }}
+                onClick={() => {
+                  window.location.href = thread.url;
+                }}
               >
-                {thread.preview || 'Thread'} {thread.newReplies > 0 ? `• ${thread.newReplies} new replies` : ''}
+                {thread.preview || 'Thread'}{' '}
+                {thread.newReplies > 0 ? `• ${thread.newReplies} new replies` : ''}
               </Typography>
             ))}
             {(quick.followedThreads || []).length === 0 && (
@@ -496,18 +547,12 @@ const ActivityFeedPage = () => {
       <Paper elevation={0} sx={{ mb: 3, borderRadius: 2 }}>
         <Tabs
           value={mode}
-          onChange={(e, v) => {
+          onChange={(_e, v: string) => {
             setMode(v);
             setFilter('all');
           }}
           variant="fullWidth"
-          sx={{
-            '& .MuiTab-root': {
-              minHeight: 48,
-              textTransform: 'none',
-              fontWeight: 500,
-            },
-          }}
+          sx={{ '& .MuiTab-root': { minHeight: 48, textTransform: 'none', fontWeight: 500 } }}
         >
           <Tab icon={<UpdatesIcon />} iconPosition="start" label="Updates" value="updates" />
           <Tab icon={<ActionsIcon />} iconPosition="start" label="Actions" value="actions" />
@@ -518,26 +563,35 @@ const ActivityFeedPage = () => {
       <Paper elevation={0} sx={{ mb: 3, borderRadius: 2 }}>
         <Tabs
           value={filter}
-          onChange={(e, v) => setFilter(v)}
+          onChange={(_e, v: string) => setFilter(v)}
           variant="scrollable"
           allowScrollButtonsMobile
-          sx={{
-            '& .MuiTab-root': {
-              minHeight: 44,
-              textTransform: 'none',
-              fontWeight: 500,
-            },
-          }}
+          sx={{ '& .MuiTab-root': { minHeight: 44, textTransform: 'none', fontWeight: 500 } }}
         >
           <Tab icon={<AllIcon />} iconPosition="start" label="All" value="all" />
           {mode === 'updates' && (
-            <Tab icon={<MentionsIcon />} iconPosition="start" label="Mentions" value="mentions" />
+            <Tab
+              icon={<MentionsIcon />}
+              iconPosition="start"
+              label="Mentions"
+              value="mentions"
+            />
           )}
           {mode === 'updates' && (
-            <Tab icon={<FollowingIcon />} iconPosition="start" label="Following" value="following" />
+            <Tab
+              icon={<FollowingIcon />}
+              iconPosition="start"
+              label="Following"
+              value="following"
+            />
           )}
           {mode === 'updates' && (
-            <Tab icon={<ThreadsIcon />} iconPosition="start" label="Threads" value="threads" />
+            <Tab
+              icon={<ThreadsIcon />}
+              iconPosition="start"
+              label="Threads"
+              value="threads"
+            />
           )}
           {mode === 'updates' && (
             <Tab icon={<PodsIcon />} iconPosition="start" label="Pods" value="pods" />
@@ -580,7 +634,9 @@ const ActivityFeedPage = () => {
         onApprove={handleApprove}
         onReject={handleReject}
         onMarkRead={handleMarkRead}
-        onActorClick={(actorId) => { window.location.href = `/profile/${actorId}`; }}
+        onActorClick={(actorId) => {
+          window.location.href = `/profile/${actorId}`;
+        }}
         onLoadMore={handleLoadMore}
         hasMore={hasMore}
       />
