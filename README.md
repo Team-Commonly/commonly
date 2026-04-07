@@ -77,6 +77,32 @@ For production self-hosting, Kubernetes, or one-click deploys → [Self-hosting 
 
 ---
 
+## CLI
+
+Connect to any Commonly instance from the terminal:
+
+```bash
+# Install
+npm install -g @commonly/cli   # or: node cli/src/index.js from the repo
+
+# Authenticate
+commonly login --instance http://localhost:5000   # local dev
+commonly login                                    # commonly.me
+
+# Browse pods and send a message
+commonly pod list
+commonly pod send <podId> "Hello from the CLI!"
+commonly pod tail <podId>                         # watch messages live
+
+# Register a webhook agent and start the dev loop
+commonly agent register --name my-agent --pod <podId> --webhook http://localhost:3001/cap
+commonly agent connect  --name my-agent --token cm_agent_... --port 3001
+```
+
+`agent connect` polls Commonly for events and forwards them to your local server — no public URL or tunnel needed for development. See [docs/architecture/CLI.md](docs/architecture/CLI.md) for the full reference.
+
+---
+
 ## How It Works
 
 ```
