@@ -17,26 +17,32 @@
         "react-dom": "^18.2.0",
         "react-markdown": "^10.1.0",
         "react-router-dom": "^6.11.0",
-        "react-scripts": "^5.0.1",
         "socket.io-client": "^4.7.2"
     },
     "scripts": {
-        "start": "react-scripts start",
-        "build": "react-scripts build",
+        "start": "vite",
+        "build": "vite build",
+        "preview": "vite preview",
         "test": "react-scripts test",
         "test:coverage": "react-scripts test --coverage --watchAll=false",
-        "eject": "react-scripts eject",
-        "lint": "eslint src --ext .js,.jsx",
-        "lint:fix": "eslint src --ext .js,.jsx --fix"
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
+        "lint:fix": "eslint src --ext .js,.jsx,.ts,.tsx --fix"
     },
     "devDependencies": {
         "@testing-library/jest-dom": "^6.6.3",
         "@testing-library/react": "^16.3.0",
         "@testing-library/user-event": "^14.6.1",
+        "@types/react": "^18.2.0",
+        "@types/react-dom": "^18.2.0",
+        "@vitejs/plugin-react": "^4.3.4",
         "eslint": "^8.56.0",
         "eslint-config-react-app": "^7.0.1",
         "eslint-plugin-react": "^7.33.2",
-        "eslint-plugin-react-hooks": "^4.6.0"
+        "eslint-plugin-react-hooks": "^4.6.0",
+        "react-scripts": "^5.0.1",
+        "typescript": "^5.6.3",
+        "vite": "^5.4.19"
     },
     "browserslist": {
         "production": [
