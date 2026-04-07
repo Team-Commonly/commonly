@@ -4,19 +4,19 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import SearchBar from './SearchBar';
 import WhatsHappening from './WhatsHappening';
-import { Box, CircularProgress, Container, Paper, useTheme, useMediaQuery, IconButton } from '@mui/material';
+import { Box, CircularProgress, Container, useTheme, useMediaQuery, IconButton } from '@mui/material';
 import { useAuth } from '../context/AuthContext';
 import { useLayout } from '../context/LayoutContext';
 import './Layout.css';
 
-const Layout = () => {
-    const [searchResults, setSearchResults] = useState(null);
+const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+    const [searchResults, setSearchResults] = useState<unknown>(null);
     const { loading } = useAuth();
     const { isDashboardCollapsed, toggleDashboard } = useLayout();
     const location = useLocation();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-    
+
     // Check if user is authenticated
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -38,7 +38,7 @@ const Layout = () => {
     // Determine if we're on a pod page
     const isPodPage = location.pathname.includes('/pods');
     const isPodDetail = isPodPage && location.pathname.split('/').length > 3;
-    
+
     // Use different layout for pod pages
     const layoutClassName = `layout-container ${isPodDetail ? 'pod-detail' : ''} ${isDashboardCollapsed ? 'dashboard-collapsed' : ''} ${isMobile && !isDashboardCollapsed ? 'mobile-dashboard-open' : ''}`;
     if (isPodPage) {
@@ -51,7 +51,7 @@ const Layout = () => {
                 <div className="main-content pod-layout">
                     <div className="search-container">
                         <SearchBar onSearchResults={setSearchResults} />
-                        <IconButton 
+                        <IconButton
                             className="toggle-dashboard-button"
                             onClick={toggleDashboard}
                             aria-label={isDashboardCollapsed ? "Expand dashboard" : "Collapse dashboard"}
@@ -85,7 +85,7 @@ const Layout = () => {
             <div className="main-content">
                 <div className="search-container">
                     <SearchBar onSearchResults={setSearchResults} />
-                    <IconButton 
+                    <IconButton
                         className="toggle-dashboard-button"
                         onClick={toggleDashboard}
                         aria-label={isDashboardCollapsed ? "Expand dashboard" : "Collapse dashboard"}

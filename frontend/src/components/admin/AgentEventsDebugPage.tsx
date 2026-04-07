@@ -18,27 +18,89 @@ import {
 import { Refresh as RefreshIcon } from '@mui/icons-material';
 import axios from 'axios';
 
-const formatDate = (value) => {
-  if (!value) return '—';
+interface PendingAgentRow {
+  agentName: string;
+  instanceId: string;
+  count: number;
+  oldestCreatedAt?: string;
+  newestCreatedAt?: string;
+}
+
+interface FailedAgentRow {
+  agentName: string;
+  instanceId: string;
+  count: number;
+  newestCreatedAt?: string;
+  newestError?: string;
+}
+
+interface HeartbeatInstallation {
+  agentName: string;
+  instanceId: string;
+  podId: string;
+  everyMinutes?: number;
+  lastHeartbeatAt?: string;
+  lastHeartbeatStatus?: string;
+}
+
+interface EventRow {
+  id: string;
+  agentName?: string;
+  instanceId?: string;
+  type?: string;
+  podId?: string;
+  attempts?: number;
+  createdAt?: string;
+  error?: string;
+  delivery?: {
+    outcome?: string;
+    reason?: string;
+    messageId?: string;
+  };
+}
+
+interface AgentEventsData {
+  queue?: {
+    pending?: number;
+    delivered?: number;
+    failed?: number;
+    stalePendingCount?: number;
+    stalePendingMinutes?: number;
+    deliveredByOutcome?: Record<string, number>;
+  };
+  heartbeatInstallations?: HeartbeatInstallation[];
+  failedByAgent?: FailedAgentRow[];
+  failedEvents?: EventRow[];
+  recentDeliveredHeartbeats?: EventRow[];
+  pendingByAgent?: PendingAgentRow[];
+  pendingEvents?: EventRow[];
+}
+
+interface AgentEventsDebugPageProps {
+  embedded?: boolean;
+}
+
+const formatDate = (value: string | undefined): string => {
+  if (!value) return '\u2014';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleString();
 };
 
-const ageMinutes = (value) => {
+const ageMinutes = (value: string | undefined): number | null => {
   if (!value) return null;
   const ts = new Date(value).getTime();
   if (!Number.isFinite(ts)) return null;
   return Math.max(0, Math.floor((Date.now() - ts) / 60000));
 };
 
-const AgentEventsDebugPage = ({ embedded = false }) => {
+const AgentEventsDebugPage: React.FC<AgentEventsDebugPageProps> = ({ embedded = false }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [data, setData] = useState(null);
+  const [data, setData] = useState<AgentEventsData | null>(null);
 
-  const fetchData = useCallback(async ({ silent = false } = {}) => {
+  const fetchData = useCallback(async ({ silent = false } = {}): Promise<void> => {
     try {
       if (!silent) setLoading(true);
       if (silent) setRefreshing(true);
@@ -49,7 +111,8 @@ const AgentEventsDebugPage = ({ embedded = false }) => {
       });
       setData(response.data || null);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to load agent events');
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error || 'Failed to load agent events');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -183,7 +246,7 @@ const AgentEventsDebugPage = ({ embedded = false }) => {
                     <TableCell>{row.count}</TableCell>
                     <TableCell>{formatDate(row.newestCreatedAt)}</TableCell>
                     <TableCell sx={{ maxWidth: 520, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                      {row.newestError || '—'}
+                      {row.newestError || '\u2014'}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -220,7 +283,7 @@ const AgentEventsDebugPage = ({ embedded = false }) => {
                     <TableCell>{row.podId}</TableCell>
                     <TableCell>{row.everyMinutes}</TableCell>
                     <TableCell>{formatDate(row.lastHeartbeatAt)}</TableCell>
-                    <TableCell>{ageMinutes(row.lastHeartbeatAt) ?? '—'}</TableCell>
+                    <TableCell>{ageMinutes(row.lastHeartbeatAt) ?? '\u2014'}</TableCell>
                     <TableCell>{row.lastHeartbeatStatus || 'none'}</TableCell>
                   </TableRow>
                 ))}
@@ -293,9 +356,9 @@ const AgentEventsDebugPage = ({ embedded = false }) => {
                     <TableCell>{event.podId}</TableCell>
                     <TableCell>{event.delivery?.outcome || 'acknowledged'}</TableCell>
                     <TableCell sx={{ maxWidth: 420, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                      {event.delivery?.reason || '—'}
+                      {event.delivery?.reason || '\u2014'}
                     </TableCell>
-                    <TableCell>{event.delivery?.messageId || '—'}</TableCell>
+                    <TableCell>{event.delivery?.messageId || '\u2014'}</TableCell>
                   </TableRow>
                 ))}
                 {recentDeliveredHeartbeats.length === 0 && (
@@ -329,7 +392,7 @@ const AgentEventsDebugPage = ({ embedded = false }) => {
                     <TableCell>{event.podId}</TableCell>
                     <TableCell>{event.attempts}</TableCell>
                     <TableCell sx={{ maxWidth: 640, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                      {event.error || '—'}
+                      {event.error || '\u2014'}
                     </TableCell>
                   </TableRow>
                 ))}
