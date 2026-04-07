@@ -1,18 +1,16 @@
-/**
- * AgentIndicator Component
- *
- * Visual indicators for AI agents vs human users.
- * Used throughout the app to distinguish agent activity.
- */
-
 import React from 'react';
 import { Box, Chip, Avatar, Tooltip, alpha, useTheme } from '@mui/material';
 import { SmartToy as AgentIcon, Verified as VerifiedIcon } from '@mui/icons-material';
+import { SxProps, Theme } from '@mui/material/styles';
 
-/**
- * Known agent types and their display properties
- */
-const AGENT_TYPES = {
+interface AgentTypeInfo {
+  label: string;
+  color: string;
+  emoji: string;
+  description: string;
+}
+
+const AGENT_TYPES: Record<string, AgentTypeInfo> = {
   'commonly-bot': {
     label: 'Summarizer',
     color: '#7C3AED',
@@ -51,10 +49,7 @@ const AGENT_TYPES = {
   },
 };
 
-/**
- * Check if a username belongs to an agent
- */
-export const isAgentUsername = (username) => {
+export const isAgentUsername = (username: string | null | undefined): boolean => {
   if (!username) return false;
   const lower = username.toLowerCase();
   return (
@@ -68,10 +63,7 @@ export const isAgentUsername = (username) => {
   );
 };
 
-/**
- * Get agent info from username
- */
-export const getAgentInfo = (username) => {
+export const getAgentInfo = (username: string | null | undefined): AgentTypeInfo | null => {
   if (!username) return null;
   const lower = username.toLowerCase();
 
@@ -86,31 +78,22 @@ export const getAgentInfo = (username) => {
   return null;
 };
 
-/**
- * Agent Badge - Small inline badge (e.g., "AI" or "BOT")
- */
-export const AgentBadge = ({ username, size = 'small', showLabel = true }) => {
-  const theme = useTheme();
+interface AgentBadgeProps {
+  username?: string | null;
+  size?: 'small' | 'medium' | 'large';
+  showLabel?: boolean;
+}
+
+export const AgentBadge: React.FC<AgentBadgeProps> = ({ username, size = 'small', showLabel = true }) => {
+  useTheme();
   const agentInfo = getAgentInfo(username);
 
   if (!agentInfo) return null;
 
-  const sizeStyles = {
-    small: {
-      height: 16,
-      fontSize: '0.625rem',
-      px: 0.5,
-    },
-    medium: {
-      height: 20,
-      fontSize: '0.75rem',
-      px: 0.75,
-    },
-    large: {
-      height: 24,
-      fontSize: '0.8125rem',
-      px: 1,
-    },
+  const sizeStyles: Record<string, object> = {
+    small: { height: 16, fontSize: '0.625rem', px: 0.5 },
+    medium: { height: 20, fontSize: '0.75rem', px: 0.75 },
+    large: { height: 24, fontSize: '0.8125rem', px: 1 },
   };
 
   return (
@@ -127,19 +110,22 @@ export const AgentBadge = ({ username, size = 'small', showLabel = true }) => {
           borderColor: alpha(agentInfo.color, 0.3),
           fontWeight: 600,
           letterSpacing: '0.02em',
-          '& .MuiChip-icon': {
-            color: 'inherit',
-          },
+          '& .MuiChip-icon': { color: 'inherit' },
         }}
       />
     </Tooltip>
   );
 };
 
-/**
- * Agent Avatar - Avatar with agent styling
- */
-export const AgentAvatar = ({
+interface AgentAvatarProps {
+  username?: string | null;
+  src?: string;
+  size?: number;
+  showBadge?: boolean;
+  sx?: SxProps<Theme>;
+}
+
+export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   username,
   src,
   size = 40,
@@ -167,7 +153,7 @@ export const AgentAvatar = ({
           border: isAgent ? `2px solid ${alpha(agentInfo?.color || theme.palette.primary.main, 0.3)}` : 'none',
         }}
       >
-        {isAgent ? agentInfo.emoji : (username?.charAt(0).toUpperCase() || '?')}
+        {isAgent ? agentInfo!.emoji : (username?.charAt(0).toUpperCase() || '?')}
       </Avatar>
       {showBadge && isAgent && (
         <Box
@@ -178,7 +164,7 @@ export const AgentAvatar = ({
             width: size * 0.35,
             height: size * 0.35,
             borderRadius: '50%',
-            backgroundColor: agentInfo.color,
+            backgroundColor: agentInfo!.color,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -192,15 +178,20 @@ export const AgentAvatar = ({
   );
 };
 
-/**
- * Agent Name Display - Name with optional badge
- */
-export const AgentName = ({
+interface AgentNameProps {
+  username?: string | null;
+  displayName?: string | null;
+  showBadge?: boolean;
+  verified?: boolean;
+  variant?: string;
+  sx?: SxProps<Theme>;
+}
+
+export const AgentName: React.FC<AgentNameProps> = ({
   username,
   displayName,
   showBadge = true,
   verified = false,
-  variant = 'body1',
   sx = {},
 }) => {
   const theme = useTheme();
@@ -208,14 +199,7 @@ export const AgentName = ({
   const isAgent = Boolean(agentInfo);
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 0.5,
-        ...sx,
-      }}
-    >
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ...sx }}>
       <Box
         component="span"
         sx={{
@@ -228,28 +212,26 @@ export const AgentName = ({
       {isAgent && showBadge && <AgentBadge username={username} size="small" showLabel={false} />}
       {verified && (
         <Tooltip title="Verified agent">
-          <VerifiedIcon
-            sx={{
-              fontSize: 14,
-              color: theme.palette.primary.main,
-            }}
-          />
+          <VerifiedIcon sx={{ fontSize: 14, color: theme.palette.primary.main }} />
         </Tooltip>
       )}
     </Box>
   );
 };
 
-/**
- * Agent Type Indicator - Larger indicator for cards/headers
- */
-export const AgentTypeIndicator = ({
+interface AgentTypeIndicatorProps {
+  username?: string | null;
+  type?: string;
+  showDescription?: boolean;
+}
+
+export const AgentTypeIndicator: React.FC<AgentTypeIndicatorProps> = ({
   username,
   type,
   showDescription = false,
 }) => {
-  const theme = useTheme();
-  const agentInfo = getAgentInfo(username) || AGENT_TYPES[type] || AGENT_TYPES.default;
+  useTheme();
+  const agentInfo = getAgentInfo(username) || (type ? AGENT_TYPES[type] : null) || AGENT_TYPES.default;
 
   return (
     <Box
@@ -277,22 +259,11 @@ export const AgentTypeIndicator = ({
         {agentInfo.emoji}
       </Box>
       <Box>
-        <Box
-          sx={{
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            color: agentInfo.color,
-          }}
-        >
+        <Box sx={{ fontSize: '0.875rem', fontWeight: 600, color: agentInfo.color }}>
           {agentInfo.label}
         </Box>
         {showDescription && (
-          <Box
-            sx={{
-              fontSize: '0.75rem',
-              color: 'text.secondary',
-            }}
-          >
+          <Box sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
             {agentInfo.description}
           </Box>
         )}
@@ -301,10 +272,12 @@ export const AgentTypeIndicator = ({
   );
 };
 
-/**
- * Activity Source Badge - For activity feed items
- */
-export const ActivitySourceBadge = ({ source, username }) => {
+interface ActivitySourceBadgeProps {
+  source?: string;
+  username?: string | null;
+}
+
+export const ActivitySourceBadge: React.FC<ActivitySourceBadgeProps> = ({ source, username }) => {
   const theme = useTheme();
   const agentInfo = getAgentInfo(username);
 
@@ -327,26 +300,26 @@ export const ActivitySourceBadge = ({ source, username }) => {
         fontSize: '0.625rem',
         backgroundColor: alpha(config.color, 0.1),
         color: config.color,
-        '& .MuiChip-label': {
-          px: 0.75,
-        },
+        '& .MuiChip-label': { px: 0.75 },
       }}
     />
   );
 };
 
-/**
- * Default export for basic indicator
- */
-const AgentIndicator = ({ username, variant = 'badge', ...props }) => {
-  const Component = {
-    badge: AgentBadge,
-    avatar: AgentAvatar,
-    name: AgentName,
-    type: AgentTypeIndicator,
-    source: ActivitySourceBadge,
-  }[variant];
+interface AgentIndicatorProps extends Record<string, unknown> {
+  username?: string | null;
+  variant?: 'badge' | 'avatar' | 'name' | 'type' | 'source';
+}
 
+const AgentIndicator: React.FC<AgentIndicatorProps> = ({ username, variant = 'badge', ...props }) => {
+  const variantMap: Record<string, React.FC<Record<string, unknown>>> = {
+    badge: AgentBadge as React.FC<Record<string, unknown>>,
+    avatar: AgentAvatar as React.FC<Record<string, unknown>>,
+    name: AgentName as React.FC<Record<string, unknown>>,
+    type: AgentTypeIndicator as React.FC<Record<string, unknown>>,
+    source: ActivitySourceBadge as React.FC<Record<string, unknown>>,
+  };
+  const Component = variantMap[variant];
   return <Component username={username} {...props} />;
 };
 

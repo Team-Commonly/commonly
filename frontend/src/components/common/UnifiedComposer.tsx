@@ -1,14 +1,4 @@
-/**
- * UnifiedComposer Component
- *
- * Message composer that supports:
- * - @mentions for both humans and agents
- * - Quick agent actions (/commands)
- * - File attachments
- * - Emoji picker
- */
-
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   Box,
   TextField,
@@ -33,15 +23,22 @@ import {
   AttachFile as AttachIcon,
   EmojiEmotions as EmojiIcon,
   SmartToy as AgentIcon,
-  Person as PersonIcon,
   Code as CodeIcon,
   Search as SearchIcon,
   Summarize as SummarizeIcon,
   CheckCircle as CheckIcon,
 } from '@mui/icons-material';
+import { SvgIconComponent } from '@mui/icons-material';
 
-// Quick actions (slash commands)
-const quickActions = [
+interface QuickAction {
+  command: string;
+  label: string;
+  description: string;
+  icon: SvgIconComponent;
+  agentRequired: boolean;
+}
+
+const quickActions: QuickAction[] = [
   {
     command: '/summarize',
     label: 'Summarize',
@@ -72,7 +69,42 @@ const quickActions = [
   },
 ];
 
-const UnifiedComposer = ({
+interface Member {
+  id?: string;
+  username?: string;
+  name?: string;
+  [key: string]: unknown;
+}
+
+interface Agent {
+  id?: string;
+  name?: string;
+  displayName?: string;
+  [key: string]: unknown;
+}
+
+type Participant =
+  | (Member & { type: 'human' })
+  | (Agent & { type: 'agent'; name: string });
+
+interface SendPayload {
+  content: string;
+  mentions: (Participant | undefined)[];
+  command: { name: string; label: string } | null;
+}
+
+interface UnifiedComposerProps {
+  onSend: (payload: SendPayload) => void;
+  onFileUpload?: () => void;
+  members?: Member[];
+  agents?: Agent[];
+  placeholder?: string;
+  disabled?: boolean;
+  showFileUpload?: boolean;
+  showEmoji?: boolean;
+}
+
+const UnifiedComposer: React.FC<UnifiedComposerProps> = ({
   onSend,
   onFileUpload,
   members = [],
@@ -83,27 +115,24 @@ const UnifiedComposer = ({
   showEmoji = true,
 }) => {
   const theme = useTheme();
-  const inputRef = useRef(null);
+  const inputRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState('');
-  const [mentionAnchor, setMentionAnchor] = useState(null);
+  const [mentionAnchor, setMentionAnchor] = useState<HTMLDivElement | null>(null);
   const [mentionQuery, setMentionQuery] = useState('');
-  const [mentionType, setMentionType] = useState(null); // 'mention' or 'command'
+  const [mentionType, setMentionType] = useState<'mention' | 'command' | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // All mentionable participants (humans + agents)
-  const allParticipants = [
-    ...members.map((m) => ({ ...m, type: 'human' })),
-    ...agents.map((a) => ({ ...a, type: 'agent', name: a.displayName || a.name })),
+  const allParticipants: Participant[] = [
+    ...members.map((m): Participant => ({ ...m, type: 'human' as const })),
+    ...agents.map((a): Participant => ({ ...a, type: 'agent' as const, name: a.displayName || a.name || '' })),
   ];
 
-  // Filter participants by query
   const filteredParticipants = mentionQuery
     ? allParticipants.filter((p) =>
-        (p.name || p.username || '').toLowerCase().includes(mentionQuery.toLowerCase())
+        ((p.name as string | undefined) || (p as Member).username || '').toLowerCase().includes(mentionQuery.toLowerCase())
       )
     : allParticipants;
 
-  // Filter quick actions by query
   const filteredActions = mentionQuery
     ? quickActions.filter(
         (a) =>
@@ -112,12 +141,10 @@ const UnifiedComposer = ({
       )
     : quickActions;
 
-  // Handle input change
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const value = e.target.value;
     setMessage(value);
 
-    // Check for @ mention trigger
     const atMatch = value.match(/@(\w*)$/);
     if (atMatch) {
       setMentionAnchor(inputRef.current);
@@ -127,7 +154,6 @@ const UnifiedComposer = ({
       return;
     }
 
-    // Check for / command trigger
     const slashMatch = value.match(/\/(\w*)$/);
     if (slashMatch && (value === slashMatch[0] || value.endsWith(' ' + slashMatch[0]))) {
       setMentionAnchor(inputRef.current);
@@ -137,15 +163,56 @@ const UnifiedComposer = ({
       return;
     }
 
-    // Close mention popup
     setMentionAnchor(null);
     setMentionType(null);
   };
 
-  // Handle keyboard navigation
-  const handleKeyDown = (e) => {
+  const handleSelect = useCallback((item: Participant | QuickAction): void => {
+    if (mentionType === 'mention') {
+      const p = item as Participant;
+      const name = (p as Member).username || p.name;
+      const newMessage = message.replace(/@\w*$/, `@${name} `);
+      setMessage(newMessage);
+    } else if (mentionType === 'command') {
+      const action = item as QuickAction;
+      const newMessage = message.replace(/\/\w*$/, `${action.command} `);
+      setMessage(newMessage);
+    }
+
+    setMentionAnchor(null);
+    setMentionType(null);
+    (inputRef.current?.querySelector('textarea') as HTMLTextAreaElement | null)?.focus();
+  }, [mentionType, message]);
+
+  const handleSend = useCallback((): void => {
+    if (!message.trim() || disabled) return;
+
+    const mentionMatches = message.match(/@(\w+)/g) || [];
+    const mentions = mentionMatches
+      .map((m) => {
+        const username = m.slice(1);
+        return allParticipants.find(
+          (p) => ((p as Member).username || p.name)?.toLowerCase() === username.toLowerCase()
+        );
+      })
+      .filter(Boolean);
+
+    const commandMatch = message.match(/^\/(\w+)/);
+    const command = commandMatch ? quickActions.find((a) => a.command === `/${commandMatch[1]}`) : null;
+
+    onSend({
+      content: message,
+      mentions,
+      command: command ? { name: command.command, label: command.label } : null,
+    });
+
+    setMessage('');
+  }, [message, disabled, allParticipants, onSend]);
+
+  const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (mentionAnchor) {
-      const items = mentionType === 'mention' ? filteredParticipants : filteredActions;
+      const items: (Participant | QuickAction)[] =
+        mentionType === 'mention' ? filteredParticipants : filteredActions;
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -168,51 +235,6 @@ const UnifiedComposer = ({
     }
   };
 
-  // Handle mention/command selection
-  const handleSelect = (item) => {
-    if (mentionType === 'mention') {
-      // Replace @query with @username
-      const newMessage = message.replace(/@\w*$/, `@${item.username || item.name} `);
-      setMessage(newMessage);
-    } else if (mentionType === 'command') {
-      // Replace /query with /command
-      const newMessage = message.replace(/\/\w*$/, `${item.command} `);
-      setMessage(newMessage);
-    }
-
-    setMentionAnchor(null);
-    setMentionType(null);
-    inputRef.current?.focus();
-  };
-
-  // Handle send
-  const handleSend = () => {
-    if (!message.trim() || disabled) return;
-
-    // Extract mentions
-    const mentionMatches = message.match(/@(\w+)/g) || [];
-    const mentions = mentionMatches
-      .map((m) => {
-        const username = m.slice(1);
-        return allParticipants.find(
-          (p) => (p.username || p.name)?.toLowerCase() === username.toLowerCase()
-        );
-      })
-      .filter(Boolean);
-
-    // Check for commands
-    const commandMatch = message.match(/^\/(\w+)/);
-    const command = commandMatch ? quickActions.find((a) => a.command === `/${commandMatch[1]}`) : null;
-
-    onSend({
-      content: message,
-      mentions,
-      command: command ? { name: command.command, label: command.label } : null,
-    });
-
-    setMessage('');
-  };
-
   return (
     <Box sx={{ position: 'relative' }}>
       {/* Main composer */}
@@ -228,14 +250,12 @@ const UnifiedComposer = ({
           backgroundColor: theme.palette.background.paper,
         }}
       >
-        {/* Attachment button */}
         {showFileUpload && (
           <IconButton size="small" color="default" onClick={onFileUpload}>
             <AttachIcon />
           </IconButton>
         )}
 
-        {/* Input field */}
         <TextField
           ref={inputRef}
           fullWidth
@@ -254,24 +274,18 @@ const UnifiedComposer = ({
           sx={{ flex: 1 }}
         />
 
-        {/* Emoji button */}
         {showEmoji && (
           <IconButton size="small" color="default">
             <EmojiIcon />
           </IconButton>
         )}
 
-        {/* Send button */}
         <Button
           variant="contained"
           size="small"
           disabled={!message.trim() || disabled}
           onClick={handleSend}
-          sx={{
-            minWidth: 40,
-            height: 36,
-            borderRadius: 2,
-          }}
+          sx={{ minWidth: 40, height: 36, borderRadius: 2 }}
         >
           <SendIcon fontSize="small" />
         </Button>
@@ -313,21 +327,11 @@ const UnifiedComposer = ({
         <ClickAwayListener onClickAway={() => setMentionAnchor(null)}>
           <Paper
             elevation={8}
-            sx={{
-              width: 280,
-              maxHeight: 300,
-              overflow: 'auto',
-              borderRadius: 2,
-              mb: 1,
-            }}
+            sx={{ width: 280, maxHeight: 300, overflow: 'auto', borderRadius: 2, mb: 1 }}
           >
             {mentionType === 'mention' && (
               <>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ px: 2, py: 1, display: 'block' }}
-                >
+                <Typography variant="caption" color="text.secondary" sx={{ px: 2, py: 1, display: 'block' }}>
                   Mention someone
                 </Typography>
                 <Divider />
@@ -342,15 +346,12 @@ const UnifiedComposer = ({
                   ) : (
                     filteredParticipants.map((participant, index) => (
                       <ListItem
-                        key={participant.id || participant.name}
-                        button
+                        key={(participant as Member).id || participant.name}
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        {...{ button: true } as any}
                         selected={index === selectedIndex}
                         onClick={() => handleSelect(participant)}
-                        sx={{
-                          borderRadius: 1,
-                          mx: 0.5,
-                          my: 0.25,
-                        }}
+                        sx={{ borderRadius: 1, mx: 0.5, my: 0.25 }}
                       >
                         <ListItemAvatar sx={{ minWidth: 40 }}>
                           <Avatar
@@ -369,11 +370,13 @@ const UnifiedComposer = ({
                                   : theme.palette.text.primary,
                             }}
                           >
-                            {participant.type === 'agent' ? '🤖' : (participant.name || participant.username)?.charAt(0)}
+                            {participant.type === 'agent'
+                              ? '🤖'
+                              : (participant.name || (participant as Member).username)?.charAt(0)}
                           </Avatar>
                         </ListItemAvatar>
                         <ListItemText
-                          primary={participant.name || participant.username}
+                          primary={participant.name || (participant as Member).username}
                           secondary={participant.type === 'agent' ? 'Agent' : 'Member'}
                           primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
                           secondaryTypographyProps={{ fontSize: '0.75rem' }}
@@ -399,11 +402,7 @@ const UnifiedComposer = ({
 
             {mentionType === 'command' && (
               <>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ px: 2, py: 1, display: 'block' }}
-                >
+                <Typography variant="caption" color="text.secondary" sx={{ px: 2, py: 1, display: 'block' }}>
                   Quick actions
                 </Typography>
                 <Divider />
@@ -419,14 +418,11 @@ const UnifiedComposer = ({
                     filteredActions.map((action, index) => (
                       <ListItem
                         key={action.command}
-                        button
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        {...{ button: true } as any}
                         selected={index === selectedIndex}
                         onClick={() => handleSelect(action)}
-                        sx={{
-                          borderRadius: 1,
-                          mx: 0.5,
-                          my: 0.25,
-                        }}
+                        sx={{ borderRadius: 1, mx: 0.5, my: 0.25 }}
                       >
                         <ListItemAvatar sx={{ minWidth: 40 }}>
                           <Avatar
@@ -443,11 +439,7 @@ const UnifiedComposer = ({
                         <ListItemText
                           primary={action.command}
                           secondary={action.description}
-                          primaryTypographyProps={{
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            fontFamily: 'monospace',
-                          }}
+                          primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500, fontFamily: 'monospace' }}
                           secondaryTypographyProps={{ fontSize: '0.75rem' }}
                         />
                         {action.agentRequired && (
