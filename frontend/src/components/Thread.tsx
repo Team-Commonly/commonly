@@ -14,7 +14,7 @@ import FavoriteIcon from '@mui/icons-material/Favorite';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import EmojiPicker from 'emoji-picker-react';
+import EmojiPicker, { EmojiStyle } from 'emoji-picker-react';
 import { AgentAvatar } from './common/AgentIndicator';
 import MarkdownContent from './common/MarkdownContent';
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
@@ -25,20 +25,67 @@ import { refreshPage } from '../utils/refreshUtils';
 import './Thread.css';
 import '../components/PostFeed.css';
 
-const normalizeAgentSegment = (value) => (
+interface PostUser {
+    _id: string;
+    username: string;
+    profilePicture?: string;
+    isBot?: boolean;
+    botMetadata?: { displayName?: string };
+}
+
+interface Comment {
+    _id: string;
+    text: string;
+    createdAt: string;
+    replyTo?: string;
+    userId?: PostUser;
+}
+
+interface Post {
+    _id: string;
+    content: string;
+    createdAt: string;
+    likes?: number;
+    likedBy?: Array<string | { _id: string }>;
+    comments: Comment[];
+    image?: string;
+    podId?: string | { _id?: string };
+    userId: PostUser;
+    agentCommentsDisabled?: boolean;
+}
+
+interface PodAgent {
+    name: string;
+    instanceId?: string;
+    profile?: { displayName?: string; iconUrl?: string; avatarUrl?: string };
+    displayName?: string;
+    iconUrl?: string;
+}
+
+interface MentionableItem {
+    id: string;
+    label: string;
+    labelLower: string;
+    subtitle: string;
+    avatar: string;
+    isAgent: boolean;
+    value: string;
+}
+
+const normalizeAgentSegment = (value: string): string => (
     (value || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40)
 );
 
-const buildAgentUsername = (agentName, instanceId) => {
+const buildAgentUsername = (agentName: string, instanceId?: string): string => {
     const normalized = normalizeAgentSegment(agentName);
-    const instance = normalizeAgentSegment(instanceId);
+    const instance = normalizeAgentSegment(instanceId || '');
     if (!instance || instance === 'default' || instance === normalized) {
         return normalized || 'agent';
     }
     return `${normalized}-${instance}`;
 };
 
-const slugify = (value = '') => value
+const slugify = (value = ''): string => value
     .toString()
     .trim()
     .toLowerCase()
@@ -46,43 +93,44 @@ const slugify = (value = '') => value
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');
 
-const getUserDisplayName = (user) => {
+const getUserDisplayName = (user?: PostUser | null): string => {
     if (!user) return 'Unknown';
     if (user.isBot && user.botMetadata?.displayName) return user.botMetadata.displayName;
     return user.username || 'Unknown';
 };
 
 const Thread = () => {
-    const { id } = useParams();
+    const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { currentUser, refreshData, removePost } = useAppContext();
-    const [post, setPost] = useState(null);
+    const [post, setPost] = useState<Post | null>(null);
     const [error, setError] = useState('');
     const [comment, setComment] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [liked, setLiked] = useState(false);
     const [threadFollowed, setThreadFollowed] = useState(false);
     const [threadFollowLoading, setThreadFollowLoading] = useState(false);
-    const [menuAnchorEl, setMenuAnchorEl] = useState(null);
-    const [selectedItemId, setSelectedItemId] = useState(null);
-    const [itemType, setItemType] = useState(null); // 'post' or 'comment'
+    const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+    const [itemType, setItemType] = useState<'post' | 'comment' | null>(null);
     const [loading, setLoading] = useState(true);
-    const [podAgents, setPodAgents] = useState([]);
-    const [threadPodId, setThreadPodId] = useState(null);
+    const [podAgents, setPodAgents] = useState<PodAgent[]>([]);
+    const [threadPodId, setThreadPodId] = useState<string | null>(null);
     const [mentionOpen, setMentionOpen] = useState(false);
     const [mentionQuery, setMentionQuery] = useState('');
     const [mentionStart, setMentionStart] = useState(-1);
     const [mentionIndex, setMentionIndex] = useState(0);
-    const [lightboxImage, setLightboxImage] = useState(null);
+    const [lightboxImage, setLightboxImage] = useState<string | null>(null);
     const [lightboxAlt, setLightboxAlt] = useState('');
     const [lightboxZoomed, setLightboxZoomed] = useState(false);
-    const [replyingTo, setReplyingTo] = useState(null);
+    const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
     const [agentCommentsDisabled, setAgentCommentsDisabled] = useState(false);
-    const emojiButtonRef = useRef(null);
-    const commentInputRef = useRef(null);
-    const mentionDropdownRef = useRef(null);
+    const emojiButtonRef = useRef<HTMLButtonElement>(null);
+    const commentInputRef = useRef<HTMLTextAreaElement>(null);
+    const mentionDropdownRef = useRef<HTMLDivElement>(null);
+    const scrollHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const getAgentIconSrc = (username) => {
+    const getAgentIconSrc = (username: string): string | null => {
         if (!username) return null;
         const agent = (podAgents || []).find(
             (a) => buildAgentUsername(a.name, a.instanceId) === username,
@@ -90,8 +138,8 @@ const Thread = () => {
         return agent?.profile?.iconUrl || agent?.iconUrl || null;
     };
 
-    const mentionableItems = useMemo(() => {
-        const items = [];
+    const mentionableItems = useMemo<MentionableItem[]>(() => {
+        const items: MentionableItem[] = [];
         (podAgents || []).forEach((agent) => {
             const agentName = agent?.name;
             if (!agentName) return;
@@ -116,24 +164,23 @@ const Thread = () => {
         return items;
     }, [podAgents]);
 
-    const commentMap = useMemo(() => {
+    const commentMap = useMemo<Record<string, Comment>>(() => {
         if (!post?.comments) return {};
-        return post.comments.reduce((acc, c) => {
+        return post.comments.reduce((acc: Record<string, Comment>, c) => {
             acc[c._id] = c;
             return acc;
         }, {});
     }, [post?.comments]);
 
-    const filteredMentions = useMemo(() => {
+    const filteredMentions = useMemo<MentionableItem[]>(() => {
         if (!mentionOpen) return [];
         const query = mentionQuery.trim().toLowerCase();
         const result = mentionableItems.filter((item) => item.labelLower.includes(query));
         return result.slice(0, 8);
     }, [mentionOpen, mentionQuery, mentionableItems]);
 
-    const scrollHighlightTimer = useRef(null);
-    const scrollToComment = (commentId) => {
-        clearTimeout(scrollHighlightTimer.current);
+    const scrollToComment = (commentId: string) => {
+        clearTimeout(scrollHighlightTimer.current!);
         scrollHighlightTimer.current = scrollToElementById(`comment-${commentId}`, 'comment-highlight');
     };
 
@@ -148,8 +195,8 @@ const Thread = () => {
                 // Check if current user has liked this post
                 if (currentUser && res.data.likedBy) {
                     // Check if likedBy contains the current user's ID
-                    const isLiked = res.data.likedBy.some(user => 
-                        user._id === currentUser._id || user === currentUser._id
+                    const isLiked = res.data.likedBy.some((u: string | { _id: string }) =>
+                        (typeof u === 'object' ? u._id : u) === currentUser._id
                     );
                     setLiked(isLiked);
                 } else {
@@ -172,7 +219,7 @@ const Thread = () => {
                     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
                 });
                 const threads = response.data?.threads || [];
-                setThreadFollowed(threads.some((thread) => thread._id === id));
+                setThreadFollowed(threads.some((thread: { _id: string }) => thread._id === id));
             } catch (err) {
                 // Keep default state if endpoint fails
             }
@@ -191,7 +238,7 @@ const Thread = () => {
 
             try {
                 const postPodId = typeof post?.podId === 'object' ? post.podId?._id : post?.podId;
-                let resolvedPodId = postPodId || null;
+                let resolvedPodId: string | null = postPodId || null;
                 if (!resolvedPodId) {
                     const podsRes = await axios.get('/api/pods', authHeaders);
                     const pods = Array.isArray(podsRes.data) ? podsRes.data : podsRes.data?.pods || [];
@@ -208,14 +255,14 @@ const Thread = () => {
                 const agentsRes = await axios.get(`/api/registry/pods/${resolvedPodId}/agents`, authHeaders);
                 setPodAgents(agentsRes.data?.agents || []);
             } catch (err) {
-                console.warn('Failed to fetch thread agents:', err.response?.status);
+                console.warn('Failed to fetch thread agents:', (err as { response?: { status: number } })?.response?.status);
             }
         };
 
         fetchThreadAgents();
     }, [post, currentUser]);
 
-    const openLightbox = (src, alt = '') => {
+    const openLightbox = (src: string, alt = '') => {
         setLightboxImage(src);
         setLightboxAlt(alt);
         setLightboxZoomed(false);
@@ -227,10 +274,10 @@ const Thread = () => {
         setLightboxZoomed(false);
     };
 
-    const handleCommentSubmit = async (e) => {
+    const handleCommentSubmit = async (e: { preventDefault: () => void }) => {
         e.preventDefault();
         if (!comment.trim()) return;
-    
+
         try {
             const payload = {
                 text: comment,
@@ -241,17 +288,17 @@ const Thread = () => {
                 payload,
                 { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
             );
-            setPost(prevPost => ({
+            setPost((prevPost) => prevPost ? ({
                 ...prevPost,
                 comments: [...prevPost.comments, res.data]
-            }));
+            }) : prevPost);
             setComment('');
             setShowEmojiPicker(false);
             setMentionOpen(false);
             setMentionQuery('');
             setMentionStart(-1);
             setReplyingTo(null);
-            
+
             // Refresh data to ensure consistency
             refreshData();
         } catch (err) {
@@ -262,22 +309,22 @@ const Thread = () => {
     const handleLike = async () => {
         // Store current liked state
         const wasLiked = liked;
-        
+
         try {
             // Update UI immediately for better user experience
             setLiked(!wasLiked);
-            
+
             // Send request to server
             const response = await axios.post(`/api/posts/${id}/like`, {}, {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
             });
-            
+
             // Update post likes count
-            setPost(prevPost => ({
+            setPost((prevPost) => prevPost ? ({
                 ...prevPost,
                 likes: response.data.likes
-            }));
-            
+            }) : prevPost);
+
             // If server response doesn't match our optimistic update, correct it
             if (response.data.liked !== !wasLiked) {
                 setLiked(response.data.liked);
@@ -311,7 +358,7 @@ const Thread = () => {
         }
     };
 
-    const handleMenuOpen = (event, itemId, type) => {
+    const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, itemId: string, type: 'post' | 'comment') => {
         event.stopPropagation();
         setMenuAnchorEl(event.currentTarget);
         setSelectedItemId(itemId);
@@ -327,7 +374,7 @@ const Thread = () => {
 
     const handleToggleAgentComments = async () => {
         try {
-            const res = await axios.patch(`/api/posts/${post._id}/agent-comments`, {}, {
+            const res = await axios.patch(`/api/posts/${post!._id}/agent-comments`, {}, {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
             });
             setAgentCommentsDisabled(res.data.agentCommentsDisabled);
@@ -338,37 +385,37 @@ const Thread = () => {
 
     const handleDelete = async () => {
         if (!selectedItemId) return;
-        
+
         try {
             // Close the menu first
             handleMenuClose();
-            
+
             if (itemType === 'post') {
                 // Use the removePost function from context
                 removePost(selectedItemId);
-                
+
                 // Navigate back to feed immediately
                 navigate('/feed');
-                
+
                 // Send the delete request to the server
                 await axios.delete(`/api/posts/${selectedItemId}`, {
                     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                 });
-                
+
                 // Trigger a page refresh after a short delay
                 refreshPage(500);
             } else if (itemType === 'comment') {
                 // Remove the deleted comment from the state immediately
-                setPost(prevPost => ({
+                setPost((prevPost) => prevPost ? ({
                     ...prevPost,
-                    comments: prevPost.comments.filter(comment => comment._id !== selectedItemId)
-                }));
-                
+                    comments: prevPost.comments.filter((c) => c._id !== selectedItemId)
+                }) : prevPost);
+
                 // Send the delete request to the server
                 await axios.delete(`/api/posts/${id}/comments/${selectedItemId}`, {
                     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                 });
-                
+
                 // No refresh needed for comment deletion as we've already updated the state
             }
         } catch (err) {
@@ -378,15 +425,15 @@ const Thread = () => {
         }
     };
 
-    const onEmojiClick = (emojiObj) => {
+    const onEmojiClick = (emojiObj: { emoji?: string; unified?: string }) => {
         // Support both older and newer emoji-picker-react versions
         const emoji = emojiObj.emoji || (emojiObj.unified && String.fromCodePoint(parseInt(emojiObj.unified, 16)));
         if (emoji) {
-            setComment(prevComment => prevComment + emoji);
+            setComment((prevComment) => prevComment + emoji);
         }
     };
 
-    const getMentionContext = (text, cursor) => {
+    const getMentionContext = (text: string, cursor: number | null | undefined): { start: number; query: string } | null => {
         if (!text || cursor === null || cursor === undefined) return null;
         const atIndex = text.lastIndexOf('@', cursor - 1);
         if (atIndex < 0) return null;
@@ -397,7 +444,7 @@ const Thread = () => {
         return { start: atIndex, query: between };
     };
 
-    const updateMentionState = (nextValue, cursorPosition) => {
+    const updateMentionState = (nextValue: string, cursorPosition: number | null) => {
         const context = getMentionContext(nextValue, cursorPosition);
         if (!context) {
             setMentionOpen(false);
@@ -411,7 +458,7 @@ const Thread = () => {
         setMentionIndex(0);
     };
 
-    const handleMentionSelect = (item) => {
+    const handleMentionSelect = (item: MentionableItem) => {
         const input = commentInputRef.current;
         if (!input) return;
         const cursor = input.selectionStart ?? comment.length;
@@ -430,7 +477,7 @@ const Thread = () => {
         });
     };
 
-    const handleCommentKeyDown = (event) => {
+    const handleCommentKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (mentionOpen && filteredMentions.length > 0) {
             if (event.key === 'ArrowDown') {
                 event.preventDefault();
@@ -469,11 +516,11 @@ const Thread = () => {
 
     // Handle clicking outside emoji picker
     useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (showEmojiPicker && 
-                emojiButtonRef.current && 
-                !emojiButtonRef.current.contains(event.target) &&
-                !event.target.closest('.emoji-picker-portal')) {
+        const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+            if (showEmojiPicker &&
+                emojiButtonRef.current &&
+                !emojiButtonRef.current.contains(event.target as Node) &&
+                !(event.target as Element).closest('.emoji-picker-portal')) {
                 setShowEmojiPicker(false);
             }
         };
@@ -490,10 +537,10 @@ const Thread = () => {
     }, [showEmojiPicker]);
 
     useEffect(() => {
-        const handleMentionClickOutside = (event) => {
+        const handleMentionClickOutside = (event: MouseEvent) => {
             if (!mentionOpen) return;
-            if (mentionDropdownRef.current && mentionDropdownRef.current.contains(event.target)) return;
-            if (commentInputRef.current && commentInputRef.current.contains(event.target)) return;
+            if (mentionDropdownRef.current && mentionDropdownRef.current.contains(event.target as Node)) return;
+            if (commentInputRef.current && commentInputRef.current.contains(event.target as Node)) return;
             setMentionOpen(false);
         };
 
@@ -542,11 +589,11 @@ const Thread = () => {
                         <div className="post-meta">
                             {post.userId.isBot ? (
                                 <AgentAvatar
-                                    className="post-avatar"
                                     username={post.userId.username}
                                     src={getAgentIconSrc(post.userId.username)}
                                     size={40}
                                     showBadge={false}
+                                    sx={{ mr: 1 }}
                                 />
                             ) : (
                                 <Avatar
@@ -565,8 +612,8 @@ const Thread = () => {
                             </div>
                         </div>
                         {currentUser && (currentUser._id === post.userId._id) && (
-                            <IconButton 
-                                size="small" 
+                            <IconButton
+                                size="small"
                                 onClick={(e) => handleMenuOpen(e, post._id, 'post')}
                                 aria-label="post options"
                                 id="post-options-button"
@@ -595,18 +642,18 @@ const Thread = () => {
                                 return part;
                             })}
                         </Typography>
-                    
+
                         {post.image && (
-                            <Box 
-                                sx={{ 
-                                    mt: 1, 
-                                    mb: 3, 
+                            <Box
+                                sx={{
+                                    mt: 1,
+                                    mb: 3,
                                     borderRadius: '8px',
                                     overflow: 'hidden',
                                     maxHeight: '500px',
                                 }}
                                 className="post-image-container"
-                                onClick={() => openLightbox(normalizeUploadUrl(post.image), post.content)}
+                                onClick={() => openLightbox(normalizeUploadUrl(post.image!), post.content)}
                             >
                                 <Box
                                     component="img"
@@ -623,7 +670,7 @@ const Thread = () => {
                                 />
                             </Box>
                         )}
-                    
+
                         <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
                             <IconButton onClick={handleLike} color="primary">
                                 {liked ? <FavoriteIcon /> : <FavoriteBorderIcon />}
@@ -721,8 +768,8 @@ const Thread = () => {
                                 updateMentionState(nextValue, e.target.selectionStart);
                             }}
                             onKeyDown={handleCommentKeyDown}
-                            onClick={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
-                            onKeyUp={(e) => updateMentionState(e.target.value, e.target.selectionStart)}
+                            onClick={(e) => updateMentionState((e.target as HTMLTextAreaElement).value, (e.target as HTMLTextAreaElement).selectionStart)}
+                            onKeyUp={(e) => updateMentionState((e.target as HTMLTextAreaElement).value, (e.target as HTMLTextAreaElement).selectionStart)}
                             placeholder={replyingTo ? `Reply to @${getUserDisplayName(replyingTo.userId)}...` : 'Write a comment...'}
                             ref={commentInputRef}
                         />
@@ -742,10 +789,10 @@ const Thread = () => {
 
             {/* Emoji Picker Portal - Positioned outside the comment form container */}
             {showEmojiPicker && (
-                <Box 
+                <Box
                     className="emoji-picker-portal"
-                    sx={{ 
-                        position: 'fixed', 
+                    sx={{
+                        position: 'fixed',
                         zIndex: 1300,
                         top: (() => {
                             if (emojiButtonRef.current) {
@@ -771,7 +818,7 @@ const Thread = () => {
                     }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <Box 
+                    <Box
                         className="emoji-picker-container"
                         sx={{
                             backgroundColor: 'rgba(15, 23, 42, 0.98)',
@@ -781,15 +828,15 @@ const Thread = () => {
                             overflow: 'hidden'
                         }}
                     >
-                        <EmojiPicker 
+                        <EmojiPicker
                             onEmojiClick={onEmojiClick}
                             width={320}
                             height={380}
-                            emojiStyle="native"
+                            emojiStyle={EmojiStyle.NATIVE}
                             searchDisabled={false}
                             skinTonesDisabled={true}
                             previewConfig={{ showPreview: false }}
-                            style={{ transform: 'none', scale: 1 }}
+                            style={{ transform: 'none', scale: '1' }}
                         />
                     </Box>
                 </Box>
@@ -799,10 +846,10 @@ const Thread = () => {
                 Comments ({post.comments.length})
             </Typography>
 
-            {post.comments.map((comment) => {
-                const quotedComment = comment.replyTo ? commentMap[comment.replyTo] : null;
+            {post.comments.map((threadComment) => {
+                const quotedComment = threadComment.replyTo ? commentMap[threadComment.replyTo] : null;
                 return (
-                <Paper key={comment._id} id={`comment-${comment._id}`} className="comment-item">
+                <Paper key={threadComment._id} id={`comment-${threadComment._id}`} className="comment-item">
                     {quotedComment && (
                         <div
                             className="comment-quote-bubble"
@@ -821,11 +868,10 @@ const Thread = () => {
                         </div>
                     )}
                     <div className="comment-row">
-                        {comment.userId?.isBot ? (
+                        {threadComment.userId?.isBot ? (
                             <AgentAvatar
-                                className="comment-avatar"
-                                username={comment.userId.username}
-                                src={getAgentIconSrc(comment.userId.username)}
+                                username={threadComment.userId.username}
+                                src={getAgentIconSrc(threadComment.userId.username)}
                                 size={32}
                                 showBadge={false}
                             />
@@ -833,21 +879,21 @@ const Thread = () => {
                             <Avatar
                                 className="comment-avatar"
                                 sx={{
-                                    bgcolor: getAvatarColor(comment.userId && comment.userId.profilePicture)
+                                    bgcolor: getAvatarColor(threadComment.userId && threadComment.userId.profilePicture)
                                 }}
-                                src={getAvatarSrc(comment.userId && comment.userId.profilePicture)}
+                                src={getAvatarSrc(threadComment.userId && threadComment.userId.profilePicture)}
                             >
-                                {comment.userId && comment.userId.username ? comment.userId.username.charAt(0).toUpperCase() : '?'}
+                                {threadComment.userId && threadComment.userId.username ? threadComment.userId.username.charAt(0).toUpperCase() : '?'}
                             </Avatar>
                         )}
                         <div className="comment-content">
                             <div className="comment-header">
                                 <div className="comment-meta">
                                     <Typography variant="subtitle2">
-                                        {getUserDisplayName(comment.userId)}
+                                        {getUserDisplayName(threadComment.userId)}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary">
-                                        {formatDistanceToNow(new Date(comment.createdAt))} ago
+                                        {formatDistanceToNow(new Date(threadComment.createdAt))} ago
                                     </Typography>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -855,16 +901,16 @@ const Thread = () => {
                                         <IconButton
                                             size="small"
                                             className="comment-reply-button"
-                                            onClick={() => { setReplyingTo(comment); commentInputRef.current?.focus(); }}
+                                            onClick={() => { setReplyingTo(threadComment); commentInputRef.current?.focus(); }}
                                             aria-label="reply to comment"
                                         >
                                             <ReplyIcon fontSize="inherit" />
                                         </IconButton>
                                     </Tooltip>
-                                    {currentUser && comment.userId && (currentUser._id === comment.userId._id) && (
+                                    {currentUser && threadComment.userId && (currentUser._id === threadComment.userId._id) && (
                                         <IconButton
                                             size="small"
-                                            onClick={(e) => handleMenuOpen(e, comment._id, 'comment')}
+                                            onClick={(e) => handleMenuOpen(e, threadComment._id, 'comment')}
                                             aria-label="comment options"
                                             id="post-options-button"
                                         >
@@ -876,9 +922,9 @@ const Thread = () => {
                             <Box className="comment-body">
                                 <MarkdownContent
                                     variant="comment"
-                                    onHashtagClick={(tag) => navigate(`/feed?q=${tag}`)}
+                                    onHashtagClick={(tag: string) => navigate(`/feed?q=${tag}`)}
                                 >
-                                    {comment.text}
+                                    {threadComment.text}
                                 </MarkdownContent>
                             </Box>
                         </div>
@@ -896,11 +942,6 @@ const Thread = () => {
                 MenuListProps={{
                     'aria-labelledby': 'post-options-button',
                     autoFocusItem: false,
-                }}
-                slotProps={{
-                    backdrop: {
-                        onClick: handleMenuClose
-                    }
                 }}
             >
                 <MenuItem
