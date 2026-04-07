@@ -36,7 +36,12 @@ import axios from 'axios';
 import AppCard from './AppCard';
 import OfficialIntegrationCard from './OfficialIntegrationCard';
 
-const categories = [
+interface Category {
+  id: string;
+  label: string;
+}
+
+const categories: Category[] = [
   { id: 'all', label: 'All Categories' },
   { id: 'productivity', label: 'Productivity' },
   { id: 'development', label: 'Development' },
@@ -46,7 +51,7 @@ const categories = [
   { id: 'other', label: 'Other' },
 ];
 
-const types = [
+const types: Category[] = [
   { id: 'all', label: 'All Types' },
   { id: 'agent', label: 'Agent Apps' },
   { id: 'integration', label: 'Integrations' },
@@ -54,43 +59,85 @@ const types = [
   { id: 'webhook', label: 'Webhook Apps' },
 ];
 
+interface App {
+  id: string;
+  name?: string;
+  displayName?: string;
+  installationId?: string;
+  [key: string]: unknown;
+}
 
-const AppsMarketplacePage = () => {
+interface OfficialEntry {
+  id: string;
+  name?: string;
+  type?: string;
+  capabilities?: string[];
+  [key: string]: unknown;
+}
+
+interface IntegrationCatalogEntry {
+  id: string;
+  catalog?: { capabilities?: string[] };
+  stats?: { activeIntegrations?: number };
+}
+
+interface IntegrationsById {
+  [id: string]: IntegrationCatalogEntry;
+}
+
+interface OfficialListing extends OfficialEntry {
+  capabilities: string[];
+  activeCount?: number;
+}
+
+interface Pod {
+  _id: string;
+  name: string;
+}
+
+interface SnackbarState {
+  open: boolean;
+  message: string;
+  severity: 'info' | 'error' | 'success' | 'warning';
+}
+
+const AppsMarketplacePage: React.FC = () => {
   const theme = useTheme();
-  const [apps, setApps] = useState([]);
-  const [featured, setFeatured] = useState([]);
-  const [officialEntries, setOfficialEntries] = useState([]);
+  const [apps, setApps] = useState<App[]>([]);
+  const [featured, setFeatured] = useState<App[]>([]);
+  const [officialEntries, setOfficialEntries] = useState<OfficialEntry[]>([]);
   const [officialLoading, setOfficialLoading] = useState(false);
-  const [officialError, setOfficialError] = useState(null);
-  const [integrationEntries, setIntegrationEntries] = useState([]);
+  const [officialError, setOfficialError] = useState<string | null>(null);
+  const [integrationEntries, setIntegrationEntries] = useState<IntegrationCatalogEntry[]>([]);
   const [integrationsLoading, setIntegrationsLoading] = useState(false);
-  const [integrationsError, setIntegrationsError] = useState(null);
-  const [installedApps, setInstalledApps] = useState([]);
-  const [userPods, setUserPods] = useState([]);
+  const [integrationsError, setIntegrationsError] = useState<string | null>(null);
+  const [installedApps, setInstalledApps] = useState<App[]>([]);
+  const [userPods, setUserPods] = useState<Pod[]>([]);
   const [selectedPodId, setSelectedPodId] = useState('');
   const [activeTab, setActiveTab] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const [error, setError] = useState<string | null>(null);
+  const [snackbar, setSnackbar] = useState<SnackbarState>({ open: false, message: '', severity: 'info' });
   const contribUrl =
     process.env.REACT_APP_MARKETPLACE_CONTRIB_URL ||
     'https://example.com/commonly-marketplace#contributing';
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('token');
-    return { 'x-auth-token': token };
+    return { 'x-auth-token': token || '' };
   };
 
   useEffect(() => {
-    const fetchUserPods = async () => {
+    const fetchUserPods = async (): Promise<void> => {
       try {
         const response = await axios.get('/api/pods', { headers: getAuthHeaders() });
-        setUserPods(response.data || []);
-        if (!selectedPodId && response.data?.length > 0) {
-          setSelectedPodId(response.data[0]._id);
+        const pods = (response.data as Pod[]) || [];
+        setUserPods(pods);
+        if (!selectedPodId && pods.length > 0) {
+          setSelectedPodId(pods[0]._id);
         }
       } catch (err) {
         console.error('Error fetching pods:', err);
@@ -114,7 +161,7 @@ const AppsMarketplacePage = () => {
     }
   }, [selectedPodId]);
 
-  const fetchMarketplace = async () => {
+  const fetchMarketplace = async (): Promise<void> => {
     setLoading(true);
     setError(null);
 
@@ -129,8 +176,8 @@ const AppsMarketplacePage = () => {
         axios.get('/api/apps/marketplace/featured'),
       ]);
 
-      setApps(appsRes.data.apps || []);
-      setFeatured(featuredRes.data.apps || []);
+      setApps((appsRes.data as { apps?: App[] }).apps || []);
+      setFeatured((featuredRes.data as { apps?: App[] }).apps || []);
     } catch (err) {
       console.error('Error loading marketplace apps:', err);
       setError('Failed to load apps marketplace');
@@ -140,12 +187,12 @@ const AppsMarketplacePage = () => {
     }
   };
 
-  const fetchOfficialMarketplace = async () => {
+  const fetchOfficialMarketplace = async (): Promise<void> => {
     setOfficialLoading(true);
     setOfficialError(null);
     try {
       const response = await axios.get('/api/marketplace/official');
-      setOfficialEntries(response.data?.entries || []);
+      setOfficialEntries((response.data as { entries?: OfficialEntry[] })?.entries || []);
     } catch (err) {
       console.error('Error loading official marketplace:', err);
       setOfficialError('Failed to load official marketplace.');
@@ -155,7 +202,7 @@ const AppsMarketplacePage = () => {
     }
   };
 
-  const fetchIntegrations = async () => {
+  const fetchIntegrations = async (): Promise<void> => {
     const token = localStorage.getItem('token');
     if (!token) {
       setIntegrationEntries([]);
@@ -169,7 +216,7 @@ const AppsMarketplacePage = () => {
       const response = await axios.get('/api/integrations/catalog', {
         headers: getAuthHeaders(),
       });
-      setIntegrationEntries(response.data?.entries || []);
+      setIntegrationEntries((response.data as { entries?: IntegrationCatalogEntry[] })?.entries || []);
     } catch (err) {
       console.error('Error loading integrations catalog:', err);
       setIntegrationsError('Failed to load integrations catalog.');
@@ -178,18 +225,18 @@ const AppsMarketplacePage = () => {
     }
   };
 
-  const fetchInstalled = async () => {
+  const fetchInstalled = async (): Promise<void> => {
     try {
       const response = await axios.get(`/api/apps/pods/${selectedPodId}/apps`, {
         headers: getAuthHeaders(),
       });
-      setInstalledApps(response.data.apps || []);
+      setInstalledApps((response.data as { apps?: App[] }).apps || []);
     } catch (err) {
       console.error('Error fetching installed apps:', err);
     }
   };
 
-  const handleInstall = async (app) => {
+  const handleInstall = async (app: App): Promise<void> => {
     if (!selectedPodId) {
       setSnackbar({ open: true, message: 'Select a pod to install', severity: 'warning' });
       return;
@@ -204,16 +251,17 @@ const AppsMarketplacePage = () => {
       setSnackbar({ open: true, message: `Installed ${app.displayName || app.name}`, severity: 'success' });
       fetchInstalled();
     } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
       console.error('Error installing app:', err);
       setSnackbar({
         open: true,
-        message: err.response?.data?.error || 'Failed to install app',
+        message: e.response?.data?.error || 'Failed to install app',
         severity: 'error',
       });
     }
   };
 
-  const handleRemove = async (app) => {
+  const handleRemove = async (app: App): Promise<void> => {
     if (!selectedPodId) return;
 
     try {
@@ -228,24 +276,24 @@ const AppsMarketplacePage = () => {
     }
   };
 
-  const isInstalled = (appId) => installedApps.some((a) => a.id === appId);
-  const integrationsById = integrationEntries.reduce((acc, entry) => {
+  const isInstalled = (appId: string): boolean => installedApps.some((a) => a.id === appId);
+  const integrationsById: IntegrationsById = integrationEntries.reduce((acc, entry) => {
     acc[entry.id] = entry;
     return acc;
-  }, {});
+  }, {} as IntegrationsById);
 
-  const officialListings = officialEntries.map((entry) => {
-    const integrationInfo = integrationsById[entry.id] || {};
+  const officialListings: OfficialListing[] = officialEntries.map((entry) => {
+    const integrationInfo = integrationsById[entry.id];
     return {
       ...entry,
-      capabilities: integrationInfo.catalog?.capabilities || entry.capabilities || [],
-      activeCount: integrationInfo.stats?.activeIntegrations,
+      capabilities: integrationInfo?.catalog?.capabilities || (entry.capabilities as string[]) || [],
+      activeCount: integrationInfo?.stats?.activeIntegrations,
     };
   });
   const officialIntegrations = officialListings.filter((entry) => entry.type !== 'mcp-app');
   const mcpListings = officialListings.filter((entry) => entry.type === 'mcp-app');
 
-  const handleConnect = (entry) => {
+  const handleConnect = (entry: OfficialEntry): void => {
     setSnackbar({
       open: true,
       message: `Open a pod to connect ${entry.name}.`,
@@ -293,7 +341,7 @@ const AppsMarketplacePage = () => {
             <Select
               value={selectedPodId || ''}
               label="Install to Pod"
-              onChange={(e) => setSelectedPodId(e.target.value)}
+              onChange={(e) => setSelectedPodId(e.target.value as string)}
             >
               {userPods.map((pod) => (
                 <MenuItem key={pod._id} value={pod._id}>
@@ -332,7 +380,7 @@ const AppsMarketplacePage = () => {
           <Select
             value={typeFilter}
             label="Type"
-            onChange={(e) => setTypeFilter(e.target.value)}
+            onChange={(e) => setTypeFilter(e.target.value as string)}
           >
             {types.map((t) => (
               <MenuItem key={t.id} value={t.id}>
@@ -365,7 +413,7 @@ const AppsMarketplacePage = () => {
       </Box>
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={activeTab} onChange={(e, v) => setActiveTab(v)}>
+        <Tabs value={activeTab} onChange={(_e: React.SyntheticEvent, v: number) => setActiveTab(v)}>
           <Tab label="Discover" icon={<AppsIcon />} iconPosition="start" />
           <Tab label={`Installed ${installedApps.length ? `(${installedApps.length})` : ''}`} />
         </Tabs>
@@ -499,6 +547,8 @@ const AppsMarketplacePage = () => {
             {loading
               ? [1, 2, 3, 4, 5, 6].map((i) => (
                   <Grid item xs={12} sm={6} md={4} lg={3} key={i}>
+                    {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+                    {/* @ts-ignore — AppCard is a JS component; loading skeleton omits app prop intentionally */}
                     <AppCard loading />
                   </Grid>
                 ))

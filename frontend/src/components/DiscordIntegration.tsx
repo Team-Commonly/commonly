@@ -28,71 +28,97 @@ import axios from 'axios';
 import getApiBaseUrl from '../utils/apiBaseUrl';
 import { AuthContext } from '../context/AuthContext';
 
+interface IntegrationConfig {
+  serverName?: string;
+  channelName?: string;
+  agentAccessEnabled?: boolean;
+  botToken?: string;
+}
+
+interface Integration {
+  _id: string;
+  type: string;
+  status: string;
+  config: IntegrationConfig;
+  createdBy?: string | { _id?: string };
+}
+
+interface PodInfo {
+  createdBy?: string | { _id?: string };
+}
+
+interface DiscordIntegrationProps {
+  podId: string;
+  viewOnly?: boolean;
+}
+
 // Discord logo component
-const DiscordIcon = () => (
+const DiscordIcon = (): React.ReactElement => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
     <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419-.0190 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9460 2.4189-2.1568 2.4189Z"/>
   </svg>
 );
 
 // Use OAuth flow with redirect instead of simple bot invite
-const getDiscordOAuthUrl = (podId) => {
+const getDiscordOAuthUrl = (podId: string): string => {
   const clientId = process.env.REACT_APP_DISCORD_CLIENT_ID;
   const redirectUri = encodeURIComponent(`${getApiBaseUrl()}/api/discord/callback`);
   const scopes = encodeURIComponent('bot applications.commands');
   const permissions = '536873984'; // Send Messages (2048) + Manage Webhooks (536870912) = 536873984
   const state = `pod_${podId}`;
   const timestamp = Date.now(); // Add timestamp to prevent caching
-  
+
   return `https://discord.com/api/oauth2/authorize?client_id=${clientId}&scope=${scopes}&permissions=${permissions}&redirect_uri=${redirectUri}&response_type=code&state=${state}&t=${timestamp}`;
 };
 
-const DiscordIntegration = ({ podId, viewOnly = false }) => {
+const DiscordIntegration: React.FC<DiscordIntegrationProps> = ({ podId, viewOnly = false }) => {
   const { user } = useContext(AuthContext);
-  const [integrations, setIntegrations] = useState([]);
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [integrationToDelete, setIntegrationToDelete] = useState(null);
+  const [integrationToDelete, setIntegrationToDelete] = useState<Integration | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const [integrationToConfigure, setIntegrationToConfigure] = useState(null);
+  const [integrationToConfigure, setIntegrationToConfigure] = useState<Integration | null>(null);
   const [botToken, setBotToken] = useState('');
   const [enableAgentAccess, setEnableAgentAccess] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [podInfo, setPodInfo] = useState(null);
+  const [podInfo, setPodInfo] = useState<PodInfo | null>(null);
 
   // Check if user can delete integration (only used in non-viewOnly mode)
-  const canDeleteIntegration = (integration) => {
+  const canDeleteIntegration = (integration: Integration): boolean => {
     if (viewOnly) return false; // No delete in view-only mode
-    
+
     if (!user) return false;
-    
+
     // Admin can delete any integration
     if (user.role === 'admin') return true;
-    
+
     // Get user ID (different auth contexts use different field names)
-    const currentUserId = user.id || user._id;
-    
+    const currentUserId = (user as { id?: string; _id?: string }).id || (user as { id?: string; _id?: string })._id;
+
     // Pod owner can delete integrations in their pod
     if (podInfo) {
       const podOwnerId = typeof podInfo.createdBy === 'string' ? podInfo.createdBy : podInfo.createdBy?._id;
       if (podOwnerId === currentUserId) return true;
     }
-    
+
     // Integration creator can delete their own integration
-    const integrationCreatorId = integration.createdBy?._id || integration.createdBy;
+    const integrationCreatorId = typeof integration.createdBy === 'object'
+      ? integration.createdBy?._id
+      : integration.createdBy;
     if (integrationCreatorId === currentUserId) return true;
-    
+
     return false;
   };
 
   // Fetch existing integrations and pod info
-  const fetchIntegrations = async () => {
+  const fetchIntegrations = async (): Promise<void> => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      
+
       // Fetch integrations and pod info in parallel
       const [integrationsResponse, podResponse] = await Promise.all([
         axios.get(`/api/integrations/${podId}`, {
@@ -100,20 +126,23 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
         }),
         axios.get(`/api/pods/${podId}`, {
           headers: { Authorization: `Bearer ${token}` }
-        }).catch((error) => {
-          console.warn('Pod fetch failed:', error.response?.status, error.response?.data);
+        }).catch((err: unknown) => {
+          const e = err as { response?: { status?: number; data?: unknown } };
+          console.warn('Pod fetch failed:', e.response?.status, e.response?.data);
           return null; // Don't fail if pod info can't be fetched
         })
       ]);
-      
-      const discordIntegrations = integrationsResponse.data.filter(integration => integration.type === 'discord');
+
+      const discordIntegrations = (integrationsResponse.data as Integration[]).filter(
+        (integration) => integration.type === 'discord'
+      );
       setIntegrations(discordIntegrations);
-      
+
       if (podResponse) {
-        setPodInfo(podResponse.data);
+        setPodInfo((podResponse as { data: PodInfo }).data);
       }
-    } catch (error) {
-      console.error('Error fetching integrations:', error);
+    } catch (err) {
+      console.error('Error fetching integrations:', err);
       setError('Failed to load apps');
     } finally {
       setLoading(false);
@@ -126,57 +155,57 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
     }
   }, [podId]);
 
-  const handleDelete = async (integrationId) => {
+  const handleDelete = async (integrationId: string): Promise<void> => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
       await axios.delete(`/api/integrations/${integrationId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       setSuccess('App disconnected successfully');
       fetchIntegrations();
       setDeleteDialogOpen(false);
       setIntegrationToDelete(null);
-    } catch (error) {
-      console.error('Error deleting integration:', error);
+    } catch (err) {
+      console.error('Error deleting integration:', err);
       setError('Failed to disconnect app');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteClick = (integration) => {
+  const handleDeleteClick = (integration: Integration): void => {
     setIntegrationToDelete(integration);
     setDeleteDialogOpen(true);
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = (): void => {
     if (integrationToDelete) {
       handleDelete(integrationToDelete._id);
     }
   };
 
-  const handleDeleteCancel = () => {
+  const handleDeleteCancel = (): void => {
     setDeleteDialogOpen(false);
     setIntegrationToDelete(null);
   };
 
-  const handleSettingsOpen = (integration) => {
+  const handleSettingsOpen = (integration: Integration): void => {
     setIntegrationToConfigure(integration);
     setBotToken(integration?.config?.botToken || '');
     setEnableAgentAccess(Boolean(integration?.config?.agentAccessEnabled));
     setSettingsDialogOpen(true);
   };
 
-  const handleSettingsClose = () => {
+  const handleSettingsClose = (): void => {
     setSettingsDialogOpen(false);
     setIntegrationToConfigure(null);
     setBotToken('');
     setEnableAgentAccess(false);
   };
 
-  const handleSettingsSave = async () => {
+  const handleSettingsSave = async (): Promise<void> => {
     if (!integrationToConfigure?._id) return;
     try {
       setSettingsSaving(true);
@@ -193,14 +222,15 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
       handleSettingsClose();
       await fetchIntegrations();
     } catch (updateError) {
+      const e = updateError as { response?: { data?: { message?: string } } };
       console.error('Error updating Discord integration settings:', updateError);
-      setError(updateError.response?.data?.message || 'Failed to update Discord settings');
+      setError(e.response?.data?.message || 'Failed to update Discord settings');
     } finally {
       setSettingsSaving(false);
     }
   };
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: string): 'success' | 'warning' | 'error' | 'default' => {
     switch (status) {
       case 'connected': return 'success';
       case 'pending': return 'warning';
@@ -209,7 +239,7 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
     }
   };
 
-  const getStatusText = (status) => {
+  const getStatusText = (status: string): string => {
     switch (status) {
       case 'connected': return 'Connected';
       case 'pending': return 'Connecting...';
@@ -229,21 +259,21 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
   return (
     <Box sx={{ p: 0 }}>
       {/* Header removed - title is already in sidebar section */}
-      
+
       {/* Error/Success Messages */}
       {error && (
-        <Alert 
-          severity="error" 
-          sx={{ mb: 2, borderRadius: 2 }} 
+        <Alert
+          severity="error"
+          sx={{ mb: 2, borderRadius: 2 }}
           onClose={() => setError('')}
         >
           {error}
         </Alert>
       )}
       {success && (
-        <Alert 
-          severity="success" 
-          sx={{ mb: 2, borderRadius: 2 }} 
+        <Alert
+          severity="success"
+          sx={{ mb: 2, borderRadius: 2 }}
           onClose={() => setSuccess('')}
         >
           {success}
@@ -252,8 +282,8 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
 
       {/* Apps List */}
       {integrations.length === 0 ? (
-        <Card 
-          sx={{ 
+        <Card
+          sx={{
             borderRadius: 3,
             border: '1px solid rgba(88, 101, 242, 0.1)',
             background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)',
@@ -268,8 +298,8 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
           <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Box 
-                  sx={{ 
+                <Box
+                  sx={{
                     color: '#5865F2',
                     display: 'flex',
                     alignItems: 'center',
@@ -345,11 +375,11 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
           >
             Add Discord
           </Button>
-          
+
           {integrations.map((integration) => (
-            <Card 
-              key={integration._id} 
-              sx={{ 
+            <Card
+              key={integration._id}
+              sx={{
                 borderRadius: 3,
                 border: '1px solid rgba(88, 101, 242, 0.1)',
                 background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)',
@@ -364,8 +394,8 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Box 
-                      sx={{ 
+                    <Box
+                      sx={{
                         color: '#5865F2',
                         display: 'flex',
                         alignItems: 'center',
@@ -387,9 +417,9 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
                       </Typography>
                     </Box>
                   </Box>
-                  
+
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Chip 
+                    <Chip
                       label={getStatusText(integration.status)}
                       size="small"
                       color={getStatusColor(integration.status)}
@@ -409,15 +439,15 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
                         borderRadius: 2
                       }}
                     />
-                    
+
                     <Tooltip title="Refresh">
                       <IconButton
                         size="small"
                         onClick={fetchIntegrations}
                         disabled={loading}
-                        sx={{ 
+                        sx={{
                           color: 'text.secondary',
-                          '&:hover': { 
+                          '&:hover': {
                             color: '#5865F2',
                             backgroundColor: 'rgba(88, 101, 242, 0.1)'
                           }
@@ -445,7 +475,7 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
                         </IconButton>
                       </Tooltip>
                     )}
-                    
+
                     {!viewOnly && (
                       <Tooltip title={canDeleteIntegration(integration) ? "Delete Integration" : "No permission to delete"}>
                         <IconButton
@@ -456,10 +486,10 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
                             }
                           }}
                           disabled={loading || !canDeleteIntegration(integration)}
-                          sx={{ 
+                          sx={{
                             color: canDeleteIntegration(integration) ? 'error.main' : 'text.disabled',
                             opacity: canDeleteIntegration(integration) ? 0.8 : 0.4,
-                            '&:hover': { 
+                            '&:hover': {
                               opacity: canDeleteIntegration(integration) ? 1 : 0.4,
                               color: canDeleteIntegration(integration) ? 'error.dark' : 'text.disabled',
                               backgroundColor: canDeleteIntegration(integration) ? 'rgba(244, 67, 54, 0.1)' : 'transparent',
@@ -494,9 +524,9 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleDeleteCancel}>Cancel</Button>
-          <Button 
-            onClick={handleDeleteConfirm} 
-            color="error" 
+          <Button
+            onClick={handleDeleteConfirm}
+            color="error"
             disabled={loading}
           >
             {loading ? <CircularProgress size={20} /> : 'Remove'}
@@ -541,4 +571,4 @@ const DiscordIntegration = ({ podId, viewOnly = false }) => {
   );
 };
 
-export default DiscordIntegration; 
+export default DiscordIntegration;
