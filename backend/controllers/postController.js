@@ -139,15 +139,27 @@ exports.getPosts = async (req, res) => {
 
     let posts;
     if (sort === 'hot') {
-      // Score = likeCount / (ageHours + 2)^1.5 — time-decayed popularity
+      // Score = (likes + comments*3) / (hoursSinceLastReply + 2)^1.2
+      // lastReplyAt = max(createdAt, most recent comment createdAt)
+      // Comments weighted 3x because they represent active conversation
       const scoredIds = await Post.aggregate([
         { $match: filter },
         { $addFields: {
           likeCount: { $size: { $ifNull: ['$likedBy', []] } },
-          ageHours: { $divide: [{ $subtract: [new Date(), '$createdAt'] }, 3600000] },
+          commentCount: { $size: { $ifNull: ['$comments', []] } },
+          lastReplyAt: {
+            $max: [
+              '$createdAt',
+              { $max: { $ifNull: ['$comments.createdAt', []] } },
+            ],
+          },
         } },
         { $addFields: {
-          heatScore: { $divide: ['$likeCount', { $pow: [{ $add: ['$ageHours', 2] }, 1.5] }] },
+          ageHours: { $divide: [{ $subtract: [new Date(), '$lastReplyAt'] }, 3600000] },
+          activityScore: { $add: ['$likeCount', { $multiply: ['$commentCount', 3] }] },
+        } },
+        { $addFields: {
+          heatScore: { $divide: ['$activityScore', { $pow: [{ $add: ['$ageHours', 2] }, 1.2] }] },
         } },
         { $sort: { heatScore: -1, createdAt: -1 } },
         { $skip: skip },

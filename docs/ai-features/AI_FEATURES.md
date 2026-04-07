@@ -52,6 +52,7 @@ Vector embeddings can also be routed through LiteLLM by setting
 - **Enhanced Refresh**: Manual refresh triggers fresh AI analysis, not cached data
 - **Context Awareness**: Understands conversation flow and topic transitions
 - **Quality Filtering**: Focuses on meaningful content, filters noise
+- **Pod name resolution**: Summaries always show the real pod name — a `$lookup` fallback resolves the pod name from the `pods` collection when `metadata.podName` is missing from older summary records
 
 #### **Rich Content Understanding**
 ```javascript
