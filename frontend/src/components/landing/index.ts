@@ -1,7 +1,3 @@
-/**
- * Landing page module exports
- */
-
 export { default as LandingPage } from './LandingPage';
 export { default as LandingHeader } from './components/LandingHeader';
 export { default as FeatureCard } from './components/FeatureCard';

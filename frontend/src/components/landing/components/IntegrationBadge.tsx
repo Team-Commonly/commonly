@@ -1,12 +1,14 @@
-/**
- * IntegrationBadge Component
- * Platform badge with glow effect for integrations section
- */
-
 import React from 'react';
 import { Box, Typography, alpha } from '@mui/material';
+import { SvgIconComponent } from '@mui/icons-material';
 
-const IntegrationBadge = ({ name, color, icon: Icon }) => {
+interface IntegrationBadgeProps {
+  name: string;
+  color: string;
+  icon: SvgIconComponent;
+}
+
+const IntegrationBadge: React.FC<IntegrationBadgeProps> = ({ name, color, icon: Icon }) => {
   return (
     <Box
       className="integration-badge"
@@ -24,33 +26,13 @@ const IntegrationBadge = ({ name, color, icon: Icon }) => {
           borderColor: alpha(color, 0.5),
           boxShadow: `0 0 24px ${alpha(color, 0.25)}, 0 8px 24px rgba(8, 12, 24, 0.3)`,
           transform: 'translateY(-2px)',
-          '& .integration-icon': {
-            color: color,
-            transform: 'scale(1.1)',
-          },
-          '& .integration-name': {
-            color: '#e2e8f0',
-          },
+          '& .integration-icon': { color, transform: 'scale(1.1)' },
+          '& .integration-name': { color: '#e2e8f0' },
         },
       }}
     >
-      <Icon
-        className="integration-icon"
-        sx={{
-          fontSize: 24,
-          color: '#94a3b8',
-          transition: 'all 0.3s ease',
-        }}
-      />
-      <Typography
-        className="integration-name"
-        variant="body2"
-        sx={{
-          fontWeight: 500,
-          color: '#94a3b8',
-          transition: 'color 0.3s ease',
-        }}
-      >
+      <Icon className="integration-icon" sx={{ fontSize: 24, color: '#94a3b8', transition: 'all 0.3s ease' }} />
+      <Typography className="integration-name" variant="body2" sx={{ fontWeight: 500, color: '#94a3b8', transition: 'color 0.3s ease' }}>
         {name}
       </Typography>
     </Box>
