@@ -8,26 +8,39 @@ import {
   Select,
   MenuItem,
   FormLabel,
-  Divider
+  Divider,
 } from '@mui/material';
 import ActivityTimeline from './ActivityTimeline';
 import KeywordCloud from './KeywordCloud';
 
-const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
+interface QuickStats {
+  totalSummaries: number;
+  totalActivity: number;
+  uniqueUsers: number;
+  dominantSentiment?: string;
+}
+
+interface AnalyticsDashboardProps {
+  defaultTimeRange?: string;
+}
+
+const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
+  defaultTimeRange = '24h',
+}) => {
   const [timeRange, setTimeRange] = useState(defaultTimeRange);
   const [viewMode, setViewMode] = useState('timeline');
 
-  const QuickStats = () => {
-    const [stats, setStats] = useState(null);
+  const QuickStatsPanel: React.FC = () => {
+    const [stats, setStats] = useState<QuickStats | null>(null);
 
     React.useEffect(() => {
-      const fetchStats = async () => {
+      const fetchStats = async (): Promise<void> => {
         try {
           const token = localStorage.getItem('token');
           const response = await fetch(`/api/analytics/summary?timeRange=${timeRange}`, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${token}` },
           });
-          const data = await response.json();
+          const data = await response.json() as { summary: QuickStats };
           setStats(data.summary);
         } catch (error) {
           console.error('Error fetching stats:', error);
@@ -35,7 +48,7 @@ const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
       };
 
       fetchStats();
-    }, [timeRange]);
+    }, []);
 
     if (!stats) return null;
 
@@ -88,11 +101,20 @@ const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
   return (
     <Box sx={{ p: 2 }}>
       {/* Header Controls */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>
           📊 Community Analytics
         </Typography>
-        
+
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <FormControl size="small">
             <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>Time Range</FormLabel>
@@ -106,7 +128,7 @@ const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
               <MenuItem value="7d">7 Days</MenuItem>
             </Select>
           </FormControl>
-          
+
           <FormControl size="small">
             <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>View</FormLabel>
             <Select
@@ -123,7 +145,7 @@ const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
       </Box>
 
       {/* Quick Stats */}
-      <QuickStats />
+      <QuickStatsPanel />
 
       <Divider sx={{ my: 3 }} />
 
@@ -134,7 +156,7 @@ const AnalyticsDashboard = ({ defaultTimeRange = '24h' }) => {
             <ActivityTimeline timeRange={timeRange} />
           </Grid>
         )}
-        
+
         {(viewMode === 'keywords' || viewMode === 'both') && (
           <Grid item xs={12} lg={viewMode === 'both' ? 6 : 12}>
             <KeywordCloud timeRange={timeRange} />

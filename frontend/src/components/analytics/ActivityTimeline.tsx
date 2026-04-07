@@ -7,7 +7,7 @@ import {
   Select,
   MenuItem,
   CircularProgress,
-  Alert
+  Alert,
 } from '@mui/material';
 import {
   Chart as ChartJS,
@@ -19,6 +19,8 @@ import {
   Title,
   Tooltip,
   Legend,
+  ChartData,
+  ChartOptions,
 } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
 import axios from 'axios';
@@ -31,28 +33,47 @@ ChartJS.register(
   BarElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
 );
 
-const ActivityTimeline = ({ timeRange = '24h' }) => {
-  const [activityData, setActivityData] = useState(null);
+interface ActivityDataPoint {
+  hour?: number;
+  day?: string;
+  timestamp?: string;
+  activity: number;
+  sentiment?: string;
+}
+
+interface ActivityData {
+  activity: ActivityDataPoint[];
+  totalDataPoints: number;
+}
+
+interface ActivityTimelineProps {
+  timeRange?: string;
+}
+
+const ActivityTimeline: React.FC<ActivityTimelineProps> = ({ timeRange = '24h' }) => {
+  const [activityData, setActivityData] = useState<ActivityData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [chartType, setChartType] = useState('hourly');
 
-  const fetchActivityData = async () => {
+  const fetchActivityData = async (): Promise<void> => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      
-      const response = await axios.get(`/api/analytics/activity?timeRange=${timeRange}&type=${chartType}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
+
+      const response = await axios.get<ActivityData>(
+        `/api/analytics/activity?timeRange=${timeRange}&type=${chartType}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
       setActivityData(response.data);
       setError(null);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to fetch activity data');
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      setError(axiosErr.response?.data?.error || 'Failed to fetch activity data');
       console.error('Error fetching activity data:', err);
     } finally {
       setLoading(false);
@@ -61,24 +82,22 @@ const ActivityTimeline = ({ timeRange = '24h' }) => {
 
   useEffect(() => {
     fetchActivityData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeRange, chartType]);
 
-  const formatChartData = () => {
+  const formatChartData = (): ChartData<'line'> | ChartData<'bar'> | null => {
     if (!activityData?.activity) return null;
 
     const { activity } = activityData;
 
     if (chartType === 'hourly') {
-      // Create 24-hour format
       const hourlyData = Array.from({ length: 24 }, (_, hour) => {
-        const found = activity.find(a => a.hour === hour);
+        const found = activity.find((a) => a.hour === hour);
         return found ? found.activity : 0;
       });
 
       return {
-        labels: Array.from({ length: 24 }, (_, i) => 
-          `${i.toString().padStart(2, '0')}:00`
-        ),
+        labels: Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`),
         datasets: [
           {
             label: 'Activity Level',
@@ -86,63 +105,61 @@ const ActivityTimeline = ({ timeRange = '24h' }) => {
             borderColor: 'rgb(29, 161, 242)',
             backgroundColor: 'rgba(29, 161, 242, 0.1)',
             tension: 0.4,
-            fill: true
-          }
-        ]
-      };
+            fill: true,
+          },
+        ],
+      } as ChartData<'line'>;
     }
 
     if (chartType === 'daily') {
       return {
-        labels: activity.map(a => new Date(a.day).toLocaleDateString()),
+        labels: activity.map((a) => new Date(a.day ?? '').toLocaleDateString()),
         datasets: [
           {
             label: 'Daily Activity',
-            data: activity.map(a => a.activity),
+            data: activity.map((a) => a.activity),
             backgroundColor: 'rgba(29, 161, 242, 0.6)',
             borderColor: 'rgb(29, 161, 242)',
-            borderWidth: 1
-          }
-        ]
-      };
+            borderWidth: 1,
+          },
+        ],
+      } as ChartData<'bar'>;
     }
 
     if (chartType === 'sentiment') {
-      const sentimentColors = {
-        'very_positive': '#4caf50',
-        'positive': '#8bc34a',
-        'neutral': '#ffc107',
-        'negative': '#ff9800',
-        'very_negative': '#f44336'
+      const sentimentColors: Record<string, string> = {
+        very_positive: '#4caf50',
+        positive: '#8bc34a',
+        neutral: '#ffc107',
+        negative: '#ff9800',
+        very_negative: '#f44336',
       };
 
       return {
-        labels: activity.map(a => new Date(a.timestamp).toLocaleTimeString()),
+        labels: activity.map((a) => new Date(a.timestamp ?? '').toLocaleTimeString()),
         datasets: [
           {
             label: 'Sentiment Over Time',
-            data: activity.map(a => a.activity),
-            backgroundColor: activity.map(a => sentimentColors[a.sentiment] || '#9e9e9e'),
+            data: activity.map((a) => a.activity),
+            backgroundColor: activity.map((a) => sentimentColors[a.sentiment ?? ''] || '#9e9e9e'),
             borderColor: 'rgba(0,0,0,0.1)',
-            borderWidth: 1
-          }
-        ]
-      };
+            borderWidth: 1,
+          },
+        ],
+      } as ChartData<'bar'>;
     }
 
     return null;
   };
 
-  const chartOptions = {
+  const chartOptions: ChartOptions<'line'> | ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        position: 'top',
-      },
+      legend: { position: 'top' },
       title: {
         display: true,
-        text: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Activity Pattern`
+        text: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Activity Pattern`,
       },
     },
     scales: {
@@ -150,22 +167,26 @@ const ActivityTimeline = ({ timeRange = '24h' }) => {
         beginAtZero: true,
         title: {
           display: true,
-          text: chartType === 'sentiment' ? 'Activity Level' : 'Messages'
-        }
+          text: chartType === 'sentiment' ? 'Activity Level' : 'Messages',
+        },
       },
       x: {
         title: {
           display: true,
-          text: chartType === 'hourly' ? 'Hour of Day' : 
-                chartType === 'daily' ? 'Date' : 'Time'
+          text:
+            chartType === 'hourly'
+              ? 'Hour of Day'
+              : chartType === 'daily'
+                ? 'Date'
+                : 'Time',
         },
         ticks: {
           maxRotation: 45,
           minRotation: 45,
-          maxTicksLimit: chartType === 'hourly' ? 12 : 10
-        }
-      }
-    }
+          maxTicksLimit: chartType === 'hourly' ? 12 : 10,
+        },
+      },
+    },
   };
 
   const chartData = formatChartData();
@@ -176,12 +197,9 @@ const ActivityTimeline = ({ timeRange = '24h' }) => {
         <Typography variant="h6" component="h3">
           📈 Activity Timeline
         </Typography>
-        
+
         <FormControl size="small" sx={{ minWidth: 120 }}>
-          <Select
-            value={chartType}
-            onChange={(e) => setChartType(e.target.value)}
-          >
+          <Select value={chartType} onChange={(e) => setChartType(e.target.value)}>
             <MenuItem value="hourly">Hourly</MenuItem>
             <MenuItem value="daily">Daily</MenuItem>
             <MenuItem value="sentiment">Sentiment</MenuItem>
@@ -205,18 +223,20 @@ const ActivityTimeline = ({ timeRange = '24h' }) => {
         <Box sx={{ height: 300 }}>
           {chartData && activityData.activity.length > 0 ? (
             chartType === 'daily' || chartType === 'sentiment' ? (
-              <Bar data={chartData} options={chartOptions} />
+              <Bar data={chartData as ChartData<'bar'>} options={chartOptions as ChartOptions<'bar'>} />
             ) : (
-              <Line data={chartData} options={chartOptions} />
+              <Line data={chartData as ChartData<'line'>} options={chartOptions as ChartOptions<'line'>} />
             )
           ) : (
-            <Box sx={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              alignItems: 'center', 
-              height: '100%',
-              color: 'text.secondary'
-            }}>
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                height: '100%',
+                color: 'text.secondary',
+              }}
+            >
               <Typography>No activity data available for this time period</Typography>
             </Box>
           )}
