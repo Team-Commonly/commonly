@@ -4,11 +4,11 @@ import { Box, Typography } from '@mui/material';
 
 const HASHTAG_RE = /(#\w+)/g;
 
-/**
- * Splits a string by hashtags and returns an array of strings and clickable spans.
- */
-function renderWithHashtags(text, onHashtagClick) {
-  if (!onHashtagClick || typeof text !== 'string') return text;
+function renderWithHashtags(
+  text: React.ReactNode,
+  onHashtagClick: (tag: string) => void,
+): React.ReactNode {
+  if (typeof text !== 'string') return text;
   const parts = text.split(HASHTAG_RE);
   if (parts.length === 1) return text;
   return parts.map((part, i) => {
@@ -19,7 +19,7 @@ function renderWithHashtags(text, onHashtagClick) {
           component="span"
           color="primary"
           sx={{ fontWeight: 'bold', cursor: 'pointer' }}
-          onClick={(e) => {
+          onClick={(e: React.MouseEvent) => {
             e.stopPropagation();
             onHashtagClick(part.substring(1));
           }}
@@ -33,35 +33,37 @@ function renderWithHashtags(text, onHashtagClick) {
   });
 }
 
-/**
- * Recursively extracts plain text from React children for hashtag splitting.
- */
-function childrenToText(children) {
+function childrenToText(children: React.ReactNode): string {
   if (typeof children === 'string') return children;
   if (Array.isArray(children)) return children.map(childrenToText).join('');
-  if (React.isValidElement(children)) return childrenToText(children.props.children);
+  if (React.isValidElement(children)) {
+    return childrenToText((children.props as { children?: React.ReactNode }).children);
+  }
   return '';
 }
 
-/**
- * MarkdownContent — renders a markdown string with MUI-compatible styling.
- *
- * Props:
- *   children: string           — markdown source text
- *   variant: 'chat' | 'post' | 'comment'  (default: 'post')
- *   onHashtagClick: (tag) => void          — optional; enables hashtag highlighting
- */
-export default function MarkdownContent({ children, variant = 'post', onHashtagClick }) {
+interface MarkdownContentProps {
+  children?: string | null;
+  variant?: 'chat' | 'post' | 'comment';
+  onHashtagClick?: (tag: string) => void;
+}
+
+export default function MarkdownContent({
+  children,
+  variant = 'post',
+  onHashtagClick,
+}: MarkdownContentProps): React.ReactElement | null {
   if (!children) return null;
 
   const isChat = variant === 'chat';
   const paragraphMargin = isChat ? 0 : 0.5;
 
-  const components = {
-    // Paragraphs — with optional hashtag highlighting
+  // Using Record<string, unknown> for component props since react-markdown v10
+  // types vary by component key and we only need runtime behaviour here.
+  const components: Record<string, React.ComponentType<Record<string, unknown>>> = {
     p({ children: pChildren }) {
       const content = onHashtagClick
-        ? renderWithHashtags(childrenToText(pChildren), onHashtagClick)
+        ? renderWithHashtags(childrenToText(pChildren as React.ReactNode), onHashtagClick)
         : pChildren;
       return (
         <Box
@@ -73,29 +75,27 @@ export default function MarkdownContent({ children, variant = 'post', onHashtagC
             lineHeight: isChat ? 'inherit' : 1.6,
           }}
         >
-          {content}
+          {content as React.ReactNode}
         </Box>
       );
     },
 
-    // Links
     a({ href, children: aChildren }) {
       return (
         <Box
           component="a"
-          href={href}
+          href={href as string | undefined}
           target="_blank"
           rel="noopener noreferrer"
           sx={{ color: 'primary.main', textDecoration: 'underline' }}
         >
-          {aChildren}
+          {aChildren as React.ReactNode}
         </Box>
       );
     },
 
-    // Inline code
     code({ inline, children: cChildren }) {
-      if (inline !== false) {
+      if ((inline as boolean | undefined) !== false) {
         return (
           <Box
             component="code"
@@ -108,7 +108,7 @@ export default function MarkdownContent({ children, variant = 'post', onHashtagC
               borderRadius: 0.5,
             }}
           >
-            {cChildren}
+            {cChildren as React.ReactNode}
           </Box>
         );
       }
@@ -117,12 +117,11 @@ export default function MarkdownContent({ children, variant = 'post', onHashtagC
           component="code"
           sx={{ fontFamily: 'monospace', fontSize: '0.875em', display: 'block', whiteSpace: 'pre' }}
         >
-          {cChildren}
+          {cChildren as React.ReactNode}
         </Box>
       );
     },
 
-    // Code blocks
     pre({ children: preChildren }) {
       return (
         <Box
@@ -141,31 +140,29 @@ export default function MarkdownContent({ children, variant = 'post', onHashtagC
             overflowWrap: 'normal',
           }}
         >
-          {preChildren}
+          {preChildren as React.ReactNode}
         </Box>
       );
     },
 
-    // Lists
     ul({ children: ulChildren }) {
       return (
         <Box component="ul" sx={{ pl: 2.5, my: paragraphMargin }}>
-          {ulChildren}
+          {ulChildren as React.ReactNode}
         </Box>
       );
     },
     ol({ children: olChildren }) {
       return (
         <Box component="ol" sx={{ pl: 2.5, my: paragraphMargin }}>
-          {olChildren}
+          {olChildren as React.ReactNode}
         </Box>
       );
     },
     li({ children: liChildren }) {
-      return <Box component="li" sx={{ mb: 0.25 }}>{liChildren}</Box>;
+      return <Box component="li" sx={{ mb: 0.25 }}>{liChildren as React.ReactNode}</Box>;
     },
 
-    // Blockquotes
     blockquote({ children: bqChildren }) {
       return (
         <Box
@@ -179,56 +176,53 @@ export default function MarkdownContent({ children, variant = 'post', onHashtagC
             fontStyle: 'italic',
           }}
         >
-          {bqChildren}
+          {bqChildren as React.ReactNode}
         </Box>
       );
     },
 
-    // Headers — scaled down; agents shouldn't need page-size headings
     h1({ children: hChildren }) {
       return (
         <Typography variant="subtitle1" sx={{ fontWeight: 700, mt: 1, mb: 0.5 }}>
-          {hChildren}
+          {hChildren as React.ReactNode}
         </Typography>
       );
     },
     h2({ children: hChildren }) {
       return (
         <Typography variant="subtitle2" sx={{ fontWeight: 700, mt: 1, mb: 0.5 }}>
-          {hChildren}
+          {hChildren as React.ReactNode}
         </Typography>
       );
     },
     h3({ children: hChildren }) {
       return (
         <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.5, mb: 0.25 }}>
-          {hChildren}
+          {hChildren as React.ReactNode}
         </Typography>
       );
     },
 
-    // Horizontal rule
     hr() {
-      return <Box component="hr" sx={{ border: 'none', borderTop: '1px solid', borderColor: 'divider', my: 1 }} />;
+      return (
+        <Box
+          component="hr"
+          sx={{ border: 'none', borderTop: '1px solid', borderColor: 'divider', my: 1 }}
+        />
+      );
     },
 
-    // Strong / em
     strong({ children: sChildren }) {
-      return <Box component="strong" sx={{ fontWeight: 700 }}>{sChildren}</Box>;
+      return <Box component="strong" sx={{ fontWeight: 700 }}>{sChildren as React.ReactNode}</Box>;
     },
     em({ children: eChildren }) {
-      return <Box component="em" sx={{ fontStyle: 'italic' }}>{eChildren}</Box>;
+      return <Box component="em" sx={{ fontStyle: 'italic' }}>{eChildren as React.ReactNode}</Box>;
     },
   };
 
   return (
-    <Box
-      sx={{
-        '& > *:first-child': { mt: 0 },
-        '& > *:last-child': { mb: 0 },
-      }}
-    >
-      <ReactMarkdown components={components}>
+    <Box sx={{ '& > *:first-child': { mt: 0 }, '& > *:last-child': { mb: 0 } }}>
+      <ReactMarkdown components={components as Parameters<typeof ReactMarkdown>[0]['components']}>
         {children}
       </ReactMarkdown>
     </Box>
