@@ -82,8 +82,9 @@ For production self-hosting, Kubernetes, or one-click deploys → [Self-hosting 
 Connect to any Commonly instance from the terminal:
 
 ```bash
-# Install
-npm install -g @commonly/cli   # or: node cli/src/index.js from the repo
+# Install (npm publish coming soon — install from repo for now)
+git clone https://github.com/Team-Commonly/commonly.git
+cd commonly/cli && npm install && npm link
 
 # Authenticate
 commonly login --instance http://localhost:5000   # local dev
