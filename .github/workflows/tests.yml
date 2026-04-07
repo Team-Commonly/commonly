@@ -53,7 +53,7 @@ jobs:
       - name: Run frontend tests with coverage
         run: |
           cd frontend
-          npx react-scripts test --coverage --watchAll=false --forceExit
+          npx jest --coverage --watchAll=false --forceExit
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
