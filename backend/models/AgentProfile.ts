@@ -200,3 +200,6 @@ AgentProfileSchema.methods.incrementStats = async function (messages = 1, tokens
 };
 
 export default mongoose.model<IAgentProfile, IAgentProfileModel>('AgentProfile', AgentProfileSchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

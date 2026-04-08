@@ -1,58 +1,20 @@
-import axios from 'axios';
-
-// eslint-disable-next-line global-require
+// @ts-nocheck
+const axios = require('axios');
 const { generateText } = require('./llmService');
 
 const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
 
-interface AvatarOptions {
-  agentName: string;
-  style?: string;
-  personality?: string;
-  colorScheme?: string;
-  gender?: string;
-  customPrompt?: string;
-}
-
-interface AvatarDesign {
-  mainShape: string;
-  primaryColor: string;
-  secondaryColor: string;
-  accentColor: string;
-  features?: string[];
-  emoji?: string;
-}
-
-interface AvatarMetadata {
-  source: string;
-  model: string | null;
-  fallbackUsed: boolean;
-  error?: string;
-}
-
-interface AvatarDetailedResult {
-  avatar: string;
-  metadata: AvatarMetadata;
-}
-
-interface ImageAvatarResult {
-  avatar: string;
-}
-
-interface ValidateAvatarResult {
-  valid: boolean;
-  error?: string;
-  size?: number;
-  format?: string;
-}
-
-interface AllPostsCacheEntry {
-  summary: Record<string, unknown> | null;
-  createdAt: number;
-  cooldownUntil: number;
-}
-
+/**
+ * Agent Avatar Generation Service
+ * Uses Gemini AI to generate unique avatar descriptions and creates SVG avatars
+ *
+ * Note: Gemini 2.5 Flash doesn't currently support direct image generation,
+ * so we generate creative SVG avatars based on AI-generated design descriptions.
+ */
 class AgentAvatarService {
+  /**
+   * Generate AI avatar for an agent
+   */
   static async generateAvatar({
     agentName,
     style = 'realistic',
@@ -60,7 +22,7 @@ class AgentAvatarService {
     colorScheme = 'vibrant',
     gender = 'neutral',
     customPrompt = '',
-  }: AvatarOptions): Promise<string> {
+  }) {
     const result = await this.generateAvatarDetailed({
       agentName,
       style,
@@ -72,6 +34,9 @@ class AgentAvatarService {
     return result.avatar;
   }
 
+  /**
+   * Generate AI avatar with metadata about which engine produced it.
+   */
   static async generateAvatarDetailed({
     agentName,
     style = 'realistic',
@@ -79,7 +44,7 @@ class AgentAvatarService {
     colorScheme = 'vibrant',
     gender = 'neutral',
     customPrompt = '',
-  }: AvatarOptions): Promise<AvatarDetailedResult> {
+  }) {
     try {
       const imageResult = await this.generateImageAvatar({
         agentName,
@@ -106,7 +71,10 @@ class AgentAvatarService {
         colorScheme,
       });
 
+      // Generate SVG based on design description
       const svg = this.createSVGAvatar(avatarDesign);
+
+      // Return base64 data URI
       const base64Svg = Buffer.from(svg).toString('base64');
       return {
         avatar: `data:image/svg+xml;base64,${base64Svg}`,
@@ -118,18 +86,22 @@ class AgentAvatarService {
       };
     } catch (error) {
       console.error('Error generating avatar:', error);
+      // Fallback to default avatar
       return {
         avatar: this.getFallbackAvatar(agentName),
         metadata: {
           source: 'initial-fallback',
           model: null,
           fallbackUsed: true,
-          error: (error as Error).message,
+          error: error.message,
         },
       };
     }
   }
 
+  /**
+   * Generate image avatar using Gemini image model (fallback to SVG if unavailable).
+   */
   static async generateImageAvatar({
     agentName,
     style,
@@ -137,7 +109,7 @@ class AgentAvatarService {
     colorScheme,
     gender,
     customPrompt,
-  }: AvatarOptions): Promise<ImageAvatarResult | null> {
+  }) {
     if (!process.env.GEMINI_API_KEY) {
       return null;
     }
@@ -167,9 +139,9 @@ class AgentAvatarService {
           timeout: 30_000,
         },
       );
-      const parts = (response.data?.candidates?.[0]?.content?.parts || []) as Array<Record<string, unknown>>;
+      const parts = response.data?.candidates?.[0]?.content?.parts || [];
       const inline = parts.find((part) => part?.inlineData || part?.inline_data);
-      const inlineData = (inline?.inlineData || inline?.inline_data) as Record<string, string> | undefined;
+      const inlineData = inline?.inlineData || inline?.inline_data;
       if (!inlineData?.data) {
         return null;
       }
@@ -178,14 +150,17 @@ class AgentAvatarService {
         avatar: `data:${mimeType};base64,${inlineData.data}`,
       };
     } catch (error) {
-      console.error('Error generating avatar image:', (error as Error).message);
+      console.error('Error generating avatar image:', error.message);
       return null;
     }
   }
 
+  /**
+   * Generate avatar design description using AI
+   */
   static async generateAvatarDesign({
     agentName, style, personality, colorScheme,
-  }: Pick<AvatarOptions, 'agentName' | 'style' | 'personality' | 'colorScheme'>): Promise<AvatarDesign> {
+  }) {
     const prompt = this.createAvatarDesignPrompt({
       agentName,
       style,
@@ -199,17 +174,20 @@ class AgentAvatarService {
         maxOutputTokens: 500,
       });
 
-      return this.parseDesignDescription(designDescription as string);
+      return this.parseDesignDescription(designDescription);
     } catch (error) {
       console.error('Error generating avatar design:', error);
-      return this.getDefaultDesign(style || 'banana', colorScheme || 'vibrant');
+      return this.getDefaultDesign(style, colorScheme);
     }
   }
 
+  /**
+   * Create prompt for avatar design generation
+   */
   static createAvatarDesignPrompt({
     agentName, style, personality, colorScheme,
-  }: Pick<AvatarOptions, 'agentName' | 'style' | 'personality' | 'colorScheme'>): string {
-    const styleDescriptions: Record<string, string> = {
+  }) {
+    const styleDescriptions = {
       banana: 'a cute, friendly banana character with expressive features',
       abstract: 'abstract geometric shapes with flowing, dynamic forms',
       minimalist: 'minimal, clean design with simple shapes and bold colors',
@@ -220,7 +198,7 @@ class AgentAvatarService {
       game: 'video game avatar with bold shapes, playful details, or pixel-art vibes',
     };
 
-    const personalityTraits: Record<string, string> = {
+    const personalityTraits = {
       friendly: 'warm, welcoming, approachable',
       professional: 'sophisticated, trustworthy, competent',
       playful: 'fun, energetic, whimsical',
@@ -228,7 +206,7 @@ class AgentAvatarService {
       creative: 'artistic, imaginative, innovative',
     };
 
-    const colorSchemeDescriptions: Record<string, string> = {
+    const colorSchemeDescriptions = {
       vibrant: 'bright, saturated colors with high contrast',
       pastel: 'soft, muted pastel tones',
       monochrome: 'shades of gray with black and white accents',
@@ -237,9 +215,9 @@ class AgentAvatarService {
 
     return `Design a unique avatar for an AI agent named "${agentName}".
 
-Style: ${styleDescriptions[style || ''] || styleDescriptions.banana}
-Personality: ${personalityTraits[personality || ''] || 'friendly'}
-Color Scheme: ${colorSchemeDescriptions[colorScheme || ''] || 'vibrant'}
+Style: ${styleDescriptions[style] || styleDescriptions.banana}
+Personality: ${personalityTraits[personality] || 'friendly'}
+Color Scheme: ${colorSchemeDescriptions[colorScheme] || 'vibrant'}
 
 Provide a concise design specification in this format:
 {
@@ -254,6 +232,9 @@ Provide a concise design specification in this format:
 Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple details).`;
   }
 
+  /**
+   * Create prompt for image-based avatar generation
+   */
   static createAvatarImagePrompt({
     agentName,
     style,
@@ -261,13 +242,13 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
     colorScheme,
     gender = 'neutral',
     customPrompt = '',
-  }: AvatarOptions): string {
-    const portraitGender: Record<string, string> = {
+  }) {
+    const portraitGender = {
       male: 'male',
       female: 'female',
       neutral: 'androgynous',
     };
-    const styleDescriptions: Record<string, string> = {
+    const styleDescriptions = {
       banana: 'playful illustrated portrait',
       abstract: 'stylized portrait with artistic brushwork',
       minimalist: 'clean vector portrait',
@@ -282,44 +263,68 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
     return [
       `Create a square 1:1 profile avatar for AI agent "${agentName}".`,
       `Render a single ${portraitGender[gender] || portraitGender.neutral} human person, head-and-shoulders portrait, facing camera.`,
-      `Style: ${styleDescriptions[style || ''] || styleDescriptions.realistic}. Personality: ${personality}. Color scheme: ${colorScheme}.`,
+      `Style: ${styleDescriptions[style] || styleDescriptions.realistic}. Personality: ${personality}. Color scheme: ${colorScheme}.`,
       'Keep face and eyes clearly visible, natural facial features, modern profile-photo composition.',
       'Simple clean background, centered subject, no text, no logo, no watermark, no abstract shapes-only composition.',
       safeCustomPrompt ? `User guidance: ${safeCustomPrompt}` : '',
     ].join(' ');
   }
 
-  static parseDesignDescription(description: string): AvatarDesign {
+  /**
+   * Parse AI-generated design description
+   */
+  static parseDesignDescription(description) {
     try {
+      // Try to extract JSON from response
       const jsonMatch = description.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as AvatarDesign;
+        return JSON.parse(jsonMatch[0]);
       }
       throw new Error('No JSON found in response');
     } catch (error) {
+      // Fallback to default design
       return this.getDefaultDesign('banana', 'vibrant');
     }
   }
 
-  static getDefaultDesign(style: string, colorScheme: string): AvatarDesign {
-    const colorSchemes: Record<string, { primary: string; secondary: string; accent: string }> = {
-      vibrant: { primary: '#FF6B6B', secondary: '#4ECDC4', accent: '#FFD93D' },
-      pastel: { primary: '#FFB3BA', secondary: '#BAE1FF', accent: '#FFFFBA' },
-      monochrome: { primary: '#333333', secondary: '#888888', accent: '#DDDDDD' },
-      neon: { primary: '#FF00FF', secondary: '#00FFFF', accent: '#FFFF00' },
+  /**
+   * Get default design based on style
+   */
+  static getDefaultDesign(style, colorScheme) {
+    const colorSchemes = {
+      vibrant: {
+        primary: '#FF6B6B',
+        secondary: '#4ECDC4',
+        accent: '#FFD93D',
+      },
+      pastel: {
+        primary: '#FFB3BA',
+        secondary: '#BAE1FF',
+        accent: '#FFFFBA',
+      },
+      monochrome: {
+        primary: '#333333',
+        secondary: '#888888',
+        accent: '#DDDDDD',
+      },
+      neon: {
+        primary: '#FF00FF',
+        secondary: '#00FFFF',
+        accent: '#FFFF00',
+      },
     };
 
     const colors = colorSchemes[colorScheme] || colorSchemes.vibrant;
 
-    const designs: Record<string, AvatarDesign> = {
-      banana: {
-        mainShape: 'rounded banana shape',
-        primaryColor: colors.primary,
-        secondaryColor: colors.secondary,
-        accentColor: colors.accent,
-        features: ['curved body', 'smiling face', 'friendly eyes'],
-        emoji: '🍌',
-      },
+      const designs = {
+        banana: {
+          mainShape: 'rounded banana shape',
+          primaryColor: colors.primary,
+          secondaryColor: colors.secondary,
+          accentColor: colors.accent,
+          features: ['curved body', 'smiling face', 'friendly eyes'],
+          emoji: '🍌',
+        },
       abstract: {
         mainShape: 'flowing abstract form',
         primaryColor: colors.primary,
@@ -344,49 +349,51 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
         features: ['big eyes', 'happy smile', 'expressive face'],
         emoji: '😊',
       },
-      geometric: {
-        mainShape: 'hexagon',
-        primaryColor: colors.primary,
-        secondaryColor: colors.secondary,
-        accentColor: colors.accent,
-        features: ['symmetrical pattern', 'sharp angles', 'mathematical beauty'],
-        emoji: '🔷',
-      },
-      anime: {
-        mainShape: 'anime portrait with stylized hair',
-        primaryColor: colors.primary,
-        secondaryColor: colors.secondary,
-        accentColor: colors.accent,
-        features: ['large expressive eyes', 'layered hair', 'soft highlights'],
-        emoji: '✨',
-      },
-      realistic: {
-        mainShape: 'softly shaded portrait',
-        primaryColor: colors.primary,
-        secondaryColor: colors.secondary,
-        accentColor: colors.accent,
-        features: ['subtle gradients', 'gentle lighting', 'balanced proportions'],
-        emoji: '🖼️',
-      },
-      game: {
-        mainShape: 'game avatar badge',
-        primaryColor: colors.primary,
-        secondaryColor: colors.secondary,
-        accentColor: colors.accent,
-        features: ['pixel accents', 'bold outline', 'emblem shapes'],
-        emoji: '🎮',
-      },
-    };
+        geometric: {
+          mainShape: 'hexagon',
+          primaryColor: colors.primary,
+          secondaryColor: colors.secondary,
+          accentColor: colors.accent,
+          features: ['symmetrical pattern', 'sharp angles', 'mathematical beauty'],
+          emoji: '🔷',
+        },
+        anime: {
+          mainShape: 'anime portrait with stylized hair',
+          primaryColor: colors.primary,
+          secondaryColor: colors.secondary,
+          accentColor: colors.accent,
+          features: ['large expressive eyes', 'layered hair', 'soft highlights'],
+          emoji: '✨',
+        },
+        realistic: {
+          mainShape: 'softly shaded portrait',
+          primaryColor: colors.primary,
+          secondaryColor: colors.secondary,
+          accentColor: colors.accent,
+          features: ['subtle gradients', 'gentle lighting', 'balanced proportions'],
+          emoji: '🖼️',
+        },
+        game: {
+          mainShape: 'game avatar badge',
+          primaryColor: colors.primary,
+          secondaryColor: colors.secondary,
+          accentColor: colors.accent,
+          features: ['pixel accents', 'bold outline', 'emblem shapes'],
+          emoji: '🎮',
+        },
+      };
 
     return designs[style] || designs.banana;
   }
 
-  static createSVGAvatar(design: AvatarDesign): string {
-    const {
-      mainShape, primaryColor, secondaryColor, accentColor, emoji,
-    } = design;
-    const descriptor = `${mainShape} ${(design.features || []).join(' ')} ${emoji || ''}`.toLowerCase();
+  /**
+   * Create SVG avatar based on design specification
+   */
+  static createSVGAvatar(design) {
+    const { mainShape, primaryColor, secondaryColor, accentColor, emoji } = design;
+    const descriptor = `${mainShape} ${(design.features || []).join(' ')} ${emoji}`.toLowerCase();
 
+    // Create style-specific SVG
     if (mainShape.includes('banana') || emoji === '🍌') {
       return this.createBananaSVG(primaryColor, secondaryColor, accentColor);
     }
@@ -408,25 +415,37 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
     if (descriptor.includes('game') || descriptor.includes('pixel') || emoji === '🎮') {
       return this.createGameSVG(primaryColor, secondaryColor, accentColor);
     }
+
+    // Default: minimalist circle
     return this.createMinimalistSVG(primaryColor, secondaryColor, accentColor);
   }
 
-  static createBananaSVG(primary: string, secondary: string, accent: string): string {
+  /**
+   * Create banana-themed SVG
+   */
+  static createBananaSVG(primary, secondary, accent) {
     return `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
       <rect width="512" height="512" fill="${secondary}"/>
+      <!-- Banana body -->
       <path d="M 200 150 Q 150 250 170 350 Q 180 400 250 420 Q 320 400 330 350 Q 350 250 300 150 Z"
             fill="${primary}" stroke="${accent}" stroke-width="8"/>
+      <!-- Banana stem -->
       <rect x="235" y="120" width="40" height="40" fill="#8B4513" rx="5"/>
+      <!-- Eyes -->
       <circle cx="230" cy="260" r="20" fill="#000000"/>
       <circle cx="270" cy="260" r="20" fill="#000000"/>
       <circle cx="235" cy="255" r="8" fill="#FFFFFF"/>
       <circle cx="275" cy="255" r="8" fill="#FFFFFF"/>
+      <!-- Smile -->
       <path d="M 220 310 Q 250 330 280 310"
             stroke="#000000" stroke-width="6" fill="none" stroke-linecap="round"/>
     </svg>`;
   }
 
-  static createAbstractSVG(primary: string, secondary: string, accent: string): string {
+  /**
+   * Create abstract art SVG
+   */
+  static createAbstractSVG(primary, secondary, accent) {
     return `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -436,6 +455,7 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
         </linearGradient>
       </defs>
       <rect width="512" height="512" fill="#FFFFFF"/>
+      <!-- Abstract flowing shapes -->
       <path d="M 0 256 Q 128 100 256 256 T 512 256"
             fill="url(#grad1)" opacity="0.8"/>
       <circle cx="150" cy="150" r="80" fill="${primary}" opacity="0.7"/>
@@ -446,38 +466,54 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
     </svg>`;
   }
 
-  static createGeometricSVG(primary: string, secondary: string, accent: string): string {
+  /**
+   * Create geometric pattern SVG
+   */
+  static createGeometricSVG(primary, secondary, accent) {
     return `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
       <rect width="512" height="512" fill="#FFFFFF"/>
+      <!-- Hexagon pattern -->
       <polygon points="256,100 356,175 356,325 256,400 156,325 156,175"
                fill="${primary}" stroke="${accent}" stroke-width="8"/>
       <polygon points="256,140 326,187.5 326,287.5 256,335 186,287.5 186,187.5"
                fill="${secondary}" stroke="${primary}" stroke-width="6"/>
+      <!-- Inner triangles -->
       <polygon points="256,200 290,240 256,280 222,240"
                fill="${accent}"/>
+      <!-- Geometric accents -->
       <circle cx="256" cy="240" r="30" fill="none" stroke="${accent}" stroke-width="4"/>
       <circle cx="256" cy="240" r="15" fill="${primary}"/>
     </svg>`;
   }
 
-  static createCartoonSVG(primary: string, secondary: string, accent: string): string {
+  /**
+   * Create cartoon character SVG
+   */
+  static createCartoonSVG(primary, secondary, accent) {
     return `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
       <rect width="512" height="512" fill="${secondary}"/>
+      <!-- Head -->
       <circle cx="256" cy="256" r="150" fill="${primary}"/>
+      <!-- Eyes -->
       <ellipse cx="210" cy="230" rx="30" ry="40" fill="#FFFFFF"/>
       <ellipse cx="302" cy="230" rx="30" ry="40" fill="#FFFFFF"/>
       <circle cx="215" cy="235" r="18" fill="#000000"/>
       <circle cx="297" cy="235" r="18" fill="#000000"/>
       <circle cx="220" cy="225" r="8" fill="#FFFFFF"/>
       <circle cx="302" cy="225" r="8" fill="#FFFFFF"/>
+      <!-- Smile -->
       <path d="M 190 300 Q 256 340 322 300"
             stroke="#000000" stroke-width="10" fill="none" stroke-linecap="round"/>
+      <!-- Cheeks -->
       <circle cx="160" cy="280" r="25" fill="${accent}" opacity="0.6"/>
       <circle cx="352" cy="280" r="25" fill="${accent}" opacity="0.6"/>
     </svg>`;
   }
 
-  static createAnimeSVG(primary: string, secondary: string, accent: string): string {
+  /**
+   * Create anime-inspired SVG
+   */
+  static createAnimeSVG(primary, secondary, accent) {
     return `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="anime-bg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -486,20 +522,28 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
         </linearGradient>
       </defs>
       <rect width="512" height="512" fill="url(#anime-bg)"/>
+      <!-- Hair -->
       <path d="M 120 230 Q 256 80 392 230 Q 360 120 256 140 Q 150 120 120 230 Z" fill="${primary}"/>
+      <!-- Face -->
       <ellipse cx="256" cy="290" rx="120" ry="140" fill="#F7E6D0"/>
+      <!-- Eyes -->
       <ellipse cx="210" cy="280" rx="32" ry="40" fill="#FFFFFF"/>
       <ellipse cx="302" cy="280" rx="32" ry="40" fill="#FFFFFF"/>
       <circle cx="215" cy="285" r="18" fill="${primary}"/>
       <circle cx="297" cy="285" r="18" fill="${primary}"/>
       <circle cx="225" cy="275" r="6" fill="#FFFFFF"/>
       <circle cx="307" cy="275" r="6" fill="#FFFFFF"/>
+      <!-- Mouth -->
       <path d="M 220 350 Q 256 370 292 350" stroke="#333" stroke-width="6" fill="none" stroke-linecap="round"/>
+      <!-- Highlight -->
       <circle cx="160" cy="240" r="24" fill="${accent}" opacity="0.6"/>
     </svg>`;
   }
 
-  static createRealisticSVG(primary: string, secondary: string, accent: string): string {
+  /**
+   * Create realistic-style SVG
+   */
+  static createRealisticSVG(primary, secondary, accent) {
     return `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <radialGradient id="realistic-bg" cx="50%" cy="35%" r="70%">
@@ -524,9 +568,13 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
     </svg>`;
   }
 
-  static createGameSVG(primary: string, secondary: string, accent: string): string {
+  /**
+   * Create game-inspired SVG
+   */
+  static createGameSVG(primary, secondary, accent) {
     return `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
       <rect width="512" height="512" fill="${secondary}"/>
+      <!-- Pixel badge -->
       <rect x="96" y="96" width="320" height="320" fill="${primary}" stroke="${accent}" stroke-width="12"/>
       <rect x="160" y="160" width="64" height="64" fill="#FFFFFF"/>
       <rect x="288" y="160" width="64" height="64" fill="#FFFFFF"/>
@@ -537,22 +585,36 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
     </svg>`;
   }
 
-  static createMinimalistSVG(primary: string, secondary: string, accent: string): string {
+  /**
+   * Create minimalist SVG
+   */
+  static createMinimalistSVG(primary, secondary, accent) {
     return `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
       <rect width="512" height="512" fill="${secondary}"/>
+      <!-- Main circle -->
       <circle cx="256" cy="256" r="180" fill="${primary}"/>
+      <!-- Accent circle -->
       <circle cx="256" cy="200" r="60" fill="${accent}"/>
+      <!-- Simple geometric element -->
       <rect x="206" y="290" width="100" height="20" fill="${accent}" rx="10"/>
     </svg>`;
   }
 
-  static getFallbackAvatar(agentName: string): string {
+  /**
+   * Fallback avatar using simple initial
+   */
+  static getFallbackAvatar(agentName) {
     const colors = [
-      '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
-      '#98D8C8', '#F7DC6F', '#BB8FCE',
+      '#FF6B6B',
+      '#4ECDC4',
+      '#45B7D1',
+      '#FFA07A',
+      '#98D8C8',
+      '#F7DC6F',
+      '#BB8FCE',
     ];
-    const hashVal = agentName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const color = colors[hashVal % colors.length];
+    const hash = agentName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const color = colors[hash % colors.length];
     const initial = agentName.charAt(0).toUpperCase();
 
     return `data:image/svg+xml;base64,${Buffer.from(`
@@ -566,7 +628,10 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
     `).toString('base64')}`;
   }
 
-  static validateAvatar(imageDataUri: string): ValidateAvatarResult {
+  /**
+   * Validate generated avatar
+   */
+  static validateAvatar(imageDataUri) {
     try {
       if (!imageDataUri || typeof imageDataUri !== 'string') {
         return { valid: false, error: 'Invalid data URI' };
@@ -589,9 +654,9 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
         format: imageDataUri.includes('svg') ? 'svg' : 'unknown',
       };
     } catch (error) {
-      return { valid: false, error: (error as Error).message };
+      return { valid: false, error: error.message };
     }
   }
 }
 
-export default AgentAvatarService;
+module.exports = AgentAvatarService;

@@ -35,7 +35,7 @@ router.post('/:podId/ensemble/start', auth, async (req: AuthReq, res: Res) => {
     const pod = await checkEnsemblePod(podId || '');
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
     if (pod.type !== 'agent-ensemble') return res.status(400).json({ error: 'Pod is not an agent ensemble' });
-    if (!pod.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
+    if (!pod.members?.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
     const state = await AgentEnsembleService.startDiscussion(podId, { topic, participants, maxMessages, maxRounds, maxDurationMinutes, createdBy: req.user?.id }) as { _id: unknown; status?: string; topic?: string; participants?: unknown; turnState?: unknown };
     return res.status(201).json({ success: true, message: 'Discussion started', state: { id: state._id, status: state.status, topic: state.topic, participants: state.participants, turnState: state.turnState } });
   } catch (error) {
@@ -50,7 +50,7 @@ router.post('/:podId/ensemble/pause', auth, async (req: AuthReq, res: Res) => {
     const pod = await checkEnsemblePod(podId || '');
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
     if (pod.type !== 'agent-ensemble') return res.status(400).json({ error: 'Pod is not an agent ensemble' });
-    if (!pod.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
+    if (!pod.members?.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
     const state = await AgentEnsembleService.pauseDiscussion(podId) as { _id: unknown; status?: string; stats?: { pausedAt?: unknown }; turnState?: { turnNumber?: number } };
     return res.json({ success: true, message: 'Discussion paused', state: { id: state._id, status: state.status, pausedAt: state.stats?.pausedAt, turnNumber: state.turnState?.turnNumber } });
   } catch (error) {
@@ -65,7 +65,7 @@ router.post('/:podId/ensemble/resume', auth, async (req: AuthReq, res: Res) => {
     const pod = await checkEnsemblePod(podId || '');
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
     if (pod.type !== 'agent-ensemble') return res.status(400).json({ error: 'Pod is not an agent ensemble' });
-    if (!pod.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
+    if (!pod.members?.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
     const state = await AgentEnsembleService.resumeDiscussion(podId) as { _id: unknown; status?: string; turnState?: { turnNumber?: number; currentAgent?: string } };
     return res.json({ success: true, message: 'Discussion resumed', state: { id: state._id, status: state.status, turnNumber: state.turnState?.turnNumber, currentAgent: state.turnState?.currentAgent } });
   } catch (error) {
@@ -80,7 +80,7 @@ router.post('/:podId/ensemble/complete', auth, async (req: AuthReq, res: Res) =>
     const pod = await checkEnsemblePod(podId || '');
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
     if (pod.type !== 'agent-ensemble') return res.status(400).json({ error: 'Pod is not an agent ensemble' });
-    if (!pod.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
+    if (!pod.members?.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
     const completed = await AgentEnsembleService.completeActiveForPod(podId, 'manual') as { _id: unknown; status?: string; stats?: { completionReason?: string; totalMessages?: number }; summary?: unknown };
     return res.json({ success: true, message: 'Discussion completed', state: { id: completed._id, status: completed.status, completionReason: completed.stats?.completionReason, totalMessages: completed.stats?.totalMessages, summary: completed.summary } });
   } catch (error) {
@@ -95,7 +95,7 @@ router.get('/:podId/ensemble/state', auth, async (req: AuthReq, res: Res) => {
     const pod = await checkEnsemblePod(podId || '');
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
     if (pod.type !== 'agent-ensemble') return res.status(400).json({ error: 'Pod is not an agent ensemble' });
-    if (!pod.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
+    if (!pod.members?.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
     const state = await AgentEnsembleService.getState(podId) as { _id: unknown; status?: string; topic?: string; participants?: unknown; turnState?: unknown; stats?: unknown; stopConditions?: unknown; keyPoints?: unknown[]; summary?: unknown } | null;
     if (!state) return res.json({ success: true, state: null, podConfig: pod.agentEnsemble || {} });
     return res.json({ success: true, state: { id: state._id, status: state.status, topic: state.topic, participants: state.participants, turnState: state.turnState, stats: state.stats, stopConditions: state.stopConditions, keyPoints: state.keyPoints?.slice(-5), summary: state.summary }, podConfig: pod.agentEnsemble || {} });
@@ -139,7 +139,7 @@ router.get('/:podId/ensemble/history', auth, async (req: AuthReq, res: Res) => {
     const pod = await checkEnsemblePod(podId || '');
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
     if (pod.type !== 'agent-ensemble') return res.status(400).json({ error: 'Pod is not an agent ensemble' });
-    if (!pod.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
+    if (!pod.members?.includes?.(req.user?.id || '')) return res.status(403).json({ error: 'Not a member of this pod' });
     // eslint-disable-next-line global-require
     const AgentEnsembleState = require('../models/AgentEnsembleState');
     const history = await AgentEnsembleState.find({ podId, status: 'completed' }).sort({ 'stats.completedAt': -1 }).limit(parseInt(limit, 10)).select('topic participants stats summary createdAt').lean();

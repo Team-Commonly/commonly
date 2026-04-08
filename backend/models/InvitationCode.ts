@@ -30,3 +30,6 @@ const invitationCodeSchema = new Schema<IInvitationCode>(
 invitationCodeSchema.index({ isActive: 1, expiresAt: 1 });
 
 export default mongoose.model<IInvitationCode>('InvitationCode', invitationCodeSchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

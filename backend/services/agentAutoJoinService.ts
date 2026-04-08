@@ -128,3 +128,6 @@ class AgentAutoJoinService {
 }
 
 export default AgentAutoJoinService;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

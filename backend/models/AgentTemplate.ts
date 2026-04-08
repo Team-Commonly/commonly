@@ -29,3 +29,6 @@ AgentTemplateSchema.index({ agentName: 1, visibility: 1 });
 AgentTemplateSchema.index({ createdBy: 1, visibility: 1 });
 
 export default mongoose.model<IAgentTemplate>('AgentTemplate', AgentTemplateSchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

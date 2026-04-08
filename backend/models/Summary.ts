@@ -175,3 +175,6 @@ summarySchema.index({ 'timeRange.start': 1, 'timeRange.end': 1 });
 summarySchema.index({ type: 1, 'metadata.userId': 1, createdAt: -1 });
 
 export default mongoose.model<ISummary>('Summary', summarySchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

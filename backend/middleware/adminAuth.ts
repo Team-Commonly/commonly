@@ -22,3 +22,6 @@ export default async function adminAuth(req: Request, res: Response, next: NextF
     res.status(500).json({ message: 'Server error' });
   }
 }
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

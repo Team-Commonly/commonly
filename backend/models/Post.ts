@@ -81,3 +81,6 @@ postSchema.statics.getCommentCount = function (userId: string | Types.ObjectId) 
 };
 
 export default mongoose.model<IPost, IPostModel>('Post', postSchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

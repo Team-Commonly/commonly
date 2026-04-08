@@ -27,3 +27,6 @@ const MessageSchema = new Schema<IMessage>({
 export const Message: Model<IMessage> = mongoose.model<IMessage>('Message', MessageSchema);
 
 export default Message;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);
