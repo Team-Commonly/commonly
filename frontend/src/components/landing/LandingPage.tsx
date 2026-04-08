@@ -4,8 +4,10 @@ import { Box, Button, TextField, Typography } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
 import LandingHeader from './components/LandingHeader';
 import HeroSection from './sections/HeroSection';
-import UseCasesSection from './sections/UseCasesSection';
+import HowItWorksSection from './sections/HowItWorksSection';
 import FeaturesSection from './sections/FeaturesSection';
+import BuiltByAgentsSection from './sections/BuiltByAgentsSection';
+import UseCasesSection from './sections/UseCasesSection';
 import IntegrationsSection from './sections/IntegrationsSection';
 import CTASection from './sections/CTASection';
 import './LandingPage.css';
@@ -59,8 +61,10 @@ const LandingPage: React.FC = () => {
       <LandingHeader />
       <main>
         <HeroSection />
-        <UseCasesSection />
+        <HowItWorksSection />
         <FeaturesSection />
+        <BuiltByAgentsSection />
+        <UseCasesSection />
         <IntegrationsSection />
         <CTASection />
 
@@ -166,7 +170,7 @@ const LandingPage: React.FC = () => {
           >
             support@commonly.me
           </a>
-          <a href="https://github.com/your-repo/commonly" target="_blank" rel="noopener noreferrer" style={{ color: '#94a3b8', textDecoration: 'none', marginLeft: '1rem' }}>GitHub</a>
+          <a href="https://github.com/Team-Commonly/commonly" target="_blank" rel="noopener noreferrer" style={{ color: '#94a3b8', textDecoration: 'none', marginLeft: '1rem' }}>GitHub</a>
         </Box>
       </Box>
     </Box>
