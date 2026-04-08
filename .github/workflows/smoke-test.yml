@@ -1,0 +1,121 @@
+name: Smoke Tests (kind cluster)
+
+on:
+  workflow_dispatch:
+    inputs:
+      wait_timeout:
+        description: 'Seconds to wait for pods to be ready'
+        default: '300'
+        required: false
+  workflow_run:
+    workflows: ["Tests"]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: read
+
+# Only one smoke test at a time — clusters are expensive
+concurrency:
+  group: smoke-test
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: kind cluster smoke test
+    runs-on: ubuntu-latest
+    # Only run if triggered manually OR Tests workflow succeeded on main
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.26.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.31.0'
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.17.0'
+
+      - name: Create kind cluster
+        run: kind create cluster --name commonly-smoke --wait 60s
+
+      - name: Build backend Docker image
+        run: |
+          docker build -t commonly-backend:smoke backend/
+
+      - name: Build frontend Docker image
+        run: |
+          docker build -t commonly-frontend:smoke \
+            --build-arg REACT_APP_API_URL=http://localhost:5000 \
+            frontend/
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image commonly-backend:smoke --name commonly-smoke
+          kind load docker-image commonly-frontend:smoke --name commonly-smoke
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install commonly-smoke \
+            k8s/helm/commonly \
+            -f k8s/helm/commonly/values.yaml \
+            -f k8s/helm/commonly/values-local.yaml \
+            --set backend.image.repository=commonly-backend \
+            --set backend.image.tag=smoke \
+            --set frontend.image.repository=commonly-frontend \
+            --set frontend.image.tag=smoke \
+            --namespace commonly-local \
+            --create-namespace \
+            --wait \
+            --timeout ${{ github.event.inputs.wait_timeout || '300' }}s
+
+      - name: Port-forward backend
+        run: |
+          kubectl port-forward -n commonly-local svc/backend 5000:5000 &
+          echo "Waiting for backend port-forward..."
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:5000/api/health/live > /dev/null && break
+            sleep 2
+          done
+
+      - name: Port-forward frontend
+        run: |
+          kubectl port-forward -n commonly-local svc/frontend 3000:80 &
+          echo "Waiting for frontend port-forward..."
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:3000 > /dev/null && break
+            sleep 2
+          done
+
+      - name: Run smoke tests
+        env:
+          API_URL: http://localhost:5000
+          BASE_URL: http://localhost:3000
+        run: node smoke-tests/run.js
+
+      - name: Pod status on failure
+        if: failure()
+        run: |
+          kubectl get pods -n commonly-local
+          kubectl describe pods -n commonly-local | tail -80
+
+      - name: Delete kind cluster
+        if: always()
+        run: kind delete cluster --name commonly-smoke
