@@ -63,7 +63,7 @@ describe('LandingPage', () => {
       renderLandingPage();
 
       // Check for main headline
-      expect(screen.getByRole('heading', { level: 1, name: /social workspace to chat, build, and live with ai agents/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: /collaboration os for humans and ai agents/i })).toBeInTheDocument();
     });
 
     it('renders the header with logo', () => {
@@ -82,19 +82,19 @@ describe('LandingPage', () => {
     it('renders the hero section with CTAs', () => {
       renderLandingPage();
 
-      expect(screen.getByRole('button', { name: /get started free/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /learn more/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /self-host free/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /view on github/i })).toBeInTheDocument();
     });
 
     it('renders all feature cards', () => {
       renderLandingPage();
 
-      expect(screen.getByText('Social-Native Pods')).toBeInTheDocument();
-      expect(screen.getByText('Agent Orchestrator')).toBeInTheDocument();
-      expect(screen.getByText('Secure Runtime Access')).toBeInTheDocument();
-      expect(screen.getByText('Containerized Gateways')).toBeInTheDocument();
-      expect(screen.getByText('Cross-App Social Feed')).toBeInTheDocument();
-      expect(screen.getByText('Self-Growing Knowledge Base')).toBeInTheDocument();
+      expect(screen.getByText('Agent-Native Architecture')).toBeInTheDocument();
+      expect(screen.getAllByText('Any Runtime').length).toBeGreaterThan(0);
+      expect(screen.getByText('Task Board + GitHub Sync')).toBeInTheDocument();
+      expect(screen.getAllByText('Pod Memory').length).toBeGreaterThan(0);
+      expect(screen.getByText('Audit & Control')).toBeInTheDocument();
+      expect(screen.getAllByText('Open Source').length).toBeGreaterThan(0);
     });
 
     it('renders integration badges', () => {
@@ -111,8 +111,8 @@ describe('LandingPage', () => {
     it('renders the CTA section', () => {
       renderLandingPage();
 
-      expect(screen.getByText(/Ready to give your people/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /create your pod/i })).toBeInTheDocument();
+      expect(screen.getByText(/Ready to meet/i)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /self-host in 5 minutes/i })).toBeInTheDocument();
     });
 
     it('renders the footer', () => {
@@ -141,22 +141,18 @@ describe('LandingPage', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/login');
     });
 
-    it('navigates to /register when Get Started Free is clicked', () => {
+    it('hero self-host link points to GitHub self-hosting section', () => {
       renderLandingPage();
 
-      const getStartedFreeButton = screen.getByRole('button', { name: /get started free/i });
-      fireEvent.click(getStartedFreeButton);
-
-      expect(mockNavigate).toHaveBeenCalledWith('/register');
+      const selfHostLink = screen.getByRole('link', { name: /self-host free/i });
+      expect(selfHostLink).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly#self-hosting');
     });
 
-    it('navigates to /register when Create Your Pod is clicked', () => {
+    it('CTA self-host link points to GitHub self-hosting section', () => {
       renderLandingPage();
 
-      const createPodButton = screen.getByRole('button', { name: /create your pod/i });
-      fireEvent.click(createPodButton);
-
-      expect(mockNavigate).toHaveBeenCalledWith('/register');
+      const ctaLink = screen.getByRole('link', { name: /self-host in 5 minutes/i });
+      expect(ctaLink).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly#self-hosting');
     });
 
   });
@@ -194,12 +190,12 @@ describe('LandingPage', () => {
 
       renderLandingPage();
 
-      expect(screen.getByText(/social workspace to chat/i)).toBeInTheDocument();
+      expect(screen.getByText(/collaboration os/i)).toBeInTheDocument();
     });
   });
 
   describe('Scroll behavior', () => {
-    it('scrolls to features section when Learn More is clicked', () => {
+    it('scrolls to use-cases section when "How it works" link is clicked', () => {
       // Mock scrollIntoView
       const scrollIntoViewMock = jest.fn();
       const originalGetElementById = document.getElementById;
@@ -212,8 +208,8 @@ describe('LandingPage', () => {
 
       renderLandingPage();
 
-      const learnMoreButton = screen.getByRole('button', { name: /learn more/i });
-      fireEvent.click(learnMoreButton);
+      const howItWorksLinks = screen.getAllByText(/how it works/i);
+      fireEvent.click(howItWorksLinks[0]);
 
       expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: 'smooth' });
 

@@ -115,18 +115,7 @@ const HeroSection: React.FC = () => {
               mb: 4,
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <Box sx={{ fontSize: '0.875rem' }}>👥</Box>
-              <Box
-                sx={{
-                  width: 4,
-                  height: 4,
-                  borderRadius: '50%',
-                  backgroundColor: '#64748b',
-                }}
-              />
-              <Box sx={{ fontSize: '0.875rem' }}>🤖</Box>
-            </Box>
+            <Box sx={{ fontSize: '0.875rem' }}>🤖</Box>
             <Typography
               variant="caption"
               sx={{
@@ -136,7 +125,7 @@ const HeroSection: React.FC = () => {
                 letterSpacing: '0.01em',
               }}
             >
-              For communities that chat and build with AI agents
+              Open source · MIT licensed · Self-host in 5 minutes
             </Typography>
           </Box>
 
@@ -152,7 +141,7 @@ const HeroSection: React.FC = () => {
               mb: 3,
             }}
           >
-            A social workspace to chat, build, and{' '}
+            The Collaboration OS for{' '}
             <Box
               component="span"
               sx={{
@@ -162,7 +151,7 @@ const HeroSection: React.FC = () => {
                 color: 'transparent',
               }}
             >
-              live with AI agents
+              Humans and AI Agents
             </Box>
           </Typography>
 
@@ -179,8 +168,8 @@ const HeroSection: React.FC = () => {
               mx: 'auto',
             }}
           >
-            From friend groups to product teams, run pods, social feeds, and secure
-            agent workflows in one place with shared memory that grows with your community.
+            Agents with identities. Agents with memory. Agents that ship code —
+            alongside your team, not instead of it.
           </Typography>
 
           {/* Stats/Social proof */}
@@ -193,10 +182,10 @@ const HeroSection: React.FC = () => {
               mb: 5,
             }}
           >
-            <StatBadge icon="🌐" label="Social + Chat" detail="Pods, feed, and live activity" />
-            <StatBadge icon="🤝" label="People + Agents" detail="Work, plan, and create together" />
-            <StatBadge icon="🔐" label="Security" detail="Scoped tokens + policy controls" />
-            <StatBadge icon="📦" label="Deployment" detail="Docker + K8s gateway options" />
+            <StatBadge icon="🤖" label="Any Runtime" detail="OpenClaw, Codex, Claude, Gemini" />
+            <StatBadge icon="🧠" label="Pod Memory" detail="Context that accumulates, not resets" />
+            <StatBadge icon="📋" label="GitHub Sync" detail="Agents self-assign from issues" />
+            <StatBadge icon="🔓" label="MIT Licensed" detail="Own your infrastructure" />
           </Box>
 
           {/* CTAs */}
@@ -212,7 +201,10 @@ const HeroSection: React.FC = () => {
             <Button
               variant="contained"
               size="large"
-              onClick={() => navigate('/register')}
+              component="a"
+              href="https://github.com/Team-Commonly/commonly#self-hosting"
+              target="_blank"
+              rel="noopener noreferrer"
               sx={{
                 minWidth: { xs: '100%', sm: 200 },
                 py: 1.5,
@@ -229,12 +221,16 @@ const HeroSection: React.FC = () => {
                 transition: 'all 0.3s ease',
               }}
             >
-              Get Started Free
+              Self-host free →
             </Button>
             <Button
               variant="outlined"
               size="large"
-              onClick={handleLearnMore}
+              component="a"
+              href="https://github.com/Team-Commonly/commonly"
+              target="_blank"
+              rel="noopener noreferrer"
+              startIcon={<GitHubIcon />}
               sx={{
                 minWidth: { xs: '100%', sm: 180 },
                 py: 1.5,
@@ -250,7 +246,7 @@ const HeroSection: React.FC = () => {
                 },
               }}
             >
-              Learn More
+              View on GitHub
             </Button>
           </Box>
 
@@ -286,19 +282,18 @@ const HeroSection: React.FC = () => {
             </Link>
             <Box sx={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: '#334155' }} />
             <Link
-              href="https://docs.commonly.me"
-              target="_blank"
-              rel="noopener noreferrer"
+              onClick={handleLearnMore}
               underline="none"
               sx={{
                 color: '#64748b',
                 fontSize: '0.875rem',
                 fontWeight: 500,
+                cursor: 'pointer',
                 transition: 'color 0.2s ease',
                 '&:hover': { color: '#94a3b8' },
               }}
             >
-              Read the docs →
+              How it works ↓
             </Link>
             <Box sx={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: '#334155' }} />
             <Link
