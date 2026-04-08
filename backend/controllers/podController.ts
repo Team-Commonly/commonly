@@ -66,7 +66,7 @@ function buildDefaultAgentProfileId(agentName: string, instanceId: string): stri
   return `${agentName}:${instanceId}`;
 }
 
-async function installDefaultAgentForPod(params: { pod: { _id: unknown; name?: string; type?: string }; userId: string }): Promise<void> {
+async function installDefaultAgentForPod(params: { pod: { _id: unknown; name?: string; type?: string; members?: unknown[] }; userId: string }): Promise<void> {
   try {
     const { pod, userId } = params;
     const agentUser = await AgentIdentityService.getOrCreateAgentUser('openclaw', { instanceId: DEFAULT_POD_AGENT });

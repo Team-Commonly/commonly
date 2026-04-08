@@ -73,6 +73,7 @@ function createDiscordProvider(integration: IntegrationDoc): DiscordProvider {
       }
     },
 
+    // @ts-ignore — handler param types are more specific than generic interface allows
     getWebhookHandlers() {
       return {
         verify: (_req: unknown, res: { json: (data: unknown) => void }) => res.json({ type: 1 }),

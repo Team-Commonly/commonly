@@ -358,7 +358,7 @@ class VectorSearchService {
     params.push(limit);
 
     try {
-      return this.db!.prepare(sql).all(...params) as SearchResult[];
+      return this.db!.prepare(sql).all(...params) as unknown as SearchResult[];
     } catch (error) {
       console.error('Vector search error:', error);
       return [];
@@ -394,7 +394,7 @@ class VectorSearchService {
     params.push(limit);
 
     try {
-      return this.db!.prepare(sql).all(...params) as SearchResult[];
+      return this.db!.prepare(sql).all(...params) as unknown as SearchResult[];
     } catch (error) {
       console.error('Keyword search error:', error);
       return [];

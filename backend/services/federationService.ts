@@ -395,7 +395,7 @@ class FederationService {
       }),
     )).flat();
 
-    allResults.sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime());
+    allResults.sort((a, b) => new Date((b as FederatedItem).createdAt as string).getTime() - new Date((a as FederatedItem).createdAt as string).getTime());
 
     return allResults.slice(0, limit);
   }

@@ -45,16 +45,16 @@ class AgentThreadService {
     }
 
     // Respect per-post agent comment opt-out
-    if ((post as Record<string, unknown>).agentCommentsDisabled) {
+    if ((post as unknown as Record<string, unknown>).agentCommentsDisabled) {
       return { success: false, agentCommentsDisabled: true };
     }
 
     // Prevent agent from replying to its own comment
     if (replyToCommentId) {
-      const postDoc = post as Record<string, unknown>;
+      const postDoc = post as unknown as Record<string, unknown>;
       const comments = postDoc.comments as Array<Record<string, unknown>>;
       const targetComment = comments?.find(
-        (c) => c._id.toString() === replyToCommentId.toString(),
+        (c) => String(c._id) === replyToCommentId.toString(),
       );
       if (targetComment && targetComment.userId?.toString() === agentUser._id.toString()) {
         return { success: false, selfReply: true };
@@ -63,7 +63,7 @@ class AgentThreadService {
 
     // Dedup: one standalone comment per agent instance per post
     if (!replyToCommentId) {
-      const postDoc = post as Record<string, unknown>;
+      const postDoc = post as unknown as Record<string, unknown>;
       const comments = postDoc.comments as Array<Record<string, unknown>>;
       const alreadyCommented = comments?.some(
         (c) => c.userId && c.userId.toString() === agentUser._id.toString() && !c.replyTo,
@@ -71,12 +71,12 @@ class AgentThreadService {
       if (alreadyCommented) {
         const existing = await Post.findById(post._id)
           .populate('comments.userId', 'username profilePicture')
-          .lean() as Record<string, unknown>;
+          .lean() as unknown as Record<string, unknown>;
         const existingComments = (existing.comments as Array<Record<string, unknown>>);
         const existingComment = [...existingComments]
           .reverse()
           .find((c) => {
-            const userId = c.userId as Record<string, unknown> | undefined;
+            const userId = c.userId as unknown as Record<string, unknown> | undefined;
             return userId && userId._id?.toString() === agentUser._id.toString() && !c.replyTo;
           });
         return { success: true, comment: existingComment, duplicate: true };
@@ -90,12 +90,12 @@ class AgentThreadService {
       createdAt: new Date(),
     };
 
-    (post as Record<string, unknown[]>).comments.push(comment as never);
+    (post as unknown as Record<string, unknown[]>).comments.push(comment as never);
     await post.save();
 
     const updated = await Post.findById(post._id)
       .populate('comments.userId', 'username profilePicture')
-      .lean() as Record<string, unknown>;
+      .lean() as unknown as Record<string, unknown>;
     const updatedComments = updated.comments as Array<unknown>;
     const newComment = updatedComments[updatedComments.length - 1];
 

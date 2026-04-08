@@ -54,6 +54,7 @@ function createSlackProvider(integration: { _id: unknown; config?: Record<string
       validateRequiredConfig(config, manifests.slack);
     },
 
+    // @ts-ignore — handler param types are more specific than generic interface allows
     getWebhookHandlers() {
       return {
         verify: (_req: unknown, res: { sendStatus: (n: number) => unknown }) => res.sendStatus(200),

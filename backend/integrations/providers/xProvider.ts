@@ -270,6 +270,7 @@ function createXProvider(integration: { _id: unknown; config?: XConfig; [key: st
       }
     },
 
+    // @ts-ignore — handler param types are more specific than generic interface allows
     getWebhookHandlers() {
       return {
         verify: (_req: unknown, res: { sendStatus: (n: number) => unknown }) => res.sendStatus(200),
@@ -521,9 +522,9 @@ function createXProvider(integration: { _id: unknown; config?: XConfig; [key: st
           tokenRefreshed,
           refreshedAccessToken: tokenRefreshed ? accessToken : undefined,
           refreshedRefreshToken: tokenRefreshed ? refreshToken : undefined,
-          refreshedTokenType: refreshMeta?.tokenType || undefined,
-          refreshedExpiresIn: refreshMeta?.expiresIn || undefined,
-          refreshedScope: refreshMeta?.scope || undefined,
+          refreshedTokenType: (refreshMeta as RefreshMeta | null)?.tokenType || undefined,
+          refreshedExpiresIn: (refreshMeta as RefreshMeta | null)?.expiresIn || undefined,
+          refreshedScope: (refreshMeta as RefreshMeta | null)?.scope || undefined,
         },
       };
     },

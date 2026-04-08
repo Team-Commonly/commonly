@@ -47,6 +47,8 @@ export interface IUser extends Document {
     capabilities?: string[];
     agentName?: string;
     instanceId?: string;
+    runtime?: string;
+    icon?: string;
   };
   avatarMetadata: {
     style?: AvatarStyle;

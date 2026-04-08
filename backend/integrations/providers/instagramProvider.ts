@@ -136,6 +136,7 @@ function createInstagramProvider(integration: { _id: unknown; config?: Instagram
       }
     },
 
+    // @ts-ignore — handler param types are more specific than generic interface allows
     getWebhookHandlers() {
       return {
         verify: (_req: unknown, res: { sendStatus: (n: number) => unknown }) => res.sendStatus(200),

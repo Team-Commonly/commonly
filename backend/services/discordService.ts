@@ -63,6 +63,7 @@ interface IntegrationDoc {
     channelId?: string;
     webhookUrl?: string;
     webhookId?: string;
+    botToken?: string;
   };
   [key: string]: unknown;
 }

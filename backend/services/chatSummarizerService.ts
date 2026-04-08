@@ -26,7 +26,7 @@ interface FallbackAnalyticsResult {
 
 interface EnhancedSummaryResult {
   summary: string;
-  analytics: Record<string, unknown>;
+  analytics: FallbackAnalyticsResult | Record<string, unknown>;
 }
 
 class ChatSummarizerService {

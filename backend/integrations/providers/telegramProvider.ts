@@ -105,6 +105,7 @@ function createTelegramProvider(integration: { _id: unknown; config?: Record<str
       validateRequiredConfig(config, manifests.telegram);
     },
 
+    // @ts-ignore — handler param types are more specific than generic interface allows
     getWebhookHandlers() {
       return {
         events: async (req: { headers: Record<string, unknown>; body: unknown }, res: { status: (n: number) => { send: (s: string) => unknown }; sendStatus: (n: number) => unknown }) => {
