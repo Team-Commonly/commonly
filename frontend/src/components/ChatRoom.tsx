@@ -44,6 +44,7 @@ import { useLayout } from '../context/LayoutContext';
 import { getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
 import { AgentAvatar, AgentBadge, isAgentUsername } from './common/AgentIndicator';
 import MarkdownContent from './common/MarkdownContent';
+import MessageContent from './common/MessageContent';
 import { markPodReadFromMessages } from '../utils/podReadState';
 import AgentEnsemblePanel from './agents/AgentEnsemblePanel';
 import axios from 'axios';
@@ -4172,7 +4173,7 @@ const ChatRoom = () => {
                                                     {/* Text message */}
                                                     {messageType === 'text' && (
                                                         <div className={`message-bubble ${isCurrentUser ? 'sent' : 'received'}`}>
-                                                            <MarkdownContent variant="chat">{messageContent}</MarkdownContent>
+                                                            <MessageContent>{messageContent}</MessageContent>
                                                         </div>
                                                     )}
 
