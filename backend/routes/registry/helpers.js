@@ -1,6 +1,7 @@
 // Shared helper utilities — extracted from registry.js (GH#112)
 const User = require('../../models/User');
 const Gateway = require('../../models/Gateway');
+const { AgentInstallation } = require('../../models/AgentRegistry');
 const { isK8sMode } = require('../../services/agentProvisionerService');
 
 const buildIdentityContent = (name, persona) => {
@@ -346,6 +347,48 @@ const parseEnvFlag = (value) => {
 
 const hasAnyEnv = (keys = []) => keys.some((key) => parseEnvFlag(process.env[key]));
 
+const buildAgentProfileId = (agentName, instanceId) => (
+  `${agentName.toLowerCase()}:${normalizeInstanceId(instanceId)}`
+);
+
+const resolveInstallation = async ({ agentName, podId, instanceId }) => {
+  const normalizedInstanceId = normalizeInstanceId(instanceId);
+  let installation = await AgentInstallation.findOne({
+    agentName: agentName.toLowerCase(),
+    podId,
+    instanceId: normalizedInstanceId,
+  });
+
+  if (installation) {
+    return { installation, instanceId: normalizedInstanceId };
+  }
+
+  // Fallback: if instanceId is default and there is exactly one install, use it.
+  if (normalizedInstanceId === 'default') {
+    const installs = await AgentInstallation.find({
+      agentName: agentName.toLowerCase(),
+      podId,
+      status: { $ne: 'uninstalled' },
+    }).limit(2);
+    if (installs.length === 1) {
+      return { installation: installs[0], instanceId: installs[0].instanceId || 'default' };
+    }
+  }
+
+  // Fallback: if a specific instanceId was provided but there is exactly one active install,
+  // use it to avoid hard failures when the UI doesn't know the instanceId.
+  const activeInstalls = await AgentInstallation.find({
+    agentName: agentName.toLowerCase(),
+    podId,
+    status: { $ne: 'uninstalled' },
+  }).limit(2);
+  if (activeInstalls.length === 1) {
+    return { installation: activeInstalls[0], instanceId: activeInstalls[0].instanceId || 'default' };
+  }
+
+  return { installation: null, instanceId: normalizedInstanceId };
+};
+
 module.exports = {
   buildIdentityContent,
   parseVerifiedFilter,
@@ -370,4 +413,6 @@ module.exports = {
   serializeRuntimeTokens,
   parseEnvFlag,
   hasAnyEnv,
+  resolveInstallation,
+  buildAgentProfileId,
 };
