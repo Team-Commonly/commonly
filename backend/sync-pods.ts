@@ -60,10 +60,10 @@ async function syncPods() {
             for (const memberId of mongoPod.members) {
               try {
                 await PGPod.addMember(mongoPodId, memberId.toString());
-              } catch (memberErr) {
+              } catch (memberErr: unknown) {
                 console.error(
                   `Error adding member ${memberId} to pod ${mongoPodId}:`,
-                  memberErr.message,
+                  ((memberErr) as Error).message,
                 );
               }
             }
@@ -73,14 +73,14 @@ async function syncPods() {
         } else {
           console.log(`Pod already exists in PostgreSQL: ${mongoPodId}`);
         }
-      } catch (err) {
-        console.error(`Error syncing pod ${mongoPod._id}:`, err.message);
+      } catch (err: unknown) {
+        console.error(`Error syncing pod ${mongoPod._id}:`, ((err) as Error).message);
       }
     }
 
     console.log(`Synchronized ${synced} pods from MongoDB to PostgreSQL`);
-  } catch (err) {
-    console.error('Error:', err.message);
+  } catch (err: unknown) {
+    console.error('Error:', ((err) as Error).message);
   } finally {
     // Close connections
     if (mongoose.connection.readyState !== 0) {
@@ -96,3 +96,4 @@ if (require.main === module) {
 }
 
 module.exports = syncPods;
+export {};

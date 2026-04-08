@@ -39,13 +39,13 @@ async function testConnection() {
         console.log('Pods table exists:', tablesResult.rows[0].exists);
 
         client.release();
-      } catch (queryErr) {
+      } catch (queryErr: unknown) {
         console.error('Error running test queries:', queryErr);
       }
     } else {
       console.error('Connection failed.');
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('Error in test script:', err);
   } finally {
     // Close the pool
@@ -59,3 +59,4 @@ if (require.main === module) {
 }
 
 module.exports = testConnection;
+export {};

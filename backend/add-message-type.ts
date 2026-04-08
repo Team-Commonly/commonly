@@ -28,8 +28,8 @@ async function addMessageTypeColumn() {
 
     await pool.query(alterTableQuery);
     console.log('Successfully added message_type column to messages table');
-  } catch (error) {
-    console.error('Migration failed:', error.message);
+  } catch (error: unknown) {
+    console.error('Migration failed:', ((error) as Error).message);
   } finally {
     await pool.end();
   }
@@ -41,3 +41,4 @@ if (require.main === module) {
 }
 
 module.exports = addMessageTypeColumn;
+export {};
