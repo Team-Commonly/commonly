@@ -351,6 +351,15 @@ const buildAgentProfileId = (agentName, instanceId) => (
   `${agentName.toLowerCase()}:${normalizeInstanceId(instanceId)}`
 );
 
+const resolveRuntimeInstanceId = ({ agentName, requestedInstanceId, installation }) => {
+  // Runtime identity must follow the installed instance exactly.
+  // Do not derive a different runtime instance from displayName, otherwise
+  // shared tokens can drift and runtime pod authorization fails.
+  const installedInstanceId = normalizeInstanceId(installation?.instanceId);
+  if (installedInstanceId) return installedInstanceId;
+  return normalizeInstanceId(requestedInstanceId);
+};
+
 const resolveInstallation = async ({ agentName, podId, instanceId }) => {
   const normalizedInstanceId = normalizeInstanceId(instanceId);
   let installation = await AgentInstallation.findOne({
@@ -415,4 +424,5 @@ module.exports = {
   hasAnyEnv,
   resolveInstallation,
   buildAgentProfileId,
+  resolveRuntimeInstanceId,
 };
