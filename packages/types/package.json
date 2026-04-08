@@ -1,0 +1,13 @@
+{
+  "name": "@commonly/types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript type definitions for the Commonly platform",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "license": "MIT"
+}
