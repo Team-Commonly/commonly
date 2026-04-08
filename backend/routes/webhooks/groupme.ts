@@ -1,4 +1,3 @@
-// @ts-nocheck
 const express = require('express');
 const Integration = require('../../models/Integration');
 const registry = require('../../integrations');
@@ -6,7 +5,7 @@ const registry = require('../../integrations');
 const router = express.Router({ mergeParams: true });
 
 // GroupMe sends JSON via POST with bot_id, group_id, etc.
-router.post('/:integrationId', async (req, res) => {
+router.post('/:integrationId', async (req: any, res: any) => {
   try {
     const { integrationId } = req.params;
     const integration = await Integration.findById(integrationId);
@@ -25,3 +24,5 @@ router.post('/:integrationId', async (req, res) => {
 
 module.exports = router;
 // LEGACY: in-platform webhook. External provider service will replace this route.
+
+export {};

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent preset routes — extracted from registry.js (GH#112)
 // Handles: GET /presets
 const express = require('express');
@@ -14,38 +13,38 @@ const { PRESET_DEFINITIONS } = require('./presets');
 
 const presetsRouter = express.Router();
 
-const resolvePresetTool = (tool, capabilities) => {
+const resolvePresetTool = (tool: any, capabilities: any) => {
   if (tool.type === 'core') {
     return { ...tool, available: true };
   }
   if (tool.type === 'plugin') {
     const pluginSpecs = (capabilities.plugins || [])
-      .map((plugin) => `${plugin.name || ''} ${plugin.spec || ''}`.toLowerCase());
-    const available = (tool.matchAny || []).some((needle) => pluginSpecs.some((spec) => spec.includes(needle)));
+      .map((plugin: any) => `${plugin.name || ''} ${plugin.spec || ''}`.toLowerCase());
+    const available = (tool.matchAny || []).some((needle: any) => pluginSpecs.some((spec: any) => spec.includes(needle)));
     return { ...tool, available };
   }
   return { ...tool, available: false };
 };
 
-const resolvePresetApiRequirement = (requirement) => ({
+const resolvePresetApiRequirement = (requirement: any) => ({
   ...requirement,
   configured: hasAnyEnv(requirement.envAny || [requirement.key]),
 });
 
-const resolvePresetSkills = ({ preset, builtInSkills, dockerCapabilities }) => {
-  const skillMap = new Map((builtInSkills.skills || []).map((skill) => [skill.id, skill]));
+const resolvePresetSkills = ({ preset, builtInSkills, dockerCapabilities }: { preset: any; builtInSkills: any; dockerCapabilities: any }) => {
+  const skillMap = new Map((builtInSkills.skills || []).map((skill: any) => [skill.id, skill]));
   const defaultSkills = Array.isArray(preset.defaultSkills) ? preset.defaultSkills : [];
-  return defaultSkills.map((entry) => {
-    const builtIn = skillMap.get(entry.id);
+  return defaultSkills.map((entry: any) => {
+    const builtIn = skillMap.get(entry.id) as any;
     const requiresBins = Array.isArray(builtIn?.requiresBins) ? builtIn.requiresBins : [];
     const requiresEnv = Array.isArray(builtIn?.requiresEnv) ? builtIn.requiresEnv : [];
-    const binsReady = requiresBins.every((bin) => binLooksInstalled(bin, dockerCapabilities));
-    const envReady = requiresEnv.every((envName) => hasAnyEnv([envName]));
-    const binStatus = requiresBins.map((bin) => ({
+    const binsReady = requiresBins.every((bin: any) => binLooksInstalled(bin, dockerCapabilities));
+    const envReady = requiresEnv.every((envName: any) => hasAnyEnv([envName]));
+    const binStatus = requiresBins.map((bin: any) => ({
       bin,
       installed: binLooksInstalled(bin, dockerCapabilities),
     }));
-    const envStatus = requiresEnv.map((envKey) => ({
+    const envStatus = requiresEnv.map((envKey: any) => ({
       key: envKey,
       configured: hasAnyEnv([envKey]),
     }));
@@ -77,19 +76,19 @@ const resolvePresetSkills = ({ preset, builtInSkills, dockerCapabilities }) => {
  * GET /api/registry/presets
  * List agent presets with capability readiness
  */
-presetsRouter.get('/presets', auth, async (req, res) => {
+presetsRouter.get('/presets', auth, async (req: any, res: any) => {
   try {
     const capabilities = await detectGatewayPresetCapabilities();
     const builtInSkills = detectBuiltInOpenClawSkills();
     const dockerCapabilities = detectDockerfileCommonlyPackages();
-    const presets = PRESET_DEFINITIONS.map((preset) => {
+    const presets = PRESET_DEFINITIONS.map((preset: any) => {
       const resolvedSkills = resolvePresetSkills({
         preset,
         builtInSkills,
         dockerCapabilities,
       });
       const recommendedEnvMap = new Map();
-      (preset.apiRequirements || []).forEach((requirement) => {
+      (preset.apiRequirements || []).forEach((requirement: any) => {
         const key = String(requirement.key || '').trim();
         if (!key) return;
         recommendedEnvMap.set(key, {
@@ -99,8 +98,8 @@ presetsRouter.get('/presets', auth, async (req, res) => {
           source: 'preset-api',
         });
       });
-      resolvedSkills.forEach((skill) => {
-        (skill.envStatus || []).forEach((envEntry) => {
+      resolvedSkills.forEach((skill: any) => {
+        (skill.envStatus || []).forEach((envEntry: any) => {
           if (!envEntry?.key) return;
           if (!recommendedEnvMap.has(envEntry.key)) {
             recommendedEnvMap.set(envEntry.key, {
@@ -115,17 +114,17 @@ presetsRouter.get('/presets', auth, async (req, res) => {
       return {
         ...preset,
         requiredTools: (preset.requiredTools || []).map(
-          (tool) => resolvePresetTool(tool, capabilities),
+          (tool: any) => resolvePresetTool(tool, capabilities),
         ),
         apiRequirements: (preset.apiRequirements || []).map(resolvePresetApiRequirement),
         defaultSkills: resolvedSkills,
         recommendedEnv: Array.from(recommendedEnvMap.values()),
         readiness: (() => {
           const toolsReady = (preset.requiredTools || [])
-            .every((tool) => resolvePresetTool(tool, capabilities).available);
+            .every((tool: any) => resolvePresetTool(tool, capabilities).available);
           const apisReady = (preset.apiRequirements || [])
-            .every((requirement) => hasAnyEnv(requirement.envAny || [requirement.key]));
-          const skillsReady = resolvedSkills.every((skill) => skill.readiness.ready);
+            .every((requirement: any) => hasAnyEnv(requirement.envAny || [requirement.key]));
+          const skillsReady = resolvedSkills.every((skill: any) => skill.readiness.ready);
           return {
             toolsReady,
             apisReady,
@@ -149,3 +148,5 @@ presetsRouter.get('/presets', auth, async (req, res) => {
 });
 
 module.exports = presetsRouter;
+
+export {};

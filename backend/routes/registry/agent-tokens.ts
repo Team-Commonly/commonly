@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent token management routes — extracted from registry.js (GH#112)
 // Handles: runtime-tokens (R/W/D) and user-token (R/W/D)
 const express = require('express');
@@ -25,7 +24,7 @@ const agentTokensRouter = express.Router();
  * GET /api/registry/pods/:podId/agents/:name/runtime-tokens
  * List runtime tokens for an installed agent
  */
-agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) => {
+agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { installation, instanceId } = await resolveInstallation({
@@ -44,7 +43,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (r
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -76,7 +75,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (r
  * POST /api/registry/pods/:podId/agents/:name/runtime-tokens
  * Issue a runtime token for an installed agent
  */
-agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req, res) => {
+agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { label, instanceId } = req.body || {};
@@ -91,7 +90,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -140,7 +139,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (
  * DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId
  * Revoke a runtime token for an installed agent
  */
-agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', auth, async (req, res) => {
+agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', auth, async (req: any, res: any) => {
   try {
     const { podId, name, tokenId } = req.params;
     const { installation, instanceId } = await resolveInstallation({
@@ -159,7 +158,7 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', au
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -182,7 +181,7 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', au
 
     const originalCount = agentUser.agentRuntimeTokens?.length || 0;
     agentUser.agentRuntimeTokens = (agentUser.agentRuntimeTokens || []).filter(
-      (token) => token._id?.toString() !== tokenId,
+      (token: any) => token._id?.toString() !== tokenId,
     );
 
     if ((agentUser.agentRuntimeTokens || []).length === originalCount) {
@@ -211,7 +210,7 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', au
  * GET /api/registry/pods/:podId/agents/:name/user-token
  * Get metadata for the agent's designated user token (no raw token returned)
  */
-agentTokensRouter.get('/pods/:podId/agents/:name/user-token', auth, async (req, res) => {
+agentTokensRouter.get('/pods/:podId/agents/:name/user-token', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { installation, instanceId } = await resolveInstallation({
@@ -230,7 +229,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/user-token', auth, async (req, 
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -269,7 +268,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/user-token', auth, async (req, 
  * POST /api/registry/pods/:podId/agents/:name/user-token
  * Issue a designated user API token for the agent user
  */
-agentTokensRouter.post('/pods/:podId/agents/:name/user-token', auth, async (req, res) => {
+agentTokensRouter.post('/pods/:podId/agents/:name/user-token', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { scopes, instanceId, displayName } = req.body || {};
@@ -284,7 +283,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/user-token', auth, async (req,
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -331,7 +330,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/user-token', auth, async (req,
  * DELETE /api/registry/pods/:podId/agents/:name/user-token
  * Revoke designated user token for the agent user
  */
-agentTokensRouter.delete('/pods/:podId/agents/:name/user-token', auth, async (req, res) => {
+agentTokensRouter.delete('/pods/:podId/agents/:name/user-token', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { installation, instanceId } = await resolveInstallation({
@@ -350,7 +349,7 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/user-token', auth, async (re
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -383,3 +382,5 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/user-token', auth, async (re
 });
 
 module.exports = agentTokensRouter;
+
+export {};

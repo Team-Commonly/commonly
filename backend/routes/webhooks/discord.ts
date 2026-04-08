@@ -1,4 +1,3 @@
-// @ts-nocheck
 const express = require('express');
 
 const router = express.Router();
@@ -6,7 +5,7 @@ const DiscordService = require('../../services/discordService');
 const DiscordIntegration = require('../../models/DiscordIntegration');
 
 // Discord webhook endpoint
-router.post('/', async (req, res) => {
+router.post('/', async (req: any, res: any) => {
   try {
     const event = req.body;
 
@@ -49,7 +48,7 @@ router.post('/', async (req, res) => {
 });
 
 // Discord-specific routes
-router.get('/channels/:integrationId', async (req, res) => {
+router.get('/channels/:integrationId', async (req: any, res: any) => {
   try {
     const { integrationId } = req.params;
 
@@ -64,7 +63,7 @@ router.get('/channels/:integrationId', async (req, res) => {
 });
 
 // Generate bot invite link
-router.post('/invite', async (req, res) => {
+router.post('/invite', async (req: any, res: any) => {
   try {
     const { clientId, permissions, guildId } = req.body;
 
@@ -88,7 +87,7 @@ router.post('/invite', async (req, res) => {
 });
 
 // Test webhook endpoint
-router.post('/test/:integrationId', async (req, res) => {
+router.post('/test/:integrationId', async (req: any, res: any) => {
   try {
     const { integrationId } = req.params;
 
@@ -113,3 +112,5 @@ router.post('/test/:integrationId', async (req, res) => {
 
 module.exports = router;
 // LEGACY: in-platform webhook. External provider service will replace this route.
+
+export {};

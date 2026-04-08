@@ -1,4 +1,3 @@
-// @ts-nocheck
 const express = require('express');
 const Integration = require('../../models/Integration');
 const Pod = require('../../models/Pod');
@@ -16,23 +15,23 @@ const POD_SUMMARY_COMMAND = '/pod_summary';
 
 const normalizeCommand = (raw = '') => raw.split('@')[0].toLowerCase();
 
-const getMessageFromUpdate = (update) => update?.message || update?.channel_post || null;
+const getMessageFromUpdate = (update: any) => update?.message || update?.channel_post || null;
 
-const getChatTitle = (chat) => (
+const getChatTitle = (chat: any) => (
   chat?.title
   || chat?.username
   || [chat?.first_name, chat?.last_name].filter(Boolean).join(' ').trim()
   || 'Telegram chat'
 );
 
-const verifyTelegramHeader = (req) => {
+const verifyTelegramHeader = (req: any) => {
   const expectedToken = process.env.TELEGRAM_SECRET_TOKEN;
   if (!expectedToken) return true;
   const headerToken = req.headers['x-telegram-bot-api-secret-token'];
   return headerToken && headerToken === expectedToken;
 };
 
-const handleEnableCommand = async (chat, code) => {
+const handleEnableCommand = async (chat: any, code: any) => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = chat?.id?.toString();
   if (!botToken || !chatId) return;
@@ -112,7 +111,7 @@ const handleEnableCommand = async (chat, code) => {
   );
 };
 
-const handleSummaryCommand = async (chat, integration) => {
+const handleSummaryCommand = async (chat: any, integration: any) => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken || !chat?.id) return;
   const chatId = chat.id.toString();
@@ -150,14 +149,14 @@ const handleSummaryCommand = async (chat, integration) => {
       podId: latest.podId,
       status: 'active',
     }).lean();
-  } catch (err) {
-    console.warn('telegram agent lookup failed', err.message);
+  } catch (err: unknown) {
+    console.warn('telegram agent lookup failed', (err as Error).message);
   }
 
   const targets = installations.length > 0 ? installations : [{ instanceId: 'default' }];
 
   await Promise.all(
-    targets.map((installation) => (
+    targets.map((installation: any) => (
       AgentEventService.enqueue({
         agentName: 'commonly-bot',
         instanceId: installation.instanceId || 'default',
@@ -183,7 +182,7 @@ const handleSummaryCommand = async (chat, integration) => {
   );
 };
 
-const handlePodSummaryCommand = async (chat, integration) => {
+const handlePodSummaryCommand = async (chat: any, integration: any) => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken || !chat?.id) return;
   const chatId = chat.id.toString();
@@ -222,7 +221,7 @@ const handlePodSummaryCommand = async (chat, integration) => {
 };
 
 // Universal Telegram webhook (single bot, many chats)
-router.post('/', async (req, res) => {
+router.post('/', async (req: any, res: any) => {
   try {
     if (!verifyTelegramHeader(req)) {
       return res.status(401).send('invalid secret token');
@@ -274,3 +273,5 @@ router.post('/', async (req, res) => {
 
 module.exports = router;
 // LEGACY: in-platform webhook. External provider service will replace this route.
+
+export {};

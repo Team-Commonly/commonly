@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent template CRUD routes — extracted from registry.js (GH#112)
 const express = require('express');
 const auth = require('../../middleware/auth');
@@ -13,7 +12,7 @@ const templatesRouter = express.Router();
  * GET /api/registry/templates
  * List agent templates (public + creator's private)
  */
-templatesRouter.get('/templates', auth, async (req, res) => {
+templatesRouter.get('/templates', auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -28,7 +27,7 @@ templatesRouter.get('/templates', auth, async (req, res) => {
     }).lean();
 
     return res.json({
-      templates: templates.map((template) => ({
+      templates: templates.map((template: any) => ({
         id: template._id.toString(),
         agentName: template.agentName,
         displayName: template.displayName,
@@ -48,7 +47,7 @@ templatesRouter.get('/templates', auth, async (req, res) => {
  * POST /api/registry/templates
  * Create a new agent template (public or private)
  */
-templatesRouter.post('/templates', auth, async (req, res) => {
+templatesRouter.post('/templates', auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -128,7 +127,7 @@ templatesRouter.post('/templates', auth, async (req, res) => {
  * PATCH /api/registry/templates/:id
  * Update an existing agent template (creator only)
  */
-templatesRouter.patch('/templates/:id', auth, async (req, res) => {
+templatesRouter.patch('/templates/:id', auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -206,7 +205,7 @@ templatesRouter.patch('/templates/:id', auth, async (req, res) => {
  * DELETE /api/registry/templates/:id
  * Remove an agent template (creator only)
  */
-templatesRouter.delete('/templates/:id', auth, async (req, res) => {
+templatesRouter.delete('/templates/:id', auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -232,3 +231,5 @@ templatesRouter.delete('/templates/:id', auth, async (req, res) => {
 });
 
 module.exports = templatesRouter;
+
+export {};

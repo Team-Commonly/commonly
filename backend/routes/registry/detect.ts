@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Gateway/environment detection helpers — extracted from registry.js (GH#112)
 const fs = require('fs');
 const path = require('path');
@@ -30,7 +29,7 @@ const detectGatewayPresetCapabilities = async () => {
     const report = await listOpenClawPlugins();
     const plugins = Array.isArray(report?.plugins) ? report.plugins : [];
     capability.pluginStatus = 'detected';
-    capability.plugins = plugins.map((plugin) => ({
+    capability.plugins = plugins.map((plugin: any) => ({
       name: plugin.name || '',
       spec: plugin.spec || plugin.name || '',
       version: plugin.version || '',
@@ -56,7 +55,7 @@ const SKILLS_DIR_CANDIDATES = [
 const OPENCLAW_METADATA_REGEX = /^---\s*[\s\S]*?metadata:\s*([\s\S]*?)\n---/m;
 const ENV_HINT_REGEX = /\b[A-Z][A-Z0-9]*_[A-Z0-9_]{2,}\b/g;
 
-const findFirstExistingPath = (candidates = []) => candidates.find((candidate) => {
+const findFirstExistingPath = (candidates: string[] = []) => candidates.find((candidate) => {
   try {
     return fs.existsSync(candidate);
   } catch (error) {
@@ -64,7 +63,7 @@ const findFirstExistingPath = (candidates = []) => candidates.find((candidate) =
   }
 }) || null;
 
-const parseSkillMetadata = (skillContent) => {
+const parseSkillMetadata = (skillContent: any) => {
   if (!skillContent) return {};
   const match = skillContent.match(OPENCLAW_METADATA_REGEX);
   if (!match) return {};
@@ -77,7 +76,7 @@ const parseSkillMetadata = (skillContent) => {
   }
 };
 
-const extractEnvHints = (skillContent) => {
+const extractEnvHints = (skillContent: any) => {
   if (!skillContent) return [];
   const hits = new Set();
   let match;
@@ -92,7 +91,7 @@ const detectBuiltInOpenClawSkills = () => {
   if (!skillsDir) {
     return { status: 'unavailable', skills: [] };
   }
-  let entries = [];
+  let entries: any[] = [];
   try {
     entries = fs.readdirSync(skillsDir, { withFileTypes: true });
   } catch (error) {
@@ -100,10 +99,10 @@ const detectBuiltInOpenClawSkills = () => {
   }
 
   const skills = entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
+    .filter((entry: any) => entry.isDirectory())
+    .map((entry: any) => entry.name)
     .sort()
-    .map((skillName) => {
+    .map((skillName: any) => {
       const skillFile = path.join(skillsDir, skillName, 'SKILL.md');
       let content = '';
       try {
@@ -149,7 +148,7 @@ const detectDockerfileCommonlyPackages = () => {
       .filter(Boolean)
     : [];
 
-  const pythonPackages = [];
+  const pythonPackages: string[] = [];
   const pipInstallMatches = content.match(/pip install --no-cache-dir\s+([^\n]+)/g) || [];
   pipInstallMatches.forEach((line) => {
     const parts = line.split(/\s+/).filter(Boolean);
@@ -166,15 +165,15 @@ const detectDockerfileCommonlyPackages = () => {
   };
 };
 
-const binLooksInstalled = (binName, dockerCapabilities) => {
+const binLooksInstalled = (binName: any, dockerCapabilities: any) => {
   const name = String(binName || '').trim().toLowerCase();
   if (!name) return false;
-  const aptSet = new Set((dockerCapabilities.aptPackages || []).map((pkg) => String(pkg).toLowerCase()));
+  const aptSet = new Set((dockerCapabilities.aptPackages || []).map((pkg: any) => String(pkg).toLowerCase()));
   const pythonSet = new Set(
-    (dockerCapabilities.pythonPackages || []).map((pkg) => String(pkg).toLowerCase()),
+    (dockerCapabilities.pythonPackages || []).map((pkg: any) => String(pkg).toLowerCase()),
   );
 
-  const binToPkg = {
+  const binToPkg: Record<string, string> = {
     rg: 'ripgrep',
     yq: 'yq',
     ffmpeg: 'ffmpeg',
@@ -195,3 +194,5 @@ module.exports = {
   detectDockerfileCommonlyPackages,
   binLooksInstalled,
 };
+
+export {};

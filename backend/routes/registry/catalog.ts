@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent catalog browse routes — extracted from registry.js (GH#112)
 const express = require('express');
 const auth = require('../../middleware/auth');
@@ -17,7 +16,7 @@ const {
 
 const catalogRouter = express.Router();
 
-const findExistingAgentInstance = async (agentName, instanceId) => {
+const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
   const installations = await AgentInstallation.find({
     agentName: agentName.toLowerCase(),
     instanceId,
@@ -41,7 +40,7 @@ const findExistingAgentInstance = async (agentName, instanceId) => {
  * GET /api/registry/agents
  * List available agents in the registry
  */
-catalogRouter.get('/agents', auth, async (req, res) => {
+catalogRouter.get('/agents', auth, async (req: any, res: any) => {
   try {
     const {
       q, category, verified, registry, limit = 20, offset = 0,
@@ -56,7 +55,7 @@ catalogRouter.get('/agents', auth, async (req, res) => {
     });
 
     res.json({
-      agents: agents.map((a) => ({
+      agents: agents.map((a: any) => ({
         name: a.agentName,
         displayName: a.displayName,
         description: a.description,
@@ -78,7 +77,7 @@ catalogRouter.get('/agents', auth, async (req, res) => {
  * GET /api/registry/agents/:name
  * Get agent details
  */
-catalogRouter.get('/agents/:name', auth, async (req, res) => {
+catalogRouter.get('/agents/:name', auth, async (req: any, res: any) => {
   try {
     const agent = await AgentRegistry.getByName(req.params.name);
 
@@ -92,7 +91,7 @@ catalogRouter.get('/agents/:name', auth, async (req, res) => {
       description: agent.description,
       readme: agent.readme,
       version: agent.latestVersion,
-      versions: agent.versions.map((v) => ({
+      versions: agent.versions.map((v: any) => ({
         version: v.version,
         publishedAt: v.publishedAt,
         deprecated: v.deprecated,
@@ -115,7 +114,7 @@ catalogRouter.get('/agents/:name', auth, async (req, res) => {
  * GET /api/registry/agents/:name/instances/:instanceId
  * Check if an agent instance exists globally (across all pods).
  */
-catalogRouter.get('/agents/:name/instances/:instanceId', auth, async (req, res) => {
+catalogRouter.get('/agents/:name/instances/:instanceId', auth, async (req: any, res: any) => {
   try {
     const { name, instanceId } = req.params;
     const userId = getUserId(req);
@@ -130,13 +129,13 @@ catalogRouter.get('/agents/:name/instances/:instanceId', auth, async (req, res) 
       return res.json({ exists: false });
     }
 
-    const podIds = globalAgent.installations.map((i) => i.podId);
+    const podIds = globalAgent.installations.map((i: any) => i.podId);
     const pods = await Pod.find({ _id: { $in: podIds } }).select('name').lean();
-    const podMap = new Map(pods.map((p) => [p._id.toString(), p.name]));
+    const podMap = new Map(pods.map((p: any) => [p._id.toString(), p.name]));
 
     return res.json({
       exists: true,
-      installations: globalAgent.installations.map((i) => ({
+      installations: globalAgent.installations.map((i: any) => ({
         podId: i.podId.toString(),
         podName: podMap.get(i.podId.toString()) || 'Unknown Pod',
         displayName: i.displayName,
@@ -156,7 +155,7 @@ catalogRouter.get('/agents/:name/instances/:instanceId', auth, async (req, res) 
  * GET /api/registry/agents/:name/instances
  * List all instances of an agent type (for discovery).
  */
-catalogRouter.get('/agents/:name/instances', auth, async (req, res) => {
+catalogRouter.get('/agents/:name/instances', auth, async (req: any, res: any) => {
   try {
     const { name } = req.params;
     const userId = getUserId(req);
@@ -170,7 +169,7 @@ catalogRouter.get('/agents/:name/instances', auth, async (req, res) => {
     }).lean();
 
     const instanceMap = new Map();
-    installations.forEach((i) => {
+    installations.forEach((i: any) => {
       const key = i.instanceId || 'default';
       if (!instanceMap.has(key)) {
         instanceMap.set(key, {
@@ -182,13 +181,13 @@ catalogRouter.get('/agents/:name/instances', auth, async (req, res) => {
       instanceMap.get(key).pods.push(i.podId.toString());
     });
 
-    const allPodIds = installations.map((i) => i.podId);
+    const allPodIds = installations.map((i: any) => i.podId);
     const pods = await Pod.find({ _id: { $in: allPodIds } }).select('name').lean();
-    const podMap = new Map(pods.map((p) => [p._id.toString(), p.name]));
+    const podMap = new Map(pods.map((p: any) => [p._id.toString(), p.name]));
 
-    const instances = Array.from(instanceMap.values()).map((inst) => ({
+    const instances = Array.from(instanceMap.values()).map((inst: any) => ({
       ...inst,
-      pods: inst.pods.map((podId) => ({
+      pods: inst.pods.map((podId: any) => ({
         podId,
         podName: podMap.get(podId) || 'Unknown Pod',
       })),
@@ -205,7 +204,7 @@ catalogRouter.get('/agents/:name/instances', auth, async (req, res) => {
  * GET /api/registry/categories
  * List agent categories
  */
-catalogRouter.get('/categories', auth, async (req, res) => {
+catalogRouter.get('/categories', auth, async (req: any, res: any) => {
   try {
     const categories = await AgentRegistry.distinct('categories');
     res.json({ categories });
@@ -219,7 +218,7 @@ catalogRouter.get('/categories', auth, async (req, res) => {
  * GET /api/registry/openclaw/bundled-skills
  * List bundled gateway skills available under /app/skills.
  */
-catalogRouter.get('/openclaw/bundled-skills', auth, async (req, res) => {
+catalogRouter.get('/openclaw/bundled-skills', auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -243,7 +242,7 @@ catalogRouter.get('/openclaw/bundled-skills', auth, async (req, res) => {
  * GET /api/registry/agents/:name/installations
  * List pods where an agent instance is installed (user-visible only)
  */
-catalogRouter.get('/agents/:name/installations', auth, async (req, res) => {
+catalogRouter.get('/agents/:name/installations', auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -259,14 +258,14 @@ catalogRouter.get('/agents/:name/installations', auth, async (req, res) => {
     if (!installations.length) {
       return res.json({ installations: [] });
     }
-    const podIds = installations.map((i) => i.podId).filter(Boolean);
+    const podIds = installations.map((i: any) => i.podId).filter(Boolean);
     const pods = await Pod.find({ _id: { $in: podIds } })
       .select('name members createdBy')
       .lean();
-    const podMap = new Map(pods.map((pod) => [pod._id.toString(), pod]));
+    const podMap = new Map(pods.map((pod: any) => [pod._id.toString(), pod]));
     const results = installations
-      .map((install) => {
-        const pod = podMap.get(install.podId?.toString?.());
+      .map((install: any) => {
+        const pod = podMap.get(install.podId?.toString?.()) as any;
         if (!pod || !userHasPodAccess(pod, userId)) return null;
         return {
           podId: pod._id,
@@ -283,3 +282,5 @@ catalogRouter.get('/agents/:name/installations', auth, async (req, res) => {
 });
 
 module.exports = catalogRouter;
+
+export {};
