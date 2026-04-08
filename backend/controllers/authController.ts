@@ -1,4 +1,3 @@
-// @ts-nocheck
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
@@ -10,7 +9,7 @@ const AgentIdentityService = require('../services/agentIdentityService');
 const SMTP2GO_BASE_URL = process.env.SMTP2GO_BASE_URL || 'https://api.smtp2go.com/v3';
 const SMTP2GO_SEND_URL = `${SMTP2GO_BASE_URL.replace(/\/$/, '')}/email/send`;
 
-const parseBooleanEnv = (value) => {
+const parseBooleanEnv = (value: any) => {
   if (value === undefined || value === null || value === '') return null;
   const normalized = String(value).trim().toLowerCase();
   if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
@@ -29,16 +28,16 @@ const getInvitationCodes = () => (process.env.REGISTRATION_INVITE_CODES || '')
   .map((code) => code.trim())
   .filter(Boolean);
 
-const normalizeInviteCode = (code) => String(code || '').trim();
-const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const normalizeInviteCode = (code: any) => String(code || '').trim();
+const normalizeEmail = (email: any) => String(email || '').trim().toLowerCase();
 
-const isEnvInvitationCodeValid = (code) => {
+const isEnvInvitationCodeValid = (code: any) => {
   const normalized = normalizeInviteCode(code);
   if (!normalized) return false;
   return getInvitationCodes().includes(normalized);
 };
 
-const consumeDbInvitationCode = async (code) => {
+const consumeDbInvitationCode = async (code: any) => {
   const now = new Date();
   const normalized = normalizeInviteCode(code).toUpperCase();
   if (!normalized) return null;
@@ -58,10 +57,10 @@ const consumeDbInvitationCode = async (code) => {
   );
 };
 
-const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const isValidEmail = (email: any) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 // 📌 Register User
-exports.register = async (req, res) => {
+exports.register = async (req: any, res: any) => {
   try {
     const {
       username,
@@ -167,7 +166,7 @@ exports.register = async (req, res) => {
           html_body: html,
         }, { timeout: 30000 });
         console.log('SMTP2GO send response:', smtpRes?.data);
-      } catch (sendError) {
+      } catch (sendError: any) {
         console.error('SMTP2GO error during registration:', sendError?.response?.data || sendError.message);
         return res.status(502).json({
           error: 'Email delivery failed. Please verify SMTP2GO configuration.',
@@ -182,7 +181,7 @@ exports.register = async (req, res) => {
           ? 'User registered successfully. Check your email for verification.'
           : 'User registered successfully. Email verification skipped in development.',
       });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     if (err?.code === 11000) {
       const key = Object.keys(err.keyPattern || {})[0] || '';
@@ -198,7 +197,7 @@ exports.register = async (req, res) => {
   }
 };
 
-exports.getRegistrationPolicy = async (_req, res) => {
+exports.getRegistrationPolicy = async (_req: any, res: any) => {
   try {
     const inviteOnly = isInviteOnlyRegistrationEnabled();
     const activeDbCodeExists = await InvitationCode.exists({
@@ -212,13 +211,13 @@ exports.getRegistrationPolicy = async (_req, res) => {
       hasInvitationCodes,
       registrationOpen: !inviteOnly || hasInvitationCodes,
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     return res.status(500).json({ error: 'Server error' });
   }
 };
 
-exports.requestWaitlist = async (req, res) => {
+exports.requestWaitlist = async (req: any, res: any) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const name = String(req.body?.name || '').trim();
@@ -259,14 +258,14 @@ exports.requestWaitlist = async (req, res) => {
       message: 'Waitlist request submitted. A global admin can review and send an invitation code by email.',
       requestId: created._id,
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to submit waitlist request:', err);
     return res.status(500).json({ error: 'Failed to submit waitlist request' });
   }
 };
 
 // 📌 Verify Email
-exports.verifyEmail = async (req, res) => {
+exports.verifyEmail = async (req: any, res: any) => {
   try {
     const { token } = req.query;
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -285,7 +284,7 @@ exports.verifyEmail = async (req, res) => {
 };
 
 // 📌 Login User
-exports.login = async (req, res) => {
+exports.login = async (req: any, res: any) => {
   const { email, password } = req.body;
   try {
     const user = await User.findOne({ email });
@@ -316,14 +315,14 @@ exports.login = async (req, res) => {
         role: user.role,
       },
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     return res.status(500).send('Server error');
   }
 };
 
 // 🔄 Refresh Token — issue a new 7d token from a still-valid token
-exports.refresh = async (req, res) => {
+exports.refresh = async (req: any, res: any) => {
   try {
     const user = await User.findById(req.userId).select('-password');
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -333,38 +332,38 @@ exports.refresh = async (req, res) => {
     });
 
     return res.json({ token });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     return res.status(500).send('Server error');
   }
 };
 
 // New method to get user profile
-exports.getProfile = async (req, res) => {
+exports.getProfile = async (req: any, res: any) => {
   try {
     const user = await User.findById(req.userId).select('-password');
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 };
 
 // Get current user information
-exports.getCurrentUser = async (req, res) => {
+exports.getCurrentUser = async (req: any, res: any) => {
   try {
     const user = await User.findById(req.userId).select('-password');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
     res.json(user);
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 };
 
 // Update user profile
-exports.updateProfile = async (req, res) => {
+exports.updateProfile = async (req: any, res: any) => {
   try {
     const { profilePicture } = req.body;
     const userId = req.userId || req.user?.id;
@@ -386,7 +385,9 @@ exports.updateProfile = async (req, res) => {
     // Return the updated user without the password
     const updatedUser = await User.findById(userId).select('-password');
     res.json(updatedUser);
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 };
+
+export {};
