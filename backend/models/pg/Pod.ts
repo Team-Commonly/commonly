@@ -1,11 +1,11 @@
-// eslint-disable-next-line global-require
-const { ObjectId } = require('mongodb');
-// eslint-disable-next-line global-require
-const { pool } = require('../../config/db-pg');
-
 interface PgPool {
   query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
 }
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { ObjectId } = require('mongodb') as { ObjectId: new () => { toString(): string } };
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { pool } = require('../../config/db-pg') as { pool: PgPool };
 
 interface PodRow {
   id: string;
@@ -34,8 +34,8 @@ class Pod {
       RETURNING *
     `;
     const result = await (pool as PgPool).query(query, [podId, name, description, type, createdBy]);
-    await Pod.addMember((result.rows[0] as PodRow).id, createdBy);
-    return result.rows[0] as PodRow;
+    await Pod.addMember((result.rows[0] as unknown as PodRow).id, createdBy);
+    return result.rows[0] as unknown as PodRow;
   }
 
   static async findAll(type: string | null = null): Promise<PodRow[]> {
@@ -54,7 +54,7 @@ class Pod {
     const result = type
       ? await (pool as PgPool).query(query, [type])
       : await (pool as PgPool).query(query);
-    return result.rows as PodRow[];
+    return result.rows as unknown as PodRow[];
   }
 
   static async findById(id: string): Promise<PodRow | undefined> {
@@ -70,7 +70,7 @@ class Pod {
       GROUP BY p.id, u.username, u.profile_picture
     `;
     const result = await (pool as PgPool).query(query, [id]);
-    return result.rows[0] as PodRow | undefined;
+    return result.rows[0] as unknown as PodRow | undefined;
   }
 
   static async update(id: string, name: string, description: string): Promise<PodRow | undefined> {
@@ -83,13 +83,13 @@ class Pod {
       RETURNING *
     `;
     const result = await (pool as PgPool).query(query, [name, description, id]);
-    return result.rows[0] as PodRow | undefined;
+    return result.rows[0] as unknown as PodRow | undefined;
   }
 
   static async delete(id: string): Promise<PodRow | undefined> {
     const query = `DELETE FROM pods WHERE id = $1 RETURNING *`;
     const result = await (pool as PgPool).query(query, [id]);
-    return result.rows[0] as PodRow | undefined;
+    return result.rows[0] as unknown as PodRow | undefined;
   }
 
   static async addMember(podId: string, userId: string): Promise<unknown> {
@@ -137,4 +137,8 @@ class Pod {
   }
 }
 
-module.exports = Pod;
+export default Pod;
+export { Pod, PodRow };
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

@@ -11,3 +11,5 @@ router.get('/', checkStatus);
 router.post('/sync-user', auth, syncUser);
 
 module.exports = router;
+
+export {};

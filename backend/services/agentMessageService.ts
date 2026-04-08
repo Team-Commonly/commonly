@@ -1210,8 +1210,10 @@ class AgentMessageService {
         isBot: userId?.isBot === true,
         createdAt: msg.createdAt as Date,
       };
-    });
+    }) as MessageNormalized[];
   }
 }
 
 module.exports = AgentMessageService;
+
+export {};

@@ -48,3 +48,5 @@ function normalizeBufferMessage(message: RawMessage | null | undefined): Normali
 }
 
 module.exports = { normalizeBufferMessage };
+
+export {};

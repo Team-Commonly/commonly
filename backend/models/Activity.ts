@@ -244,3 +244,6 @@ activitySchema.methods.reject = async function (userId: Types.ObjectId, notes?: 
 };
 
 export default mongoose.model<IActivity, IActivityModel>('Activity', activitySchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

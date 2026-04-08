@@ -93,3 +93,5 @@ const connectPG = async (): Promise<unknown> => {
 };
 
 module.exports = { pool, connectPG };
+
+export {};

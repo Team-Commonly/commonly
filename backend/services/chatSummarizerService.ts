@@ -26,7 +26,7 @@ interface FallbackAnalyticsResult {
 
 interface EnhancedSummaryResult {
   summary: string;
-  analytics: Record<string, unknown>;
+  analytics: FallbackAnalyticsResult | Record<string, unknown>;
 }
 
 class ChatSummarizerService {
@@ -502,3 +502,6 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 }
 
 export default new ChatSummarizerService();
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

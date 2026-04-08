@@ -41,3 +41,6 @@ const waitlistRequestSchema = new Schema<IWaitlistRequest>(
 waitlistRequestSchema.index({ createdAt: -1 });
 
 export default mongoose.model<IWaitlistRequest>('WaitlistRequest', waitlistRequestSchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

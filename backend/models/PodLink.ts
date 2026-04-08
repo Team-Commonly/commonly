@@ -219,10 +219,10 @@ PodLinkSchema.methods.hasScope = function (
 ): boolean {
   return this.scopes.some((scope: IPodLinkScope) => {
     if (scope.type !== scopeType) return false;
-    if (scope.filters?.tags?.length > 0 && filters.tags) {
+    if ((scope.filters?.tags?.length ?? 0) > 0 && filters.tags) {
       if (!filters.tags.some((t) => scope.filters.tags!.includes(t))) return false;
     }
-    if (scope.filters?.types?.length > 0 && filters.type) {
+    if ((scope.filters?.types?.length ?? 0) > 0 && filters.type) {
       if (!scope.filters.types!.includes(filters.type)) return false;
     }
     if (scope.filters?.since && filters.createdAt) {
@@ -233,3 +233,6 @@ PodLinkSchema.methods.hasScope = function (
 };
 
 export default mongoose.model<IPodLink, IPodLinkModel>('PodLink', PodLinkSchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

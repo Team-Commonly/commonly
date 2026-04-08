@@ -175,12 +175,12 @@ class AgentIdentityService {
     } else if (!agentUser.isBot) {
       // Upgrade existing user to bot if not already marked
       agentUser.isBot = true;
-      agentUser.botType = typeConfig?.botType || options.botType || 'agent';
+      agentUser.botType = (typeConfig?.botType || options.botType || 'agent') as typeof agentUser.botType;
       agentUser.botMetadata = {
         displayName: options.displayName || typeConfig?.officialDisplayName || agentUser.username,
         description: options.description || typeConfig?.officialDescription || `${resolvedType} agent`,
         icon: typeConfig?.icon || '🤖',
-        runtimeId: options.runtimeId || agentUser.botMetadata?.runtimeId || null,
+        runtimeId: options.runtimeId || agentUser.botMetadata?.runtimeId || undefined,
         officialAgent: isOfficial,
         capabilities: options.capabilities || typeConfig?.capabilities || [],
         agentName: resolvedType,
@@ -205,7 +205,7 @@ class AgentIdentityService {
           displayName: options.displayName || existingMeta.displayName || typeConfig?.officialDisplayName || resolvedType,
           description: options.description || existingMeta.description || typeConfig?.officialDescription || `${resolvedType} agent`,
           icon: existingMeta.icon || typeConfig?.icon || '🤖',
-          runtimeId: options.runtimeId || existingMeta.runtimeId || null,
+          runtimeId: options.runtimeId || existingMeta.runtimeId || undefined,
           officialAgent: instanceId === 'default' && !!typeConfig,
           capabilities: options.capabilities || existingMeta.capabilities || typeConfig?.capabilities || [],
           agentName: resolvedType,
@@ -331,3 +331,6 @@ class AgentIdentityService {
 }
 
 export default AgentIdentityService;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

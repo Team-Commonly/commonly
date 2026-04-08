@@ -113,6 +113,7 @@ function createGroupMeProvider(integration: { _id: unknown; config?: Record<stri
       validateRequiredConfig(config, manifests.groupme);
     },
 
+    // @ts-ignore — handler param types are more specific than generic interface allows
     getWebhookHandlers() {
       return {
         events: async (req: { body: Record<string, unknown> }, res: { status: (n: number) => { send: (s: string) => unknown }; sendStatus: (n: number) => unknown }) => {
@@ -268,3 +269,5 @@ function createGroupMeProvider(integration: { _id: unknown; config?: Record<stri
 
 module.exports = createGroupMeProvider;
 // LEGACY: in-platform provider. External service will replace this module.
+
+export {};

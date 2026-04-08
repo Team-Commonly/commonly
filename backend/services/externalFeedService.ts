@@ -56,7 +56,6 @@ interface SyncMeta {
   refreshedTokenType?: string;
   refreshedScope?: string;
   refreshedExpiresIn?: number;
-  lastExternalIdsByUser?: Record<string, string>;
 }
 
 interface SyncResult {

@@ -61,7 +61,7 @@ interface ValidatedToken {
 
 class AppService {
   static async deliverWebhook(app: InstanceType<typeof App>, event: string, payload: unknown, webhookSecret: string): Promise<WebhookResult> {
-    const appDoc = app as Record<string, unknown>;
+    const appDoc = app as unknown as Record<string, unknown>;
     if (appDoc.status !== 'active' || !appDoc.webhookUrl) {
       return { success: false, reason: 'App inactive or no webhook URL' };
     }
@@ -85,7 +85,7 @@ class AppService {
         timeout: 10000,
       });
 
-      const stats = appDoc.stats as Record<string, unknown>;
+      const stats = appDoc.stats as unknown as Record<string, unknown>;
       (stats.webhooksDelivered as number) += 1;
       stats.lastActivity = new Date();
       await app.save();
@@ -117,8 +117,8 @@ class AppService {
 
       const results = await Promise.all(
         installations.map(async (installation) => {
-          const app = (installation as Record<string, unknown>).appId as InstanceType<typeof App>;
-          const appDoc = app as Record<string, unknown>;
+          const app = (installation as unknown as Record<string, unknown>).appId as InstanceType<typeof App>;
+          const appDoc = app as unknown as Record<string, unknown>;
           if (!app || appDoc.status !== 'active') return [];
 
           const entries: Array<Record<string, unknown>> = [];
@@ -149,21 +149,21 @@ class AppService {
   }
 
   static async deliverWebhookByInstallation(installation: InstanceType<typeof AppInstallation>, event: string, payload: unknown): Promise<WebhookResult> {
-    const app = (installation as Record<string, unknown>).appId as Record<string, unknown>;
+    const app = (installation as unknown as Record<string, unknown>).appId as unknown as Record<string, unknown>;
     if (!app.webhookUrl) {
       return { success: false, reason: 'No webhook URL' };
     }
 
     const body = JSON.stringify({
       event,
-      installationId: (installation as Record<string, unknown>)._id?.toString(),
-      targetType: (installation as Record<string, unknown>).targetType,
-      targetId: (installation as Record<string, unknown>).targetId?.toString(),
+      installationId: (installation as unknown as Record<string, unknown>)._id?.toString(),
+      targetType: (installation as unknown as Record<string, unknown>).targetType,
+      targetId: (installation as unknown as Record<string, unknown>).targetId?.toString(),
       timestamp: new Date().toISOString(),
       payload,
     });
 
-    const tokenHash = String((installation as Record<string, unknown>).tokenHash || '');
+    const tokenHash = String((installation as unknown as Record<string, unknown>).tokenHash || '');
     const signature = crypto
       .createHmac('sha256', tokenHash.substring(0, 32))
       .update(body)
@@ -175,7 +175,7 @@ class AppService {
           'Content-Type': 'application/json',
           'X-Commonly-Signature': `sha256=${signature}`,
           'X-Commonly-Event': event,
-          'X-Commonly-Installation': (installation as Record<string, unknown>)._id?.toString(),
+          'X-Commonly-Installation': (installation as unknown as Record<string, unknown>)._id?.toString(),
         },
         timeout: 10000,
       });
@@ -201,7 +201,7 @@ class AppService {
       query.type = type;
     }
 
-    let sortOptions: Record<string, unknown> = {};
+    let sortOptions: Record<string, -1 | 1> = {};
     switch (sort) {
       case 'popular':
         sortOptions = { 'marketplace.installCount': -1 };
@@ -238,22 +238,22 @@ class AppService {
   }
 
   static formatForMarketplace(app: InstanceType<typeof App>): MarketplaceApp {
-    const a = app as Record<string, unknown>;
+    const a = app as unknown as Record<string, unknown>;
     return {
       id: (a._id as { toString(): string }).toString(),
       name: String(a.name),
-      displayName: String((a.agent as Record<string, unknown>)?.displayName || a.name),
+      displayName: String((a.agent as unknown as Record<string, unknown>)?.displayName || a.name),
       description: String(a.description || ''),
       type: String(a.type),
       homepage: String(a.homepage || ''),
-      category: String((a.marketplace as Record<string, unknown>)?.category || 'other'),
-      tags: ((a.marketplace as Record<string, unknown>)?.tags as string[]) || [],
-      logo: ((a.marketplace as Record<string, unknown>)?.logo || (a.agent as Record<string, unknown>)?.avatar) as string | null,
-      verified: Boolean((a.marketplace as Record<string, unknown>)?.verified),
-      rating: Number((a.marketplace as Record<string, unknown>)?.rating || 0),
-      ratingCount: Number((a.marketplace as Record<string, unknown>)?.ratingCount || 0),
-      installs: Number((a.marketplace as Record<string, unknown>)?.installCount || 0),
-      capabilities: ((a.agent as Record<string, unknown>)?.capabilities as string[]) || [],
+      category: String((a.marketplace as unknown as Record<string, unknown>)?.category || 'other'),
+      tags: ((a.marketplace as unknown as Record<string, unknown>)?.tags as string[]) || [],
+      logo: ((a.marketplace as unknown as Record<string, unknown>)?.logo || (a.agent as unknown as Record<string, unknown>)?.avatar) as string | null,
+      verified: Boolean((a.marketplace as unknown as Record<string, unknown>)?.verified),
+      rating: Number((a.marketplace as unknown as Record<string, unknown>)?.rating || 0),
+      ratingCount: Number((a.marketplace as unknown as Record<string, unknown>)?.ratingCount || 0),
+      installs: Number((a.marketplace as unknown as Record<string, unknown>)?.installCount || 0),
+      capabilities: ((a.agent as unknown as Record<string, unknown>)?.capabilities as string[]) || [],
       scopes: (a.defaultScopes as string[]) || [],
       createdAt: a.createdAt as Date,
     };
@@ -277,7 +277,7 @@ class AppService {
     if (!app) {
       throw new Error('App not found');
     }
-    const appDoc = app as Record<string, unknown>;
+    const appDoc = app as unknown as Record<string, unknown>;
     if (appDoc.status !== 'active') {
       throw new Error('App is not active');
     }
@@ -307,15 +307,15 @@ class AppService {
       createdBy: userId,
     });
 
-    await (app as Record<string, unknown> & { recordInstall(): Promise<void> }).recordInstall();
+    await (app as unknown as Record<string, unknown> & { recordInstall(): Promise<void> }).recordInstall();
 
     await AppService.dispatchEvent('app.installed', 'pod', podId, {
       appId: appDoc._id?.toString(),
       appName: appDoc.name,
-      installationId: (installation as Record<string, unknown>)._id?.toString(),
+      installationId: (installation as unknown as Record<string, unknown>)._id?.toString(),
     });
 
-    const instDoc = installation as Record<string, unknown>;
+    const instDoc = installation as unknown as Record<string, unknown>;
     return {
       installationId: String(instDoc._id),
       token,
@@ -330,17 +330,17 @@ class AppService {
       throw new Error('Installation not found');
     }
 
-    const app = (installation as Record<string, unknown>).appId as InstanceType<typeof App> | null;
-    const instDoc = installation as Record<string, unknown>;
+    const app = (installation as unknown as Record<string, unknown>).appId as InstanceType<typeof App> | null;
+    const instDoc = installation as unknown as Record<string, unknown>;
     instDoc.status = 'revoked';
     await installation.save();
 
     if (app) {
-      await (app as Record<string, unknown> & { recordUninstall(): Promise<void> }).recordUninstall();
+      await (app as unknown as Record<string, unknown> & { recordUninstall(): Promise<void> }).recordUninstall();
     }
 
     if (app) {
-      const appDoc = app as Record<string, unknown>;
+      const appDoc = app as unknown as Record<string, unknown>;
       await AppService.dispatchEvent('app.uninstalled', String(instDoc.targetType), instDoc.targetId, {
         appId: appDoc._id?.toString(),
         appName: appDoc.name,
@@ -358,9 +358,9 @@ class AppService {
     }).populate('appId', '-clientSecretHash -webhookSecretHash');
 
     return installations
-      .filter((i) => (i as Record<string, unknown>).appId)
+      .filter((i) => (i as unknown as Record<string, unknown>).appId)
       .map((installation) => {
-        const instDoc = installation as Record<string, unknown>;
+        const instDoc = installation as unknown as Record<string, unknown>;
         return {
           installationId: String(instDoc._id),
           ...AppService.formatForMarketplace(instDoc.appId as InstanceType<typeof App>),
@@ -380,7 +380,7 @@ class AppService {
       $or: [{ tokenExpiresAt: null }, { tokenExpiresAt: { $gt: new Date() } }],
     }).populate('appId');
 
-    const instDoc = installation as Record<string, unknown> | null;
+    const instDoc = installation as unknown as Record<string, unknown> | null;
     if (!instDoc || !instDoc.appId) {
       return null;
     }
@@ -406,3 +406,6 @@ class AppService {
 }
 
 export default AppService;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

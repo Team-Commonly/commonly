@@ -104,7 +104,7 @@ router.post('/:podId', auth, async (req: AuthReq, res: Res) => {
       if (existing) {
         if (existing.status === 'done') {
           existing.status = 'pending';
-          existing.assignee = assignee || null;
+          existing.assignee = assignee || undefined;
           existing.claimedAt = null;
           existing.notes = 'Reopened — previously completed but issue is still open.';
           existing.updates.push({ text: 'Reopened: task was done but linked issue is still open — picking up again.', author: 'system', authorId: null, createdAt: new Date() });
@@ -265,3 +265,5 @@ router.patch('/:podId/:taskId', auth, async (req: AuthReq, res: Res) => {
 });
 
 module.exports = router;
+
+export {};

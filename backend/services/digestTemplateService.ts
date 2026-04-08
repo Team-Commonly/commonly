@@ -271,3 +271,6 @@ Your communities continue to grow and evolve. Keep an eye out for new conversati
 }
 
 export default DigestTemplateService;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

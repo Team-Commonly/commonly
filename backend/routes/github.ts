@@ -131,3 +131,5 @@ router.post('/issues/:number/close', anyAuth, async (req: AuthReq, res: Res) => 
 });
 
 module.exports = router;
+
+export {};

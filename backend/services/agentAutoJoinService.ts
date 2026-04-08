@@ -51,7 +51,7 @@ class AgentAutoJoinService {
       for (const pod of agentOwnedPods) {
         if (installed >= MAX_TOTAL_INSTALLS || installedForSource >= MAX_PER_SOURCE) break;
         // eslint-disable-next-line no-await-in-loop
-        const isInstalled = await AgentInstallation.isInstalled(String(sourceInstall.agentName), (pod as Record<string, unknown>)._id, instanceId);
+        const isInstalled = await AgentInstallation.isInstalled(String(sourceInstall.agentName), (pod as { _id: import('mongoose').Types.ObjectId })._id, instanceId);
         if (isInstalled) {
           skipped += 1;
           // eslint-disable-next-line no-continue
@@ -73,9 +73,9 @@ class AgentAutoJoinService {
 
         try {
           // eslint-disable-next-line no-await-in-loop
-          await AgentInstallation.install(String(sourceInstall.agentName), (pod as Record<string, unknown>)._id, {
+          await AgentInstallation.install(String(sourceInstall.agentName), (pod as { _id: import('mongoose').Types.ObjectId })._id, {
             version: String(sourceInstall.version || '1.0.0'),
-            config: mergedConfig,
+            config: mergedConfig as unknown as Map<string, unknown>,
             scopes: Array.isArray(sourceInstall.scopes) ? sourceInstall.scopes as string[] : [],
             installedBy: agentUser._id,
             instanceId,
@@ -128,3 +128,6 @@ class AgentAutoJoinService {
 }
 
 export default AgentAutoJoinService;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

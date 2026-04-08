@@ -32,3 +32,6 @@ const GatewaySchema = new Schema<IGateway>(
 GatewaySchema.index({ slug: 1 }, { unique: true });
 
 export default mongoose.model<IGateway>('Gateway', GatewaySchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

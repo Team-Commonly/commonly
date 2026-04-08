@@ -1,9 +1,9 @@
-// eslint-disable-next-line global-require
-const { pool } = require('../../config/db-pg');
-
 interface PgPool {
   query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
 }
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { pool } = require('../../config/db-pg') as { pool: PgPool };
 
 interface MessageRow {
   id: string;
@@ -93,7 +93,7 @@ class Message {
         'UPDATE pods SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
         [podId],
       );
-      return result.rows[0] as MessageRow;
+      return result.rows[0] as unknown as MessageRow;
     } catch (error) {
       const e = error as { message?: string };
       console.error('SQL Error in Message.create:', e.message);
@@ -130,7 +130,7 @@ class Message {
       queryParams.push(limit);
 
       const result = await (pool as PgPool).query(query, queryParams);
-      const rows = (result.rows as MessageRow[]).slice().reverse();
+      const rows = (result.rows as unknown as MessageRow[]).slice().reverse();
       return rows.map(formatMessage);
     } catch (error) {
       const e = error as { message?: string };
@@ -156,7 +156,7 @@ class Message {
       `;
       const result = await (pool as PgPool).query(query, [id]);
       if (result.rows.length === 0) return null;
-      return formatMessage(result.rows[0] as MessageRow);
+      return formatMessage(result.rows[0] as unknown as MessageRow);
     } catch (error) {
       const e = error as { message?: string };
       console.error('Error in findById:', e.message);
@@ -172,19 +172,19 @@ class Message {
       RETURNING *
     `;
     const result = await (pool as PgPool).query(query, [content, id]);
-    return result.rows[0] as MessageRow | undefined;
+    return result.rows[0] as unknown as MessageRow | undefined;
   }
 
   static async delete(id: string): Promise<MessageRow | undefined> {
     const query = `DELETE FROM messages WHERE id = $1 RETURNING *`;
     const result = await (pool as PgPool).query(query, [id]);
-    return result.rows[0] as MessageRow | undefined;
+    return result.rows[0] as unknown as MessageRow | undefined;
   }
 
   static async deleteByPodId(podId: string): Promise<MessageRow[]> {
     const query = `DELETE FROM messages WHERE pod_id = $1 RETURNING *`;
     const result = await (pool as PgPool).query(query, [podId]);
-    return result.rows as MessageRow[];
+    return result.rows as unknown as MessageRow[];
   }
 
   static async findActivityHint(podId: unknown, since: unknown): Promise<ActivityHintResult> {
@@ -255,4 +255,8 @@ class Message {
   }
 }
 
-module.exports = Message;
+export default Message;
+export { Message, MessageRow, FormattedMessage };
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

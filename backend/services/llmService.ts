@@ -66,7 +66,7 @@ const getLiteLLMConfig = (): LiteLLMConfig | null => {
 
 const getOpenRouterConfig = (globalConfig: Record<string, unknown> | null = null): OpenRouterConfig => {
   const settings = globalConfig || {};
-  const openrouterSettings = (settings?.llmService as Record<string, unknown>)?.openrouter as Record<string, unknown> || {};
+  const openrouterSettings = (settings?.llmService as unknown as Record<string, unknown>)?.openrouter as unknown as Record<string, unknown> || {};
   const baseUrl = String(
     openrouterSettings.baseUrl
     || process.env.OPENROUTER_BASE_URL
@@ -75,8 +75,8 @@ const getOpenRouterConfig = (globalConfig: Record<string, unknown> | null = null
   const apiKey = String(process.env.OPENROUTER_API_KEY || '').trim();
   const model = String(
     openrouterSettings.model
-    || (settings?.llmService as Record<string, unknown>)?.model
-    || (settings?.llmService as Record<string, unknown>)?.defaultModel
+    || (settings?.llmService as unknown as Record<string, unknown>)?.model
+    || (settings?.llmService as unknown as Record<string, unknown>)?.defaultModel
     || process.env.OPENROUTER_MODEL
     || DEFAULT_MODEL,
   ).trim();
@@ -91,10 +91,10 @@ const getOpenRouterConfig = (globalConfig: Record<string, unknown> | null = null
 };
 
 const parseLiteLLMResponse = (data: unknown): string => {
-  const d = data as Record<string, unknown>;
+  const d = data as unknown as Record<string, unknown>;
   // Check for OpenRouter/LiteLLM error payloads first
   if (d?.error) {
-    const errObj = d.error as Record<string, unknown>;
+    const errObj = d.error as unknown as Record<string, unknown>;
     const errMsg = String(errObj.message || errObj.type || 'Unknown provider error');
     const errCode = errObj.code || errObj.status || '';
     const err = new Error(`LLM provider error: ${errMsg}`) as LLMProviderError;
@@ -104,7 +104,7 @@ const parseLiteLLMResponse = (data: unknown): string => {
   }
   const choices = d?.choices as Array<Record<string, unknown>> | undefined;
   const choice = choices?.[0];
-  const message = choice?.message as Record<string, unknown> | undefined;
+  const message = choice?.message as unknown as Record<string, unknown> | undefined;
   const content = message?.content || choice?.text;
   if (!content) {
     throw new Error('LLM response missing content');
@@ -201,10 +201,8 @@ export const generateText = async (prompt: string, options: GenerateOptions = {}
     console.warn('[llm-service] Failed to load model config, using defaults:', configErr.message);
     return null;
   });
-  const configuredProvider = String((globalModelConfig as Record<string, unknown>)?.llmService
-    ? ((globalModelConfig as Record<string, unknown>).llmService as Record<string, unknown>)?.provider
-    : 'auto' || 'auto').toLowerCase();
-  const llmServiceConfig = (globalModelConfig as Record<string, unknown>)?.llmService as Record<string, unknown> | undefined;
+  const llmServiceConfig = (globalModelConfig as unknown as Record<string, unknown>)?.llmService as unknown as Record<string, unknown> | undefined;
+  const configuredProvider = String(llmServiceConfig?.provider || 'auto').toLowerCase();
   const configuredModel = String(
     llmServiceConfig?.model
     || llmServiceConfig?.defaultModel
@@ -221,7 +219,7 @@ export const generateText = async (prompt: string, options: GenerateOptions = {}
     || String(selectedModel).startsWith('openrouter:');
   if (shouldUseOpenRouter) {
     try {
-      return await generateViaOpenRouter(prompt, runOptions, globalModelConfig as Record<string, unknown>);
+      return await generateViaOpenRouter(prompt, runOptions, globalModelConfig as unknown as Record<string, unknown>);
     } catch (error) {
       const err = error as LLMProviderError;
       console.warn(
@@ -278,3 +276,6 @@ export const generateText = async (prompt: string, options: GenerateOptions = {}
 };
 
 export default { generateText };
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

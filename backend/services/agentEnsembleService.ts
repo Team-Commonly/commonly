@@ -169,7 +169,7 @@ class AgentEnsembleService {
       }),
     );
 
-    const starterIndex = participants.findIndex((p) => p.role === 'starter' && p.role !== 'observer');
+    const starterIndex = participants.findIndex((p) => p.role === 'starter');
     const starterParticipant = starterIndex >= 0 ? participants[starterIndex] : speakingParticipants[0];
 
     const scheduleConfig: ScheduleConfig = config.schedule || {};
@@ -755,3 +755,5 @@ class AgentEnsembleService {
 }
 
 module.exports = AgentEnsembleService;
+
+export {};

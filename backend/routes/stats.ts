@@ -30,3 +30,5 @@ router.get('/public', async (_req: unknown, res: { json: (d: unknown) => void; s
 });
 
 module.exports = router;
+
+export {};

@@ -51,14 +51,14 @@ class IntegrationService {
         status,
         errorMessage,
         lastSync:
-          status === 'connected' ? new Date() : (this.integration as Record<string, unknown>)?.lastSync,
+          status === 'connected' ? new Date() : (this.integration as unknown as Record<string, unknown>)?.lastSync,
       });
 
       if (this.integration) {
-        (this.integration as Record<string, unknown>).status = status;
-        (this.integration as Record<string, unknown>).errorMessage = errorMessage;
+        (this.integration as unknown as Record<string, unknown>).status = status;
+        (this.integration as unknown as Record<string, unknown>).errorMessage = errorMessage;
         if (status === 'connected') {
-          (this.integration as Record<string, unknown>).lastSync = new Date();
+          (this.integration as unknown as Record<string, unknown>).lastSync = new Date();
         }
       }
     } catch (error) {
@@ -81,3 +81,6 @@ class IntegrationService {
 }
 
 export default IntegrationService;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

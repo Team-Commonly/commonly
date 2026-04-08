@@ -80,3 +80,5 @@ router.get('/:fileName', async (req: AuthReq, res: Res) => {
 });
 
 module.exports = router;
+
+export {};

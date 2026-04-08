@@ -185,3 +185,5 @@ router.get('/links/:linkId/audit', auth, async (req: Req, res: Res) => {
 });
 
 module.exports = router;
+
+export {};

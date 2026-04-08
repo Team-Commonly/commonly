@@ -33,7 +33,7 @@ class DMService {
 
   static async ensureDmMembers(dmPod: InstanceType<typeof Pod>, ownerId: unknown, agentId: unknown): Promise<InstanceType<typeof Pod>> {
     const existingMembers = new Set(
-      (dmPod.members || []).map((member: unknown) => String((member as Record<string, unknown>)?._id || member)),
+      (dmPod.members || []).map((member: unknown) => String((member as unknown as Record<string, unknown>)?._id || member)),
     );
     const missingOwner = !existingMembers.has(String(ownerId));
     const missingAgent = !existingMembers.has(String(agentId));
@@ -41,7 +41,7 @@ class DMService {
       return dmPod;
     }
 
-    (dmPod as Record<string, unknown>).members = Array.from(new Set([
+    (dmPod as unknown as Record<string, unknown>).members = Array.from(new Set([
       ...Array.from(existingMembers),
       String(ownerId),
       String(agentId),
@@ -55,7 +55,7 @@ class DMService {
     const ownerIdStr = String(ownerId);
     const agentIdStr = String(agentId);
     const otherMemberIds = (dmPod.members || [])
-      .map((member: unknown) => String((member as Record<string, unknown>)?._id || member))
+      .map((member: unknown) => String((member as unknown as Record<string, unknown>)?._id || member))
       .filter((id: string) => id !== ownerIdStr);
 
     if (!otherMemberIds.length) return true;
@@ -67,7 +67,7 @@ class DMService {
 
     if (!botMembers.length) return true;
 
-    return botMembers.some((member) => String((member as Record<string, unknown>)._id) === agentIdStr);
+    return botMembers.some((member) => String((member as unknown as Record<string, unknown>)._id) === agentIdStr);
   }
 
   /**
@@ -138,7 +138,7 @@ class DMService {
       if (process.env.PG_HOST && PGPod) {
         await PGPod.create(
           dmPod.name,
-          dmPod.description,
+          dmPod.description || '',
           'agent-admin',
           ownerId,
           dmPod._id.toString(),
@@ -170,7 +170,7 @@ class DMService {
       status: { $in: ['active', 'paused'] },
     }).select('installedBy').lean();
 
-    return (installation as Record<string, unknown> | null)?.installedBy || null;
+    return (installation as unknown as Record<string, unknown> | null)?.installedBy || null;
   }
 
   /**
@@ -187,7 +187,7 @@ class DMService {
     const podName = `Admin: ${label}${instanceSuffix}`;
 
     const admins = await User.find({ role: 'admin' }).select('_id').lean();
-    const adminIds = admins.map((a) => String((a as Record<string, unknown>)._id));
+    const adminIds = admins.map((a) => String((a as unknown as Record<string, unknown>)._id));
     // Include the installer even if they are not an admin (community-installed agents).
     const installerId = installerUserId ? String(installerUserId) : null;
     const allExpectedIds = [...new Set([agentId, ...adminIds, ...(installerId ? [installerId] : [])])];
@@ -204,7 +204,7 @@ class DMService {
       const existingMemberStrings = existing.members.map(String);
       const missing = allExpectedIds.filter((id) => !existingMemberStrings.includes(id));
       if (missing.length > 0) {
-        existing.members.push(...missing);
+        (existing.members as unknown as string[]).push(...missing);
         await existing.save();
         try {
           if (process.env.PG_HOST && PGPod) {
@@ -233,7 +233,7 @@ class DMService {
       if (process.env.PG_HOST && PGPod) {
         await PGPod.create(
           dmPod.name,
-          dmPod.description,
+          dmPod.description || '',
           'agent-admin',
           creatorId,
           dmPod._id.toString(),
@@ -254,3 +254,6 @@ class DMService {
 }
 
 export default DMService;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

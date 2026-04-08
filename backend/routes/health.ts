@@ -172,3 +172,5 @@ router.get('/clawdbot', async (_req: unknown, res: Res) => {
 });
 
 module.exports = router;
+
+export {};

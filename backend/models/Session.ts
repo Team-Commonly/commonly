@@ -209,3 +209,6 @@ SessionSchema.methods.reset = async function () {
 };
 
 export default mongoose.model<ISession, ISessionModel>('Session', SessionSchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

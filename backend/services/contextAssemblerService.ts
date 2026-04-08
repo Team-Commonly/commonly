@@ -318,7 +318,7 @@ class ContextAssemblerService {
               const result = results.find((r) => r.asset_id === id);
               return skill ? { ...skill, relevance: result?.combinedScore || 0 } : null;
             })
-            .filter((s): s is SkillDoc => s !== null);
+            .filter((s): s is NonNullable<typeof s> => s !== null) as SkillDoc[];
         }
       } catch (error) {
         console.error('Skill vector search error:', (error as Error).message);
@@ -745,3 +745,6 @@ class ContextAssemblerService {
 }
 
 export default ContextAssemblerService;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

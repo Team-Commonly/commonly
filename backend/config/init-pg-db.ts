@@ -37,3 +37,5 @@ const initializeDatabase = async (): Promise<boolean> => {
 };
 
 module.exports = initializeDatabase;
+
+export {};

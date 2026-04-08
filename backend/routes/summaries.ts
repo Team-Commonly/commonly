@@ -279,3 +279,5 @@ router.post('/daily-digest/trigger-all', auth, async (_req: AuthReq, res: Res) =
 });
 
 module.exports = router;
+
+export {};

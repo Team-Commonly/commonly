@@ -1,383 +1,543 @@
-import type { Request, Response } from 'express';
-
-// eslint-disable-next-line global-require
+// @ts-nocheck
 const Post = require('../models/Post');
-// eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
-// eslint-disable-next-line global-require
 const User = require('../models/User');
-// eslint-disable-next-line global-require
 const Activity = require('../models/Activity');
+const AgentMentionService = require('../services/agentMentionService');
 
-interface AuthRequest extends Request {
-  userId?: string;
-  user?: { id: string; username?: string };
-}
-
-interface CreatePostBody {
-  content?: string;
-  image?: string;
-  tags?: string[];
-  podId?: string | null;
-  category?: string;
-  source?: {
-    type?: string;
-    provider?: string;
-    externalId?: string;
-    url?: string;
-    author?: string;
-    authorUrl?: string;
-    channel?: string;
-  };
-}
-
-interface AddCommentBody {
-  text?: string;
-  podId?: string;
-  replyToCommentId?: string;
-}
-
-interface GetPostsQuery {
-  podId?: string;
-  category?: string;
-  sort?: string;
-  page?: string;
-  limit?: string;
-}
-
-interface SearchPostsQuery {
-  query?: string;
-  tags?: string;
-  podId?: string;
-  category?: string;
-}
-
-exports.createPost = async (req: AuthRequest, res: Response): Promise<void> => {
+exports.createPost = async (req, res) => {
+  const {
+    content,
+    image,
+    tags,
+    podId,
+    category,
+    source,
+  } = req.body;
   try {
-    const userId = req.userId || req.user?.id;
-    const { content, image, tags, podId, category, source } = req.body as CreatePostBody;
-    if (!content) {
-      res.status(400).json({ msg: 'Content is required' });
-      return;
+    const resolvedPodId = podId || null;
+    if (resolvedPodId) {
+      const pod = await Pod.findById(resolvedPodId).select('_id members').lean();
+      const isMember = pod?.members?.some(
+        (memberId) => memberId.toString() === req.userId.toString(),
+      );
+      if (!isMember) {
+        return res.status(403).json({ error: 'You are not a member of this pod' });
+      }
     }
-    const post = await Post.create({
-      userId,
+
+    const resolvedCategory = (category || '').trim() || 'General';
+    const resolvedSource = source && typeof source === 'object'
+      ? {
+        type: source.type || (resolvedPodId ? 'pod' : 'user'),
+        provider: source.provider || 'internal',
+        externalId: source.externalId || null,
+        url: source.url || null,
+        author: source.author || null,
+        authorUrl: source.authorUrl || null,
+        channel: source.channel || null,
+      }
+      : {
+        type: resolvedPodId ? 'pod' : 'user',
+        provider: 'internal',
+      };
+
+    const post = new Post({
+      userId: req.userId,
       content,
       image,
-      tags: tags || [],
-      podId: podId || null,
-      category: category || 'General',
-      source: source || null,
+      tags,
+      podId: resolvedPodId,
+      category: resolvedCategory,
+      source: resolvedSource,
     });
-    res.json(post);
+    await post.save();
+    res.status(201).json(post);
   } catch (err) {
-    const e = err as { message?: string };
-    console.error(e.message);
-    res.status(500).send('Server Error');
+    res.status(400).json({ error: err.message });
   }
 };
 
-exports.getUserStats = async (req: AuthRequest, res: Response): Promise<void> => {
+// Get user statistics (post count and comment count)
+exports.getUserStats = async (req, res) => {
   try {
-    const userId = req.params.id || req.userId || req.user?.id;
-    const [postCount, commentCount] = await Promise.all([
-      Post.countDocuments({ userId }),
-      Post.countDocuments({ 'comments.userId': userId }),
-    ]);
+    const { userId } = req.params;
+    const postCount = await Post.getPostCount(userId);
+    const commentCount = await Post.getCommentCount(userId);
     res.json({ postCount, commentCount });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error(e.message);
-    res.status(500).send('Server Error');
+    res.status(400).json({ error: err.message });
   }
 };
 
-exports.searchPosts = async (req: AuthRequest, res: Response): Promise<void> => {
+// Search posts by content or tags
+exports.searchPosts = async (req, res) => {
   try {
-    const { query, tags, podId, category } = req.query as SearchPostsQuery;
-    const filter: Record<string, unknown> = {};
-    if (podId) filter.podId = podId;
-    if (category) filter.category = category;
-    if (tags) filter.tags = { $in: tags.split(',').map((t) => t.trim()) };
+    const { query, tags, podId, category } = req.query;
+    const searchQuery = {};
+
     if (query) {
-      filter.$text = { $search: query };
+      searchQuery.$or = [
+        { content: { $regex: query, $options: 'i' } },
+        { 'comments.text': { $regex: query, $options: 'i' } },
+      ];
     }
-    const posts = await Post.find(filter)
-      .populate('userId', 'username profilePicture')
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean();
+
+    if (tags) {
+      const tagArray = tags.split(',').map((tag) => tag.trim());
+      searchQuery.tags = { $in: tagArray };
+    }
+
+    if (podId) {
+      if (podId === 'global' || podId === 'none') {
+        searchQuery.podId = null;
+      } else {
+        searchQuery.podId = podId;
+      }
+    }
+
+    if (category) {
+      searchQuery.category = category;
+    }
+
+    const posts = await Post.find(searchQuery)
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata')
+      .populate('podId', 'name type')
+      .populate('likedBy', '_id')
+      .sort({ createdAt: -1 });
+
     res.json(posts);
   } catch (err) {
-    const e = err as { message?: string };
-    console.error(e.message);
-    res.status(500).send('Server Error');
+    res.status(400).json({ error: err.message });
   }
 };
 
-exports.getPosts = async (req: AuthRequest, res: Response): Promise<void> => {
+exports.getPosts = async (req, res) => {
   try {
-    const { podId, category, sort = 'recent', page = '1', limit = '20' } = req.query as GetPostsQuery;
-    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
-    const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
+    const { podId, category, sort = 'recent', page = 1, limit = 20 } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
     const skip = (pageNum - 1) * limitNum;
 
-    const filter: Record<string, unknown> = {};
-    if (podId) filter.podId = podId;
-    if (category) filter.category = category;
+    const filter = {};
+    if (podId) {
+      if (podId === 'global' || podId === 'none') {
+        filter.podId = null;
+      } else {
+        filter.podId = podId;
+      }
+    }
+    if (category) {
+      filter.category = category;
+    }
 
-    const sortOrder = sort === 'hot' ? { likes: -1, createdAt: -1 } : { createdAt: -1 };
+    const populate = (q) => q
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata')
+      .populate('podId', 'name type')
+      .populate('likedBy', '_id');
 
-    const [posts, total] = await Promise.all([
-      Post.find(filter)
-        .populate('userId', 'username profilePicture')
-        .sort(sortOrder)
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Post.countDocuments(filter),
-    ]);
+    let posts;
+    if (sort === 'hot') {
+      // Score = (likes + comments*3) / (hoursSinceLastReply + 2)^1.2
+      // lastReplyAt = max(createdAt, most recent comment createdAt)
+      // Comments weighted 3x because they represent active conversation
+      const scoredIds = await Post.aggregate([
+        { $match: filter },
+        { $addFields: {
+          likeCount: { $size: { $ifNull: ['$likedBy', []] } },
+          commentCount: { $size: { $ifNull: ['$comments', []] } },
+          lastReplyAt: {
+            $max: [
+              '$createdAt',
+              { $max: { $ifNull: ['$comments.createdAt', []] } },
+            ],
+          },
+        } },
+        { $addFields: {
+          ageHours: { $divide: [{ $subtract: [new Date(), '$lastReplyAt'] }, 3600000] },
+          activityScore: { $add: ['$likeCount', { $multiply: ['$commentCount', 3] }] },
+        } },
+        { $addFields: {
+          heatScore: { $divide: ['$activityScore', { $pow: [{ $add: ['$ageHours', 2] }, 1.2] }] },
+        } },
+        { $sort: { heatScore: -1, createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limitNum },
+        { $project: { _id: 1 } },
+      ]);
+      const idList = scoredIds.map((d) => d._id);
+      const byId = {};
+      const docs = await populate(Post.find({ _id: { $in: idList } }));
+      docs.forEach((d) => { byId[d._id.toString()] = d; });
+      posts = idList.map((id) => byId[id.toString()]).filter(Boolean);
+    } else {
+      posts = await populate(Post.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum));
+    }
 
-    res.json({
-      posts,
-      hasMore: skip + posts.length < total,
-      total,
-      page: pageNum,
-    });
+    const total = await Post.countDocuments(filter);
+    res.json({ posts, hasMore: skip + posts.length < total, total, page: pageNum });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error(e.message);
-    res.status(500).send('Server Error');
+    res.status(400).json({ error: err.message });
   }
 };
 
-exports.getPostById = async (req: AuthRequest, res: Response): Promise<void> => {
+// New method to get a single post by ID
+exports.getPostById = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id)
-      .populate('userId', 'username profilePicture')
-      .lean();
-    if (!post) {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
-    }
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata')
+      .populate('podId', 'name type')
+      .populate('likedBy', '_id');
+    if (!post) return res.status(404).json({ error: 'Post not found' });
     res.json(post);
   } catch (err) {
-    const e = err as { message?: string; kind?: string };
-    console.error(e.message);
-    if (e.kind === 'ObjectId') {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
-    }
-    res.status(500).send('Server Error');
+    res.status(400).json({ error: err.message });
   }
 };
 
-exports.addComment = async (req: AuthRequest, res: Response): Promise<void> => {
+// Add a comment to a post
+exports.addComment = async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id;
-    const { text, podId, replyToCommentId } = req.body as AddCommentBody;
+    const { text, podId: requestPodId, replyToCommentId } = req.body;
+
     if (!text) {
-      res.status(400).json({ msg: 'Comment text is required' });
-      return;
+      return res.status(400).json({ error: 'Comment text is required' });
     }
+
     const post = await Post.findById(req.params.id);
     if (!post) {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
+      return res.status(404).json({ error: 'Post not found' });
     }
-    const comment: Record<string, unknown> = { userId, text, createdAt: new Date() };
-    if (replyToCommentId) comment.replyTo = replyToCommentId;
+
+    const commentingUser = await User.findById(req.userId).select('_id username').lean();
+
+    // Create the comment object
+    const comment = {
+      userId: req.userId,
+      text,
+      replyTo: replyToCommentId || null,
+      createdAt: new Date(),
+    };
+
+    // Add the comment to the post's comments array
     post.comments.push(comment);
+
+    // Save the updated post
     await post.save();
 
-    const savedComment = post.comments[post.comments.length - 1] as Record<string, unknown>;
+    // Populate the user information for the new comment and return it
+    const updatedPost = await Post.findById(post._id)
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata');
 
-    // Enqueue agent mentions (lazy import to avoid circular deps)
+    // Return only the newly added comment with populated user information
+    const newComment = updatedPost.comments[updatedPost.comments.length - 1];
+
+    // Enqueue agent mentions if applicable (thread context)
     try {
-      // eslint-disable-next-line global-require
-      const AgentMentionService = require('../services/agentMentionService');
-      await AgentMentionService.enqueueMentions({
-        podId: podId || post.podId,
-        message: { id: savedComment._id, content: text, user_id: userId },
-        userId,
-        username: req.user?.username,
+      const resolveMentionPod = async () => {
+        const candidate = requestPodId || post.podId;
+        if (candidate) {
+          const pod = await Pod.findById(candidate).select('_id members').lean();
+          const isMember = pod?.members?.some(
+            (memberId) => memberId.toString() === req.userId.toString(),
+          );
+          return isMember ? pod._id : null;
+        }
+        const fallback = await Pod.findOne({ members: req.userId }).select('_id').lean();
+        return fallback?._id || null;
+      };
+
+      const mentionPodId = await resolveMentionPod();
+      if (mentionPodId) {
+        let username = req.user?.username || commentingUser?.username;
+        if (!username) {
+          const user = await User.findById(req.userId).select('username').lean();
+          username = user?.username;
+        }
+        await AgentMentionService.enqueueMentions({
+          podId: mentionPodId,
+          message: {
+            _id: comment._id,
+            id: comment._id,
+            content: text,
+            messageType: 'thread',
+            source: 'thread',
+            createdAt: comment.createdAt,
+            thread: {
+              postId: post._id,
+              postContent: post.content,
+              postUserId: post.userId,
+              commentId: comment._id,
+              commentText: text,
+            },
+          },
+          userId: req.userId,
+          username,
+        });
+      }
+    } catch (mentionError) {
+      console.warn('Failed to enqueue thread mentions:', mentionError.message);
+    }
+
+    try {
+      const displayPodId = requestPodId || post.podId || null;
+      await Activity.create({
+        type: 'pod_event',
+        actor: {
+          id: req.userId,
+          name: commentingUser?.username || req.user?.username || 'User',
+          type: 'human',
+          verified: false,
+        },
+        action: 'thread_comment',
+        content: `New reply on thread: ${(post.content || '').slice(0, 120)}`,
+        podId: displayPodId || undefined,
+        sourceType: 'event',
+        sourceId: post._id.toString(),
+        visibility: 'pod',
+        target: {
+          title: `Thread reply by @${commentingUser?.username || 'user'}`,
+          description: text.slice(0, 180),
+          url: `/thread/${post._id}`,
+        },
+        involves: [
+          {
+            id: post.userId,
+            name: 'thread-owner',
+            type: 'human',
+          },
+        ],
       });
-    } catch (mentionErr) {
-      const me = mentionErr as { message?: string };
-      console.warn('AgentMentionService error on comment:', me.message);
+    } catch (activityError) {
+      console.warn('Failed to create thread comment activity:', activityError.message);
     }
 
-    res.json(post);
+    res.status(201).json(newComment);
   } catch (err) {
-    const e = err as { message?: string; kind?: string };
-    console.error(e.message);
-    if (e.kind === 'ObjectId') {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
-    }
-    res.status(500).send('Server Error');
+    res.status(400).json({ error: err.message });
   }
 };
 
-exports.likePost = async (req: AuthRequest, res: Response): Promise<void> => {
+// Like a post
+exports.likePost = async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id;
-    const post = await Post.findById(req.params.id) as {
-      likes?: Array<{ toString(): string }>;
-      save(): Promise<void>;
-      _id: unknown;
-    } | null;
+    const postId = req.params.id;
+    const { userId } = req;
+
+    const post = await Post.findById(postId);
     if (!post) {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
+      return res.status(404).json({ error: 'Post not found' });
     }
-    if (!post.likes) post.likes = [];
-    const alreadyLiked = post.likes.some((id) => id.toString() === String(userId));
-    if (alreadyLiked) {
-      post.likes = post.likes.filter((id) => id.toString() !== String(userId));
+
+    // Check if user has already liked this post
+    const userLikedIndex = post.likedBy ? post.likedBy.indexOf(userId) : -1;
+
+    if (userLikedIndex === -1) {
+      // User hasn't liked the post yet, add like
+      if (!post.likedBy) {
+        post.likedBy = [];
+      }
+      post.likedBy.push(userId);
+      post.likes += 1;
     } else {
-      post.likes.push(userId as unknown as { toString(): string });
+      // User already liked the post, remove like
+      post.likedBy.splice(userLikedIndex, 1);
+      post.likes = Math.max(0, post.likes - 1);
     }
+
     await post.save();
-    res.json({ likes: post.likes.length, liked: !alreadyLiked });
+    res.json({ likes: post.likes, liked: userLikedIndex === -1 });
   } catch (err) {
-    const e = err as { message?: string; kind?: string };
-    console.error(e.message);
-    if (e.kind === 'ObjectId') {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
-    }
-    res.status(500).send('Server Error');
+    res.status(400).json({ error: err.message });
   }
 };
 
-exports.deletePost = async (req: AuthRequest, res: Response): Promise<void> => {
+// Delete a post
+exports.deletePost = async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id;
-    const post = await Post.findById(req.params.id) as { userId?: { toString(): string }; deleteOne?(): Promise<void> } | null;
+    const post = await Post.findById(req.params.id);
+
     if (!post) {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
+      return res.status(404).json({ error: 'Post not found' });
     }
-    if (post.userId?.toString() !== String(userId)) {
-      res.status(401).json({ msg: 'Not authorized to delete this post' });
-      return;
+
+    // Check if the user is the owner of the post
+    if (post.userId.toString() !== req.userId) {
+      return res
+        .status(403)
+        .json({ error: 'You are not authorized to delete this post' });
     }
-    await post.deleteOne?.();
-    res.json({ msg: 'Post deleted' });
+
+    await Post.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Post deleted successfully' });
   } catch (err) {
-    const e = err as { message?: string; kind?: string };
-    console.error(e.message);
-    if (e.kind === 'ObjectId') {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
-    }
-    res.status(500).send('Server Error');
+    res.status(500).json({ error: err.message });
   }
 };
 
-exports.deleteComment = async (req: AuthRequest, res: Response): Promise<void> => {
+// Delete a comment
+exports.deleteComment = async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id;
-    const post = await Post.findById(req.params.id) as {
-      comments: Array<{ _id: { toString(): string }; userId?: { toString(): string } }>;
-      save(): Promise<void>;
-    } | null;
+    const { id, commentId } = req.params;
+
+    const post = await Post.findById(id);
     if (!post) {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
+      return res.status(404).json({ error: 'Post not found' });
     }
-    const comment = post.comments.find((c) => c._id.toString() === req.params.commentId);
-    if (!comment) {
-      res.status(404).json({ msg: 'Comment not found' });
-      return;
+
+    // Find the comment index
+    const commentIndex = post.comments.findIndex(
+      (comment) => comment._id.toString() === commentId,
+    );
+
+    if (commentIndex === -1) {
+      return res.status(404).json({ error: 'Comment not found' });
     }
-    if (comment.userId?.toString() !== String(userId)) {
-      res.status(401).json({ msg: 'Not authorized to delete this comment' });
-      return;
+
+    // Check if the user is the owner of the comment
+    if (post.comments[commentIndex].userId.toString() !== req.userId) {
+      return res
+        .status(403)
+        .json({ error: 'You are not authorized to delete this comment' });
     }
-    post.comments = post.comments.filter((c) => c._id.toString() !== req.params.commentId) as typeof post.comments;
+
+    // Remove the comment using splice
+    post.comments.splice(commentIndex, 1);
     await post.save();
-    res.json(post);
+
+    res.json({ message: 'Comment deleted successfully' });
   } catch (err) {
-    const e = err as { message?: string; kind?: string };
-    console.error(e.message);
-    if (e.kind === 'ObjectId') {
-      res.status(404).json({ msg: 'Post or comment not found' });
-      return;
-    }
-    res.status(500).send('Server Error');
+    res.status(500).json({ error: err.message });
   }
 };
 
-exports.followThread = async (req: AuthRequest, res: Response): Promise<void> => {
+exports.followThread = async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id;
-    await User.findByIdAndUpdate(userId, { $addToSet: { followedThreads: req.params.id } });
-    res.json({ msg: 'Thread followed' });
+    const post = await Post.findById(req.params.id).select('_id content');
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const user = await User.findById(req.userId).select('_id username followedThreads');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const alreadyFollowing = (user.followedThreads || []).some(
+      (thread) => String(thread.postId) === String(post._id),
+    );
+
+    if (!alreadyFollowing) {
+      user.followedThreads = [
+        ...(user.followedThreads || []),
+        { postId: post._id, followedAt: new Date() },
+      ];
+      await user.save();
+    }
+
+    try {
+      await Activity.create({
+        type: 'pod_event',
+        actor: {
+          id: user._id,
+          name: user.username,
+          type: 'human',
+          verified: false,
+        },
+        action: 'thread_followed',
+        content: `${user.username} followed a thread`,
+        sourceType: 'event',
+        sourceId: post._id.toString(),
+        visibility: 'private',
+        target: {
+          title: 'Followed thread',
+          description: (post.content || '').slice(0, 180),
+          url: `/thread/${post._id}`,
+        },
+        involves: [{ id: user._id, name: user.username, type: 'human' }],
+      });
+    } catch (activityError) {
+      console.warn('Failed to create thread follow activity:', activityError.message);
+    }
+
+    return res.json({
+      success: true,
+      followed: true,
+      postId: post._id.toString(),
+      followedThreadsCount: user.followedThreads?.length || 0,
+    });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error(e.message);
-    res.status(500).send('Server Error');
+    return res.status(400).json({ error: err.message });
   }
 };
 
-exports.unfollowThread = async (req: AuthRequest, res: Response): Promise<void> => {
+exports.unfollowThread = async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id;
-    await User.findByIdAndUpdate(userId, { $pull: { followedThreads: req.params.id } });
-    res.json({ msg: 'Thread unfollowed' });
+    const post = await Post.findById(req.params.id).select('_id');
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const user = await User.findById(req.userId).select('_id followedThreads');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    user.followedThreads = (user.followedThreads || []).filter(
+      (thread) => String(thread.postId) !== String(post._id),
+    );
+    await user.save();
+
+    return res.json({
+      success: true,
+      followed: false,
+      postId: post._id.toString(),
+      followedThreadsCount: user.followedThreads?.length || 0,
+    });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error(e.message);
-    res.status(500).send('Server Error');
+    return res.status(400).json({ error: err.message });
   }
 };
 
-exports.toggleAgentComments = async (req: AuthRequest, res: Response): Promise<void> => {
+exports.toggleAgentComments = async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id;
-    const post = await Post.findById(req.params.id) as {
-      userId?: { toString(): string };
-      agentCommentsDisabled?: boolean;
-      save(): Promise<void>;
-    } | null;
-    if (!post) {
-      res.status(404).json({ msg: 'Post not found' });
-      return;
-    }
-    if (post.userId?.toString() !== String(userId)) {
-      res.status(401).json({ msg: 'Not authorized' });
-      return;
-    }
+    const post = await Post.findById(req.params.id).select('userId agentCommentsDisabled');
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (post.userId.toString() !== req.userId)
+      return res.status(403).json({ error: 'Not authorized' });
     post.agentCommentsDisabled = !post.agentCommentsDisabled;
     await post.save();
-    res.json({ agentCommentsDisabled: post.agentCommentsDisabled });
+    return res.json({ agentCommentsDisabled: post.agentCommentsDisabled });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error(e.message);
-    res.status(500).send('Server Error');
+    return res.status(400).json({ error: err.message });
   }
 };
 
-exports.getFollowedThreads = async (req: AuthRequest, res: Response): Promise<void> => {
+exports.getFollowedThreads = async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id;
-    const user = await User.findById(userId).select('followedThreads').lean() as {
-      followedThreads?: string[];
-    } | null;
-    if (!user) {
-      res.status(404).json({ msg: 'User not found' });
-      return;
+    const user = await User.findById(req.userId).select('followedThreads');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const followedThreads = user.followedThreads || [];
+    if (!followedThreads.length) {
+      return res.json({ threads: [] });
     }
-    const threads = user.followedThreads || [];
-    const posts = await Post.find({ _id: { $in: threads } })
-      .populate('userId', 'username profilePicture')
+
+    const postIds = followedThreads.map((thread) => thread.postId);
+    const followedAtMap = new Map(
+      followedThreads.map((thread) => [String(thread.postId), thread.followedAt || null]),
+    );
+
+    const posts = await Post.find({ _id: { $in: postIds } })
+      .populate('userId', 'username profilePicture isBot botMetadata')
+      .populate('comments.userId', 'username profilePicture isBot botMetadata')
+      .populate('podId', 'name type')
+      .sort({ createdAt: -1 })
       .lean();
-    res.json(posts);
+
+    const normalized = posts.map((post) => ({
+      ...post,
+      followedAt: followedAtMap.get(String(post._id)) || null,
+    }));
+
+    return res.json({ threads: normalized });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error(e.message);
-    res.status(500).send('Server Error');
+    return res.status(400).json({ error: err.message });
   }
 };

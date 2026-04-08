@@ -291,3 +291,5 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
 });
 
 module.exports = router;
+
+export {};

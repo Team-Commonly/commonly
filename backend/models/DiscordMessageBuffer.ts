@@ -33,3 +33,6 @@ DiscordMessageBufferSchema.index({ messageId: 1 }, { unique: true });
 DiscordMessageBufferSchema.index({ createdAt: 1 }, { expireAfterSeconds: 86400 });
 
 export default mongoose.model<IDiscordMessageBuffer>('DiscordMessageBuffer', DiscordMessageBufferSchema);
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

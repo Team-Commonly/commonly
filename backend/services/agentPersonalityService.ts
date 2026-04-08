@@ -201,3 +201,6 @@ You proactively monitor feeds and share 2-3 curated picks every few hours. Quali
 }
 
 export default AgentPersonalityService;
+// CJS compat: let require() return the default export directly
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+module.exports = exports["default"]; Object.assign(module.exports, exports);

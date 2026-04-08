@@ -1038,3 +1038,5 @@ class ActivityService {
 }
 
 module.exports = ActivityService;
+
+export {};
