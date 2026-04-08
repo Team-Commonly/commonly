@@ -34,7 +34,7 @@ const { AgentInstallation } = require('../../../models/AgentRegistry');
 const User = require('../../../models/User');
 const AgentProfile = require('../../../models/AgentProfile');
 const AgentIdentityService = require('../../../services/agentIdentityService');
-const registryRoutes = require('../../../routes/registry');
+const podAgentsRouter = require('../../../routes/registry/pod-agents');
 
 const mockRoleLookup = (role) => {
   User.findById.mockReturnValue({
@@ -45,7 +45,7 @@ const mockRoleLookup = (role) => {
 };
 
 const getDeleteHandler = () => {
-  const deleteLayer = registryRoutes.stack.find((layer) => (
+  const deleteLayer = podAgentsRouter.stack.find((layer) => (
     layer.route
     && layer.route.path === '/agents/:name/pods/:podId'
     && layer.route.methods
