@@ -16,3 +16,5 @@ router.post('/:podId', auth, createMessage);
 router.delete('/:id', auth, deleteMessage);
 
 module.exports = router;
+
+export {};

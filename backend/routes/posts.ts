@@ -34,3 +34,5 @@ router.delete('/:id/comments/:commentId', auth, deleteComment);
 router.patch('/:id/agent-comments', auth, toggleAgentComments);
 
 module.exports = router;
+
+export {};

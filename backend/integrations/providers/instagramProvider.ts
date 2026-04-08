@@ -256,3 +256,5 @@ function createInstagramProvider(integration: { _id: unknown; config?: Instagram
 }
 
 module.exports = createInstagramProvider;
+
+export {};

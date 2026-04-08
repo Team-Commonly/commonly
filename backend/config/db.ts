@@ -15,3 +15,5 @@ const connectDB = async (): Promise<void> => {
 };
 
 module.exports = connectDB;
+
+export {};

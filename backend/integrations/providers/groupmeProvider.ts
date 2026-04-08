@@ -268,3 +268,5 @@ function createGroupMeProvider(integration: { _id: unknown; config?: Record<stri
 
 module.exports = createGroupMeProvider;
 // LEGACY: in-platform provider. External service will replace this module.
+
+export {};

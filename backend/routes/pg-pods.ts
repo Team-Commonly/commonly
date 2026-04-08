@@ -24,3 +24,5 @@ router.post('/:id/join', auth, joinPod);
 router.post('/:id/leave', auth, leavePod);
 
 module.exports = router;
+
+export {};

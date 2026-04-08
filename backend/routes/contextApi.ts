@@ -260,3 +260,5 @@ router.get('/pods/:podId/summaries', auth, async (req: AuthReq, res: Res) => {
 });
 
 module.exports = router;
+
+export {};

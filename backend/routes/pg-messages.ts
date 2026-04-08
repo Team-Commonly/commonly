@@ -18,3 +18,5 @@ router.put('/:id', auth, updateMessage);
 router.delete('/:id', auth, deleteMessage);
 
 module.exports = router;
+
+export {};

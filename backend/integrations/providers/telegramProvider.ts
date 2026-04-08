@@ -162,3 +162,5 @@ function createTelegramProvider(integration: { _id: unknown; config?: Record<str
 
 module.exports = createTelegramProvider;
 // LEGACY: in-platform provider. External service will replace this module.
+
+export {};

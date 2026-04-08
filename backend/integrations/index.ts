@@ -68,3 +68,5 @@ registry.register('x', (integration) => createXProvider(integration));
 registry.register('instagram', (integration) => createInstagramProvider(integration));
 
 module.exports = registry;
+
+export {};

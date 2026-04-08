@@ -70,3 +70,5 @@ module.exports = {
   getManifestEntries,
   buildCatalogEntries,
 };
+
+export {};

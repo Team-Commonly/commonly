@@ -1202,3 +1202,5 @@ class DiscordService {
 }
 
 module.exports = DiscordService;
+
+export {};

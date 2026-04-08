@@ -637,3 +637,5 @@ module.exports = {
   chownPath,
   getOpenClawWorkspaceOwnership,
 };
+
+export {};

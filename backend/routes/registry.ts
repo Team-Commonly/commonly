@@ -453,3 +453,5 @@ const sanitizeStringList = (value: unknown): string[] => {
 // The actual route implementations are in registry.js
 // This file provides TypeScript types for the module
 module.exports = require('./registry.js');
+
+export {};

@@ -617,3 +617,5 @@ function createXProvider(integration: { _id: unknown; config?: XConfig; [key: st
 }
 
 module.exports = createXProvider;
+
+export {};

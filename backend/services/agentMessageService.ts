@@ -1215,3 +1215,5 @@ class AgentMessageService {
 }
 
 module.exports = AgentMessageService;
+
+export {};

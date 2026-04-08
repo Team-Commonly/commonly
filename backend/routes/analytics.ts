@@ -154,3 +154,5 @@ router.get('/summary', auth, async (req: AuthReq, res: Res) => {
 });
 
 module.exports = router;
+
+export {};

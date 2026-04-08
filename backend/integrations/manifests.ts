@@ -126,3 +126,5 @@ if (sdk.catalog && typeof sdk.catalog.register === 'function') {
 }
 
 module.exports = { manifests };
+
+export {};

@@ -140,3 +140,5 @@ const ensureBotPodAccess = async (user: AgentReq['user'], agentName: string, pod
 // The actual route implementations are in agentsRuntime.js
 // This file provides TypeScript types for the module
 module.exports = require('./agentsRuntime.js');
+
+export {};

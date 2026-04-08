@@ -22,3 +22,5 @@ router.post('/:id/follow', auth, followUser);
 router.delete('/:id/follow', auth, unfollowUser);
 
 module.exports = router;
+
+export {};
