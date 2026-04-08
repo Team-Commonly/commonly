@@ -1,6 +1,5 @@
-// @ts-nocheck
 // Agent preset definitions — extracted from registry.js (GH#112)
-
+export {};
 // Default git branch for PRs — change here when the target branch changes (e.g. v2.0.x, main)
 const DEFAULT_BRANCH = 'main';
 

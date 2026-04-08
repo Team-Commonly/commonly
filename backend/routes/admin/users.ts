@@ -1,4 +1,4 @@
-// @ts-nocheck
+export {};
 const express = require('express');
 const crypto = require('crypto');
 const axios = require('axios');
@@ -10,7 +10,7 @@ const WaitlistRequest = require('../../models/WaitlistRequest');
 
 const router = express.Router();
 
-const sanitizeUser = (user) => ({
+const sanitizeUser = (user: any) => ({
   id: user._id?.toString?.() || user.id,
   username: user.username,
   email: user.email,
@@ -20,7 +20,7 @@ const sanitizeUser = (user) => ({
   updatedAt: user.updatedAt,
 });
 
-const sanitizeInvitation = (invite) => ({
+const sanitizeInvitation = (invite: any) => ({
   id: invite._id?.toString?.() || invite.id,
   code: invite.code,
   note: invite.note || '',
@@ -39,7 +39,7 @@ const sanitizeInvitation = (invite) => ({
     : null,
 });
 
-const sanitizeWaitlist = (request) => ({
+const sanitizeWaitlist = (request: any) => ({
   id: request._id?.toString?.() || request.id,
   email: request.email,
   name: request.name || '',
@@ -66,7 +66,7 @@ const sanitizeWaitlist = (request) => ({
     : null,
 });
 
-const generateInvitationCode = () => `CM-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+const generateInvitationCode = () => `CM-${(crypto as any).randomBytes(4).toString('hex').toUpperCase()}`;
 const SMTP2GO_BASE_URL = process.env.SMTP2GO_BASE_URL || 'https://api.smtp2go.com/v3';
 const SMTP2GO_SEND_URL = `${SMTP2GO_BASE_URL.replace(/\/$/, '')}/email/send`;
 
@@ -76,18 +76,18 @@ const getPrimaryFrontendUrl = () => {
   return raw.split(',').map((value) => value.trim()).filter(Boolean)[0] || 'https://app.commonly.me';
 };
 
-const parsePositiveInt = (value, fallback) => {
+const parsePositiveInt = (value: any, fallback: any) => {
   const parsed = Number.parseInt(String(value || ''), 10);
   if (!Number.isFinite(parsed) || parsed < 1) return fallback;
   return parsed;
 };
 
 // GET /api/admin/users
-router.get('/', auth, adminAuth, async (req, res) => {
+router.get('/', auth, adminAuth, async (req: any, res: any) => {
   try {
     const q = String(req.query.q || '').trim();
     const role = String(req.query.role || 'all').trim().toLowerCase();
-    const query = {};
+    const query: any = {};
 
     if (q) {
       query.$or = [
@@ -115,7 +115,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/users/:userId/role
-router.patch('/:userId/role', auth, adminAuth, async (req, res) => {
+router.patch('/:userId/role', auth, adminAuth, async (req: any, res: any) => {
   try {
     const { userId } = req.params;
     const { role } = req.body || {};
@@ -153,7 +153,7 @@ router.patch('/:userId/role', auth, adminAuth, async (req, res) => {
 });
 
 // DELETE /api/admin/users/:userId
-router.delete('/:userId', auth, adminAuth, async (req, res) => {
+router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
   try {
     const { userId } = req.params;
     if (req.user?.id && String(req.user.id) === String(userId)) {
@@ -184,7 +184,7 @@ router.delete('/:userId', auth, adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/users/invitations
-router.get('/invitations', auth, adminAuth, async (req, res) => {
+router.get('/invitations', auth, adminAuth, async (req: any, res: any) => {
   try {
     const page = parsePositiveInt(req.query.page, 1);
     const requestedLimit = parsePositiveInt(req.query.limit, 20);
@@ -217,7 +217,7 @@ router.get('/invitations', auth, adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/users/invitations
-router.post('/invitations', auth, adminAuth, async (req, res) => {
+router.post('/invitations', auth, adminAuth, async (req: any, res: any) => {
   try {
     const {
       code: requestedCode,
@@ -270,7 +270,7 @@ router.post('/invitations', auth, adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/users/invitations/:invitationId/revoke
-router.post('/invitations/:invitationId/revoke', auth, adminAuth, async (req, res) => {
+router.post('/invitations/:invitationId/revoke', auth, adminAuth, async (req: any, res: any) => {
   try {
     const invitation = await InvitationCode.findByIdAndUpdate(
       req.params.invitationId,
@@ -293,7 +293,7 @@ router.post('/invitations/:invitationId/revoke', auth, adminAuth, async (req, re
 });
 
 // GET /api/admin/users/waitlist
-router.get('/waitlist', auth, adminAuth, async (req, res) => {
+router.get('/waitlist', auth, adminAuth, async (req: any, res: any) => {
   try {
     const q = String(req.query.q || '').trim();
     const status = String(req.query.status || 'all').trim().toLowerCase();
@@ -301,7 +301,7 @@ router.get('/waitlist', auth, adminAuth, async (req, res) => {
     const requestedLimit = parsePositiveInt(req.query.limit, 20);
     const limit = Math.min(requestedLimit, 100);
     const skip = (page - 1) * limit;
-    const query = {};
+    const query: any = {};
 
     if (q) {
       query.$or = [
@@ -340,14 +340,14 @@ router.get('/waitlist', auth, adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/users/waitlist/:requestId
-router.patch('/waitlist/:requestId', auth, adminAuth, async (req, res) => {
+router.patch('/waitlist/:requestId', auth, adminAuth, async (req: any, res: any) => {
   try {
     const status = String(req.body?.status || '').trim().toLowerCase();
     if (!['pending', 'invited', 'closed'].includes(status)) {
       return res.status(400).json({ error: 'status must be one of pending, invited, or closed' });
     }
 
-    const update = { status };
+    const update: any = { status };
     if (status === 'closed') {
       update.invitedAt = null;
       update.invitationSentAt = null;
@@ -378,7 +378,7 @@ router.patch('/waitlist/:requestId', auth, adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/users/waitlist/:requestId/send-invitation
-router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req, res) => {
+router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req: any, res: any) => {
   try {
     const waitlistRequest = await WaitlistRequest.findById(req.params.requestId);
     if (!waitlistRequest) {
@@ -492,7 +492,7 @@ router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req,
       request: sanitizeWaitlist(hydrated),
     });
   } catch (error) {
-    console.error('Failed to send waitlist invitation email:', error?.response?.data || error);
+    console.error('Failed to send waitlist invitation email:', (error as any)?.response?.data || error);
     return res.status(500).json({ error: 'Failed to send invitation email' });
   }
 });

@@ -1,6 +1,6 @@
-// @ts-nocheck
 // Runtime management routes — extracted from registry.js (GH#112)
 // Handles: runtime-status, runtime-start, runtime-stop, runtime-restart, runtime-clear-sessions, runtime-logs
+export {};
 const express = require('express');
 const auth = require('../../middleware/auth');
 const Pod = require('../../models/Pod');
@@ -17,9 +17,11 @@ const {
 const {
   getUserId,
   normalizeInstanceId,
+  normalizeConfigMap,
   resolveInstallation,
   buildRuntimeLogFilters,
   resolveGatewayForRequest,
+  resolveGatewayForInstallation,
   userHasPodAccess,
 } = require('./helpers');
 
@@ -29,7 +31,7 @@ const runtimeRouter = express.Router({ mergeParams: true });
  * GET /api/registry/pods/:podId/agents/:name/runtime-status
  * Check local runtime status (docker).
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req, res) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const userId = getUserId(req);
@@ -45,7 +47,7 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req, 
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -79,10 +81,10 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req, 
 
     const status = await getAgentRuntimeStatus(runtimeType, effectiveInstanceId, { gateway });
     return res.json({ runtimeType, status, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error fetching runtime status:', error);
-    if (error.status) {
-      return res.status(error.status).json({ error: error.message });
+    if ((error as any).status) {
+      return res.status((error as any).status).json({ error: (error as Error).message });
     }
     return res.status(500).json({ error: 'Failed to fetch runtime status' });
   }
@@ -91,7 +93,7 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-status', auth, async (req, 
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-start
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req, res) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -107,7 +109,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req, 
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -141,10 +143,10 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req, 
 
     const started = await startAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
     return res.json({ runtimeType, started, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error starting runtime:', error);
-    if (error.status) {
-      return res.status(error.status).json({ error: error.message });
+    if ((error as any).status) {
+      return res.status((error as any).status).json({ error: (error as Error).message });
     }
     return res.status(500).json({ error: 'Failed to start runtime' });
   }
@@ -153,7 +155,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-start', auth, async (req, 
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-stop
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req, res) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -169,7 +171,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req, r
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -203,10 +205,10 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req, r
 
     const stopped = await stopAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
     return res.json({ runtimeType, stopped, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error stopping runtime:', error);
-    if (error.status) {
-      return res.status(error.status).json({ error: error.message });
+    if ((error as any).status) {
+      return res.status((error as any).status).json({ error: (error as Error).message });
     }
     return res.status(500).json({ error: 'Failed to stop runtime' });
   }
@@ -215,7 +217,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-stop', auth, async (req, r
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-restart
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req, res) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId } = req.body || {};
@@ -231,7 +233,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -265,10 +267,10 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req
 
     const restarted = await restartAgentRuntime(runtimeType, effectiveInstanceId, { gateway });
     return res.json({ runtimeType, restarted, gatewayId: gateway?._id || null, gatewaySlug: gateway?.slug || null });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error restarting runtime:', error);
-    if (error.status) {
-      return res.status(error.status).json({ error: error.message });
+    if ((error as any).status) {
+      return res.status((error as any).status).json({ error: (error as Error).message });
     }
     return res.status(500).json({ error: 'Failed to restart runtime' });
   }
@@ -277,7 +279,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-restart', auth, async (req
 /**
  * POST /api/registry/pods/:podId/agents/:name/runtime-clear-sessions
  */
-runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, async (req, res) => {
+runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, gatewayId, restart = true } = req.body || {};
@@ -293,7 +295,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, asy
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -351,10 +353,10 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, asy
       gatewayId: gateway?._id || null,
       gatewaySlug: gateway?.slug || null,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error clearing runtime sessions:', error);
-    if (error.status) {
-      return res.status(error.status).json({ error: error.message });
+    if ((error as any).status) {
+      return res.status((error as any).status).json({ error: (error as Error).message });
     }
     return res.status(500).json({ error: 'Failed to clear runtime sessions' });
   }
@@ -363,7 +365,7 @@ runtimeRouter.post('/pods/:podId/agents/:name/runtime-clear-sessions', auth, asy
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-logs
  */
-runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req, res) => {
+runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const lines = Number(req.query.lines || 200);
@@ -380,7 +382,7 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req, re
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -420,10 +422,10 @@ runtimeRouter.get('/pods/:podId/agents/:name/runtime-logs', auth, async (req, re
       gatewayId: gateway?._id || null,
       gatewaySlug: gateway?.slug || null,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error fetching runtime logs:', error);
-    if (error.status) {
-      return res.status(error.status).json({ error: error.message });
+    if ((error as any).status) {
+      return res.status((error as any).status).json({ error: (error as Error).message });
     }
     return res.status(500).json({ error: 'Failed to fetch runtime logs' });
   }
