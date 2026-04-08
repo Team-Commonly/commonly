@@ -1,4 +1,3 @@
-// @ts-nocheck
 const connectDB = require('./config/db');
 const Pod = require('./models/Pod');
 const User = require('./models/User');

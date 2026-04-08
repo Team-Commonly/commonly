@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Discord Integration Test Script
  * Run this script to test the Discord integration functionality

@@ -1,4 +1,3 @@
-// @ts-nocheck
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const bcrypt = require('bcryptjs');
@@ -89,7 +88,7 @@ const seedPods = async () => {
     console.log('Pods seeded successfully');
     await mongoose.disconnect();
     process.exit(0);
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('Error seeding pods:', err);
     await mongoose.disconnect();
     process.exit(1);
@@ -101,3 +100,4 @@ if (require.main === module) {
 }
 
 module.exports = seedPods;
+export {};

@@ -1,4 +1,3 @@
-// @ts-nocheck
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
@@ -89,8 +88,8 @@ async function migrateFiles() {
       console.log(
         `Migrated file ${fileName} (${migratedCount}/${files.length})`,
       );
-    } catch (error) {
-      console.error(`Error migrating file ${fileName}:`, error.message);
+    } catch (error: unknown) {
+      console.error(`Error migrating file ${fileName}:`, ((error) as Error).message);
     }
   }
 
@@ -108,3 +107,4 @@ if (require.main === module) {
 }
 
 module.exports = migrateFiles;
+export {};

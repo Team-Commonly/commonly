@@ -1,4 +1,3 @@
-// @ts-nocheck
 const DiscordCommandService = require("./services/discordCommandService");
 const Integration = require("./models/Integration");
 

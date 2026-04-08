@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Test script to validate PostgreSQL setup
 const { pool } = require('./config/db-pg');
 
@@ -27,8 +26,8 @@ async function testPG() {
 
         console.log(`\nTable: ${table}`);
         console.table(result.rows);
-      } catch (err) {
-        console.error(`Error checking table ${table}:`, err.message);
+      } catch (err: unknown) {
+        console.error(`Error checking table ${table}:`, ((err) as Error).message);
       }
     }
 
@@ -47,8 +46,8 @@ async function testPG() {
       );
 
       console.log('Test pod creation successful!');
-    } catch (err) {
-      console.error('Error creating test pod:', err.message);
+    } catch (err: unknown) {
+      console.error('Error creating test pod:', ((err) as Error).message);
     }
 
     // 4. Query the test pod
@@ -57,8 +56,8 @@ async function testPG() {
         testPodId,
       ]);
       console.log('\nTest pod query result:', result.rows[0] || 'No pod found');
-    } catch (err) {
-      console.error('Error querying test pod:', err.message);
+    } catch (err: unknown) {
+      console.error('Error querying test pod:', ((err) as Error).message);
     }
 
     // 5. Test creating a message
@@ -73,10 +72,10 @@ async function testPG() {
       );
 
       console.log('Test message creation successful!');
-    } catch (err) {
-      console.error('Error creating test message:', err.message);
+    } catch (err: unknown) {
+      console.error('Error creating test message:', ((err) as Error).message);
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('General error:', err);
   } finally {
     // Close the connection pool
@@ -90,3 +89,4 @@ if (require.main === module) {
 }
 
 module.exports = testPG;
+export {};
