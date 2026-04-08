@@ -56,10 +56,10 @@ jest.mock('../../../utils/secret', () => ({
 }));
 
 const { AgentRegistry } = require('../../../models/AgentRegistry');
-const registryRoutes = require('../../../routes/registry');
+const publishRouter = require('../../../routes/registry/publish');
 
 const getRouteHandler = (path, method) => {
-  const layer = registryRoutes.stack.find((entry) => (
+  const layer = publishRouter.stack.find((entry) => (
     entry.route
     && entry.route.path === path
     && entry.route.methods[method]

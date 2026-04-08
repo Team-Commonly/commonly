@@ -28,10 +28,10 @@ jest.mock('../../../services/agentProvisionerService', () => ({
 }));
 
 const { listOpenClawPlugins } = require('../../../services/agentProvisionerService');
-const registryRoutes = require('../../../routes/registry');
+const presetsRouter = require('../../../routes/registry/presets-router');
 
 const getRouteHandler = (path, method) => {
-  const layer = registryRoutes.stack.find((entry) => (
+  const layer = presetsRouter.stack.find((entry) => (
     entry.route
     && entry.route.path === path
     && entry.route.methods[method]
