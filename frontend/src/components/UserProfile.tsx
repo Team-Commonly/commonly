@@ -42,30 +42,72 @@ import AppsManagement from './AppsManagement';
 import AvatarGenerator from './agents/AvatarGenerator';
 import AdminUsers from './admin/AdminUsers';
 
+interface ProfileUser {
+    _id: string;
+    username: string;
+    email: string;
+    role?: string;
+    profilePicture?: string;
+    createdAt: string;
+    isFollowing?: boolean;
+    followersCount?: number;
+    followingCount?: number;
+}
+
+interface UserStats {
+    postCount: number;
+    commentCount: number;
+}
+
+interface PublicPost {
+    id: string;
+    content?: string;
+    category?: string;
+    createdAt: string;
+}
+
+interface JoinedPod {
+    id: string;
+    name: string;
+    type?: string;
+    membersCount?: number;
+}
+
+interface PublicActivity {
+    recentPublicPosts: PublicPost[];
+    joinedPods: JoinedPod[];
+}
+
+interface SnackbarState {
+    open: boolean;
+    message: string;
+    severity: 'info' | 'error' | 'success' | 'warning';
+}
+
 const UserProfile = () => {
     const { refreshAvatars } = useAppContext();
     const { currentUser } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
-    const { id: profileId } = useParams();
-    const [user, setUser] = useState(null);
-    const [userStats, setUserStats] = useState({ postCount: 0, commentCount: 0 });
+    const { id: profileId } = useParams<{ id?: string }>();
+    const [user, setUser] = useState<ProfileUser | null>(null);
+    const [userStats, setUserStats] = useState<UserStats>({ postCount: 0, commentCount: 0 });
     const [error, setError] = useState('');
     const [openAvatarDialog, setOpenAvatarDialog] = useState(false);
     const [selectedAvatar, setSelectedAvatar] = useState('default');
-    const [avatarFile, setAvatarFile] = useState(null);
+    const [avatarFile, setAvatarFile] = useState<File | null>(null);
     const [avatarPreview, setAvatarPreview] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
     const [avatarGeneratorOpen, setAvatarGeneratorOpen] = useState(false);
     const [currentTab, setCurrentTab] = useState('overview');
-    const [apiToken, setApiToken] = useState(null);
-    const [apiTokenCreatedAt, setApiTokenCreatedAt] = useState(null);
+    const [apiToken, setApiToken] = useState<string | null>(null);
+    const [apiTokenCreatedAt, setApiTokenCreatedAt] = useState<string | null>(null);
     const [isGeneratingToken, setIsGeneratingToken] = useState(false);
     const [isRevokingToken, setIsRevokingToken] = useState(false);
     const [isFollowLoading, setIsFollowLoading] = useState(false);
     const [showToken, setShowToken] = useState(false);
-    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
-    const [publicActivity, setPublicActivity] = useState({ recentPublicPosts: [], joinedPods: [] });
+    const [snackbar, setSnackbar] = useState<SnackbarState>({ open: false, message: '', severity: 'info' });
+    const [publicActivity, setPublicActivity] = useState<PublicActivity>({ recentPublicPosts: [], joinedPods: [] });
     const [publicActivityLoading, setPublicActivityLoading] = useState(false);
 
     useEffect(() => {
@@ -114,11 +156,11 @@ const UserProfile = () => {
 
                 // Calculate post count and comment count
                 const allPosts = postsRes.data.posts || postsRes.data;
-                const userPosts = allPosts.filter(post => post.userId && post.userId._id === userRes.data._id);
-                const userComments = allPosts.reduce((count, post) => {
-                    return count + (post.comments || []).filter(comment => 
-                        comment.userId && 
-                        comment.userId._id && 
+                const userPosts = allPosts.filter((post: { userId?: { _id?: string } }) => post.userId && post.userId._id === userRes.data._id);
+                const userComments = allPosts.reduce((count: number, post: { comments?: Array<{ userId?: { _id?: string } }> }) => {
+                    return count + (post.comments || []).filter((comment) =>
+                        comment.userId &&
+                        comment.userId._id &&
                         comment.userId._id === userRes.data._id
                     ).length;
                 }, 0);
@@ -153,13 +195,13 @@ const UserProfile = () => {
         blurActiveElement();
     };
 
-    const handleAvatarSelect = (avatarId) => {
+    const handleAvatarSelect = (avatarId: string) => {
         setSelectedAvatar(avatarId);
         setAvatarFile(null);
         setAvatarPreview('');
     };
 
-    const handleGeneratedAvatarSelect = (avatarDataUri) => {
+    const handleGeneratedAvatarSelect = (avatarDataUri: string) => {
         if (!avatarDataUri) return;
         setSelectedAvatar(avatarDataUri);
         setAvatarFile(null);
@@ -167,7 +209,7 @@ const UserProfile = () => {
         setAvatarGeneratorOpen(false);
     };
 
-    const handleAvatarFileChange = (event) => {
+    const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
         setAvatarFile(file);
@@ -183,7 +225,7 @@ const UserProfile = () => {
                 const formData = new FormData();
                 formData.append('image', avatarFile);
                 const uploadRes = await axios.post('/api/uploads', formData, {
-                    headers: { 
+                    headers: {
                         Authorization: `Bearer ${localStorage.getItem('token')}`,
                         'Content-Type': 'multipart/form-data'
                     }
@@ -197,7 +239,7 @@ const UserProfile = () => {
             );
             setUser(response.data);
             handleCloseAvatarDialog();
-            
+
             // Use the refreshAvatars function instead to ensure consistent avatar display
             refreshAvatars();
         } catch (err) {
@@ -215,20 +257,20 @@ const UserProfile = () => {
                 const response = await axios.delete(`/api/users/${user._id}/follow`, {
                     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                 });
-                setUser((prev) => ({
+                setUser((prev) => prev ? ({
                     ...prev,
                     isFollowing: false,
                     followersCount: response.data?.target?.followersCount ?? Math.max((prev.followersCount || 1) - 1, 0),
-                }));
+                }) : prev);
             } else {
                 const response = await axios.post(`/api/users/${user._id}/follow`, {}, {
                     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                 });
-                setUser((prev) => ({
+                setUser((prev) => prev ? ({
                     ...prev,
                     isFollowing: true,
                     followersCount: response.data?.target?.followersCount ?? ((prev.followersCount || 0) + 1),
-                }));
+                }) : prev);
             }
         } catch (err) {
             setSnackbar({
@@ -247,7 +289,7 @@ const UserProfile = () => {
             const response = await axios.post('/api/auth/api-token/generate', {}, {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
             });
-            
+
             setApiToken(response.data.apiToken);
             setApiTokenCreatedAt(response.data.createdAt);
             setShowToken(true);
@@ -273,7 +315,7 @@ const UserProfile = () => {
             await axios.delete('/api/auth/api-token', {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
             });
-            
+
             setApiToken(null);
             setApiTokenCreatedAt(null);
             setShowToken(false);
@@ -333,10 +375,10 @@ const UserProfile = () => {
                         <Grid item xs={12} md={4}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                 <Box sx={{ position: 'relative' }}>
-                                    <Avatar 
-                                        sx={{ 
-                                            width: 96, 
-                                            height: 96, 
+                                    <Avatar
+                                        sx={{
+                                            width: 96,
+                                            height: 96,
                                             bgcolor: getAvatarColor(user.profilePicture),
                                             fontSize: '2.2rem'
                                         }}
@@ -345,10 +387,10 @@ const UserProfile = () => {
                                         {user.username.charAt(0).toUpperCase()}
                                     </Avatar>
                                     {isOwnProfile && (
-                                        <IconButton 
-                                            sx={{ 
-                                                position: 'absolute', 
-                                                bottom: 0, 
+                                        <IconButton
+                                            sx={{
+                                                position: 'absolute',
+                                                bottom: 0,
                                                 right: -4,
                                                 bgcolor: 'background.paper',
                                                 border: '1px solid',
@@ -434,14 +476,14 @@ const UserProfile = () => {
                     </Grid>
 
                     <Divider sx={{ my: 3 }} />
-                    
+
                     <Grid container spacing={2} alignItems="center">
                         <Grid item xs={12} md={6}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <Typography variant="h6" color="primary">
                                     Account Type
                                 </Typography>
-                                <Chip 
+                                <Chip
                                     icon={user.role === 'admin' ? <AdminPanelSettingsIcon /> : undefined}
                                     label={user.role === 'admin' ? 'Administrator' : 'User'}
                                     color={user.role === 'admin' ? 'primary' : 'default'}
@@ -476,16 +518,16 @@ const UserProfile = () => {
             {/* Profile Tabs */}
             {isOwnProfile ? (
             <Card>
-                <Tabs 
-                    value={currentTab} 
-                    onChange={(e, newValue) => setCurrentTab(newValue)}
+                <Tabs
+                    value={currentTab}
+                    onChange={(_e: React.SyntheticEvent, newValue: string) => setCurrentTab(newValue)}
                     sx={{ borderBottom: 1, borderColor: 'divider' }}
                 >
                     <Tab value="overview" label="Overview" />
-                    <Tab 
+                    <Tab
                         value="apps"
-                        label="Apps" 
-                        icon={<AppsIcon />} 
+                        label="Apps"
+                        icon={<AppsIcon />}
                         iconPosition="start"
                     />
                     <Tab
@@ -503,7 +545,7 @@ const UserProfile = () => {
                         />
                     )}
                 </Tabs>
-                
+
                 <CardContent>
                     {currentTab === 'overview' && (
                         <Box>
@@ -515,27 +557,27 @@ const UserProfile = () => {
                             </Typography>
                         </Box>
                     )}
-                    
+
                     {currentTab === 'apps' && <AppsManagement />}
-                    
+
                     {currentTab === 'api-token' && (
                         <Box>
                             <Typography variant="h6" gutterBottom>
                                 API Token Management
                             </Typography>
                             <Typography variant="body2" color="text.secondary" gutterBottom>
-                                Generate an API token to access the Commonly API programmatically. 
+                                Generate an API token to access the Commonly API programmatically.
                                 Keep your token secure and don&apos;t share it publicly.
                             </Typography>
-                            
+
                             {apiToken ? (
                                 <Box sx={{ mt: 3 }}>
                                     <Alert severity="info" sx={{ mb: 3 }}>
                                         Your API token was created on {' '}
-                                        {new Date(apiTokenCreatedAt).toLocaleDateString()} at {' '}
-                                        {new Date(apiTokenCreatedAt).toLocaleTimeString()}
+                                        {new Date(apiTokenCreatedAt!).toLocaleDateString()} at {' '}
+                                        {new Date(apiTokenCreatedAt!).toLocaleTimeString()}
                                     </Alert>
-                                    
+
                                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
                                         <TextField
                                             label="API Token"
@@ -553,7 +595,7 @@ const UserProfile = () => {
                                             </IconButton>
                                         </Tooltip>
                                         <Tooltip title={showToken ? "Hide token" : "Show token"}>
-                                            <IconButton 
+                                            <IconButton
                                                 onClick={() => setShowToken(!showToken)}
                                                 color="primary"
                                             >
@@ -561,7 +603,7 @@ const UserProfile = () => {
                                             </IconButton>
                                         </Tooltip>
                                     </Box>
-                                    
+
                                     <Box sx={{ display: 'flex', gap: 2 }}>
                                         <Button
                                             variant="outlined"
@@ -598,16 +640,16 @@ const UserProfile = () => {
                                     </Button>
                                 </Box>
                             )}
-                            
+
                             <Divider sx={{ my: 3 }} />
-                            
+
                             <Typography variant="h6" gutterBottom>
                                 Usage Example
                             </Typography>
                             <Paper sx={{ p: 2, bgcolor: 'grey.100', mt: 2 }}>
-                                <Typography 
-                                    variant="body2" 
-                                    component="pre" 
+                                <Typography
+                                    variant="body2"
+                                    component="pre"
                                     sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}
                                 >
 {`curl -H "Authorization: Bearer YOUR_API_TOKEN" \\
@@ -688,8 +730,8 @@ const UserProfile = () => {
 
             {/* Avatar Selection Dialog */}
             {isOwnProfile && (
-            <Dialog 
-                open={openAvatarDialog} 
+            <Dialog
+                open={openAvatarDialog}
                 onClose={handleCloseAvatarDialog}
                 disableRestoreFocus={true}
             >
@@ -703,7 +745,7 @@ const UserProfile = () => {
                                 bgcolor: getAvatarColor(selectedAvatar),
                                 fontSize: '1.6rem'
                             }}
-                            src={avatarPreview || (isSelectedAvatarColor ? null : getAvatarSrc(selectedAvatar)) || null}
+                            src={avatarPreview || (isSelectedAvatarColor ? undefined : getAvatarSrc(selectedAvatar)) || undefined}
                         >
                             {user.username.charAt(0).toUpperCase()}
                         </Avatar>
@@ -748,9 +790,9 @@ const UserProfile = () => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={handleCloseAvatarDialog}>Cancel</Button>
-                    <Button 
-                        onClick={handleSaveAvatar} 
-                        variant="contained" 
+                    <Button
+                        onClick={handleSaveAvatar}
+                        variant="contained"
                         disabled={isUpdating}
                     >
                         {isUpdating ? 'Saving...' : 'Save'}
@@ -776,8 +818,8 @@ const UserProfile = () => {
                 onClose={handleCloseSnackbar}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
             >
-                <Alert 
-                    onClose={handleCloseSnackbar} 
+                <Alert
+                    onClose={handleCloseSnackbar}
                     severity={snackbar.severity}
                     variant="filled"
                 >
