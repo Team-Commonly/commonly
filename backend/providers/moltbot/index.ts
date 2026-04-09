@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Moltbot Provider
  *
@@ -10,6 +9,7 @@
  * - Syncs agent activity to Commonly
  */
 
+export {};
 /* eslint-disable max-classes-per-file, no-plusplus, no-restricted-syntax, global-require, import/no-extraneous-dependencies */
 const WebSocket = require('ws');
 const { EventEmitter } = require('events');
@@ -43,7 +43,7 @@ const ProviderManifest = {
  * Moltbot Gateway Connection
  */
 class MoltbotConnection extends EventEmitter {
-  constructor(options = {}) {
+  constructor(options: any = {}) {
     super();
     this.gatewayUrl = options.gatewayUrl || DEFAULT_GATEWAY_URL;
     this.ws = null;
@@ -60,7 +60,7 @@ class MoltbotConnection extends EventEmitter {
    * Connect to moltbot Gateway
    */
   async connect() {
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       try {
         this.ws = new WebSocket(this.gatewayUrl);
 
@@ -72,25 +72,25 @@ class MoltbotConnection extends EventEmitter {
           resolve();
         });
 
-        this.ws.on('message', (data) => {
+        this.ws.on('message', (data: any) => {
           this.handleMessage(data);
         });
 
-        this.ws.on('close', (code, reason) => {
+        this.ws.on('close', (code: any, reason: any) => {
           console.log(`[moltbot] Disconnected: ${code} ${reason}`);
           this.connected = false;
           this.emit('disconnected', { code, reason });
           this.scheduleReconnect();
         });
 
-        this.ws.on('error', (error) => {
+        this.ws.on('error', (error: any) => {
           console.error('[moltbot] WebSocket error:', error.message);
           this.emit('error', error);
           if (!this.connected) {
             reject(error);
           }
         });
-      } catch (error) {
+      } catch (error: any) {
         reject(error);
       }
     });
@@ -131,7 +131,7 @@ class MoltbotConnection extends EventEmitter {
   /**
    * Handle incoming message from Gateway
    */
-  handleMessage(data) {
+  handleMessage(data: any) {
     try {
       const message = JSON.parse(data.toString());
 
@@ -155,7 +155,7 @@ class MoltbotConnection extends EventEmitter {
       if (message.type) {
         this.emit(message.type, message.payload || message);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[moltbot] Failed to parse message:', error);
     }
   }
@@ -163,7 +163,7 @@ class MoltbotConnection extends EventEmitter {
   /**
    * Send RPC request to Gateway
    */
-  async rpc(method, params = {}) {
+  async rpc(method: any, params: any = {}) {
     if (!this.connected || !this.ws) {
       throw new Error('Not connected to Gateway');
     }
@@ -176,18 +176,18 @@ class MoltbotConnection extends EventEmitter {
       params,
     };
 
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
         reject(new Error('RPC timeout'));
       }, 30000);
 
       this.pendingRequests.set(id, {
-        resolve: (result) => {
+        resolve: (result: any) => {
           clearTimeout(timeout);
           resolve(result);
         },
-        reject: (error) => {
+        reject: (error: any) => {
           clearTimeout(timeout);
           reject(error);
         },
@@ -200,7 +200,7 @@ class MoltbotConnection extends EventEmitter {
   /**
    * Send event to Gateway
    */
-  send(type, payload) {
+  send(type: any, payload: any) {
     if (!this.connected || !this.ws) {
       throw new Error('Not connected to Gateway');
     }
@@ -219,7 +219,7 @@ class MoltbotConnection extends EventEmitter {
  * Moltbot Provider for Commonly
  */
 class MoltbotProvider extends EventEmitter {
-  constructor(options = {}) {
+  constructor(options: any = {}) {
     super();
     this.connection = new MoltbotConnection(options);
     this.commonlyApiUrl = options.commonlyApiUrl || 'http://localhost:5000';
@@ -236,7 +236,7 @@ class MoltbotProvider extends EventEmitter {
     // Set up event handlers
     this.connection.on('connected', () => this.handleConnected());
     this.connection.on('disconnected', () => this.handleDisconnected());
-    this.connection.on('message', (msg) => this.handleGatewayMessage(msg));
+    this.connection.on('message', (msg: any) => this.handleGatewayMessage(msg));
 
     // Connect to moltbot Gateway
     await this.connection.connect();
@@ -295,7 +295,7 @@ class MoltbotProvider extends EventEmitter {
         ],
       });
       console.log('[moltbot] Registered as context provider');
-    } catch (error) {
+    } catch (error: any) {
       console.error('[moltbot] Failed to register provider:', error);
     }
   }
@@ -317,7 +317,7 @@ class MoltbotProvider extends EventEmitter {
   /**
    * Handle incoming message from moltbot Gateway
    */
-  async handleGatewayMessage(message) {
+  async handleGatewayMessage(message: any) {
     // Handle tool calls from moltbot
     if (message.type === 'tool.call') {
       await this.handleToolCall(message);
@@ -334,7 +334,7 @@ class MoltbotProvider extends EventEmitter {
   /**
    * Handle tool call from moltbot
    */
-  async handleToolCall(message) {
+  async handleToolCall(message: any) {
     const { toolName, arguments: args, requestId } = message.payload || message;
 
     try {
@@ -362,7 +362,7 @@ class MoltbotProvider extends EventEmitter {
         result,
         success: true,
       });
-    } catch (error) {
+    } catch (error: any) {
       this.connection.send('tool.result', {
         requestId,
         error: error.message,
@@ -374,7 +374,7 @@ class MoltbotProvider extends EventEmitter {
   /**
    * Handle context request from moltbot
    */
-  async handleContextRequest(message) {
+  async handleContextRequest(message: any) {
     const { podId, task, requestId } = message.payload || message;
 
     try {
@@ -385,7 +385,7 @@ class MoltbotProvider extends EventEmitter {
         context,
         success: true,
       });
-    } catch (error) {
+    } catch (error: any) {
       this.connection.send('context.response', {
         requestId,
         error: error.message,
@@ -397,7 +397,7 @@ class MoltbotProvider extends EventEmitter {
   /**
    * Search Commonly pod memory
    */
-  async search(podId, query, options = {}) {
+  async search(podId: any, query: any, options: any = {}) {
     const axios = require('axios');
     const params = new URLSearchParams();
     params.set('q', query);
@@ -416,7 +416,7 @@ class MoltbotProvider extends EventEmitter {
   /**
    * Get context from Commonly pod
    */
-  async getContext(podId, options = {}) {
+  async getContext(podId: any, options: any = {}) {
     // Check cache first
     const cacheKey = `${podId}:${options.task || 'default'}`;
     const cached = this.contextCache.get(cacheKey);
@@ -448,7 +448,7 @@ class MoltbotProvider extends EventEmitter {
   /**
    * Write to Commonly pod memory
    */
-  async write(podId, options) {
+  async write(podId: any, options: any) {
     const axios = require('axios');
     const response = await axios.post(
       `${this.commonlyApiUrl}/api/v1/memory/${podId}`,
@@ -482,7 +482,7 @@ class MoltbotProvider extends EventEmitter {
   /**
    * Push an event to moltbot
    */
-  pushEvent(eventType, payload) {
+  pushEvent(eventType: any, payload: any) {
     this.connection.send('commonly.event', {
       eventType,
       payload,
@@ -499,12 +499,12 @@ class MoltbotProvider extends EventEmitter {
 }
 
 // Singleton instance
-let providerInstance = null;
+let providerInstance: any = null;
 
 /**
  * Get or create the moltbot provider instance
  */
-const getMoltbotProvider = (options) => {
+const getMoltbotProvider = (options: any) => {
   if (!providerInstance) {
     providerInstance = new MoltbotProvider(options);
   }
@@ -514,7 +514,7 @@ const getMoltbotProvider = (options) => {
 /**
  * Initialize the moltbot provider
  */
-const initializeMoltbotProvider = async (options) => {
+const initializeMoltbotProvider = async (options: any) => {
   const provider = getMoltbotProvider(options);
   await provider.initialize();
   return provider;
