@@ -1,4 +1,4 @@
-// @ts-nocheck
+export {};
 const express = require('express');
 const cors = require('cors');
 const _path = require('path');
@@ -45,10 +45,10 @@ const agentAutonomyAdminRoutes = require('./routes/admin/agentAutonomy');
 const agentEventsAdminRoutes = require('./routes/admin/agentEvents');
 const adminUsersRoutes = require('./routes/admin/users');
 // Conditionally load PostgreSQL routes and models
-let pgPodRoutes;
-let pgMessageRoutes;
-let pgStatusRoutes;
-let PGMessage;
+let pgPodRoutes: any;
+let pgMessageRoutes: any;
+let pgStatusRoutes: any;
+let PGMessage: any;
 let _PGPod;
 const Message = require('./models/Message');
 const Pod = require('./models/Pod');
@@ -83,7 +83,7 @@ const buildAllowedOrigins = () => {
 };
 
 const allowedOrigins = buildAllowedOrigins();
-const isAllowedOrigin = (origin) => !origin || allowedOrigins.includes(origin);
+const isAllowedOrigin = (origin: any) => !origin || allowedOrigins.includes(origin);
 
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -116,7 +116,7 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(
   cors({
-    origin: (origin, callback) => {
+    origin: (origin: any, callback: any) => {
       if (isAllowedOrigin(origin)) {
         callback(null, true);
       } else {
@@ -135,7 +135,7 @@ app.use('/api/discord/interactions', express.raw({ type: 'application/json' }));
 app.use(
   '/api/webhooks/slack',
   express.json({
-    verify: (req, res, buf) => {
+    verify: (req: any, res: any, buf: any) => {
       req.rawBody = buf.toString();
     },
   }),
@@ -205,18 +205,18 @@ mongoose.connection.once('open', () => {
       try {
         const indexes = await AgentInstallation.collection.indexes();
         const legacyIndex = indexes.find(
-          (index) => JSON.stringify(index.key) === JSON.stringify({ agentName: 1, podId: 1 }),
+          (index: any) => JSON.stringify(index.key) === JSON.stringify({ agentName: 1, podId: 1 }),
         );
         if (legacyIndex) {
           await AgentInstallation.collection.dropIndex(legacyIndex.name);
           console.log('[agent-installations] Dropped legacy index:', legacyIndex.name);
         }
         await AgentInstallation.syncIndexes();
-      } catch (indexError) {
+      } catch (indexError: any) {
         console.warn('[agent-installations] Index sync failed:', indexError.message);
       }
 
-      AgentBootstrapService.bootstrap().catch((err) => {
+      AgentBootstrapService.bootstrap().catch((err: any) => {
         console.error('[agent-bootstrap] Error:', err.message);
       });
     })();
@@ -240,11 +240,11 @@ if (process.env.NODE_ENV !== 'test') {
 if (process.env.PG_HOST) {
   console.log('Attempting to connect to PostgreSQL for chat functionality...');
   connectPG()
-    .then((pgPool) => {
+    .then((pgPool: any) => {
       if (pgPool) {
         // Initialize PostgreSQL database
         initializePGDB()
-          .then((success) => {
+          .then((success: any) => {
             if (success) {
               // Set global flag that PostgreSQL is available
               pgAvailable = true;
@@ -261,16 +261,16 @@ if (process.env.PG_HOST) {
                 'PostgreSQL database initialization failed, chat functionality will use MongoDB',
               );
               // Register a dummy status endpoint to indicate PostgreSQL is not available
-              app.use('/api/pg/status', (req, res) => {
+              app.use('/api/pg/status', (req: any, res: any) => {
                 res.json({ available: false });
               });
             }
           })
-          .catch((err) => {
+          .catch((err: any) => {
             pgAvailable = false;
             console.error('Error initializing PostgreSQL database:', err);
             // Register a dummy status endpoint to indicate PostgreSQL is not available
-            app.use('/api/pg/status', (req, res) => {
+            app.use('/api/pg/status', (req: any, res: any) => {
               res.json({ available: false });
             });
           });
@@ -280,16 +280,16 @@ if (process.env.PG_HOST) {
           'PostgreSQL connection failed, chat functionality will use MongoDB',
         );
         // Register a dummy status endpoint to indicate PostgreSQL is not available
-        app.use('/api/pg/status', (req, res) => {
+        app.use('/api/pg/status', (req: any, res: any) => {
           res.json({ available: false });
         });
       }
     })
-    .catch((err) => {
+    .catch((err: any) => {
       pgAvailable = false;
       console.error('Error connecting to PostgreSQL:', err);
       // Register a dummy status endpoint to indicate PostgreSQL is not available
-      app.use('/api/pg/status', (req, res) => {
+      app.use('/api/pg/status', (req: any, res: any) => {
         res.json({ available: false });
       });
     });
@@ -299,13 +299,13 @@ if (process.env.PG_HOST) {
     'PostgreSQL connection not configured. Chat functionality will use MongoDB.',
   );
   // Register a dummy status endpoint to indicate PostgreSQL is not available
-  app.use('/api/pg/status', (req, res) => {
+  app.use('/api/pg/status', (req: any, res: any) => {
     res.json({ available: false });
   });
 }
 
 // Socket.io middleware for authentication
-io.use((socket, next) => {
+io.use((socket: any, next: any) => {
   const { token } = socket.handshake.auth;
   if (!token) {
     console.error('Socket auth error: Token not provided');
@@ -325,38 +325,38 @@ io.use((socket, next) => {
 
     socket.userId = userId;
     return next();
-  } catch (err) {
+  } catch (err: any) {
     console.error('Socket auth error:', err.message);
     return next(new Error('Authentication error: Invalid token'));
   }
 });
 
-const emitPresence = async (podId) => {
+const emitPresence = async (podId: any) => {
   if (!podId) return;
   try {
     const sockets = await io.in(`pod_${podId}`).fetchSockets();
     const userIds = Array.from(
       new Set(
         sockets
-          .map((s) => s.userId)
-          .filter((userId) => userId),
+          .map((s: any) => s.userId)
+          .filter((userId: any) => userId),
       ),
     );
     io.to(`pod_${podId}`).emit('podPresence', { podId, userIds });
-  } catch (error) {
+  } catch (error: any) {
     console.warn('Failed to emit pod presence:', error.message);
   }
 };
 
-const isPodMember = (pod, userId) => {
+const isPodMember = (pod: any, userId: any) => {
   if (!pod || !userId) {
     return false;
   }
 
-  return (pod.members || []).some((member) => member?.toString() === userId.toString());
+  return (pod.members || []).some((member: any) => member?.toString() === userId.toString());
 };
 
-const authorizeSocketPodAccess = async (socket, podId, action) => {
+const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) => {
   if (!podId) {
     console.warn(`Socket tried to ${action} without podId`);
     socket.emit('error', { message: 'Pod ID is required' });
@@ -385,14 +385,14 @@ const authorizeSocketPodAccess = async (socket, podId, action) => {
 };
 
 // Socket.io event handlers
-io.on('connection', (socket) => {
+io.on('connection', (socket: any) => {
   console.log(
     `New client connected (id: ${socket.id}, user: ${socket.userId})`,
   );
   socket.data.joinedPods = new Set();
 
   // Join a pod room
-  socket.on('joinPod', async (podId) => {
+  socket.on('joinPod', async (podId: any) => {
     const pod = await authorizeSocketPodAccess(socket, podId, 'join');
     if (!pod) {
       return;
@@ -405,7 +405,7 @@ io.on('connection', (socket) => {
   });
 
   // Leave a pod room
-  socket.on('leavePod', async (podId) => {
+  socket.on('leavePod', async (podId: any) => {
     if (!podId) {
       console.warn('Socket tried to leave pod without podId');
       return;
@@ -419,7 +419,7 @@ io.on('connection', (socket) => {
   // Send a message to a pod
   socket.on(
     'sendMessage',
-    async ({ podId, content, userId, messageType = 'text', replyToMessageId = null }) => {
+    async ({ podId, content, userId, messageType = 'text', replyToMessageId = null }: { podId: any; content: any; userId: any; messageType?: any; replyToMessageId?: any }) => {
       try {
         const socketUserId = socket.userId;
 
@@ -586,7 +586,7 @@ io.on('connection', (socket) => {
               username: mentionUsername,
             });
           }
-        } catch (mentionError) {
+        } catch (mentionError: any) {
           console.warn('Failed to enqueue agent mentions:', mentionError.message);
         }
 
@@ -616,7 +616,7 @@ io.on('connection', (socket) => {
         });
 
         io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Socket error:', err.message, { podId, userId: socket.userId });
         socket.emit('error', { message: 'Server error' });
       }
@@ -624,7 +624,7 @@ io.on('connection', (socket) => {
   );
 
   // Disconnect event
-  socket.on('disconnect', (reason) => {
+  socket.on('disconnect', (reason: any) => {
     console.log(
       `Client disconnected (id: ${socket.id}, user: ${socket.userId}). Reason: ${reason}`,
     );
