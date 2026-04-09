@@ -1,8 +1,9 @@
-// @ts-nocheck
 /**
  * Kubernetes-native Agent Provisioner Service
  * Replaces Docker socket mounting with K8s API for agent runtime provisioning
  */
+
+export {};
 
 const k8s = require('@kubernetes/client-node');
 const stream = require('stream');
@@ -41,7 +42,7 @@ const AGENT_TOLERATIONS = (() => {
 /**
  * Resolve OpenClaw account ID from agent name and instance ID
  */
-const resolveOpenClawAccountId = ({ agentName, instanceId }) => {
+const resolveOpenClawAccountId = ({ agentName, instanceId }: any) => {
   const normalizedAgent = String(agentName || '').trim().toLowerCase();
   const normalizedInstance = String(instanceId || 'default').trim().toLowerCase() || 'default';
   if (normalizedAgent === 'openclaw') {
@@ -50,13 +51,13 @@ const resolveOpenClawAccountId = ({ agentName, instanceId }) => {
   return `${normalizedAgent}-${normalizedInstance}`;
 };
 
-const normalizeGatewaySlug = (gateway) => {
+const normalizeGatewaySlug = (gateway: any) => {
   const slug = String(gateway?.slug || '').trim().toLowerCase();
   if (!slug) return '';
   return slug.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
 };
 
-const resolveGatewayDeploymentName = (gateway) => {
+const resolveGatewayDeploymentName = (gateway: any) => {
   const slug = normalizeGatewaySlug(gateway);
   if (gateway?.mode === 'k8s' && slug) {
     return `gateway-${slug}`;
@@ -64,7 +65,7 @@ const resolveGatewayDeploymentName = (gateway) => {
   return 'clawdbot-gateway';
 };
 
-const resolveGatewayConfigMapName = (gateway) => {
+const resolveGatewayConfigMapName = (gateway: any) => {
   const slug = normalizeGatewaySlug(gateway);
   if (gateway?.mode === 'k8s' && slug) {
     return `gateway-${slug}-config`;
@@ -133,7 +134,7 @@ const DEFAULT_HEARTBEAT_PROMPT = [
   'When new claims or topics appear, use web_search (if available) to quickly verify/enrich before posting.',
 ].join(' ');
 
-const normalizeHeartbeatContent = (content) => {
+const normalizeHeartbeatContent = (content: any) => {
   const trimmed = String(content || '').trim();
   if (!trimmed) return DEFAULT_HEARTBEAT_CONTENT;
   if (trimmed.startsWith('#')) return `${trimmed}\n`;
@@ -147,15 +148,15 @@ const buildLabelSelector = (labels = {}) => (
     .join(',')
 );
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: any) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const isPodReady = (pod) => {
+const isPodReady = (pod: any) => {
   if (pod?.status?.phase !== 'Running') return false;
   const conditions = Array.isArray(pod?.status?.conditions) ? pod.status.conditions : [];
-  return conditions.some((condition) => condition?.type === 'Ready' && condition?.status === 'True');
+  return conditions.some((condition: any) => condition?.type === 'Ready' && condition?.status === 'True');
 };
 
-const resolveGatewayPodName = async (gateway) => {
+const resolveGatewayPodName = async (gateway: any) => {
   const deploymentName = resolveGatewayDeploymentName(gateway);
   const deploymentResponse = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
   const matchLabels = deploymentResponse.body?.spec?.selector?.matchLabels || {};
@@ -176,7 +177,7 @@ const resolveGatewayPodName = async (gateway) => {
 };
 
 const resolveGatewayPodNameWithRetry = async (
-  gateway,
+  gateway: any,
   { timeoutMs = 60000, pollMs = 1500 } = {},
 ) => {
   const startedAt = Date.now();
@@ -185,7 +186,7 @@ const resolveGatewayPodNameWithRetry = async (
     try {
       const podName = await resolveGatewayPodName(gateway);
       if (podName) return podName;
-    } catch (error) {
+    } catch (error: any) {
       lastError = error;
     }
     await sleep(pollMs);
@@ -194,15 +195,15 @@ const resolveGatewayPodNameWithRetry = async (
   throw new Error(`No ready gateway pod found within ${timeoutMs}ms`);
 };
 
-const execInPod = async ({ podName, containerName = 'clawdbot-gateway', command = [] }) => {
+const execInPod = async ({ podName, containerName = 'clawdbot-gateway', command = [] }: any) => {
   const stdout = new stream.PassThrough();
   const stderr = new stream.PassThrough();
   let out = '';
   let err = '';
-  stdout.on('data', (chunk) => { out += chunk.toString(); });
-  stderr.on('data', (chunk) => { err += chunk.toString(); });
+  stdout.on('data', (chunk: any) => { out += chunk.toString(); });
+  stderr.on('data', (chunk: any) => { err += chunk.toString(); });
 
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     stdout.on('error', reject);
     stderr.on('error', reject);
     k8sExec.exec(
@@ -214,7 +215,7 @@ const execInPod = async ({ podName, containerName = 'clawdbot-gateway', command 
       stderr,
       null,
       false,
-      (status) => {
+      (status: any) => {
         const success = status?.status === 'Success' || !status || !status?.status;
         if (success) resolve();
         else reject(new Error(status?.message || `Pod exec failed with status: ${status?.status}`));
@@ -225,7 +226,7 @@ const execInPod = async ({ podName, containerName = 'clawdbot-gateway', command 
   return { stdout: out, stderr: err };
 };
 
-const writeOpenClawHeartbeatFile = async (accountId, content, { allowEmpty = true, gateway } = {}) => {
+const writeOpenClawHeartbeatFile = async (accountId: any, content: any, { allowEmpty = true, gateway } : any = {}) => {
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
   const heartbeatPath = `${workspacePath}/${accountId}/HEARTBEAT.md`;
@@ -245,7 +246,7 @@ const writeOpenClawHeartbeatFile = async (accountId, content, { allowEmpty = tru
   return result.stdout.trim() || heartbeatPath;
 };
 
-const writeWorkspaceIdentityFile = async (accountId, content, { gateway } = {}) => {
+const writeWorkspaceIdentityFile = async (accountId: any, content: any, { gateway } : any = {}) => {
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
   const identityPath = `${workspacePath}/${accountId}/IDENTITY.md`;
@@ -265,7 +266,7 @@ const writeWorkspaceIdentityFile = async (accountId, content, { gateway } = {}) 
   return result.stdout.trim() || identityPath;
 };
 
-const ensureWorkspaceIdentityFile = async (accountId, content, { gateway } = {}) => {
+const ensureWorkspaceIdentityFile = async (accountId: any, content: any, { gateway } : any = {}) => {
   if (!content || !content.trim()) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
@@ -291,7 +292,7 @@ const ensureWorkspaceIdentityFile = async (accountId, content, { gateway } = {})
   return result.stdout.trim() || identityPath;
 };
 
-const readOpenClawHeartbeatFile = async (accountId, { gateway } = {}) => {
+const readOpenClawHeartbeatFile = async (accountId: any, { gateway } : any = {}) => {
   try {
     const podName = await resolveGatewayPodNameWithRetry(gateway);
     const heartbeatPath = `/workspace/${accountId}/HEARTBEAT.md`;
@@ -306,7 +307,7 @@ const readOpenClawHeartbeatFile = async (accountId, { gateway } = {}) => {
   }
 };
 
-const readOpenClawIdentityFile = async (accountId, { gateway } = {}) => {
+const readOpenClawIdentityFile = async (accountId: any, { gateway } : any = {}) => {
   try {
     const podName = await resolveGatewayPodNameWithRetry(gateway);
     const identityPath = `/workspace/${accountId}/IDENTITY.md`;
@@ -321,7 +322,7 @@ const readOpenClawIdentityFile = async (accountId, { gateway } = {}) => {
   }
 };
 
-const ensureWorkspaceSoulFile = async (accountId, content, { gateway } = {}) => {
+const ensureWorkspaceSoulFile = async (accountId: any, content: any, { gateway } : any = {}) => {
   if (!content || !String(content).trim()) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
@@ -342,7 +343,7 @@ const ensureWorkspaceSoulFile = async (accountId, content, { gateway } = {}) => 
   return result.stdout.trim() || soulPath;
 };
 
-const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway, customContent, forceOverwrite } = {}) => {
+const ensureHeartbeatTemplate = async (accountId: any, heartbeat: any, { gateway, customContent, forceOverwrite } : any = {}) => {
   if (!heartbeat || heartbeat.enabled === false) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
@@ -386,7 +387,7 @@ const ensureHeartbeatTemplate = async (accountId, heartbeat, { gateway, customCo
  * ConfigMap, so new accounts must appear there too or the init container will
  * never write their auth-profiles.json and the gateway will skip them on startup.
  */
-const syncAccountToStateMoltbot = async (accountId, accountEntry, agentEntry, binding, { gateway } = {}) => {
+const syncAccountToStateMoltbot = async (accountId: any, accountEntry: any, agentEntry: any, binding: any, { gateway } : any = {}) => {
   let podName;
   try {
     podName = await resolveGatewayPodNameWithRetry(gateway);
@@ -438,7 +439,7 @@ const syncAccountToStateMoltbot = async (accountId, accountEntry, agentEntry, bi
   await execInPod({ podName, containerName: 'clawdbot-gateway', command: ['sh', '-lc', script] });
 };
 
-const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
+const normalizeWorkspaceDocs = async (accountId: any, { gateway } : any = {}) => {
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
   const agentPath = `${workspacePath}/${accountId}`;
@@ -604,7 +605,7 @@ const normalizeWorkspaceDocs = async (accountId, { gateway } = {}) => {
   return result.stdout.trim() || agentPath;
 };
 
-const ensureWorkspaceMemoryFiles = async (accountId, { gateway } = {}) => {
+const ensureWorkspaceMemoryFiles = async (accountId: any, { gateway } : any = {}) => {
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
   const agentPath = `${workspacePath}/${accountId}`;
@@ -640,7 +641,7 @@ const ensureWorkspaceMemoryFiles = async (accountId, { gateway } = {}) => {
   return result.stdout.trim() || agentPath;
 };
 
-const listOpenClawPlugins = async ({ gateway } = {}) => {
+const listOpenClawPlugins = async ({ gateway } : any = {}) => {
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const result = await execInPod({
     podName,
@@ -650,7 +651,7 @@ const listOpenClawPlugins = async ({ gateway } = {}) => {
   let payload;
   try {
     payload = JSON.parse(result.stdout || '{}');
-  } catch (error) {
+  } catch (error: any) {
     throw new Error('Failed to parse OpenClaw plugin list output.');
   }
   return {
@@ -660,7 +661,7 @@ const listOpenClawPlugins = async ({ gateway } = {}) => {
   };
 };
 
-const installOpenClawPlugin = async ({ spec, link = false, gateway } = {}) => {
+const installOpenClawPlugin = async ({ spec, link = false, gateway } : any = {}) => {
   if (!spec || typeof spec !== 'string') {
     throw new Error('spec is required');
   }
@@ -683,7 +684,7 @@ const installOpenClawPlugin = async ({ spec, link = false, gateway } = {}) => {
   };
 };
 
-const listOpenClawBundledSkills = async ({ gateway } = {}) => {
+const listOpenClawBundledSkills = async ({ gateway } : any = {}) => {
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const result = await execInPod({
     podName,
@@ -714,7 +715,7 @@ const syncOpenClawSkills = async ({
   gateway,
   defaultCommonlySkillContent = '',
   bundledSkills = [],
-} = {}) => {
+}: any = {}) => {
   if (!accountId) {
     throw new Error('accountId is required');
   }
@@ -756,11 +757,11 @@ const syncOpenClawSkills = async ({
       ? skillNames.map((name) => String(name).trim()).filter(Boolean)
       : [];
     if (mode === 'selected' && normalizedSkillNames.length) {
-      query['metadata.skillName'] = { $in: normalizedSkillNames };
+      (query as any)['metadata.skillName'] = { $in: normalizedSkillNames };
     }
 
     const assets = await PodAsset.find(query).lean();
-    assets.forEach((asset) => {
+    assets.forEach((asset: any) => {
       const skillName = asset?.metadata?.skillName || asset?.title?.replace(/^Skill:\s*/i, '') || '';
       if (!skillName) return;
       const slug = PodAssetService.normalizeSkillKey(skillName);
@@ -775,7 +776,7 @@ const syncOpenClawSkills = async ({
       const extraFiles = Array.isArray(asset?.metadata?.extraFiles)
         ? asset.metadata.extraFiles
         : [];
-      extraFiles.forEach((file) => {
+      extraFiles.forEach((file: any) => {
         const relPathRaw = String(file?.path || '').trim().replace(/\\/g, '/');
         const fileContent = file?.content;
         if (!relPathRaw || typeof fileContent !== 'string') return;
@@ -849,25 +850,25 @@ const syncOpenClawSkills = async ({
 /**
  * Read ConfigMap data
  */
-const readConfigMap = async (configMapName, key) => {
+const readConfigMap = async (configMapName: any, key: any) => {
   try {
     const response = await k8sApi.readNamespacedConfigMap(configMapName, NAMESPACE);
     const data = response.body.data || {};
     const raw = data[key] || '{}';
     return JSON.parse(raw);
-  } catch (error) {
-    if (error.response && error.response.statusCode === 404) {
+  } catch (error: any) {
+    if ((error as any).response && (error as any).response.statusCode === 404) {
       console.log(`[k8s-provisioner] ConfigMap ${configMapName} not found, will create`);
       return {};
     }
-    throw new Error(`Failed to read ConfigMap ${configMapName}: ${error.message}`);
+    throw new Error(`Failed to read ConfigMap ${configMapName}: ${(error as Error).message}`);
   }
 };
 
 /**
  * Write ConfigMap data
  */
-const writeConfigMap = async (configMapName, key, data) => {
+const writeConfigMap = async (configMapName: any, key: any, data: any) => {
   const dataString = JSON.stringify(data, null, 2);
   const configMap = {
     metadata: {
@@ -887,22 +888,22 @@ const writeConfigMap = async (configMapName, key, data) => {
     // Try to update existing ConfigMap (requires resourceVersion)
     const existing = await k8sApi.readNamespacedConfigMap(configMapName, NAMESPACE);
     if (existing?.body?.metadata?.resourceVersion) {
-      configMap.metadata.resourceVersion = existing.body.metadata.resourceVersion;
+      (configMap as any).metadata.resourceVersion = existing.body.metadata.resourceVersion;
     }
     await k8sApi.replaceNamespacedConfigMap(configMapName, NAMESPACE, configMap);
     console.log(`[k8s-provisioner] Updated ConfigMap ${configMapName}`);
-  } catch (error) {
-    if (error.response && error.response.statusCode === 404) {
+  } catch (error: any) {
+    if ((error as any).response && (error as any).response.statusCode === 404) {
       // Create new ConfigMap
       await k8sApi.createNamespacedConfigMap(NAMESPACE, configMap);
       console.log(`[k8s-provisioner] Created ConfigMap ${configMapName}`);
     } else {
-      throw new Error(`Failed to write ConfigMap ${configMapName}: ${error.message}`);
+      throw new Error(`Failed to write ConfigMap ${configMapName}: ${(error as Error).message}`);
     }
   }
 };
 
-const normalizeSkillEnvMap = (env) => {
+const normalizeSkillEnvMap = (env: any) => {
   if (!env || typeof env !== 'object') return null;
   const entries = Object.entries(env)
     .map(([key, value]) => [String(key || '').trim(), String(value ?? '').trim()])
@@ -911,20 +912,20 @@ const normalizeSkillEnvMap = (env) => {
   return Object.fromEntries(entries);
 };
 
-const normalizeSkillApiKey = (value) => {
+const normalizeSkillApiKey = (value: any) => {
   const next = String(value ?? '').trim();
   return next ? next : null;
 };
 
-const isEnvLikeKey = (key) => /^[A-Z][A-Z0-9_]*$/.test(String(key || '').trim());
+const isEnvLikeKey = (key: any) => /^[A-Z][A-Z0-9_]*$/.test(String(key || '').trim());
 
-const shouldTreatRawEntryAsEnv = (rawEntry) => {
+const shouldTreatRawEntryAsEnv = (rawEntry: any) => {
   if (!rawEntry || typeof rawEntry !== 'object') return false;
   const keys = Object.keys(rawEntry).filter(Boolean);
   return keys.length > 0 && keys.every((key) => isEnvLikeKey(key));
 };
 
-const applySkillEnvEntriesToConfig = (config, skillEnv = {}) => {
+const applySkillEnvEntriesToConfig = (config: any, skillEnv = {}) => {
   if (!skillEnv || typeof skillEnv !== 'object') return;
   config.skills = config.skills || {};
   config.skills.entries = config.skills.entries || {};
@@ -1001,32 +1002,32 @@ const applySkillEnvEntriesToConfig = (config, skillEnv = {}) => {
   });
 };
 
-const extractGatewaySkillEntries = (config) => {
+const extractGatewaySkillEntries = (config: any) => {
   const entries = config?.skills?.entries || {};
   const output = {};
   Object.entries(entries).forEach(([skillKey, entry]) => {
-    const env = entry?.env || {};
+    const env = (entry as any)?.env || {};
     const keys = Object.keys(env).filter(Boolean);
     const rawKeys = Object.keys(entry || {}).filter(
       (key) => key && key !== 'env' && key !== 'apiKey',
     );
     const merged = Array.from(new Set([...keys, ...rawKeys]));
-    output[skillKey] = {
+    (output as any)[skillKey] = {
       envKeys: merged,
-      apiKeyPresent: Boolean(entry?.apiKey),
+      apiKeyPresent: Boolean((entry as any)?.apiKey),
       rawKeys,
     };
   });
   return output;
 };
 
-const getGatewaySkillEntries = async ({ gateway } = {}) => {
+const getGatewaySkillEntries = async ({ gateway } : any = {}) => {
   const configMapName = resolveGatewayConfigMapName(gateway);
   const config = await readConfigMap(configMapName, 'moltbot.json');
   return extractGatewaySkillEntries(config);
 };
 
-const syncGatewaySkillEnv = async ({ gateway, entries } = {}) => {
+const syncGatewaySkillEnv = async ({ gateway, entries } : any = {}) => {
   const configMapName = resolveGatewayConfigMapName(gateway);
   const config = await readConfigMap(configMapName, 'moltbot.json');
   applySkillEnvEntriesToConfig(config, entries);
@@ -1034,7 +1035,7 @@ const syncGatewaySkillEnv = async ({ gateway, entries } = {}) => {
   return extractGatewaySkillEntries(config);
 };
 
-const applyOpenClawIntegrationChannels = (config, integrationChannels) => {
+const applyOpenClawIntegrationChannels = (config: any, integrationChannels: any) => {
   if (!integrationChannels || typeof integrationChannels !== 'object') return;
   config.channels = config.channels || {};
 
@@ -1076,7 +1077,7 @@ const applyOpenClawIntegrationChannels = (config, integrationChannels) => {
     }
   }
 
-  const asEntries = (value) => {
+  const asEntries = (value: any) => {
     if (!Array.isArray(value)) return [];
     return value
       .filter((entry) => entry && typeof entry === 'object')
@@ -1159,7 +1160,7 @@ const applyOpenClawIntegrationChannels = (config, integrationChannels) => {
   }
 };
 
-const applyOpenClawWebToolDefaults = (config) => {
+const applyOpenClawWebToolDefaults = (config: any) => {
   const braveApiKey = String(process.env.BRAVE_API_KEY || '').trim();
   const braveApiKey2 = String(process.env.BRAVE_API_KEY_2 || '').trim();
   const firecrawlApiKey = String(process.env.FIRECRAWL_API_KEY || '').trim();
@@ -1192,7 +1193,7 @@ const applyOpenClawWebToolDefaults = (config) => {
   }
 };
 
-const applyOpenClawMemoryDefaults = (config) => {
+const applyOpenClawMemoryDefaults = (config: any) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
   config.agents.defaults.memorySearch = config.agents.defaults.memorySearch || {};
@@ -1204,7 +1205,7 @@ const applyOpenClawMemoryDefaults = (config) => {
   }
 };
 
-const applyOpenClawContextDefaults = (config) => {
+const applyOpenClawContextDefaults = (config: any) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
   config.agents.defaults.contextPruning = config.agents.defaults.contextPruning || {};
@@ -1230,7 +1231,7 @@ const GEMINI_FALLBACKS = [
 // Default dev agent IDs — overridden by DB openclaw.devAgentIds if set.
 const DEFAULT_DEV_AGENT_IDS = ['theo', 'nova', 'pixel', 'ops'];
 
-const applyOpenClawAcpxPluginDefaults = (config) => {
+const applyOpenClawAcpxPluginDefaults = (config: any) => {
   config.plugins = config.plugins || {};
   config.plugins.entries = config.plugins.entries || {};
   if (!config.plugins.entries.acpx) {
@@ -1251,7 +1252,7 @@ const applyOpenClawAcpxPluginDefaults = (config) => {
  * Keys are not deduplicated — re-provisioning creates a new key each time.
  * Old keys remain valid in LiteLLM DB (harmless orphans).
  */
-const issueLiteLLMVirtualKey = async (agentId) => {
+const issueLiteLLMVirtualKey = async (agentId: any) => {
   const baseUrl = process.env.LITELLM_BASE_URL;
   const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
   if (!baseUrl || !masterKey) return null;
@@ -1265,19 +1266,19 @@ const issueLiteLLMVirtualKey = async (agentId) => {
     try {
       const gwPod = await waitForReadyGatewayPod(10000, 2000);
       if (gwPod) {
-        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openai-codex:codex-cli'];process.stdout.write(p&&p.access?p.access:'');} catch(e){}"`;
+        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openai-codex:codex-cli'];process.stdout.write(p&&p.access?p.access:'');} catch (e: any) {}"`;
         const out = await new Promise((resolve) => {
-          const chunks = [];
+          const chunks: any[] = [];
           const s = new stream.PassThrough();
-          s.on('data', (d) => chunks.push(d));
+          s.on('data', (d: any) => chunks.push(d));
           k8sExec.exec(NAMESPACE, gwPod.metadata.name, 'clawdbot-gateway',
             ['sh', '-c', readScript], s, null, null, false,
             () => resolve(Buffer.concat(chunks).toString().trim()),
           ).catch(() => resolve(''));
         });
-        if (out && out.startsWith('sk-')) existingKey = out;
+        if (out && (out as any).startsWith('sk-')) existingKey = out;
       }
-    } catch (_) { /* best-effort */ }
+    } catch (_: any) { /* best-effort */ }
 
     // Check if existing key is still valid in LiteLLM DB AND belongs to this agent.
     // Without the ownership check, a key mistakenly written to the wrong agent's PVC
@@ -1295,7 +1296,7 @@ const issueLiteLLMVirtualKey = async (agentId) => {
           await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
           console.log(`[litellm] Deleted stale/misowned key for ${agentId}`);
         }
-      } catch (_) { /* key not in DB — fall through to issue a new one */ }
+      } catch (_: any) { /* key not in DB — fall through to issue a new one */ }
     }
 
     const resp = await axios.post(
@@ -1326,7 +1327,7 @@ const issueLiteLLMVirtualKey = async (agentId) => {
     const newKey = resp.data?.key || null;
     if (newKey) console.log(`[litellm] Issued new virtual key for ${agentId}`);
     return newKey;
-  } catch (err) {
+  } catch (err: any) {
     console.warn(`[litellm] Virtual key generation failed for ${agentId}: ${err.message}`);
     return null;
   }
@@ -1337,7 +1338,7 @@ const issueLiteLLMVirtualKey = async (agentId) => {
  * Community agents use gpt-5.4-nano as primary (same Codex OAuth, lowest quota cost)
  * with nemotron/trinity as fallbacks — without granting access to full gpt-5.4/mini (dev-only).
  */
-const issueLiteLLMOpenRouterKey = async (agentId) => {
+const issueLiteLLMOpenRouterKey = async (agentId: any) => {
   const baseUrl = process.env.LITELLM_BASE_URL;
   const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
   if (!baseUrl || !masterKey) return null;
@@ -1352,19 +1353,19 @@ const issueLiteLLMOpenRouterKey = async (agentId) => {
     try {
       const gwPod = await waitForReadyGatewayPod(10000, 2000);
       if (gwPod) {
-        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openai-codex:codex-cli'];process.stdout.write(p&&p.access?p.access:'');} catch(e){}"`;
+        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openai-codex:codex-cli'];process.stdout.write(p&&p.access?p.access:'');} catch (e: any) {}"`;
         const out = await new Promise((resolve) => {
-          const chunks = [];
+          const chunks: any[] = [];
           const s = new stream.PassThrough();
-          s.on('data', (d) => chunks.push(d));
+          s.on('data', (d: any) => chunks.push(d));
           k8sExec.exec(NAMESPACE, gwPod.metadata.name, 'clawdbot-gateway',
             ['sh', '-c', readScript], s, null, null, false,
             () => resolve(Buffer.concat(chunks).toString().trim()),
           ).catch(() => resolve(''));
         });
-        if (out && out.startsWith('sk-')) existingKey = out;
+        if (out && (out as any).startsWith('sk-')) existingKey = out;
       }
-    } catch (_) { /* best-effort */ }
+    } catch (_: any) { /* best-effort */ }
 
     if (existingKey && existingKey !== masterKey) {
       // Safety: never delete the master key even if found on PVC
@@ -1378,7 +1379,7 @@ const issueLiteLLMOpenRouterKey = async (agentId) => {
           await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
           console.log(`[litellm] Deleted stale/misowned OpenRouter key for ${agentId}`);
         }
-      } catch (_) { /* key not in DB — fall through */ }
+      } catch (_: any) { /* key not in DB — fall through */ }
     }
 
     const resp = await axios.post(
@@ -1404,7 +1405,7 @@ const issueLiteLLMOpenRouterKey = async (agentId) => {
     const newKey = resp.data?.key || null;
     if (newKey) console.log(`[litellm] Issued OpenRouter virtual key for ${agentId}`);
     return newKey;
-  } catch (err) {
+  } catch (err: any) {
     console.warn(`[litellm] OpenRouter virtual key generation failed for ${agentId}: ${err.message}`);
     return null;
   }
@@ -1418,7 +1419,7 @@ const issueLiteLLMOpenRouterKey = async (agentId) => {
  * The init container runs in patch mode and does NOT update these profiles, so injections
  * persist across gateway restarts.
  */
-const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, virtualKey) => {
+const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agentId: any, virtualKey: any) => {
   if (!virtualKey) return;
   const escaped = virtualKey.replace(/'/g, "\\'");
   // OpenRouter calls are proxied through LiteLLM (openrouter.baseUrl = http://litellm:4000/v1).
@@ -1436,10 +1437,10 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, v
     `  store.order['openai-codex'] = ['openai-codex:codex-cli'];`,
     `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
     `  process.stdout.write('ok');`,
-    `} catch(e) { process.stdout.write('skip:' + e.message); }`,
+    `} catch (e: any) { process.stdout.write('skip:' + e.message); }`,
   ].join(' ');
 
-  const execOnPod = async (podName) => new Promise((resolve, reject) => {
+  const execOnPod = async (podName: any) => new Promise<void>((resolve, reject) => {
     const stdoutStream = new stream.PassThrough();
     k8sExec.exec(
       NAMESPACE,
@@ -1450,7 +1451,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, v
       stdoutStream,
       null,
       false,
-      (status) => {
+      (status: any) => {
         if (status.status === 'Success') resolve();
         else reject(new Error(status.message || 'exec failed'));
       },
@@ -1467,7 +1468,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, v
       await execOnPod(gwPod.metadata.name);
       console.log(`[k8s-provisioner] openrouter key injected for ${agentId}`);
       return;
-    } catch (err) {
+    } catch (err: any) {
       if (attempt < 2) {
         console.warn(`[k8s-provisioner] openrouter key inject attempt ${attempt} failed for ${agentId}: ${err.message} — retrying`);
         await new Promise((r) => setTimeout(r, 10000));
@@ -1478,7 +1479,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName, agentId, v
   }
 };
 
-const applyOpenClawCodexProviderConfig = async (config) => {
+const applyOpenClawCodexProviderConfig = async (config: any) => {
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
 
@@ -1537,7 +1538,7 @@ const applyOpenClawCodexProviderConfig = async (config) => {
   try {
     const secretResponse = await k8sApi.readNamespacedSecret('api-keys', NAMESPACE);
     const secretData = secretResponse.body.data || {};
-    const decode = (key) => (secretData[key] ? Buffer.from(secretData[key], 'base64').toString('utf8') : null);
+    const decode = (key: any) => (secretData[key] ? Buffer.from(secretData[key], 'base64').toString('utf8') : null);
 
     for (const { suffix, profileId } of CODEX_ACCOUNTS) {
       const access = decode(`openai-codex-access-token${suffix}`);
@@ -1559,7 +1560,7 @@ const applyOpenClawCodexProviderConfig = async (config) => {
         },
       });
     }
-  } catch (_err) {
+  } catch (_err: any) {
     // Not in k8s mode or secret unavailable
   }
 
@@ -1579,10 +1580,10 @@ const applyOpenClawCodexProviderConfig = async (config) => {
 // Returns a gateway pod that is fully Ready (init containers done, main container running).
 // Polls up to timeoutMs (default 90s) so injections survive a gateway rolling restart.
 const waitForReadyGatewayPod = async (timeoutMs = 90000, pollIntervalMs = 5000) => {
-  const isReady = (pod) => {
+  const isReady = (pod: any) => {
     if (pod.status?.phase !== 'Running') return false;
     const conditions = pod.status?.conditions || [];
-    return conditions.some((c) => c.type === 'Ready' && c.status === 'True');
+    return conditions.some((c: any) => c.type === 'Ready' && c.status === 'True');
   };
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -1596,13 +1597,13 @@ const waitForReadyGatewayPod = async (timeoutMs = 90000, pollIntervalMs = 5000) 
   return null;
 };
 
-const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, credentials) => {
+const injectCodexTokenToAgentAuthProfiles = async (deploymentName: any, agentId: any, credentials: any) => {
   // credentials: array of { profileId, credential } or null
   if (!credentials || credentials.length === 0) return;
   const assignments = credentials
-    .map(({ profileId, credential }) => `store.profiles['${profileId}'] = ${JSON.stringify(credential).replace(/'/g, "'\\''")};`)
+    .map(({ profileId, credential }: any) => `store.profiles['${profileId}'] = ${JSON.stringify(credential).replace(/'/g, "'\\''")};`)
     .join(' ');
-  const profileIds = JSON.stringify(credentials.map((c) => c.profileId));
+  const profileIds = JSON.stringify(credentials.map((c: any) => c.profileId));
   const script = [
     `const fs = require('fs');`,
     `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
@@ -1615,10 +1616,10 @@ const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, cred
     `  store.order['openai-codex'] = Array.from(new Set([...injected, ...existing]));`,
     `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
     `  process.stdout.write('ok');`,
-    `} catch(e) { process.stdout.write('skip:' + e.message); }`,
+    `} catch (e: any) { process.stdout.write('skip:' + e.message); }`,
   ].join(' ');
 
-  const execOnPod = async (podName) => new Promise((resolve, reject) => {
+  const execOnPod = async (podName: any) => new Promise<void>((resolve, reject) => {
     // stdout captures script output. stdin MUST be null — passing any stream (even an
     // ended PassThrough) keeps the stdin WebSocket channel open and stalls the status
     // callback, causing the Promise to never settle.
@@ -1632,7 +1633,7 @@ const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, cred
       stdoutStream,
       null,
       false,
-      (status) => {
+      (status: any) => {
         if (status.status === 'Success') resolve();
         else reject(new Error(status.message || 'exec failed'));
       },
@@ -1654,7 +1655,7 @@ const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, cred
       await execOnPod(podName);
       console.log(`[k8s-provisioner] codex token injected for ${agentId} into ${podName}`);
       return;
-    } catch (err) {
+    } catch (err: any) {
       if (attempt < MAX_ATTEMPTS) {
         console.warn(`[k8s-provisioner] codex token inject attempt ${attempt} failed for ${agentId}: ${err.message} — retrying`);
         await new Promise((r) => setTimeout(r, 10000));
@@ -1665,14 +1666,14 @@ const injectCodexTokenToAgentAuthProfiles = async (deploymentName, agentId, cred
   }
 };
 
-const applyOpenClawModelDefaults = async (config) => {
+const applyOpenClawModelDefaults = async (config: any) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
   config.agents.defaults.model = config.agents.defaults.model || {};
   let modelConfig = null;
   try {
     modelConfig = await GlobalModelConfigService.getConfig({ includeSecrets: false });
-  } catch (error) {
+  } catch (error: any) {
     modelConfig = null;
   }
   // OpenRouter fallbacks: free models only, explicit list enforced on every provision.
@@ -1761,7 +1762,7 @@ const provisionOpenClawAccount = async ({
   integrationChannels,
   configMapName = 'clawdbot-config',
   gateway,
-}) => {
+}: any) => {
   const configKey = 'moltbot.json';
 
   // Read existing config
@@ -1794,19 +1795,19 @@ const provisionOpenClawAccount = async ({
     throw new Error('Missing runtime token for OpenClaw account provisioning');
   }
 
-  const normalizeKey = (value, fallback) => {
+  const normalizeKey = (value: any, fallback: any) => {
     const normalized = String(value ?? fallback ?? '').trim().toLowerCase();
     return normalized || String(fallback || '').trim().toLowerCase();
   };
   const targetAgent = normalizeKey(agentName, '');
   const targetInstance = normalizeKey(instanceId, 'default');
-  const removedAccountIds = [];
+  const removedAccountIds: any[] = [];
 
   // Remove duplicate accounts
   Object.entries(config.channels.commonly.accounts).forEach(([key, entry]) => {
     if (!entry || key === accountId) return;
-    const entryAgent = normalizeKey(entry.agentName, '');
-    const entryInstance = normalizeKey(entry.instanceId, 'default');
+    const entryAgent = normalizeKey((entry as any).agentName, '');
+    const entryInstance = normalizeKey((entry as any).instanceId, 'default');
     if (entryAgent === targetAgent && entryInstance === targetInstance) {
       delete config.channels.commonly.accounts[key];
       removedAccountIds.push(key);
@@ -1905,14 +1906,14 @@ const provisionOpenClawAccount = async ({
   config.agents.list = Array.isArray(config.agents.list) ? config.agents.list : [];
   if (removedAccountIds.length) {
     config.agents.list = config.agents.list.filter(
-      (agent) => !removedAccountIds.includes(agent?.id),
+      (agent: any) => !removedAccountIds.includes(agent?.id),
     );
   }
 
   // Workspace path for K8s
   const desiredWorkspace = `/workspace/${accountId}`;
 
-  const normalizeHeartbeat = (payload) => {
+  const normalizeHeartbeat = (payload: any) => {
     if (!payload || payload.enabled === false) return null;
     const minutes = Number(payload.everyMinutes || payload.every || payload.intervalMinutes);
     const every = Number.isFinite(minutes) && minutes > 0 ? `${minutes}m` : payload.every;
@@ -1925,7 +1926,7 @@ const provisionOpenClawAccount = async ({
     };
   };
 
-  const agentEntry = config.agents.list.find((agent) => agent?.id === accountId);
+  const agentEntry = config.agents.list.find((agent: any) => agent?.id === accountId);
   const heartbeatConfig = normalizeHeartbeat(heartbeat);
 
   // Per-agent model override: dev agents get explicit Codex config.
@@ -1966,11 +1967,11 @@ const provisionOpenClawAccount = async ({
   config.bindings = Array.isArray(config.bindings) ? config.bindings : [];
   if (removedAccountIds.length) {
     config.bindings = config.bindings.filter(
-      (binding) => !removedAccountIds.includes(binding?.match?.accountId),
+      (binding: any) => !removedAccountIds.includes(binding?.match?.accountId),
     );
   }
   const bindingExists = config.bindings.some(
-    (binding) => binding?.match?.channel === 'commonly' && binding?.match?.accountId === accountId,
+    (binding: any) => binding?.match?.channel === 'commonly' && binding?.match?.accountId === accountId,
   );
   if (!bindingExists) {
     config.bindings.push({
@@ -1986,11 +1987,11 @@ const provisionOpenClawAccount = async ({
   // (clawdbot-auth-seed) picks up the account on next gateway restart.
   try {
     const accountEntry = config.channels.commonly.accounts[accountId];
-    const agentEntry = config.agents.list.find((a) => a?.id === accountId) || null;
-    const bindingEntry = config.bindings.find((b) => b?.match?.accountId === accountId) || null;
+    const agentEntry = config.agents.list.find((a: any) => a?.id === accountId) || null;
+    const bindingEntry = config.bindings.find((b: any) => b?.match?.accountId === accountId) || null;
     await syncAccountToStateMoltbot(accountId, accountEntry, agentEntry, bindingEntry, { gateway });
     console.log(`[k8s-provisioner] synced ${accountId} to /state/moltbot.json`);
-  } catch (err) {
+  } catch (err: any) {
     console.warn('[k8s-provisioner] Failed to sync account to /state/moltbot.json:', err.message);
   }
 
@@ -2004,32 +2005,32 @@ const provisionOpenClawAccount = async ({
     if (heartbeatPath) {
       console.log(`[k8s-provisioner] ensured heartbeat template for ${accountId}: ${heartbeatPath}`);
     }
-  } catch (error) {
-    console.warn('[k8s-provisioner] Failed to ensure HEARTBEAT.md template:', error.message);
+  } catch (error: any) {
+    console.warn('[k8s-provisioner] Failed to ensure HEARTBEAT.md template:', (error as Error).message);
   }
   try {
     const soulPath = await ensureWorkspaceSoulFile(accountId, heartbeat?.soulContent, { gateway });
     if (soulPath) {
       console.log(`[k8s-provisioner] wrote SOUL.md for ${accountId}: ${soulPath}`);
     }
-  } catch (error) {
-    console.warn('[k8s-provisioner] Failed to write SOUL.md:', error.message);
+  } catch (error: any) {
+    console.warn('[k8s-provisioner] Failed to write SOUL.md:', (error as Error).message);
   }
   try {
     const normalizedPath = await normalizeWorkspaceDocs(accountId, { gateway });
     if (normalizedPath) {
       console.log(`[k8s-provisioner] normalized workspace docs for ${accountId}: ${normalizedPath}`);
     }
-  } catch (error) {
-    console.warn('[k8s-provisioner] Failed to normalize workspace docs:', error.message);
+  } catch (error: any) {
+    console.warn('[k8s-provisioner] Failed to normalize workspace docs:', (error as Error).message);
   }
   try {
     const memoryPath = await ensureWorkspaceMemoryFiles(accountId, { gateway });
     if (memoryPath) {
       console.log(`[k8s-provisioner] ensured memory files for ${accountId}: ${memoryPath}`);
     }
-  } catch (error) {
-    console.warn('[k8s-provisioner] Failed to ensure workspace memory files:', error.message);
+  } catch (error: any) {
+    console.warn('[k8s-provisioner] Failed to ensure workspace memory files:', (error as Error).message);
   }
 
   return {
@@ -2048,7 +2049,7 @@ const provisionCommonlyBotAccount = async ({
   userToken,
   agentName,
   instanceId,
-}) => {
+}: any) => {
   const configMapName = 'commonly-bot-config';
   const configKey = 'runtime.json';
 
@@ -2078,7 +2079,7 @@ const buildAgentDeploymentManifest = ({
   accountId,
   agentName,
   instanceId,
-}) => {
+}: any) => {
   const labels = {
     app: `agent-${runtimeType}`,
     'agent-type': runtimeType,
@@ -2090,7 +2091,7 @@ const buildAgentDeploymentManifest = ({
   const deploymentName = `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
 
   let containerSpec;
-  let volumes = [];
+  let volumes: any[] = [];
 
   if (runtimeType === 'moltbot') {
     containerSpec = {
@@ -2251,7 +2252,7 @@ const provisionAgentRuntime = async ({
   skillEnv,
   integrationChannels,
   gateway,
-}) => {
+}: any) => {
   console.log(`[k8s-provisioner] Provisioning ${runtimeType} agent: ${agentName}/${instanceId}`);
 
   let result;
@@ -2303,7 +2304,7 @@ const provisionAgentRuntime = async ({
   };
 };
 
-const resolveRuntimeDeploymentName = (runtimeType, instanceId, gateway) => {
+const resolveRuntimeDeploymentName = (runtimeType: any, instanceId: any, gateway: any) => {
   if (runtimeType === 'moltbot') {
     return resolveGatewayDeploymentName(gateway);
   }
@@ -2311,14 +2312,14 @@ const resolveRuntimeDeploymentName = (runtimeType, instanceId, gateway) => {
   return `agent-${runtimeType}-${accountId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
 };
 
-const cleanupLegacyInternalDeployment = async (deploymentName) => {
+const cleanupLegacyInternalDeployment = async (deploymentName: any) => {
   if (!deploymentName) return;
   try {
     await k8sAppsApi.deleteNamespacedDeployment(deploymentName, NAMESPACE);
     console.log(`[k8s-provisioner] Removed legacy internal deployment: ${deploymentName}`);
-  } catch (error) {
+  } catch (error: any) {
     if (error?.response?.statusCode !== 404) {
-      console.warn(`[k8s-provisioner] Failed to remove legacy internal deployment ${deploymentName}:`, error.message);
+      console.warn(`[k8s-provisioner] Failed to remove legacy internal deployment ${deploymentName}:`, (error as Error).message);
     }
   }
 };
@@ -2326,9 +2327,9 @@ const cleanupLegacyInternalDeployment = async (deploymentName) => {
 /**
  * Start agent runtime (scale to 1 replica)
  */
-const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+const startAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
   if (runtimeType === 'moltbot') {
-    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
     return { started: true, deployment: deploymentName, sharedGateway: true };
   }
   if (runtimeType === 'internal') {
@@ -2337,7 +2338,7 @@ const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
     return { started: false, external: true, reason: 'external runtime — agent manages its own process' };
   }
-  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
 
   try {
     const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
@@ -2348,18 +2349,18 @@ const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
 
     console.log(`[k8s-provisioner] Started agent runtime: ${deploymentName}`);
     return { started: true, deployment: deploymentName };
-  } catch (error) {
-    console.error(`[k8s-provisioner] Failed to start ${deploymentName}:`, error.message);
-    return { started: false, reason: error.message };
+  } catch (error: any) {
+    console.error(`[k8s-provisioner] Failed to start ${deploymentName}:`, (error as Error).message);
+    return { started: false, reason: (error as Error).message };
   }
 };
 
 /**
  * Stop agent runtime (scale to 0 replicas)
  */
-const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+const stopAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
   if (runtimeType === 'moltbot') {
-    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
     return { stopped: true, deployment: deploymentName, sharedGateway: true };
   }
   if (runtimeType === 'internal') {
@@ -2368,7 +2369,7 @@ const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
     return { stopped: false, external: true, reason: 'external runtime — agent manages its own process' };
   }
-  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
 
   try {
     const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
@@ -2379,20 +2380,20 @@ const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
 
     console.log(`[k8s-provisioner] Stopped agent runtime: ${deploymentName}`);
     return { stopped: true, deployment: deploymentName };
-  } catch (error) {
-    console.error(`[k8s-provisioner] Failed to stop ${deploymentName}:`, error.message);
-    return { stopped: false, reason: error.message };
+  } catch (error: any) {
+    console.error(`[k8s-provisioner] Failed to stop ${deploymentName}:`, (error as Error).message);
+    return { stopped: false, reason: (error as Error).message };
   }
 };
 
 /**
  * Restart agent runtime (trigger rolling restart)
  */
-const restartAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+const restartAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
   if (runtimeType === 'internal') {
     return { restarted: true, managedExternally: true, reason: 'internal runtime is config-only on k8s' };
   }
-  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
 
   try {
     const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
@@ -2407,21 +2408,21 @@ const restartAgentRuntime = async (runtimeType, instanceId, options = {}) => {
 
     console.log(`[k8s-provisioner] Restarted agent runtime: ${deploymentName}`);
     return { restarted: true, deployment: deploymentName, sharedGateway: runtimeType === 'moltbot' };
-  } catch (error) {
-    console.error(`[k8s-provisioner] Failed to restart ${deploymentName}:`, error.message);
-    return { restarted: false, reason: error.message, sharedGateway: runtimeType === 'moltbot' };
+  } catch (error: any) {
+    console.error(`[k8s-provisioner] Failed to restart ${deploymentName}:`, (error as Error).message);
+    return { restarted: false, reason: (error as Error).message, sharedGateway: runtimeType === 'moltbot' };
   }
 };
 
 /**
  * Get agent runtime status
  */
-const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
+const getAgentRuntimeStatus = async (runtimeType: any, instanceId: any, options = {}) => {
   if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
     return { status: 'external', reason: 'agent manages its own compute' };
   }
   if (runtimeType === 'moltbot') {
-    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
     try {
       const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
       const deployment = response.body;
@@ -2443,7 +2444,7 @@ const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
         readyReplicas,
         sharedGateway: true,
       };
-    } catch (error) {
+    } catch (error: any) {
       return { status: 'not_found', deployment: deploymentName, sharedGateway: true };
     }
   }
@@ -2457,7 +2458,7 @@ const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
       reason: 'internal runtime is config-only on k8s',
     };
   }
-  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
 
   try {
     const response = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
@@ -2485,18 +2486,18 @@ const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
       availableReplicas,
       readyReplicas,
     };
-  } catch (error) {
-    if (error.response && error.response.statusCode === 404) {
+  } catch (error: any) {
+    if ((error as any).response && (error as any).response.statusCode === 404) {
       return { status: 'not-found', deployment: deploymentName };
     }
-    return { status: 'error', reason: error.message };
+    return { status: 'error', reason: (error as Error).message };
   }
 };
 
 /**
  * Get agent runtime logs
  */
-const getDeploymentLogs = async ({ deploymentName, lines, filterTokens = [] }) => {
+const getDeploymentLogs = async ({ deploymentName, lines, filterTokens = [] }: any) => {
   try {
     const deploymentResponse = await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
     const matchLabels = deploymentResponse.body?.spec?.selector?.matchLabels || {};
@@ -2530,34 +2531,34 @@ const getDeploymentLogs = async ({ deploymentName, lines, filterTokens = [] }) =
       lines,
     );
     let logs = logsResponse.body || '';
-    const tokens = (filterTokens || []).map((t) => String(t || '').trim()).filter(Boolean);
+    const tokens = (filterTokens || []).map((t: any) => String(t || '').trim()).filter(Boolean);
     if (tokens.length) {
       logs = logs
         .split('\n')
-        .filter((line) => {
+        .filter((line: any) => {
           if (!line) return false;
-          if (tokens.some((token) => line.includes(`[commonly] [${token}]`))) return true;
-          if (tokens.some((token) => line.includes(token))) return true;
+          if (tokens.some((token: any) => line.includes(`[commonly] [${token}]`))) return true;
+          if (tokens.some((token: any) => line.includes(token))) return true;
           return false;
         })
         .join('\n');
     }
     return { logs, pod: pod.metadata.name, deployment: deploymentName };
-  } catch (error) {
-    console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, error.message);
-    return { logs: '', reason: error.message };
+  } catch (error: any) {
+    console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, (error as Error).message);
+    return { logs: '', reason: (error as Error).message };
   }
 };
 
 const getAgentRuntimeLogs = async (
-  runtimeType,
-  instanceId,
+  runtimeType: any,
+  instanceId: any,
   lines = 200,
   options = {},
 ) => {
   if (runtimeType === 'moltbot') {
-    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
-    const filterTokens = options.filterTokens || [];
+    const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
+    const filterTokens = (options as any).filterTokens || [];
     return getDeploymentLogs({ deploymentName, lines, filterTokens });
   }
   if (runtimeType === 'internal') {
@@ -2566,14 +2567,14 @@ const getAgentRuntimeLogs = async (
       status: 'managed-externally',
     };
   }
-  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway);
+  const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
 
   try {
     // Find pods for this deployment
     return getDeploymentLogs({ deploymentName, lines });
-  } catch (error) {
-    console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, error.message);
-    return { logs: '', reason: error.message };
+  } catch (error: any) {
+    console.error(`[k8s-provisioner] Failed to get logs for ${deploymentName}:`, (error as Error).message);
+    return { logs: '', reason: (error as Error).message };
   }
 };
 
@@ -2582,7 +2583,7 @@ const getAgentRuntimeLogs = async (
  * @returns {Promise<Array<{accountId: string, bytes: number}>>}
  */
 const getAgentSessionSizes = async (options = {}) => {
-  const podName = await resolveGatewayPodNameWithRetry(options.gateway);
+  const podName = await resolveGatewayPodNameWithRetry((options as any).gateway);
   const script = [
     'set -eu',
     'for dir in /state/agents/*/sessions; do',
@@ -2610,7 +2611,7 @@ const getAgentSessionSizes = async (options = {}) => {
     .filter((entry) => entry.accountId && Number.isFinite(entry.bytes));
 };
 
-const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) => {
+const clearAgentRuntimeSessions = async (runtimeType: any, instanceId: any, options = {}) => {
   if (runtimeType !== 'moltbot') {
     return {
       cleared: false,
@@ -2619,12 +2620,12 @@ const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) 
     };
   }
 
-  const accountId = String(options.accountId || instanceId || '').trim();
+  const accountId = String((options as any).accountId || instanceId || '').trim();
   if (!accountId) {
     throw new Error('accountId is required to clear runtime sessions');
   }
 
-  const podName = await resolveGatewayPodNameWithRetry(options.gateway);
+  const podName = await resolveGatewayPodNameWithRetry((options as any).gateway);
   const targets = [
     `/state/agents/${accountId}/sessions`,
     `/state/agents/${accountId}/sessions.json`,
@@ -2661,7 +2662,7 @@ const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) 
     accountId,
     removed,
     pod: podName,
-    deployment: resolveRuntimeDeploymentName(runtimeType, instanceId, options.gateway),
+    deployment: resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway),
   };
 };
 
@@ -2670,8 +2671,8 @@ const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) 
  * suffix='' → account 1 (keys: openai-codex-*, profile: openai-codex:codex-cli)
  * suffix='-2' → account 2 (keys: openai-codex-*-2, profile: openai-codex:account-2)
  */
-const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
-  const decode = (key) => (secretData[key] ? Buffer.from(secretData[key], 'base64').toString('utf8') : null);
+const refreshCodexOAuthTokenForAccount = async (secretData: any, suffix: any) => {
+  const decode = (key: any) => (secretData[key] ? Buffer.from(secretData[key], 'base64').toString('utf8') : null);
   const profileId = suffix === '-2' ? 'openai-codex:account-2' : 'openai-codex:codex-cli';
   const refreshToken = decode(`openai-codex-refresh-token${suffix}`);
   const clientId = decode('openai-codex-client-id') || process.env.OPENAI_CODEX_CLIENT_ID;
@@ -2690,7 +2691,7 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
     tokenResponse = await axios.post('https://auth.openai.com/oauth/token', body.toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
-  } catch (err) {
+  } catch (err: any) {
     const status = err.response?.status;
     const detail = JSON.stringify(err.response?.data || err.message);
     throw new Error(`[codex-refresh${suffix}] Token refresh failed (${status}): ${detail}`);
@@ -2702,7 +2703,7 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
   }
 
   const expiresAt = Date.now() + (expires_in || 3600) * 1000;
-  const encode = (s) => Buffer.from(s).toString('base64');
+  const encode = (s: any) => Buffer.from(s).toString('base64');
 
   // Patch the k8s secret with new tokens for this account
   const patch = {
@@ -2717,7 +2718,7 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
       headers: { 'Content-Type': 'application/merge-patch+json' },
     });
     console.log(`[codex-refresh${suffix}] Secret patched. Expires at ${new Date(expiresAt).toISOString()}`);
-  } catch (err) {
+  } catch (err: any) {
     throw new Error(`[codex-refresh${suffix}] Failed to patch api-keys secret: ${err.message}`);
   }
 
@@ -2735,12 +2736,12 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
       Object.entries(toUpdate).map(([key, value]) =>
         smClient.addSecretVersion({
           parent: `projects/${project}/secrets/commonly-dev-${key}`,
-          payload: { data: Buffer.from(value) },
+          payload: { data: Buffer.from(value as string) },
         }),
       ),
     );
     console.log(`[codex-refresh${suffix}] GCP Secret Manager updated.`);
-  } catch (err) {
+  } catch (err: any) {
     // Re-throw so the caller knows GCP SM failed — silent swallow causes ESO to revert
     // the k8s secret to the old (consumed) refresh token on next 1h sync, permanently
     // breaking the refresh chain.
@@ -2780,7 +2781,7 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
 
   try {
     const gwPods = await k8sApi.listNamespacedPod(NAMESPACE, undefined, undefined, undefined, undefined, 'app=clawdbot-gateway');
-    const gwPod = gwPods.body.items.find((p) => p.status?.phase === 'Running');
+    const gwPod = gwPods.body.items.find((p: any) => p.status?.phase === 'Running');
     // When using LiteLLM, only account 1 needs to run (for .codex/auth.json); accounts 2/3 skip.
     if (gwPod && (!useLiteLLM || isAccount1)) {
       const script = [
@@ -2799,7 +2800,7 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
               `      store.profiles['${profileId}'] = ${credJson};`,
               `      fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
               `      count++;`,
-              `    } catch (_) {}`,
+              `    } catch (_: any) {}`,
             ]
           : []),
         ...(isAccount1
@@ -2808,20 +2809,20 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
               `      const d = path.join(base, a, '.codex');`,
               `      fs.mkdirSync(d, { recursive: true });`,
               `      fs.writeFileSync(path.join(d, 'auth.json'), '${codexAuthJson}');`,
-              `    } catch (_) {}`,
+              `    } catch (_: any) {}`,
             ]
           : []),
         `  }`,
-        `} catch (_) {}`,
+        `} catch (_: any) {}`,
         ...(isAccount1
           ? [
-              `try { fs.mkdirSync('/state/.codex', { recursive: true }); fs.writeFileSync('/state/.codex/auth.json', '${codexAuthJson}'); } catch (_) {}`,
-              `try { fs.mkdirSync('/home/node/.codex', { recursive: true }); fs.writeFileSync('/home/node/.codex/auth.json', '${codexAuthJson}'); } catch (_) {}`,
+              `try { fs.mkdirSync('/state/.codex', { recursive: true }); fs.writeFileSync('/state/.codex/auth.json', '${codexAuthJson}'); } catch (_: any) {}`,
+              `try { fs.mkdirSync('/home/node/.codex', { recursive: true }); fs.writeFileSync('/home/node/.codex/auth.json', '${codexAuthJson}'); } catch (_: any) {}`,
             ]
           : []),
         `process.stdout.write('updated:' + count);`,
       ].join(' ');
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         k8sExec.exec(
           NAMESPACE,
           gwPod.metadata.name,
@@ -2831,14 +2832,14 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
           process.stderr,
           process.stdin,
           false,
-          (status) => {
+          (status: any) => {
             console.log(`[codex-refresh${suffix}] auth files re-inject: ${status.status}`);
             resolve();
           },
         ).catch(reject);
       });
     }
-  } catch (err) {
+  } catch (err: any) {
     console.warn(`[codex-refresh${suffix}] auth files re-inject skipped: ${err.message}`);
   }
 
@@ -2854,7 +2855,7 @@ const refreshCodexOAuthTokenForAccount = async (secretData, suffix) => {
         { headers: { 'Content-Type': 'application/strategic-merge-patch+json' } },
       );
       console.log('[codex-refresh] Triggered LiteLLM rollout restart to pick up refreshed token.');
-    } catch (err) {
+    } catch (err: any) {
       console.warn(`[codex-refresh] LiteLLM restart skipped: ${err.message}`);
     }
   }
@@ -2867,7 +2868,7 @@ const refreshCodexOAuthToken = async () => {
   try {
     const secretResponse = await k8sApi.readNamespacedSecret('api-keys', NAMESPACE);
     secretData = secretResponse.body.data || {};
-  } catch (err) {
+  } catch (err: any) {
     throw new Error(`[codex-refresh] Failed to read api-keys secret: ${err.message}`);
   }
   return refreshCodexOAuthTokenForAccount(secretData, '');
@@ -2882,11 +2883,11 @@ const refreshCodexOAuthTokenIfNeeded = async ({ thresholdDays = 3 } = {}) => {
   try {
     const secretResponse = await k8sApi.readNamespacedSecret('api-keys', NAMESPACE);
     secretData = secretResponse.body.data || {};
-  } catch (_err) {
+  } catch (_err: any) {
     return null; // Not in k8s mode
   }
 
-  const decode = (key) => (secretData[key] ? Buffer.from(secretData[key], 'base64').toString('utf8') : null);
+  const decode = (key: any) => (secretData[key] ? Buffer.from(secretData[key], 'base64').toString('utf8') : null);
   const thresholdMs = thresholdDays * 24 * 60 * 60 * 1000;
   const results = [];
 
@@ -2898,7 +2899,7 @@ const refreshCodexOAuthTokenIfNeeded = async ({ thresholdDays = 3 } = {}) => {
     try {
       const result = await refreshCodexOAuthTokenForAccount(secretData, suffix);
       if (result) results.push({ suffix: suffix || '1', ...result });
-    } catch (err) {
+    } catch (err: any) {
       console.error(`[codex-refresh${suffix}] ${err.message}`);
     }
   }

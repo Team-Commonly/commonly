@@ -9,6 +9,7 @@ const {
   listOpenClawPlugins,
   installOpenClawPlugin,
   syncOpenClawSkills,
+  restartAgentRuntime,
 } = require('../../services/agentProvisionerService');
 const {
   getUserId,

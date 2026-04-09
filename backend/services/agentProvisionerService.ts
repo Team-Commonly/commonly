@@ -1,4 +1,5 @@
-// @ts-nocheck
+export {};
+
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -67,44 +68,44 @@ curl -s "\${COMMONLY_API_URL:-http://backend:5000}/api/posts?podId=\${POD_ID}&li
 const getOpenClawWorkspaceOwnership = () => {
   const uidRaw = process.env.OPENCLAW_WORKSPACE_UID || process.env.CLAWDBOT_WORKSPACE_UID;
   const gidRaw = process.env.OPENCLAW_WORKSPACE_GID || process.env.CLAWDBOT_WORKSPACE_GID;
-  const uid = Number.parseInt(uidRaw, 10);
-  const gid = Number.parseInt(gidRaw, 10);
+  const uid = Number.parseInt((uidRaw as string), 10);
+  const gid = Number.parseInt((gidRaw as string), 10);
   return {
     uid: Number.isFinite(uid) ? uid : 1000,
     gid: Number.isFinite(gid) ? gid : 1000,
   };
 };
 
-const chownPath = (targetPath) => {
+const chownPath = (targetPath: any) => {
   const { uid, gid } = getOpenClawWorkspaceOwnership();
   try {
     fs.chownSync(targetPath, uid, gid);
-  } catch (error) {
+  } catch (error: any) {
     if (error?.code !== 'EPERM') {
-      console.warn('[agent-provisioner] Failed to chown path:', error.message);
+      console.warn('[agent-provisioner] Failed to chown path:', (error as Error).message);
     }
   }
 };
 
-const ensureDir = (filePath) => {
+const ensureDir = (filePath: any) => {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   chownPath(dir);
 };
 
-const readJsonFile = (filePath, fallback) => {
+const readJsonFile = (filePath: any, fallback: any) => {
   try {
     if (!fs.existsSync(filePath)) return fallback;
     const raw = fs.readFileSync(filePath, 'utf8');
     if (!raw.trim()) return fallback;
     return JSON5.parse(raw);
-  } catch (error) {
-    console.warn(`[agent-provisioner] Failed to parse ${filePath}:`, error.message);
+  } catch (error: any) {
+    console.warn(`[agent-provisioner] Failed to parse ${filePath}:`, (error as Error).message);
     return fallback;
   }
 };
 
-const writeJsonFile = (filePath, payload) => {
+const writeJsonFile = (filePath: any, payload: any) => {
   ensureDir(filePath);
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`);
   chownPath(filePath);
@@ -172,7 +173,7 @@ const isHeartbeatContentEffectivelyEmpty = (content = '') => {
   return actionable.length === 0;
 };
 
-const normalizeHeartbeatContent = (content) => {
+const normalizeHeartbeatContent = (content: any) => {
   const trimmed = String(content || '').trim();
   if (!trimmed) return DEFAULT_HEARTBEAT_CONTENT;
   if (trimmed.startsWith('#')) {
@@ -181,7 +182,7 @@ const normalizeHeartbeatContent = (content) => {
   return `# HEARTBEAT.md\n\n${trimmed}\n`;
 };
 
-const migrateLegacyCommonlySkillContent = (content) => {
+const migrateLegacyCommonlySkillContent = (content: any) => {
   let next = String(content || '');
   if (!next) return next;
 
@@ -241,7 +242,7 @@ const migrateLegacyCommonlySkillContent = (content) => {
   return next;
 };
 
-const migrateLegacyHeartbeatContent = (content) => {
+const migrateLegacyHeartbeatContent = (content: any) => {
   let next = String(content || '');
   if (!next) return next;
   next = next.replace(/\/home\/node\/\.clawdbot\/skills\/commonly\/SKILL\.md/g, './skills/commonly/SKILL.md');
@@ -333,7 +334,7 @@ const migrateLegacyHeartbeatContent = (content) => {
   return next;
 };
 
-const resolveOpenClawAccountId = ({ agentName, instanceId }) => {
+const resolveOpenClawAccountId = ({ agentName, instanceId }: any) => {
   const normalizedAgent = String(agentName || '').trim().toLowerCase();
   const normalizedInstance = String(instanceId || 'default').trim().toLowerCase() || 'default';
   if (normalizedAgent === 'openclaw') {
@@ -342,7 +343,7 @@ const resolveOpenClawAccountId = ({ agentName, instanceId }) => {
   return `${normalizedAgent}-${normalizedInstance}`;
 };
 
-const resolveOpenClawWorkspacePath = (accountId) => {
+const resolveOpenClawWorkspacePath = (accountId: any) => {
   const workspaceRoot = (
     process.env.OPENCLAW_WORKSPACE_ROOT
     || process.env.CLAWDBOT_WORKSPACE_DIR
@@ -351,7 +352,7 @@ const resolveOpenClawWorkspacePath = (accountId) => {
   return `${workspaceRoot}/${accountId}`;
 };
 
-const writeOpenClawHeartbeatFileLocal = (accountId, content, { allowEmpty = true } = {}) => {
+const writeOpenClawHeartbeatFileLocal = (accountId: any, content: any, { allowEmpty = true } = {}) => {
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const heartbeatPath = path.join(workspacePath, 'HEARTBEAT.md');
   ensureDir(heartbeatPath);
@@ -361,7 +362,7 @@ const writeOpenClawHeartbeatFileLocal = (accountId, content, { allowEmpty = true
   return heartbeatPath;
 };
 
-const writeWorkspaceIdentityFileLocal = (accountId, content) => {
+const writeWorkspaceIdentityFileLocal = (accountId: any, content: any) => {
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const identityPath = path.join(workspacePath, 'IDENTITY.md');
   ensureDir(identityPath);
@@ -371,7 +372,7 @@ const writeWorkspaceIdentityFileLocal = (accountId, content) => {
   return identityPath;
 };
 
-const ensureWorkspaceIdentityFileLocal = (accountId, content) => {
+const ensureWorkspaceIdentityFileLocal = (accountId: any, content: any) => {
   if (!content || !String(content).trim()) return null;
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const identityPath = path.join(workspacePath, 'IDENTITY.md');
@@ -386,7 +387,7 @@ const ensureWorkspaceIdentityFileLocal = (accountId, content) => {
   return identityPath;
 };
 
-const ensureWorkspaceMemoryFilesLocal = (accountId) => {
+const ensureWorkspaceMemoryFilesLocal = (accountId: any) => {
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const memoryDir = path.join(workspacePath, 'memory');
   const longTermMemoryPath = path.join(workspacePath, 'MEMORY.md');
@@ -420,13 +421,13 @@ const ensureWorkspaceMemoryFilesLocal = (accountId) => {
   return { memoryDir, longTermMemoryPath, dailyPath };
 };
 
-const clearOpenClawSkillsDir = (accountId) => {
+const clearOpenClawSkillsDir = (accountId: any) => {
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const skillsDir = path.join(workspacePath, 'skills');
   try {
     fs.rmSync(skillsDir, { recursive: true, force: true });
-  } catch (error) {
-    console.warn('[agent-provisioner] Failed clearing skills dir:', error.message);
+  } catch (error: any) {
+    console.warn('[agent-provisioner] Failed clearing skills dir:', (error as Error).message);
   }
   fs.mkdirSync(skillsDir, { recursive: true });
   chownPath(skillsDir);
@@ -446,8 +447,8 @@ const getDefaultCommonlySkillContent = () => {
       if (!fs.existsSync(filePath)) continue;
       const content = fs.readFileSync(filePath, 'utf8');
       if (content && content.trim()) return migrateLegacyCommonlySkillContent(content);
-    } catch (error) {
-      console.warn('[agent-provisioner] Failed loading commonly skill content:', error.message);
+    } catch (error: any) {
+      console.warn('[agent-provisioner] Failed loading commonly skill content:', (error as Error).message);
     }
   }
 
@@ -459,7 +460,7 @@ const syncOpenClawSkillsLocal = async ({
   podIds = [],
   mode = 'all',
   skillNames = [],
-}) => {
+}: any) => {
   const skillsDir = clearOpenClawSkillsDir(accountId);
   const normalizedPods = Array.isArray(podIds)
     ? podIds.map((id) => String(id)).filter(Boolean)
@@ -476,22 +477,22 @@ const syncOpenClawSkillsLocal = async ({
       ? skillNames.map((name) => String(name).trim()).filter(Boolean)
       : [];
     if (mode === 'selected' && normalizedSkillNames.length) {
-      query['metadata.skillName'] = { $in: normalizedSkillNames };
+      (query as any)['metadata.skillName'] = { $in: normalizedSkillNames };
     }
     assets = await PodAsset.find(query).lean();
   }
 
-  const ensureDirWithMode = (dirPath) => {
+  const ensureDirWithMode = (dirPath: any) => {
     fs.mkdirSync(dirPath, { recursive: true });
     chownPath(dirPath);
     try {
       fs.chmodSync(dirPath, 0o755);
-    } catch (error) {
-      console.warn('[agent-provisioner] Failed to chmod dir:', error.message);
+    } catch (error: any) {
+      console.warn('[agent-provisioner] Failed to chmod dir:', (error as Error).message);
     }
   };
 
-  const setFileMode = (filePath) => {
+  const setFileMode = (filePath: any) => {
     const lower = filePath.toLowerCase();
     const isScript = lower.includes(`${path.sep}scripts${path.sep}`)
       || lower.endsWith('.py')
@@ -500,8 +501,8 @@ const syncOpenClawSkillsLocal = async ({
     const mode = isScript ? 0o755 : 0o644;
     try {
       fs.chmodSync(filePath, mode);
-    } catch (error) {
-      console.warn('[agent-provisioner] Failed to chmod file:', error.message);
+    } catch (error: any) {
+      console.warn('[agent-provisioner] Failed to chmod file:', (error as Error).message);
     }
     chownPath(filePath);
   };
@@ -519,7 +520,7 @@ const syncOpenClawSkillsLocal = async ({
     setFileMode(commonlySkillPath);
   }
 
-  assets.forEach((asset) => {
+  assets.forEach((asset: any) => {
     const skillName = asset?.metadata?.skillName || asset?.title?.replace(/^Skill:\s*/i, '') || '';
     if (!skillName) return;
     const slug = PodAssetService.normalizeSkillKey(skillName);
@@ -533,7 +534,7 @@ const syncOpenClawSkillsLocal = async ({
     const extraFiles = Array.isArray(asset?.metadata?.extraFiles)
       ? asset.metadata.extraFiles
       : [];
-    extraFiles.forEach((file) => {
+    extraFiles.forEach((file: any) => {
       const relPath = String(file?.path || '').trim();
       const fileContent = file?.content;
       if (!relPath || typeof fileContent !== 'string') return;
@@ -547,7 +548,7 @@ const syncOpenClawSkillsLocal = async ({
   return skillsDir;
 };
 
-const normalizeSkillEnvMap = (env) => {
+const normalizeSkillEnvMap = (env: any) => {
   if (!env || typeof env !== 'object') return null;
   const entries = Object.entries(env)
     .map(([key, value]) => [String(key || '').trim(), String(value ?? '').trim()])
@@ -556,20 +557,20 @@ const normalizeSkillEnvMap = (env) => {
   return Object.fromEntries(entries);
 };
 
-const normalizeSkillApiKey = (value) => {
+const normalizeSkillApiKey = (value: any) => {
   const next = String(value ?? '').trim();
   return next ? next : null;
 };
 
-const isEnvLikeKey = (key) => /^[A-Z][A-Z0-9_]*$/.test(String(key || '').trim());
+const isEnvLikeKey = (key: any) => /^[A-Z][A-Z0-9_]*$/.test(String(key || '').trim());
 
-const shouldTreatRawEntryAsEnv = (rawEntry) => {
+const shouldTreatRawEntryAsEnv = (rawEntry: any) => {
   if (!rawEntry || typeof rawEntry !== 'object') return false;
   const keys = Object.keys(rawEntry).filter(Boolean);
   return keys.length > 0 && keys.every((key) => isEnvLikeKey(key));
 };
 
-const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath } = {}) => {
+const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath }: any = {}) => {
   if (!skillEnv || typeof skillEnv !== 'object') return null;
   const configPath = overridePath || getOpenClawConfigPath();
   const config = readJsonFile(configPath, {});
@@ -585,11 +586,11 @@ const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath } = {}) 
       ? Object.prototype.hasOwnProperty.call(entry, 'apiKey')
       : false;
     const hasRawFlag = entry && typeof entry === 'object'
-      ? Object.prototype.hasOwnProperty.call(entry, '__raw') && entry.__raw === true
+      ? Object.prototype.hasOwnProperty.call(entry, '__raw') && (entry as any).__raw === true
       : false;
     const isRawEntry = entry && typeof entry === 'object' && (!hasEnvProp && !hasApiKeyProp);
-    const env = entry && typeof entry === 'object' && hasEnvProp ? entry.env : entry;
-    const apiKey = entry && typeof entry === 'object' ? entry.apiKey : null;
+    const env = entry && typeof entry === 'object' && hasEnvProp ? (entry as any).env : entry;
+    const apiKey = entry && typeof entry === 'object' ? (entry as any).apiKey : null;
     const rawEntry = isRawEntry
       ? Object.fromEntries(
         Object.entries(entry)
@@ -649,28 +650,28 @@ const syncOpenClawSkillEnv = ({ skillEnv = {}, configPath: overridePath } = {}) 
   return configPath;
 };
 
-const readGatewaySkillEntries = ({ configPath: overridePath } = {}) => {
+const readGatewaySkillEntries = ({ configPath: overridePath }: any = {}) => {
   const configPath = overridePath || getOpenClawConfigPath();
   const config = readJsonFile(configPath, {});
   const entries = config?.skills?.entries || {};
   const output = {};
   Object.entries(entries).forEach(([skillKey, entry]) => {
-    const env = entry?.env || {};
+    const env = (entry as any)?.env || {};
     const keys = Object.keys(env).filter(Boolean);
     const rawKeys = Object.keys(entry || {}).filter(
       (key) => key && key !== 'env' && key !== 'apiKey',
     );
     const merged = Array.from(new Set([...keys, ...rawKeys]));
-    output[skillKey] = {
+    (output as any)[skillKey] = {
       envKeys: merged,
-      apiKeyPresent: Boolean(entry?.apiKey),
+      apiKeyPresent: Boolean((entry as any)?.apiKey),
       rawKeys,
     };
   });
   return output;
 };
 
-const getGatewaySkillEntries = async ({ gateway } = {}) => {
+const getGatewaySkillEntries = async ({ gateway }: any = {}) => {
   if (isK8sMode() || gateway?.mode === 'k8s') {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -679,7 +680,7 @@ const getGatewaySkillEntries = async ({ gateway } = {}) => {
   return readGatewaySkillEntries({ configPath: gateway?.configPath });
 };
 
-const syncGatewaySkillEnv = async ({ gateway, entries } = {}) => {
+const syncGatewaySkillEnv = async ({ gateway, entries }: any = {}) => {
   if (isK8sMode() || gateway?.mode === 'k8s') {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -689,7 +690,7 @@ const syncGatewaySkillEnv = async ({ gateway, entries } = {}) => {
   return readGatewaySkillEntries({ configPath: gateway?.configPath });
 };
 
-const ensureHeartbeatTemplate = (accountId, heartbeat) => {
+const ensureHeartbeatTemplate = (accountId: any, heartbeat: any) => {
   if (!heartbeat || heartbeat.enabled === false) return null;
   const workspacePath = resolveOpenClawWorkspacePath(accountId);
   const heartbeatPath = path.join(workspacePath, 'HEARTBEAT.md');
@@ -698,8 +699,8 @@ const ensureHeartbeatTemplate = (accountId, heartbeat) => {
     if (fs.existsSync(heartbeatPath)) {
       content = fs.readFileSync(heartbeatPath, 'utf8');
     }
-  } catch (error) {
-    console.warn('[agent-provisioner] Failed to read HEARTBEAT.md:', error.message);
+  } catch (error: any) {
+    console.warn('[agent-provisioner] Failed to read HEARTBEAT.md:', (error as Error).message);
   }
   if (!content || isHeartbeatContentEffectivelyEmpty(content)) {
     const normalized = normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT);
@@ -728,7 +729,7 @@ const getCommonlyBotConfigPath = () => (
   || path.resolve(__dirname, '../../external/commonly-bot-state/runtime.json')
 );
 
-const applyOpenClawIntegrationChannels = (config, integrationChannels) => {
+const applyOpenClawIntegrationChannels = (config: any, integrationChannels: any) => {
   if (!integrationChannels || typeof integrationChannels !== 'object') return;
   config.channels = config.channels || {};
 
@@ -770,7 +771,7 @@ const applyOpenClawIntegrationChannels = (config, integrationChannels) => {
     }
   }
 
-  const asEntries = (value) => {
+  const asEntries = (value: any) => {
     if (!Array.isArray(value)) return [];
     return value
       .filter((entry) => entry && typeof entry === 'object')
@@ -853,7 +854,7 @@ const applyOpenClawIntegrationChannels = (config, integrationChannels) => {
   }
 };
 
-const applyOpenClawWebToolDefaults = (config) => {
+const applyOpenClawWebToolDefaults = (config: any) => {
   const braveApiKey = String(process.env.BRAVE_API_KEY || '').trim();
   const firecrawlApiKey = String(process.env.FIRECRAWL_API_KEY || '').trim();
   if (!braveApiKey && !firecrawlApiKey) return;
@@ -883,7 +884,7 @@ const applyOpenClawWebToolDefaults = (config) => {
   }
 };
 
-const applyOpenClawMemoryDefaults = (config) => {
+const applyOpenClawMemoryDefaults = (config: any) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
   config.agents.defaults.memorySearch = config.agents.defaults.memorySearch || {};
@@ -895,7 +896,7 @@ const applyOpenClawMemoryDefaults = (config) => {
   }
 };
 
-const applyOpenClawContextDefaults = (config) => {
+const applyOpenClawContextDefaults = (config: any) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
   config.agents.defaults.contextPruning = config.agents.defaults.contextPruning || {};
@@ -910,14 +911,14 @@ const applyOpenClawContextDefaults = (config) => {
   }
 };
 
-const applyOpenClawModelDefaults = async (config) => {
+const applyOpenClawModelDefaults = async (config: any) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
   config.agents.defaults.model = config.agents.defaults.model || {};
   let modelConfig = null;
   try {
     modelConfig = await GlobalModelConfigService.getConfig({ includeSecrets: false });
-  } catch (error) {
+  } catch (error: any) {
     modelConfig = null;
   }
   const defaultPrimary = String(
@@ -959,7 +960,7 @@ const provisionOpenClawAccount = async ({
   heartbeat,
   authProfiles,
   integrationChannels,
-}) => {
+}: any) => {
   const configPath = getOpenClawConfigPath();
   const config = readJsonFile(configPath, {});
 
@@ -976,18 +977,18 @@ const provisionOpenClawAccount = async ({
     throw new Error('Missing runtime token for OpenClaw account provisioning');
   }
 
-  const normalizeKey = (value, fallback) => {
+  const normalizeKey = (value: any, fallback: any) => {
     const normalized = String(value ?? fallback ?? '').trim().toLowerCase();
     return normalized || String(fallback || '').trim().toLowerCase();
   };
   const targetAgent = normalizeKey(agentName, '');
   const targetInstance = normalizeKey(instanceId, 'default');
-  const removedAccountIds = [];
+  const removedAccountIds: any[] = [];
 
   Object.entries(config.channels.commonly.accounts).forEach(([key, entry]) => {
     if (!entry || key === accountId) return;
-    const entryAgent = normalizeKey(entry.agentName, '');
-    const entryInstance = normalizeKey(entry.instanceId, 'default');
+    const entryAgent = normalizeKey((entry as any).agentName, '');
+    const entryInstance = normalizeKey((entry as any).instanceId, 'default');
     if (entryAgent === targetAgent && entryInstance === targetInstance) {
       delete config.channels.commonly.accounts[key];
       removedAccountIds.push(key);
@@ -1011,11 +1012,11 @@ const provisionOpenClawAccount = async ({
   config.agents.list = Array.isArray(config.agents.list) ? config.agents.list : [];
   if (removedAccountIds.length) {
     config.agents.list = config.agents.list.filter(
-      (agent) => !removedAccountIds.includes(agent?.id),
+      (agent: any) => !removedAccountIds.includes(agent?.id),
     );
   }
   const desiredWorkspace = resolveOpenClawWorkspacePath(accountId);
-  const normalizeHeartbeat = (payload) => {
+  const normalizeHeartbeat = (payload: any) => {
     if (!payload || payload.enabled === false) return null;
     const minutes = Number(payload.everyMinutes || payload.every || payload.intervalMinutes);
     const every = Number.isFinite(minutes) && minutes > 0 ? `${minutes}m` : payload.every;
@@ -1028,7 +1029,7 @@ const provisionOpenClawAccount = async ({
     };
   };
 
-  const agentEntry = config.agents.list.find((agent) => agent?.id === accountId);
+  const agentEntry = config.agents.list.find((agent: any) => agent?.id === accountId);
   const heartbeatConfig = normalizeHeartbeat(heartbeat);
   if (agentEntry) {
     if (agentEntry.workspace !== desiredWorkspace) {
@@ -1054,11 +1055,11 @@ const provisionOpenClawAccount = async ({
   config.bindings = Array.isArray(config.bindings) ? config.bindings : [];
   if (removedAccountIds.length) {
     config.bindings = config.bindings.filter(
-      (binding) => !removedAccountIds.includes(binding?.match?.accountId),
+      (binding: any) => !removedAccountIds.includes(binding?.match?.accountId),
     );
   }
   const bindingExists = config.bindings.some(
-    (binding) => binding?.match?.channel === 'commonly' && binding?.match?.accountId === accountId,
+    (binding: any) => binding?.match?.channel === 'commonly' && binding?.match?.accountId === accountId,
   );
   if (!bindingExists) {
     config.bindings.push({
@@ -1084,7 +1085,7 @@ const provisionCommonlyBotAccount = ({
   userToken,
   agentName,
   instanceId,
-}) => {
+}: any) => {
   const configPath = getCommonlyBotConfigPath();
   const config = readJsonFile(configPath, { accounts: {} });
   config.accounts = config.accounts || {};
@@ -1116,7 +1117,7 @@ const provisionAgentRuntime = async ({
   authProfiles,
   skillEnv,
   integrationChannels,
-}) => {
+}: any) => {
   // Route to K8s or Docker implementation
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
@@ -1182,7 +1183,7 @@ const getComposeFile = () => (
   || path.resolve(__dirname, '../../docker-compose.dev.yml')
 );
 
-const buildComposeCommand = (args) => {
+const buildComposeCommand = (args: any) => {
   const composeBin = process.env.DOCKER_COMPOSE_BIN;
   if (composeBin) {
     return { bin: composeBin, args };
@@ -1193,11 +1194,11 @@ const buildComposeCommand = (args) => {
 
 const getDockerBin = () => process.env.DOCKER_BIN || 'docker';
 
-const execDockerCommand = async (args, options = {}) => {
+const execDockerCommand = async (args: any, options = {}) => {
   const bin = getDockerBin();
   const result = await execFileAsync(bin, args, {
-    timeout: options.timeout ?? 120000,
-    maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,
+    timeout: (options as any).timeout ?? 120000,
+    maxBuffer: (options as any).maxBuffer ?? 10 * 1024 * 1024,
   });
   return {
     stdout: result.stdout || '',
@@ -1206,13 +1207,13 @@ const execDockerCommand = async (args, options = {}) => {
   };
 };
 
-const resolveContainerName = (runtimeType) => {
+const resolveContainerName = (runtimeType: any) => {
   if (runtimeType === 'moltbot') return 'clawdbot-gateway-dev';
   if (runtimeType === 'internal') return 'commonly-bot-dev';
   return null;
 };
 
-const dockerContainerExists = async (containerName) => {
+const dockerContainerExists = async (containerName: any) => {
   if (!containerName) return false;
   try {
     const result = await execDockerCommand([
@@ -1224,12 +1225,12 @@ const dockerContainerExists = async (containerName) => {
       '{{.ID}}',
     ], { timeout: 10000 });
     return Boolean(result.stdout.trim());
-  } catch (error) {
+  } catch (error: any) {
     return false;
   }
 };
 
-const execDockerRuntimeCommand = async (runtimeType, args, options = {}) => {
+const execDockerRuntimeCommand = async (runtimeType: any, args: any, options = {}) => {
   if (!isDockerProvisioningEnabled()) {
     throw new Error('docker provisioning disabled');
   }
@@ -1257,7 +1258,7 @@ const listOpenClawPluginsDocker = async () => {
   let payload;
   try {
     payload = JSON.parse(result.stdout || '{}');
-  } catch (error) {
+  } catch (error: any) {
     throw new Error('Failed to parse OpenClaw plugin list output.');
   }
   return {
@@ -1267,7 +1268,7 @@ const listOpenClawPluginsDocker = async () => {
   };
 };
 
-const installOpenClawPluginDocker = async ({ spec, link = false }) => {
+const installOpenClawPluginDocker = async ({ spec, link = false }: any) => {
   const args = [
     'node',
     'dist/index.js',
@@ -1291,23 +1292,23 @@ const listOpenClawBundledSkillsDocker = async () => {
     return { skills: [] };
   }
   const names = fs.readdirSync(skillsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((name) => /^[a-zA-Z0-9._-]+$/.test(name))
-    .sort((a, b) => a.localeCompare(b));
+    .filter((entry: any) => entry.isDirectory())
+    .map((entry: any) => entry.name)
+    .filter((name: any) => /^[a-zA-Z0-9._-]+$/.test(name))
+    .sort((a: any, b: any) => a.localeCompare(b));
   return {
-    skills: names.map((name) => ({ name })),
+    skills: names.map((name: any) => ({ name })),
     path: skillsDir,
   };
 };
 
-const resolveDockerServiceName = (runtimeType) => {
+const resolveDockerServiceName = (runtimeType: any) => {
   if (runtimeType === 'moltbot') return 'clawdbot-gateway';
   if (runtimeType === 'internal') return 'commonly-bot';
   return null;
 };
 
-const startDockerRuntime = async (runtimeType) => {
+const startDockerRuntime = async (runtimeType: any) => {
   if (!isDockerProvisioningEnabled()) {
     return { started: false, reason: 'docker provisioning disabled' };
   }
@@ -1336,7 +1337,7 @@ const startDockerRuntime = async (runtimeType) => {
   return { started: true, command: `${command.bin} ${command.args.join(' ')}` };
 };
 
-const stopDockerRuntime = async (runtimeType) => {
+const stopDockerRuntime = async (runtimeType: any) => {
   if (!isDockerProvisioningEnabled()) {
     return { stopped: false, reason: 'docker provisioning disabled' };
   }
@@ -1356,7 +1357,7 @@ const stopDockerRuntime = async (runtimeType) => {
   return { stopped: true, command: `${command.bin} ${command.args.join(' ')}` };
 };
 
-const restartDockerRuntime = async (runtimeType) => {
+const restartDockerRuntime = async (runtimeType: any) => {
   if (!isDockerProvisioningEnabled()) {
     return { restarted: false, reason: 'docker provisioning disabled' };
   }
@@ -1376,7 +1377,7 @@ const restartDockerRuntime = async (runtimeType) => {
   return { restarted: true, command: `${command.bin} ${command.args.join(' ')}` };
 };
 
-const getDockerRuntimeStatus = async (runtimeType) => {
+const getDockerRuntimeStatus = async (runtimeType: any) => {
   if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
     return { status: 'external', reason: 'agent manages its own compute' };
   }
@@ -1407,7 +1408,7 @@ const getDockerRuntimeStatus = async (runtimeType) => {
   let parsed = null;
   try {
     parsed = JSON.parse(result.stdout || '[]');
-  } catch (error) {
+  } catch (error: any) {
     parsed = [];
   }
   const entry = Array.isArray(parsed) ? parsed[0] : parsed;
@@ -1422,7 +1423,7 @@ const getDockerRuntimeStatus = async (runtimeType) => {
   };
 };
 
-const getDockerRuntimeLogs = async (runtimeType, lines = 200) => {
+const getDockerRuntimeLogs = async (runtimeType: any, lines = 200) => {
   if (!isDockerProvisioningEnabled()) {
     return { logs: '', reason: 'docker provisioning disabled' };
   }
@@ -1460,7 +1461,7 @@ const syncOpenClawSkills = async (options = {}) => {
   return syncOpenClawSkillsLocal(options);
 };
 
-const writeOpenClawHeartbeatFile = async (accountId, content, options = {}) => {
+const writeOpenClawHeartbeatFile = async (accountId: any, content: any, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1469,7 +1470,7 @@ const writeOpenClawHeartbeatFile = async (accountId, content, options = {}) => {
   return writeOpenClawHeartbeatFileLocal(accountId, content, options);
 };
 
-const readOpenClawHeartbeatFile = async (accountId, options = {}) => {
+const readOpenClawHeartbeatFile = async (accountId: any, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1488,7 +1489,7 @@ const readOpenClawHeartbeatFile = async (accountId, options = {}) => {
   }
 };
 
-const readOpenClawIdentityFile = async (accountId, options = {}) => {
+const readOpenClawIdentityFile = async (accountId: any, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1507,7 +1508,7 @@ const readOpenClawIdentityFile = async (accountId, options = {}) => {
   }
 };
 
-const writeWorkspaceIdentityFile = async (accountId, content, options = {}) => {
+const writeWorkspaceIdentityFile = async (accountId: any, content: any, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1516,7 +1517,7 @@ const writeWorkspaceIdentityFile = async (accountId, content, options = {}) => {
   return writeWorkspaceIdentityFileLocal(accountId, content);
 };
 
-const ensureWorkspaceIdentityFile = async (accountId, content, options = {}) => {
+const ensureWorkspaceIdentityFile = async (accountId: any, content: any, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1525,7 +1526,7 @@ const ensureWorkspaceIdentityFile = async (accountId, content, options = {}) => 
   return ensureWorkspaceIdentityFileLocal(accountId, content);
 };
 
-const clearOpenClawSessionsLocal = ({ accountId }) => {
+const clearOpenClawSessionsLocal = ({ accountId }: any) => {
   const normalizedAccountId = String(accountId || '').trim();
   if (!normalizedAccountId) {
     throw new Error('accountId is required');
@@ -1534,7 +1535,7 @@ const clearOpenClawSessionsLocal = ({ accountId }) => {
     path.resolve(__dirname, '../../external/clawdbot-state/state/agents', normalizedAccountId),
     path.resolve('/tmp/openclaw/state/agents', normalizedAccountId),
   ];
-  const removed = [];
+  const removed: any[] = [];
   candidates.forEach((agentStateDir) => {
     const targets = [
       path.join(agentStateDir, 'sessions'),
@@ -1551,8 +1552,8 @@ const clearOpenClawSessionsLocal = ({ accountId }) => {
           fs.unlinkSync(targetPath);
         }
         removed.push(targetPath);
-      } catch (error) {
-        console.warn('[agent-provisioner] Failed to clear session path:', targetPath, error.message);
+      } catch (error: any) {
+        console.warn('[agent-provisioner] Failed to clear session path:', targetPath, (error as Error).message);
       }
     });
   });
@@ -1564,7 +1565,7 @@ const clearOpenClawSessionsLocal = ({ accountId }) => {
 };
 
 // Unified interface that routes to K8s or Docker implementation
-const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+const startAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1573,7 +1574,7 @@ const startAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   return startDockerRuntime(runtimeType);
 };
 
-const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+const stopAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1582,7 +1583,7 @@ const stopAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   return stopDockerRuntime(runtimeType);
 };
 
-const restartAgentRuntime = async (runtimeType, instanceId, options = {}) => {
+const restartAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1591,7 +1592,7 @@ const restartAgentRuntime = async (runtimeType, instanceId, options = {}) => {
   return restartDockerRuntime(runtimeType);
 };
 
-const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
+const getAgentRuntimeStatus = async (runtimeType: any, instanceId: any, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1600,7 +1601,7 @@ const getAgentRuntimeStatus = async (runtimeType, instanceId, options = {}) => {
   return getDockerRuntimeStatus(runtimeType);
 };
 
-const getAgentRuntimeLogs = async (runtimeType, instanceId, lines = 200, options = {}) => {
+const getAgentRuntimeLogs = async (runtimeType: any, instanceId: any, lines = 200, options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
@@ -1618,7 +1619,7 @@ const getAgentSessionSizes = async (options = {}) => {
   return [];
 };
 
-const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) => {
+const clearAgentRuntimeSessions = async (runtimeType: any, instanceId: any, options = {}) => {
   if (runtimeType !== 'moltbot') {
     return {
       cleared: false,
@@ -1632,7 +1633,7 @@ const clearAgentRuntimeSessions = async (runtimeType, instanceId, options = {}) 
     return k8sProvisioner.clearAgentRuntimeSessions(runtimeType, instanceId, options);
   }
   return clearOpenClawSessionsLocal({
-    accountId: options.accountId || instanceId,
+    accountId: (options as any).accountId || instanceId,
   });
 };
 
@@ -1654,7 +1655,7 @@ const listOpenClawBundledSkills = async (options = {}) => {
   return listOpenClawBundledSkillsDocker();
 };
 
-const installOpenClawPlugin = async ({ spec, link = false, ...options } = {}) => {
+const installOpenClawPlugin = async ({ spec, link = false, ...options }: any = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
