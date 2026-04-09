@@ -40,17 +40,21 @@ async function syncPodFromMongo(podId: string, requestingUserId: string): Promis
 async function isMemberWithFallback(podId: string, userId: string): Promise<boolean> {
   const pgMember = await PGPod.isMember(podId, userId);
   if (pgMember) return true;
-  // Fall back to MongoDB
-  const mongoPod = await MongoPod.findById(podId).lean() as {
-    members?: Array<{ toString(): string }>;
-  } | null;
-  if (!mongoPod) return false;
-  const inMongo = (mongoPod.members || []).some((m) => m.toString() === userId.toString());
-  if (inMongo) {
-    // Sync this member to PG for future requests
-    await PGPod.addMember(podId, userId).catch(() => {});
+  // Fall back to MongoDB (may throw CastError for invalid ObjectId — treat as not found)
+  try {
+    const mongoPod = await MongoPod.findById(podId).lean() as {
+      members?: Array<{ toString(): string }>;
+    } | null;
+    if (!mongoPod) return false;
+    const inMongo = (mongoPod.members || []).some((m) => m.toString() === userId.toString());
+    if (inMongo) {
+      // Sync this member to PG for future requests
+      await PGPod.addMember(podId, userId).catch(() => {});
+    }
+    return inMongo;
+  } catch {
+    return false;
   }
-  return inMongo;
 }
 
 exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => {
