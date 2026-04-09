@@ -13,6 +13,8 @@
  * - Client authentication
  */
 
+export {};
+
 // eslint-disable-next-line import/no-extraneous-dependencies
 const WebSocket = require('ws');
 const jwt = require('jsonwebtoken');
@@ -72,10 +74,10 @@ const ClientTypes = {
  * Gateway Server
  */
 class Gateway extends EventEmitter {
-  constructor(options = {}) {
+  constructor(options: any = {}) {
     super();
 
-    this.port = options.port || parseInt(process.env.GATEWAY_PORT, 10) || 5001;
+    this.port = options.port || parseInt(process.env.GATEWAY_PORT as string, 10) || 5001;
     this.host = options.host || process.env.GATEWAY_BIND || '127.0.0.1';
     this.jwtSecret = options.jwtSecret || process.env.JWT_SECRET;
 
@@ -96,13 +98,13 @@ class Gateway extends EventEmitter {
    * Start the Gateway server
    */
   start() {
-    this.wss = new WebSocket.Server({
+    this.wss = new (WebSocket as any).Server({
       port: this.port,
       host: this.host,
     });
 
-    this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
-    this.wss.on('error', (error) => this.handleError(error));
+    this.wss.on('connection', (ws: any, req: any) => this.handleConnection(ws, req));
+    this.wss.on('error', (error: any) => this.handleError(error));
 
     console.log(`Gateway listening on ws://${this.host}:${this.port}`);
 
@@ -128,7 +130,7 @@ class Gateway extends EventEmitter {
   /**
    * Handle new WebSocket connection
    */
-  handleConnection(ws, req) {
+  handleConnection(ws: any, req: any) {
     const clientId = this.generateClientId();
 
     // Initialize client state
@@ -146,10 +148,10 @@ class Gateway extends EventEmitter {
     this.stats.activeConnections += 1;
 
     // Setup message handler
-    ws.on('message', (data) => this.handleMessage(clientId, data));
+    ws.on('message', (data: any) => this.handleMessage(clientId, data));
     ws.on('close', () => this.handleDisconnect(clientId));
     ws.on('pong', () => this.handlePong(clientId));
-    ws.on('error', (error) => console.error(`Client ${clientId} error:`, error));
+    ws.on('error', (error: any) => console.error(`Client ${clientId} error:`, error));
 
     // Send welcome message
     this.sendToClient(clientId, {
@@ -167,7 +169,7 @@ class Gateway extends EventEmitter {
   /**
    * Handle incoming message
    */
-  handleMessage(clientId, data) {
+  handleMessage(clientId: any, data: any) {
     this.stats.messagesReceived += 1;
 
     try {
@@ -210,7 +212,7 @@ class Gateway extends EventEmitter {
           // Emit for custom handlers
           this.emit(type, { clientId, client, payload });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error handling message from ${clientId}:`, error);
       this.sendToClient(clientId, {
         type: EventTypes.ERROR,
@@ -222,7 +224,7 @@ class Gateway extends EventEmitter {
   /**
    * Handle authentication
    */
-  handleAuthenticate(clientId, payload) {
+  handleAuthenticate(clientId: any, payload: any) {
     const client = this.clients.get(clientId);
     if (!client) return;
 
@@ -265,7 +267,7 @@ class Gateway extends EventEmitter {
   /**
    * Handle subscription to pod events
    */
-  handleSubscribe(clientId, payload) {
+  handleSubscribe(clientId: any, payload: any) {
     const client = this.clients.get(clientId);
     if (!client) return;
 
@@ -289,7 +291,7 @@ class Gateway extends EventEmitter {
   /**
    * Handle unsubscription
    */
-  handleUnsubscribe(clientId, payload) {
+  handleUnsubscribe(clientId: any, payload: any) {
     const client = this.clients.get(clientId);
     if (!client) return;
 
@@ -316,12 +318,12 @@ class Gateway extends EventEmitter {
   /**
    * Handle disconnect
    */
-  handleDisconnect(clientId) {
+  handleDisconnect(clientId: any) {
     const client = this.clients.get(clientId);
     if (!client) return;
 
     // Clean up subscriptions
-    client.subscriptions.forEach((podId) => {
+    client.subscriptions.forEach((podId: any) => {
       const subscribers = this.podSubscriptions.get(podId);
       if (subscribers) {
         subscribers.delete(clientId);
@@ -346,7 +348,7 @@ class Gateway extends EventEmitter {
   /**
    * Handle pong (heartbeat response)
    */
-  handlePong(clientId) {
+  handlePong(clientId: any) {
     const client = this.clients.get(clientId);
     if (client) {
       client.isAlive = true;
@@ -357,7 +359,7 @@ class Gateway extends EventEmitter {
    * Check heartbeats and disconnect stale clients
    */
   checkHeartbeats() {
-    this.clients.forEach((client, clientId) => {
+    this.clients.forEach((client: any, clientId: any) => {
       if (!client.isAlive) {
         console.log(`Terminating stale connection: ${clientId}`);
         client.ws.terminate();
@@ -372,7 +374,7 @@ class Gateway extends EventEmitter {
   /**
    * Send message to a specific client
    */
-  sendToClient(clientId, message) {
+  sendToClient(clientId: any, message: any) {
     const client = this.clients.get(clientId);
     if (client && client.ws.readyState === WebSocket.OPEN) {
       client.ws.send(JSON.stringify(message));
@@ -383,11 +385,11 @@ class Gateway extends EventEmitter {
   /**
    * Broadcast message to all subscribers of a pod
    */
-  broadcastToPod(podId, message, excludeClientId = null) {
+  broadcastToPod(podId: any, message: any, excludeClientId: any = null) {
     const subscribers = this.podSubscriptions.get(podId);
     if (!subscribers) return;
 
-    subscribers.forEach((clientId) => {
+    subscribers.forEach((clientId: any) => {
       if (clientId !== excludeClientId) {
         this.sendToClient(clientId, message);
       }
@@ -397,7 +399,7 @@ class Gateway extends EventEmitter {
   /**
    * Send message to a specific agent
    */
-  sendToAgent(agentId, message) {
+  sendToAgent(agentId: any, message: any) {
     const clientId = this.agentConnections.get(agentId);
     if (clientId) {
       this.sendToClient(clientId, message);
@@ -407,7 +409,7 @@ class Gateway extends EventEmitter {
   /**
    * Handle broadcast to pod (from a client)
    */
-  handleBroadcastToPod(clientId, podId, message) {
+  handleBroadcastToPod(clientId: any, podId: any, message: any) {
     const client = this.clients.get(clientId);
     if (!client || !client.subscriptions.has(podId)) {
       this.sendToClient(clientId, {
@@ -431,7 +433,7 @@ class Gateway extends EventEmitter {
   /**
    * Handle server error
    */
-  handleError(error) {
+  handleError(error: any) {
     console.error('Gateway error:', error);
     this.emit('error', error);
   }
@@ -460,8 +462,8 @@ class Gateway extends EventEmitter {
    * Get client count by type
    */
   getClientsByType() {
-    const counts = {};
-    this.clients.forEach((client) => {
+    const counts: Record<string, number> = {};
+    this.clients.forEach((client: any) => {
       counts[client.type] = (counts[client.type] || 0) + 1;
     });
     return counts;
@@ -469,7 +471,7 @@ class Gateway extends EventEmitter {
 }
 
 // Export singleton instance
-let gateway = null;
+let gateway: Gateway | null = null;
 
 const getGateway = () => {
   if (!gateway) {
@@ -478,9 +480,9 @@ const getGateway = () => {
   return gateway;
 };
 
-const startGateway = (options) => {
+const startGateway = (_options?: any) => {
   const gw = getGateway();
-  gw.start(options);
+  gw.start();
   return gw;
 };
 
