@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "dev": "ts-node server.ts",
     "migrate-files": "node migrations/migrateFilesToDB.js",
     "test": "jest",
     "test:watch": "jest --watch",

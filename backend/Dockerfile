@@ -9,6 +9,9 @@ RUN npm install --include=dev
 
 COPY . .
 
+# Compile TypeScript to dist/
+RUN npx tsc -p tsconfig.build.json
+
 EXPOSE 5000
 
 # Add a label to indicate testing is supported

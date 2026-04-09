@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.js",
+    "**/*.spec.ts",
+    "jest.config.js",
+    "jest.setup.js",
+    "cleanup-test-data.ts",
+    "test-discord-commands.ts",
+    "test-discord-integration.ts",
+    "test-discord-interactions.ts",
+    "testPgConnection.ts",
+    "testPG.ts"
+  ]
+}

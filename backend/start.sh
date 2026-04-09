@@ -16,4 +16,4 @@ fi
 
 # Start the main application
 echo "🚀 Starting server..."
-exec node server.js 
+exec node dist/server.js
