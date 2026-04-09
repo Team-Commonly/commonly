@@ -12,6 +12,9 @@ COPY . .
 # Compile TypeScript to dist/
 RUN npx tsc -p tsconfig.build.json
 
+# Copy non-JS assets that tsc doesn't copy
+RUN cp config/schema.sql dist/config/schema.sql
+
 EXPOSE 5000
 
 # Add a label to indicate testing is supported
