@@ -45,6 +45,11 @@ jobs:
           npm install --legacy-peer-deps
           cd ..
 
+      - name: Backend TypeScript check
+        run: |
+          cd backend
+          npm run tsc:check
+
       - name: Run backend tests with coverage
         run: |
           cd backend
