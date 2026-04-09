@@ -1,11 +1,10 @@
-// @ts-nocheck
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const User = require('../models/User');
 const Activity = require('../models/Activity');
 const AgentMentionService = require('../services/agentMentionService');
 
-exports.createPost = async (req, res) => {
+exports.createPost = async (req: any, res: any) => {
   const {
     content,
     image,
@@ -19,7 +18,7 @@ exports.createPost = async (req, res) => {
     if (resolvedPodId) {
       const pod = await Pod.findById(resolvedPodId).select('_id members').lean();
       const isMember = pod?.members?.some(
-        (memberId) => memberId.toString() === req.userId.toString(),
+        (memberId: any) => memberId.toString() === req.userId.toString(),
       );
       if (!isMember) {
         return res.status(403).json({ error: 'You are not a member of this pod' });
@@ -53,28 +52,28 @@ exports.createPost = async (req, res) => {
     });
     await post.save();
     res.status(201).json(post);
-  } catch (err) {
+  } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 };
 
 // Get user statistics (post count and comment count)
-exports.getUserStats = async (req, res) => {
+exports.getUserStats = async (req: any, res: any) => {
   try {
     const { userId } = req.params;
     const postCount = await Post.getPostCount(userId);
     const commentCount = await Post.getCommentCount(userId);
     res.json({ postCount, commentCount });
-  } catch (err) {
+  } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 };
 
 // Search posts by content or tags
-exports.searchPosts = async (req, res) => {
+exports.searchPosts = async (req: any, res: any) => {
   try {
     const { query, tags, podId, category } = req.query;
-    const searchQuery = {};
+    const searchQuery: any = {};
 
     if (query) {
       searchQuery.$or = [
@@ -84,7 +83,7 @@ exports.searchPosts = async (req, res) => {
     }
 
     if (tags) {
-      const tagArray = tags.split(',').map((tag) => tag.trim());
+      const tagArray = (tags as string).split(',').map((tag: any) => tag.trim());
       searchQuery.tags = { $in: tagArray };
     }
 
@@ -108,19 +107,19 @@ exports.searchPosts = async (req, res) => {
       .sort({ createdAt: -1 });
 
     res.json(posts);
-  } catch (err) {
+  } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 };
 
-exports.getPosts = async (req, res) => {
+exports.getPosts = async (req: any, res: any) => {
   try {
     const { podId, category, sort = 'recent', page = 1, limit = 20 } = req.query;
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit as string, 10) || 20));
     const skip = (pageNum - 1) * limitNum;
 
-    const filter = {};
+    const filter: any = {};
     if (podId) {
       if (podId === 'global' || podId === 'none') {
         filter.podId = null;
@@ -132,7 +131,7 @@ exports.getPosts = async (req, res) => {
       filter.category = category;
     }
 
-    const populate = (q) => q
+    const populate = (q: any) => q
       .populate('userId', 'username profilePicture isBot botMetadata')
       .populate('comments.userId', 'username profilePicture isBot botMetadata')
       .populate('podId', 'name type')
@@ -167,24 +166,24 @@ exports.getPosts = async (req, res) => {
         { $limit: limitNum },
         { $project: { _id: 1 } },
       ]);
-      const idList = scoredIds.map((d) => d._id);
-      const byId = {};
+      const idList = scoredIds.map((d: any) => d._id);
+      const byId: any = {};
       const docs = await populate(Post.find({ _id: { $in: idList } }));
-      docs.forEach((d) => { byId[d._id.toString()] = d; });
-      posts = idList.map((id) => byId[id.toString()]).filter(Boolean);
+      docs.forEach((d: any) => { byId[d._id.toString()] = d; });
+      posts = idList.map((id: any) => byId[id.toString()]).filter(Boolean);
     } else {
       posts = await populate(Post.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum));
     }
 
     const total = await Post.countDocuments(filter);
     res.json({ posts, hasMore: skip + posts.length < total, total, page: pageNum });
-  } catch (err) {
+  } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 };
 
 // New method to get a single post by ID
-exports.getPostById = async (req, res) => {
+exports.getPostById = async (req: any, res: any) => {
   try {
     const post = await Post.findById(req.params.id)
       .populate('userId', 'username profilePicture isBot botMetadata')
@@ -193,13 +192,13 @@ exports.getPostById = async (req, res) => {
       .populate('likedBy', '_id');
     if (!post) return res.status(404).json({ error: 'Post not found' });
     res.json(post);
-  } catch (err) {
+  } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 };
 
 // Add a comment to a post
-exports.addComment = async (req, res) => {
+exports.addComment = async (req: any, res: any) => {
   try {
     const { text, podId: requestPodId, replyToCommentId } = req.body;
 
@@ -215,7 +214,7 @@ exports.addComment = async (req, res) => {
     const commentingUser = await User.findById(req.userId).select('_id username').lean();
 
     // Create the comment object
-    const comment = {
+    const comment: any = {
       userId: req.userId,
       text,
       replyTo: replyToCommentId || null,
@@ -243,7 +242,7 @@ exports.addComment = async (req, res) => {
         if (candidate) {
           const pod = await Pod.findById(candidate).select('_id members').lean();
           const isMember = pod?.members?.some(
-            (memberId) => memberId.toString() === req.userId.toString(),
+            (memberId: any) => memberId.toString() === req.userId.toString(),
           );
           return isMember ? pod._id : null;
         }
@@ -279,7 +278,7 @@ exports.addComment = async (req, res) => {
           username,
         });
       }
-    } catch (mentionError) {
+    } catch (mentionError: any) {
       console.warn('Failed to enqueue thread mentions:', mentionError.message);
     }
 
@@ -312,18 +311,18 @@ exports.addComment = async (req, res) => {
           },
         ],
       });
-    } catch (activityError) {
+    } catch (activityError: any) {
       console.warn('Failed to create thread comment activity:', activityError.message);
     }
 
     res.status(201).json(newComment);
-  } catch (err) {
+  } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 };
 
 // Like a post
-exports.likePost = async (req, res) => {
+exports.likePost = async (req: any, res: any) => {
   try {
     const postId = req.params.id;
     const { userId } = req;
@@ -351,13 +350,13 @@ exports.likePost = async (req, res) => {
 
     await post.save();
     res.json({ likes: post.likes, liked: userLikedIndex === -1 });
-  } catch (err) {
+  } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 };
 
 // Delete a post
-exports.deletePost = async (req, res) => {
+exports.deletePost = async (req: any, res: any) => {
   try {
     const post = await Post.findById(req.params.id);
 
@@ -374,13 +373,13 @@ exports.deletePost = async (req, res) => {
 
     await Post.findByIdAndDelete(req.params.id);
     res.json({ message: 'Post deleted successfully' });
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 };
 
 // Delete a comment
-exports.deleteComment = async (req, res) => {
+exports.deleteComment = async (req: any, res: any) => {
   try {
     const { id, commentId } = req.params;
 
@@ -391,7 +390,7 @@ exports.deleteComment = async (req, res) => {
 
     // Find the comment index
     const commentIndex = post.comments.findIndex(
-      (comment) => comment._id.toString() === commentId,
+      (comment: any) => comment._id.toString() === commentId,
     );
 
     if (commentIndex === -1) {
@@ -410,12 +409,12 @@ exports.deleteComment = async (req, res) => {
     await post.save();
 
     res.json({ message: 'Comment deleted successfully' });
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 };
 
-exports.followThread = async (req, res) => {
+exports.followThread = async (req: any, res: any) => {
   try {
     const post = await Post.findById(req.params.id).select('_id content');
     if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -424,7 +423,7 @@ exports.followThread = async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const alreadyFollowing = (user.followedThreads || []).some(
-      (thread) => String(thread.postId) === String(post._id),
+      (thread: any) => String(thread.postId) === String(post._id),
     );
 
     if (!alreadyFollowing) {
@@ -456,7 +455,7 @@ exports.followThread = async (req, res) => {
         },
         involves: [{ id: user._id, name: user.username, type: 'human' }],
       });
-    } catch (activityError) {
+    } catch (activityError: any) {
       console.warn('Failed to create thread follow activity:', activityError.message);
     }
 
@@ -466,12 +465,12 @@ exports.followThread = async (req, res) => {
       postId: post._id.toString(),
       followedThreadsCount: user.followedThreads?.length || 0,
     });
-  } catch (err) {
+  } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
 };
 
-exports.unfollowThread = async (req, res) => {
+exports.unfollowThread = async (req: any, res: any) => {
   try {
     const post = await Post.findById(req.params.id).select('_id');
     if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -480,7 +479,7 @@ exports.unfollowThread = async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     user.followedThreads = (user.followedThreads || []).filter(
-      (thread) => String(thread.postId) !== String(post._id),
+      (thread: any) => String(thread.postId) !== String(post._id),
     );
     await user.save();
 
@@ -490,12 +489,12 @@ exports.unfollowThread = async (req, res) => {
       postId: post._id.toString(),
       followedThreadsCount: user.followedThreads?.length || 0,
     });
-  } catch (err) {
+  } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
 };
 
-exports.toggleAgentComments = async (req, res) => {
+exports.toggleAgentComments = async (req: any, res: any) => {
   try {
     const post = await Post.findById(req.params.id).select('userId agentCommentsDisabled');
     if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -504,12 +503,12 @@ exports.toggleAgentComments = async (req, res) => {
     post.agentCommentsDisabled = !post.agentCommentsDisabled;
     await post.save();
     return res.json({ agentCommentsDisabled: post.agentCommentsDisabled });
-  } catch (err) {
+  } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
 };
 
-exports.getFollowedThreads = async (req, res) => {
+exports.getFollowedThreads = async (req: any, res: any) => {
   try {
     const user = await User.findById(req.userId).select('followedThreads');
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -519,9 +518,9 @@ exports.getFollowedThreads = async (req, res) => {
       return res.json({ threads: [] });
     }
 
-    const postIds = followedThreads.map((thread) => thread.postId);
+    const postIds = followedThreads.map((thread: any) => thread.postId);
     const followedAtMap = new Map(
-      followedThreads.map((thread) => [String(thread.postId), thread.followedAt || null]),
+      followedThreads.map((thread: any) => [String(thread.postId), thread.followedAt || null]),
     );
 
     const posts = await Post.find({ _id: { $in: postIds } })
@@ -531,13 +530,15 @@ exports.getFollowedThreads = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const normalized = posts.map((post) => ({
+    const normalized = posts.map((post: any) => ({
       ...post,
       followedAt: followedAtMap.get(String(post._id)) || null,
     }));
 
     return res.json({ threads: normalized });
-  } catch (err) {
+  } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
 };
+
+export {};

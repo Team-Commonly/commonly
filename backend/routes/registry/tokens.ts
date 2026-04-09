@@ -11,7 +11,7 @@ const AGENT_USER_TOKEN_SCOPES = new Set([
   'agent:messages:write',
 ]);
 
-const normalizeScopes = (scopes) => {
+const normalizeScopes = (scopes: any) => {
   if (!Array.isArray(scopes)) return [];
   return Array.from(new Set(scopes.filter((scope) => AGENT_USER_TOKEN_SCOPES.has(scope))));
 };
@@ -21,12 +21,12 @@ const AUTO_GRANTED_INTEGRATION_SCOPES = [
   'integration:messages:read',
 ];
 
-const sanitizeStringList = (value) => {
+const sanitizeStringList = (value: any) => {
   if (!Array.isArray(value)) return [];
   return Array.from(new Set(value.map((entry) => String(entry || '').trim()).filter(Boolean)));
 };
 
-const normalizeToolPolicy = (policy) => {
+const normalizeToolPolicy = (policy: any) => {
   if (!policy || typeof policy !== 'object') return null;
   return {
     allowed: sanitizeStringList(policy.allowed),
@@ -35,7 +35,7 @@ const normalizeToolPolicy = (policy) => {
   };
 };
 
-const normalizeContextPolicy = (policy) => {
+const normalizeContextPolicy = (policy: any) => {
   if (!policy || typeof policy !== 'object') return null;
   const next = { ...policy };
   if (next.maxTokens !== undefined) next.maxTokens = Number(next.maxTokens);
@@ -54,7 +54,7 @@ const normalizeContextPolicy = (policy) => {
  * @param {Object} installation - Optional installation to also store token on (for backward compat)
  * @returns {Object} - { token, label, existing, createdAt }
  */
-const issueRuntimeTokenForAgent = async (agentUser, label, installation = null) => {
+const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null) => {
   // Check if agent already has a runtime token (reuse existing)
   if (agentUser.agentRuntimeTokens?.length > 0) {
     const existingToken = agentUser.agentRuntimeTokens[0];
@@ -99,7 +99,7 @@ const issueRuntimeTokenForAgent = async (agentUser, label, installation = null) 
  * Legacy function for backward compatibility.
  * @deprecated Use issueRuntimeTokenForAgent instead
  */
-const issueRuntimeTokenForInstallation = async (installation, label) => {
+const issueRuntimeTokenForInstallation = async (installation: any, label: any) => {
   const rawToken = `cm_agent_${randomSecret(32)}`;
   installation.runtimeTokens = installation.runtimeTokens || [];
   installation.runtimeTokens.push({
@@ -118,6 +118,13 @@ const issueUserTokenForInstallation = async ({
   podId,
   scopes,
   force = false,
+}: {
+  agentName: any;
+  instanceId: any;
+  displayName: any;
+  podId: any;
+  scopes: any;
+  force?: boolean;
 }) => {
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(agentName.toLowerCase(), {
     instanceId,
@@ -155,3 +162,5 @@ module.exports = {
   issueRuntimeTokenForInstallation,
   issueUserTokenForInstallation,
 };
+
+export {};

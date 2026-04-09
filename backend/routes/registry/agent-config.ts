@@ -31,7 +31,7 @@ const agentConfigRouter = express.Router();
  * PATCH /api/registry/pods/:podId/agents/:name
  * Update agent configuration in a pod
  */
-agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
+agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const {
@@ -60,7 +60,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -80,7 +80,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
-    const applyInstallationSettings = (targetInstallation) => {
+    const applyInstallationSettings = (targetInstallation: any) => {
       if (!targetInstallation) return;
       if (config) {
         const existingConfig = normalizeConfigMap(targetInstallation.config) || {};
@@ -121,7 +121,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
     });
 
     const peerByPod = new Map(
-      peerInstallations.map((entry) => [entry.podId?.toString?.() || '', entry]),
+      peerInstallations.map((entry: any) => [entry.podId?.toString?.() || '', entry]),
     );
     if (!peerByPod.has(podId.toString())) {
       peerByPod.set(podId.toString(), installation);
@@ -134,17 +134,17 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
         .select('_id members createdBy')
         .lean();
       accessiblePodIds = peerPods
-        .filter((entry) => userHasPodAccess(entry, userId))
-        .map((entry) => entry._id.toString());
+        .filter((entry: any) => userHasPodAccess(entry, userId))
+        .map((entry: any) => entry._id.toString());
       if (!accessiblePodIds.includes(podId.toString())) {
         accessiblePodIds.push(podId.toString());
       }
     }
 
     const accessiblePodSet = new Set(accessiblePodIds);
-    const installationsToUpdate = Array.from(peerByPod.entries())
-      .filter(([entryPodId]) => accessiblePodSet.has(entryPodId))
-      .map(([, entry]) => entry);
+    const installationsToUpdate: any[] = Array.from(peerByPod.entries())
+      .filter(([entryPodId]: any[]) => accessiblePodSet.has(entryPodId))
+      .map(([, entry]: any[]) => entry);
 
     for (const targetInstallation of installationsToUpdate) {
       applyInstallationSettings(targetInstallation);
@@ -161,7 +161,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
       || normalizedToolPolicy !== null
       || normalizedContextPolicy !== null
     ) {
-      const updates = {};
+      const updates: any = {};
       if (status) updates.status = status;
       if (modelPreferences) updates.modelPreferences = modelPreferences;
       if (displayName) updates.name = displayName;
@@ -179,7 +179,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
 
       if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
         const identityContent = buildIdentityContent(displayName || normalizedInstanceId, persona || {});
-        writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err) => {
+        writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err: any) => {
           console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
         });
       }
@@ -189,7 +189,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
     if (skillSync && name.toLowerCase() === 'openclaw') {
       const mode = skillSync.mode === 'selected' ? 'selected' : 'all';
       const requestedPodIds = Array.isArray(skillSync.podIds)
-        ? skillSync.podIds.map((id) => String(id)).filter(Boolean)
+        ? skillSync.podIds.map((id: any) => String(id)).filter(Boolean)
         : [];
       let podIdsToSync = requestedPodIds;
       if (skillSync.allPods) {
@@ -198,15 +198,15 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
           instanceId: normalizedInstanceId,
           status: 'active',
         }).lean();
-        podIdsToSync = installations.map((i) => i.podId?.toString?.()).filter(Boolean);
+        podIdsToSync = installations.map((i: any) => i.podId?.toString?.()).filter(Boolean);
       }
       if (podIdsToSync.length) {
         const pods = await Pod.find({ _id: { $in: podIdsToSync } })
           .select('members createdBy')
           .lean();
         podIdsToSync = pods
-          .filter((p) => userHasPodAccess(p, userId))
-          .map((p) => p._id.toString());
+          .filter((p: any) => userHasPodAccess(p, userId))
+          .map((p: any) => p._id.toString());
       }
       await syncOpenClawSkills({
         accountId: normalizedInstanceId,
@@ -233,3 +233,5 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req, res) => {
 });
 
 module.exports = agentConfigRouter;
+
+export {};

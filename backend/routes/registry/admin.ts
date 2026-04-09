@@ -1,5 +1,6 @@
 // @ts-nocheck
 // Admin-only registry routes — extracted from registry.js (GH#112)
+export {};
 const express = require('express');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
@@ -27,7 +28,7 @@ const adminRouter = express.Router();
  * GET /api/registry/admin/installations
  * List all agent installations (admin only)
  */
-adminRouter.get('/admin/installations', auth, adminAuth, async (req, res) => {
+adminRouter.get('/admin/installations', auth, adminAuth, async (req: any, res: any) => {
   try {
     const {
       q,
@@ -39,7 +40,7 @@ adminRouter.get('/admin/installations', auth, adminAuth, async (req, res) => {
     const limit = Math.min(Math.max(parseInt(limitParam, 10) || 200, 1), 1000);
     const offset = Math.max(parseInt(offsetParam, 10) || 0, 0);
 
-    const filter = {};
+    const filter: any = {};
     if (status && status !== 'all') {
       filter.status = status;
     }
@@ -47,7 +48,7 @@ adminRouter.get('/admin/installations', auth, adminAuth, async (req, res) => {
     if (q) {
       const regex = new RegExp(escapeRegExp(String(q).trim()), 'i');
       const matchedPods = await Pod.find({ name: regex }).select('_id').lean();
-      const matchedPodIds = matchedPods.map((pod) => pod._id);
+      const matchedPodIds = (matchedPods as any[]).map((pod: any) => pod._id);
       filter.$or = [
         { agentName: regex },
         { displayName: regex },
@@ -65,17 +66,17 @@ adminRouter.get('/admin/installations', auth, adminAuth, async (req, res) => {
         .lean(),
     ]);
 
-    const podIds = installations.map((install) => install.podId).filter(Boolean);
+    const podIds = (installations as any[]).map((install: any) => install.podId).filter(Boolean);
     const pods = await Pod.find({ _id: { $in: podIds } })
       .select('_id name createdBy')
       .lean();
-    const podMap = new Map(pods.map((pod) => [pod._id.toString(), pod]));
+    const podMap = new Map((pods as any[]).map((pod: any) => [pod._id.toString(), pod]));
 
     const userIds = new Set();
-    installations.forEach((install) => {
+    (installations as any[]).forEach((install: any) => {
       if (install.installedBy) userIds.add(install.installedBy.toString());
     });
-    pods.forEach((pod) => {
+    (pods as any[]).forEach((pod: any) => {
       if (pod.createdBy) userIds.add(pod.createdBy.toString());
     });
 
@@ -84,14 +85,14 @@ adminRouter.get('/admin/installations', auth, adminAuth, async (req, res) => {
         .select('_id username email role')
         .lean()
       : [];
-    const userMap = new Map(users.map((user) => [user._id.toString(), user]));
+    const userMap = new Map((users as any[]).map((user: any) => [user._id.toString(), user]));
 
-    const payload = installations.map((install) => {
-      const pod = podMap.get(install.podId?.toString?.() || '');
-      const installedBy = install.installedBy
+    const payload = (installations as any[]).map((install: any) => {
+      const pod: any = podMap.get(install.podId?.toString?.() || '');
+      const installedBy: any = install.installedBy
         ? userMap.get(install.installedBy.toString())
         : null;
-      const podOwner = pod?.createdBy
+      const podOwner: any = pod?.createdBy
         ? userMap.get(pod.createdBy.toString())
         : null;
 
@@ -155,7 +156,7 @@ adminRouter.get('/admin/installations', auth, adminAuth, async (req, res) => {
  * POST /api/registry/admin/installations/reprovision-all
  * Force reprovision all active agent installations (global admin only).
  */
-adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async (req, res) => {
+adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async (req: any, res: any) => {
   try {
     const limitRaw = Number(req.body?.limit);
     const limit = Number.isFinite(limitRaw) && limitRaw > 0
@@ -191,21 +192,21 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
           runtimeStartError: result.runtimeStartError,
           runtimeRestartError: null,
         });
-      } catch (error) {
+      } catch (error: unknown) {
         items.push({
           installationId: installation._id?.toString(),
           agentName: installation.agentName,
           instanceId: installation.instanceId || 'default',
           podId: installation.podId?.toString?.() || null,
           success: false,
-          error: error.message,
+          error: (error as Error).message,
         });
       }
     }
 
     // Single gateway restart after all agents provisioned (instead of one per agent)
     if (sharedRuntimesNeedingRestart.has('moltbot')) {
-      await restartAgentRuntime('moltbot', 'default', {}).catch((err) => {
+      await restartAgentRuntime('moltbot', 'default', {}).catch((err: any) => {
         console.warn('[reprovision-all] Failed to restart gateway:', err.message);
       });
     }
@@ -229,7 +230,7 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
  * DELETE /api/registry/admin/installations/:installationId/runtime-tokens/:tokenId
  * Revoke a runtime token for an installation (admin only)
  */
-adminRouter.delete('/admin/installations/:installationId/runtime-tokens/:tokenId', auth, adminAuth, async (req, res) => {
+adminRouter.delete('/admin/installations/:installationId/runtime-tokens/:tokenId', auth, adminAuth, async (req: any, res: any) => {
   try {
     const { installationId, tokenId } = req.params;
     const installation = await AgentInstallation.findById(installationId);
@@ -239,7 +240,7 @@ adminRouter.delete('/admin/installations/:installationId/runtime-tokens/:tokenId
 
     const originalCount = installation.runtimeTokens?.length || 0;
     installation.runtimeTokens = (installation.runtimeTokens || []).filter(
-      (token) => token._id?.toString() !== tokenId,
+      (token: any) => token._id?.toString() !== tokenId,
     );
 
     if ((installation.runtimeTokens || []).length === originalCount) {
@@ -258,7 +259,7 @@ adminRouter.delete('/admin/installations/:installationId/runtime-tokens/:tokenId
  * DELETE /api/registry/admin/installations/:installationId
  * Uninstall an agent instance from a pod (admin only)
  */
-adminRouter.delete('/admin/installations/:installationId', auth, adminAuth, async (req, res) => {
+adminRouter.delete('/admin/installations/:installationId', auth, adminAuth, async (req: any, res: any) => {
   try {
     const { installationId } = req.params;
     const installation = await AgentInstallation.findById(installationId);
@@ -285,8 +286,8 @@ adminRouter.delete('/admin/installations/:installationId', auth, adminAuth, asyn
         AgentIdentityService.buildAgentUsername(resolvedType, instanceId),
         podId,
       );
-    } catch (identityError) {
-      console.warn('Failed to remove agent user from pod:', identityError.message);
+    } catch (identityError: unknown) {
+      console.warn('Failed to remove agent user from pod:', (identityError as Error).message);
     }
 
     return res.json({ success: true });
@@ -300,7 +301,7 @@ adminRouter.delete('/admin/installations/:installationId', auth, adminAuth, asyn
  * POST /api/registry/admin/agents/claude-code/session-token
  * Issue a session-scoped runtime token for a Claude Code agent (e.g. a Happy session).
  */
-adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, async (req, res) => {
+adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, async (req: any, res: any) => {
   try {
     const { podId, instanceId: requestedInstanceId, displayName, expiresIn } = req.body;
 
@@ -321,7 +322,7 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
     });
 
     // Ensure pod membership — plain ObjectId array per Pod.members invariant
-    const isMember = pod.members?.some((m) => m.toString() === agentUser._id.toString());
+    const isMember = pod.members?.some((m: any) => m.toString() === agentUser._id.toString());
     if (!isMember) {
       pod.members.push(agentUser._id);
       await pod.save();
@@ -379,7 +380,7 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
  * POST /api/registry/admin/agents/:agentName/trigger-heartbeat
  * Immediately fire a heartbeat for a named agent (admin only).
  */
-adminRouter.post('/admin/agents/:agentName/trigger-heartbeat', auth, adminAuth, async (req, res) => {
+adminRouter.post('/admin/agents/:agentName/trigger-heartbeat', auth, adminAuth, async (req: any, res: any) => {
   try {
     const { agentName } = req.params;
     const { instanceId = 'default' } = req.body || {};

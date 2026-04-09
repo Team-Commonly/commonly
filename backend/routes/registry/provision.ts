@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Agent provision route — extracted from registry.js (GH#112)
 // Handles: POST /pods/:podId/agents/:name/provision
+export {};
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -40,7 +41,7 @@ const provisionRouter = express.Router();
  * POST /api/registry/pods/:podId/agents/:name/provision
  * Provision an external runtime config for an agent instance (local dev).
  */
-provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, res) => {
+provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const {
@@ -70,7 +71,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -165,8 +166,8 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
         installation.installedBy,
         { agentName: name, instanceId: normalizedInstanceId },
       );
-    } catch (dmErr) {
-      console.warn('[provision] Failed to pre-create shared DM pod:', dmErr.message);
+    } catch (dmErr: unknown) {
+      console.warn('[provision] Failed to pre-create shared DM pod:', (dmErr as Error).message);
     }
 
     const baseUrl = process.env.COMMONLY_API_URL
@@ -211,8 +212,8 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
           );
           console.log(`[provision] Upgraded DM heartbeat installation to fixedPod for ${name}:${normalizedInstanceId}`);
         }
-      } catch (dmInstErr) {
-        console.warn('[provision] Failed to upsert DM pod heartbeat installation:', dmInstErr.message);
+      } catch (dmInstErr: unknown) {
+        console.warn('[provision] Failed to upsert DM pod heartbeat installation:', (dmInstErr as Error).message);
       }
     }
 
@@ -241,7 +242,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
       || Boolean(runtimeIssued.token || runtimeAuthProfiles || runtimeSkillEnv);
     if (shouldProvision) {
       const explicitPresetId = configPayload?.presetId || null;
-      const matchedPreset = PRESET_DEFINITIONS.find((p) => p.id === (explicitPresetId || normalizedInstanceId));
+      const matchedPreset: any = PRESET_DEFINITIONS.find((p: any) => p.id === (explicitPresetId || normalizedInstanceId));
       const heartbeatForProvision = {
         ...(matchedPreset?.heartbeatTemplate ? { global: true, everyMinutes: 30 } : {}),
         ...(matchedPreset?.defaultHeartbeat || {}),
@@ -268,33 +269,33 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
       });
     }
 
-    const matchedPresetForSave = PRESET_DEFINITIONS.find((p) => p.id === normalizedInstanceId);
+    const matchedPresetForSave: any = PRESET_DEFINITIONS.find((p: any) => p.id === normalizedInstanceId);
     if (matchedPresetForSave?.heartbeatTemplate) {
       try {
         await AgentProfile.updateMany(
           { agentName: name.toLowerCase(), instanceId: normalizedInstanceId, podId },
           { $set: { heartbeatContent: matchedPresetForSave.heartbeatTemplate } },
         );
-      } catch (hbErr) {
-        console.warn('[reprovision] Failed to persist heartbeatContent to AgentProfile:', hbErr.message);
+      } catch (hbErr: unknown) {
+        console.warn('[reprovision] Failed to persist heartbeatContent to AgentProfile:', (hbErr as Error).message);
       }
     }
 
     let runtimeStart = null;
     try {
       runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
-    } catch (startError) {
-      console.warn('Runtime start failed:', startError.message);
-      runtimeStart = { started: false, reason: startError.message };
+    } catch (startError: unknown) {
+      console.warn('Runtime start failed:', (startError as Error).message);
+      runtimeStart = { started: false, reason: (startError as Error).message };
     }
 
     let runtimeRestart = null;
     if (provisioned.restartRequired) {
       try {
         runtimeRestart = await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
-      } catch (restartError) {
-        console.warn('Runtime restart failed:', restartError.message);
-        runtimeRestart = { restarted: false, reason: restartError.message };
+      } catch (restartError: unknown) {
+        console.warn('Runtime restart failed:', (restartError as Error).message);
+        runtimeRestart = { restarted: false, reason: (restartError as Error).message };
       }
     }
 
@@ -303,7 +304,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
       const skillSync = configPayload?.skillSync || null;
       const mode = skillSync?.mode === 'selected' ? 'selected' : 'all';
       const requestedPodIds = Array.isArray(skillSync?.podIds)
-        ? skillSync.podIds.map((id) => String(id)).filter(Boolean)
+        ? skillSync.podIds.map((id: any) => String(id)).filter(Boolean)
         : [String(podId)];
       let podIdsToSync = requestedPodIds;
 
@@ -313,8 +314,8 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
           instanceId: normalizedInstanceId,
           status: 'active',
         }).lean();
-        podIdsToSync = allInstallations
-          .map((i) => i.podId?.toString?.())
+        podIdsToSync = (allInstallations as any[])
+          .map((i: any) => i.podId?.toString?.())
           .filter(Boolean);
       }
 
@@ -322,9 +323,9 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
         const pods = await Pod.find({ _id: { $in: podIdsToSync } })
           .select('members createdBy')
           .lean();
-        podIdsToSync = pods
-          .filter((p) => userHasPodAccess(p, userId))
-          .map((p) => p._id.toString());
+        podIdsToSync = (pods as any[])
+          .filter((p: any) => userHasPodAccess(p, userId))
+          .map((p: any) => p._id.toString());
       }
 
       try {
@@ -336,9 +337,9 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
           gateway,
         });
         skillsSynced = { success: true, path: skillsPath, podIds: podIdsToSync };
-      } catch (syncError) {
-        console.warn('OpenClaw skill sync failed during provision:', syncError.message);
-        skillsSynced = { success: false, error: syncError.message };
+      } catch (syncError: unknown) {
+        console.warn('OpenClaw skill sync failed during provision:', (syncError as Error).message);
+        skillsSynced = { success: false, error: (syncError as Error).message };
       }
     }
 
@@ -387,10 +388,10 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req, re
       sharedIdentity: true,
       agentUsername: agentUser.username,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error provisioning agent runtime:', error);
-    if (error.status) {
-      return res.status(error.status).json({ error: error.message });
+    if ((error as any).status) {
+      return res.status((error as any).status).json({ error: (error as Error).message });
     }
     return res.status(500).json({ error: 'Failed to provision agent runtime' });
   }

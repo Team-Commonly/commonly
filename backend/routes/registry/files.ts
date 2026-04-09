@@ -27,7 +27,7 @@ const {
 
 const filesRouter = express.Router({ mergeParams: true });
 
-filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req, res) => {
+filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId } = req.body;
@@ -42,7 +42,7 @@ filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req,
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -91,8 +91,8 @@ filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req,
     try {
       const text = await generateText(prompt, { temperature: 0.7 });
       generated = parseJsonFromText(text);
-    } catch (error) {
-      console.warn('Persona generation failed, using fallback:', error.message);
+    } catch (error: unknown) {
+      console.warn('Persona generation failed, using fallback:', (error as Error).message);
     }
 
     if (!generated || typeof generated !== 'object') {
@@ -130,7 +130,7 @@ filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req,
  * GET /pods/:podId/agents/:name/heartbeat-file
  * Read the agent's current HEARTBEAT.md from workspace (or AgentProfile cache)
  */
-filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) => {
+filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId } = req.query;
@@ -141,7 +141,7 @@ filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, re
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -172,7 +172,7 @@ filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, re
       AgentProfile.updateMany(
         { podId, agentName: name.toLowerCase(), instanceId: resolved.instanceId },
         { $set: { heartbeatContent: content } },
-      ).catch((profileErr) => {
+      ).catch((profileErr: any) => {
         console.warn('[heartbeat-file] Failed to sync AgentProfile cache from workspace:', profileErr.message);
       });
     }
@@ -184,7 +184,7 @@ filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, re
   }
 });
 
-filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, res) => {
+filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, content, reset } = req.body;
@@ -203,7 +203,7 @@ filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, r
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -238,8 +238,8 @@ filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, r
         { podId, agentName: name.toLowerCase(), instanceId: resolved.instanceId },
         { $set: { heartbeatContent: normalized } },
       );
-    } catch (profileErr) {
-      console.warn('[heartbeat-file] Failed to persist to AgentProfile:', profileErr.message);
+    } catch (profileErr: unknown) {
+      console.warn('[heartbeat-file] Failed to persist to AgentProfile:', (profileErr as Error).message);
     }
 
     return res.json({ success: true, path: filePath, reset: Boolean(reset) });
@@ -253,7 +253,7 @@ filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req, r
  * GET /api/registry/pods/:podId/agents/:name/identity-file
  * Read IDENTITY.md from agent workspace
  */
-filesRouter.get('/pods/:podId/agents/:name/identity-file', auth, async (req, res) => {
+filesRouter.get('/pods/:podId/agents/:name/identity-file', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId } = req.query;
@@ -264,7 +264,7 @@ filesRouter.get('/pods/:podId/agents/:name/identity-file', auth, async (req, res
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -292,7 +292,7 @@ filesRouter.get('/pods/:podId/agents/:name/identity-file', auth, async (req, res
  * POST /api/registry/pods/:podId/agents/:name/identity-file
  * Write IDENTITY.md to agent workspace
  */
-filesRouter.post('/pods/:podId/agents/:name/identity-file', auth, async (req, res) => {
+filesRouter.post('/pods/:podId/agents/:name/identity-file', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, content } = req.body;
@@ -307,7 +307,7 @@ filesRouter.post('/pods/:podId/agents/:name/identity-file', auth, async (req, re
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -329,3 +329,5 @@ filesRouter.post('/pods/:podId/agents/:name/identity-file', auth, async (req, re
 });
 
 module.exports = filesRouter;
+
+export {};

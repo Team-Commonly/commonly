@@ -7,7 +7,7 @@ const AgentAutoJoinService = require('../../services/agentAutoJoinService');
 
 const router = express.Router();
 
-const toNumberOrDefault = (value, fallback) => {
+const toNumberOrDefault = (value: any, fallback: any) => {
   if (value === undefined || value === null || value === '') return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -18,7 +18,7 @@ const toNumberOrDefault = (value, fallback) => {
  * Manually runs the themed pod autonomy workflow.
  * Global admin only.
  */
-router.post('/themed-pods/run', auth, adminAuth, async (req, res) => {
+router.post('/themed-pods/run', auth, adminAuth, async (req: any, res: any) => {
   try {
     const hours = toNumberOrDefault(req.body?.hours, 12);
     const minMatches = toNumberOrDefault(req.body?.minMatches, 4);
@@ -54,7 +54,7 @@ router.post('/themed-pods/run', auth, adminAuth, async (req, res) => {
  * Manually runs agent auto-join for agent-owned pods.
  * Global admin only.
  */
-router.post('/auto-join/run', auth, adminAuth, async (_req, res) => {
+router.post('/auto-join/run', auth, adminAuth, async (_req: any, res: any) => {
   try {
     const result = await AgentAutoJoinService.runAutoJoinAgentOwnedPods({
       source: 'manual-admin',
@@ -71,3 +71,5 @@ router.post('/auto-join/run', auth, adminAuth, async (_req, res) => {
 });
 
 module.exports = router;
+
+export {};

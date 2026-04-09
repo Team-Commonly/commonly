@@ -16,11 +16,15 @@ const {
   resolveInstallation,
   resolveGatewayForRequest,
   userHasPodAccess,
+  normalizeConfigMap,
+  resolveGatewayForInstallation,
+  normalizePluginIdentifier,
+  getPluginSpecBase,
 } = require('./helpers');
 
 const pluginsRouter = express.Router({ mergeParams: true });
 
-pluginsRouter.get('/pods/:podId/agents/:name/plugins', auth, async (req, res) => {
+pluginsRouter.get('/pods/:podId/agents/:name/plugins', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const instanceId = normalizeInstanceId(req.query.instanceId || 'default');
@@ -36,7 +40,7 @@ pluginsRouter.get('/pods/:podId/agents/:name/plugins', auth, async (req, res) =>
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -86,7 +90,7 @@ pluginsRouter.get('/pods/:podId/agents/:name/plugins', auth, async (req, res) =>
  * POST /api/registry/pods/:podId/agents/:name/plugins/install
  * Install an OpenClaw plugin in the selected/runtime gateway.
  */
-pluginsRouter.post('/pods/:podId/agents/:name/plugins/install', auth, async (req, res) => {
+pluginsRouter.post('/pods/:podId/agents/:name/plugins/install', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const {
@@ -112,7 +116,7 @@ pluginsRouter.post('/pods/:podId/agents/:name/plugins/install', auth, async (req
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -156,7 +160,7 @@ pluginsRouter.post('/pods/:podId/agents/:name/plugins/install', auth, async (req
       specNormalized,
       specBase,
     ].filter(Boolean));
-    const existing = (pluginReport.plugins || []).find((plugin) => {
+    const existing = (pluginReport.plugins || []).find((plugin: any) => {
       const pluginIdValue = normalizePluginIdentifier(plugin?.id);
       const pluginNameValue = normalizePluginIdentifier(plugin?.name);
       return candidates.has(pluginIdValue) || candidates.has(pluginNameValue);
@@ -198,3 +202,5 @@ pluginsRouter.post('/pods/:podId/agents/:name/plugins/install', auth, async (req
  * Update agent configuration in a pod
  */
 module.exports = pluginsRouter;
+
+export {};

@@ -1,4 +1,3 @@
-// @ts-nocheck
 const AGENT_NAME_PATTERN = /^[a-z0-9-]+$/;
 const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
 const SLUG_PATTERN = /^[a-z0-9-]+$/;
@@ -6,24 +5,25 @@ const SCOPE_PATTERN = /^[a-z0-9:_-]+$/i;
 const MEMORY_PATTERN = /^\d+(?:\.\d+)?(?:kb|mb|gb|tb)$/i;
 
 class ManifestValidationError extends Error {
-  constructor(details) {
+  details: any;
+  constructor(details: any) {
     super('Invalid agent manifest');
     this.name = 'ManifestValidationError';
     this.details = details;
   }
 }
 
-const isPlainObject = (value) => (
+const isPlainObject = (value: any) => (
   value !== null
   && typeof value === 'object'
   && !Array.isArray(value)
 );
 
-const addError = (details, field, message) => {
+const addError = (details: any, field: any, message: any) => {
   details.push({ field, message });
 };
 
-const normalizeString = (value, {
+const normalizeString = (value: any, {
   trim = true,
   maxLength = 200,
 } = {}) => {
@@ -33,7 +33,7 @@ const normalizeString = (value, {
   return nextValue.slice(0, maxLength);
 };
 
-const normalizeSlugList = (value, field, details, maxItems = 20) => {
+const normalizeSlugList = (value: any, field: any, details: any, maxItems = 20) => {
   if (value == null) return [];
   if (!Array.isArray(value)) {
     addError(details, field, 'Must be an array of lowercase slugs');
@@ -41,9 +41,9 @@ const normalizeSlugList = (value, field, details, maxItems = 20) => {
   }
 
   const seen = new Set();
-  const normalized = [];
+  const normalized: any[] = [];
 
-  value.forEach((entry, index) => {
+  value.forEach((entry: any, index: any) => {
     const nextValue = normalizeString(entry, { maxLength: 64 }).toLowerCase();
     if (!nextValue) return;
     if (!SLUG_PATTERN.test(nextValue)) {
@@ -62,7 +62,7 @@ const normalizeSlugList = (value, field, details, maxItems = 20) => {
   return normalized;
 };
 
-const normalizeScopeList = (value, field, details, maxItems = 50) => {
+const normalizeScopeList = (value: any, field: any, details: any, maxItems = 50) => {
   if (value == null) return [];
   if (!Array.isArray(value)) {
     addError(details, field, 'Must be an array of scope strings');
@@ -70,9 +70,9 @@ const normalizeScopeList = (value, field, details, maxItems = 50) => {
   }
 
   const seen = new Set();
-  const normalized = [];
+  const normalized: any[] = [];
 
-  value.forEach((entry, index) => {
+  value.forEach((entry: any, index: any) => {
     const nextValue = normalizeString(entry, { maxLength: 100 });
     if (!nextValue) return;
     if (!SCOPE_PATTERN.test(nextValue)) {
@@ -91,7 +91,7 @@ const normalizeScopeList = (value, field, details, maxItems = 50) => {
   return normalized;
 };
 
-const normalizeStringList = (value, field, details, {
+const normalizeStringList = (value: any, field: any, details: any, {
   maxItems = 50,
   maxLength = 100,
 } = {}) => {
@@ -102,9 +102,9 @@ const normalizeStringList = (value, field, details, {
   }
 
   const seen = new Set();
-  const normalized = [];
+  const normalized: any[] = [];
 
-  value.forEach((entry) => {
+  value.forEach((entry: any) => {
     const nextValue = normalizeString(entry, { maxLength });
     if (!nextValue) return;
     if (seen.has(nextValue)) return;
@@ -119,7 +119,7 @@ const normalizeStringList = (value, field, details, {
   return normalized;
 };
 
-const normalizeUrl = (value, field, details) => {
+const normalizeUrl = (value: any, field: any, details: any) => {
   const nextValue = normalizeString(value, { maxLength: 500 });
   if (!nextValue) return '';
 
@@ -136,7 +136,7 @@ const normalizeUrl = (value, field, details) => {
   }
 };
 
-const normalizeCapabilities = (value, details) => {
+const normalizeCapabilities = (value: any, details: any) => {
   if (value == null) return [];
   if (!Array.isArray(value)) {
     addError(details, 'manifest.capabilities', 'Must be an array');
@@ -144,9 +144,9 @@ const normalizeCapabilities = (value, details) => {
   }
 
   const seen = new Set();
-  const normalized = [];
+  const normalized: any[] = [];
 
-  value.forEach((entry, index) => {
+  value.forEach((entry: any, index: any) => {
     if (!isPlainObject(entry)) {
       addError(details, `manifest.capabilities[${index}]`, 'Must be an object');
       return;
@@ -174,14 +174,14 @@ const normalizeCapabilities = (value, details) => {
   return normalized;
 };
 
-const normalizeRuntime = (value, details) => {
+const normalizeRuntime = (value: any, details: any) => {
   if (value == null) return null;
   if (!isPlainObject(value)) {
     addError(details, 'manifest.runtime', 'Must be an object');
     return null;
   }
 
-  const runtime = {};
+  const runtime: any = {};
   const type = normalizeString(value.type, { maxLength: 40 });
   if (type) {
     if (!['standalone', 'commonly-hosted', 'hybrid'].includes(type)) {
@@ -213,7 +213,7 @@ const normalizeRuntime = (value, details) => {
     if (!isPlainObject(value.ports)) {
       addError(details, 'manifest.runtime.ports', 'Must be an object keyed by port name');
     } else {
-      const ports = {};
+      const ports: any = {};
       Object.entries(value.ports).forEach(([key, portValue]) => {
         const portName = normalizeString(key, { maxLength: 50 });
         const portNumber = Number(portValue);
@@ -234,14 +234,14 @@ const normalizeRuntime = (value, details) => {
   return Object.keys(runtime).length ? runtime : null;
 };
 
-const normalizeHooks = (value, details) => {
+const normalizeHooks = (value: any, details: any) => {
   if (value == null) return null;
   if (!isPlainObject(value)) {
     addError(details, 'manifest.hooks', 'Must be an object');
     return null;
   }
 
-  const hooks = {};
+  const hooks: any = {};
   ['postInstall', 'preUpdate', 'postUpdate'].forEach((field) => {
     const nextValue = normalizeString(value[field], { maxLength: 200 });
     if (nextValue) hooks[field] = nextValue;
@@ -250,7 +250,7 @@ const normalizeHooks = (value, details) => {
   return Object.keys(hooks).length ? hooks : null;
 };
 
-const normalizeManifest = (input, details) => {
+const normalizeManifest = (input: any, details: any) => {
   if (!isPlainObject(input)) {
     addError(details, 'manifest', 'Manifest must be an object');
     return null;
@@ -270,7 +270,7 @@ const normalizeManifest = (input, details) => {
     addError(details, 'manifest.version', 'Must be a valid semantic version');
   }
 
-  const manifest = {
+  const manifest: any = {
     name,
     version,
   };
@@ -361,8 +361,8 @@ const normalizeManifest = (input, details) => {
   return manifest;
 };
 
-const normalizePublishPayload = (payload = {}) => {
-  const details = [];
+const normalizePublishPayload = (payload: any = {}) => {
+  const details: any[] = [];
   if (!isPlainObject(payload)) {
     throw new ManifestValidationError([{ field: 'body', message: 'Request body must be an object' }]);
   }
@@ -399,3 +399,5 @@ module.exports = {
   ManifestValidationError,
   normalizePublishPayload,
 };
+
+export {};

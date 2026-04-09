@@ -30,7 +30,7 @@ const installRouter = express.Router();
  * This ensures the same agent (e.g., "Cuz") gets the same instanceId regardless
  * of which pod it's installed in, allowing shared runtime tokens and memory.
  */
-const deriveInstanceId = (displayName, agentName) => {
+const deriveInstanceId = (displayName: any, agentName: any) => {
   if (!displayName) return 'default';
   const slug = String(displayName)
     .trim()
@@ -48,7 +48,7 @@ const deriveInstanceId = (displayName, agentName) => {
  * Check if an agent instance already exists globally (across all pods).
  * Returns the existing installations and agent user if found.
  */
-const findExistingAgentInstance = async (agentName, instanceId) => {
+const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
   const installations = await AgentInstallation.find({
     agentName: agentName.toLowerCase(),
     instanceId,
@@ -72,7 +72,7 @@ const findExistingAgentInstance = async (agentName, instanceId) => {
  * POST /api/registry/install
  * Install an agent to a pod
  */
-installRouter.post('/install', auth, async (req, res) => {
+installRouter.post('/install', auth, async (req: any, res: any) => {
   try {
     const {
       agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId,
@@ -93,7 +93,7 @@ installRouter.post('/install', auth, async (req, res) => {
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -128,7 +128,7 @@ installRouter.post('/install', auth, async (req, res) => {
     const isReusingExistingAgent = globalAgent.exists;
 
     const requiredScopes = agent.manifest.context?.required || [];
-    const missingScopes = requiredScopes.filter((s) => !scopes.includes(s));
+    const missingScopes = requiredScopes.filter((s: any) => !scopes.includes(s));
     if (missingScopes.length > 0) {
       return res.status(400).json({
         error: 'Missing required scopes',
@@ -182,10 +182,10 @@ installRouter.post('/install', auth, async (req, res) => {
       instructions: agent.manifest.configSchema?.defaultInstructions || '',
       persona: {
         tone: 'friendly',
-        specialties: agent.manifest.capabilities?.map((c) => c.name) || [],
+        specialties: agent.manifest.capabilities?.map((c: any) => c.name) || [],
       },
       toolPolicy: {
-        allowed: grantedScopes.filter((s) => s.includes(':')).map((s) => s.split(':')[0]),
+        allowed: grantedScopes.filter((s: any) => s.includes(':')).map((s: any) => s.split(':')[0]),
       },
       createdBy: userId,
     });
@@ -196,8 +196,8 @@ installRouter.post('/install', auth, async (req, res) => {
         displayName: displayName || agent.displayName,
       });
       await AgentIdentityService.ensureAgentInPod(agentUser, podId);
-    } catch (identityError) {
-      console.warn('Failed to provision agent user identity:', identityError.message);
+    } catch (identityError: unknown) {
+      console.warn('Failed to provision agent user identity:', (identityError as Error).message);
     }
 
     await AgentRegistry.incrementInstalls(agentName);
@@ -219,14 +219,14 @@ installRouter.post('/install', auth, async (req, res) => {
           agentName: agent.agentName,
         },
       });
-    } catch (activityError) {
-      console.warn('Failed to create activity for agent install:', activityError.message);
+    } catch (activityError: unknown) {
+      console.warn('Failed to create activity for agent install:', (activityError as Error).message);
     }
 
     const otherPodIds = isReusingExistingAgent
       ? globalAgent.installations
-        .filter((i) => i.podId.toString() !== podId)
-        .map((i) => i.podId)
+        .filter((i: any) => i.podId.toString() !== podId)
+        .map((i: any) => i.podId)
       : [];
 
     res.json({
@@ -247,8 +247,10 @@ installRouter.post('/install', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error installing agent:', error);
-    res.status(500).json({ error: error.message || 'Failed to install agent' });
+    res.status(500).json({ error: (error as any).message || 'Failed to install agent' });
   }
 });
 
 module.exports = installRouter;
+
+export {};

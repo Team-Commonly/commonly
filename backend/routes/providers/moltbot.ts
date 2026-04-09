@@ -4,7 +4,7 @@
  *
  * API endpoints for managing moltbot integration with Commonly.
  */
-
+export {};
 const express = require('express');
 
 const router = express.Router();
@@ -15,7 +15,7 @@ const { getMoltbotProvider, ProviderManifest } = require('../../providers/moltbo
  * GET /api/providers/moltbot
  * Get moltbot provider info and connection status
  */
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, async (req: any, res: any) => {
   try {
     const provider = getMoltbotProvider();
     const connected = provider?.connection?.connected || false;
@@ -35,7 +35,7 @@ router.get('/', auth, async (req, res) => {
  * POST /api/providers/moltbot/connect
  * Connect to moltbot Gateway
  */
-router.post('/connect', auth, async (req, res) => {
+router.post('/connect', auth, async (req: any, res: any) => {
   try {
     const { gatewayUrl, apiToken, defaultPodId } = req.body;
 
@@ -51,11 +51,11 @@ router.post('/connect', auth, async (req, res) => {
       success: true,
       message: 'Connected to moltbot Gateway',
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error connecting to moltbot:', error);
     res.status(500).json({
       error: 'Failed to connect to moltbot Gateway',
-      details: error.message,
+      details: (error as Error).message,
     });
   }
 });
@@ -64,7 +64,7 @@ router.post('/connect', auth, async (req, res) => {
  * POST /api/providers/moltbot/disconnect
  * Disconnect from moltbot Gateway
  */
-router.post('/disconnect', auth, async (req, res) => {
+router.post('/disconnect', auth, async (req: any, res: any) => {
   try {
     const provider = getMoltbotProvider();
     if (provider) {
@@ -85,7 +85,7 @@ router.post('/disconnect', auth, async (req, res) => {
  * POST /api/providers/moltbot/push
  * Push an event to moltbot
  */
-router.post('/push', auth, async (req, res) => {
+router.post('/push', auth, async (req: any, res: any) => {
   try {
     const { eventType, payload } = req.body;
 
@@ -111,7 +111,7 @@ router.post('/push', auth, async (req, res) => {
  * GET /api/providers/moltbot/context/:podId
  * Get context for moltbot from a pod
  */
-router.get('/context/:podId', auth, async (req, res) => {
+router.get('/context/:podId', auth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const { task } = req.query;
@@ -133,7 +133,7 @@ router.get('/context/:podId', auth, async (req, res) => {
  * POST /api/providers/moltbot/search/:podId
  * Search pod memory for moltbot
  */
-router.post('/search/:podId', auth, async (req, res) => {
+router.post('/search/:podId', auth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const { query, limit, types } = req.body;
@@ -159,7 +159,7 @@ router.post('/search/:podId', auth, async (req, res) => {
  * POST /api/providers/moltbot/write/:podId
  * Write to pod memory from moltbot
  */
-router.post('/write/:podId', auth, async (req, res) => {
+router.post('/write/:podId', auth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const { target, content, tags } = req.body;

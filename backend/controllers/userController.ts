@@ -1,16 +1,15 @@
-// @ts-nocheck
 const User = require('../models/User');
 const Activity = require('../models/Activity');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const AgentIdentityService = require('../services/agentIdentityService');
 
-const toSocialProfile = (userDoc, viewerId = null) => {
+const toSocialProfile = (userDoc: any, viewerId: any = null) => {
   const followers = Array.isArray(userDoc.followers) ? userDoc.followers : [];
   const following = Array.isArray(userDoc.following) ? userDoc.following : [];
   const viewerIdStr = viewerId ? String(viewerId) : null;
   const isFollowing = Boolean(
-    viewerIdStr && followers.some((id) => String(id) === viewerIdStr),
+    viewerIdStr && followers.some((id: any) => String(id) === viewerIdStr),
   );
 
   return {
@@ -23,26 +22,26 @@ const toSocialProfile = (userDoc, viewerId = null) => {
 };
 
 // Get current user profile
-exports.getCurrentProfile = async (req, res) => {
+exports.getCurrentProfile = async (req: any, res: any) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
     res.json(toSocialProfile(user, req.user.id));
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     res.status(500).send('Server Error');
   }
 };
 
 // Update user profile
-exports.updateProfile = async (req, res) => {
+exports.updateProfile = async (req: any, res: any) => {
   try {
     const { username, bio, profilePicture } = req.body;
 
     // Build user object
-    const userFields = {};
+    const userFields: any = {};
     if (username) userFields.username = username;
     if (bio) userFields.bio = bio;
     if (profilePicture) userFields.profilePicture = profilePicture;
@@ -56,21 +55,21 @@ exports.updateProfile = async (req, res) => {
     await AgentIdentityService.syncUserToPostgreSQL(user);
 
     res.json(toSocialProfile(user, req.user.id));
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     res.status(500).send('Server Error');
   }
 };
 
 // Get user by ID
-exports.getUserById = async (req, res) => {
+exports.getUserById = async (req: any, res: any) => {
   try {
     const user = await User.findById(req.params.id).select('-password');
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
     res.json(toSocialProfile(user, req.user.id));
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     if (err.kind === 'ObjectId') {
       return res.status(404).json({ msg: 'User not found' });
@@ -79,7 +78,7 @@ exports.getUserById = async (req, res) => {
   }
 };
 
-exports.getUserPublicActivity = async (req, res) => {
+exports.getUserPublicActivity = async (req: any, res: any) => {
   try {
     const targetUserId = String(req.params.id || '').trim();
     if (!targetUserId) {
@@ -108,7 +107,7 @@ exports.getUserPublicActivity = async (req, res) => {
     return res.json({
       userId: user._id.toString(),
       username: user.username,
-      recentPublicPosts: (recentPublicPosts || []).map((post) => ({
+      recentPublicPosts: (recentPublicPosts || []).map((post: any) => ({
         id: post._id.toString(),
         content: post.content || '',
         category: post.category || 'General',
@@ -117,7 +116,7 @@ exports.getUserPublicActivity = async (req, res) => {
         commentCount: Array.isArray(post.comments) ? post.comments.length : 0,
         sourceType: post.source?.type || 'user',
       })),
-      joinedPods: (joinedPods || []).map((pod) => ({
+      joinedPods: (joinedPods || []).map((pod: any) => ({
         id: pod._id.toString(),
         name: pod.name || 'Untitled Pod',
         type: pod.type || 'chat',
@@ -132,13 +131,13 @@ exports.getUserPublicActivity = async (req, res) => {
           : null,
       })),
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     return res.status(500).send('Server Error');
   }
 };
 
-exports.followUser = async (req, res) => {
+exports.followUser = async (req: any, res: any) => {
   try {
     const targetUserId = String(req.params.id || '');
     const actorUserId = String(req.userId || req.user?.id || '');
@@ -157,7 +156,7 @@ exports.followUser = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const alreadyFollowing = (actor.following || []).some((id) => String(id) === targetUserId);
+    const alreadyFollowing = (actor.following || []).some((id: any) => String(id) === targetUserId);
     if (!alreadyFollowing) {
       actor.following = [...(actor.following || []), target._id];
       target.followers = [...(target.followers || []), actor._id];
@@ -183,7 +182,7 @@ exports.followUser = async (req, res) => {
           { id: target._id, name: target.username, type: 'human' },
         ],
       });
-    } catch (activityError) {
+    } catch (activityError: any) {
       console.warn('followUser activity create failed:', activityError.message);
     }
 
@@ -201,13 +200,13 @@ exports.followUser = async (req, res) => {
         followingCount: actor.following?.length || 0,
       },
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     return res.status(500).send('Server Error');
   }
 };
 
-exports.unfollowUser = async (req, res) => {
+exports.unfollowUser = async (req: any, res: any) => {
   try {
     const targetUserId = String(req.params.id || '');
     const actorUserId = String(req.userId || req.user?.id || '');
@@ -226,8 +225,8 @@ exports.unfollowUser = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    actor.following = (actor.following || []).filter((id) => String(id) !== targetUserId);
-    target.followers = (target.followers || []).filter((id) => String(id) !== actorUserId);
+    actor.following = (actor.following || []).filter((id: any) => String(id) !== targetUserId);
+    target.followers = (target.followers || []).filter((id: any) => String(id) !== actorUserId);
     await Promise.all([actor.save(), target.save()]);
 
     return res.json({
@@ -244,8 +243,10 @@ exports.unfollowUser = async (req, res) => {
         followingCount: actor.following?.length || 0,
       },
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     return res.status(500).send('Server Error');
   }
 };
+
+export {};

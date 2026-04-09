@@ -6,7 +6,7 @@ const registry = require('../../integrations');
 const router = express.Router({ mergeParams: true });
 
 // Slack sends JSON with signature based on raw body; raw middleware is set in server.js
-router.post('/:integrationId', async (req, res) => {
+router.post('/:integrationId', async (req: any, res: any) => {
   try {
     const { integrationId } = req.params;
     const integration = await Integration.findById(integrationId);
@@ -24,3 +24,5 @@ router.post('/:integrationId', async (req, res) => {
 
 module.exports = router;
 // LEGACY: in-platform webhook. External provider service will replace this route.
+
+export {};

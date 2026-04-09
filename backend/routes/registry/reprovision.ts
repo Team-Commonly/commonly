@@ -34,6 +34,12 @@ const reprovisionInstallation = async ({
   runtimeTokenCache = new Map(),
   userTokenCache = new Map(),
   skipRuntimeRestart = false,
+}: {
+  installation?: any;
+  force?: boolean;
+  runtimeTokenCache?: Map<any, any>;
+  userTokenCache?: Map<any, any>;
+  skipRuntimeRestart?: boolean;
 } = {}) => {
   if (!installation) {
     throw new Error('Installation is required');
@@ -119,7 +125,7 @@ const reprovisionInstallation = async ({
 
   // Prefer explicit presetId from installationConfig; fall back to instanceId matching
   const explicitPresetId = configPayload?.presetId || null;
-  const matchedPreset = PRESET_DEFINITIONS.find((p) => p.id === (explicitPresetId || normalizedInstanceId));
+  const matchedPreset = PRESET_DEFINITIONS.find((p: any) => p.id === (explicitPresetId || normalizedInstanceId));
   const heartbeatForProvision = {
     // Presets with a heartbeat template default to global=true: the agent iterates
     // its own pods during the heartbeat rather than firing once per pod.
@@ -155,24 +161,24 @@ const reprovisionInstallation = async ({
         { agentName: name.toLowerCase(), instanceId: normalizedInstanceId, podId },
         { $set: { heartbeatContent: matchedPreset.heartbeatTemplate } },
       );
-    } catch (hbErr) {
-      console.warn('[provision] Failed to persist heartbeatContent to AgentProfile:', hbErr.message);
+    } catch (hbErr: unknown) {
+      console.warn('[provision] Failed to persist heartbeatContent to AgentProfile:', (hbErr as Error).message);
     }
   }
 
   let runtimeStart = null;
   try {
     runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
-  } catch (startError) {
-    runtimeStart = { started: false, reason: startError.message };
+  } catch (startError: unknown) {
+    runtimeStart = { started: false, reason: (startError as Error).message };
   }
 
   let runtimeRestart = null;
   if (provisioned.restartRequired && !skipRuntimeRestart) {
     try {
       runtimeRestart = await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
-    } catch (restartError) {
-      runtimeRestart = { restarted: false, reason: restartError.message };
+    } catch (restartError: unknown) {
+      runtimeRestart = { restarted: false, reason: (restartError as Error).message };
     }
   }
 
@@ -181,7 +187,7 @@ const reprovisionInstallation = async ({
     const skillSync = configPayload?.skillSync || null;
     const mode = skillSync?.mode === 'selected' ? 'selected' : 'all';
     let podIdsToSync = Array.isArray(skillSync?.podIds)
-      ? skillSync.podIds.map((id) => String(id)).filter(Boolean)
+      ? skillSync.podIds.map((id: any) => String(id)).filter(Boolean)
       : [podId];
     if (skillSync?.allPods) {
       const allInstallations = await AgentInstallation.find({
@@ -190,7 +196,7 @@ const reprovisionInstallation = async ({
         status: 'active',
       }).lean();
       podIdsToSync = allInstallations
-        .map((i) => i.podId?.toString?.())
+        .map((i: any) => i.podId?.toString?.())
         .filter(Boolean);
     }
     try {
@@ -202,8 +208,8 @@ const reprovisionInstallation = async ({
         gateway,
       });
       skillsSynced = { success: true, path: pathSynced, podIds: podIdsToSync };
-    } catch (syncError) {
-      skillsSynced = { success: false, error: syncError.message };
+    } catch (syncError: unknown) {
+      skillsSynced = { success: false, error: (syncError as Error).message };
     }
   }
 
@@ -219,8 +225,8 @@ const reprovisionInstallation = async ({
         installation.displayName || normalizedInstanceId,
         p,
       );
-      ensureWorkspaceIdentityFile(normalizedInstanceId, identityContent, { gateway }).catch((err) => {
-        console.warn('[registry] Failed to seed IDENTITY.md on provision:', err.message);
+      ensureWorkspaceIdentityFile(normalizedInstanceId, identityContent, { gateway }).catch((err: unknown) => {
+        console.warn('[registry] Failed to seed IDENTITY.md on provision:', (err as Error).message);
       });
     }
   }
@@ -261,3 +267,5 @@ const reprovisionInstallation = async ({
 };
 
 module.exports = { reprovisionInstallation };
+
+export {};

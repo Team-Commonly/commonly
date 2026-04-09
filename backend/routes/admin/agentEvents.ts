@@ -7,13 +7,13 @@ const { AgentInstallation } = require('../../models/AgentRegistry');
 
 const router = express.Router();
 
-const toPositiveInt = (value, fallback, { min = 1, max = 500 } = {}) => {
+const toPositiveInt = (value: any, fallback: any, { min = 1, max = 500 } = {}) => {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, parsed));
 };
 
-router.get('/', auth, adminAuth, async (req, res) => {
+router.get('/', auth, adminAuth, async (req: any, res: any) => {
   try {
     const limitPending = toPositiveInt(req.query.limitPending, 100);
     const limitRecent = toPositiveInt(req.query.limitRecent, 100);
@@ -121,16 +121,16 @@ router.get('/', auth, adminAuth, async (req, res) => {
       ]),
     ]);
 
-    const statusCounts = statusCountsRaw.reduce((acc, row) => {
+    const statusCounts = statusCountsRaw.reduce((acc: any, row: any) => {
       if (row?._id) acc[row._id] = row.count || 0;
       return acc;
     }, {});
-    const deliveredByOutcome = deliveredByOutcomeRaw.reduce((acc, row) => {
+    const deliveredByOutcome = deliveredByOutcomeRaw.reduce((acc: any, row: any) => {
       if (row?._id) acc[row._id] = row.count || 0;
       return acc;
     }, {});
 
-    const pendingEvents = pendingEventsRaw.map((event) => ({
+    const pendingEvents = pendingEventsRaw.map((event: any) => ({
       id: String(event._id),
       agentName: event.agentName,
       instanceId: event.instanceId || 'default',
@@ -143,7 +143,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
       error: event.error || null,
     }));
 
-    const recentEvents = recentEventsRaw.map((event) => ({
+    const recentEvents = recentEventsRaw.map((event: any) => ({
       id: String(event._id),
       agentName: event.agentName,
       instanceId: event.instanceId || 'default',
@@ -159,15 +159,15 @@ router.get('/', auth, adminAuth, async (req, res) => {
     }));
 
     const lastHeartbeatMap = new Map(
-      lastHeartbeatByInstallation.map((row) => ([
+      lastHeartbeatByInstallation.map((row: any) => ([
         `${row?._id?.agentName || ''}:${row?._id?.instanceId || 'default'}:${row?._id?.podId || ''}`,
         row,
       ])),
     );
 
-    const installationHeartbeatStatus = installations.map((installation) => {
+    const installationHeartbeatStatus = installations.map((installation: any) => {
       const key = `${installation.agentName}:${installation.instanceId || 'default'}:${installation.podId}`;
-      const last = lastHeartbeatMap.get(key);
+      const last = lastHeartbeatMap.get(key) as any;
       const everyMinutesRaw = Number(installation?.config?.heartbeat?.everyMinutes);
       const everyMinutes = Number.isFinite(everyMinutesRaw) && everyMinutesRaw > 0
         ? Math.min(1440, Math.max(1, Math.trunc(everyMinutesRaw)))
@@ -196,7 +196,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
         stalePendingMinutes,
         stalePendingCount,
       },
-      pendingByAgent: pendingByAgent.map((row) => ({
+      pendingByAgent: pendingByAgent.map((row: any) => ({
         agentName: row?._id?.agentName || null,
         instanceId: row?._id?.instanceId || 'default',
         count: row.count || 0,
@@ -204,7 +204,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
         newestCreatedAt: row.newestCreatedAt || null,
       })),
       pendingEvents,
-      failedByAgent: failedByAgentRaw.map((row) => ({
+      failedByAgent: failedByAgentRaw.map((row: any) => ({
         agentName: row?._id?.agentName || null,
         instanceId: row?._id?.instanceId || 'default',
         count: row.count || 0,
@@ -212,7 +212,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
         newestCreatedAt: row.newestCreatedAt || null,
         newestError: row.newestError || null,
       })),
-      failedEvents: failedEventsRaw.map((event) => ({
+      failedEvents: failedEventsRaw.map((event: any) => ({
         id: String(event._id),
         agentName: event.agentName,
         instanceId: event.instanceId || 'default',
@@ -227,9 +227,9 @@ router.get('/', auth, adminAuth, async (req, res) => {
       })),
       recentEvents,
       recentDeliveredHeartbeats: recentEvents
-        .filter((event) => event.type === 'heartbeat' && event.status === 'delivered')
+        .filter((event: any) => event.type === 'heartbeat' && event.status === 'delivered')
         .slice(0, 60)
-        .map((event) => ({
+        .map((event: any) => ({
           id: String(event._id),
           agentName: event.agentName,
           instanceId: event.instanceId || 'default',
@@ -251,3 +251,5 @@ router.get('/', auth, adminAuth, async (req, res) => {
 });
 
 module.exports = router;
+
+export {};

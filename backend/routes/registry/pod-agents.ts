@@ -24,7 +24,7 @@ const podAgentsRouter = express.Router();
  * DELETE /api/registry/agents/:name/pods/:podId
  * Uninstall an agent from a pod
  */
-podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
+podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: any) => {
   try {
     const { name, podId } = req.params;
     const { installation, instanceId } = await resolveInstallation({
@@ -44,7 +44,7 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -66,8 +66,8 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
           AgentIdentityService.buildAgentUsername(resolvedType, instanceId),
           podId,
         );
-      } catch (identityError) {
-        console.warn('Failed to remove agent user from pod:', identityError.message);
+      } catch (identityError: unknown) {
+        console.warn('Failed to remove agent user from pod:', (identityError as Error).message);
       }
 
       return res.json({ success: true, removedOrphan: true });
@@ -88,8 +88,8 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
         AgentIdentityService.buildAgentUsername(resolvedType, instanceId),
         podId,
       );
-    } catch (identityError) {
-      console.warn('Failed to remove agent user from pod:', identityError.message);
+    } catch (identityError: unknown) {
+      console.warn('Failed to remove agent user from pod:', (identityError as Error).message);
     }
 
     res.json({ success: true });
@@ -103,7 +103,7 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req, res) => {
  * GET /api/registry/pods/:podId/agents
  * List agents installed in a pod
  */
-podAgentsRouter.get('/pods/:podId/agents', auth, async (req, res) => {
+podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const userId = getUserId(req);
@@ -117,7 +117,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req, res) => {
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -135,8 +135,8 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req, res) => {
         $match: {
           type: 'heartbeat',
           status: 'delivered',
-          agentName: { $in: installations.map((i) => i.agentName) },
-          instanceId: { $in: installations.map((i) => i.instanceId || 'default') },
+          agentName: { $in: installations.map((i: any) => i.agentName) },
+          instanceId: { $in: installations.map((i: any) => i.instanceId || 'default') },
         },
       },
       { $sort: { createdAt: -1 } },
@@ -148,52 +148,52 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req, res) => {
       },
     ]);
     const heartbeatMap = new Map(
-      heartbeatRows.map((r) => [`${r._id.agentName}:${r._id.instanceId}`, r.lastHeartbeatAt]),
+      heartbeatRows.map((r: any) => [`${r._id.agentName}:${r._id.instanceId}`, r.lastHeartbeatAt]),
     );
 
     const registryEntries = await AgentRegistry.find({
-      agentName: { $in: installations.map((i) => i.agentName) },
+      agentName: { $in: installations.map((i: any) => i.agentName) },
     }).select('agentName iconUrl').lean();
-    const iconMap = new Map(registryEntries.map((entry) => [entry.agentName, entry.iconUrl || '']));
+    const iconMap = new Map(registryEntries.map((entry: any) => [entry.agentName, entry.iconUrl || '']));
     const installationDisplayNames = Array.from(new Set(
-      installations.map((i) => i.displayName).filter(Boolean),
+      installations.map((i: any) => i.displayName).filter(Boolean),
     ));
     const templateCandidates = await AgentTemplate.find({
-      agentName: { $in: installations.map((i) => i.agentName) },
+      agentName: { $in: installations.map((i: any) => i.agentName) },
       displayName: { $in: installationDisplayNames },
       $or: [
         { visibility: 'public' },
         { createdBy: userId },
-        { createdBy: { $in: installations.map((i) => i.installedBy).filter(Boolean) } },
+        { createdBy: { $in: installations.map((i: any) => i.installedBy).filter(Boolean) } },
       ],
     }).select('agentName displayName iconUrl createdBy visibility').lean();
-    const getTemplateIcon = (installation) => {
+    const getTemplateIcon = (installation: any) => {
       const displayName = normalizeDisplayName(installation.displayName);
       if (!displayName) return '';
-      const matches = templateCandidates.filter((template) => (
+      const matches = templateCandidates.filter((template: any) => (
         template.agentName === installation.agentName
         && normalizeDisplayName(template.displayName) === displayName
         && template.iconUrl
       ));
       if (matches.length === 0) return '';
       const installedBy = installation.installedBy?.toString?.() || String(installation.installedBy || '');
-      const exactOwner = matches.find((template) => String(template.createdBy || '') === installedBy);
+      const exactOwner = matches.find((template: any) => String(template.createdBy || '') === installedBy);
       if (exactOwner) return exactOwner.iconUrl;
-      const currentUserTemplate = matches.find((template) => String(template.createdBy || '') === String(userId));
+      const currentUserTemplate = matches.find((template: any) => String(template.createdBy || '') === String(userId));
       if (currentUserTemplate) return currentUserTemplate.iconUrl;
-      const publicTemplate = matches.find((template) => template.visibility === 'public');
+      const publicTemplate = matches.find((template: any) => template.visibility === 'public');
       return (publicTemplate || matches[0]).iconUrl || '';
     };
 
     const profiles = await AgentProfile.find({
       podId,
-      agentName: { $in: installations.map((i) => i.agentName) },
+      agentName: { $in: installations.map((i: any) => i.agentName) },
     }).lean();
 
     res.json({
-      agents: installations.map((i) => {
+      agents: installations.map((i: any) => {
         const profile = profiles.find(
-          (p) => p.agentName === i.agentName && p.instanceId === (i.instanceId || 'default'),
+          (p: any) => p.agentName === i.agentName && p.instanceId === (i.instanceId || 'default'),
         );
         const templateIcon = getTemplateIcon(i);
         const instanceKey = `${i.agentName}:${i.instanceId || 'default'}`;
@@ -214,7 +214,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req, res) => {
  * GET /api/registry/pods/:podId/agents/:name?instanceId=
  * Return a single installed agent payload with latest persisted config/profile.
  */
-podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req, res) => {
+podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { installation } = await resolveInstallation({
@@ -232,7 +232,7 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req, res) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m) => {
+    const membership = pod.members?.find((m: any) => {
       if (!m) return false;
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
@@ -263,9 +263,9 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req, res) => {
     ]);
     const installedBy = installation.installedBy?.toString?.() || String(installation.installedBy || '');
     const templateIcon = (
-      templateCandidates.find((template) => String(template.createdBy || '') === installedBy)
-      || templateCandidates.find((template) => String(template.createdBy || '') === String(userId))
-      || templateCandidates.find((template) => template.visibility === 'public')
+      templateCandidates.find((template: any) => String(template.createdBy || '') === installedBy)
+      || templateCandidates.find((template: any) => String(template.createdBy || '') === String(userId))
+      || templateCandidates.find((template: any) => template.visibility === 'public')
       || templateCandidates[0]
     )?.iconUrl || '';
 
@@ -282,3 +282,5 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req, res) => {
 });
 
 module.exports = podAgentsRouter;
+
+export {};

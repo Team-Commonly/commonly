@@ -1,6 +1,6 @@
 // @ts-nocheck
 const express = require('express');
-const crypto = require('crypto');
+const crypto: any = require('crypto');
 const axios = require('axios');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
@@ -19,17 +19,17 @@ if (process.env.PG_HOST) {
 }
 
 const router = express.Router();
-const getUserId = (req) => req.userId || req.user?.id || req.user?.userId || null;
+const getUserId = (req: any) => req.userId || req.user?.id || req.user?.userId || null;
 const X_OAUTH_AUTHORIZE_URL = process.env.X_OAUTH_AUTHORIZE_URL || 'https://x.com/i/oauth2/authorize';
 const X_OAUTH_TOKEN_URL = process.env.X_OAUTH_TOKEN_URL || 'https://api.x.com/2/oauth2/token';
 const X_API_BASE = process.env.X_API_BASE_URL || 'https://api.x.com/2';
-const clamp = (value, min, max, fallback) => {
+const clamp = (value: any, min: any, max: any, fallback: any) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(Math.trunc(parsed), min), max);
 };
 
-const buildFrontendRedirect = (status, detail, redirectPath = '/admin/integrations/global') => {
+const buildFrontendRedirect = (status: any, detail: any, redirectPath = '/admin/integrations/global') => {
   const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
   const safePath = String(redirectPath || '/admin/integrations/global').startsWith('/')
     ? String(redirectPath || '/admin/integrations/global')
@@ -50,7 +50,7 @@ const getXClientConfig = () => ({
   clientSecret: process.env.X_OAUTH_CLIENT_SECRET || process.env.X_CLIENT_SECRET || '',
 });
 
-const encodeBase64Url = (buffer) => buffer
+const encodeBase64Url = (buffer: any) => buffer
   .toString('base64')
   .replace(/\+/g, '-')
   .replace(/\//g, '_')
@@ -62,8 +62,8 @@ const createPkcePair = () => {
   return { verifier, challenge };
 };
 
-const buildTokenHeaders = ({ clientId, clientSecret }) => {
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+const buildTokenHeaders = ({ clientId, clientSecret }: { clientId: any; clientSecret: any }) => {
+  const headers: any = { 'Content-Type': 'application/x-www-form-urlencoded' };
   if (clientId && clientSecret) {
     headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
   }
@@ -80,7 +80,7 @@ const getDefaultXScopes = () => (
     .filter(Boolean)
 );
 
-const ensureGlobalPodPostgresSync = async ({ pod, userId }) => {
+const ensureGlobalPodPostgresSync = async ({ pod, userId }: { pod: any; userId: any }) => {
   if (!PGPod || !pod?._id || !userId) return;
   const podId = String(pod._id);
   try {
@@ -96,12 +96,12 @@ const ensureGlobalPodPostgresSync = async ({ pod, userId }) => {
       return;
     }
     await PGPod.addMember(podId, userId);
-  } catch (error) {
-    console.warn('[global-integrations] PostgreSQL pod sync failed:', error.message);
+  } catch (error: unknown) {
+    console.warn('[global-integrations] PostgreSQL pod sync failed:', (error as Error).message);
   }
 };
 
-const ensureGlobalSocialFeedPod = async (userId) => {
+const ensureGlobalSocialFeedPod = async (userId: any) => {
   let globalPod = await Pod.findOne({ name: 'Global Social Feed' });
 
   if (!globalPod) {
@@ -119,7 +119,7 @@ const ensureGlobalSocialFeedPod = async (userId) => {
   return globalPod;
 };
 
-const normalizeList = (value) => {
+const normalizeList = (value: any) => {
   if (Array.isArray(value)) {
     return value.map((item) => String(item || '').trim().replace(/^@/, '')).filter(Boolean);
   }
@@ -132,7 +132,7 @@ const normalizeList = (value) => {
   return [];
 };
 
-const normalizeBoolean = (value, fallback = false) => {
+const normalizeBoolean = (value: any, fallback = false) => {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
@@ -158,6 +158,22 @@ const upsertXIntegration = async ({
   followFromAuthenticatedUser,
   followingWhitelistUserIds,
   followingMaxUsers,
+}: {
+  requesterId: any;
+  globalPodId: any;
+  enabled?: any;
+  accessToken: any;
+  refreshToken?: any;
+  tokenType?: any;
+  tokenExpiresAt?: any;
+  oauthScopes?: any;
+  username: any;
+  userId: any;
+  followUsernames?: any;
+  followUserIds?: any;
+  followFromAuthenticatedUser?: any;
+  followingWhitelistUserIds?: any;
+  followingMaxUsers?: any;
 }) => {
   let xIntegration = await Integration.findOne({
     type: 'x',
@@ -238,7 +254,7 @@ const upsertXIntegration = async ({
  * Start X OAuth (PKCE)
  * POST /api/admin/integrations/global/x/oauth/start
  */
-router.post('/x/oauth/start', auth, adminAuth, async (req, res) => {
+router.post('/x/oauth/start', auth, adminAuth, async (req: any, res: any) => {
   try {
     const requesterId = getUserId(req);
     if (!requesterId) {
@@ -253,7 +269,7 @@ router.post('/x/oauth/start', auth, adminAuth, async (req, res) => {
       ? req.body.scopes
       : getDefaultXScopes();
     const scopes = requestedScopes
-      .map((scope) => String(scope || '').trim())
+      .map((scope: any) => String(scope || '').trim())
       .filter(Boolean);
     const { verifier, challenge } = createPkcePair();
     const state = encodeBase64Url(crypto.randomBytes(24));
@@ -295,7 +311,7 @@ router.post('/x/oauth/start', auth, adminAuth, async (req, res) => {
  * X OAuth callback
  * GET /api/admin/integrations/global/x/oauth/callback
  */
-router.get('/x/oauth/callback', async (req, res) => {
+router.get('/x/oauth/callback', async (req: any, res: any) => {
   try {
     const {
       state,
@@ -394,14 +410,15 @@ router.get('/x/oauth/callback', async (req, res) => {
     });
 
     return res.redirect(buildFrontendRedirect('success', `connected_${me.username}`, oauthState.redirectPath));
-  } catch (error) {
-    const detail = error?.response?.data?.error_description
-      || error?.response?.data?.error
-      || error?.response?.data?.detail
-      || error?.response?.data?.title
-      || error?.message
+  } catch (error: unknown) {
+    const err = error as any;
+    const detail = err?.response?.data?.error_description
+      || err?.response?.data?.error
+      || err?.response?.data?.detail
+      || err?.response?.data?.title
+      || err?.message
       || 'oauth_callback_failed';
-    console.error('Error handling X OAuth callback:', error?.response?.data || error);
+    console.error('Error handling X OAuth callback:', err?.response?.data || err);
     return res.redirect(buildFrontendRedirect('error', detail));
   }
 });
@@ -410,7 +427,7 @@ router.get('/x/oauth/callback', async (req, res) => {
  * Get global integrations (X and Instagram)
  * GET /api/admin/integrations/global
  */
-router.get('/', auth, adminAuth, async (req, res) => {
+router.get('/', auth, adminAuth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -447,7 +464,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
  * Save global model policy (backend llm + openclaw defaults)
  * POST /api/admin/integrations/global/model-policy
  */
-router.post('/model-policy', auth, adminAuth, async (req, res) => {
+router.post('/model-policy', auth, adminAuth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -465,7 +482,7 @@ router.post('/model-policy', auth, adminAuth, async (req, res) => {
  * Save global social publish policy
  * POST /api/admin/integrations/global/policy
  */
-router.post('/policy', auth, adminAuth, async (req, res) => {
+router.post('/policy', auth, adminAuth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -483,7 +500,7 @@ router.post('/policy', auth, adminAuth, async (req, res) => {
  * Save X global integration
  * POST /api/admin/integrations/global/x
  */
-router.post('/x', auth, adminAuth, async (req, res) => {
+router.post('/x', auth, adminAuth, async (req: any, res: any) => {
   try {
     const requesterId = getUserId(req);
     if (!requesterId) {
@@ -536,7 +553,7 @@ router.post('/x', auth, adminAuth, async (req, res) => {
  * Save Instagram global integration
  * POST /api/admin/integrations/global/instagram
  */
-router.post('/instagram', auth, adminAuth, async (req, res) => {
+router.post('/instagram', auth, adminAuth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -609,7 +626,7 @@ router.post('/instagram', auth, adminAuth, async (req, res) => {
  * Test X connection
  * POST /api/admin/integrations/global/x/test
  */
-router.post('/x/test', auth, adminAuth, async (req, res) => {
+router.post('/x/test', auth, adminAuth, async (req: any, res: any) => {
   try {
     const globalPod = await Pod.findOne({ name: 'Global Social Feed' });
     if (!globalPod) {
@@ -636,9 +653,9 @@ router.post('/x/test', auth, adminAuth, async (req, res) => {
     }
 
     res.json({ success: true, message: 'X connection successful' });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('X connection test failed:', error);
-    res.status(500).json({ error: error.message || 'Connection test failed' });
+    res.status(500).json({ error: (error as Error).message || 'Connection test failed' });
   }
 });
 
@@ -646,7 +663,7 @@ router.post('/x/test', auth, adminAuth, async (req, res) => {
  * Trigger external social feed sync now (admin debug helper)
  * POST /api/admin/integrations/global/sync
  */
-router.post('/sync', auth, adminAuth, async (req, res) => {
+router.post('/sync', auth, adminAuth, async (req: any, res: any) => {
   try {
     const results = await externalFeedService.syncExternalFeeds();
     return res.json({
@@ -654,9 +671,9 @@ router.post('/sync', auth, adminAuth, async (req, res) => {
       count: Array.isArray(results) ? results.length : 0,
       results: Array.isArray(results) ? results : [],
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Manual external feed sync failed:', error);
-    return res.status(500).json({ error: error.message || 'Failed to sync external feeds' });
+    return res.status(500).json({ error: (error as Error).message || 'Failed to sync external feeds' });
   }
 });
 
@@ -664,7 +681,7 @@ router.post('/sync', auth, adminAuth, async (req, res) => {
  * List following accounts for authenticated global X OAuth integration
  * GET /api/admin/integrations/global/x/following?limit=100
  */
-router.get('/x/following', auth, adminAuth, async (req, res) => {
+router.get('/x/following', auth, adminAuth, async (req: any, res: any) => {
   try {
     const globalPod = await Pod.findOne({ name: 'Global Social Feed' });
     if (!globalPod) {
@@ -701,19 +718,20 @@ router.get('/x/following', auth, adminAuth, async (req, res) => {
     return res.json({
       success: true,
       count: users.length,
-      users: users.map((user) => ({
+      users: users.map((user: any) => ({
         id: String(user?.id || ''),
         username: String(user?.username || ''),
         name: String(user?.name || ''),
-      })).filter((user) => user.id),
+      })).filter((user: any) => user.id),
     });
-  } catch (error) {
-    console.error('Failed to fetch X following list:', error?.response?.data || error);
-    const status = error?.response?.status;
-    const detail = error?.response?.data?.detail
-      || error?.response?.data?.title
-      || error?.response?.data?.error
-      || error?.message
+  } catch (error: unknown) {
+    const err = error as any;
+    console.error('Failed to fetch X following list:', err?.response?.data || err);
+    const status = err?.response?.status;
+    const detail = err?.response?.data?.detail
+      || err?.response?.data?.title
+      || err?.response?.data?.error
+      || err?.message
       || 'Failed to fetch following list from X';
     return res.status(status && status >= 400 ? status : 500).json({ error: detail });
   }
@@ -723,7 +741,7 @@ router.get('/x/following', auth, adminAuth, async (req, res) => {
  * Test Instagram connection
  * POST /api/admin/integrations/global/instagram/test
  */
-router.post('/instagram/test', auth, adminAuth, async (req, res) => {
+router.post('/instagram/test', auth, adminAuth, async (req: any, res: any) => {
   try {
     const globalPod = await Pod.findOne({ name: 'Global Social Feed' });
     if (!globalPod) {
@@ -743,10 +761,12 @@ router.post('/instagram/test', auth, adminAuth, async (req, res) => {
     await provider.validateConfig();
 
     res.json({ success: true, message: 'Instagram connection successful' });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Instagram connection test failed:', error);
-    res.status(500).json({ error: error.message || 'Connection test failed' });
+    res.status(500).json({ error: (error as Error).message || 'Connection test failed' });
   }
 });
 
 module.exports = router;
+
+export {};

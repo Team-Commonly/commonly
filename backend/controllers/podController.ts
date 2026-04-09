@@ -1,4 +1,3 @@
-// @ts-nocheck
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
 const Post = require('../models/Post');
@@ -10,8 +9,8 @@ const AgentProfile = require('../models/AgentProfile');
 const AgentIdentityService = require('../services/agentIdentityService');
 const User = require('../models/User');
 // Add PGPod at the top level if it's available
-let PGPod;
-let PGMessage;
+let PGPod: any;
+let PGMessage: any;
 if (process.env.PG_HOST) {
   PGPod = require('../models/pg/Pod');
   PGMessage = require('../models/pg/Message');
@@ -28,11 +27,11 @@ const DEFAULT_POD_AGENT_SCOPES = [
   'integration:write',
 ];
 
-const buildDefaultAgentProfileId = (agentName, instanceId = 'default') => (
+const buildDefaultAgentProfileId = (agentName: any, instanceId = 'default') => (
   `${agentName.toLowerCase()}:${instanceId || 'default'}`
 );
 
-const isGlobalAdminRequest = async (req) => {
+const isGlobalAdminRequest = async (req: any) => {
   if (req.user?.role === 'admin') return true;
   const userId = req.userId || req.user?.id || req.user?._id;
   if (!userId) return false;
@@ -40,7 +39,7 @@ const isGlobalAdminRequest = async (req) => {
   return Boolean(user && user.role === 'admin');
 };
 
-const ensureDefaultAgentRegistryEntry = async (agentName) => {
+const ensureDefaultAgentRegistryEntry = async (agentName: any) => {
   const normalized = String(agentName || '').trim().toLowerCase();
   if (!normalized) return null;
 
@@ -53,7 +52,7 @@ const ensureDefaultAgentRegistryEntry = async (agentName) => {
 
   const commonlyBotType = AgentIdentityService.getAgentTypeConfig('commonly-bot');
   const capabilities = (commonlyBotType?.capabilities || ['summarize', 'digest', 'integrations'])
-    .map((name) => ({ name, description: name }));
+    .map((name: any) => ({ name, description: name }));
 
   agent = await AgentRegistry.create({
     agentName: 'commonly-bot',
@@ -85,7 +84,7 @@ const ensureDefaultAgentRegistryEntry = async (agentName) => {
   return agent;
 };
 
-const installDefaultAgentForPod = async ({ pod, userId }) => {
+const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: any }) => {
   if (!pod?._id || !userId) return;
   if (process.env.AUTO_INSTALL_DEFAULT_AGENT === '0') return;
 
@@ -144,13 +143,13 @@ const installDefaultAgentForPod = async ({ pod, userId }) => {
       displayName: installation.displayName || agent.displayName || 'Commonly Bot',
     });
     await AgentIdentityService.ensureAgentInPod(agentUser, pod._id);
-  } catch (identityError) {
+  } catch (identityError: any) {
     console.warn('[pod] failed to provision default agent user identity:', identityError.message);
   }
 };
 
 // Get all pods or filter by type
-exports.getAllPods = async (req, res) => {
+exports.getAllPods = async (req: any, res: any) => {
   try {
     const { type } = req.query;
     // Exclude agent-admin DM pods from default listing; only show when
@@ -166,18 +165,18 @@ exports.getAllPods = async (req, res) => {
     // When fetching agent-admin pods, restrict to pods the requester belongs to
     if (type === 'agent-admin' && req.userId) {
       const uid = String(req.userId);
-      pods = pods.filter((p) => p.members.some((m) => String(m._id || m) === uid));
+      pods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
     }
 
     return res.json(pods);
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     return res.status(500).json({ error: 'Server Error' });
   }
 };
 
 // Get pods by type
-exports.getPodsByType = async (req, res) => {
+exports.getPodsByType = async (req: any, res: any) => {
   try {
     const { type } = req.params;
 
@@ -192,19 +191,19 @@ exports.getPodsByType = async (req, res) => {
 
     if (type === 'agent-admin' && req.userId) {
       const uid = String(req.userId);
-      const memberPods = pods.filter((p) => p.members.some((m) => String(m._id || m) === uid));
+      const memberPods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
       return res.json(memberPods);
     }
 
     return res.json(pods);
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     return res.status(500).json({ error: 'Server Error' });
   }
 };
 
 // Get a specific pod
-exports.getPodById = async (req, res) => {
+exports.getPodById = async (req: any, res: any) => {
   try {
     const { id, type } = req.params;
 
@@ -230,7 +229,7 @@ exports.getPodById = async (req, res) => {
     }
 
     return res.json(pod);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error in getPodById:', err.message);
     if (err.kind === 'ObjectId') {
       return res.status(404).json({ error: 'Pod not found' });
@@ -240,7 +239,7 @@ exports.getPodById = async (req, res) => {
 };
 
 // Create a pod
-exports.createPod = async (req, res) => {
+exports.createPod = async (req: any, res: any) => {
   try {
     const {
       name, description, type, joinPolicy, parentPod,
@@ -286,7 +285,7 @@ exports.createPod = async (req, res) => {
 
         console.log('Pod successfully created in PostgreSQL');
       }
-    } catch (pgErr) {
+    } catch (pgErr: any) {
       console.error('Error creating pod in PostgreSQL:', pgErr.message);
       // We don't fail the request if PostgreSQL creation fails
       // The synchronization script can fix this later
@@ -297,19 +296,19 @@ exports.createPod = async (req, res) => {
         pod,
         userId: req.userId,
       });
-    } catch (defaultAgentError) {
+    } catch (defaultAgentError: any) {
       console.warn('[pod] default agent auto-install failed:', defaultAgentError.message);
     }
 
     res.json(pod);
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     res.status(500).send('Server Error');
   }
 };
 
 // Join a pod
-exports.joinPod = async (req, res) => {
+exports.joinPod = async (req: any, res: any) => {
   try {
     console.log('Join pod request received:', {
       params: req.params,
@@ -342,7 +341,7 @@ exports.joinPod = async (req, res) => {
 
     // Check if user is already a member
     const isMember = pod.members.some(
-      (member) => member.toString() === userId.toString(),
+      (member: any) => member.toString() === userId.toString(),
     );
     console.log('Is user already a member?', isMember);
 
@@ -375,7 +374,7 @@ exports.joinPod = async (req, res) => {
 
     console.log('Join pod successful, returning updated pod');
     res.json(updatedPod);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error in joinPod:', err.message);
     console.error('Full error:', err);
 
@@ -393,7 +392,7 @@ exports.joinPod = async (req, res) => {
 };
 
 // Leave a pod
-exports.leavePod = async (req, res) => {
+exports.leavePod = async (req: any, res: any) => {
   try {
     const pod = await Pod.findById(req.params.id);
 
@@ -408,7 +407,7 @@ exports.leavePod = async (req, res) => {
 
     // Remove user from members
     pod.members = pod.members.filter(
-      (member) => member.toString() !== req.userId,
+      (member: any) => member.toString() !== req.userId,
     );
     pod.updatedAt = Date.now();
 
@@ -419,7 +418,7 @@ exports.leavePod = async (req, res) => {
     await pod.populate('members', 'username profilePicture');
 
     res.json(pod);
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     if (err.kind === 'ObjectId') {
       return res.status(404).json({ msg: 'Pod not found' });
@@ -429,7 +428,7 @@ exports.leavePod = async (req, res) => {
 };
 
 // Remove a member from a pod (only creator can remove)
-exports.removeMember = async (req, res) => {
+exports.removeMember = async (req: any, res: any) => {
   try {
     const { id: podId, memberId } = req.params;
     const userId = req.userId || req.user?.id;
@@ -458,14 +457,14 @@ exports.removeMember = async (req, res) => {
     }
 
     const isMember = pod.members.some(
-      (member) => member.toString() === memberId.toString(),
+      (member: any) => member.toString() === memberId.toString(),
     );
     if (!isMember) {
       return res.status(400).json({ msg: 'User is not a member of this pod' });
     }
 
     pod.members = pod.members.filter(
-      (member) => member.toString() !== memberId.toString(),
+      (member: any) => member.toString() !== memberId.toString(),
     );
     pod.updatedAt = Date.now();
 
@@ -475,7 +474,7 @@ exports.removeMember = async (req, res) => {
     if (process.env.PG_HOST && PGPod) {
       try {
         await PGPod.removeMember(podId, memberId.toString());
-      } catch (pgErr) {
+      } catch (pgErr: any) {
         console.warn(
           'Failed to remove member from PostgreSQL pod members:',
           pgErr.message,
@@ -487,7 +486,7 @@ exports.removeMember = async (req, res) => {
     await pod.populate('members', 'username profilePicture');
 
     return res.json(pod);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error removing pod member:', err.message);
     if (err.kind === 'ObjectId') {
       return res.status(404).json({ msg: 'Pod not found' });
@@ -497,7 +496,7 @@ exports.removeMember = async (req, res) => {
 };
 
 // Delete a pod (only creator can delete)
-exports.deletePod = async (req, res) => {
+exports.deletePod = async (req: any, res: any) => {
   try {
     const pod = await Pod.findById(req.params.id);
 
@@ -537,7 +536,7 @@ exports.deletePod = async (req, res) => {
     await Pod.deleteOne({ _id: req.params.id });
 
     res.json({ msg: 'Pod deleted' });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err.message);
     if (err.kind === 'ObjectId') {
       return res.status(404).json({ msg: 'Pod not found' });
@@ -545,3 +544,5 @@ exports.deletePod = async (req, res) => {
     res.status(500).send('Server Error');
   }
 };
+
+export {};

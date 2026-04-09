@@ -17,7 +17,7 @@ const publishRouter = express.Router();
  * POST /api/registry/publish
  * Publish a new agent to the registry (for developers)
  */
-publishRouter.post('/publish', auth, async (req, res) => {
+publishRouter.post('/publish', auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -46,7 +46,7 @@ publishRouter.post('/publish', auth, async (req, res) => {
 
       agent.versions = Array.isArray(agent.versions)
         ? [
-          ...agent.versions.filter((entry) => entry.version !== manifest.version),
+          ...agent.versions.filter((entry: any) => entry.version !== manifest.version),
           versionPayload,
         ]
         : [versionPayload];
@@ -88,12 +88,12 @@ publishRouter.post('/publish', auth, async (req, res) => {
   } catch (error) {
     if (error instanceof ManifestValidationError) {
       return res.status(400).json({
-        error: error.message,
-        details: error.details,
+        error: (error as any).message,
+        details: (error as any).details,
       });
     }
     console.error('Error publishing agent:', error);
-    res.status(500).json({ error: error.message || 'Failed to publish agent' });
+    res.status(500).json({ error: (error as any).message || 'Failed to publish agent' });
   }
 });
 
@@ -101,7 +101,7 @@ publishRouter.post('/publish', auth, async (req, res) => {
  * POST /api/registry/seed
  * Seed default agents (development only)
  */
-publishRouter.post('/seed', auth, async (req, res) => {
+publishRouter.post('/seed', auth, async (req: any, res: any) => {
   try {
     const agentTypes = AgentIdentityService.getAgentTypes();
 
@@ -120,7 +120,7 @@ publishRouter.post('/seed', auth, async (req, res) => {
           name: 'commonly-bot',
           version: '1.0.0',
           capabilities: (agentTypes['commonly-bot']?.capabilities || ['notify', 'summarize', 'integrate'])
-            .map((c) => ({ name: c, description: c })),
+            .map((c: any) => ({ name: c, description: c })),
           context: { required: ['context:read', 'summaries:read'] },
           models: {
             supported: ['gemini-2.5-pro', 'gemini-2.5-flash'],
@@ -149,7 +149,7 @@ publishRouter.post('/seed', auth, async (req, res) => {
           name: 'openclaw',
           version: '1.0.0',
           capabilities: (agentTypes.openclaw?.capabilities || ['chat', 'memory', 'context', 'summarize', 'code'])
-            .map((c) => ({ name: c, description: c })),
+            .map((c: any) => ({ name: c, description: c })),
           context: { required: ['context:read', 'summaries:read', 'messages:write'] },
           models: {
             supported: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-pro'],
@@ -196,7 +196,7 @@ publishRouter.post('/seed', auth, async (req, res) => {
  * POST /api/registry/generate-avatar
  * Generate AI avatar for an agent
  */
-publishRouter.post('/generate-avatar', auth, async (req, res) => {
+publishRouter.post('/generate-avatar', auth, async (req: any, res: any) => {
   try {
     // eslint-disable-next-line global-require
     const AgentAvatarService = require('../../services/agentAvatarService');
@@ -262,8 +262,10 @@ publishRouter.post('/generate-avatar', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Avatar generation failed:', error);
-    res.status(500).json({ error: 'Failed to generate avatar', details: error.message });
+    res.status(500).json({ error: 'Failed to generate avatar', details: (error as any).message });
   }
 });
 
 module.exports = publishRouter;
+
+export {};
