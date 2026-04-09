@@ -1,4 +1,3 @@
-// @ts-nocheck
 const express = require('express');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');

@@ -1,4 +1,3 @@
-// @ts-nocheck
 const express = require('express');
 const crypto: any = require('crypto');
 const axios = require('axios');

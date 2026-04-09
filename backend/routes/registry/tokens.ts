@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Token issuance + scope helpers — extracted from registry.js (GH#112)
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { hash, randomSecret } = require('../../utils/secret');

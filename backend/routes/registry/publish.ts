@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent publish/seed/avatar routes — extracted from registry.js (GH#112)
 // Handles: POST /publish, POST /seed, POST /generate-avatar
 const express = require('express');

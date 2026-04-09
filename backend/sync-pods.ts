@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Synchronize pods from MongoDB to PostgreSQL
 const mongoose = require('mongoose');
 const { pool } = require('./config/db-pg');

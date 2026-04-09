@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent configuration update route — extracted from registry.js (GH#112)
 // Handles: PATCH /pods/:podId/agents/:name
 const express = require('express');

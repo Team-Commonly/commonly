@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Migration script to add message_type column to messages table
 const { pool } = require('./config/db-pg');
 

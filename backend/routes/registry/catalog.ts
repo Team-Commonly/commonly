@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent catalog browse routes — extracted from registry.js (GH#112)
 const express = require('express');
 const auth = require('../../middleware/auth');

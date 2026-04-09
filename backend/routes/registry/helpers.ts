@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Shared helper utilities — extracted from registry.js (GH#112)
 const User = require('../../models/User');
 const Gateway = require('../../models/Gateway');

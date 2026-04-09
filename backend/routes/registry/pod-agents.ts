@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Pod/agent management routes — extracted from registry.js (GH#112)
 // Handles: list agents in pod, get single agent, uninstall agent
 const express = require('express');

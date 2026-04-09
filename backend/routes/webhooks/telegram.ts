@@ -1,4 +1,3 @@
-// @ts-nocheck
 const express = require('express');
 const Integration = require('../../models/Integration');
 const Pod = require('../../models/Pod');

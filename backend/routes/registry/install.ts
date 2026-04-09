@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent install route — extracted from registry.js (GH#112)
 // Handles: POST /install
 const express = require('express');

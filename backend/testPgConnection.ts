@@ -1,4 +1,3 @@
-// @ts-nocheck
 const { pool, connectPG } = require('./config/db-pg');
 require('dotenv').config();
 

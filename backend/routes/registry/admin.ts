@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Admin-only registry routes — extracted from registry.js (GH#112)
 export {};
 const express = require('express');

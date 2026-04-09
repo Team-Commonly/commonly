@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Gateway/environment detection helpers — extracted from registry.js (GH#112)
 const fs = require('fs');
 const path = require('path');

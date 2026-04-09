@@ -1,4 +1,3 @@
-// @ts-nocheck
 // reprovisionInstallation — extracted from registry.js (GH#112)
 // Shared by the provision route and the reprovision-all admin route.
 const { AgentInstallation } = require('../../models/AgentRegistry');

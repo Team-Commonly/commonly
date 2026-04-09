@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Test script to validate PostgreSQL setup
 const { pool } = require('./config/db-pg');
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent provision route — extracted from registry.js (GH#112)
 // Handles: POST /pods/:podId/agents/:name/provision
 export {};

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent file routes — extracted from registry.js (GH#112)
 // Handles: persona/generate, heartbeat-file (R/W), identity-file (R/W)
 const express = require('express');

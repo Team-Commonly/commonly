@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent preset routes — extracted from registry.js (GH#112)
 // Handles: GET /presets
 const express = require('express');

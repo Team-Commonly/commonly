@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Agent token management routes — extracted from registry.js (GH#112)
 // Handles: runtime-tokens (R/W/D) and user-token (R/W/D)
 const express = require('express');
