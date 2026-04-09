@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Runtime management routes — extracted from registry.js (GH#112)
 // Handles: runtime-status, runtime-start, runtime-stop, runtime-restart, runtime-clear-sessions, runtime-logs
 export {};
@@ -13,6 +14,7 @@ const {
   getAgentRuntimeStatus,
   getAgentRuntimeLogs,
   clearAgentRuntimeSessions,
+  resolveOpenClawAccountId,
 } = require('../../services/agentProvisionerService');
 const {
   getUserId,

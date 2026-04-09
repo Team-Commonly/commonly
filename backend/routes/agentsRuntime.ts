@@ -1,4 +1,5 @@
-// @ts-nocheck
+export {};
+
 const express = require('express');
 
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
@@ -28,18 +29,18 @@ let PGPod;
 try {
   // eslint-disable-next-line global-require
   PGPod = require('../models/pg/Pod');
-} catch (_) {
+} catch (_: any) {
   PGPod = null;
 }
 
 const router = express.Router();
-const parseNonNegativeInt = (value, fallback) => {
+const parseNonNegativeInt = (value: any, fallback: any) => {
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed)) return fallback;
   return Math.max(0, parsed);
 };
 
-const parsePositiveInt = (value, fallback) => {
+const parsePositiveInt = (value: any, fallback: any) => {
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed)) return fallback;
   return Math.max(1, parsed);
@@ -54,7 +55,7 @@ const INTEGRATION_PUBLISH_DAILY_LIMIT = parsePositiveInt(
   24,
 );
 
-const ensurePodMatch = (installationOrList, podId, authorizedPodIds = []) => {
+const ensurePodMatch = (installationOrList: any, podId: any, authorizedPodIds = []) => {
   const normalizedPodId = podId?.toString?.() || String(podId || '');
   if (Array.isArray(authorizedPodIds) && authorizedPodIds.length > 0) {
     return authorizedPodIds.some((id) => String(id) === normalizedPodId);
@@ -67,14 +68,14 @@ const ensurePodMatch = (installationOrList, podId, authorizedPodIds = []) => {
   return installationOrList?.podId?.toString() === normalizedPodId;
 };
 
-const resolveInstallationForPod = (installations = [], fallback, podId) => {
+const resolveInstallationForPod = (installations: any[] = [], fallback: any, podId: any) => {
   if (!Array.isArray(installations)) return fallback;
   return installations.find((installation) => (
     installation?.podId?.toString() === podId.toString()
   )) || fallback;
 };
 
-const hasAnyScope = (installation, acceptedScopes = []) => {
+const hasAnyScope = (installation: any, acceptedScopes: any[] = []) => {
   const scopes = Array.isArray(installation?.scopes) ? installation.scopes : [];
   // Backward compatibility: installations created before scope persistence
   // should behave as unscoped/full-access for runtime integration routes.
@@ -82,16 +83,16 @@ const hasAnyScope = (installation, acceptedScopes = []) => {
   return acceptedScopes.some((scope) => scopes.includes(scope));
 };
 
-const mapBufferedIntegrationMessages = (integration, {
+const mapBufferedIntegrationMessages = (integration: any, {
   limit = 100,
   before,
   after,
-} = {}) => {
+}: any = {}) => {
   const buffer = Array.isArray(integration?.config?.messageBuffer)
     ? integration.config.messageBuffer
     : [];
   let messages = buffer
-    .map((entry) => ({
+    .map((entry: any) => ({
       id: entry?.messageId ? String(entry.messageId) : null,
       content: String(entry?.content || ''),
       author: String(entry?.authorName || ''),
@@ -99,26 +100,26 @@ const mapBufferedIntegrationMessages = (integration, {
       timestamp: entry?.timestamp || null,
       metadata: entry?.metadata || {},
     }))
-    .filter((entry) => entry.id && entry.timestamp);
+    .filter((entry: any) => entry.id && entry.timestamp);
 
   if (before) {
     const beforeDate = new Date(before);
     if (!Number.isNaN(beforeDate.valueOf())) {
-      messages = messages.filter((entry) => new Date(entry.timestamp) < beforeDate);
+      messages = messages.filter((entry: any) => new Date(entry.timestamp) < beforeDate);
     }
   }
   if (after) {
     const afterDate = new Date(after);
     if (!Number.isNaN(afterDate.valueOf())) {
-      messages = messages.filter((entry) => new Date(entry.timestamp) > afterDate);
+      messages = messages.filter((entry: any) => new Date(entry.timestamp) > afterDate);
     }
   }
 
-  messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  messages.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   return messages.slice(0, limit);
 };
 
-const requireBotUser = async (req, res) => {
+const requireBotUser = async (req: any, res: any) => {
   const userId = req.userId || req.user?.id;
   const user = await User.findById(userId).lean();
   if (!user || !user.isBot) {
@@ -128,8 +129,8 @@ const requireBotUser = async (req, res) => {
 };
 
 const ensureBotInstallation = async (
-  agentName,
-  podId,
+  agentName: any,
+  podId: any,
   statuses = ['active'],
   instanceId = 'default',
 ) => {
@@ -143,9 +144,9 @@ const ensureBotInstallation = async (
 };
 
 const ensureBotPodAccess = async (
-  user,
-  agentName,
-  podId,
+  user: any,
+  agentName: any,
+  podId: any,
   statuses = ['active'],
   instanceId = 'default',
 ) => {
@@ -179,7 +180,7 @@ const ensureBotPodAccess = async (
  * Returns all active pod installations for the authenticated agent, including
  * pod name and type so the runtime can self-discover where it is installed.
  */
-router.get('/installations', agentRuntimeAuth, async (req, res) => {
+router.get('/installations', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installations = req.agentInstallations || [];
     const agentInstallation = req.agentInstallation;
@@ -193,12 +194,12 @@ router.get('/installations', agentRuntimeAuth, async (req, res) => {
       || 'default';
 
     const podIds = installations
-      .map((inst) => inst?.podId)
+      .map((inst: any) => inst?.podId)
       .filter(Boolean);
 
     // Also include DM pods the agent is a member of
     const dmPodIds = (req.agentAuthorizedPodIds || []).filter(
-      (id) => !podIds.map(String).includes(String(id)),
+      (id: any) => !podIds.map(String).includes(String(id)),
     );
 
     const allPodIds = [...podIds.map(String), ...dmPodIds.map(String)];
@@ -207,9 +208,9 @@ router.get('/installations', agentRuntimeAuth, async (req, res) => {
       ? await Pod.find({ _id: { $in: allPodIds } }).select('_id name type').lean()
       : [];
 
-    const podMap = Object.fromEntries(pods.map((p) => [String(p._id), p]));
+    const podMap = Object.fromEntries(pods.map((p: any) => [String(p._id), p]));
 
-    const installationList = installations.map((inst) => {
+    const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
       return {
         podId: String(inst?.podId || ''),
@@ -221,7 +222,7 @@ router.get('/installations', agentRuntimeAuth, async (req, res) => {
       };
     });
 
-    const dmList = dmPodIds.map((id) => {
+    const dmList = dmPodIds.map((id: any) => {
       const pod = podMap[String(id)] || {};
       return {
         podId: String(id),
@@ -238,8 +239,8 @@ router.get('/installations', agentRuntimeAuth, async (req, res) => {
       instanceId,
       installations: [...installationList, ...dmList],
     });
-  } catch (error) {
-    console.error('Error fetching agent installations:', error.message || error);
+  } catch (error: any) {
+    console.error('Error fetching agent installations:', (error as Error).message || error);
     return res.status(500).json({ message: 'Failed to fetch installations' });
   }
 });
@@ -248,7 +249,7 @@ router.get('/installations', agentRuntimeAuth, async (req, res) => {
  * GET /events (agent runtime token auth)
  * Original endpoint for agent runtime tokens (cm_agent_*)
  */
-router.get('/events', agentRuntimeAuth, async (req, res) => {
+router.get('/events', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installation = req.agentInstallation;
     const agentUser = req.agentUser;
@@ -264,13 +265,13 @@ router.get('/events', agentRuntimeAuth, async (req, res) => {
     }
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     const installationPodIds = (req.agentInstallations || [])
-      .map((item) => item?.podId)
+      .map((item: any) => item?.podId)
       .filter(Boolean);
     const dmPods = await Pod.find({
       type: 'agent-admin',
       members: agentUser?._id,
     }).select('_id').lean();
-    const dmPodIds = dmPods.map((pod) => pod._id);
+    const dmPodIds = dmPods.map((pod: any) => pod._id);
     const podIds = Array.from(
       new Set(
         [...installationPodIds, ...dmPodIds]
@@ -291,7 +292,7 @@ router.get('/events', agentRuntimeAuth, async (req, res) => {
     });
 
     return res.json({ events });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error listing agent events:', error);
     return res.status(500).json({ message: 'Failed to list agent events' });
   }
@@ -302,7 +303,7 @@ router.get('/events', agentRuntimeAuth, async (req, res) => {
  * For bot users to poll events using their user API token
  * Bot user must have isBot: true and username matching agentName
  */
-router.get('/bot/events', auth, requireApiTokenScopes(['agent:events:read']), async (req, res) => {
+router.get('/bot/events', auth, requireApiTokenScopes(['agent:events:read']), async (req: any, res: any) => {
   try {
     const { user, error } = await requireBotUser(req, res);
     if (error) return error;
@@ -323,12 +324,12 @@ router.get('/bot/events', auth, requireApiTokenScopes(['agent:events:read']), as
       status: 'active',
     }).lean();
 
-    const installationPodIds = installations.map((i) => i.podId);
+    const installationPodIds = installations.map((i: any) => i.podId);
     const dmPods = await Pod.find({
       type: 'agent-admin',
       members: user._id,
     }).select('_id').lean();
-    const dmPodIds = dmPods.map((pod) => pod._id);
+    const dmPodIds = dmPods.map((pod: any) => pod._id);
     const podIds = Array.from(
       new Set(
         [...installationPodIds, ...dmPodIds]
@@ -346,13 +347,13 @@ router.get('/bot/events', auth, requireApiTokenScopes(['agent:events:read']), as
     });
 
     return res.json({ events });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error listing bot events:', error);
     return res.status(500).json({ message: 'Failed to list bot events' });
   }
 });
 
-router.post('/dm', auth, async (req, res) => {
+router.post('/dm', auth, async (req: any, res: any) => {
   try {
     const userId = req.userId || req.user?.id;
     if (!userId) {
@@ -376,8 +377,8 @@ router.post('/dm', auth, async (req, res) => {
       agentName,
       status: 'active',
     };
-    if (instanceId) installationQuery.instanceId = instanceId;
-    if (requestedPodId) installationQuery.podId = requestedPodId;
+    if (instanceId) (installationQuery as any).instanceId = instanceId;
+    if (requestedPodId) (installationQuery as any).podId = requestedPodId;
 
     let installations = await AgentInstallation.find(installationQuery)
       .select('agentName instanceId podId installedBy')
@@ -390,7 +391,7 @@ router.post('/dm', auth, async (req, res) => {
         agentName,
         status: 'active',
       };
-      if (requestedPodId) fallbackQuery.podId = requestedPodId;
+      if (requestedPodId) (fallbackQuery as any).podId = requestedPodId;
       const fallbackInstalls = await AgentInstallation.find(fallbackQuery)
         .select('agentName instanceId podId installedBy')
         .limit(2)
@@ -405,17 +406,17 @@ router.post('/dm', auth, async (req, res) => {
     }
 
     const candidatePodIds = installations
-      .map((installation) => installation.podId)
+      .map((installation: any) => installation.podId)
       .filter(Boolean);
     const accessiblePods = await Pod.find({
       _id: { $in: candidatePodIds },
       members: userId,
     }).select('_id').lean();
     const accessiblePodIdSet = new Set(
-      accessiblePods.map((pod) => pod._id.toString()),
+      accessiblePods.map((pod: any) => pod._id.toString()),
     );
 
-    const authorizedInstallations = installations.filter((installation) => (
+    const authorizedInstallations = installations.filter((installation: any) => (
       String(installation.installedBy || '') === String(userId)
       || accessiblePodIdSet.has(String(installation.podId))
     ));
@@ -424,13 +425,13 @@ router.post('/dm', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to message this agent' });
     }
 
-    const normalizedInstalls = authorizedInstallations.map((installation) => ({
+    const normalizedInstalls = authorizedInstallations.map((installation: any) => ({
       ...installation,
       instanceId: String(installation.instanceId || 'default'),
     }));
     const byExactInstance = normalizedInstanceId
       ? normalizedInstalls.filter(
-        (installation) => installation.instanceId.toLowerCase() === normalizedInstanceId,
+        (installation: any) => installation.instanceId.toLowerCase() === normalizedInstanceId,
       )
       : [];
 
@@ -449,7 +450,7 @@ router.post('/dm', auth, async (req, res) => {
     } else {
       return res.status(409).json({
         message: 'Multiple installations found. Specify instanceId (and podId if needed).',
-        installations: normalizedInstalls.map((installation) => ({
+        installations: normalizedInstalls.map((installation: any) => ({
           instanceId: installation.instanceId,
           podId: String(installation.podId || ''),
         })),
@@ -467,7 +468,7 @@ router.post('/dm', auth, async (req, res) => {
     });
 
     return res.json({ dmPod });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating/fetching agent DM:', error);
     return res.status(500).json({ message: 'Failed to create/fetch agent DM' });
   }
@@ -477,7 +478,7 @@ router.post('/dm', auth, async (req, res) => {
  * POST /bot/events/:id/ack (user API token auth)
  * For bot users to acknowledge events
  */
-router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ack']), async (req, res) => {
+router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ack']), async (req: any, res: any) => {
   try {
     const { user, error } = await requireBotUser(req, res);
     if (error) return error;
@@ -493,13 +494,13 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
     await AgentEventService.acknowledge(req.params.id, resolvedAgentName, instanceId, delivery);
 
     return res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error acknowledging bot event:', error);
     return res.status(500).json({ message: 'Failed to acknowledge bot event' });
   }
 });
 
-router.post('/events/:id/ack', agentRuntimeAuth, async (req, res) => {
+router.post('/events/:id/ack', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installation = req.agentInstallation;
     const agentUser = req.agentUser;
@@ -521,7 +522,7 @@ router.post('/events/:id/ack', agentRuntimeAuth, async (req, res) => {
       delivery,
     );
     return res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error acknowledging agent event:', error);
     return res.status(500).json({ message: 'Failed to acknowledge agent event' });
   }
@@ -535,7 +536,7 @@ router.get(
   '/bot/pods/:podId/context',
   auth,
   requireApiTokenScopes(['agent:context:read']),
-  async (req, res) => {
+  async (req: any, res: any) => {
     try {
       const { podId } = req.params;
       const { user, error } = await requireBotUser(req, res);
@@ -562,8 +563,8 @@ router.get(
 
       await AgentIdentityService.ensureAgentInPod(user, podId);
 
-      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-      const parseLimit = (raw, fallback, max) => {
+      const clamp = (value: any, min: any, max: any) => Math.min(Math.max(value, min), max);
+      const parseLimit = (raw: any, fallback: any, max: any) => {
         const parsed = Number.parseInt(raw, 10);
         if (Number.isNaN(parsed)) return fallback;
         return clamp(parsed, 1, max);
@@ -583,7 +584,7 @@ router.get(
       });
 
       return res.json(context);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching bot pod context:', error);
       return res.status(500).json({ message: 'Failed to fetch pod context' });
     }
@@ -597,7 +598,7 @@ router.get(
   '/bot/pods/:podId/messages',
   auth,
   requireApiTokenScopes(['agent:messages:read']),
-  async (req, res) => {
+  async (req: any, res: any) => {
     try {
       const { podId } = req.params;
       const { user, error } = await requireBotUser(req, res);
@@ -625,7 +626,7 @@ router.get(
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
       const messages = await AgentMessageService.getRecentMessages(podId, limit);
       return res.json({ messages });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching bot messages:', error);
       return res.status(500).json({ message: 'Failed to fetch messages' });
     }
@@ -639,7 +640,7 @@ router.post(
   '/bot/pods/:podId/messages',
   auth,
   requireApiTokenScopes(['agent:messages:write']),
-  async (req, res) => {
+  async (req: any, res: any) => {
     try {
       const { podId } = req.params;
       const { user, error } = await requireBotUser(req, res);
@@ -677,9 +678,9 @@ router.post(
       });
 
       return res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error posting bot message:', error);
-      return res.status(500).json({ message: error.message || 'Failed to post message' });
+      return res.status(500).json({ message: (error as Error).message || 'Failed to post message' });
     }
   },
 );
@@ -692,7 +693,7 @@ router.post(
   '/bot/threads/:threadId/comments',
   auth,
   requireApiTokenScopes(['agent:messages:write']),
-  async (req, res) => {
+  async (req: any, res: any) => {
     try {
       const { threadId } = req.params;
       const { user, error } = await requireBotUser(req, res);
@@ -740,14 +741,14 @@ router.post(
       });
 
       return res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error posting bot thread comment:', error);
-      return res.status(500).json({ message: error.message || 'Failed to post comment' });
+      return res.status(500).json({ message: (error as Error).message || 'Failed to post comment' });
     }
   },
 );
 
-router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
+router.get('/pods/:podId/context', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -766,8 +767,8 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
     });
     await AgentIdentityService.ensureAgentInPod(agentUser, podId);
 
-    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-    const parseLimit = (raw, fallback, max) => {
+    const clamp = (value: any, min: any, max: any) => Math.min(Math.max(value, min), max);
+    const parseLimit = (raw: any, fallback: any, max: any) => {
       const parsed = Number.parseInt(raw, 10);
       if (Number.isNaN(parsed)) return fallback;
       return clamp(parsed, 1, max);
@@ -801,20 +802,20 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req, res) => {
     });
 
     return res.json(context);
-  } catch (error) {
+  } catch (error: any) {
     let statusCode = 500;
     if (error.status) statusCode = error.status;
-    else if (error.code === 'POD_NOT_FOUND') statusCode = 404;
-    else if (error.code === 'NOT_A_MEMBER') statusCode = 403;
-    console.error(`Error fetching agent pod context [${statusCode}]:`, error.message || error);
+    else if ((error as any).code === 'POD_NOT_FOUND') statusCode = 404;
+    else if ((error as any).code === 'NOT_A_MEMBER') statusCode = 403;
+    console.error(`Error fetching agent pod context [${statusCode}]:`, (error as Error).message || error);
     return res.status(statusCode).json({
-      message: error.message || 'Failed to fetch pod context',
-      code: error.code || 'INTERNAL_ERROR',
+      message: (error as Error).message || 'Failed to fetch pod context',
+      code: (error as any).code || 'INTERNAL_ERROR',
     });
   }
 });
 
-router.get('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
+router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -831,7 +832,7 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
     const messages = await AgentMessageService.getRecentMessages(podId, limit);
 
     return res.json({ messages });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching pod messages:', error);
     return res.status(500).json({ message: 'Failed to fetch messages' });
   }
@@ -842,7 +843,7 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
  * Recent posts in a pod with comment counts and recent human comments.
  * postId doubles as threadId for commonly_post_thread_comment.
  */
-router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
+router.get('/pods/:podId/posts', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
@@ -858,7 +859,7 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
       .lean();
 
     const agentUserId = req.agentUser?._id?.toString();
-    const result = posts.map((p) => {
+    const result = posts.map((p: any) => {
       const allComments = p.comments || [];
       const humanComments = [];
       const agentComments = [];
@@ -907,13 +908,13 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req, res) => {
     });
 
     return res.json({ posts: result });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching pod posts:', error);
     return res.status(500).json({ message: 'Failed to fetch posts' });
   }
 });
 
-router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
+router.post('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -943,17 +944,17 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req, res) => {
       const userId = req.agentUser?._id;
       const username = req.agentUser?.username;
       AgentMentionService.enqueueMentions({ podId, message: result.message, userId, username })
-        .catch((err) => console.warn('enqueueMentions failed:', err.message));
+        .catch((err: any) => console.warn('enqueueMentions failed:', err.message));
     }
 
     return res.json(result);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error posting agent message:', error);
-    return res.status(500).json({ message: error.message || 'Failed to post message' });
+    return res.status(500).json({ message: (error as Error).message || 'Failed to post message' });
   }
 });
 
-router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req, res) => {
+router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -1020,16 +1021,16 @@ router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req, res) => {
         }
         : null,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error persisting agent summary:', error);
-    return res.status(500).json({ message: error.message || 'Failed to persist summary' });
+    return res.status(500).json({ message: (error as Error).message || 'Failed to persist summary' });
   }
 });
 
 /**
  * POST /threads/:threadId/comments (agent runtime token auth)
  */
-router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) => {
+router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { threadId } = req.params;
     const installation = req.agentInstallation;
@@ -1066,9 +1067,9 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
     });
 
     return res.json(result);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error posting agent thread comment:', error);
-    return res.status(500).json({ message: error.message || 'Failed to post comment' });
+    return res.status(500).json({ message: (error as Error).message || 'Failed to post comment' });
   }
 });
 
@@ -1076,7 +1077,7 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req, res) =>
  * GET /memory (agent runtime token auth)
  * Read this agent's personal MEMORY.md (persistent across sessions)
  */
-router.get('/memory', agentRuntimeAuth, async (req, res) => {
+router.get('/memory', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const agentInstallation = req.agentInstallation;
     const agentName =
@@ -1092,7 +1093,7 @@ router.get('/memory', agentRuntimeAuth, async (req, res) => {
     }
     const record = await AgentMemory.findOne({ agentName, instanceId }).lean();
     return res.json({ content: record?.content ?? '' });
-  } catch (err) {
+  } catch (err: any) {
     console.error('GET /memory error:', err);
     return res.status(500).json({ message: 'Failed to read agent memory' });
   }
@@ -1102,7 +1103,7 @@ router.get('/memory', agentRuntimeAuth, async (req, res) => {
  * PUT /memory (agent runtime token auth)
  * Write this agent's personal MEMORY.md (overwrites full content)
  */
-router.put('/memory', agentRuntimeAuth, async (req, res) => {
+router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const agentInstallation = req.agentInstallation;
     const agentName =
@@ -1126,7 +1127,7 @@ router.put('/memory', agentRuntimeAuth, async (req, res) => {
       { upsert: true, new: true },
     );
     return res.json({ ok: true });
-  } catch (err) {
+  } catch (err: any) {
     console.error('PUT /memory error:', err);
     return res.status(500).json({ message: 'Failed to write agent memory' });
   }
@@ -1136,7 +1137,7 @@ router.put('/memory', agentRuntimeAuth, async (req, res) => {
  * POST /posts (agent runtime token auth)
  * Create a post in the feed as the agent's bot user
  */
-router.post('/posts', agentRuntimeAuth, async (req, res) => {
+router.post('/posts', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const agentUser = req.agentUser;
     if (!agentUser) {
@@ -1151,7 +1152,7 @@ router.post('/posts', agentRuntimeAuth, async (req, res) => {
     if (podId) {
       const pod = await Pod.findById(podId).select('_id members').lean();
       if (!pod) return res.status(404).json({ message: 'Pod not found' });
-      const isMember = pod.members?.some((m) => m.toString() === agentUser._id.toString());
+      const isMember = pod.members?.some((m: any) => m.toString() === agentUser._id.toString());
       if (!isMember) {
         return res.status(403).json({ message: 'Agent is not a member of this pod' });
       }
@@ -1192,9 +1193,9 @@ router.post('/posts', agentRuntimeAuth, async (req, res) => {
     await post.save();
 
     return res.status(201).json(post);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating agent post:', error);
-    return res.status(500).json({ message: error.message || 'Failed to create post' });
+    return res.status(500).json({ message: (error as Error).message || 'Failed to create post' });
   }
 });
 
@@ -1202,7 +1203,7 @@ router.post('/posts', agentRuntimeAuth, async (req, res) => {
  * Ensure the summarizer bot is installed (or reactivated) in a pod.
  * Silently no-ops if already active.
  */
-async function ensureCommonlyBotInstalled(podId, installedBy) {
+async function ensureCommonlyBotInstalled(podId: any, installedBy: any) {
   try {
     await AgentInstallation.install('commonly-bot', podId, {
       version: '1.0.0',
@@ -1212,7 +1213,7 @@ async function ensureCommonlyBotInstalled(podId, installedBy) {
       instanceId: 'default',
       displayName: 'Commonly Summarizer',
     });
-  } catch (err) {
+  } catch (err: any) {
     if (!err.message?.includes('already installed')) throw err;
   }
 }
@@ -1222,7 +1223,7 @@ async function ensureCommonlyBotInstalled(podId, installedBy) {
  * List public pods the agent can discover and join.
  * Returns pods ordered by recent activity, excluding DM pods.
  */
-router.get('/pods', agentRuntimeAuth, async (req, res) => {
+router.get('/pods', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     const pods = await Pod.find({ type: { $nin: ['dm', 'agent-admin'] } })
@@ -1231,30 +1232,30 @@ router.get('/pods', agentRuntimeAuth, async (req, res) => {
       .select('name description type members updatedAt')
       .lean();
 
-    const authorizedPodIds = new Set((req.agentAuthorizedPodIds || []).map((id) => id.toString()));
+    const authorizedPodIds = new Set((req.agentAuthorizedPodIds || []).map((id: any) => id.toString()));
 
     // Batch-fetch bot user IDs and pod summaries in parallel
     const allMemberIds = [...new Set(
-      pods.flatMap((p) => (p.members || []).map((id) => id.toString())),
+      pods.flatMap((p: any) => (p.members || []).map((id: any) => id.toString())),
     )];
-    const podIdStrings = pods.map((p) => p._id.toString());
+    const podIdStrings = pods.map((p: any) => p._id.toString());
 
     const [bots, summaryMapResult] = await Promise.all([
       allMemberIds.length > 0
         ? User.find({ _id: { $in: allMemberIds }, isBot: true }).select('_id').lean()
         : Promise.resolve([]),
-      ChatSummarizerService.getMultiplePodSummaries(podIdStrings).catch((summaryErr) => {
+      ChatSummarizerService.getMultiplePodSummaries(podIdStrings).catch((summaryErr: any) => {
         console.warn('[GET /pods] Failed to fetch pod summaries:', summaryErr.message);
         return {};
       }),
     ]);
-    const botUserIds = new Set(bots.map((b) => b._id.toString()));
+    const botUserIds = new Set(bots.map((b: any) => b._id.toString()));
     const summaryMap = summaryMapResult;
 
-    const result = pods.map((p) => {
+    const result = pods.map((p: any) => {
       const members = p.members || [];
       const humanMemberCount = members.filter(
-        (id) => !botUserIds.has(id.toString()),
+        (id: any) => !botUserIds.has(id.toString()),
       ).length;
       const podIdStr = p._id.toString();
       const latestSummary = summaryMap[podIdStr];
@@ -1272,7 +1273,7 @@ router.get('/pods', agentRuntimeAuth, async (req, res) => {
     });
 
     return res.json({ pods: result });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error listing pods:', error);
     return res.status(500).json({ message: 'Failed to list pods' });
   }
@@ -1282,7 +1283,7 @@ router.get('/pods', agentRuntimeAuth, async (req, res) => {
  * POST /pods (agent runtime token auth)
  * Create a new pod as the agent's bot user
  */
-router.post('/pods', agentRuntimeAuth, async (req, res) => {
+router.post('/pods', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const agentUser = req.agentUser;
     if (!agentUser) {
@@ -1309,7 +1310,7 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
       .populate('createdBy', 'username profilePicture')
       .populate('members', 'username profilePicture');
     if (existingPod) {
-      const isMember = existingPod.members?.some((m) => m._id.toString() === agentUser._id.toString());
+      const isMember = existingPod.members?.some((m: any) => m._id.toString() === agentUser._id.toString());
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();
@@ -1343,14 +1344,14 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
               displayName: sourceInstall.displayName,
             });
           }
-        } catch (installErr) {
+        } catch (installErr: any) {
           console.warn('[agent] auto-install on pod dedup failed:', installErr.message);
         }
       }
       // Ensure commonly-bot is installed on deduplicated pod too
       try {
         await ensureCommonlyBotInstalled(existingPod._id, agentUser._id);
-      } catch (summarizerErr) {
+      } catch (summarizerErr: any) {
         console.warn('[agent] auto-install commonly-bot on pod dedup failed:', summarizerErr.message);
       }
       return res.status(200).json(existingPod);
@@ -1371,7 +1372,7 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
     if (process.env.PG_HOST && PGPod) {
       try {
         await PGPod.create(name, description, type, agentUser._id.toString(), pod._id.toString());
-      } catch (pgErr) {
+      } catch (pgErr: any) {
         console.error('Error creating agent pod in PostgreSQL:', pgErr.message);
       }
     }
@@ -1400,7 +1401,7 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
           displayName: sourceInstall.displayName,
         });
         await AgentIdentityService.ensureAgentInPod(agentUser, pod._id);
-      } catch (installErr) {
+      } catch (installErr: any) {
         console.warn('[agent] auto-install on pod create failed:', installErr.message);
       }
     }
@@ -1408,14 +1409,14 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
     // Auto-install commonly-bot (summarizer) in every new pod
     try {
       await ensureCommonlyBotInstalled(pod._id, agentUser._id);
-    } catch (summarizerErr) {
+    } catch (summarizerErr: any) {
       console.warn('[agent] auto-install commonly-bot on pod create failed:', summarizerErr.message);
     }
 
     return res.status(201).json(pod);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating agent pod:', error);
-    return res.status(500).json({ message: error.message || 'Failed to create pod' });
+    return res.status(500).json({ message: (error as Error).message || 'Failed to create pod' });
   }
 });
 
@@ -1426,7 +1427,7 @@ router.post('/pods', agentRuntimeAuth, async (req, res) => {
  * member list. This allows agents to join pods they (or other agents) created without waiting
  * for the 2-hour auto-join cron.
  */
-router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req, res) => {
+router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const agentUser = req.agentUser;
     if (!agentUser) {
@@ -1447,7 +1448,7 @@ router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req, res) => {
     // Allow self-install if: pod was created by any bot user, OR agent is already a member
     const creator = await User.findById(pod.createdBy).select('isBot').lean();
     const isAgentOwned = creator?.isBot === true;
-    const isMember = (pod.members || []).some((m) => m.toString() === agentUser._id.toString());
+    const isMember = (pod.members || []).some((m: any) => m.toString() === agentUser._id.toString());
 
     if (!isAgentOwned && !isMember) {
       return res.status(403).json({ message: 'Self-install is only allowed for agent-owned pods or pods you are a member of' });
@@ -1490,9 +1491,9 @@ router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req, res) => {
     await AgentIdentityService.ensureAgentInPod(agentUser, podId);
 
     return res.status(201).json({ message: 'Self-installed successfully', podId, installationId: installation._id });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in agent self-install:', error);
-    return res.status(500).json({ message: error.message || 'Failed to self-install' });
+    return res.status(500).json({ message: (error as Error).message || 'Failed to self-install' });
   }
 });
 
@@ -1500,7 +1501,7 @@ router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req, res) => {
  * GET /pods/:podId/integrations (agent runtime token auth)
  * Get integration configs for a pod that agents can access
  */
-router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req, res) => {
+router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -1552,7 +1553,7 @@ router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req, res) => {
         accessToken: integration.config?.accessToken,
       })),
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching integrations for agent:', error);
     return res.status(500).json({ message: 'Failed to fetch integrations' });
   }
@@ -1562,7 +1563,7 @@ router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req, res) => {
  * GET /pods/:podId/integrations/:integrationId/messages (agent runtime token auth)
  * Fetch messages from Discord/GroupMe channel
  */
-router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth, async (req, res) => {
+router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId, integrationId } = req.params;
     const {
@@ -1638,9 +1639,9 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
     }
 
     return res.json({ messages });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching messages for agent:', error);
-    return res.status(500).json({ message: error.message || 'Failed to fetch messages' });
+    return res.status(500).json({ message: (error as Error).message || 'Failed to fetch messages' });
   }
 });
 
@@ -1648,7 +1649,7 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
  * GET /pods/:podId/social-policy (agent runtime token auth)
  * Returns effective global social publish policy.
  */
-router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req, res) => {
+router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -1661,7 +1662,7 @@ router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req, res) => {
     }
     const policy = await SocialPolicyService.getPolicy();
     return res.json({ policy });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching social policy for agent:', error);
     return res.status(500).json({ message: 'Failed to fetch social policy' });
   }
@@ -1671,7 +1672,7 @@ router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req, res) => {
  * POST /pods/:podId/integrations/:integrationId/publish (agent runtime token auth)
  * Publish curated content to an external integration (X/Instagram).
  */
-router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth, async (req, res) => {
+router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId, integrationId } = req.params;
     const {
@@ -1810,14 +1811,14 @@ router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth
           confidence: socialPolicy.socialMode === 'rewrite' ? 0.8 : 1.0,
         },
       });
-    } catch (activityError) {
+    } catch (activityError: any) {
       console.warn('Failed to log integration publish activity:', activityError.message);
     }
 
     return res.json({ success: true, result });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error publishing via integration for agent:', error);
-    return res.status(500).json({ message: error.message || 'Failed to publish via integration' });
+    return res.status(500).json({ message: (error as Error).message || 'Failed to publish via integration' });
   }
 });
 
