@@ -1,11 +1,10 @@
-// @ts-nocheck
 // Shared helper utilities — extracted from registry.js (GH#112)
 const User = require('../../models/User');
 const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { isK8sMode } = require('../../services/agentProvisionerService');
 
-const buildIdentityContent = (name, persona) => {
+const buildIdentityContent = (name: any, persona: any) => {
   const toneMap = {
     friendly: 'Warm, approachable, supportive.',
     professional: 'Precise, measured, focused.',
@@ -13,7 +12,7 @@ const buildIdentityContent = (name, persona) => {
     educational: 'Patient, explanatory, thorough.',
     humorous: 'Playful, witty, light.',
   };
-  const vibe = toneMap[persona?.tone] || persona?.tone || '';
+  const vibe = (toneMap as any)[persona?.tone] || persona?.tone || '';
   const specialties = Array.isArray(persona?.specialties)
     ? persona.specialties.join(', ')
     : String(persona?.specialties || '');
@@ -31,17 +30,17 @@ const buildIdentityContent = (name, persona) => {
   return lines.join('\n');
 };
 
-const parseVerifiedFilter = (value) => {
+const parseVerifiedFilter = (value: any) => {
   if (value === 'true') return true;
   if (value === 'false') return false;
   return null;
 };
 
-const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeRegExp = (value: any) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const getUserId = (req) => req.userId || req.user?.id || req.user?._id;
+const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
 
-const normalizeConfigMap = (config) => {
+const normalizeConfigMap = (config: any) => {
   if (!config) return null;
   if (config instanceof Map) {
     return Object.fromEntries(config.entries());
@@ -52,18 +51,19 @@ const normalizeConfigMap = (config) => {
   return null;
 };
 
-const normalizeRuntimeAuthProfiles = (profiles) => {
+const normalizeRuntimeAuthProfiles = (profiles: any) => {
   if (!profiles || typeof profiles !== 'object') return null;
   const normalized = {};
   Object.entries(profiles).forEach(([key, value]) => {
     if (!value || typeof value !== 'object') return;
-    const provider = String(value.provider || '').trim().toLowerCase();
-    const rawKey = String(value.key || '').trim();
+    const v = value as any;
+    const provider = String(v.provider || '').trim().toLowerCase();
+    const rawKey = String(v.key || '').trim();
     if (!provider || !rawKey) return;
-    const type = String(value.type || 'api_key').trim().toLowerCase();
+    const type = String(v.type || 'api_key').trim().toLowerCase();
     if (type !== 'api_key') return;
     const profileId = String(key || `${provider}:default`).trim();
-    normalized[profileId || `${provider}:default`] = {
+    (normalized as any)[profileId || `${provider}:default`] = {
       type: 'api_key',
       provider,
       key: rawKey,
@@ -72,19 +72,20 @@ const normalizeRuntimeAuthProfiles = (profiles) => {
   return Object.keys(normalized).length ? normalized : null;
 };
 
-const normalizeSkillEnvEntries = (entries) => {
+const normalizeSkillEnvEntries = (entries: any) => {
   if (!entries || typeof entries !== 'object') return null;
   const normalized = {};
   Object.entries(entries).forEach(([skillName, value]) => {
     const name = String(skillName || '').trim();
     if (!name || !value || typeof value !== 'object') return;
-    const env = value.env && typeof value.env === 'object' ? value.env : {};
+    const va = value as any;
+    const env = va.env && typeof va.env === 'object' ? va.env : {};
     const envEntries = Object.entries(env)
-      .map(([key, val]) => [String(key || '').trim(), String(val ?? '').trim()])
+      .map(([key, val]) => [String(key || '').trim(), String((val as any) ?? '').trim()])
       .filter(([key, val]) => key && val);
-    const apiKey = String(value.apiKey ?? '').trim();
+    const apiKey = String(va.apiKey ?? '').trim();
     if (!envEntries.length && !apiKey) return;
-    normalized[name] = {
+    (normalized as any)[name] = {
       ...(envEntries.length ? { env: Object.fromEntries(envEntries) } : {}),
       ...(apiKey ? { apiKey } : {}),
     };
@@ -92,13 +93,13 @@ const normalizeSkillEnvEntries = (entries) => {
   return Object.keys(normalized).length ? normalized : null;
 };
 
-const sanitizeRuntimeConfig = (runtimeConfig) => {
+const sanitizeRuntimeConfig = (runtimeConfig: any) => {
   if (!runtimeConfig || typeof runtimeConfig !== 'object') return runtimeConfig;
   const { authProfiles, skillEnv, ...rest } = runtimeConfig;
   const providers = authProfiles && typeof authProfiles === 'object'
     ? Array.from(new Set(
       Object.values(authProfiles)
-        .map((profile) => String(profile?.provider || '').trim().toLowerCase())
+        .map((profile: any) => String(profile?.provider || '').trim().toLowerCase())
         .filter(Boolean),
     ))
     : [];
@@ -114,13 +115,13 @@ const sanitizeRuntimeConfig = (runtimeConfig) => {
   };
 };
 
-const buildOpenClawIntegrationChannels = (integrations = []) => {
-  const channels = {
+const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
+  const channels: any = {
     discord: [],
     slack: [],
     telegram: [],
   };
-  integrations.forEach((integration) => {
+  integrations.forEach((integration: any) => {
     if (!integration || typeof integration !== 'object') return;
     const id = String(integration._id || '').trim();
     const type = String(integration.type || '').trim().toLowerCase();
@@ -173,11 +174,11 @@ const buildOpenClawIntegrationChannels = (integrations = []) => {
   return channels;
 };
 
-const buildAgentInstallationPayload = (installation, {
+const buildAgentInstallationPayload = (installation: any, {
   profile = null,
   iconUrl = '',
   lastHeartbeatAt = null,
-} = {}) => {
+}: { profile?: any; iconUrl?: string; lastHeartbeatAt?: any } = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
   const runtimeConfig = sanitizeRuntimeConfig(normalizedConfig?.runtime || installation.config?.runtime || null);
@@ -216,9 +217,9 @@ const buildAgentInstallationPayload = (installation, {
   };
 };
 
-const normalizePluginIdentifier = (value) => String(value || '').trim().toLowerCase();
+const normalizePluginIdentifier = (value: any) => String(value || '').trim().toLowerCase();
 
-const getPluginSpecBase = (spec) => {
+const getPluginSpecBase = (spec: any) => {
   const normalized = normalizePluginIdentifier(spec);
   if (!normalized) return '';
   if (normalized.startsWith('@')) {
@@ -231,7 +232,7 @@ const getPluginSpecBase = (spec) => {
   return normalized.split('@')[0];
 };
 
-const normalizeInstanceId = (raw) => {
+const normalizeInstanceId = (raw: any) => {
   const normalized = String(raw || '')
     .trim()
     .toLowerCase()
@@ -241,9 +242,9 @@ const normalizeInstanceId = (raw) => {
   return normalized || 'default';
 };
 
-const normalizeDisplayName = (value) => String(value || '').trim().toLowerCase();
+const normalizeDisplayName = (value: any) => String(value || '').trim().toLowerCase();
 
-const buildRuntimeLogFilters = ({ runtimeType, agentName, instanceId }) => {
+const buildRuntimeLogFilters = ({ runtimeType, agentName, instanceId }: { runtimeType: any; agentName: any; instanceId: any }) => {
   if (runtimeType !== 'moltbot') return [];
   const normalizedInstance = normalizeInstanceId(instanceId);
   const normalizedAgent = String(agentName || '').trim().toLowerCase();
@@ -254,67 +255,69 @@ const buildRuntimeLogFilters = ({ runtimeType, agentName, instanceId }) => {
   return Array.from(new Set(tokens));
 };
 
-const resolveGatewayForRequest = async ({ gatewayId, userId }) => {
+const resolveGatewayForRequest = async ({ gatewayId, userId }: { gatewayId: any; userId: any }) => {
   if (!gatewayId) return null;
   const user = await User.findById(userId).select('role').lean();
   if (!user || user.role !== 'admin') {
-    const error = new Error('Global admin required to select a gateway');
+    const error: any = new Error('Global admin required to select a gateway');
     error.status = 403;
     throw error;
   }
   const gateway = await Gateway.findById(gatewayId).lean();
   if (!gateway) {
-    const error = new Error('Gateway not found');
+    const error: any = new Error('Gateway not found');
     error.status = 404;
     throw error;
   }
-  if (gateway.status && gateway.status !== 'active') {
-    const error = new Error('Gateway is not active');
+  const gw = gateway as any;
+  if (gw.status && gw.status !== 'active') {
+    const error: any = new Error('Gateway is not active');
     error.status = 400;
     throw error;
   }
-  if (isK8sMode() && gateway.mode !== 'k8s') {
-    const error = new Error('Gateway must be K8s mode in this environment');
+  if (isK8sMode() && gw.mode !== 'k8s') {
+    const error: any = new Error('Gateway must be K8s mode in this environment');
     error.status = 400;
     throw error;
   }
   return gateway;
 };
 
-const isGlobalAdminUser = async (userId) => {
+const isGlobalAdminUser = async (userId: any) => {
   const user = await User.findById(userId).select('role').lean();
   return Boolean(user && user.role === 'admin');
 };
 
-const resolveGatewayForInstallation = async ({ gatewayId }) => {
+const resolveGatewayForInstallation = async ({ gatewayId }: { gatewayId: any }) => {
   if (!gatewayId) return null;
   const gateway = await Gateway.findById(gatewayId).lean();
   if (!gateway) {
-    const error = new Error('Gateway not found');
+    const error: any = new Error('Gateway not found');
     error.status = 404;
     throw error;
   }
-  if (gateway.status && gateway.status !== 'active') {
-    const error = new Error('Gateway is not active');
+  const gw2 = gateway as any;
+  if (gw2.status && gw2.status !== 'active') {
+    const error: any = new Error('Gateway is not active');
     error.status = 400;
     throw error;
   }
-  if (isK8sMode() && gateway.mode !== 'k8s') {
-    const error = new Error('Gateway must be K8s mode in this environment');
+  if (isK8sMode() && gw2.mode !== 'k8s') {
+    const error: any = new Error('Gateway must be K8s mode in this environment');
     error.status = 400;
     throw error;
   }
   return gateway;
 };
 
-const userHasPodAccess = (pod, userId) => {
+const userHasPodAccess = (pod: any, userId: any) => {
   if (!pod || !userId) return false;
   const userIdStr = userId.toString();
   if (pod.createdBy?.toString() === userIdStr) return true;
-  return Boolean(pod.members?.some((m) => (m.userId?.toString?.() || m.toString()) === userIdStr));
+  return Boolean(pod.members?.some((m: any) => (m.userId?.toString?.() || m.toString()) === userIdStr));
 };
 
-const parseJsonFromText = (text) => {
+const parseJsonFromText = (text: any) => {
   if (!text) return null;
   try {
     return JSON.parse(text);
@@ -332,14 +335,14 @@ const parseJsonFromText = (text) => {
   }
 };
 
-const serializeRuntimeTokens = (tokens = []) => tokens.map((token) => ({
+const serializeRuntimeTokens = (tokens: any[] = []) => tokens.map((token: any) => ({
   id: token._id?.toString(),
   label: token.label,
   createdAt: token.createdAt,
   lastUsedAt: token.lastUsedAt,
 }));
 
-const parseEnvFlag = (value) => {
+const parseEnvFlag = (value: any) => {
   if (value === undefined || value === null) return false;
   const normalized = String(value).trim().toLowerCase();
   if (!normalized) return false;
@@ -348,11 +351,11 @@ const parseEnvFlag = (value) => {
 
 const hasAnyEnv = (keys = []) => keys.some((key) => parseEnvFlag(process.env[key]));
 
-const buildAgentProfileId = (agentName, instanceId) => (
+const buildAgentProfileId = (agentName: any, instanceId: any) => (
   `${agentName.toLowerCase()}:${normalizeInstanceId(instanceId)}`
 );
 
-const resolveRuntimeInstanceId = ({ agentName, requestedInstanceId, installation }) => {
+const resolveRuntimeInstanceId = ({ agentName, requestedInstanceId, installation }: { agentName: any; requestedInstanceId: any; installation: any }) => {
   // Runtime identity must follow the installed instance exactly.
   // Do not derive a different runtime instance from displayName, otherwise
   // shared tokens can drift and runtime pod authorization fails.
@@ -361,7 +364,7 @@ const resolveRuntimeInstanceId = ({ agentName, requestedInstanceId, installation
   return normalizeInstanceId(requestedInstanceId);
 };
 
-const resolveInstallation = async ({ agentName, podId, instanceId }) => {
+const resolveInstallation = async ({ agentName, podId, instanceId }: { agentName: any; podId: any; instanceId: any }) => {
   const normalizedInstanceId = normalizeInstanceId(instanceId);
   let installation = await AgentInstallation.findOne({
     agentName: agentName.toLowerCase(),
@@ -427,3 +430,5 @@ module.exports = {
   buildAgentProfileId,
   resolveRuntimeInstanceId,
 };
+
+export {};

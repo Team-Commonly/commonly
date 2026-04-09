@@ -15,6 +15,10 @@ const {
   resolveInstallation,
   resolveGatewayForRequest,
   userHasPodAccess,
+  normalizeConfigMap,
+  resolveGatewayForInstallation,
+  normalizePluginIdentifier,
+  getPluginSpecBase,
 } = require('./helpers');
 
 const pluginsRouter = express.Router({ mergeParams: true });
