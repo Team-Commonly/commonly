@@ -17,15 +17,40 @@ async function syncPodFromMongo(podId: string, requestingUserId: string): Promis
     name?: string;
     description?: string;
     type?: string;
+    members?: Array<{ toString(): string }>;
   } | null;
   if (!mongoPod) return null;
-  return PGPod.create(
+  const pod = await PGPod.create(
     mongoPod.name,
     mongoPod.description || '',
     mongoPod.type || 'chat',
     requestingUserId,
     podId,
   );
+  // Sync all MongoDB members to PG pod_members
+  if (Array.isArray(mongoPod.members)) {
+    await Promise.allSettled(
+      mongoPod.members.map((m) => PGPod.addMember(podId, m.toString())),
+    );
+  }
+  return pod;
+}
+
+// Check if user is a member via PG, falling back to MongoDB as source of truth
+async function isMemberWithFallback(podId: string, userId: string): Promise<boolean> {
+  const pgMember = await PGPod.isMember(podId, userId);
+  if (pgMember) return true;
+  // Fall back to MongoDB
+  const mongoPod = await MongoPod.findById(podId).lean() as {
+    members?: Array<{ toString(): string }>;
+  } | null;
+  if (!mongoPod) return false;
+  const inMongo = (mongoPod.members || []).some((m) => m.toString() === userId.toString());
+  if (inMongo) {
+    // Sync this member to PG for future requests
+    await PGPod.addMember(podId, userId).catch(() => {});
+  }
+  return inMongo;
 }
 
 exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -53,28 +78,10 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       }
     }
 
-    console.log(`Checking message access for pod ${podId} by user ${userId}`);
-
-    const isMember = await PGPod.isMember(podId, userId);
+    const isMember = await isMemberWithFallback(podId, userId);
     if (!isMember) {
-      console.error(`User ${userId} is not a member of pod ${podId}`);
-      try {
-        console.log(`Attempting to resolve membership for user ${userId} in pod ${podId}`);
-        await PGPod.addMember(podId, userId);
-        const verifyMembership = await PGPod.isMember(podId, userId);
-        if (verifyMembership) {
-          console.log(`Successfully resolved membership for user ${userId} in pod ${podId}`);
-        } else {
-          console.error(`Failed to resolve membership for user ${userId} in pod ${podId}`);
-          res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
-          return;
-        }
-      } catch (membershipError) {
-        const me = membershipError as { message?: string };
-        console.error(`Error resolving membership: ${me.message}`);
-        res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
-        return;
-      }
+      res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
+      return;
     }
 
     const messages = await PGMessage.findByPodId(podId, limit, before);
@@ -112,7 +119,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
-    const isMember = await PGPod.isMember(podId, userId);
+    const isMember = await isMemberWithFallback(podId, userId);
     if (!isMember) {
       res.status(401).json({ msg: 'Not authorized to post in this pod' });
       return;
