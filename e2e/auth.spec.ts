@@ -30,8 +30,13 @@ test.describe('Authentication', () => {
     await page.getByLabel('Password').fill('wrongpassword');
     await page.getByRole('button', { name: 'Login' }).click();
 
-    // Error typography is shown inline (no redirect)
-    await expect(page.locator('.MuiTypography-colorError, [class*="colorError"]')).toBeVisible({ timeout: 8000 });
+    // MUI v5: error text appears as Typography with color="error" — selector via style or role="alert"
+    // Fall back to any visible text containing common error keywords
+    await expect(
+      page.locator('[role="alert"], .MuiAlert-root').or(
+        page.locator('.MuiTypography-root').filter({ hasText: /invalid|incorrect|wrong|error|failed|not found/i })
+      )
+    ).toBeVisible({ timeout: 8000 });
     // URL must still be /login — not redirected
     expect(page.url()).toContain('/login');
   });
@@ -56,9 +61,11 @@ test.describe('Authentication', () => {
   });
 
   test('protected route redirects unauthenticated user', async ({ page }) => {
-    // Without a token, /feed should redirect to /login
-    await page.context().clearCookies();
-    await page.evaluate(() => localStorage.removeItem('token'));
+    // Navigate to the app first so localStorage is accessible, then clear token
+    await page.goto('/');
+    await page.evaluate(() => {
+      try { localStorage.removeItem('token'); } catch { /* ignore */ }
+    });
     await page.goto('/feed');
 
     // Either redirected to /login or shows a login prompt
