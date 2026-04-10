@@ -92,7 +92,8 @@ jobs:
       - name: Start backend
         run: |
           cd backend
-          node server.js &
+          npm run build
+          node dist/server.js &
           echo $! > /tmp/backend.pid
 
       - name: Wait for backend

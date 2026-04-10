@@ -63,7 +63,7 @@ jobs:
       - name: Build frontend Docker image
         run: |
           docker build -t commonly-frontend:smoke \
-            --build-arg REACT_APP_API_URL=http://localhost:5000 \
+            --build-arg VITE_API_URL=http://localhost:5000 \
             frontend/
 
       - name: Load images into kind

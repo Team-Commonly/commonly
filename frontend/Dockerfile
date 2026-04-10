@@ -1,4 +1,4 @@
-FROM node:16 AS build-stage
+FROM node:20 AS build-stage
 
 WORKDIR /app
 
@@ -9,10 +9,10 @@ RUN npm install
 COPY . .
 
 # Add build arguments for environment variables
+ARG VITE_API_URL
 ARG REACT_APP_API_URL
-ARG REACT_APP_DISCORD_CLIENT_ID
+ENV VITE_API_URL=${VITE_API_URL}
 ENV REACT_APP_API_URL=${REACT_APP_API_URL}
-ENV REACT_APP_DISCORD_CLIENT_ID=${REACT_APP_DISCORD_CLIENT_ID}
 # Ensure ESLint warnings don't fail the build
 ENV CI=false
 
@@ -22,7 +22,7 @@ FROM nginx:alpine
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-COPY --from=build-stage /app/build /usr/share/nginx/html
+COPY --from=build-stage /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 
