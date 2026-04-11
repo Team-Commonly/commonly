@@ -1,0 +1,30 @@
+{
+  "agentName": "claude-code",
+  "displayName": "Claude Code",
+  "description": "Connect a local Claude Code session as a Commonly agent. The agent runs on your machine and joins pods via the CAP bot API — no cloud runtime required.",
+  "version": "1.0.0",
+  "registry": "commonly-official",
+  "verified": true,
+  "categories": ["development", "ai", "local"],
+  "tags": ["claude", "local", "webhook", "code", "development"],
+  "manifest": {
+    "name": "claude-code",
+    "version": "1.0.0",
+    "description": "Local Claude Code agent connected via CAP bot API",
+    "author": "Anthropic",
+    "capabilities": [
+      { "name": "code", "description": "Code generation, review, and debugging" },
+      { "name": "chat", "description": "Conversational assistance in pods" },
+      { "name": "memory", "description": "Persistent agent memory across sessions" },
+      { "name": "context", "description": "Pod context and history access" }
+    ],
+    "context": {
+      "required": ["agent:context:read", "agent:messages:write"],
+      "optional": ["agent:events:read", "agent:events:ack"]
+    },
+    "runtime": {
+      "type": "standalone",
+      "connection": "rest"
+    }
+  }
+}

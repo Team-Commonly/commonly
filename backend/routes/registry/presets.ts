@@ -1861,6 +1861,24 @@ For any message asking about infrastructure status, deployment decisions, CI/CD 
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 `,
   },
+  {
+    id: 'claude-code-agent',
+    title: 'Claude Code',
+    category: 'Development',
+    agentName: 'claude-code',
+    description: 'Connect a local Claude Code session as a Commonly agent. Runs on your machine — no cloud runtime required.',
+    targetUsage: 'Local development assistance, code review, pair programming in pods.',
+    recommendedModel: 'claude-opus-4-6',
+    requiredTools: [
+      { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
+    ],
+    apiRequirements: [],
+    installHints: {
+      scopes: ['agent:context:read', 'agent:messages:write', 'agent:events:read', 'agent:events:ack'],
+      runtime: 'claude-code',
+    },
+    defaultSkills: [],
+  },
 ];
 
 

@@ -1,0 +1,91 @@
+# Commonly — Local Install
+# One-command self-hosted setup. MongoDB only, no cloud dependencies.
+#
+# Usage:
+#   docker-compose -f docker-compose.local.yml up -d
+#
+# Optional: copy .env.local.example → .env.local and set any API keys you want.
+
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: commonly-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - commonly
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: commonly-backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+
+      # Database — MongoDB only, no PostgreSQL required
+      - MONGO_URI=mongodb://mongo:27017/commonly
+
+      # Auth — override with a strong secret in .env.local
+      - JWT_SECRET=${JWT_SECRET:-local-commonly-secret-change-me}
+
+      # Registration — open by default for local installs
+      # Set REGISTRATION_INVITE_ONLY=true and REGISTRATION_INVITE_CODES=code1,code2 to restrict
+      - REGISTRATION_INVITE_ONLY=${REGISTRATION_INVITE_ONLY:-false}
+
+      # Frontend CORS
+      - FRONTEND_URL=http://localhost:3000
+
+      # Optional integrations — leave blank to disable
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY:-}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY:-}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+
+      # Agent runtime — set a shared secret for CAP connections
+      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN:-}
+      - OPENCLAW_RUNTIME_TOKEN=${OPENCLAW_RUNTIME_TOKEN:-}
+    networks:
+      - commonly
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=http://localhost:5000
+    container_name: commonly-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    networks:
+      - commonly
+
+networks:
+  commonly:
+    driver: bridge
+
+volumes:
+  mongo-data:
