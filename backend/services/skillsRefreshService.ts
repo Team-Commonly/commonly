@@ -5,14 +5,17 @@ import path from 'path';
  * skillsRefreshService
  *
  * Keeps the local awesome-agent-skills-index.json catalog fresh by:
- *   1. Fetching the upstream index JSON from GitHub (raw.githubusercontent.com).
+ *   1. Attempting to fetch the upstream index JSON (configurable URL).
+ *      On failure, falls back to reading the existing LOCAL catalog file so we
+ *      still do step 2 even when the upstream mirror is unreachable/moved.
  *   2. For every unique `repo` in the catalog, fetching live star counts via the
  *      GitHub REST API and overwriting the `stars` field on all matching items.
  *   3. Writing the result back to the SAME local path the read-side catalog
  *      service (`skillsCatalogService.ts`) reads from.
  *
- * Designed to fail safely — if the upstream fetch fails, or auth fails, we
- * leave the stale local file untouched rather than wiping it.
+ * Designed to fail safely — if both upstream AND local reads fail, we bail
+ * without touching anything. Star-count refresh happens even when upstream is
+ * gone, which is the common dev case (upstream URL changes or goes to GCS).
  */
 
 const UPSTREAM_INDEX_URL = process.env.SKILLS_UPSTREAM_INDEX_URL
@@ -90,6 +93,20 @@ const fetchUpstreamIndex = async (): Promise<CatalogFile> => {
   }
 };
 
+const readLocalCatalog = (filePath: string): CatalogFile | null => {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const text = fs.readFileSync(filePath, 'utf8');
+    return JSON.parse(text) as CatalogFile;
+  } catch (error) {
+    console.warn(
+      '[skills-refresh] Failed to parse local catalog file:',
+      (error as Error).message,
+    );
+    return null;
+  }
+};
+
 const parseRepoString = (repo: unknown): { owner: string; name: string } | null => {
   if (typeof repo !== 'string') return null;
   const trimmed = repo.trim();
@@ -152,14 +169,28 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
   };
 
   let catalog: CatalogFile;
+  let upstreamSucceeded = false;
   try {
     catalog = await fetchUpstreamIndex();
+    upstreamSucceeded = true;
   } catch (error) {
     const err = error as Error;
-    console.warn('[skills-refresh] Upstream index fetch failed; keeping stale local file:', err.message);
+    console.warn(
+      '[skills-refresh] Upstream index fetch failed; falling back to local catalog:',
+      err.message,
+    );
     errors.push(err);
-    result.durationMs = Date.now() - startedAt;
-    return result;
+    // Fall back: read the local file and still run the star-count refresh on
+    // its entries. This is the common dev case when the upstream URL is wrong
+    // or the mirror has moved.
+    const localPath = resolveLocalCatalogPath();
+    const localCatalog = readLocalCatalog(localPath);
+    if (!localCatalog) {
+      console.warn('[skills-refresh] No local catalog available; nothing to refresh.');
+      result.durationMs = Date.now() - startedAt;
+      return result;
+    }
+    catalog = localCatalog;
   }
 
   const items = Array.isArray(catalog.items) ? catalog.items : [];
@@ -235,13 +266,19 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
   result.reposUpdated = starByRepo.size;
 
   // Stamp the catalog for frontend "last updated X ago" display.
+  // If upstream fetch succeeded, record now as the upstreamRefreshedAt.
+  // If we fell back to local, preserve the prior upstreamRefreshedAt (or
+  // the old `updatedAt` field as a best-effort approximation) since we
+  // didn't actually hit the upstream.
   const now = new Date();
   const nowIso = now.toISOString();
-  const upstreamRefreshedAt = typeof catalog.updatedAt === 'string' ? catalog.updatedAt : nowIso;
+  const priorUpstream = typeof catalog.upstreamRefreshedAt === 'string'
+    ? catalog.upstreamRefreshedAt
+    : (typeof catalog.updatedAt === 'string' ? catalog.updatedAt : null);
   const output: CatalogFile = {
     ...catalog,
     updatedAt: nowIso,
-    upstreamRefreshedAt,
+    upstreamRefreshedAt: upstreamSucceeded ? nowIso : priorUpstream,
     localRefreshedAt: nowIso,
     items,
   };
