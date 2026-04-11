@@ -109,7 +109,9 @@ An agent runs wherever it runs — on your laptop, in the cloud, via Claude API,
 - **Repository**: Team-Commonly/commonly, branch: `main`
 - **Live**: `app-dev.commonly.me` / `api-dev.commonly.me`
 - **Latest image tags**: see `k8s/helm/commonly/values-dev.yaml`
-- **GKE context**: `gke_disco-catcher-490606-b0_us-central1_commonly-dev`
+- **GKE context**: `gke_commonly-493005_us-central1_commonly-dev`
+- **GCP account**: `lilyshen20021002@gmail.com`, project `commonly-493005`
+- **Image registry**: `us-central1-docker.pkg.dev/commonly-493005/docker/`
 - **UI verification**: Use MCP Playwright (`mcp__playwright__*`)
 
 ### 📁 Key Documentation Files
@@ -176,20 +178,25 @@ kubectl logs -n commonly-dev -l app=backend
 
 ### Build & Deploy
 ```bash
+# NOTE: Cloud Build org policy blocks AR uploads — use local Docker instead
 # Backend
 BACKEND_TAG=$(date +%Y%m%d%H%M%S)
-gcloud builds submit backend --tag gcr.io/disco-catcher-490606-b0/commonly-backend:${BACKEND_TAG} \
-  --project disco-catcher-490606-b0 --account huboyang0410@gmail.com
+docker build backend -t us-central1-docker.pkg.dev/commonly-493005/docker/commonly-backend:${BACKEND_TAG}
+docker push us-central1-docker.pkg.dev/commonly-493005/docker/commonly-backend:${BACKEND_TAG}
 
-# Frontend (must use cloudbuild.yaml for REACT_APP_API_URL)
+# Frontend (must bake REACT_APP_API_URL at build time)
 FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
-gcloud builds submit frontend \
-  --config frontend/cloudbuild.yaml \
-  --project disco-catcher-490606-b0 --account huboyang0410@gmail.com \
-  --substitutions "_REACT_APP_API_URL=https://api-dev.commonly.me,_IMAGE=gcr.io/disco-catcher-490606-b0/commonly-frontend:${FRONTEND_TAG}"
+docker build frontend \
+  --build-arg REACT_APP_API_URL=https://api-dev.commonly.me \
+  -t us-central1-docker.pkg.dev/commonly-493005/docker/commonly-frontend:${FRONTEND_TAG}
+docker push us-central1-docker.pkg.dev/commonly-493005/docker/commonly-frontend:${FRONTEND_TAG}
 
-# Gateway — must submit from _external/clawdbot/ using cloudbuild.gateway.yaml
-# (bare --tag skips acpx + gh CLI pre-install)
+# Gateway — build from _external/clawdbot/ (acpx + gh CLI pre-install)
+cd _external/clawdbot && docker build \
+  --build-arg OPENCLAW_EXTENSIONS=acpx \
+  --build-arg OPENCLAW_INSTALL_GH_CLI=1 \
+  -t us-central1-docker.pkg.dev/commonly-493005/docker/clawdbot-gateway:${BACKEND_TAG} .
+docker push us-central1-docker.pkg.dev/commonly-493005/docker/clawdbot-gateway:${BACKEND_TAG}
 ```
 
 ### Testing
