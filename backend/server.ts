@@ -272,6 +272,14 @@ if (process.env.PG_HOST) {
                     retentionErr?.message || retentionErr,
                   );
                 }
+                try {
+                  require('./services/agentInstallationCleanupService').initInstallationCleanup();
+                } catch (cleanupErr: any) {
+                  console.error(
+                    '[installation-cleanup] failed to initialize:',
+                    cleanupErr?.message || cleanupErr,
+                  );
+                }
               }
             } else {
               pgAvailable = false;

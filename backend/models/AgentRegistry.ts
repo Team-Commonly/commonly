@@ -4,7 +4,7 @@ export type RegistryType = 'commonly-official' | 'commonly-community' | 'private
 export type RegistryStatus = 'active' | 'deprecated' | 'unpublished' | 'pending-review';
 export type ManifestRuntimeType = 'standalone' | 'commonly-hosted' | 'hybrid';
 export type ManifestConnectionType = 'mcp' | 'rest' | 'websocket';
-export type AgentInstallationStatus = 'active' | 'paused' | 'uninstalled' | 'error';
+export type AgentInstallationStatus = 'active' | 'paused' | 'uninstalled' | 'error' | 'stale';
 
 export interface IManifestCapability {
   name?: string;
@@ -191,6 +191,7 @@ export interface IAgentInstallationRegistry extends Document {
   scopes: string[];
   status: AgentInstallationStatus;
   errorMessage?: string;
+  staleSince?: Date;
   installedBy: Types.ObjectId;
   usage: {
     lastUsedAt?: Date;
@@ -224,8 +225,9 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
     version: { type: String, required: true },
     config: { type: Map, of: Schema.Types.Mixed },
     scopes: [String],
-    status: { type: String, enum: ['active', 'paused', 'uninstalled', 'error'], default: 'active' },
+    status: { type: String, enum: ['active', 'paused', 'uninstalled', 'error', 'stale'], default: 'active' },
     errorMessage: String,
+    staleSince: { type: Date },
     installedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     usage: {
       lastUsedAt: Date,
