@@ -100,6 +100,7 @@ const io = socketIo(server, {
 const socketConfig = require('./config/socket');
 const agentWebSocketService = require('./services/agentWebSocketService');
 const { bindSocketIO: bindAgentTypingSocketIO } = require('./services/agentTypingService');
+const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventService');
 
 // Socket.io Redis adapter initialization is async in K8s mode
 (async () => {
@@ -107,6 +108,7 @@ const { bindSocketIO: bindAgentTypingSocketIO } = require('./services/agentTypin
     await socketConfig.init(io);
     agentWebSocketService.init(io);
     bindAgentTypingSocketIO(io);
+    bindTaskEventSocketIO(io);
   } catch (error) {
     console.error('Failed to initialize Socket.io:', error);
     process.exit(1);

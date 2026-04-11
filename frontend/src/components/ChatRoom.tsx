@@ -55,6 +55,16 @@ import axios from 'axios';
 import getApiBaseUrl, { normalizeUploadUrl } from '../utils/apiBaseUrl';
 import EmojiPicker from 'emoji-picker-react';
 import * as nodeEmoji from 'node-emoji';
+import {
+    DndContext,
+    DragOverlay,
+    PointerSensor,
+    useDraggable,
+    useDroppable,
+    useSensor,
+    useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import './ChatRoom.css';
 
 /**
@@ -321,6 +331,146 @@ const AgentTypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents
     );
 };
 
+// ---------------------------------------------------------------------------
+// Task board — Drag-and-drop primitives
+// ---------------------------------------------------------------------------
+// These live at module scope so the `useDraggable` / `useDroppable` hooks are
+// called from component functions (not inside a .map() callback inside
+// ChatRoom) — satisfying the React rules of hooks.
+
+interface BoardColumnMeta {
+    key: 'pending' | 'claimed' | 'blocked' | 'done';
+    label: string;
+    color: string;
+    borderColor: string;
+}
+
+interface DroppableColumnProps {
+    col: BoardColumnMeta;
+    children: React.ReactNode;
+}
+
+const DroppableColumn: React.FC<DroppableColumnProps> = ({ col, children }) => {
+    const { isOver, setNodeRef } = useDroppable({ id: col.key });
+    return (
+        <Box
+            ref={setNodeRef}
+            sx={{
+                overflowY: 'auto',
+                pr: 0.5,
+                borderRadius: 1,
+                transition: 'background-color 0.15s ease, box-shadow 0.15s ease',
+                ...(isOver && {
+                    bgcolor: `${col.borderColor}14`,
+                    boxShadow: `inset 0 0 0 2px ${col.borderColor}`,
+                }),
+            }}
+        >
+            {children}
+        </Box>
+    );
+};
+
+interface DraggableTaskCardProps {
+    task: any;
+    col: BoardColumnMeta;
+    tasks: any[];
+    onOpen: (task: any) => void;
+    isDragging: boolean;
+}
+
+const DraggableTaskCard: React.FC<DraggableTaskCardProps> = ({ task, col, tasks, onOpen, isDragging }) => {
+    const { attributes, listeners, setNodeRef, transform, isDragging: dndDragging } = useDraggable({
+        id: task.taskId,
+        data: { task },
+    });
+    const childCount = tasks.filter(t => t.parentTask === task.taskId).length;
+    const translate = transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined;
+    const showAsDragging = isDragging || dndDragging;
+    return (
+        <Card
+            ref={setNodeRef}
+            variant="outlined"
+            onClick={() => onOpen(task)}
+            {...attributes}
+            {...listeners}
+            sx={{
+                mb: 1.5,
+                borderLeft: `2px solid ${col.borderColor}`,
+                cursor: showAsDragging ? 'grabbing' : 'pointer',
+                transition: 'box-shadow 0.15s ease, transform 0.15s ease',
+                opacity: showAsDragging ? 0.5 : 1,
+                transform: translate,
+                touchAction: 'none',
+                '&:hover': { boxShadow: 3, transform: translate || 'translateY(-1px)' },
+            }}
+        >
+            <CardContent sx={{ p: '14px !important' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.75, flexWrap: 'wrap' }}>
+                    <Chip label={task.taskId} size="small" sx={{ fontSize: '0.72rem', height: 20, bgcolor: `${col.borderColor}15`, color: col.color, fontWeight: 600 }} />
+                    {task.assignee && (
+                        <Chip label={task.assignee} size="small" sx={{ fontSize: '0.72rem', height: 20 }} />
+                    )}
+                </Box>
+                <Tooltip title={task.title} arrow placement="top">
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            fontSize: '0.9rem',
+                            fontWeight: 500,
+                            lineHeight: 1.4,
+                            color: col.key === 'done' ? 'text.secondary' : 'text.primary',
+                            textDecoration: col.key === 'done' ? 'line-through' : 'none',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}
+                    >
+                        {task.title}
+                    </Typography>
+                </Tooltip>
+                {task.prUrl && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.75 }}>
+                        <OpenInNewIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>PR linked</Typography>
+                    </Box>
+                )}
+                {task.updates?.length > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <HistoryIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.85rem' }}>{task.updates.length} update{task.updates.length !== 1 ? 's' : ''}</Typography>
+                    </Box>
+                )}
+                {task.parentTask && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <SubdirectoryArrowRightIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.85rem' }}>
+                            Sub-task of {task.parentTask}
+                        </Typography>
+                    </Box>
+                )}
+                {task.dep && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <BlockIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                        <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.85rem' }}>
+                            Blocked by {task.dep}
+                        </Typography>
+                    </Box>
+                )}
+                {childCount > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.85rem', color: 'info.main' }}>
+                            {childCount} sub-task{childCount !== 1 ? 's' : ''}
+                        </Typography>
+                    </Box>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
+
 const ChatRoom = () => {
     const { currentUser } = useAuth();
     const { socket, connected, pgAvailable, joinPod, leavePod, sendMessage } = useSocket();
@@ -460,6 +610,11 @@ const ChatRoom = () => {
     const [taskUpdateText, setTaskUpdateText] = useState('');
     const [taskUpdating, setTaskUpdating] = useState(false);
     const [taskPatching, setTaskPatching] = useState(false);
+    // Drag-and-drop state for the task board
+    const [activeDragTaskId, setActiveDragTaskId] = useState<string | null>(null);
+    const boardSensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    );
 
     // Parent pod info for child pods — derive from room.parentPod
     const parentPodId = room?.parentPod
@@ -815,16 +970,18 @@ const ChatRoom = () => {
         initialScrollDoneRef.current = false;
     }, [roomId]);
 
-    // Fetch tasks from API when Board tab is active
+    // Fetch tasks from API when Board tab is active.
+    // Uses 20s polling as a safety net, plus a socket subscription to
+    // `task_updated` for real-time sync between users viewing the same board.
     useEffect(() => {
         if (activeTab !== 'board' || !roomId) return;
         let cancelled = false;
+        const boardPodId = parentPodId || roomId;
         const load = async () => {
             setTaskBoardLoading(true);
             try {
                 const token = localStorage.getItem('token');
-                const podId = parentPodId || roomId;
-                const res = await axios.get(`/api/v1/tasks/${podId}`, {
+                const res = await axios.get(`/api/v1/tasks/${boardPodId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 if (!cancelled) {
@@ -841,8 +998,46 @@ const ChatRoom = () => {
         };
         load();
         const interval = setInterval(load, 20000);
-        return () => { cancelled = true; clearInterval(interval); };
-    }, [activeTab, roomId, parentPodId]);
+
+        // Real-time task sync: listen for server-pushed task_updated events.
+        // Payload: { podId, task, kind: 'created' | 'updated' | 'deleted' }
+        const handleTaskUpdated = (payload) => {
+            if (!payload || !payload.task) return;
+            // Only react to events for the board we're currently viewing
+            if (payload.podId && String(payload.podId) !== String(boardPodId)) return;
+            const incoming = payload.task;
+            const kind = payload.kind || 'updated';
+            if (kind === 'deleted') {
+                setTasks(prev => prev.filter(t => t.taskId !== incoming.taskId));
+                setSelectedTask(prev => (prev && prev.taskId === incoming.taskId ? null : prev));
+                return;
+            }
+            setTasks(prev => {
+                const idx = prev.findIndex(t => t.taskId === incoming.taskId);
+                if (idx === -1) {
+                    // 'created' (or 'updated' for a task we somehow missed) — append
+                    return [...prev, incoming];
+                }
+                // 'updated' — replace in place
+                const next = prev.slice();
+                next[idx] = incoming;
+                return next;
+            });
+            setSelectedTask(prev => (prev && prev.taskId === incoming.taskId ? incoming : prev));
+        };
+
+        if (socket) {
+            socket.on('task_updated', handleTaskUpdated);
+        }
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+            if (socket) {
+                socket.off('task_updated', handleTaskUpdated);
+            }
+        };
+    }, [activeTab, roomId, parentPodId, socket]);
 
     const fetchOlderMessages = async () => {
         if (!roomId || !hasMoreMessages || isLoadingOlder) {
@@ -2507,6 +2702,34 @@ const ChatRoom = () => {
         }
     };
 
+    // Drag-and-drop: change a task's status by patching the API.
+    // Does an optimistic in-place update first so the card appears in the
+    // new column immediately; reverts to the previous task if the request fails.
+    const handleChangeTaskStatus = async (task, targetStatus: 'pending' | 'claimed' | 'blocked' | 'done') => {
+        if (!task || !task.taskId) return;
+        if (task.status === targetStatus) return;
+        const previous = task;
+        // Optimistic update
+        setTasks(prev => prev.map(t => (t.taskId === task.taskId ? { ...t, status: targetStatus } : t)));
+        setSelectedTask(prev => (prev && prev.taskId === task.taskId ? { ...prev, status: targetStatus } : prev));
+        try {
+            const token = localStorage.getItem('token');
+            const podId = parentPodId || roomId;
+            const res = await axios.patch(
+                `/api/v1/tasks/${podId}/${task.taskId}`,
+                { status: targetStatus },
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+            const updated = res.data.task;
+            setTasks(prev => prev.map(t => (t.taskId === updated.taskId ? updated : t)));
+            setSelectedTask(prev => (prev && prev.taskId === updated.taskId ? updated : prev));
+        } catch {
+            // Revert optimistic update on failure
+            setTasks(prev => prev.map(t => (t.taskId === previous.taskId ? previous : t)));
+            setSelectedTask(prev => (prev && prev.taskId === previous.taskId ? previous : prev));
+        }
+    };
+
     const handleCreateTask = async () => {
         if (!newTaskTitle.trim()) return;
         setNewTaskCreating(true);
@@ -3842,12 +4065,33 @@ const ChatRoom = () => {
                     
                     {/* Board Tab */}
                     {activeTab === 'board' && (() => {
-                        const COLS = [
+                        const COLS: BoardColumnMeta[] = [
                             { key: 'pending', label: 'Pending', color: '#555', borderColor: '#9e9e9e' },
                             { key: 'claimed', label: 'In Progress', color: '#1565c0', borderColor: '#1976d2' },
                             { key: 'blocked', label: 'Blocked', color: '#c62828', borderColor: '#e53935' },
                             { key: 'done', label: 'Done', color: '#2e7d32', borderColor: '#43a047' },
                         ];
+                        const activeDragTask = activeDragTaskId
+                            ? tasks.find(t => t.taskId === activeDragTaskId)
+                            : null;
+                        const activeDragCol = activeDragTask
+                            ? COLS.find(c => c.key === activeDragTask.status) || COLS[0]
+                            : null;
+                        const handleDragStart = (event: DragStartEvent) => {
+                            setActiveDragTaskId(String(event.active.id));
+                        };
+                        const handleDragCancel = () => setActiveDragTaskId(null);
+                        const handleDragEnd = (event: DragEndEvent) => {
+                            setActiveDragTaskId(null);
+                            const { active, over } = event;
+                            if (!over) return;
+                            const targetStatus = over.id as 'pending' | 'claimed' | 'blocked' | 'done';
+                            if (!targetStatus) return;
+                            const sourceTask = (active.data.current as { task?: any } | undefined)?.task
+                                || tasks.find(t => t.taskId === active.id);
+                            if (!sourceTask || sourceTask.status === targetStatus) return;
+                            handleChangeTaskStatus(sourceTask, targetStatus);
+                        };
                         return (
                             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                                 {/* Board header */}
@@ -3865,131 +4109,112 @@ const ChatRoom = () => {
                                     </Button>
                                 </Box>
                                 {taskBoardLoading && tasks.length === 0 && <LinearProgress sx={{ flexShrink: 0 }} />}
-                                {/* Kanban columns */}
-                                <Box sx={{ display: 'flex', gap: 2, p: 2, overflowX: 'auto', overflowY: 'hidden', flex: 1, alignItems: 'flex-start' }}>
-                                    {COLS.map(col => {
-                                        const colTasks = tasks.filter(t => t.status === col.key);
-                                        const emptyHelper = col.key === 'pending'
-                                            ? 'Nothing pending'
-                                            : col.key === 'claimed'
-                                                ? 'Nothing in progress'
-                                                : col.key === 'blocked'
-                                                    ? 'All clear'
-                                                    : 'None complete yet';
-                                        return (
-                                            <Box key={col.key} sx={{ minWidth: 260, flex: '1 1 260px', maxWidth: 340, display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 700, color: col.color, textTransform: 'uppercase', letterSpacing: 0.4, fontSize: '0.75rem' }}>
-                                                        {col.label}
+                                {/* Kanban columns — drag-and-drop enabled */}
+                                <DndContext
+                                    sensors={boardSensors}
+                                    onDragStart={handleDragStart}
+                                    onDragEnd={handleDragEnd}
+                                    onDragCancel={handleDragCancel}
+                                >
+                                    <Box sx={{ display: 'flex', gap: 2, p: 2, overflowX: 'auto', overflowY: 'hidden', flex: 1, alignItems: 'flex-start' }}>
+                                        {COLS.map(col => {
+                                            const colTasks = tasks.filter(t => t.status === col.key);
+                                            const emptyHelper = col.key === 'pending'
+                                                ? 'Nothing pending'
+                                                : col.key === 'claimed'
+                                                    ? 'Nothing in progress'
+                                                    : col.key === 'blocked'
+                                                        ? 'All clear'
+                                                        : 'None complete yet';
+                                            return (
+                                                <Box key={col.key} sx={{ minWidth: 260, flex: '1 1 260px', maxWidth: 340, display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: col.color, textTransform: 'uppercase', letterSpacing: 0.4, fontSize: '0.75rem' }}>
+                                                            {col.label}
+                                                        </Typography>
+                                                        <Chip label={colTasks.length} size="small" sx={{ height: 20, fontSize: '0.72rem', bgcolor: `${col.borderColor}22`, color: col.color }} />
+                                                    </Box>
+                                                    <DroppableColumn col={col}>
+                                                        {colTasks.length === 0 && (
+                                                            <Box
+                                                                sx={{
+                                                                    display: 'flex',
+                                                                    flexDirection: 'column',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    py: 3,
+                                                                    px: 1,
+                                                                    gap: 0.5,
+                                                                    border: '1px dashed',
+                                                                    borderColor: 'divider',
+                                                                    borderRadius: 1,
+                                                                    color: 'text.disabled',
+                                                                }}
+                                                            >
+                                                                <InboxOutlinedIcon sx={{ fontSize: 28, opacity: 0.5 }} />
+                                                                <Typography variant="caption" sx={{ fontSize: '0.85rem', color: 'text.secondary', fontWeight: 500 }}>
+                                                                    No tasks
+                                                                </Typography>
+                                                                <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.disabled' }}>
+                                                                    {emptyHelper}
+                                                                </Typography>
+                                                            </Box>
+                                                        )}
+                                                        {colTasks.map(task => (
+                                                            <DraggableTaskCard
+                                                                key={task.taskId}
+                                                                task={task}
+                                                                col={col}
+                                                                tasks={tasks}
+                                                                onOpen={handleOpenTask}
+                                                                isDragging={activeDragTaskId === task.taskId}
+                                                            />
+                                                        ))}
+                                                    </DroppableColumn>
+                                                </Box>
+                                            );
+                                        })}
+                                    </Box>
+                                    <DragOverlay dropAnimation={null}>
+                                        {activeDragTask && activeDragCol ? (
+                                            <Card
+                                                variant="outlined"
+                                                sx={{
+                                                    borderLeft: `2px solid ${activeDragCol.borderColor}`,
+                                                    boxShadow: 6,
+                                                    cursor: 'grabbing',
+                                                    minWidth: 260,
+                                                    maxWidth: 340,
+                                                    bgcolor: 'background.paper',
+                                                }}
+                                            >
+                                                <CardContent sx={{ p: '14px !important' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.75, flexWrap: 'wrap' }}>
+                                                        <Chip label={activeDragTask.taskId} size="small" sx={{ fontSize: '0.72rem', height: 20, bgcolor: `${activeDragCol.borderColor}15`, color: activeDragCol.color, fontWeight: 600 }} />
+                                                        {activeDragTask.assignee && (
+                                                            <Chip label={activeDragTask.assignee} size="small" sx={{ fontSize: '0.72rem', height: 20 }} />
+                                                        )}
+                                                    </Box>
+                                                    <Typography
+                                                        variant="body2"
+                                                        sx={{
+                                                            fontSize: '0.9rem',
+                                                            fontWeight: 500,
+                                                            lineHeight: 1.4,
+                                                            display: '-webkit-box',
+                                                            WebkitLineClamp: 3,
+                                                            WebkitBoxOrient: 'vertical',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                        }}
+                                                    >
+                                                        {activeDragTask.title}
                                                     </Typography>
-                                                    <Chip label={colTasks.length} size="small" sx={{ height: 20, fontSize: '0.72rem', bgcolor: `${col.borderColor}22`, color: col.color }} />
-                                                </Box>
-                                                <Box sx={{ overflowY: 'auto', pr: 0.5 }}>
-                                                    {colTasks.length === 0 && (
-                                                        <Box
-                                                            sx={{
-                                                                display: 'flex',
-                                                                flexDirection: 'column',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                py: 3,
-                                                                px: 1,
-                                                                gap: 0.5,
-                                                                border: '1px dashed',
-                                                                borderColor: 'divider',
-                                                                borderRadius: 1,
-                                                                color: 'text.disabled',
-                                                            }}
-                                                        >
-                                                            <InboxOutlinedIcon sx={{ fontSize: 28, opacity: 0.5 }} />
-                                                            <Typography variant="caption" sx={{ fontSize: '0.85rem', color: 'text.secondary', fontWeight: 500 }}>
-                                                                No tasks
-                                                            </Typography>
-                                                            <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.disabled' }}>
-                                                                {emptyHelper}
-                                                            </Typography>
-                                                        </Box>
-                                                    )}
-                                                    {colTasks.map(task => (
-                                                        <Card
-                                                            key={task.taskId}
-                                                            variant="outlined"
-                                                            onClick={() => handleOpenTask(task)}
-                                                            sx={{ mb: 1.5, borderLeft: `2px solid ${col.borderColor}`, cursor: 'pointer', transition: 'box-shadow 0.15s ease, transform 0.15s ease', '&:hover': { boxShadow: 3, transform: 'translateY(-1px)' } }}
-                                                        >
-                                                            <CardContent sx={{ p: '14px !important' }}>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.75, flexWrap: 'wrap' }}>
-                                                                    <Chip label={task.taskId} size="small" sx={{ fontSize: '0.72rem', height: 20, bgcolor: `${col.borderColor}15`, color: col.color, fontWeight: 600 }} />
-                                                                    {task.assignee && (
-                                                                        <Chip label={task.assignee} size="small" sx={{ fontSize: '0.72rem', height: 20 }} />
-                                                                    )}
-                                                                </Box>
-                                                                <Tooltip title={task.title} arrow placement="top">
-                                                                    <Typography
-                                                                        variant="body2"
-                                                                        sx={{
-                                                                            fontSize: '0.9rem',
-                                                                            fontWeight: 500,
-                                                                            lineHeight: 1.4,
-                                                                            color: col.key === 'done' ? 'text.secondary' : 'text.primary',
-                                                                            textDecoration: col.key === 'done' ? 'line-through' : 'none',
-                                                                            display: '-webkit-box',
-                                                                            WebkitLineClamp: 3,
-                                                                            WebkitBoxOrient: 'vertical',
-                                                                            overflow: 'hidden',
-                                                                            textOverflow: 'ellipsis',
-                                                                        }}
-                                                                    >
-                                                                        {task.title}
-                                                                    </Typography>
-                                                                </Tooltip>
-                                                                {task.prUrl && (
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.75 }}>
-                                                                        <OpenInNewIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                                                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>PR linked</Typography>
-                                                                    </Box>
-                                                                )}
-                                                                {task.updates?.length > 0 && (
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                                                                        <HistoryIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                                                                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.85rem' }}>{task.updates.length} update{task.updates.length !== 1 ? 's' : ''}</Typography>
-                                                                    </Box>
-                                                                )}
-                                                                {/* Relationship indicators */}
-                                                                {task.parentTask && (
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                                                                        <SubdirectoryArrowRightIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                                                                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.85rem' }}>
-                                                                            Sub-task of {task.parentTask}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                )}
-                                                                {task.dep && (
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                                                                        <BlockIcon sx={{ fontSize: 14, color: 'warning.main' }} />
-                                                                        <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.85rem' }}>
-                                                                            Blocked by {task.dep}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                )}
-                                                                {(() => {
-                                                                    const childCount = tasks.filter(t => t.parentTask === task.taskId).length;
-                                                                    return childCount > 0 ? (
-                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                                                                            <Typography variant="caption" sx={{ fontSize: '0.85rem', color: 'info.main' }}>
-                                                                                {childCount} sub-task{childCount !== 1 ? 's' : ''}
-                                                                            </Typography>
-                                                                        </Box>
-                                                                    ) : null;
-                                                                })()}
-                                                            </CardContent>
-                                                        </Card>
-                                                    ))}
-                                                </Box>
-                                            </Box>
-                                        );
-                                    })}
-                                </Box>
+                                                </CardContent>
+                                            </Card>
+                                        ) : null}
+                                    </DragOverlay>
+                                </DndContext>
 
                                 {/* Task detail drawer */}
                                 <Drawer
