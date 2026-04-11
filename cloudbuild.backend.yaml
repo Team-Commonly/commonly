@@ -4,7 +4,11 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/commonly-test/commonly-backend:latest'
+      - '${_IMAGE}'
       - '.'
+
 images:
-  - 'gcr.io/commonly-test/commonly-backend:latest'
+  - '${_IMAGE}'
+
+substitutions:
+  _IMAGE: 'us-central1-docker.pkg.dev/commonly-493005/docker/commonly-backend:latest'

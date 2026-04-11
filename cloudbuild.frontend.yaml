@@ -3,14 +3,17 @@ steps:
     dir: 'frontend'
     args:
       - 'build'
-      - '-t'
-      - 'gcr.io/commonly-test/commonly-frontend:latest'
-      - '-f'
-      - 'Dockerfile'
+      - '--build-arg'
+      - 'VITE_API_URL=${_REACT_APP_API_URL}'
       - '--build-arg'
       - 'REACT_APP_API_URL=${_REACT_APP_API_URL}'
+      - '-t'
+      - '${_IMAGE}'
       - '.'
+
 images:
-  - 'gcr.io/commonly-test/commonly-frontend:latest'
+  - '${_IMAGE}'
+
 substitutions:
-  _REACT_APP_API_URL: ''
+  _REACT_APP_API_URL: 'https://api-dev.commonly.me'
+  _IMAGE: 'us-central1-docker.pkg.dev/commonly-493005/docker/commonly-frontend:latest'
