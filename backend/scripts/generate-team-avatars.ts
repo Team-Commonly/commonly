@@ -1,11 +1,20 @@
 #!/usr/bin/env ts-node
 /**
- * Generate personality-matched OpenAI portraits for the core team agents
- * and save them to their User records.
+ * Generate personality-matched AI portraits for the core team agents and
+ * save them to their User records.
  *
- * Usage:
- *   OPENAI_API_KEY=sk-... npx ts-node backend/scripts/generate-team-avatars.ts
- *   OPENAI_API_KEY=sk-... npx ts-node backend/scripts/generate-team-avatars.ts --force
+ * Goes through AgentAvatarService.generateAvatarDetailed() which respects
+ * the AVATAR_PROVIDER env var (default 'auto' = Gemini → OpenAI → SVG).
+ * So this will use Gemini 2.5 Flash Image when GEMINI_API_KEY is available,
+ * or OpenAI/LiteLLM when OPENAI_API_KEY is set.
+ *
+ * Usage (inside backend pod with env already set):
+ *   npx ts-node scripts/generate-team-avatars.ts
+ *   npx ts-node scripts/generate-team-avatars.ts --force
+ *
+ * Or locally:
+ *   GEMINI_API_KEY=AIza... MONGO_URI=... npx ts-node backend/scripts/generate-team-avatars.ts
+ *   OPENAI_API_KEY=sk-...  MONGO_URI=... npx ts-node backend/scripts/generate-team-avatars.ts
  *
  * The script is idempotent: agents whose profilePicture is already set (to a
  * data URI or URL) are skipped unless --force is passed.
@@ -18,14 +27,13 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
-// Use require for the identity service to match the rest of the backend.
+// Use require to match the rest of the backend's module idiom.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const AgentIdentityService = require('../services/agentIdentityService');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const {
-  generateImage,
-  isOpenAIImageAvailable,
-} = require('../services/openaiImageService');
+const AgentAvatarService = require('../services/agentAvatarService');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { isOpenAIImageAvailable } = require('../services/openaiImageService');
 
 interface AgentProfile {
   agentName: string;
@@ -87,13 +95,6 @@ const TEAM: AgentProfile[] = [
   },
 ];
 
-const buildPrompt = (agent: AgentProfile): string => (
-  `Stylized portrait avatar for an AI agent named ${agent.displayName}, `
-  + `a ${agent.role}. Personality: ${agent.personality}. `
-  + `Style: ${agent.style}. Flat illustration, square aspect ratio, simple clean `
-  + 'background, friendly, professional, no text.'
-);
-
 const looksAlreadySet = (value: unknown): boolean => {
   if (!value || typeof value !== 'string') return false;
   if (value === 'default') return false;
@@ -103,29 +104,38 @@ const looksAlreadySet = (value: unknown): boolean => {
 async function run(): Promise<void> {
   const force = process.argv.includes('--force');
 
-  if (!isOpenAIImageAvailable()) {
-    console.error('OPENAI_API_KEY is not set. Export it or set it in .env and re-run.');
+  const hasGemini = Boolean((process.env.GEMINI_API_KEY || '').trim());
+  const hasOpenai = isOpenAIImageAvailable();
+  if (!hasGemini && !hasOpenai) {
+    console.error(
+      'No image provider configured. Set GEMINI_API_KEY (preferred) or '
+      + 'OPENAI_API_KEY / LITELLM_BASE_URL+LITELLM_MASTER_KEY and re-run.',
+    );
     process.exitCode = 1;
     return;
   }
+  console.log(
+    `Providers available — gemini: ${hasGemini}, openai: ${hasOpenai}. `
+    + `Active: ${process.env.AVATAR_PROVIDER || 'auto'}`,
+  );
 
   const mongoUri = (process.env.MONGO_URI || 'mongodb://localhost:27017/commonly').trim();
   console.log(`Connecting to Mongo: ${mongoUri.replace(/\/\/[^@]+@/, '//<redacted>@')}`);
   await mongoose.connect(mongoUri);
   console.log('Connected.\n');
 
-  let totalCost = 0;
   let generated = 0;
   let skipped = 0;
   let failed = 0;
+  const sources: Record<string, number> = {};
 
   for (const agent of TEAM) {
     const label = `${agent.displayName} (${agent.agentName}/${agent.instanceId})`;
     try {
       // Try the two most common identity shapes: (openclaw, {instanceId}) and
-      // (agentName, {instanceId}). Some team agents like theo/nova/pixel/ops/liz
-      // are provisioned under the openclaw runtime type with their id as the
-      // instanceId; x-curator may be under its own agentType.
+      // (agentName, {instanceId}). Team agents like theo/nova/pixel/ops/liz
+      // are provisioned under the openclaw runtime type; x-curator may be
+      // under its own agentType.
       let user = await AgentIdentityService.getOrCreateAgentUser('openclaw', {
         instanceId: agent.instanceId,
       });
@@ -148,30 +158,47 @@ async function run(): Promise<void> {
         continue;
       }
 
-      const prompt = buildPrompt(agent);
-      console.log(`  [gen]  ${label}: requesting image...`);
-      const image = await generateImage({
-        prompt,
-        size: '1024x1024',
+      console.log(`  [gen]  ${label}: requesting image via AgentAvatarService...`);
+      // Go through the full priority chain (Gemini → OpenAI → SVG → letter).
+      // Style/personality/colorScheme feed the avatar prompt builder inside
+      // the service; customPrompt adds agent-specific flavor.
+      const customPrompt = (
+        `Portrait of ${agent.displayName}, a ${agent.role}. `
+        + `Personality: ${agent.personality}. Visual style: ${agent.style}. `
+        + 'Flat illustration, square aspect ratio, simple clean background, '
+        + 'friendly, professional expression, no text.'
+      );
+      const result = await AgentAvatarService.generateAvatarDetailed({
+        agentName: agent.displayName,
+        style: 'illustration',
+        personality: agent.personality.split(',')[0]?.trim() || 'friendly',
+        colorScheme: 'vibrant',
+        gender: 'neutral',
+        customPrompt,
       });
 
-      user.profilePicture = image.dataUri;
+      if (!result?.avatar) {
+        failed += 1;
+        console.error(`  [fail] ${label}: avatar service returned no avatar`);
+        continue;
+      }
+
+      user.profilePicture = result.avatar;
       user.avatarMetadata = {
         ...(user.avatarMetadata || {}),
-        source: 'openai',
-        model: image.model,
-        prompt,
+        source: result.metadata?.source || 'unknown',
+        model: result.metadata?.model || null,
+        prompt: customPrompt,
         generatedAt: new Date(),
       };
       await user.save();
 
-      const cost = image.costEstimateUsd || 0;
-      totalCost += cost;
+      const source = result.metadata?.source || 'unknown';
+      const model = result.metadata?.model || 'n/a';
+      const fallback = result.metadata?.fallbackUsed ? ' (fallback)' : '';
+      sources[source] = (sources[source] || 0) + 1;
       generated += 1;
-      console.log(
-        `  [done] ${label}: ${image.model} ~$${cost.toFixed(4)} `
-        + `(revisedPrompt: ${image.revisedPrompt ? 'yes' : 'no'})`,
-      );
+      console.log(`  [done] ${label}: ${source}/${model}${fallback}`);
     } catch (error: any) {
       failed += 1;
       const kind = error?.kind ? ` (${error.kind})` : '';
@@ -183,7 +210,9 @@ async function run(): Promise<void> {
   console.log(`  generated: ${generated}`);
   console.log(`  skipped:   ${skipped}`);
   console.log(`  failed:    ${failed}`);
-  console.log(`  estimated total cost: ~$${totalCost.toFixed(4)} USD`);
+  if (Object.keys(sources).length) {
+    console.log(`  sources:   ${JSON.stringify(sources)}`);
+  }
 }
 
 run()
