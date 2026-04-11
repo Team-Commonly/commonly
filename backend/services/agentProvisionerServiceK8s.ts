@@ -2292,6 +2292,30 @@ const provisionAgentRuntime = async ({
   } else if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
     // External runtimes — no K8s deployment; agent manages its own compute
     return { provisioned: true, external: true, runtimeType };
+  } else if (runtimeType === 'managed-agents') {
+    // Delegate to the managed-agents adapter for provisioning.
+    // The adapter handles beta.agents.create() + beta.environments.create()
+    // and (in the full flow) stores the returned ids on the installation config.
+    //
+    // Scaffolding only — actual provision flow (creating agent, environment,
+    // storing ids on the installation) is a follow-up track. For now we
+    // verify configuration and throw a typed error so the route surfaces a
+    // clear 501-ish response if someone tries to use this runtimeType before
+    // it's finished.
+    //
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const { isManagedAgentsAvailable, ManagedAgentsError } = require('./managedAgentsAdapter');
+    if (!isManagedAgentsAvailable()) {
+      throw new ManagedAgentsError(
+        'Cannot provision managed-agents runtime: ANTHROPIC_API_KEY is missing or set to placeholder. '
+        + 'Land a real key in GCP Secret Manager and restart the backend pod.',
+        'not_configured',
+      );
+    }
+    throw new ManagedAgentsError(
+      'managed-agents runtime adapter is scaffolded but provision flow is not yet implemented. Track B follow-up.',
+      'not_configured',
+    );
   } else {
     throw new Error(`Provisioning not supported for runtime: ${runtimeType}`);
   }
