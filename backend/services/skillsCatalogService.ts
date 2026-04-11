@@ -49,6 +49,24 @@ const resolveCatalogPath = (source: string): string | null => {
   return null;
 };
 
+// In-memory catalog cache — re-reads whenever the file mtime changes so the
+// refresh scheduler can write a new copy without the server needing a restart.
+interface CacheEntry {
+  mtimeMs: number;
+  catalog: Catalog;
+  upstreamRefreshedAt: string | null;
+  localRefreshedAt: string | null;
+}
+const catalogCache = new Map<string, CacheEntry>();
+
+export const invalidateCache = (source?: string): void => {
+  if (source) {
+    catalogCache.delete(source);
+    return;
+  }
+  catalogCache.clear();
+};
+
 export const loadCatalog = (source = DEFAULT_SOURCE): Catalog => {
   const catalogPath = resolveCatalogPath(source);
   if (!catalogPath) {
@@ -58,18 +76,48 @@ export const loadCatalog = (source = DEFAULT_SOURCE): Catalog => {
     return { source, updatedAt: null, items: [] };
   }
   try {
+    const stat = fs.statSync(catalogPath);
+    const cached = catalogCache.get(source);
+    if (cached && cached.mtimeMs === stat.mtimeMs) {
+      return cached.catalog;
+    }
     const raw = fs.readFileSync(catalogPath, 'utf8');
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const items = Array.isArray(parsed.items) ? parsed.items as SkillItem[] : [];
-    return {
+    const catalog: Catalog = {
       source,
       updatedAt: (parsed.updatedAt as string) || null,
       items,
     };
+    catalogCache.set(source, {
+      mtimeMs: stat.mtimeMs,
+      catalog,
+      upstreamRefreshedAt: (parsed.upstreamRefreshedAt as string) || null,
+      localRefreshedAt: (parsed.localRefreshedAt as string) || null,
+    });
+    return catalog;
   } catch (error) {
     console.warn(`[skills-catalog] Failed to read ${catalogPath}:`, (error as Error).message);
     return { source, updatedAt: null, items: [] };
   }
+};
+
+/**
+ * Returns the ISO timestamps of the most recent local refresh and the
+ * upstream JSON's own `updatedAt`. Used by the /catalog endpoint to power a
+ * "Last updated X minutes ago" indicator on the frontend.
+ */
+export const getLastRefreshedAt = (source = DEFAULT_SOURCE): { localRefreshedAt: string | null; upstreamRefreshedAt: string | null } => {
+  // Force a cache warm-up so we pick up the current on-disk values.
+  loadCatalog(source);
+  const cached = catalogCache.get(source);
+  if (!cached) {
+    return { localRefreshedAt: null, upstreamRefreshedAt: null };
+  }
+  return {
+    localRefreshedAt: cached.localRefreshedAt,
+    upstreamRefreshedAt: cached.upstreamRefreshedAt,
+  };
 };
 
 const toRawGitHubUrl = (sourceUrl: string): string => {
@@ -216,7 +264,13 @@ export const fetchSkillContentFromSource = async (sourceUrl: string): Promise<Fe
   return { content, resolvedUrl };
 };
 
-export default { loadCatalog, fetchSkillContentFromSource, fetchSkillDirectoryFiles };
+export default {
+  loadCatalog,
+  fetchSkillContentFromSource,
+  fetchSkillDirectoryFiles,
+  getLastRefreshedAt,
+  invalidateCache,
+};
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports["default"]; Object.assign(module.exports, exports);

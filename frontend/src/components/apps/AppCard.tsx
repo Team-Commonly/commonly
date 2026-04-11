@@ -117,29 +117,48 @@ const AppCard: React.FC<AppCardProps> = ({
         borderRadius: 3,
         border: `1px solid ${alpha(accent, 0.18)}`,
         boxShadow: 'none',
-        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+        position: 'relative',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        transition: 'all 0.2s ease',
         '&:hover': {
           transform: 'translateY(-2px)',
-          boxShadow: `0 6px 18px ${alpha(accent, 0.15)}`,
+          boxShadow: `0 8px 24px ${alpha(accent, 0.18)}`,
+          borderColor: alpha(accent, 0.4),
         },
       }}
     >
-      <CardContent>
+      {/* Category chip — top-right, colored by type for at-a-glance scan. */}
+      <Chip
+        label={category}
+        size="small"
+        sx={{
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          backgroundColor: alpha(accent, 0.12),
+          color: accent,
+          fontWeight: 600,
+          textTransform: 'capitalize',
+        }}
+      />
+      <CardContent sx={{ flex: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
           <Avatar
             src={logo || undefined}
             sx={{
-              width: 56,
-              height: 56,
+              width: 64,
+              height: 64,
               backgroundColor: alpha(accent, 0.12),
               color: accent,
-              fontSize: '1.5rem',
+              fontSize: '1.75rem',
               fontWeight: 700,
             }}
           >
-            {!logo && <Icon />}
+            {!logo && <Icon fontSize="inherit" />}
           </Avatar>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ flex: 1, minWidth: 0, pr: 6 /* leave room for category chip */ }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography variant="h6" fontWeight={700} noWrap>
                 {displayName}
@@ -157,6 +176,9 @@ const AppCard: React.FC<AppCardProps> = ({
               label="Installed"
               size="small"
               sx={{
+                position: 'absolute',
+                bottom: 12,
+                right: 12,
                 backgroundColor: alpha(theme.palette.success.main, 0.12),
                 color: theme.palette.success.main,
                 fontWeight: 600,
@@ -171,7 +193,6 @@ const AppCard: React.FC<AppCardProps> = ({
 
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 2 }}>
           <Chip label={type} size="small" sx={{ fontWeight: 600 }} />
-          <Chip label={category} size="small" variant="outlined" />
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>

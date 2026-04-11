@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Card,
   CardContent,
@@ -11,6 +14,7 @@ import {
   Grid,
   Chip,
   IconButton,
+  Stack,
   Tooltip,
   Divider,
   Switch,
@@ -26,7 +30,10 @@ import {
   Check as CheckIcon,
   Error as ErrorIcon,
   Twitter as TwitterIcon,
-  Instagram as InstagramIcon
+  Instagram as InstagramIcon,
+  ExpandMore as ExpandMoreIcon,
+  Tune as TuneIcon,
+  Public as PublicIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -511,6 +518,16 @@ const GlobalIntegrations = () => {
         </Alert>
       )}
 
+      {/* Section header: Social feed integrations.
+          TODO(ui): pull non-social integrations (Chat, Email, etc.) into
+          sibling sections once their data fetch is split off from this page. */}
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2, mt: 1 }}>
+        <PublicIcon fontSize="small" color="action" />
+        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1 }}>
+          Social
+        </Typography>
+      </Stack>
+
       <Grid container spacing={3}>
         {/* X (Twitter) Integration */}
         <Grid item xs={12} md={6}>
@@ -540,6 +557,25 @@ const GlobalIntegrations = () => {
 
               <Divider sx={{ mb: 2 }} />
 
+              {/* Edit form is collapsed by default — avoids wall-of-text on
+                  first load. Click to expand when you need to make changes. */}
+              <Accordion
+                disableGutters
+                elevation={0}
+                sx={{
+                  '&:before': { display: 'none' },
+                  backgroundColor: 'transparent',
+                  '& .MuiAccordionSummary-root': { px: 0, minHeight: 40 },
+                  '& .MuiAccordionDetails-root': { px: 0, pt: 1 },
+                }}
+              >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <TuneIcon fontSize="small" />
+                    <Typography variant="button">Configure</Typography>
+                  </Stack>
+                </AccordionSummary>
+                <AccordionDetails>
                 <Box display="flex" flexDirection="column" gap={2}>
                 <Button
                   variant="outlined"
@@ -667,6 +703,8 @@ const GlobalIntegrations = () => {
                   </Tooltip>
                 </Box>
               </Box>
+                </AccordionDetails>
+              </Accordion>
 
               <Alert severity="info" sx={{ mt: 2 }}>
                 <Typography variant="caption">
@@ -705,6 +743,23 @@ const GlobalIntegrations = () => {
 
               <Divider sx={{ mb: 2 }} />
 
+              <Accordion
+                disableGutters
+                elevation={0}
+                sx={{
+                  '&:before': { display: 'none' },
+                  backgroundColor: 'transparent',
+                  '& .MuiAccordionSummary-root': { px: 0, minHeight: 40 },
+                  '& .MuiAccordionDetails-root': { px: 0, pt: 1 },
+                }}
+              >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <TuneIcon fontSize="small" />
+                    <Typography variant="button">Configure</Typography>
+                  </Stack>
+                </AccordionSummary>
+                <AccordionDetails>
               <Box display="flex" flexDirection="column" gap={2}>
                 <TextField
                   label="Username"
@@ -757,6 +812,8 @@ const GlobalIntegrations = () => {
                   </Tooltip>
                 </Box>
               </Box>
+                </AccordionDetails>
+              </Accordion>
 
               <Alert severity="info" sx={{ mt: 2 }}>
                 <Typography variant="caption">
