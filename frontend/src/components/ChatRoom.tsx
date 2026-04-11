@@ -3981,9 +3981,10 @@ const ChatRoom = () => {
                                             : (msg.user_id === currentUser?._id); // Fallback to check user_id field
                                         
                                         // Get username with multiple fallbacks
-                                        const username = 
+                                        const username =
                                             (msg.userId && typeof msg.userId === 'object' && msg.userId.username) ||
-                                            msg.username || 
+                                            msg.user?.username ||
+                                            msg.username ||
                                             'Unknown User';
                                         const normalizedUsername = normalizeIdentityKey(username);
                                         const mappedDisplayName = agentDisplayMap.get(normalizedUsername);
@@ -4004,6 +4005,7 @@ const ChatRoom = () => {
                                         
                                         // Get profile picture with multiple fallbacks
                                         const senderProfilePicture = (msg.userId && typeof msg.userId === 'object' && msg.userId.profilePicture)
+                                            || msg.user?.profile_picture
                                             || msg.profile_picture
                                             || msg.profilePicture
                                             || null;

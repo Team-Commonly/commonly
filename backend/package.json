@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
-    "dev": "ts-node server.ts",
+    "dev": "nodemon --exec 'ts-node --transpile-only' server.ts",
     "migrate-files": "node migrations/migrateFilesToDB.js",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -69,6 +69,7 @@
     "socket.io-client": "^4.7.2",
     "supertest": "^6.3.3",
     "ts-jest": "^29.4.9",
+    "ts-node": "^10.9.2",
     "typescript": "^5.6.3"
   }
 }

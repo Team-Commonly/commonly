@@ -14,6 +14,9 @@
     "resolveJsonModule": true,
     "types": ["node", "express"]
   },
+  "ts-node": {
+    "transpileOnly": true
+  },
   "include": ["**/*.js", "**/*.ts", "src/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }
