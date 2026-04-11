@@ -1,14 +1,34 @@
 const axios = require('axios');
 const { generateText } = require('./llmService');
+const {
+  generateImage: openaiGenerateImage,
+  isOpenAIImageAvailable,
+  OpenAIImageError,
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+} = require('./openaiImageService');
 
 const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
 
+type AvatarProviderPriority = 'openai' | 'gemini' | 'auto';
+
+const resolveAvatarProvider = (): AvatarProviderPriority => {
+  const raw = (process.env.AVATAR_PROVIDER || 'auto').trim().toLowerCase();
+  if (raw === 'openai' || raw === 'gemini') return raw;
+  return 'auto';
+};
+
 /**
  * Agent Avatar Generation Service
- * Uses Gemini AI to generate unique avatar descriptions and creates SVG avatars
  *
- * Note: Gemini 2.5 Flash doesn't currently support direct image generation,
- * so we generate creative SVG avatars based on AI-generated design descriptions.
+ * Priority chain:
+ *   1. OpenAI image generation (gpt-image-1 / dall-e-3) — when OPENAI_API_KEY is
+ *      set and AVATAR_PROVIDER is 'openai' or 'auto'.
+ *   2. Gemini 2.5 Flash Image — original path, kept intact for backward compat
+ *      and as a fallback.
+ *   3. SVG avatar — built from an AI-generated design description via llmService.
+ *   4. Initial-letter fallback — guarantees we always return something.
+ *
+ * AVATAR_PROVIDER env var controls the preferred engine: 'openai' | 'gemini' | 'auto'.
  */
 class AgentAvatarService {
   /**
@@ -45,24 +65,63 @@ class AgentAvatarService {
     customPrompt = '',
   }: { agentName: any; style?: any; personality?: any; colorScheme?: any; gender?: any; customPrompt?: any }) {
     try {
-      const imageResult = await this.generateImageAvatar({
-        agentName,
-        style,
-        personality,
-        colorScheme,
-        gender,
-        customPrompt,
-      });
-      if (imageResult?.avatar) {
-        return {
-          avatar: imageResult.avatar,
-          metadata: {
-            source: 'gemini-image',
-            model: GEMINI_IMAGE_MODEL,
-            fallbackUsed: false,
-          },
-        };
+      const provider = resolveAvatarProvider();
+      const openaiEnabled = provider === 'openai'
+        || (provider === 'auto' && isOpenAIImageAvailable());
+      const geminiEnabled = provider !== 'openai' || !openaiEnabled;
+
+      // Path 1: OpenAI
+      if (openaiEnabled) {
+        try {
+          const openaiResult = await this.generateOpenAIAvatar({
+            agentName,
+            style,
+            personality,
+            colorScheme,
+            gender,
+            customPrompt,
+          });
+          if (openaiResult?.avatar) {
+            return {
+              avatar: openaiResult.avatar,
+              metadata: {
+                source: 'openai',
+                model: openaiResult.model,
+                fallbackUsed: false,
+              },
+            };
+          }
+        } catch (openaiError: any) {
+          const kind = openaiError?.kind || 'unknown';
+          console.warn(
+            `[agentAvatarService] OpenAI avatar failed (${kind}): ${openaiError?.message}`,
+          );
+          // fall through to Gemini
+        }
       }
+
+      // Path 2: Gemini (existing)
+      if (geminiEnabled) {
+        const imageResult = await this.generateImageAvatar({
+          agentName,
+          style,
+          personality,
+          colorScheme,
+          gender,
+          customPrompt,
+        });
+        if (imageResult?.avatar) {
+          return {
+            avatar: imageResult.avatar,
+            metadata: {
+              source: 'gemini',
+              model: GEMINI_IMAGE_MODEL,
+              fallbackUsed: false,
+            },
+          };
+        }
+      }
+
       const avatarDesign = await this.generateAvatarDesign({
         agentName,
         style,
@@ -78,7 +137,7 @@ class AgentAvatarService {
       return {
         avatar: `data:image/svg+xml;base64,${base64Svg}`,
         metadata: {
-          source: 'svg-fallback',
+          source: 'svg',
           model: null,
           fallbackUsed: true,
         },
@@ -89,12 +148,64 @@ class AgentAvatarService {
       return {
         avatar: this.getFallbackAvatar(agentName),
         metadata: {
-          source: 'initial-fallback',
+          source: 'svg',
           model: null,
           fallbackUsed: true,
           error: error.message,
         },
       };
+    }
+  }
+
+  /**
+   * Generate avatar via OpenAI image API.
+   */
+  static async generateOpenAIAvatar({
+    agentName,
+    style,
+    personality,
+    colorScheme,
+    gender,
+    customPrompt,
+  }: {
+    agentName: any;
+    style?: any;
+    personality?: any;
+    colorScheme?: any;
+    gender?: any;
+    customPrompt?: any;
+  }) {
+    if (!isOpenAIImageAvailable()) {
+      return null;
+    }
+    const prompt = this.createAvatarImagePrompt({
+      agentName,
+      style,
+      personality,
+      colorScheme,
+      gender,
+      customPrompt,
+    });
+    try {
+      const result = await openaiGenerateImage({
+        prompt,
+        size: '1024x1024',
+      });
+      if (!result?.dataUri) {
+        return null;
+      }
+      return {
+        avatar: result.dataUri,
+        model: result.model,
+        revisedPrompt: result.revisedPrompt,
+      };
+    } catch (error: any) {
+      // Let the caller decide whether to fall through to Gemini.
+      if (error instanceof OpenAIImageError) {
+        throw error;
+      }
+      console.error('Error in generateOpenAIAvatar:', error);
+      throw error;
     }
   }
 
