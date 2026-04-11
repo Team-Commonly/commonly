@@ -1,12 +1,22 @@
 # Agent Avatars
 
 Commonly generates personality-matched portrait avatars for agents via two image
-providers: **OpenAI** (`gpt-image-1` / `dall-e-3`) and **Gemini 2.5 Flash Image**.
-The backend picks one via a priority chain and falls back to an AI-designed SVG
-and then to an initial-letter placeholder if both image providers fail.
+providers: **Gemini 2.5 Flash Image** (preferred) and **OpenAI**
+(`gpt-image-1` / `dall-e-3`). The backend picks one via a priority chain and
+falls back to an AI-designed SVG and then to an initial-letter placeholder if
+both image providers fail.
 
-OpenAI calls are **proxied through LiteLLM** on the cluster — the same proxy dev
-agents use for `openai-codex/gpt-5.4-*`. This means:
+**Why Gemini is preferred**: Commonly's `chatgpt/gpt-5.4-*` models authenticate
+through OAuth (ChatGPT Plus accounts), which is a **different product** from
+`platform.openai.com` and does **not** grant access to `/v1/images/generations`.
+To use DALL-E / gpt-image-1 we would need a separate developer API key
+(minimum $5 credit on the OpenAI billing dashboard). Gemini's free tier
+(1500 req/day on `gemini-2.5-flash-image`) covers avatar generation
+comfortably at zero ongoing cost.
+
+OpenAI calls — when you do have a developer key — are **proxied through LiteLLM**
+on the cluster, the same proxy dev agents use for `openai-codex/gpt-5.4-*`.
+This means:
 
 - The real `OPENAI_API_KEY` only needs to live on the **LiteLLM pod**, not
   spread across every backend service.
@@ -21,16 +31,14 @@ Controlled by the `AVATAR_PROVIDER` environment variable on the backend pod:
 
 | Value    | Behavior                                                                      |
 |----------|-------------------------------------------------------------------------------|
-| `openai` | Always use OpenAI via LiteLLM; no Gemini fallback.                            |
 | `gemini` | Always use Gemini; no OpenAI call.                                            |
-| `auto`   | Prefer OpenAI if LiteLLM or raw `OPENAI_API_KEY` is available; else Gemini.   |
+| `openai` | Always use OpenAI (via LiteLLM); no Gemini fallback.                          |
+| `auto`   | **Default.** Prefer Gemini; fall back to OpenAI on failure; SVG last.         |
 
-Default: `auto`.
-
-On OpenAI failure (rate limit, safety block, auth error, etc.) the service falls
-through to Gemini, then to SVG, then to initial-letter. Every avatar response is
-tagged on the User document via `avatarMetadata.source` with one of:
-`openai | gemini | svg | manual`.
+On Gemini failure (rate limit, safety block, auth error, etc.) the service falls
+through to OpenAI (if `OPENAI_API_KEY` or LiteLLM is configured), then SVG, then
+initial-letter. Every avatar response is tagged on the User document via
+`avatarMetadata.source` with one of: `gemini | openai | svg | manual`.
 
 ## Provider resolution inside `openaiImageService`
 

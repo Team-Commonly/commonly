@@ -20,18 +20,22 @@ const resolveAvatarProvider = (): AvatarProviderPriority => {
 /**
  * Agent Avatar Generation Service
  *
- * Priority chain:
- *   1. OpenAI image generation (gpt-image-1 / dall-e-3) — routed through the
- *      LiteLLM proxy when LITELLM_BASE_URL + LITELLM_MASTER_KEY are set (the
- *      default on the k8s cluster), or directly against api.openai.com when a
- *      raw OPENAI_API_KEY is set instead (local dev). The openaiImageService
- *      resolves the provider transparently.
- *   2. Gemini 2.5 Flash Image — original path, kept intact for backward compat
- *      and as a fallback.
+ * Priority chain (in `auto` mode):
+ *   1. Gemini 2.5 Flash Image — preferred. Free tier on ai.google.dev is
+ *      generous (1500 req/day) and quality is excellent for stylized
+ *      portraits. Reads GEMINI_API_KEY from env.
+ *   2. OpenAI image generation (gpt-image-1 / dall-e-3) — used when Gemini
+ *      is not configured or fails. Routed through the LiteLLM proxy when
+ *      LITELLM_BASE_URL + LITELLM_MASTER_KEY are set (k8s default), or
+ *      directly when a raw OPENAI_API_KEY is set (local dev). Note that
+ *      the OAuth-authenticated ChatGPT accounts do NOT grant access to
+ *      image generation — a separate api.openai.com developer key is
+ *      required (different product, different billing).
  *   3. SVG avatar — built from an AI-generated design description via llmService.
  *   4. Initial-letter fallback — guarantees we always return something.
  *
  * AVATAR_PROVIDER env var controls the preferred engine: 'openai' | 'gemini' | 'auto'.
+ * Default is 'auto' which prefers Gemini (the cheap, free-tier path).
  */
 class AgentAvatarService {
   /**
@@ -69,11 +73,45 @@ class AgentAvatarService {
   }: { agentName: any; style?: any; personality?: any; colorScheme?: any; gender?: any; customPrompt?: any }) {
     try {
       const provider = resolveAvatarProvider();
+      // Gemini is preferred in auto mode — it's the free-tier path and our
+      // OAuth ChatGPT accounts can't reach DALL-E anyway (different product).
+      const geminiEnabled = provider === 'gemini' || provider === 'auto';
       const openaiEnabled = provider === 'openai'
+        // In auto mode OpenAI is only tried as a fallback AFTER Gemini fails;
+        // we still check availability here so we can skip the call entirely
+        // when neither provider is configured.
         || (provider === 'auto' && isOpenAIImageAvailable());
-      const geminiEnabled = provider !== 'openai' || !openaiEnabled;
 
-      // Path 1: OpenAI
+      // Path 1: Gemini (preferred)
+      if (geminiEnabled) {
+        try {
+          const imageResult = await this.generateImageAvatar({
+            agentName,
+            style,
+            personality,
+            colorScheme,
+            gender,
+            customPrompt,
+          });
+          if (imageResult?.avatar) {
+            return {
+              avatar: imageResult.avatar,
+              metadata: {
+                source: 'gemini',
+                model: GEMINI_IMAGE_MODEL,
+                fallbackUsed: false,
+              },
+            };
+          }
+        } catch (geminiError: any) {
+          console.warn(
+            `[agentAvatarService] Gemini avatar failed: ${geminiError?.message}`,
+          );
+          // fall through to OpenAI (if enabled) or SVG
+        }
+      }
+
+      // Path 2: OpenAI (fallback in auto mode, forced in openai mode)
       if (openaiEnabled) {
         try {
           const openaiResult = await this.generateOpenAIAvatar({
@@ -90,7 +128,7 @@ class AgentAvatarService {
               metadata: {
                 source: 'openai',
                 model: openaiResult.model,
-                fallbackUsed: false,
+                fallbackUsed: provider === 'auto',
               },
             };
           }
@@ -99,29 +137,7 @@ class AgentAvatarService {
           console.warn(
             `[agentAvatarService] OpenAI avatar failed (${kind}): ${openaiError?.message}`,
           );
-          // fall through to Gemini
-        }
-      }
-
-      // Path 2: Gemini (existing)
-      if (geminiEnabled) {
-        const imageResult = await this.generateImageAvatar({
-          agentName,
-          style,
-          personality,
-          colorScheme,
-          gender,
-          customPrompt,
-        });
-        if (imageResult?.avatar) {
-          return {
-            avatar: imageResult.avatar,
-            metadata: {
-              source: 'gemini',
-              model: GEMINI_IMAGE_MODEL,
-              fallbackUsed: false,
-            },
-          };
+          // fall through to SVG
         }
       }
 
