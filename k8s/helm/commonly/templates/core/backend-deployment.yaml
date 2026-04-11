@@ -358,7 +358,7 @@ spec:
         - name: skills-catalog
           mountPath: /app/docs/skills
           readOnly: true
-        {{- if .Values.externalSecrets.enabled }}
+        {{- if and .Values.externalSecrets.enabled (not .Values.externalSecrets.workloadIdentity.enabled) }}
         - name: gcpsm-credentials
           mountPath: /app/gcp
           readOnly: true
@@ -401,7 +401,7 @@ spec:
       - name: marketplace-manifest
         configMap:
           name: marketplace-manifest
-      {{- if .Values.externalSecrets.enabled }}
+      {{- if and .Values.externalSecrets.enabled (not .Values.externalSecrets.workloadIdentity.enabled) }}
       - name: gcpsm-credentials
         secret:
           secretName: gcpsm-secret

@@ -167,6 +167,10 @@ externalSecrets:
   serviceAccount:
     name: external-secrets-sa
     gcpServiceAccount: commonly-secrets-sa@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com
+  workloadIdentity:
+    enabled: false
+    serviceAccountName: eso-gcp-sm
+    gcpServiceAccount: commonly-secrets-sa@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com
 
 # Agent runtime configuration
 agents:
