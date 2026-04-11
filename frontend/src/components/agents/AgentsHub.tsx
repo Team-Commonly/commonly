@@ -49,15 +49,13 @@ import {
   TableHead,
   TableRow,
   CircularProgress,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
+  Link,
 } from '@mui/material';
 import {
   Search as SearchIcon,
   ContentCopy as CopyIcon,
   Refresh as RefreshIcon,
-  ExpandMore as ExpandMoreIcon,
+  SmartToyOutlined as SmartToyOutlinedIcon,
 } from '@mui/icons-material';
 import AgentCard from './AgentCard';
 import ClawdbotConfigPanel from './ClawdbotConfigPanel';
@@ -152,8 +150,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [presetsError, setPresetsError] = useState('');
   const [presetInstallLoadingId, setPresetInstallLoadingId] = useState('');
   const [installedAgents, setInstalledAgents] = useState([]);
-  const [installedDebugExpanded, setInstalledDebugExpanded] = useState({});
-  const [installedRuntimeDebug, setInstalledRuntimeDebug] = useState({});
   const [userPods, setUserPods] = useState([]);
   const queryPodId = useMemo(() => {
     const params = new URLSearchParams(location.search);
@@ -824,91 +820,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       setAdminError(err?.response?.data?.error || 'Failed to reprovision all agent runtimes.');
     } finally {
       setAdminReprovisionLoading(false);
-    }
-  };
-
-  const getInstalledDebugKey = (agent) => (
-    `${agent?.name || 'unknown'}::${agent?.instanceId || 'default'}`
-  );
-
-  const fetchInstalledRuntimeDebug = async (agent, options: any = {}) => {
-    if (!selectedPodId || !agent?.name) return;
-    const { lines = 120, force = false } = options;
-    const instanceId = agent.instanceId || 'default';
-    const key = getInstalledDebugKey(agent);
-    const existing = installedRuntimeDebug[key];
-    if (!force && existing?.status && typeof existing.logs === 'string') return;
-
-    setInstalledRuntimeDebug((prev) => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        loading: true,
-        statusError: '',
-        logsError: '',
-      },
-    }));
-
-    const statusRequest = axios.get(
-      `/api/registry/pods/${selectedPodId}/agents/${agent.name}/runtime-status`,
-      {
-        headers: getAuthHeaders(),
-        params: { instanceId },
-      },
-    );
-    const logsRequest = axios.get(
-      `/api/registry/pods/${selectedPodId}/agents/${agent.name}/runtime-logs`,
-      {
-        headers: getAuthHeaders(),
-        params: { instanceId, lines },
-      },
-    );
-
-    const [statusResult, logsResult] = await Promise.allSettled([statusRequest, logsRequest]);
-    setInstalledRuntimeDebug((prev) => {
-      const next = {
-        ...(prev[key] || {}),
-        loading: false,
-        fetchedAt: new Date().toISOString(),
-      };
-      if (statusResult.status === 'fulfilled') {
-        next.status = statusResult.value?.data || null;
-        next.statusError = '';
-      } else {
-        next.status = null;
-        next.statusError = statusResult.reason?.response?.data?.error || 'Failed to fetch runtime status';
-      }
-      if (logsResult.status === 'fulfilled') {
-        next.logs = logsResult.value?.data?.logs || '';
-        next.logsError = '';
-      } else {
-        next.logs = '';
-        next.logsError = logsResult.reason?.response?.data?.error || 'Failed to fetch runtime logs';
-      }
-      return {
-        ...prev,
-        [key]: next,
-      };
-    });
-  };
-
-  const handleToggleInstalledDebug = (agent, expanded) => {
-    const key = getInstalledDebugKey(agent);
-    setInstalledDebugExpanded((prev) => ({
-      ...prev,
-      [key]: expanded,
-    }));
-    if (expanded) {
-      fetchInstalledRuntimeDebug(agent);
-    }
-  };
-
-  const copyInstalledDebug = async (value) => {
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch (err) {
-      console.error('Failed to copy runtime debug output:', err);
     }
   };
 
@@ -2325,12 +2236,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     });
   }, [runtimeLogsContent, runtimeLogsFilter, runtimeLogsOpen]);
 
-  useEffect(() => {
-    setInstalledDebugExpanded({});
-    setInstalledRuntimeDebug({});
-  }, [selectedPodId]);
-
-
   const handleRevokeRuntimeToken = async (tokenId) => {
     if (!configAgent || !selectedPodId || !tokenId) return;
     setRuntimeTokenRevokingId(tokenId);
@@ -2762,15 +2667,30 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       {activeTab === TAB_DISCOVER && (
         <>
           <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h6" fontWeight={600}>
-              {searchQuery ? `Results for "${searchQuery}"` : 'All Agents'}
-              </Typography>
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: { xs: 'flex-start', sm: 'center' },
+                justifyContent: 'space-between',
+                gap: 1,
+                mb: 3,
+              }}
+            >
+              <Box>
+                <Typography variant="h6" fontWeight={600}>
+                  {searchQuery ? `Results for "${searchQuery}"` : 'All Agents'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {searchQuery
+                    ? 'Matching agents from the registry and your templates.'
+                    : 'Agents you can install into the selected pod.'}
+                </Typography>
+              </Box>
               <Chip
                 size="small"
                 label={`${allAgents.length} agents`}
                 variant="outlined"
-                sx={{ fontWeight: 600 }}
+                sx={{ fontWeight: 600, flexShrink: 0 }}
               />
             </Box>
             <Grid container spacing={3}>
@@ -2988,16 +2908,47 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           {!currentPodId ? (
             <Alert severity="info">Select a pod to view installed agents</Alert>
           ) : installedAgents.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 8 }}>
-              <Typography variant="h6" gutterBottom>
-                No agents installed yet
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center',
+                py: { xs: 6, md: 10 },
+                px: 2,
+              }}
+            >
+              <Box
+                sx={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                  color: theme.palette.primary.main,
+                  mb: 2,
+                }}
+              >
+                <SmartToyOutlinedIcon sx={{ fontSize: 36 }} />
+              </Box>
+              <Typography variant="h6" fontWeight={600} gutterBottom>
+                No agents installed in this pod yet
               </Typography>
-              <Typography color="text.secondary" sx={{ mb: 3 }}>
-                Browse the catalog and install agents to get started
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 420 }}>
+                Install an agent to give this pod automation, summarization, or collaborative AI partners.
               </Typography>
-              <Button variant="contained" onClick={() => setActiveTab(TAB_DISCOVER)}>
-                Browse Agents
-              </Button>
+              <Link
+                component="button"
+                type="button"
+                onClick={() => setActiveTab(TAB_DISCOVER)}
+                underline="hover"
+                sx={{ fontWeight: 600 }}
+              >
+                Browse the Discover tab →
+              </Link>
             </Box>
           ) : (
             <Grid container spacing={3}>
@@ -3005,129 +2956,27 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                 const canManage = canManageInstalledAgent(agent);
                 return (
                 <Grid item xs={12} sm={6} md={4} lg={4} key={`${agent.name}-${agent.instanceId || 'default'}`}>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, height: '100%' }}>
-                    <AgentCard
-                      agent={{
-                        name: agent.name,
-                        displayName: agent.profile?.displayName || agent.displayName || agent.name,
-                        description: agent.profile?.purpose || '',
-                        version: (agent as any).version,
-                        stats: agent.usage,
-                        iconUrl: agent.iconUrl,
-                        profile: agent.profile,
-                        instanceId: agent.instanceId,
-                        agentName: agent.name,
-                        lastHeartbeatAt: agent.lastHeartbeatAt || null,
-                      } as any}
-                      installed
-                      onConfigure={(target) => (canManage ? openConfigDialog(target) : openAgentOverviewDialog(target))}
-                      onRemove={handleRemove}
-                      onMessage={handleMessageAgent}
-                      canConfigure={true}
-                      installedActionLabel={canManage ? 'Configure' : 'View'}
-                      canRemove={canManage}
-                    />
-                    <Accordion
-                      disableGutters
-                      square={false}
-                      expanded={Boolean(installedDebugExpanded[getInstalledDebugKey(agent)])}
-                      onChange={(event, expanded) => handleToggleInstalledDebug(agent, expanded)}
-                      sx={{
-                        border: `1px solid ${theme.palette.divider}`,
-                        borderRadius: 2,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ width: '100%' }} flexWrap="wrap" useFlexGap>
-                          <Typography variant="subtitle2">Runtime Debug</Typography>
-                          <Chip
-                            size="small"
-                            variant="outlined"
-                            label={`id:${agent.instanceId || 'default'}`}
-                          />
-                          <Chip
-                            size="small"
-                            color={(installedRuntimeDebug[getInstalledDebugKey(agent)]?.statusError
-                              || installedRuntimeDebug[getInstalledDebugKey(agent)]?.logsError) ? 'warning' : 'default'}
-                            label={installedRuntimeDebug[getInstalledDebugKey(agent)]?.loading
-                              ? 'Loading'
-                              : (installedRuntimeDebug[getInstalledDebugKey(agent)]?.fetchedAt
-                                ? 'Loaded'
-                                : 'Not loaded')}
-                          />
-                        </Stack>
-                      </AccordionSummary>
-                      <AccordionDetails sx={{ pt: 0 }}>
-                        <Stack direction="row" spacing={1} sx={{ mb: 1.5 }} alignItems="center">
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => fetchInstalledRuntimeDebug(agent, { force: true })}
-                            disabled={installedRuntimeDebug[getInstalledDebugKey(agent)]?.loading}
-                            startIcon={<RefreshIcon fontSize="small" />}
-                          >
-                            Refresh
-                          </Button>
-                          <Typography variant="caption" color="text.secondary">
-                            {installedRuntimeDebug[getInstalledDebugKey(agent)]?.fetchedAt
-                              ? `Last fetch ${formatDateTime(installedRuntimeDebug[getInstalledDebugKey(agent)]?.fetchedAt)}`
-                              : 'No runtime data loaded yet'}
-                          </Typography>
-                        </Stack>
-
-                        {installedRuntimeDebug[getInstalledDebugKey(agent)]?.statusError && (
-                          <Alert severity="warning" sx={{ mb: 1 }}>
-                            {installedRuntimeDebug[getInstalledDebugKey(agent)]?.statusError}
-                          </Alert>
-                        )}
-                        {installedRuntimeDebug[getInstalledDebugKey(agent)]?.logsError && (
-                          <Alert severity="warning" sx={{ mb: 1 }}>
-                            {installedRuntimeDebug[getInstalledDebugKey(agent)]?.logsError}
-                          </Alert>
-                        )}
-
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.75 }}>
-                          <Typography variant="subtitle2">Status JSON</Typography>
-                          <IconButton
-                            size="small"
-                            onClick={() => copyInstalledDebug(
-                              JSON.stringify(installedRuntimeDebug[getInstalledDebugKey(agent)]?.status || {}, null, 2),
-                            )}
-                          >
-                            <CopyIcon fontSize="small" />
-                          </IconButton>
-                        </Stack>
-                        <TextField
-                          fullWidth
-                          multiline
-                          minRows={6}
-                          maxRows={12}
-                          value={JSON.stringify(installedRuntimeDebug[getInstalledDebugKey(agent)]?.status || {}, null, 2)}
-                          InputProps={{ readOnly: true }}
-                          sx={{ mb: 1.25 }}
-                        />
-
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.75 }}>
-                          <Typography variant="subtitle2">Runtime Logs (tail)</Typography>
-                          <IconButton
-                            size="small"
-                            onClick={() => copyInstalledDebug(installedRuntimeDebug[getInstalledDebugKey(agent)]?.logs || '')}
-                          >
-                            <CopyIcon fontSize="small" />
-                          </IconButton>
-                        </Stack>
-                        <TextField
-                          fullWidth
-                          multiline
-                          minRows={8}
-                          maxRows={16}
-                          value={installedRuntimeDebug[getInstalledDebugKey(agent)]?.logs || ''}
-                          InputProps={{ readOnly: true }}
-                        />
-                      </AccordionDetails>
-                    </Accordion>
-                  </Box>
+                  <AgentCard
+                    agent={{
+                      name: agent.name,
+                      displayName: agent.profile?.displayName || agent.displayName || agent.name,
+                      description: agent.profile?.purpose || '',
+                      version: (agent as any).version,
+                      stats: agent.usage,
+                      iconUrl: agent.iconUrl,
+                      profile: agent.profile,
+                      instanceId: agent.instanceId,
+                      agentName: agent.name,
+                      lastHeartbeatAt: agent.lastHeartbeatAt || null,
+                    } as any}
+                    installed
+                    onConfigure={(target) => (canManage ? openConfigDialog(target) : openAgentOverviewDialog(target))}
+                    onRemove={handleRemove}
+                    onMessage={handleMessageAgent}
+                    canConfigure={true}
+                    installedActionLabel={canManage ? 'Configure' : 'View'}
+                    canRemove={canManage}
+                  />
                 </Grid>
                 );
               })}
