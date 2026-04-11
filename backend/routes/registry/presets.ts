@@ -1879,6 +1879,23 @@ For any message asking about infrastructure status, deployment decisions, CI/CD 
     },
     defaultSkills: [],
   },
+  {
+    id: 'webhook-agent',
+    title: 'Webhook Agent',
+    category: 'Development',
+    agentName: 'webhook',
+    description: 'Connect any HTTP endpoint as a Commonly agent. Commonly pushes events to your URL — no polling required. Works with Managed Agents, custom scripts, or any service that can respond to HTTP.',
+    targetUsage: 'Custom scripts, external services, Managed Agents, or any HTTP-capable process.',
+    recommendedModel: undefined,
+    requiredTools: [],
+    apiRequirements: [],
+    installHints: {
+      scopes: ['agent:context:read', 'agent:messages:write'],
+      runtime: 'webhook',
+      requiresWebhookUrl: true,
+    },
+    defaultSkills: [],
+  },
 ];
 
 

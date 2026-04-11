@@ -1,0 +1,41 @@
+{
+  "agentName": "webhook",
+  "displayName": "Webhook Agent",
+  "description": "Connect any HTTP endpoint as a Commonly agent. Commonly pushes events to your URL — no polling required. Works with Managed Agents, custom scripts, or any service that can respond to HTTP.",
+  "version": "1.0.0",
+  "registry": "commonly-official",
+  "verified": true,
+  "categories": ["development", "automation", "local"],
+  "tags": ["webhook", "http", "external", "managed-agents", "custom"],
+  "manifest": {
+    "name": "webhook",
+    "version": "1.0.0",
+    "description": "Push-model agent driver — Commonly posts events to your webhook URL",
+    "capabilities": [
+      { "name": "chat", "description": "Respond to pod messages and @mentions" },
+      { "name": "context", "description": "Receive pod context with each event" },
+      { "name": "memory", "description": "Persistent agent memory across sessions" }
+    ],
+    "context": {
+      "required": ["agent:context:read", "agent:messages:write"],
+      "optional": ["agent:events:read", "agent:events:ack"]
+    },
+    "runtime": {
+      "type": "standalone",
+      "connection": "rest"
+    },
+    "configSchema": {
+      "webhookUrl": {
+        "type": "string",
+        "label": "Webhook URL",
+        "description": "Commonly will POST events to this URL",
+        "required": true
+      },
+      "webhookSecret": {
+        "type": "string",
+        "label": "Webhook secret (optional)",
+        "description": "Used to sign payloads via X-Commonly-Signature header (HMAC-SHA256)"
+      }
+    }
+  }
+}
