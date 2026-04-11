@@ -301,6 +301,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     anthropic: '',
     openai: '',
   });
+  const [installWebhookUrl, setInstallWebhookUrl] = useState('');
+  const [installWebhookSecret, setInstallWebhookSecret] = useState('');
   const [installGatewayCreateOpen, setInstallGatewayCreateOpen] = useState(false);
   const [installGatewayCreateLoading, setInstallGatewayCreateLoading] = useState(false);
   const [installGatewayCreateError, setInstallGatewayCreateError] = useState('');
@@ -922,6 +924,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setInstallGatewayToken('');
     setInstallLlmMode('default');
     setInstallLlmKeys({ google: '', anthropic: '', openai: '' });
+    setInstallWebhookUrl('');
+    setInstallWebhookSecret('');
     setInstallGatewayCreateOpen(false);
     setInstallGatewayCreateError('');
     setInstallGatewayCreateLoading(false);
@@ -1166,6 +1170,8 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       }
 
       const authProfiles = buildInstallAuthProfiles();
+      const presetRuntime = installPresetContext?.installHints?.runtime || '';
+      const isExternalRuntime = ['webhook', 'claude-code'].includes(presetRuntime);
 
       const results = await Promise.allSettled(
         installPodIds.map((podId) => (
@@ -1173,6 +1179,13 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             const config: Record<string, any> = {};
             if (authProfiles) {
               config.runtime = { authProfiles };
+            }
+            if (isExternalRuntime && installWebhookUrl.trim()) {
+              config.runtime = {
+                ...config.runtime,
+                webhookUrl: installWebhookUrl.trim(),
+                ...(installWebhookSecret.trim() ? { webhookSecret: installWebhookSecret.trim() } : {}),
+              };
             }
             const presetSkills = Array.isArray(installPresetContext?.defaultSkills)
               ? installPresetContext.defaultSkills
@@ -4582,6 +4595,39 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             sx={{ mb: 2 }}
             helperText={`Derived from name: "${deriveInstanceId(installInstanceName, installAgent?.agentName || installAgent?.name)}"`}
           />
+          {(['webhook', 'claude-code'].includes(installPresetContext?.installHints?.runtime || '')) && (
+            <>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Webhook endpoint
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Commonly will POST events (mentions, messages) to this URL. The agent posts replies back via the bot API using its token.
+              </Typography>
+              <TextField
+                fullWidth
+                label="Webhook URL"
+                placeholder="https://your-agent.example.com/commonly/events"
+                value={installWebhookUrl}
+                onChange={(e) => setInstallWebhookUrl(e.target.value)}
+                size="small"
+                sx={{ mb: 2 }}
+                helperText="Leave blank to use pull-mode polling instead"
+              />
+              <TextField
+                fullWidth
+                label="Webhook secret (optional)"
+                placeholder="random secret for HMAC-SHA256 signing"
+                value={installWebhookSecret}
+                onChange={(e) => setInstallWebhookSecret(e.target.value)}
+                size="small"
+                type="password"
+                sx={{ mb: 2 }}
+                helperText="Commonly signs payloads as X-Commonly-Signature: sha256=<hmac>"
+              />
+            </>
+          )}
+          {!(['webhook', 'claude-code'].includes(installPresetContext?.installHints?.runtime || '')) && (<>
           <Divider sx={{ my: 2 }} />
           <Typography variant="subtitle2" sx={{ mb: 1 }}>
             Runtime gateway
@@ -4725,6 +4771,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               />
             </>
           )}
+          </>)}
           {(installAgent?.agentName || installAgent?.name || '').toLowerCase() === 'openclaw' && (
             <>
               <Divider sx={{ my: 2 }} />
