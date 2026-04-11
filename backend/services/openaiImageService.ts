@@ -85,25 +85,65 @@ const loadOpenAIModule = (): any => {
   }
 };
 
+/**
+ * Resolve the effective provider config.
+ *
+ * Preference order:
+ *   1. LiteLLM proxy — reuses the same pattern dev agents use (LITELLM_BASE_URL +
+ *      LITELLM_MASTER_KEY). The real OPENAI_API_KEY only lives on the LiteLLM pod,
+ *      not on the backend. Also gets us cost tracking + fallback routing for free.
+ *   2. Direct OpenAI — raw OPENAI_API_KEY fallback for local dev / tests.
+ *
+ * Returns `null` if neither path is configured so callers can soft-fallback to
+ * Gemini / SVG without crashing.
+ */
+const resolveProvider = (): { baseURL?: string; apiKey: string; via: 'litellm' | 'openai' } | null => {
+  const liteLLMBase = (process.env.LITELLM_BASE_URL || '').trim().replace(/\/$/, '');
+  const liteLLMKey = (
+    process.env.LITELLM_API_KEY
+    || process.env.LITELLM_MASTER_KEY
+    || ''
+  ).trim();
+  if (liteLLMBase && liteLLMKey) {
+    // LiteLLM accepts both /chat/completions and /v1/chat/completions at the root,
+    // so passing the base URL without /v1 works — matches llmService.ts idiom.
+    return { baseURL: liteLLMBase, apiKey: liteLLMKey, via: 'litellm' };
+  }
+  const rawKey = (process.env.OPENAI_API_KEY || '').trim();
+  if (rawKey) {
+    return { apiKey: rawKey, via: 'openai' };
+  }
+  return null;
+};
+
 const getClient = (): any => {
-  const apiKey = (process.env.OPENAI_API_KEY || '').trim();
-  if (!apiKey) {
+  const provider = resolveProvider();
+  if (!provider) {
     throw new OpenAIImageError(
-      'OPENAI_API_KEY is not set; cannot call OpenAI image API',
+      'No image provider configured. Set LITELLM_BASE_URL + LITELLM_MASTER_KEY '
+      + '(preferred — goes through proxy) or OPENAI_API_KEY (direct).',
       'auth',
     );
   }
-  if (cachedClient && cachedClientKey === apiKey) {
+  const cacheKey = `${provider.via}|${provider.baseURL || 'openai.com'}|${provider.apiKey}`;
+  if (cachedClient && cachedClientKey === cacheKey) {
     return cachedClient;
   }
   const OpenAI = loadOpenAIModule();
-  cachedClient = new OpenAI({ apiKey });
-  cachedClientKey = apiKey;
+  const opts: { apiKey: string; baseURL?: string } = { apiKey: provider.apiKey };
+  if (provider.baseURL) opts.baseURL = provider.baseURL;
+  cachedClient = new OpenAI(opts);
+  cachedClientKey = cacheKey;
+  // eslint-disable-next-line no-console
+  console.log(
+    `[openaiImageService] client initialized via ${provider.via}`
+    + (provider.baseURL ? ` (${provider.baseURL})` : ''),
+  );
   return cachedClient;
 };
 
 export function isOpenAIImageAvailable(): boolean {
-  return Boolean((process.env.OPENAI_API_KEY || '').trim());
+  return resolveProvider() !== null;
 }
 
 /**

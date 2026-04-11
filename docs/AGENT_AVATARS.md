@@ -5,15 +5,25 @@ providers: **OpenAI** (`gpt-image-1` / `dall-e-3`) and **Gemini 2.5 Flash Image*
 The backend picks one via a priority chain and falls back to an AI-designed SVG
 and then to an initial-letter placeholder if both image providers fail.
 
+OpenAI calls are **proxied through LiteLLM** on the cluster — the same proxy dev
+agents use for `openai-codex/gpt-5.4-*`. This means:
+
+- The real `OPENAI_API_KEY` only needs to live on the **LiteLLM pod**, not
+  spread across every backend service.
+- Backend reaches OpenAI via its existing `LITELLM_MASTER_KEY` (already wired in
+  the backend deployment).
+- LiteLLM gives us cost tracking, rate limiting, and failover for free.
+- Rotating the key means one secret version bump — ESO fans it out.
+
 ## Provider priority
 
 Controlled by the `AVATAR_PROVIDER` environment variable on the backend pod:
 
-| Value    | Behavior                                                         |
-|----------|------------------------------------------------------------------|
-| `openai` | Always use OpenAI; no Gemini fallback.                           |
-| `gemini` | Always use Gemini; no OpenAI call.                               |
-| `auto`   | Prefer OpenAI if `OPENAI_API_KEY` is set; else Gemini.           |
+| Value    | Behavior                                                                      |
+|----------|-------------------------------------------------------------------------------|
+| `openai` | Always use OpenAI via LiteLLM; no Gemini fallback.                            |
+| `gemini` | Always use Gemini; no OpenAI call.                                            |
+| `auto`   | Prefer OpenAI if LiteLLM or raw `OPENAI_API_KEY` is available; else Gemini.   |
 
 Default: `auto`.
 
@@ -22,25 +32,41 @@ through to Gemini, then to SVG, then to initial-letter. Every avatar response is
 tagged on the User document via `avatarMetadata.source` with one of:
 `openai | gemini | svg | manual`.
 
-## Setting `OPENAI_API_KEY` in GCP Secret Manager
+## Provider resolution inside `openaiImageService`
 
-Secrets flow `GCP Secret Manager → ESO → k8s Secret api-keys → backend env`.
+The backend service resolves its upstream in this order:
+
+1. **LiteLLM** — `LITELLM_BASE_URL` + (`LITELLM_API_KEY` || `LITELLM_MASTER_KEY`).
+   The OpenAI SDK is instantiated with `baseURL` pointed at LiteLLM and uses the
+   master/virtual key. LiteLLM routes `dall-e-3` and `gpt-image-1` to the real
+   OpenAI API using its own `OPENAI_API_KEY`.
+2. **Direct OpenAI** — `OPENAI_API_KEY` only. Used for local dev without a
+   LiteLLM proxy handy.
+3. **Not configured** — falls through to Gemini (or SVG, or initial letter).
+
+LiteLLM's `config.yaml` registers the image models at
+`k8s/helm/commonly/templates/configmaps/litellm-config.yaml` — look for the
+`# --- OpenAI image generation` block.
+
+## Setting `OPENAI_API_KEY` in GCP Secret Manager (one-time)
+
+Secrets flow `GCP Secret Manager → ESO → k8s Secret api-keys → LiteLLM pod env`.
 The mapping for `openai-api-key -> commonly-dev-openai-api-key` already lives in
-`k8s/helm/commonly/templates/secrets/api-keys.yaml`, and the backend deployment
-already wires it to `OPENAI_API_KEY`. To activate it you only need to create
-(or update) the secret in GCP SM and force an ESO sync.
+`k8s/helm/commonly/templates/secrets/api-keys.yaml`, and the LiteLLM deployment
+already wires it to its own `OPENAI_API_KEY` env (optional, so LiteLLM boots fine
+without it — but image calls will 401 until you land the key).
 
 ```bash
-# Create / update the secret version
-printf 'sk-proj-xxxxxxxxxxxxxxxxxxxxxx' | gcloud secrets versions add \
-  commonly-dev-openai-api-key \
-  --data-file=- \
+# Create the secret if it doesn't exist
+gcloud secrets create commonly-dev-openai-api-key \
+  --replication-policy=automatic \
   --project=commonly-493005 \
   --account=lilyshen20021002@gmail.com
 
-# If the secret does not exist yet, create it first:
-gcloud secrets create commonly-dev-openai-api-key \
-  --replication-policy=automatic \
+# Add a version with your key
+printf 'sk-proj-xxxxxxxxxxxxxxxxxxxxxx' | gcloud secrets versions add \
+  commonly-dev-openai-api-key \
+  --data-file=- \
   --project=commonly-493005 \
   --account=lilyshen20021002@gmail.com
 
@@ -49,9 +75,10 @@ kubectl annotate externalsecret api-keys \
   force-sync=$(date +%s) \
   -n commonly-dev --overwrite
 
-# Restart backend to pick up the new env var
-kubectl rollout restart deployment/backend -n commonly-dev
-kubectl rollout status deployment/backend -n commonly-dev --timeout=120s
+# Restart LiteLLM to pick up the new env var (NOT the backend — it never
+# reads OPENAI_API_KEY in the LiteLLM-proxied setup)
+kubectl rollout restart deployment/litellm -n commonly-dev
+kubectl rollout status deployment/litellm -n commonly-dev --timeout=120s
 ```
 
 ## Rotating the key
@@ -81,23 +108,35 @@ The generation script logs an estimate per image and a total at the end.
 
 Generates portraits for: **liz, theo, nova, pixel, ops, x-curator**.
 
-```bash
-cd /path/to/commonly
+Preferred: run the script **inside the backend pod** so it picks up the same
+`LITELLM_BASE_URL` + `LITELLM_MASTER_KEY` + `MONGO_URI` the deployment uses.
 
-# Dry check (no key → exits 1 with a clear error)
-OPENAI_API_KEY=sk-... npx ts-node backend/scripts/generate-team-avatars.ts
+```bash
+# One-shot inside the running backend pod
+kubectl exec -n commonly-dev deployment/backend -it -- \
+  npx ts-node backend/scripts/generate-team-avatars.ts
 
 # Force regeneration (even if profilePicture is already set)
-OPENAI_API_KEY=sk-... npx ts-node backend/scripts/generate-team-avatars.ts --force
+kubectl exec -n commonly-dev deployment/backend -it -- \
+  npx ts-node backend/scripts/generate-team-avatars.ts --force
+```
+
+Local / off-cluster run (direct OpenAI, no proxy):
+
+```bash
+cd /path/to/commonly
+OPENAI_API_KEY=sk-... MONGO_URI=mongodb://... \
+  npx ts-node backend/scripts/generate-team-avatars.ts
 ```
 
 The script is idempotent: it skips any agent whose `profilePicture` already
 looks like a data URI or URL, unless `--force` is passed. On completion it
 prints per-agent status and an estimated total cost.
 
-Required env vars:
-- `OPENAI_API_KEY` — the OpenAI key (same one used by the backend).
-- `MONGO_URI` — optional; defaults to `mongodb://localhost:27017/commonly`.
+Required env vars (any one combo works):
+- **LiteLLM path**: `LITELLM_BASE_URL` + (`LITELLM_API_KEY` or `LITELLM_MASTER_KEY`).
+- **Direct path**: `OPENAI_API_KEY`.
+- **Always**: `MONGO_URI` — optional; defaults to `mongodb://localhost:27017/commonly`.
 
 ## Adding a new agent to the team generator
 

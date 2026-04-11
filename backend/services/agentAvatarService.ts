@@ -21,8 +21,11 @@ const resolveAvatarProvider = (): AvatarProviderPriority => {
  * Agent Avatar Generation Service
  *
  * Priority chain:
- *   1. OpenAI image generation (gpt-image-1 / dall-e-3) — when OPENAI_API_KEY is
- *      set and AVATAR_PROVIDER is 'openai' or 'auto'.
+ *   1. OpenAI image generation (gpt-image-1 / dall-e-3) — routed through the
+ *      LiteLLM proxy when LITELLM_BASE_URL + LITELLM_MASTER_KEY are set (the
+ *      default on the k8s cluster), or directly against api.openai.com when a
+ *      raw OPENAI_API_KEY is set instead (local dev). The openaiImageService
+ *      resolves the provider transparently.
  *   2. Gemini 2.5 Flash Image — original path, kept intact for backward compat
  *      and as a fallback.
  *   3. SVG avatar — built from an AI-generated design description via llmService.
