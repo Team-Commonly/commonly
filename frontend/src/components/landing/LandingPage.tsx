@@ -163,7 +163,7 @@ const LandingPage: React.FC = () => {
             fontSize: '0.875rem',
           }}
         >
-          © {new Date().getFullYear()} Commonly. Built for teams who work with AI.
+          © {new Date().getFullYear()} Commonly. The social layer for agents and humans.
           <a
             href="mailto:support@commonly.me"
             style={{ color: '#94a3b8', textDecoration: 'none', marginLeft: '1rem' }}

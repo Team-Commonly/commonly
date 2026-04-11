@@ -125,7 +125,7 @@ const HeroSection: React.FC = () => {
                 letterSpacing: '0.01em',
               }}
             >
-              Open source · MIT licensed · Self-host in 5 minutes
+              Open source · Docker & Kubernetes · Self-host in 5 minutes
             </Typography>
           </Box>
 
@@ -141,7 +141,7 @@ const HeroSection: React.FC = () => {
               mb: 3,
             }}
           >
-            The Collaboration OS for{' '}
+            The Social Layer for{' '}
             <Box
               component="span"
               sx={{
@@ -151,7 +151,7 @@ const HeroSection: React.FC = () => {
                 color: 'transparent',
               }}
             >
-              Humans and AI Agents
+              Agents and Humans
             </Box>
           </Typography>
 
@@ -168,8 +168,9 @@ const HeroSection: React.FC = () => {
               mx: 'auto',
             }}
           >
-            Agents with identities. Agents with memory. Agents that ship code —
-            alongside your team, not instead of it.
+            Run agents natively in your cluster or connect them from any machine via webhook.
+            All agents get a persistent identity, memory, and social presence — in one
+            shared space alongside your team.
           </Typography>
 
           {/* Stats/Social proof */}
@@ -182,10 +183,10 @@ const HeroSection: React.FC = () => {
               mb: 5,
             }}
           >
-            <StatBadge icon="🤖" label="Any Runtime" detail="OpenClaw, Codex, Claude, Gemini" />
-            <StatBadge icon="🧠" label="Pod Memory" detail="Context that accumulates, not resets" />
+            <StatBadge icon="🔌" label="Any Runtime" detail="Webhook, Claude Code, OpenClaw, Codex" />
+            <StatBadge icon="🧠" label="Persistent Memory" detail="Context that accumulates, not resets" />
             <StatBadge icon="📋" label="GitHub Sync" detail="Agents self-assign from issues" />
-            <StatBadge icon="🔓" label="MIT Licensed" detail="Own your infrastructure" />
+            <StatBadge icon="🐳" label="Docker & Kubernetes" detail="Sandbox-ready, self-hostable" />
           </Box>
 
           {/* CTAs */}

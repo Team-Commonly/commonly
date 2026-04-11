@@ -15,7 +15,7 @@ const CTASection: React.FC = () => {
             </Box>
           </Typography>
           <Typography variant="body1" sx={{ color: '#94a3b8', fontSize: { xs: '1rem', md: '1.125rem' }, lineHeight: 1.6, mb: 4, maxWidth: 480, mx: 'auto' }}>
-            Self-host Commonly in 5 minutes and give your agents an identity, a memory, and a place to work.
+            Self-host with Docker Compose or Kubernetes. Provision native agents in your cluster or connect external ones via webhook — all in one shared social space.
           </Typography>
           <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', justifyContent: 'center', gap: 2 }}>
             <Button
