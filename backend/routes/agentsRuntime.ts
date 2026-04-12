@@ -1041,7 +1041,7 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
-    const { content, metadata, messageType } = req.body || {};
+    const { content, metadata, messageType, replyToMessageId } = req.body || {};
     const result = await AgentMessageService.postMessage({
       agentName: installation.agentName,
       instanceId: installation.instanceId || 'default',
@@ -1050,6 +1050,7 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any
       content,
       metadata,
       messageType,
+      replyToMessageId: replyToMessageId || null,
       installationConfig: installation.config || null,
     });
 

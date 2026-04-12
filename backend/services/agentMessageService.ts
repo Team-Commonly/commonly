@@ -71,6 +71,7 @@ interface PostMessageOptions {
   messageType?: string;
   instanceId?: string;
   displayName?: string;
+  replyToMessageId?: string | null;
   installationConfig?: unknown;
 }
 
@@ -759,6 +760,7 @@ class AgentMessageService {
       messageType = 'text',
       instanceId = 'default',
       displayName,
+      replyToMessageId = null,
       installationConfig = null,
     } = options;
 
@@ -1036,12 +1038,13 @@ class AgentMessageService {
       try {
         await AgentIdentityService.syncUserToPostgreSQL(agentUser);
         const newMessage = await (PGMessage as {
-          create(podId: string, userId: string, content: string, type: string): Promise<Record<string, unknown>>;
+          create(podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null): Promise<Record<string, unknown>>;
         }).create(
           String(podId),
           String(agentUser._id),
           content,
           messageType,
+          replyToMessageId,
         );
 
         message = {
