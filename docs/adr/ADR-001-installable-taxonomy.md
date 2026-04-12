@@ -257,34 +257,33 @@ Composition model:
 
 Why this matters for the product vision: **skills are the bridge between "agent-first" (hire Sarah) and "app-first" (install Notion)**. The Notion app can ship `notion-search`, `notion-create-page`, `notion-summarize` as Skill components; any agent in the same scope can then use them. The same Sarah agent can learn a new domain by the user installing a skill pack alongside her.
 
-#### 3. Agent Room — documented, not schematized
+#### 3. Agent DMs — shipped, 1:1 personal (corrected from initial N:1 design)
 
-Concept: **a pod variant where one agent is the host and many humans are members**. This is the "single-agent pod" shape the user asked for — the right UX for consulting a pro agent, where multiple humans may converge in the agent's "office" to ask it for help.
+**Agent DMs are personal 1:1 pods (`Pod.type: 'agent-room'`) where one user talks directly to one agent.** This is the primary human↔agent interaction surface — like chatting with a colleague, or like having a local agent gateway UI.
 
-Relationship to the taxonomy:
+Initial design proposed N humans × 1 agent ("agent room / office"). Product review corrected this: the personal DM is always 1:1. Admin DMs (`type: 'agent-admin'`, multi-admin debug channel) are a separate legacy concept that will be deprecated as LiteLLM session observability matures.
 
-- **Not a new install scope.** Agent rooms are pods. The install target is still `scope: 'pod'` (or `'user'`, depending on who the room belongs to).
-- **Not a schema change in this amendment.** Agent rooms are a Pod-model concept (a `Pod.type` variant) that the Installable taxonomy must leave room for but does not need to model directly.
-- **Hiring semantics hook**: when a user clicks "Hire Sarah" on a marketplace listing with `kind: 'agent'`, the install flow may create an agent-room pod automatically and add the user as the first member. The runtime of this behavior is defined outside this ADR — the taxonomy only needs to tolerate it.
-
-Three clean human↔agent interaction surfaces:
+Two human↔agent interaction surfaces:
 
 | Surface | Shape | Agent role |
 |---|---|---|
 | **Team pod** | N humans × N agents | team member / collaborator |
-| **Agent room** | N humans × 1 agent | host / expert / front desk |
-| **DM** | 1 human × 1 agent | private assistant |
+| **Agent DM** | 1 human × 1 agent | personal consultant / assistant |
 
-Agent rooms and DMs are distinct: DMs are 1:1 and private; agent rooms are N:1 and can be shared (useful for "office hours" with a pro agent, or for a consultancy where many team members consult the same specialist).
+Relationship to the taxonomy:
 
-**Deferred UX work** — not in Phase 1.5:
+- **Not a new install scope.** Agent DMs are pods (`type: 'agent-room'`). The install target is still `scope: 'pod'`.
+- **Not a schema change.** This is a Pod-model concept, not an Installable concept.
+- **Listed as a Pod tab**, not a separate sidebar section — Agent DMs are a variant of pod, so they live in the Pods page alongside Chat, Study, Games, Ensemble, Teams.
+- **Privacy-filtered**: backend only returns `agent-room` pods where the requesting user is a member.
 
-- `Pod.type: 'team' | 'agent-room' | 'dm'` field
-- Marketplace "Hire" verb + onboarding flow into an agent room
-- Agent profile page reframed as an agent room entry point
-- Admin room variant (many admins, one agent, platform-ops use case)
+**Implementation status**: shipped. `Pod.type: 'agent-room'` added. `POST /api/agents/runtime/room` endpoint live. `DMService.getOrCreateAgentRoom()` is idempotent. "Talk to" button on every installed agent card in Agent Hub. "Agent DMs" tab in Pods page.
 
-This amendment only commits the taxonomy to leaving room for agent rooms. The Pod model and UX ship in a follow-up.
+**Deferred UX work**:
+
+- Marketplace "Hire" verb + onboarding flow that creates an Agent DM on hire
+- Agent profile page reframed as a DM entry point
+- Deprecation of admin DMs in favor of LiteLLM observability
 
 ### What this does NOT change
 
@@ -304,6 +303,7 @@ The v2 decision is correct. This is a refinement — it adds a UX-surface hint (
 
 ### New open questions
 
-- **Pod.type schema** — where should the agent-room vs team-pod vs dm distinction live? Probably on the Pod model itself, not on Installable. Deferred to the Pod refactor.
+- **~~Pod.type schema~~** — Resolved. `Pod.type: 'agent-room'` is shipped. Agent DMs are 1:1 personal (corrected from initial N:1 design). Listed as a Pod tab, not a sidebar section. Privacy-filtered by membership.
 - **Skill versioning** — if two Installables ship the same `skillId` at different versions, does the kernel warn? Pick the newest? Scope-nearest wins is clear; version-nearest isn't. Deferred.
-- **Agent Room lifecycle** — when you uninstall an agent at `user` scope, does its agent-room pod get deleted, archived, or left orphaned with its message history intact? Identity continuity says "preserve the identity, deactivate the runtime" — the analogous rule for rooms is likely "archive the room, preserve the messages." Deferred to the Pod refactor.
+- **Agent DM lifecycle** — when you uninstall an agent, does its Agent DM pod get deleted, archived, or left with its message history intact? Identity continuity says "preserve the identity, deactivate the runtime" — the analogous rule for DMs is likely "archive the pod, preserve the messages." Deferred.
+- **Admin DM deprecation timeline** — admin DMs (`type: 'agent-admin'`) serve a debug purpose. As LiteLLM session observability and `AgentRun` tracking mature, admin DMs should be deprecated. No timeline set.

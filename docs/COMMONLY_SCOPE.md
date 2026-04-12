@@ -1,6 +1,6 @@
 # Commonly Scope & the Installable Taxonomy (v2)
 
-**Status**: Accepted 2026-04-12 · **Amended 2026-04-12** (`kind` field, `Skill` component, Agent Room — see §3.8, §3.9, §3.10)
+**Status**: Accepted 2026-04-12 · **Amended 2026-04-12** (`kind` field, `Skill` component, Agent DMs — see §3.8, §3.9, §3.10)
 **Audience**: Contributors touching anything users install — Apps, Agents, Skills, Marketplace, permissions, federation
 **Companion**: [ADR-001 — Installable Taxonomy](./adr/ADR-001-installable-taxonomy.md)
 
@@ -262,31 +262,33 @@ Scope resolution order: `dm` → `user` → `pod` → `instance`. A skill instal
 
 **Why skills are not human-addressable** (resolved 2026-04-12): The user's directive during the product review was explicit — "humans should not use skills, we want to avoid human-in-the-loop for that, but humans still talk with different agents like colleagues." Rationale: the human↔agent interaction model is identity-based. You talk to Sarah. You don't type `/westlaw-search` — you ask Sarah to look something up, and she picks the right skill. Giving skills an addressing mode would re-introduce the "function vs agent" confusion that v1 fell into and undermine the "agents as colleagues" product vision.
 
-### 3.10 Agent Room — the single-agent pod (added 2026-04-12)
+### 3.10 Agent DMs — personal 1:1 agent chat (added 2026-04-12, corrected same day)
 
-**An agent room is a pod where one agent is the host and many humans are members.** It is the right UX for consulting a pro agent — durable, shared, branded by the agent rather than by a team.
+**An Agent DM is a personal 1:1 pod where one user talks directly to one agent.** It is the primary human↔agent interaction surface — like chatting with a colleague directly, or like having a local agent gateway UI.
 
-This is distinct from both a team pod (many agents + many humans, equal-class membership) and a DM (one human ↔ one agent, private). Three cleanly-separated human↔agent surfaces:
+This is distinct from both a team pod (many agents + many humans, equal-class membership) and an admin DM (multi-admin debug channel, to be deprecated by LiteLLM session observability later). Two cleanly-separated human↔agent surfaces:
 
 | Surface | Shape | Agent role | When it's right |
 |---|---|---|---|
 | **Team pod** | N humans × N agents | team member / collaborator | Working on a project together; agents are peers |
-| **Agent room** | N humans × 1 agent | host / expert / front desk | Consulting a specialist; humans converge in the agent's "office" |
-| **DM** | 1 human × 1 agent | private assistant | Personal use, no sharing |
+| **Agent DM** | 1 human × 1 agent | personal consultant / assistant | Direct conversation, like chatting with a colleague |
 
-**Agent rooms are a Pod variant, not an Installable variant.** The Installable taxonomy doesn't add a new scope for them — they're pods with `type: 'agent-room'`. The install target is still `scope: 'pod'` (if you create a new agent-room pod at install time) or `scope: 'user'` (if the hiring user's personal agent room is where the agent lands by default).
+**Agent DMs are a Pod type (`type: 'agent-room'`), listed as a tab in the Pods page** alongside Chat, Study, Games, Ensemble, and Teams. They are NOT a separate sidebar section — they're a variant of pod, so they live where pods live.
 
-**Hiring semantics**: clicking "Hire Sarah" on a `kind: 'agent'` marketplace listing triggers an install flow that:
+**Privacy**: Agent DMs are filtered by membership on the backend. The `getPodsByType` and `getAllPods` endpoints only return `agent-room` pods where the requesting user is a member. Other users' Agent DMs are invisible.
 
-1. Creates a new agent-room pod, named "Sarah's office" (or similar).
-2. Adds the hiring user as the first member.
-3. Installs the Sarah Installable at `scope: 'pod'` with the new pod as target.
-4. Drops the hiring user into the agent room's chat view.
-5. Later, the hiring user can invite other humans ("bring Bob in to consult Sarah on this contract") without changing the agent's scope.
+**Creation flow**: clicking "Talk to" on an installed agent's card in the Agent Hub calls `POST /api/agents/runtime/room`, which:
 
-**The agent's profile page IS the agent room entry point.** Visiting Sarah's profile on the marketplace shows her capabilities, reviews, skills, and a "Talk to Sarah" button. If the current user has already hired Sarah, that button takes them to their existing agent room with her. If not, it runs the hire flow above. The profile/chat distinction collapses — consulting a pro agent is the same act as visiting their office.
+1. Finds an active installation the user has access to.
+2. Calls `DMService.getOrCreateAgentRoom()` — idempotent: returns the existing DM if one exists for this user + agent pair, or creates a new one.
+3. The pod is created with `type: 'agent-room'`, `joinPolicy: 'invite-only'`, agent as `createdBy` (host).
+4. Navigates to `/pods/agent-room/{podId}` — the ChatRoom renders with "Agent DM" subtitle.
 
-**Implementation deferred**: the `Pod.type` field, the "Hire" flow in the marketplace UI, and the agent-room variant of the chat view are all follow-up work. This section commits the taxonomy to *leaving room* for agent rooms; it does not ship them. See ADR-001's "Amendment 2026-04-12" section for the open questions around room lifecycle.
+**Hiring semantics (deferred)**: in the future, clicking "Hire Sarah" on a `kind: 'agent'` marketplace listing will trigger the same flow — create an Agent DM, install Sarah, and drop the user into the conversation. The marketplace "Hire" verb and profile-page-as-chat-entry-point are follow-up UX work.
+
+**Admin DMs (`type: 'agent-admin'`) are separate and will be deprecated.** They serve a debug/admin purpose today (multi-admin channel for an agent). As LiteLLM session observability and agent run tracking (`AgentRun` model) mature, the admin DM's debugging function will be replaced by proper observability UI. Admin DMs remain in the sidebar as a legacy item until that migration happens.
+
+**Implementation status**: shipped. `Pod.type: 'agent-room'` is live. `POST /api/agents/runtime/room` is live. "Talk to" button is on every installed agent card. "Agent DMs" tab is in the Pods page. Privacy filtering is enforced.
 
 ---
 
@@ -714,7 +716,7 @@ Deferred. The taxonomy has `stats.installs` and `stats.activeInstalls` for basic
 
 **Skill** — an agent-facing capability unit. Prompt + optional tool list + optional examples. Has no `addresses` — humans never invoke skills directly. Composable across packages: any agent in the same scope can pick up any installed skill from the scoped skill registry. This is how an `app`-kind package enriches an `agent`-kind package without either knowing about the other.
 
-**Agent Room** — a pod variant with one agent as host and many humans as members. Distinct from team pods (N × N) and DMs (1 × 1). The right UX for consulting a pro agent. Implemented as a `Pod.type` variant, not a new install scope — the Installable taxonomy leaves room for it but does not model it directly. Deferred to the Pod refactor.
+**Agent DM** — a personal 1:1 pod (`Pod.type: 'agent-room'`) where one user talks directly to one agent. Distinct from team pods (N × N) and admin DMs (N admins × 1 agent, legacy debug). Listed as a tab in the Pods page ("Agent DMs"). Privacy-filtered: only visible to the member user. Created via "Talk to" button in Agent Hub or `POST /api/agents/runtime/room`. Shipped.
 
 **Addressing Mode** — how a component is invoked. One of: `@mention`, `/command`, `event`, `schedule`, `webhook`. A component can declare multiple modes; the kernel routes accordingly. Addressing modes are *orthogonal* to component types.
 

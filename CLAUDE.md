@@ -135,7 +135,8 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 
 | Track | Status | What it builds | Why it matters |
 |-------|--------|---------------|----------------|
-| **Installable taxonomy refactor** | Phase 1 landing; 2–6 pending | Unified `Installable` table (source + components[]), collapsing `App` + `AgentRegistry`. See ADR-001. | Kills the v1 split; every plugin goes through one model |
+| **Installable taxonomy refactor** | Phase 1.5 done; 2–6 pending | Unified `Installable` table (source + components[] + kind), `Skill` 8th component type. See ADR-001. | Kills the v1 split; every plugin goes through one model |
+| **Agent DMs** | Shipped | Personal 1:1 agent chat (`Pod.type: 'agent-room'`). "Talk to" button in Agent Hub, "Agent DMs" pod tab, privacy-filtered. | Primary human↔agent interaction surface |
 | **Native runtime (Tier 1)** | Shipped | In-process agent runtime via LiteLLM with `AgentRun` turn/tool/cost tracking | Zero-setup agents; powers first-party apps |
 | **First-party apps** | 3 shipped | `pod-welcomer`, `task-clerk`, `pod-summarizer` — installed in Team Orchestration Demo pod | Reference implementations for the Installable model |
 | **Cloud sandbox runtime (Tier 2)** | Pending | Anthropic Managed Agents + Commonly-hosted container adapter | Heavy-compute agents without BYO infra |
