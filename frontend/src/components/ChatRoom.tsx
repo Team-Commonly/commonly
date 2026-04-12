@@ -87,6 +87,21 @@ const emojifyPreserveCode = (raw: string): string => {
 };
 
 /**
+ * Strip agent directive tags like [[reply_to:123]] and [[audio_as_voice]]
+ * from message content. The gateway's outbound pipeline strips these on new
+ * messages, but old messages posted before the pipeline fix still contain
+ * them. This keeps UI clean regardless of when the message was posted.
+ */
+const stripDirectiveTags = (raw: string): string => {
+    if (!raw || typeof raw !== 'string') return raw || '';
+    return raw
+        .replace(/\[\[\s*(?:reply_to_current|reply_to\s*:\s*[^\]\n]+)\s*\]\]/gi, '')
+        .replace(/\[\[\s*audio_as_voice\s*\]\]/gi, '')
+        .replace(/^\s+/, '')
+        .trim();
+};
+
+/**
  * Parse bot message content - detects structured bot messages
  * Returns { isBotMessage: true, data: {...} } or { isBotMessage: false }
  */
@@ -4548,8 +4563,9 @@ const ChatRoom = () => {
                                         );
                                         const resolvedMessageAvatar = isAgentMessage ? agentMessageAvatar : humanMessageAvatar;
                                         
-                                        // Get message content with fallbacks
-                                        const rawMessageContent = msg.content || msg.text || '';
+                                        // Get message content with fallbacks + strip agent directive tags
+                                        // (tags like [[reply_to:123]] that leaked through from old gateway).
+                                        const rawMessageContent = stripDirectiveTags(msg.content || msg.text || '');
 
                                         // Get message type with fallback
                                         const messageType = msg.messageType || msg.message_type || 'text';
@@ -4698,7 +4714,10 @@ const ChatRoom = () => {
                                                             <div className="quote-body">
                                                                 <span className="quote-author">{msg.replyTo.username}</span>
                                                                 <span className="quote-text">
-                                                                    {(msg.replyTo.content || '').slice(0, 100)}{msg.replyTo.content?.length > 100 ? '…' : ''}
+                                                                    {(() => {
+                                                                        const cleaned = stripDirectiveTags(msg.replyTo.content || '');
+                                                                        return cleaned.slice(0, 100) + (cleaned.length > 100 ? '…' : '');
+                                                                    })()}
                                                                 </span>
                                                             </div>
                                                         </div>
