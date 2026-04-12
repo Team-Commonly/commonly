@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
-    tag: "20260412011038-r8d-dmprivacy"
+    tag: "20260412014814"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -47,7 +47,7 @@ frontend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
-    tag: "20260412005615-r8c-podfix"
+    tag: "20260412014815"
     pullPolicy: Always
   nodeSelector:
     pool: dev
