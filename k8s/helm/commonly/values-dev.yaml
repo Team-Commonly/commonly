@@ -47,7 +47,7 @@ frontend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
-    tag: "20260412003812-r8b-dmtab"
+    tag: "20260412005615-r8c-podfix"
     pullPolicy: Always
   nodeSelector:
     pool: dev
