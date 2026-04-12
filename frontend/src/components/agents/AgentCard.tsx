@@ -91,6 +91,8 @@ export interface Agent {
   stats?: AgentStats;
   lastHeartbeatAt?: string | null;
   iconUrl?: string;
+  presetId?: string | null;
+  customizations?: { soul?: boolean; heartbeat?: boolean } | null;
 }
 
 interface AgentCardProps {
@@ -499,6 +501,44 @@ const AgentCard: React.FC<AgentCardProps> = ({
             </Tooltip>
           )}
         </Box>
+
+        {/* Preset + customization chips (installed agents only) */}
+        {installed && (agent.presetId || agent.customizations?.soul || agent.customizations?.heartbeat) && (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.75 }}>
+            {agent.presetId && (
+              <Tooltip title={`Based on preset: ${agent.presetId}`}>
+                <Chip
+                  label={`preset: ${agent.presetId}`}
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    fontSize: '0.6875rem',
+                    borderColor: 'rgba(99, 102, 241, 0.5)',
+                    color: '#c7d2fe',
+                  }}
+                />
+              </Tooltip>
+            )}
+            {(agent.customizations?.soul || agent.customizations?.heartbeat) && (
+              <Tooltip title={`Customized: ${[
+                agent.customizations?.soul && 'SOUL.md',
+                agent.customizations?.heartbeat && 'HEARTBEAT.md',
+              ].filter(Boolean).join(' + ')}`}>
+                <Chip
+                  label="customized"
+                  size="small"
+                  sx={{
+                    fontSize: '0.6875rem',
+                    bgcolor: 'rgba(251, 191, 36, 0.15)',
+                    color: '#fbbf24',
+                    borderColor: 'rgba(251, 191, 36, 0.4)',
+                  }}
+                  variant="outlined"
+                />
+              </Tooltip>
+            )}
+          </Box>
+        )}
 
         {/* Capabilities chips */}
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
