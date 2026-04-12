@@ -30,6 +30,30 @@ export type InstallableSource =
   | 'template'
   | 'remote';
 
+/**
+ * Installable kind — marketplace surface hint. Two orthogonal axes (source ×
+ * components) describe what an Installable *is*; `kind` tells the marketplace
+ * which aisle to shelve it in and which landing page to render.
+ *
+ * - 'agent'  → the product IS an identity you hire (Liz, Sarah the Legal
+ *              Researcher, Multica's task-dispatcher). components[] must
+ *              contain exactly one Agent, optionally plus Skill components
+ *              the agent brings with it.
+ * - 'app'    → the product is capability (Notion integration, GitHub sync).
+ *              components[] may include Agent, but the Agent is an
+ *              extension of the app, not the main product. Widgets /
+ *              slash commands / event handlers typically dominate.
+ * - 'skill'  → a pure capability file — agent-facing only, no runtime of
+ *              its own. Installs into the skill registry at the declared
+ *              scope; any agent in that scope can pick it up by id.
+ * - 'bundle' → a grouping of the above, published together.
+ *
+ * `kind` is a UX hint, not a schema partition — the underlying model is
+ * still one table. See docs/adr/ADR-001-installable-taxonomy.md (2026-04-12
+ * amendment).
+ */
+export type InstallableKind = 'agent' | 'app' | 'skill' | 'bundle';
+
 export type InstallableScope = 'instance' | 'pod' | 'user' | 'dm';
 
 export type InstallableStatus =
@@ -45,7 +69,8 @@ export type ComponentType =
   | 'scheduled-job'
   | 'widget'
   | 'webhook'
-  | 'data-schema';
+  | 'data-schema'
+  | 'skill';
 
 export type AddressMode =
   | '@mention'
@@ -157,6 +182,16 @@ export interface IComponent {
   schemaName?: string;
   schemaFields?: unknown;
 
+  // Skill-specific ----------------------------------------------------------
+  // Skills are agent-only — no `addresses`, no human-facing invocation. A
+  // skill is a unit of "how to do X well" that agents compose into their
+  // working set. Installing a Skill adds it to the skill registry at the
+  // parent Installable's scope; any agent in that scope can reference it.
+  skillId?: string;
+  skillPrompt?: string;
+  skillTools?: string[];
+  skillExamples?: unknown;
+
   // Component-level free-form metadata.
   metadata?: Record<string, unknown>;
 }
@@ -212,6 +247,12 @@ export interface IInstallable extends Document {
   name: string;
   description: string;
   version: string;
+
+  // Marketplace surface hint — which aisle to shelve this in. See
+  // InstallableKind doc above. Defaults to 'app' if not supplied by the
+  // manifest, which is the safest browse location for a package we can't
+  // classify automatically.
+  kind: InstallableKind;
 
   // Axis 1: provenance
   source: InstallableSource;
@@ -301,6 +342,7 @@ const ComponentSchema = new Schema<IComponent>(
         'widget',
         'webhook',
         'data-schema',
+        'skill',
       ],
       required: true,
     },
@@ -353,6 +395,12 @@ const ComponentSchema = new Schema<IComponent>(
     // DataSchema
     schemaName: { type: String },
     schemaFields: { type: Schema.Types.Mixed },
+
+    // Skill (agent-only — no addresses, no runtime of its own)
+    skillId: { type: String },
+    skillPrompt: { type: String },
+    skillTools: { type: [String], default: undefined },
+    skillExamples: { type: Schema.Types.Mixed },
 
     // Free-form component metadata
     metadata: { type: Schema.Types.Mixed },
@@ -421,6 +469,13 @@ const InstallableSchema = new Schema<IInstallable>(
     description: { type: String, required: true, default: '' },
     version: { type: String, required: true },
 
+    kind: {
+      type: String,
+      enum: ['agent', 'app', 'skill', 'bundle'],
+      required: true,
+      default: 'app',
+    },
+
     source: {
       type: String,
       enum: ['builtin', 'marketplace', 'user', 'template', 'remote'],
@@ -465,6 +520,7 @@ const InstallableSchema = new Schema<IInstallable>(
 // index declaration keeps the intent visible alongside the others below.
 InstallableSchema.index({ installableId: 1 }, { unique: true });
 InstallableSchema.index({ source: 1, status: 1 });
+InstallableSchema.index({ kind: 1, 'marketplace.published': 1 });
 InstallableSchema.index({ 'marketplace.published': 1, 'marketplace.category': 1 });
 InstallableSchema.index({ 'publisher.userId': 1 });
 

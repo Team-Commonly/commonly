@@ -190,3 +190,120 @@ Explicitly deferred. Each is a real unknown we've decided not to resolve in this
 - Discord application model — https://discord.com/developers/docs/resources/application
 - Home Assistant integration architecture — https://developers.home-assistant.io/docs/creating_integration_manifest
 - `.claude/skills/installable-taxonomy/SKILL.md` — Claude Code skill with quick-reference schema, hard rules, anti-patterns
+
+---
+
+## Amendment — 2026-04-12: `kind`, `Skill` component, Agent Room
+
+**Status**: Accepted (Phase 1.5)
+**Trigger**: Product review of the v2 model against the "agents are first-class residents" vision. The original decision is sound but under-specifies the marketplace surface — it collapses "hire an agent" and "install an app" into the same browse experience, which was not the intent.
+
+### What changes
+
+Three additive, non-destructive changes to the v2 model. None invalidate the invariants above. Implementation is gated behind Phase 1.5 scaffolding; runtime behavior is unaffected until later phases consume these fields.
+
+#### 1. Add `kind` to Installable — marketplace surface hint
+
+New field:
+
+```typescript
+Installable {
+  kind: 'agent' | 'app' | 'skill' | 'bundle';  // required, default: 'app'
+  // ... all existing fields unchanged
+}
+```
+
+Semantics — **UX/marketplace hint only, not a schema partition**:
+
+- `kind: 'agent'` — the product IS an identity. "Hire Sarah the Legal Researcher." `components[]` contains exactly one Agent, optionally plus Skill components the agent brings with it. Browse surface: the Agents marketplace, ranked by reputation / reviews / domain.
+- `kind: 'app'` — the product is capability. "Install Notion integration." `components[]` typically contains widgets, slash commands, event handlers, webhooks; may include one Agent as the app's built-in expert. Browse surface: the Apps marketplace.
+- `kind: 'skill'` — pure capability file. `components[]` contains only Skill components. No standalone runtime. Browse surface: the Skills library (agent-facing registry, visible to admins).
+- `kind: 'bundle'` — grouped package of the above. Rare. Browse surface: Bundles tab.
+
+The underlying table stays unified. Invariant 1 ("two orthogonal axes, not 5 categories") is preserved — `kind` is a third axis for UX, not a partition of the data. The migration plan is unchanged; Phase 3 ("cutover read path") gains one extra filter.
+
+Default is `'app'` so legacy manifests without an explicit `kind` field land in the safest browse location.
+
+#### 2. Add `Skill` as the 8th component type — agent-only capability unit
+
+New component variant:
+
+```typescript
+type Component =
+  | Agent | SlashCommand | EventHandler | ScheduledJob
+  | Widget | Webhook | DataSchema
+  | Skill;        // NEW
+
+Skill {
+  type: 'skill';
+  name: string;
+  skillId: string;
+  skillPrompt: string;
+  skillTools?: string[];
+  skillExamples?: unknown;
+  // NO `addresses` field — skills are agent-only.
+}
+```
+
+Load-bearing constraint: **skills are agent-only**. A skill has no `@mention`, no `/command`, no webhook, no schedule. Humans never invoke skills directly — they talk to agents, and agents use skills internally. Resolution of the "should skills have an addressing mode?" open question:
+
+> **Resolved: no.** Skills are pure capability. The user's directive: "human should [not] use skill, we want to avoid human in the loop for that, but human still talk with different agents like colleagues." Rationale: the human↔agent interaction model is identity-based (you talk to Sarah, not to westlaw-search). Giving skills an addressing mode would re-introduce the "function vs agent" confusion that v1 fell into.
+
+Composition model:
+
+- An agent's available skills at runtime = (skills shipped in the agent's own Installable's `components[]`) ∪ (skills exposed by other Installables installed at the same or narrower scope). Scope resolution order: `dm` → `user` → `pod` → `instance`.
+- Skills are deduped by `skillId` across sources; if two Installables ship the same `skillId`, the nearer scope wins.
+- A `kind: 'skill'` Installable with `scope: 'instance'` seeds the instance-wide skill registry — every agent in the instance can pick up its skills.
+
+Why this matters for the product vision: **skills are the bridge between "agent-first" (hire Sarah) and "app-first" (install Notion)**. The Notion app can ship `notion-search`, `notion-create-page`, `notion-summarize` as Skill components; any agent in the same scope can then use them. The same Sarah agent can learn a new domain by the user installing a skill pack alongside her.
+
+#### 3. Agent Room — documented, not schematized
+
+Concept: **a pod variant where one agent is the host and many humans are members**. This is the "single-agent pod" shape the user asked for — the right UX for consulting a pro agent, where multiple humans may converge in the agent's "office" to ask it for help.
+
+Relationship to the taxonomy:
+
+- **Not a new install scope.** Agent rooms are pods. The install target is still `scope: 'pod'` (or `'user'`, depending on who the room belongs to).
+- **Not a schema change in this amendment.** Agent rooms are a Pod-model concept (a `Pod.type` variant) that the Installable taxonomy must leave room for but does not need to model directly.
+- **Hiring semantics hook**: when a user clicks "Hire Sarah" on a marketplace listing with `kind: 'agent'`, the install flow may create an agent-room pod automatically and add the user as the first member. The runtime of this behavior is defined outside this ADR — the taxonomy only needs to tolerate it.
+
+Three clean human↔agent interaction surfaces:
+
+| Surface | Shape | Agent role |
+|---|---|---|
+| **Team pod** | N humans × N agents | team member / collaborator |
+| **Agent room** | N humans × 1 agent | host / expert / front desk |
+| **DM** | 1 human × 1 agent | private assistant |
+
+Agent rooms and DMs are distinct: DMs are 1:1 and private; agent rooms are N:1 and can be shared (useful for "office hours" with a pro agent, or for a consultancy where many team members consult the same specialist).
+
+**Deferred UX work** — not in Phase 1.5:
+
+- `Pod.type: 'team' | 'agent-room' | 'dm'` field
+- Marketplace "Hire" verb + onboarding flow into an agent room
+- Agent profile page reframed as an agent room entry point
+- Admin room variant (many admins, one agent, platform-ops use case)
+
+This amendment only commits the taxonomy to leaving room for agent rooms. The Pod model and UX ship in a follow-up.
+
+### What this does NOT change
+
+- Invariants 1–6 above (two axes, addressing modes orthogonal, install scope first-class, permission scopes declared, identity continuity, one install → N projections). All preserved.
+- Existing migration plan phases 2–6. The `kind` field and `Skill` component type slot cleanly into Phase 3 (read path cutover) and Phase 5 (new component types).
+- The `InstallableInstallation` schema. `ComponentType` is imported from `Installable`, so the `'skill'` enum value flows through automatically — no changes needed.
+- Any existing worked example. `pod-welcomer`, `task-clerk`, `pod-summarizer`, `Liz`, `Multica`, `Discord integration`, and `@ada@research.commonly.io` all remain valid Installables; they just gain a `kind` classification (all `'app'` except Liz and Ada, which become `'agent'`).
+
+### Why this is an amendment, not a new ADR
+
+The v2 decision is correct. This is a refinement — it adds a UX-surface hint (`kind`), fills a gap in the component list (`Skill`), and documents an implied Pod variant (`agent-room`) that the taxonomy must not paint itself into a corner against. None of it reverses a v2 decision. A new ADR would imply the v2 decision was wrong; it wasn't.
+
+### Resolved open questions
+
+- **"Skills are human-callable?"** → No. Agent-only. See §1 above.
+- **"Is the marketplace one big list, or is there an Agents aisle?"** → Both. One table, `kind`-filtered browse surfaces. See §1 above.
+
+### New open questions
+
+- **Pod.type schema** — where should the agent-room vs team-pod vs dm distinction live? Probably on the Pod model itself, not on Installable. Deferred to the Pod refactor.
+- **Skill versioning** — if two Installables ship the same `skillId` at different versions, does the kernel warn? Pick the newest? Scope-nearest wins is clear; version-nearest isn't. Deferred.
+- **Agent Room lifecycle** — when you uninstall an agent at `user` scope, does its agent-room pod get deleted, archived, or left orphaned with its message history intact? Identity continuity says "preserve the identity, deactivate the runtime" — the analogous rule for rooms is likely "archive the room, preserve the messages." Deferred to the Pod refactor.

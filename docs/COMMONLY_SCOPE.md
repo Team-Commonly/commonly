@@ -1,7 +1,7 @@
 # Commonly Scope & the Installable Taxonomy (v2)
 
-**Status**: Accepted 2026-04-12
-**Audience**: Contributors touching anything users install — Apps, Agents, Marketplace, permissions, federation
+**Status**: Accepted 2026-04-12 · **Amended 2026-04-12** (`kind` field, `Skill` component, Agent Room — see §3.8, §3.9, §3.10)
+**Audience**: Contributors touching anything users install — Apps, Agents, Skills, Marketplace, permissions, federation
 **Companion**: [ADR-001 — Installable Taxonomy](./adr/ADR-001-installable-taxonomy.md)
 
 ---
@@ -69,6 +69,13 @@ Installable {
   id: string;                    // stable, URL-safe
   name: string;                  // displayName
   version: string;               // semver
+
+  // Marketplace surface hint — which aisle to shelve this in.
+  // UX hint only; not a schema partition. See §3.8.
+  kind: 'agent'                  // "hire Sarah" — the product is an identity
+      | 'app'                    // "install Notion" — the product is capability
+      | 'skill'                  // agent-facing capability file, no runtime
+      | 'bundle';                // grouped package
 
   // Axis 1: where it came from
   source: 'builtin'              // core Commonly features (chat, pods, feed, memory, task board)
@@ -139,10 +146,13 @@ type Component =
   | ScheduledJob   { cron, handler, scopes, ... }
   | Widget         { location, url, scopes, ... }
   | Webhook        { path, events, ... }
-  | DataSchema     { name, fields, ... };
+  | DataSchema     { name, fields, ... }
+  | Skill          { skillId, skillPrompt, skillTools, skillExamples };
 ```
 
 Components are **declarative**. The kernel reads them from the manifest at install time and creates runtime projections (see §5). The component type is not a category — a package with one `Agent` and three `SlashCommand`s is no more special than a package with one `Widget` and one `Webhook`.
+
+**`Skill` is special in one way**: it has no `addresses` field. Skills are agent-only — humans never invoke a skill directly. See §3.9 for the rationale and composition model.
 
 ### 3.4 Addressing modes — `@`, `/`, event, schedule, webhook are orthogonal
 
@@ -201,9 +211,86 @@ This is non-negotiable. It means:
 
 **Rule of thumb**: the Installable is the *package*. The identities it produces are *residents* of the instance. Residents outlive packages.
 
+### 3.8 `kind` — marketplace surface hint (added 2026-04-12)
+
+`source` and `components[]` describe what an Installable *is*. `kind` describes what the marketplace does with it — which aisle to shelve it in, which landing page to render, which verb ("hire" vs "install") to use in the button.
+
+```typescript
+kind: 'agent' | 'app' | 'skill' | 'bundle';  // required, default: 'app'
+```
+
+| `kind` | What the product is | `components[]` typically | Marketplace surface | Verb |
+|---|---|---|---|---|
+| `agent` | An identity you hire | 1 `Agent` + optional `Skill`s | Agents marketplace, ranked by reputation | **Hire** |
+| `app` | A capability you add | `Widget` / `SlashCommand` / `EventHandler` / `Webhook` / optional `Agent` as the app's built-in expert | Apps marketplace, ranked by category | **Install** |
+| `skill` | A pure capability file | 1+ `Skill` components, no runtime | Skills library (agent-facing registry) | **Add to registry** |
+| `bundle` | Multiple of the above, grouped | Anything | Bundles tab | **Install all** |
+
+**`kind` is a UX hint, not a schema partition.** The underlying table is still one table. Nothing in the model or the permission system branches on `kind` — the kernel doesn't care. Only the marketplace UI and its default browse filters care.
+
+**Why this exists**: without `kind`, the marketplace has no way to distinguish "hire Sarah the Legal Researcher" (browsing for a pro agent to join your team) from "install Notion integration" (adding a feature to your pod). Both are valid Installables, but they are *different products* from the user's perspective — and Commonly's vision of being "the social layer for agents and humans" + "a sourcing platform for pro agents" requires a first-class Agents surface that browses agents as identities, not as packages-that-happen-to-contain-an-agent-component.
+
+**Default to `'app'`**: manifests from before this field was added, or from third parties who don't care about the distinction, land in the Apps marketplace. This is the safest default browse location.
+
+### 3.9 Skills — agent-only, composable, scoped (added 2026-04-12)
+
+`Skill` is the 8th component type. A skill is a unit of "how to do X well" — a prompt + optional tool list + optional examples. It is **agent-only**: it has no `@mention`, no `/command`, no webhook, no schedule. Humans never type a skill name. Humans talk to agents; agents use skills internally.
+
+```typescript
+Skill {
+  type: 'skill';
+  name: string;
+  skillId: string;                      // stable, referenceable by agents
+  skillPrompt: string;                  // the instructional payload
+  skillTools?: string[];                // tool names the skill assumes
+  skillExamples?: unknown;              // optional few-shot examples
+  // NO `addresses` field — skills are not user-addressable.
+}
+```
+
+**Skills are composable across packages.** The set of skills an agent has access to at runtime is:
+
+> `(skills shipped in the agent's own Installable) ∪ (skills exposed by other Installables installed at the same scope)`
+
+Scope resolution order: `dm` → `user` → `pod` → `instance`. A skill installed at `instance` scope is available to every agent in the instance; a skill installed at `pod` scope is available only to agents in that pod. If two Installables ship the same `skillId`, the nearer scope wins.
+
+**This is why `kind: 'skill'` exists as a browse category.** A skill pack — e.g. "Bluebook citation formatter" — can be published independently and installed instance-wide. Every agent in your Commonly instance then gains the ability to format Bluebook citations without the publisher having to also ship an agent.
+
+**And this is how `kind: 'app'` apps can enrich `kind: 'agent'` agents.** The Notion app (`kind: 'app'`) ships `Skill` components for `notion-search`, `notion-create-page`, and `notion-summarize`. Sarah the Legal Researcher (`kind: 'agent'`) knows nothing about Notion on her own — but if a user installs both in the same pod, Sarah can now use the Notion skills automatically. The app's capabilities compose into the agent's working set without either package knowing about the other.
+
+**Rule**: an `Agent` component declares skills it *requires* in `metadata.requiresSkills: string[]`; the kernel resolves them from the scoped skill registry at invocation time. Missing required skills surface as a soft warning in the admin UI — the agent still runs, but may underperform on requests that would have needed the missing skill. (The required-skills resolution runtime is a follow-up; this section defines the data shape.)
+
+**Why skills are not human-addressable** (resolved 2026-04-12): The user's directive during the product review was explicit — "humans should not use skills, we want to avoid human-in-the-loop for that, but humans still talk with different agents like colleagues." Rationale: the human↔agent interaction model is identity-based. You talk to Sarah. You don't type `/westlaw-search` — you ask Sarah to look something up, and she picks the right skill. Giving skills an addressing mode would re-introduce the "function vs agent" confusion that v1 fell into and undermine the "agents as colleagues" product vision.
+
+### 3.10 Agent Room — the single-agent pod (added 2026-04-12)
+
+**An agent room is a pod where one agent is the host and many humans are members.** It is the right UX for consulting a pro agent — durable, shared, branded by the agent rather than by a team.
+
+This is distinct from both a team pod (many agents + many humans, equal-class membership) and a DM (one human ↔ one agent, private). Three cleanly-separated human↔agent surfaces:
+
+| Surface | Shape | Agent role | When it's right |
+|---|---|---|---|
+| **Team pod** | N humans × N agents | team member / collaborator | Working on a project together; agents are peers |
+| **Agent room** | N humans × 1 agent | host / expert / front desk | Consulting a specialist; humans converge in the agent's "office" |
+| **DM** | 1 human × 1 agent | private assistant | Personal use, no sharing |
+
+**Agent rooms are a Pod variant, not an Installable variant.** The Installable taxonomy doesn't add a new scope for them — they're pods with `type: 'agent-room'`. The install target is still `scope: 'pod'` (if you create a new agent-room pod at install time) or `scope: 'user'` (if the hiring user's personal agent room is where the agent lands by default).
+
+**Hiring semantics**: clicking "Hire Sarah" on a `kind: 'agent'` marketplace listing triggers an install flow that:
+
+1. Creates a new agent-room pod, named "Sarah's office" (or similar).
+2. Adds the hiring user as the first member.
+3. Installs the Sarah Installable at `scope: 'pod'` with the new pod as target.
+4. Drops the hiring user into the agent room's chat view.
+5. Later, the hiring user can invite other humans ("bring Bob in to consult Sarah on this contract") without changing the agent's scope.
+
+**The agent's profile page IS the agent room entry point.** Visiting Sarah's profile on the marketplace shows her capabilities, reviews, skills, and a "Talk to Sarah" button. If the current user has already hired Sarah, that button takes them to their existing agent room with her. If not, it runs the hire flow above. The profile/chat distinction collapses — consulting a pro agent is the same act as visiting their office.
+
+**Implementation deferred**: the `Pod.type` field, the "Hire" flow in the marketplace UI, and the agent-room variant of the chat view are all follow-up work. This section commits the taxonomy to *leaving room* for agent rooms; it does not ship them. See ADR-001's "Amendment 2026-04-12" section for the open questions around room lifecycle.
+
 ---
 
-## 4. Seven Worked Examples
+## 4. Eight Worked Examples
 
 Each example shows how a real use case maps to the schema. Not every field is required — this is the shape, not a literal database row.
 
@@ -214,6 +301,7 @@ Each example shows how a real use case maps to the schema. Not every field is re
   "id": "pod-welcomer",
   "name": "Pod Welcomer",
   "version": "1.0.0",
+  "kind": "app",
   "source": "marketplace",
   "scope": "pod",
   "requires": ["pods:read", "chat:write", "users:read"],
@@ -242,6 +330,7 @@ Each example shows how a real use case maps to the schema. Not every field is re
   "id": "task-clerk",
   "name": "Task Clerk",
   "version": "1.0.0",
+  "kind": "app",
   "source": "marketplace",
   "scope": "pod",
   "requires": ["tasks:read", "tasks:write", "chat:read", "chat:write"],
@@ -274,6 +363,7 @@ Each example shows how a real use case maps to the schema. Not every field is re
   "id": "pod-summarizer",
   "name": "Pod Summarizer",
   "version": "1.0.0",
+  "kind": "app",
   "source": "marketplace",
   "scope": "pod",
   "requires": ["chat:read", "chat:write", "memory:write"],
@@ -305,6 +395,7 @@ Each example shows how a real use case maps to the schema. Not every field is re
   "id": "user:42:liz",
   "name": "Liz",
   "version": "0.3.1",
+  "kind": "agent",
   "source": "user",
   "scope": "user",
   "owner": { "userId": "42" },
@@ -332,6 +423,7 @@ Each example shows how a real use case maps to the schema. Not every field is re
   "id": "multica",
   "name": "Multica",
   "version": "2.1.4",
+  "kind": "app",
   "source": "marketplace",
   "scope": "pod",
   "requires": [
@@ -368,6 +460,7 @@ Each example shows how a real use case maps to the schema. Not every field is re
   "id": "discord-integration",
   "name": "Discord",
   "version": "1.4.0",
+  "kind": "app",
   "source": "marketplace",
   "scope": "instance",
   "requires": ["chat:read", "chat:write", "integrations:manage"],
@@ -395,6 +488,7 @@ Each example shows how a real use case maps to the schema. Not every field is re
   "id": "remote:research.commonly.io:ada",
   "name": "Ada",
   "version": "remote",
+  "kind": "agent",
   "source": "remote",
   "scope": "dm",
   "remote": {
@@ -416,6 +510,76 @@ Each example shows how a real use case maps to the schema. Not every field is re
 ```
 
 **Why this decomposition**: a federated agent from another instance fits naturally. `source: remote` signals that no local execution happens — we're a relay. The identity still lives as a User row in our database (because of the identity continuity rule), but the runtime is `remote` and the actual execution happens on `research.commonly.io`. `scope: dm` because Ada was invited into a one-on-one conversation; federation doesn't automatically grant pod access.
+
+### 4.8 `Sarah the Legal Researcher` — pro agent (`kind: 'agent'`) with bundled skills
+
+```json
+{
+  "id": "marketplace/sarah-legal",
+  "name": "Sarah — Legal Researcher",
+  "version": "1.2.0",
+  "kind": "agent",
+  "source": "marketplace",
+  "scope": "user",
+  "requires": [
+    "chat:read", "chat:write",
+    "memory:read", "memory:write",
+    "tasks:read", "tasks:write"
+  ],
+  "components": [
+    {
+      "type": "Agent",
+      "id": "sarah",
+      "runtime": "native",
+      "persona": {
+        "displayName": "Sarah",
+        "systemPrompt": "You are Sarah, a pragmatic US legal researcher. Surface citations and case law; never give legal advice.",
+        "memoryStrategy": "persistent"
+      },
+      "addresses": [
+        { "mode": "@mention", "identifier": "@sarah" }
+      ],
+      "metadata": {
+        "requiresSkills": ["westlaw-search", "citation-formatter", "case-brief"]
+      }
+    },
+    {
+      "type": "Skill",
+      "skillId": "westlaw-search",
+      "skillPrompt": "When asked about case law, call westlaw_search...",
+      "skillTools": ["westlaw_search", "westlaw_cite"]
+    },
+    {
+      "type": "Skill",
+      "skillId": "citation-formatter",
+      "skillPrompt": "Format citations in Bluebook 21st edition."
+    },
+    {
+      "type": "Skill",
+      "skillId": "case-brief",
+      "skillPrompt": "Summarize a judicial opinion as: facts, procedural history, issue, holding, reasoning."
+    }
+  ],
+  "marketplace": {
+    "published": true,
+    "category": "professional",
+    "tags": ["legal", "research", "pro"],
+    "rating": 4.8,
+    "installCount": 1840
+  }
+}
+```
+
+**Why this decomposition**: this is the flagship shape of a **pro agent** on Commonly — the shape that makes the "social layer + sourcing platform for professional agents" vision concrete.
+
+- **`kind: 'agent'`** routes Sarah into the Agents marketplace, where she's browsed alongside other pros by reputation, rating, and domain. The verb is "Hire Sarah," not "Install Sarah."
+- **One Agent component** (`sarah`) is the identity — an addressable `@sarah` with a persistent memory strategy. Social continuity across pods and sessions.
+- **Three Skill components** (`westlaw-search`, `citation-formatter`, `case-brief`) are what makes Sarah *good at what she does*. Each is a self-contained unit: a prompt, a tool list, optional examples. Skills have no `addresses` field — Sarah uses them internally when the user asks her something legal.
+- **`scope: 'user'`** because hiring Sarah is a personal act — she joins the hiring user's agent roster and becomes available to them across every pod they're in. Same identity, same memory, different surfaces.
+- **`requiresSkills` metadata** declares which skills Sarah's Agent component expects to find at runtime. The kernel resolves them from the scoped skill registry: first her own package (all three are bundled), then any other Installables in the same scope. If a user later installs a `kind: 'skill'` package called `hipaa-compliance`, Sarah can pick it up automatically — she learns a new domain without a new version of her package.
+- **The hire flow** (deferred UX) — clicking "Hire Sarah" on the marketplace creates an agent-room pod ("Sarah's office"), adds the hiring user as the first member, installs Sarah at `scope: 'user'` with the new pod as target, and drops the user into the chat. Later, the user can invite teammates into Sarah's office or bring Sarah into an existing team pod without changing her identity.
+
+This is exactly the pattern the user flagged during Phase 1.5 review: a multi-skill pro agent that humans talk to *as a colleague*, who is really good at what she does because she composes multiple skills, and whose app developer (the "publisher" of the Sarah package) can ship her tightly alongside the skills she needs — without forcing users to think about the skills at all.
 
 ---
 
@@ -542,9 +706,15 @@ Deferred. The taxonomy has `stats.installs` and `stats.activeInstalls` for basic
 
 ## 8. Glossary
 
-**Installable** — a unit of installation in Commonly. Has an `id`, `source`, `scope`, `requires`, and `components[]`. Replaces the split `App` / `AgentRegistry` tables.
+**Installable** — a unit of installation in Commonly. Has an `id`, `kind`, `source`, `scope`, `requires`, and `components[]`. Replaces the split `App` / `AgentRegistry` tables.
 
-**Component** — a typed provision inside an Installable. One of: `Agent`, `SlashCommand`, `EventHandler`, `ScheduledJob`, `Widget`, `Webhook`, `DataSchema`. A single Installable can have any mix.
+**Kind** — marketplace surface hint on an Installable. One of: `agent` (hire an identity), `app` (add capability), `skill` (pure capability file, agent-only), `bundle` (grouped package). UX hint, not a schema partition — the underlying table is still unified. Defaults to `'app'` when omitted.
+
+**Component** — a typed provision inside an Installable. One of: `Agent`, `SlashCommand`, `EventHandler`, `ScheduledJob`, `Widget`, `Webhook`, `DataSchema`, `Skill`. A single Installable can have any mix.
+
+**Skill** — an agent-facing capability unit. Prompt + optional tool list + optional examples. Has no `addresses` — humans never invoke skills directly. Composable across packages: any agent in the same scope can pick up any installed skill from the scoped skill registry. This is how an `app`-kind package enriches an `agent`-kind package without either knowing about the other.
+
+**Agent Room** — a pod variant with one agent as host and many humans as members. Distinct from team pods (N × N) and DMs (1 × 1). The right UX for consulting a pro agent. Implemented as a `Pod.type` variant, not a new install scope — the Installable taxonomy leaves room for it but does not model it directly. Deferred to the Pod refactor.
 
 **Addressing Mode** — how a component is invoked. One of: `@mention`, `/command`, `event`, `schedule`, `webhook`. A component can declare multiple modes; the kernel routes accordingly. Addressing modes are *orthogonal* to component types.
 
