@@ -148,7 +148,9 @@ spec:
         - python3
         - -c
         - |
-          import os, sys, base64, json, datetime
+          import os, sys, base64, json, datetime, urllib.request, urllib.parse, urllib.error
+
+          OAUTH_URL = 'https://auth.openai.com/oauth/token'
 
           def token_exp(tok):
               if not tok:
@@ -160,28 +162,78 @@ spec:
               except Exception:
                   return 0
 
+          def refresh_token(refresh_tok, client_id, label):
+              """Exchange refresh_token for fresh access_token. Returns (access, refresh, id_token, exp) or None."""
+              if not refresh_tok or not client_id:
+                  return None
+              body = urllib.parse.urlencode({
+                  'grant_type': 'refresh_token',
+                  'refresh_token': refresh_tok,
+                  'client_id': client_id,
+                  'scope': 'openid profile email',
+              }).encode('utf-8')
+              req = urllib.request.Request(
+                  OAUTH_URL,
+                  data=body,
+                  headers={'Content-Type': 'application/x-www-form-urlencoded'},
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as resp:
+                      payload = json.loads(resp.read().decode('utf-8'))
+              except urllib.error.HTTPError as e:
+                  err_body = e.read().decode('utf-8', errors='replace')[:200]
+                  print(f'  [{label}] refresh failed: HTTP {e.code} {err_body}')
+                  return None
+              except Exception as e:
+                  print(f'  [{label}] refresh failed: {e}')
+                  return None
+              new_access = payload.get('access_token', '')
+              new_id = payload.get('id_token', '')
+              new_refresh = payload.get('refresh_token', refresh_tok)
+              exp = token_exp(new_access) or (int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + int(payload.get('expires_in', 0) or 0))
+              if not new_access:
+                  print(f'  [{label}] refresh returned no access_token')
+                  return None
+              return (new_access, new_refresh, new_id, exp)
+
           now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+          client_id = os.environ.get('OPENAI_CODEX_CLIENT_ID', '')
+
+          # All three accounts, in preferred order (account-3 first — has fresh quota).
           candidates = [
               ('3', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN_3', '')),
+              ('2', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN_2', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN_2', ''), ''),
               ('', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN', '')),
           ]
 
           chosen = None
           for (suffix, access, refresh, id_tok) in candidates:
-              if not access:
+              label = f'account-{"1" if suffix == "" else suffix}'
+              if not access and not refresh:
+                  print(f'{label}: no tokens configured, skipping')
                   continue
-              exp = token_exp(access)
-              if exp > now_ts:
+              exp = token_exp(access) if access else 0
+              # Prefer valid access token (with 60s buffer to avoid edge-race expiry)
+              if access and exp > now_ts + 60:
                   chosen = (suffix, access, refresh, id_tok, exp)
-                  print(f'Using account-{"1" if suffix == "" else suffix} token (expires {exp})')
+                  print(f'{label}: access_token valid (expires {exp}, +{exp - now_ts}s)')
                   break
+              # Otherwise try refresh
+              if refresh and client_id:
+                  print(f'{label}: access_token expired/missing, refreshing…')
+                  refreshed = refresh_token(refresh, client_id, label)
+                  if refreshed:
+                      new_access, new_refresh, new_id, new_exp = refreshed
+                      print(f'{label}: refreshed successfully (expires {new_exp}, +{new_exp - now_ts}s)')
+                      chosen = (suffix, new_access, new_refresh, new_id or id_tok, new_exp)
+                      break
               else:
-                  print(f'Account-{"1" if suffix == "" else suffix} token expired at {exp}, skipping')
+                  print(f'{label}: no refresh_token or client_id, skipping')
 
           if not chosen:
               with open('/chatgpt-auth/auth.json', 'w') as f:
                   json.dump({}, f)
-              print('No valid Codex token found, wrote empty auth.json — chatgpt/ provider disabled')
+              print('No valid Codex token found after checking all accounts — wrote empty auth.json')
               sys.exit(0)
 
           suffix, access, refresh, id_tok, exp = chosen
@@ -195,7 +247,7 @@ spec:
               json.dump(out, f)
 
           exp_str = datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat()
-          print(f'auth.json written — expires_at={exp} ({exp_str})')
+          print(f'auth.json written — account-{"1" if suffix == "" else suffix} expires_at={exp} ({exp_str})')
         env:
         - name: OPENAI_CODEX_ACCESS_TOKEN
           valueFrom:
@@ -232,6 +284,26 @@ spec:
             secretKeyRef:
               name: api-keys
               key: openai-codex-id-token-3
+              optional: true
+        # Account-2: used when accounts 1 and 3 are exhausted/expired
+        - name: OPENAI_CODEX_ACCESS_TOKEN_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-access-token-2
+              optional: true
+        - name: OPENAI_CODEX_REFRESH_TOKEN_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-refresh-token-2
+              optional: true
+        # Client ID for OAuth refresh flow
+        - name: OPENAI_CODEX_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openai-codex-client-id
               optional: true
         volumeMounts:
         - name: chatgpt-auth
