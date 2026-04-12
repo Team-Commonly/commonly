@@ -135,6 +135,172 @@ spec:
             port: 4000
           periodSeconds: 30
           failureThreshold: 3
+      # Sidecar that rotates which Codex account's tokens are active in auth.json.
+      # LiteLLM's chatgpt/ Authenticator reads auth.json on each get_access_token() call,
+      # so rotation takes effect without requiring a pod restart. Each tick, this picks
+      # the NEXT account in round-robin order and writes its tokens to auth.json.
+      # Rotation interval: 10 minutes (spreads load; each user has an individual quota
+      # on the ChatGPT Team).
+      - name: codex-auth-rotator
+        image: python:3-alpine
+        command:
+        - python3
+        - -c
+        - |
+          import os, json, time, base64, datetime, urllib.request, urllib.parse, urllib.error
+
+          OAUTH_URL = 'https://auth.openai.com/oauth/token'
+          ROTATION_INTERVAL_SEC = int(os.environ.get('CODEX_ROTATION_INTERVAL_SEC', '600'))  # 10 min
+          STATE_FILE = '/chatgpt-auth/rotator_state.json'
+          AUTH_FILE = '/chatgpt-auth/auth.json'
+
+          def token_exp(tok):
+              if not tok: return 0
+              try:
+                  b = tok.split('.')[1]
+                  b += '=' * (4 - len(b) % 4)
+                  return int(json.loads(base64.b64decode(b.replace('-','+').replace('_','/'))).get('exp', 0))
+              except Exception:
+                  return 0
+
+          def refresh_token_call(refresh_tok, client_id, label):
+              if not refresh_tok or not client_id:
+                  return None
+              body = urllib.parse.urlencode({
+                  'grant_type': 'refresh_token',
+                  'refresh_token': refresh_tok,
+                  'client_id': client_id,
+                  'scope': 'openid profile email',
+              }).encode('utf-8')
+              req = urllib.request.Request(OAUTH_URL, data=body, headers={'Content-Type': 'application/x-www-form-urlencoded'})
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as resp:
+                      p = json.loads(resp.read().decode('utf-8'))
+              except Exception as e:
+                  print(f'[rotator] [{label}] refresh failed: {e}', flush=True)
+                  return None
+              new_access = p.get('access_token', '')
+              if not new_access:
+                  return None
+              return {
+                  'access_token': new_access,
+                  'refresh_token': p.get('refresh_token', refresh_tok),
+                  'id_token': p.get('id_token', ''),
+                  'exp': token_exp(new_access),
+              }
+
+          def load_state():
+              try:
+                  with open(STATE_FILE) as f:
+                      return json.load(f)
+              except Exception:
+                  return {'last_index': -1}
+
+          def save_state(st):
+              try:
+                  with open(STATE_FILE, 'w') as f:
+                      json.dump(st, f)
+              except Exception as e:
+                  print(f'[rotator] save_state failed: {e}', flush=True)
+
+          def get_candidates():
+              specs = [
+                  ('1', 'OPENAI_CODEX_ACCESS_TOKEN', 'OPENAI_CODEX_REFRESH_TOKEN', 'OPENAI_CODEX_ID_TOKEN'),
+                  ('2', 'OPENAI_CODEX_ACCESS_TOKEN_2', 'OPENAI_CODEX_REFRESH_TOKEN_2', ''),
+                  ('3', 'OPENAI_CODEX_ACCESS_TOKEN_3', 'OPENAI_CODEX_REFRESH_TOKEN_3', 'OPENAI_CODEX_ID_TOKEN_3'),
+              ]
+              out = []
+              for label, a_env, r_env, i_env in specs:
+                  access = os.environ.get(a_env, '')
+                  refresh = os.environ.get(r_env, '')
+                  id_tok = os.environ.get(i_env, '') if i_env else ''
+                  if access or refresh:
+                      out.append((label, access, refresh, id_tok))
+              return out
+
+          def write_auth(label, access, refresh, id_tok, exp):
+              out = {'access_token': access, 'expires_at': exp}
+              if refresh: out['refresh_token'] = refresh
+              if id_tok: out['id_token'] = id_tok
+              tmp = AUTH_FILE + '.tmp'
+              with open(tmp, 'w') as f:
+                  json.dump(out, f)
+              os.replace(tmp, AUTH_FILE)  # atomic
+              exp_str = datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat() if exp else 'unknown'
+              print(f'[rotator] active account-{label} (expires {exp_str})', flush=True)
+
+          print(f'[rotator] starting — rotation every {ROTATION_INTERVAL_SEC}s', flush=True)
+          client_id = os.environ.get('OPENAI_CODEX_CLIENT_ID', '')
+          # Skip the first rotation so the init container's selection stays active briefly
+          time.sleep(ROTATION_INTERVAL_SEC)
+
+          while True:
+              now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+              candidates = get_candidates()
+              if not candidates:
+                  print('[rotator] no candidates configured, sleeping', flush=True)
+                  time.sleep(ROTATION_INTERVAL_SEC)
+                  continue
+
+              state = load_state()
+              start_idx = (state.get('last_index', -1) + 1) % len(candidates)
+
+              chosen = None
+              for offset in range(len(candidates)):
+                  idx = (start_idx + offset) % len(candidates)
+                  label, access, refresh, id_tok = candidates[idx]
+                  exp = token_exp(access) if access else 0
+                  if access and exp > now_ts + 60:
+                      chosen = (idx, label, access, refresh, id_tok, exp)
+                      break
+                  if refresh and client_id:
+                      print(f'[rotator] account-{label} expired, refreshing…', flush=True)
+                      fresh = refresh_token_call(refresh, client_id, label)
+                      if fresh:
+                          chosen = (idx, label, fresh['access_token'], fresh['refresh_token'], fresh['id_token'] or id_tok, fresh['exp'])
+                          break
+
+              if not chosen:
+                  print('[rotator] no usable account this tick, keeping existing auth.json', flush=True)
+              else:
+                  idx, label, access, refresh, id_tok, exp = chosen
+                  write_auth(label, access, refresh, id_tok, exp)
+                  save_state({'last_index': idx, 'timestamp': now_ts})
+
+              time.sleep(ROTATION_INTERVAL_SEC)
+        env:
+        - name: CODEX_ROTATION_INTERVAL_SEC
+          value: "600"
+        - name: OPENAI_CODEX_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef: {name: api-keys, key: openai-codex-access-token, optional: true}
+        - name: OPENAI_CODEX_REFRESH_TOKEN
+          valueFrom:
+            secretKeyRef: {name: api-keys, key: openai-codex-refresh-token, optional: true}
+        - name: OPENAI_CODEX_ID_TOKEN
+          valueFrom:
+            secretKeyRef: {name: api-keys, key: openai-codex-id-token, optional: true}
+        - name: OPENAI_CODEX_ACCESS_TOKEN_2
+          valueFrom:
+            secretKeyRef: {name: api-keys, key: openai-codex-access-token-2, optional: true}
+        - name: OPENAI_CODEX_REFRESH_TOKEN_2
+          valueFrom:
+            secretKeyRef: {name: api-keys, key: openai-codex-refresh-token-2, optional: true}
+        - name: OPENAI_CODEX_ACCESS_TOKEN_3
+          valueFrom:
+            secretKeyRef: {name: api-keys, key: openai-codex-access-token-3, optional: true}
+        - name: OPENAI_CODEX_REFRESH_TOKEN_3
+          valueFrom:
+            secretKeyRef: {name: api-keys, key: openai-codex-refresh-token-3, optional: true}
+        - name: OPENAI_CODEX_ID_TOKEN_3
+          valueFrom:
+            secretKeyRef: {name: api-keys, key: openai-codex-id-token-3, optional: true}
+        - name: OPENAI_CODEX_CLIENT_ID
+          valueFrom:
+            secretKeyRef: {name: api-keys, key: openai-codex-client-id, optional: true}
+        volumeMounts:
+        - name: chatgpt-auth
+          mountPath: /chatgpt-auth
       initContainers:
       # Write the best available (non-expired) Codex token to auth.json for LiteLLM's chatgpt/ provider.
       # Account-1 entries in litellm-config have no api_key — the chatgpt/ provider reads
@@ -199,11 +365,12 @@ spec:
           now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
           client_id = os.environ.get('OPENAI_CODEX_CLIENT_ID', '')
 
-          # All three accounts, in preferred order (account-3 first — has fresh quota).
+          # All three accounts in preferred order. Account-1 is primary; 3 and 2 are
+          # fallbacks only used when account-1's tokens are expired AND unrefreshable.
           candidates = [
+              ('', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN', '')),
               ('3', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN_3', '')),
               ('2', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN_2', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN_2', ''), ''),
-              ('', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN', '')),
           ]
 
           chosen = None
