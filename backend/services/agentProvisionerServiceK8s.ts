@@ -2292,6 +2292,11 @@ const provisionAgentRuntime = async ({
   } else if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
     // External runtimes — no K8s deployment; agent manages its own compute
     return { provisioned: true, external: true, runtimeType };
+  } else if (runtimeType === 'native') {
+    // Native agents run in-process inside the backend pod via
+    // nativeRuntimeService. No K8s deployment, no gateway, no tokens — the
+    // event dispatcher picks them up directly on enqueue.
+    return { provisioned: true, runtimeType: 'native', inProcess: true };
   } else if (runtimeType === 'managed-agents') {
     // Delegate to the managed-agents adapter for provisioning.
     // The adapter handles beta.agents.create() + beta.environments.create()
@@ -2362,6 +2367,9 @@ const startAgentRuntime = async (runtimeType: any, instanceId: any, options = {}
   if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
     return { started: false, external: true, reason: 'external runtime — agent manages its own process' };
   }
+  if (runtimeType === 'native') {
+    return { started: true, inProcess: true, reason: 'native runtime is in-process — nothing to start' };
+  }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
 
   try {
@@ -2393,6 +2401,9 @@ const stopAgentRuntime = async (runtimeType: any, instanceId: any, options = {})
   if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
     return { stopped: false, external: true, reason: 'external runtime — agent manages its own process' };
   }
+  if (runtimeType === 'native') {
+    return { stopped: true, inProcess: true, reason: 'native runtime is in-process — nothing to stop' };
+  }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
 
   try {
@@ -2416,6 +2427,9 @@ const stopAgentRuntime = async (runtimeType: any, instanceId: any, options = {})
 const restartAgentRuntime = async (runtimeType: any, instanceId: any, options = {}) => {
   if (runtimeType === 'internal') {
     return { restarted: true, managedExternally: true, reason: 'internal runtime is config-only on k8s' };
+  }
+  if (runtimeType === 'native') {
+    return { restarted: true, inProcess: true, reason: 'native runtime is in-process — nothing to restart' };
   }
   const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);
 
@@ -2444,6 +2458,9 @@ const restartAgentRuntime = async (runtimeType: any, instanceId: any, options = 
 const getAgentRuntimeStatus = async (runtimeType: any, instanceId: any, options = {}) => {
   if (runtimeType === 'webhook' || runtimeType === 'claude-code') {
     return { status: 'external', reason: 'agent manages its own compute' };
+  }
+  if (runtimeType === 'native') {
+    return { status: 'in-process', reason: 'native runtime runs inside the backend process' };
   }
   if (runtimeType === 'moltbot') {
     const deploymentName = resolveRuntimeDeploymentName(runtimeType, instanceId, (options as any).gateway);

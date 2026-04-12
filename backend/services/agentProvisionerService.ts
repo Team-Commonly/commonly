@@ -1173,6 +1173,14 @@ const provisionAgentRuntime = async ({
     return { provisioned: true, external: true, runtimeType };
   }
 
+  if (runtimeType === 'native') {
+    // Native agents run in-process via nativeRuntimeService. Nothing to
+    // provision externally — no pod spin, no gateway account, no token
+    // issuance. The loop kicks in on the next event dispatched to this
+    // installation.
+    return { provisioned: true, runtimeType: 'native', inProcess: true };
+  }
+
   if (runtimeType === 'managed-agents') {
     // Delegate to the managed-agents adapter for provisioning. Mirrors the
     // branch in agentProvisionerServiceK8s.ts so that both Docker and K8s

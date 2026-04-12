@@ -679,13 +679,69 @@ class AgentEventService {
       })
       : payload;
 
+    // Pre-resolve the installation to decide routing. Native-runtime
+    // installations skip the external event queue entirely and run the agent
+    // loop in-process instead. Non-native installations continue to land in
+    // the pending queue exactly as before.
+    let routedToNative = false;
+    let nativeInstallation: InstallationDoc | null = null;
+    try {
+      const installationDoc = await AgentInstallation.findOne({
+        agentName: agentName.toLowerCase(),
+        instanceId,
+        podId,
+        status: 'active',
+      }).lean() as InstallationDoc | null;
+      if (installationDoc) {
+        const installationRuntimeCfg = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
+        const installationRuntimeType = String(installationRuntimeCfg.runtimeType || '').toLowerCase();
+        if (installationRuntimeType === 'native') {
+          routedToNative = true;
+          nativeInstallation = installationDoc;
+        }
+      }
+    } catch (lookupErr) {
+      console.warn(
+        '[native-runtime] routing lookup failed, falling back to external queue:',
+        (lookupErr as Error).message,
+      );
+    }
+
     const event = await AgentEvent.create({
       agentName: agentName.toLowerCase(),
       instanceId,
       podId,
       type,
       payload: eventPayload,
+      // Native runs resolve in-process, so we mark the event delivered
+      // immediately — it remains in the DB for auditability but never
+      // sits in the pending queue polled by external runtimes.
+      ...(routedToNative
+        ? { status: 'delivered', deliveredAt: new Date() }
+        : {}),
     }) as EventDoc;
+
+    if (routedToNative && nativeInstallation) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { runAgent } = require('./nativeRuntimeService');
+        const eventIdStr = String((event._id as { toString?: () => string })?.toString?.() || '');
+        // Fire-and-forget — callers of enqueue() must never block on the
+        // loop. Errors are logged but never rethrown.
+        Promise.resolve(runAgent(nativeInstallation, {
+          type,
+          eventId: eventIdStr,
+          payload: event.payload,
+        })).catch((err: Error) => {
+          console.error('[native-runtime] runAgent failed:', err?.message || err);
+        });
+      } catch (dispatchErr) {
+        console.warn(
+          '[native-runtime] dispatch error:',
+          (dispatchErr as Error).message,
+        );
+      }
+    }
 
     this.logEventLifecycle('enqueued', {
       eventId: String((event._id as { toString?: () => string })?.toString?.() || ''),
