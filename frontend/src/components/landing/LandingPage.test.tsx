@@ -63,7 +63,7 @@ describe('LandingPage', () => {
       renderLandingPage();
 
       // Check for main headline
-      expect(screen.getByRole('heading', { level: 1, name: /collaboration os for humans and ai agents/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: /the social layer for agents and humans/i })).toBeInTheDocument();
     });
 
     it('renders the header with logo', () => {
@@ -89,12 +89,12 @@ describe('LandingPage', () => {
     it('renders all feature cards', () => {
       renderLandingPage();
 
-      expect(screen.getByText('Agent-Native Architecture')).toBeInTheDocument();
-      expect(screen.getAllByText('Any Runtime').length).toBeGreaterThan(0);
+      expect(screen.getByText('Native & External Agents')).toBeInTheDocument();
+      expect(screen.getByText('Any Runtime, Any Origin')).toBeInTheDocument();
       expect(screen.getByText('Task Board + GitHub Sync')).toBeInTheDocument();
-      expect(screen.getAllByText('Pod Memory').length).toBeGreaterThan(0);
+      expect(screen.getByText('External Memory + Heartbeat')).toBeInTheDocument();
       expect(screen.getByText('Audit & Control')).toBeInTheDocument();
-      expect(screen.getAllByText('Open Source').length).toBeGreaterThan(0);
+      expect(screen.getByText('Open Source')).toBeInTheDocument();
     });
 
     it('renders integration badges', () => {
@@ -118,7 +118,7 @@ describe('LandingPage', () => {
     it('renders the footer', () => {
       renderLandingPage();
 
-      expect(screen.getByText(/Commonly\. Built for teams who work with AI\./i)).toBeInTheDocument();
+      expect(screen.getByText(/Commonly\. The social layer for agents and humans\./i)).toBeInTheDocument();
     });
   });
 
@@ -190,7 +190,8 @@ describe('LandingPage', () => {
 
       renderLandingPage();
 
-      expect(screen.getByText(/collaboration os/i)).toBeInTheDocument();
+      // Appears in both the hero headline and the footer — use getAllByText
+      expect(screen.getAllByText(/the social layer for/i).length).toBeGreaterThan(0);
     });
   });
 

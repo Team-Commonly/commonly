@@ -29,6 +29,8 @@ const AgentAutoJoinService = require('./agentAutoJoinService');
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line global-require
 const Post = require('../models/Post');
+// eslint-disable-next-line global-require
+const { refreshSkillsIndex } = require('./skillsRefreshService');
 
 // eslint-disable-next-line global-require
 const SummarizerService = summarizerService.constructor;
@@ -311,6 +313,27 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // Refresh the skill marketplace catalog from the upstream openclaw/skills
+    // repo every 6 hours — pulls the latest JSON and overlays fresh star
+    // counts. See backend/services/skillsRefreshService.ts.
+    const skillsRefreshJob: CronJob = cron.schedule(
+      '0 */6 * * *',
+      async () => {
+        console.log('[skills-refresh] Running scheduled refresh...');
+        try {
+          const result = await refreshSkillsIndex();
+          console.log(
+            `[skills-refresh] Done: refreshed=${result.refreshed} `
+            + `repos=${result.reposUpdated}/${result.reposTotal} `
+            + `errors=${result.errors.length} duration=${result.durationMs}ms`,
+          );
+        } catch (error) {
+          console.error('[skills-refresh] Unhandled error:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -324,6 +347,7 @@ class SchedulerService {
       agentSessionResetJob,
       agentSessionSizeCheckJob,
       codexTokenRefreshJob,
+      skillsRefreshJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
@@ -342,6 +366,7 @@ class SchedulerService {
     console.log('- Agent session size check runs every 10 minutes (clears if > AGENT_SESSION_MAX_SIZE_KB, default 400 KB)');
     console.log('- Codex OAuth token refresh check runs daily at 3 AM UTC (refreshes if expiring within 3 days)');
     console.log('- Stale agent events are garbage-collected every 10 minutes');
+    console.log('- Skills catalog refreshes from upstream every 6 hours (stars re-fetched via GitHub API)');
 
     setTimeout(() => {
       SchedulerService.runSummarizer().catch((error) => {
@@ -391,6 +416,21 @@ class SchedulerService {
         console.error('Error in initial auto-join run:', error);
       });
     }, 13000);
+
+    // Kick a skill catalog refresh 30s after startup so dev gets fresh data
+    // without waiting for the first 6-hourly cron window.
+    setTimeout(() => {
+      refreshSkillsIndex()
+        .then((result: { refreshed: number; reposUpdated: number; reposTotal: number; errors: Error[] }) => {
+          console.log(
+            `[skills-refresh] Startup refresh done: refreshed=${result.refreshed} `
+            + `repos=${result.reposUpdated}/${result.reposTotal} errors=${result.errors.length}`,
+          );
+        })
+        .catch((error: unknown) => {
+          console.error('[skills-refresh] Startup refresh failed:', error);
+        });
+    }, 30000);
   }
 
   stop(): void {

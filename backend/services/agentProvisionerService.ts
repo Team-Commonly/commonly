@@ -1173,6 +1173,35 @@ const provisionAgentRuntime = async ({
     return { provisioned: true, external: true, runtimeType };
   }
 
+  if (runtimeType === 'native') {
+    // Native agents run in-process via nativeRuntimeService. Nothing to
+    // provision externally — no pod spin, no gateway account, no token
+    // issuance. The loop kicks in on the next event dispatched to this
+    // installation.
+    return { provisioned: true, runtimeType: 'native', inProcess: true };
+  }
+
+  if (runtimeType === 'managed-agents') {
+    // Delegate to the managed-agents adapter for provisioning. Mirrors the
+    // branch in agentProvisionerServiceK8s.ts so that both Docker and K8s
+    // provisioners surface the same typed error if a caller tries to use
+    // managed-agents before the adapter's provision flow is wired up.
+    //
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const { isManagedAgentsAvailable, ManagedAgentsError } = require('./managedAgentsAdapter');
+    if (!isManagedAgentsAvailable()) {
+      throw new ManagedAgentsError(
+        'Cannot provision managed-agents runtime: ANTHROPIC_API_KEY is missing or set to placeholder. '
+        + 'Land a real key in GCP Secret Manager and restart the backend pod.',
+        'not_configured',
+      );
+    }
+    throw new ManagedAgentsError(
+      'managed-agents runtime adapter is scaffolded but provision flow is not yet implemented. Track B follow-up.',
+      'not_configured',
+    );
+  }
+
   throw new Error(`Provisioning not supported for runtime: ${runtimeType}`);
 };
 

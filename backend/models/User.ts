@@ -56,6 +56,8 @@ export interface IUser extends Document {
     colorScheme?: AvatarColorScheme;
     generatedAt?: Date;
     prompt?: string;
+    source?: 'openai' | 'gemini' | 'svg' | 'manual';
+    model?: string;
   };
   agentConfig: {
     personality: {
@@ -136,6 +138,11 @@ const userSchema = new Schema<IUser>({
     },
     generatedAt: { type: Date },
     prompt: { type: String },
+    source: {
+      type: String,
+      enum: ['openai', 'gemini', 'svg', 'manual'],
+    },
+    model: { type: String },
   },
   agentConfig: {
     personality: {

@@ -3,6 +3,8 @@
     "version": "1.0.0",
     "private": true,
     "dependencies": {
+        "@dnd-kit/core": "^6.3.1",
+        "@dnd-kit/sortable": "^8.0.0",
         "@emotion/react": "^11.10.6",
         "@emotion/styled": "^11.10.6",
         "@mui/icons-material": "^5.11.16",
@@ -12,6 +14,7 @@
         "d3": "^7.9.0",
         "date-fns": "^2.30.0",
         "emoji-picker-react": "^4.4.9",
+        "node-emoji": "^2.2.0",
         "react": "^18.2.0",
         "react-chartjs-2": "^5.3.0",
         "react-dom": "^18.2.0",

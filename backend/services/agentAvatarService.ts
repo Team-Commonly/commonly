@@ -1,14 +1,41 @@
 const axios = require('axios');
 const { generateText } = require('./llmService');
+const {
+  generateImage: openaiGenerateImage,
+  isOpenAIImageAvailable,
+  OpenAIImageError,
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+} = require('./openaiImageService');
 
 const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
 
+type AvatarProviderPriority = 'openai' | 'gemini' | 'auto';
+
+const resolveAvatarProvider = (): AvatarProviderPriority => {
+  const raw = (process.env.AVATAR_PROVIDER || 'auto').trim().toLowerCase();
+  if (raw === 'openai' || raw === 'gemini') return raw;
+  return 'auto';
+};
+
 /**
  * Agent Avatar Generation Service
- * Uses Gemini AI to generate unique avatar descriptions and creates SVG avatars
  *
- * Note: Gemini 2.5 Flash doesn't currently support direct image generation,
- * so we generate creative SVG avatars based on AI-generated design descriptions.
+ * Priority chain (in `auto` mode):
+ *   1. Gemini 2.5 Flash Image — preferred. Free tier on ai.google.dev is
+ *      generous (1500 req/day) and quality is excellent for stylized
+ *      portraits. Reads GEMINI_API_KEY from env.
+ *   2. OpenAI image generation (gpt-image-1 / dall-e-3) — used when Gemini
+ *      is not configured or fails. Routed through the LiteLLM proxy when
+ *      LITELLM_BASE_URL + LITELLM_MASTER_KEY are set (k8s default), or
+ *      directly when a raw OPENAI_API_KEY is set (local dev). Note that
+ *      the OAuth-authenticated ChatGPT accounts do NOT grant access to
+ *      image generation — a separate api.openai.com developer key is
+ *      required (different product, different billing).
+ *   3. SVG avatar — built from an AI-generated design description via llmService.
+ *   4. Initial-letter fallback — guarantees we always return something.
+ *
+ * AVATAR_PROVIDER env var controls the preferred engine: 'openai' | 'gemini' | 'auto'.
+ * Default is 'auto' which prefers Gemini (the cheap, free-tier path).
  */
 class AgentAvatarService {
   /**
@@ -45,24 +72,75 @@ class AgentAvatarService {
     customPrompt = '',
   }: { agentName: any; style?: any; personality?: any; colorScheme?: any; gender?: any; customPrompt?: any }) {
     try {
-      const imageResult = await this.generateImageAvatar({
-        agentName,
-        style,
-        personality,
-        colorScheme,
-        gender,
-        customPrompt,
-      });
-      if (imageResult?.avatar) {
-        return {
-          avatar: imageResult.avatar,
-          metadata: {
-            source: 'gemini-image',
-            model: GEMINI_IMAGE_MODEL,
-            fallbackUsed: false,
-          },
-        };
+      const provider = resolveAvatarProvider();
+      // Gemini is preferred in auto mode — it's the free-tier path and our
+      // OAuth ChatGPT accounts can't reach DALL-E anyway (different product).
+      const geminiEnabled = provider === 'gemini' || provider === 'auto';
+      const openaiEnabled = provider === 'openai'
+        // In auto mode OpenAI is only tried as a fallback AFTER Gemini fails;
+        // we still check availability here so we can skip the call entirely
+        // when neither provider is configured.
+        || (provider === 'auto' && isOpenAIImageAvailable());
+
+      // Path 1: Gemini (preferred)
+      if (geminiEnabled) {
+        try {
+          const imageResult = await this.generateImageAvatar({
+            agentName,
+            style,
+            personality,
+            colorScheme,
+            gender,
+            customPrompt,
+          });
+          if (imageResult?.avatar) {
+            return {
+              avatar: imageResult.avatar,
+              metadata: {
+                source: 'gemini',
+                model: GEMINI_IMAGE_MODEL,
+                fallbackUsed: false,
+              },
+            };
+          }
+        } catch (geminiError: any) {
+          console.warn(
+            `[agentAvatarService] Gemini avatar failed: ${geminiError?.message}`,
+          );
+          // fall through to OpenAI (if enabled) or SVG
+        }
       }
+
+      // Path 2: OpenAI (fallback in auto mode, forced in openai mode)
+      if (openaiEnabled) {
+        try {
+          const openaiResult = await this.generateOpenAIAvatar({
+            agentName,
+            style,
+            personality,
+            colorScheme,
+            gender,
+            customPrompt,
+          });
+          if (openaiResult?.avatar) {
+            return {
+              avatar: openaiResult.avatar,
+              metadata: {
+                source: 'openai',
+                model: openaiResult.model,
+                fallbackUsed: provider === 'auto',
+              },
+            };
+          }
+        } catch (openaiError: any) {
+          const kind = openaiError?.kind || 'unknown';
+          console.warn(
+            `[agentAvatarService] OpenAI avatar failed (${kind}): ${openaiError?.message}`,
+          );
+          // fall through to SVG
+        }
+      }
+
       const avatarDesign = await this.generateAvatarDesign({
         agentName,
         style,
@@ -78,7 +156,7 @@ class AgentAvatarService {
       return {
         avatar: `data:image/svg+xml;base64,${base64Svg}`,
         metadata: {
-          source: 'svg-fallback',
+          source: 'svg',
           model: null,
           fallbackUsed: true,
         },
@@ -89,12 +167,64 @@ class AgentAvatarService {
       return {
         avatar: this.getFallbackAvatar(agentName),
         metadata: {
-          source: 'initial-fallback',
+          source: 'svg',
           model: null,
           fallbackUsed: true,
           error: error.message,
         },
       };
+    }
+  }
+
+  /**
+   * Generate avatar via OpenAI image API.
+   */
+  static async generateOpenAIAvatar({
+    agentName,
+    style,
+    personality,
+    colorScheme,
+    gender,
+    customPrompt,
+  }: {
+    agentName: any;
+    style?: any;
+    personality?: any;
+    colorScheme?: any;
+    gender?: any;
+    customPrompt?: any;
+  }) {
+    if (!isOpenAIImageAvailable()) {
+      return null;
+    }
+    const prompt = this.createAvatarImagePrompt({
+      agentName,
+      style,
+      personality,
+      colorScheme,
+      gender,
+      customPrompt,
+    });
+    try {
+      const result = await openaiGenerateImage({
+        prompt,
+        size: '1024x1024',
+      });
+      if (!result?.dataUri) {
+        return null;
+      }
+      return {
+        avatar: result.dataUri,
+        model: result.model,
+        revisedPrompt: result.revisedPrompt,
+      };
+    } catch (error: any) {
+      // Let the caller decide whether to fall through to Gemini.
+      if (error instanceof OpenAIImageError) {
+        throw error;
+      }
+      console.error('Error in generateOpenAIAvatar:', error);
+      throw error;
     }
   }
 

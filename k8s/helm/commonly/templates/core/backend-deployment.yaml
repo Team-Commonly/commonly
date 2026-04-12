@@ -357,7 +357,11 @@ spec:
           readOnly: true
         - name: skills-catalog
           mountPath: /app/docs/skills
-          readOnly: true
+          # RW so backend/services/skillsRefreshService.ts can persist
+          # refreshed star counts back to the PVC. Writes are atomic
+          # (full-file writeFileSync) so a mid-write crash leaves the
+          # prior version intact.
+          readOnly: false
         {{- if and .Values.externalSecrets.enabled (not .Values.externalSecrets.workloadIdentity.enabled) }}
         - name: gcpsm-credentials
           mountPath: /app/gcp

@@ -1,6 +1,8 @@
 // eslint-disable-next-line global-require
 const socketConfig = require('../config/socket');
 // eslint-disable-next-line global-require
+const agentTypingService = require('./agentTypingService');
+// eslint-disable-next-line global-require
 const Message = require('../models/Message');
 // eslint-disable-next-line global-require
 const Summary = require('../models/Summary');
@@ -759,6 +761,17 @@ class AgentMessageService {
       displayName,
       installationConfig = null,
     } = options;
+
+    // Typing indicator cleanup — once postMessage is entered, the runtime has
+    // handed us the agent's output, so the "typing" state is over no matter
+    // which code path wins below (post, skip, dedupe, error). We emit stop
+    // eagerly here and wrap the rest of the function in a try/catch so that
+    // any throw still benefits from the stop we already sent.
+    try {
+      agentTypingService.emitAgentTypingStop({ podId, agentName, instanceId });
+    } catch (typingError) {
+      console.warn('[agent-typing] stop (postMessage entry) failed:', (typingError as Error).message);
+    }
 
     if (!agentName || !podId) {
       throw new Error('agentName and podId are required');

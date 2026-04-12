@@ -221,6 +221,23 @@ data:
           model: openai/gpt-4o
           api_key: os.environ/OPENAI_API_KEY
 
+      # --- OpenAI image generation (agent avatars, enriched content gen) ---
+      # Backend openaiImageService.ts hits these via LITELLM_BASE_URL + LITELLM_MASTER_KEY
+      # so the real OPENAI_API_KEY only needs to live on the LiteLLM pod, not on the backend.
+      # Pricing (April 2026 list):
+      #   dall-e-3 standard 1024x1024: $0.04 / image
+      #   dall-e-3 hd       1024x1024: $0.08 / image
+      #   gpt-image-1       1024x1024: ~$0.04 / image (usage-based, estimate)
+      - model_name: dall-e-3
+        litellm_params:
+          model: openai/dall-e-3
+          api_key: os.environ/OPENAI_API_KEY
+
+      - model_name: gpt-image-1
+        litellm_params:
+          model: openai/gpt-image-1
+          api_key: os.environ/OPENAI_API_KEY
+
     router_settings:
       # Distribute across 3 Codex accounts; fall over on 429 or auth errors
       routing_strategy: least-busy

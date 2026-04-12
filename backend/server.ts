@@ -99,12 +99,16 @@ const io = socketIo(server, {
 // Initialize socket instance for other services
 const socketConfig = require('./config/socket');
 const agentWebSocketService = require('./services/agentWebSocketService');
+const { bindSocketIO: bindAgentTypingSocketIO } = require('./services/agentTypingService');
+const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventService');
 
 // Socket.io Redis adapter initialization is async in K8s mode
 (async () => {
   try {
     await socketConfig.init(io);
     agentWebSocketService.init(io);
+    bindAgentTypingSocketIO(io);
+    bindTaskEventSocketIO(io);
   } catch (error) {
     console.error('Failed to initialize Socket.io:', error);
     process.exit(1);
@@ -219,6 +223,10 @@ mongoose.connection.once('open', () => {
       AgentBootstrapService.bootstrap().catch((err: any) => {
         console.error('[agent-bootstrap] Error:', err.message);
       });
+
+      require('./scripts/seed-native-agents').seedNativeAgents().catch((err: any) =>
+        console.error('[native-seed] failed:', err?.message || err),
+      );
     })();
   }
 });
@@ -255,6 +263,28 @@ if (process.env.PG_HOST) {
               console.log(
                 'PostgreSQL routes registered for chat functionality',
               );
+              // Kick off the daily 30-day message retention cron. Kept out
+              // of schedulerService.ts on purpose so other tracks can edit
+              // that file without stomping on this cron.
+              if (process.env.NODE_ENV !== 'test') {
+                try {
+                  const { initPgRetention } = require('./services/pgRetentionService');
+                  initPgRetention();
+                } catch (retentionErr: any) {
+                  console.error(
+                    '[pg-retention] failed to initialize:',
+                    retentionErr?.message || retentionErr,
+                  );
+                }
+                try {
+                  require('./services/agentInstallationCleanupService').initInstallationCleanup();
+                } catch (cleanupErr: any) {
+                  console.error(
+                    '[installation-cleanup] failed to initialize:',
+                    cleanupErr?.message || cleanupErr,
+                  );
+                }
+              }
             } else {
               pgAvailable = false;
               console.warn(
@@ -414,6 +444,28 @@ io.on('connection', (socket: any) => {
     socket.data.joinedPods.delete(podId);
     console.log(`User ${socket.userId} left pod room: pod_${podId}`);
     await emitPresence(podId);
+  });
+
+  // Agent typing indicators — forwarded from clients (gateway / SDK adapters)
+  // into the pod room. Server-side services use agentTypingService directly.
+  socket.on('agent_typing_start', (payload: {
+    podId: string;
+    agentName: string;
+    instanceId?: string;
+    displayName: string;
+    avatar?: string;
+  }) => {
+    if (!payload?.podId || !payload?.agentName) return;
+    io.to(`pod_${payload.podId}`).emit('agent_typing_start', payload);
+  });
+
+  socket.on('agent_typing_stop', (payload: {
+    podId: string;
+    agentName: string;
+    instanceId?: string;
+  }) => {
+    if (!payload?.podId || !payload?.agentName) return;
+    io.to(`pod_${payload.podId}`).emit('agent_typing_stop', payload);
   });
 
   // Send a message to a pod

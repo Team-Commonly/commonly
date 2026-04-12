@@ -14,6 +14,8 @@ const Task = require('../models/Task');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const GitHubAppService = require('../services/githubAppService');
+// eslint-disable-next-line global-require
+const { emitTaskUpdated } = require('../services/taskEventService');
 
 interface AuthReq {
   userId?: string;
@@ -109,7 +111,9 @@ router.post('/:podId', auth, async (req: AuthReq, res: Res) => {
           existing.notes = 'Reopened — previously completed but issue is still open.';
           existing.updates.push({ text: 'Reopened: task was done but linked issue is still open — picking up again.', author: 'system', authorId: null, createdAt: new Date() });
           await existing.save();
-          return res.json({ task: existing.toObject(), alreadyExists: false, reopened: true });
+          const reopenedObj = existing.toObject();
+          emitTaskUpdated(podId, reopenedObj, 'updated');
+          return res.json({ task: reopenedObj, alreadyExists: false, reopened: true });
         }
         return res.json({ task: existing.toObject(), alreadyExists: true });
       }
@@ -148,6 +152,7 @@ router.post('/:podId', auth, async (req: AuthReq, res: Res) => {
         console.warn('Parent GH lookup failed (non-fatal):', (e as Error).message);
       }
     }
+    emitTaskUpdated(podId, task, 'created');
     return res.status(201).json({ task });
   } catch (err) {
     console.error('POST /tasks error:', err);
@@ -170,6 +175,7 @@ router.post('/:podId/:taskId/claim', auth, async (req: AuthReq, res: Res) => {
       if (!existing) return res.status(404).json({ error: 'Task not found' });
       return res.status(409).json({ error: 'Task already claimed', claimedBy: existing.claimedBy, status: existing.status });
     }
+    emitTaskUpdated(podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/claim error:', err);
@@ -208,6 +214,7 @@ router.post('/:podId/:taskId/complete', auth, async (req: AuthReq, res: Res) => 
         }
       })();
     }
+    emitTaskUpdated(podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/complete error:', err);
@@ -226,6 +233,7 @@ router.post('/:podId/:taskId/updates', auth, async (req: AuthReq, res: Res) => {
     const author = await resolveAuthor(req);
     const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, { $push: { updates: { text: text.trim(), author, authorId: userId?.toString() || null, createdAt: new Date() } } }, { new: true });
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    emitTaskUpdated(podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/updates error:', err);
@@ -257,6 +265,7 @@ router.patch('/:podId/:taskId', auth, async (req: AuthReq, res: Res) => {
     if (changeParts.length > 0) update.$push = { updates: { text: `${author} updated: ${changeParts.join(', ')}`, author, authorId: userId?.toString() || null, createdAt: new Date() } };
     const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, update, { new: true });
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    emitTaskUpdated(podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('PATCH /tasks error:', err);

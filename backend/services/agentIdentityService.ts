@@ -49,6 +49,20 @@ interface AgentTypeConfig {
   icon: string;
   botType: string;
   capabilities: string[];
+  /**
+   * Runtime driver selector. Must be one of the runtimeType values handled
+   * by `provisionAgentRuntime` in `agentProvisionerServiceK8s.ts` /
+   * `agentProvisionerService.ts`:
+   *   - 'moltbot'         — OpenClaw gateway (shared k8s deployment)
+   *   - 'internal'        — Commonly-bot (in-process)
+   *   - 'webhook'         — external HTTP endpoint (no deploy)
+   *   - 'claude-code'     — external Claude Code session (no deploy)
+   *   - 'openai'          — OpenAI Codex (LiteLLM-proxied, no deploy)
+   *   - 'managed-agents'  — Anthropic Claude Managed Agents API (beta,
+   *                         see `managedAgentsAdapter.ts`; scaffolding only
+   *                         as of 2026-04-11 — requires a real
+   *                         ANTHROPIC_API_KEY to activate)
+   */
   runtime: string;
 }
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
+  Avatar,
   Box,
   Button,
   Card,
@@ -15,17 +16,27 @@ import {
   Divider,
   FormControl,
   FormControlLabel,
+  IconButton,
   InputLabel,
+  LinearProgress,
+  List,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
   MenuItem,
+  Rating,
   Select,
   Stack,
   Switch,
   Tabs,
   Tab,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useAuth } from '../../context/AuthContext';
 
 interface CatalogItem {
@@ -38,6 +49,36 @@ interface CatalogItem {
   license?: { name?: string; text?: string; path?: string } | string;
   stars?: number;
   type?: string;
+  repo?: string;
+}
+
+interface RatingHistogram {
+  1: number;
+  2: number;
+  3: number;
+  4: number;
+  5: number;
+}
+
+interface RatingSummary {
+  count: number;
+  avg: number;
+  histogram: RatingHistogram;
+  mine?: { rating: number; comment: string } | null;
+}
+
+interface RatingRecord {
+  _id: string;
+  skillId: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    _id: string;
+    username: string;
+    profilePicture: string;
+  } | null;
 }
 
 interface Pod {
@@ -152,6 +193,18 @@ const SkillsCatalogPage: React.FC = () => {
   const [gatewayCreateError, setGatewayCreateError] = useState('');
   const [importedSkills, setImportedSkills] = useState<Set<string>>(new Set());
   const [installedItems, setInstalledItems] = useState<CatalogItem[]>([]);
+  // Ratings state — batch summaries for card display + detail dialog state.
+  const [ratingSummaries, setRatingSummaries] = useState<Record<string, RatingSummary>>({});
+  const [detailItem, setDetailItem] = useState<CatalogItem | null>(null);
+  const [detailSummary, setDetailSummary] = useState<RatingSummary | null>(null);
+  const [detailRatings, setDetailRatings] = useState<RatingRecord[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [myRating, setMyRating] = useState<number>(0);
+  const [myComment, setMyComment] = useState<string>('');
+  const [mySubmitting, setMySubmitting] = useState(false);
+  // Catalog freshness metadata — surfaced as "Last updated X ago".
+  const [catalogLocalRefreshedAt, setCatalogLocalRefreshedAt] = useState<string | null>(null);
+  const [catalogUpstreamRefreshedAt, setCatalogUpstreamRefreshedAt] = useState<string | null>(null);
   const [importState, setImportState] = useState<ImportState>({
     podId: '',
     scope: 'pod',
@@ -209,13 +262,28 @@ const SkillsCatalogPage: React.FC = () => {
 
   const filteredItems = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    return catalogItems.filter((item) => {
+    const base = catalogItems.filter((item) => {
       if (selectedCategory !== 'all' && getCategory(item) !== selectedCategory) return false;
       if (!term) return true;
       const haystack = `${item.name || ''} ${item.description || ''}`.toLowerCase();
       return haystack.includes(term);
     });
-  }, [catalogItems, searchTerm, selectedCategory]);
+    // Client-side rating sort — the backend already handles name and stars.
+    // Avg rating is layered on top of the cached summaries.
+    if (sortBy === 'rating') {
+      return [...base].sort((a, b) => {
+        const aSummary = ratingSummaries[a.id || a.name || ''];
+        const bSummary = ratingSummaries[b.id || b.name || ''];
+        const aAvg = aSummary?.avg || 0;
+        const bAvg = bSummary?.avg || 0;
+        if (bAvg !== aAvg) return bAvg - aAvg;
+        const aCount = aSummary?.count || 0;
+        const bCount = bSummary?.count || 0;
+        return bCount - aCount;
+      });
+    }
+    return base;
+  }, [catalogItems, searchTerm, selectedCategory, sortBy, ratingSummaries]);
 
   const groupedItems = useMemo(() => {
     if (!groupByCategory) {
@@ -241,6 +309,8 @@ const SkillsCatalogPage: React.FC = () => {
         totalPages?: number;
         total?: number;
         categories?: string[];
+        localRefreshedAt?: string | null;
+        upstreamRefreshedAt?: string | null;
       }>('/api/skills/catalog', {
         ...getAuthHeaders(),
         params: {
@@ -256,6 +326,8 @@ const SkillsCatalogPage: React.FC = () => {
       setCatalogTotalPages(response.data?.totalPages || 1);
       setCatalogTotalItems(response.data?.total || 0);
       setCategories(response.data?.categories || []);
+      setCatalogLocalRefreshedAt(response.data?.localRefreshedAt || null);
+      setCatalogUpstreamRefreshedAt(response.data?.upstreamRefreshedAt || null);
     } catch (error: unknown) {
       const axiosErr = error as { response?: { data?: { error?: string } } };
       console.error('Failed to fetch skills catalog:', error);
@@ -273,6 +345,120 @@ const SkillsCatalogPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to fetch pods:', error);
     }
+  };
+
+  // Batch-fetch rating summaries for every visible card so we don't issue
+  // one HTTP call per skill.
+  const fetchRatingSummariesForItems = async (items: CatalogItem[]): Promise<void> => {
+    const ids = Array.from(new Set(items.map((item) => item.id || item.name || '').filter(Boolean)));
+    if (!ids.length) return;
+    try {
+      const response = await axios.get<{ summaries?: Record<string, RatingSummary> }>(
+        '/api/skills/ratings/summary',
+        { ...getAuthHeaders(), params: { skillIds: ids.join(',') } },
+      );
+      const summaries = response.data?.summaries || {};
+      setRatingSummaries((prev) => ({ ...prev, ...summaries }));
+    } catch (error) {
+      console.warn('Failed to fetch rating summaries:', error);
+    }
+  };
+
+  const fetchSkillDetail = async (item: CatalogItem): Promise<void> => {
+    const skillId = item.id || item.name;
+    if (!skillId) return;
+    setDetailLoading(true);
+    try {
+      const [summaryRes, listRes] = await Promise.all([
+        axios.get<RatingSummary>(`/api/skills/${encodeURIComponent(skillId)}/ratings/summary`, getAuthHeaders()),
+        axios.get<{ items: RatingRecord[] }>(
+          `/api/skills/${encodeURIComponent(skillId)}/ratings`,
+          { ...getAuthHeaders(), params: { limit: 50 } },
+        ),
+      ]);
+      const summary = summaryRes.data || { count: 0, avg: 0, histogram: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
+      setDetailSummary(summary);
+      setDetailRatings(listRes.data?.items || []);
+      setMyRating(summary.mine?.rating || 0);
+      setMyComment(summary.mine?.comment || '');
+      setRatingSummaries((prev) => ({ ...prev, [skillId]: summary }));
+    } catch (error) {
+      console.error('Failed to load skill detail:', error);
+      setDetailRatings([]);
+      setDetailSummary({ count: 0, avg: 0, histogram: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } });
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const openDetailDialog = (item: CatalogItem): void => {
+    setDetailItem(item);
+    setDetailSummary(null);
+    setDetailRatings([]);
+    setMyRating(0);
+    setMyComment('');
+    fetchSkillDetail(item);
+  };
+
+  const closeDetailDialog = (): void => {
+    setDetailItem(null);
+    setDetailSummary(null);
+    setDetailRatings([]);
+    setMyRating(0);
+    setMyComment('');
+  };
+
+  const submitMyRating = async (): Promise<void> => {
+    if (!detailItem || !myRating) return;
+    const skillId = detailItem.id || detailItem.name;
+    if (!skillId) return;
+    setMySubmitting(true);
+    try {
+      await axios.post(
+        `/api/skills/${encodeURIComponent(skillId)}/rating`,
+        { rating: myRating, comment: myComment },
+        getAuthHeaders(),
+      );
+      await fetchSkillDetail(detailItem);
+    } catch (error) {
+      console.error('Failed to submit rating:', error);
+    } finally {
+      setMySubmitting(false);
+    }
+  };
+
+  const deleteMyRating = async (): Promise<void> => {
+    if (!detailItem) return;
+    const skillId = detailItem.id || detailItem.name;
+    if (!skillId) return;
+    setMySubmitting(true);
+    try {
+      await axios.delete(
+        `/api/skills/${encodeURIComponent(skillId)}/rating`,
+        getAuthHeaders(),
+      );
+      await fetchSkillDetail(detailItem);
+      setMyRating(0);
+      setMyComment('');
+    } catch (error) {
+      console.error('Failed to delete rating:', error);
+    } finally {
+      setMySubmitting(false);
+    }
+  };
+
+  const formatRelativeTime = (iso: string | null): string => {
+    if (!iso) return 'never';
+    const then = Date.parse(iso);
+    if (Number.isNaN(then)) return 'never';
+    const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? '' : 's'} ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
   };
 
   const fetchPodAgents = async (podId: string): Promise<void> => {
@@ -631,6 +817,14 @@ const SkillsCatalogPage: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, selectedCategory, sortBy, catalogPage]);
 
+  // Whenever the catalog items change, refresh rating summaries for the
+  // visible slice so the card chips stay accurate.
+  useEffect(() => {
+    if (!catalogItems.length) return;
+    fetchRatingSummariesForItems(catalogItems);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogItems]);
+
   useEffect(() => {
     if (activeTab === 'gateway') {
       fetchGatewayCredentials();
@@ -809,10 +1003,27 @@ const SkillsCatalogPage: React.FC = () => {
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
         <AutoAwesomeIcon sx={{ color: '#7DD3FC' }} />
         <Typography variant="h4">Skills Catalog</Typography>
       </Box>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
+        <Typography variant="body2" color="text.secondary">
+          {catalogLocalRefreshedAt
+            ? `Last updated ${formatRelativeTime(catalogLocalRefreshedAt)}`
+            : 'Refresh status unknown'}
+        </Typography>
+        <Tooltip title="Refresh catalog">
+          <IconButton size="small" onClick={() => fetchCatalog()}>
+            <RefreshIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        {catalogUpstreamRefreshedAt && (
+          <Typography variant="caption" color="text.secondary">
+            (upstream: {formatRelativeTime(catalogUpstreamRefreshedAt)})
+          </Typography>
+        )}
+      </Stack>
 
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 3 }}>
         <FormControl sx={{ minWidth: 240 }}>
@@ -866,8 +1077,9 @@ const SkillsCatalogPage: React.FC = () => {
             label="Sort"
             onChange={(event) => setSortBy(event.target.value)}
           >
-            <MenuItem value="default">Default</MenuItem>
+            <MenuItem value="default">Name</MenuItem>
             <MenuItem value="stars">Most stars</MenuItem>
+            <MenuItem value="rating">Highest rated</MenuItem>
           </Select>
         </FormControl>
 
@@ -907,73 +1119,101 @@ const SkillsCatalogPage: React.FC = () => {
                 <Chip size="small" label={`${group.items.length} skills`} />
               </Stack>
               <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-                {group.items.map((item) => (
-                  <Card key={item.id || item.name}>
-                    <CardContent>
-                      <Typography variant="h6">{item.name}</Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        {item.description || 'No description'}
-                      </Typography>
-                      {Number.isFinite(item.stars) && (item.stars ?? -1) >= 0 && (
-                        <Chip
-                          size="small"
-                          label={`★ ${item.stars!.toLocaleString()}`}
-                          sx={{ mb: 1 }}
-                        />
-                      )}
-                      {item.type && (
-                        <Chip
-                          size="small"
-                          label={item.type === 'plugin' ? 'Plugin' : 'Skill'}
-                          sx={{ mb: 1 }}
-                        />
-                      )}
-                      {item.license && (
-                        <Chip
-                          size="small"
-                          label={`License: ${getLicenseLabel(item)}`}
-                          onClick={() => openLicenseDialog(item)}
-                          sx={{ mb: 1, cursor: 'pointer' }}
-                        />
-                      )}
-                      {item.tags?.length ? (
-                        <Stack direction="row" spacing={1} flexWrap="wrap">
-                          {item.tags.map((tag) => (
-                            <Chip key={tag} size="small" label={tag} />
-                          ))}
+                {group.items.map((item) => {
+                  const skillId = item.id || item.name || '';
+                  const summary = ratingSummaries[skillId];
+                  return (
+                    <Card
+                      key={item.id || item.name}
+                      sx={{
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        '&:hover': { boxShadow: 4, transform: 'translateY(-2px)' },
+                      }}
+                      onClick={() => openDetailDialog(item)}
+                    >
+                      <CardContent>
+                        <Typography variant="h6">{item.name}</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                          {item.description || 'No description'}
+                        </Typography>
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                          <Rating
+                            value={summary?.avg || 0}
+                            precision={0.5}
+                            size="small"
+                            readOnly
+                          />
+                          <Typography variant="caption" color="text.secondary">
+                            {summary && summary.count > 0
+                              ? `${summary.avg.toFixed(1)} (${summary.count} review${summary.count === 1 ? '' : 's'})`
+                              : 'No reviews yet'}
+                          </Typography>
                         </Stack>
-                      ) : null}
-                    </CardContent>
-                    <Divider />
-                    <CardActions sx={{ justifyContent: 'space-between' }}>
-                      <Button
-                        size="small"
-                        href={item.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        View Source
-                      </Button>
-                      {item.license && (
+                        {Number.isFinite(item.stars) && (item.stars ?? -1) >= 0 && (
+                          <Chip
+                            size="small"
+                            label={`★ ${item.stars!.toLocaleString()}`}
+                            sx={{ mb: 1 }}
+                          />
+                        )}
+                        {item.type && (
+                          <Chip
+                            size="small"
+                            label={item.type === 'plugin' ? 'Plugin' : 'Skill'}
+                            sx={{ mb: 1 }}
+                          />
+                        )}
+                        {item.license && (
+                          <Chip
+                            size="small"
+                            label={`License: ${getLicenseLabel(item)}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openLicenseDialog(item);
+                            }}
+                            sx={{ mb: 1, cursor: 'pointer' }}
+                          />
+                        )}
+                        {item.tags?.length ? (
+                          <Stack direction="row" spacing={1} flexWrap="wrap">
+                            {item.tags.map((tag) => (
+                              <Chip key={tag} size="small" label={tag} />
+                            ))}
+                          </Stack>
+                        ) : null}
+                      </CardContent>
+                      <Divider />
+                      <CardActions sx={{ justifyContent: 'space-between' }} onClick={(e) => e.stopPropagation()}>
                         <Button
                           size="small"
-                          variant="text"
-                          onClick={() => openLicenseDialog(item)}
+                          href={item.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
                         >
-                          View License
+                          View Source
                         </Button>
-                      )}
-                      <Button
-                        size="small"
-                        variant="contained"
-                        disabled={!selectedPodId || item.type === 'plugin' || isImported(item.name)}
-                        onClick={() => openImportDialog(item)}
-                      >
-                        {isImported(item.name) ? 'Imported' : item.type === 'plugin' ? 'Plugin' : 'Import'}
-                      </Button>
-                    </CardActions>
-                  </Card>
-                ))}
+                        {item.license && (
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={() => openLicenseDialog(item)}
+                          >
+                            View License
+                          </Button>
+                        )}
+                        <Button
+                          size="small"
+                          variant="contained"
+                          disabled={!selectedPodId || item.type === 'plugin' || isImported(item.name)}
+                          onClick={() => openImportDialog(item)}
+                        >
+                          {isImported(item.name) ? 'Imported' : item.type === 'plugin' ? 'Plugin' : 'Import'}
+                        </Button>
+                      </CardActions>
+                    </Card>
+                  );
+                })}
               </Box>
             </Box>
           ))}
@@ -1519,6 +1759,190 @@ const SkillsCatalogPage: React.FC = () => {
           >
             {gatewayCreateLoading ? 'Creating...' : 'Create'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!detailItem} onClose={closeDetailDialog} fullWidth maxWidth="md">
+        <DialogTitle>
+          {detailItem?.name || 'Skill'}
+          {detailItem?.category && (
+            <Chip size="small" label={detailItem.category} sx={{ ml: 1 }} />
+          )}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          {detailItem && (
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {detailItem.description || 'No description'}
+              </Typography>
+              <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+                {Number.isFinite(detailItem.stars) && (detailItem.stars ?? -1) >= 0 && (
+                  <Chip size="small" label={`★ ${detailItem.stars!.toLocaleString()} GitHub stars`} />
+                )}
+                {detailItem.sourceUrl && (
+                  <Button
+                    size="small"
+                    href={detailItem.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View Source
+                  </Button>
+                )}
+              </Stack>
+
+              <Divider />
+
+              <Box>
+                <Typography variant="h6" gutterBottom>
+                  Ratings
+                </Typography>
+                {detailLoading && <LinearProgress />}
+                {detailSummary && (
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems="flex-start">
+                    <Stack alignItems="center" sx={{ minWidth: 140 }}>
+                      <Typography variant="h3">
+                        {detailSummary.count > 0 ? detailSummary.avg.toFixed(1) : '—'}
+                      </Typography>
+                      <Rating
+                        value={detailSummary.avg || 0}
+                        precision={0.5}
+                        size="small"
+                        readOnly
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        {detailSummary.count} review{detailSummary.count === 1 ? '' : 's'}
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={0.5} sx={{ flex: 1, minWidth: 200 }}>
+                      {([5, 4, 3, 2, 1] as const).map((bucket) => {
+                        const count = detailSummary.histogram?.[bucket] || 0;
+                        const total = detailSummary.count || 1;
+                        const pct = (count / total) * 100;
+                        return (
+                          <Stack key={bucket} direction="row" spacing={1} alignItems="center">
+                            <Typography variant="caption" sx={{ width: 16 }}>
+                              {bucket}
+                            </Typography>
+                            <LinearProgress
+                              variant="determinate"
+                              value={pct}
+                              sx={{ flex: 1, height: 8, borderRadius: 1 }}
+                            />
+                            <Typography variant="caption" sx={{ width: 32, textAlign: 'right' }}>
+                              {count}
+                            </Typography>
+                          </Stack>
+                        );
+                      })}
+                    </Stack>
+                  </Stack>
+                )}
+              </Box>
+
+              <Divider />
+
+              <Box>
+                <Typography variant="subtitle1" gutterBottom>
+                  Your rating
+                </Typography>
+                <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
+                  <Rating
+                    value={myRating}
+                    onChange={(_event, value) => setMyRating(value || 0)}
+                    size="large"
+                  />
+                  {detailSummary?.mine && (
+                    <Typography variant="caption" color="text.secondary">
+                      (you rated this before — update to replace)
+                    </Typography>
+                  )}
+                </Stack>
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  maxRows={6}
+                  placeholder="Optional comment (max 2000 chars)"
+                  value={myComment}
+                  onChange={(event) => setMyComment(event.target.value.slice(0, 2000))}
+                  inputProps={{ maxLength: 2000 }}
+                  sx={{ mb: 1 }}
+                />
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="contained"
+                    disabled={!myRating || mySubmitting}
+                    onClick={submitMyRating}
+                  >
+                    {mySubmitting ? 'Saving...' : 'Submit'}
+                  </Button>
+                  {detailSummary?.mine && (
+                    <Button
+                      variant="text"
+                      color="error"
+                      startIcon={<DeleteOutlineIcon />}
+                      onClick={deleteMyRating}
+                      disabled={mySubmitting}
+                    >
+                      Delete my rating
+                    </Button>
+                  )}
+                </Stack>
+              </Box>
+
+              <Divider />
+
+              <Box>
+                <Typography variant="subtitle1" gutterBottom>
+                  Community reviews
+                </Typography>
+                {detailRatings.length === 0 && !detailLoading && (
+                  <Typography variant="body2" color="text.secondary">
+                    No reviews yet. Be the first.
+                  </Typography>
+                )}
+                <List dense>
+                  {detailRatings.map((record) => (
+                    <ListItem key={record._id} alignItems="flex-start" disableGutters>
+                      <ListItemAvatar>
+                        <Avatar>{(record.user?.username || '?').slice(0, 1).toUpperCase()}</Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="subtitle2">
+                              {record.user?.username || 'unknown'}
+                            </Typography>
+                            <Rating value={record.rating} size="small" readOnly />
+                            <Typography variant="caption" color="text.secondary">
+                              {formatRelativeTime(record.createdAt)}
+                            </Typography>
+                          </Stack>
+                        }
+                        secondary={record.comment || <em>(no comment)</em>}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDetailDialog}>Close</Button>
+          {detailItem && (
+            <Button
+              variant="contained"
+              disabled={!selectedPodId || detailItem.type === 'plugin' || isImported(detailItem.name)}
+              onClick={() => {
+                openImportDialog(detailItem);
+                closeDetailDialog();
+              }}
+            >
+              {isImported(detailItem.name) ? 'Imported' : detailItem.type === 'plugin' ? 'Plugin' : 'Import to pod'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Container>

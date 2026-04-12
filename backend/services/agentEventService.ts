@@ -222,6 +222,79 @@ const getWebSocketService = (): { pushEvent: (event: unknown) => void } | null =
   return agentWebSocketService;
 };
 
+// Lazy-loaded typing service — avoids any circular dep and makes the
+// signalling optional when not wired (e.g., in tests).
+let agentTypingService: {
+  emitAgentTypingStart: (agent: {
+    podId: unknown;
+    agentName: string;
+    instanceId?: string;
+    displayName: string;
+    avatar?: string;
+  }) => void;
+} | null = null;
+const getTypingService = (): typeof agentTypingService => {
+  if (!agentTypingService) {
+    try {
+      // eslint-disable-next-line global-require
+      agentTypingService = require('./agentTypingService');
+    } catch {
+      agentTypingService = null;
+    }
+  }
+  return agentTypingService;
+};
+
+// Event types that should surface a typing indicator in the target pod.
+// Background/broadcast events (e.g., global heartbeats with no pod) are
+// already filtered out upstream by requiring a concrete podId, but we also
+// gate by type so that non-response events (e.g., delivery audits) never
+// light up the UI.
+const TYPING_EVENT_TYPES = new Set<string>([
+  'heartbeat',
+  'chat.mention',
+  'summary.request',
+  'discord.summary',
+  'integration.summary',
+  'ensemble.turn',
+]);
+
+const signalAgentTyping = async (event: EventDoc): Promise<void> => {
+  try {
+    const typing = getTypingService();
+    if (!typing) return;
+    if (!event?.podId || !event?.agentName || !event?.type) return;
+    if (!TYPING_EVENT_TYPES.has(event.type)) return;
+
+    let displayName = event.agentName;
+    let avatar: string | undefined;
+    try {
+      const agentUser = await AgentIdentityService.getOrCreateAgentUser(event.agentName, {
+        instanceId: event.instanceId || 'default',
+      }) as {
+        username?: string;
+        profilePicture?: string;
+        botMetadata?: { displayName?: string };
+      };
+      displayName = agentUser?.botMetadata?.displayName || agentUser?.username || event.agentName;
+      avatar = agentUser?.profilePicture || undefined;
+    } catch (identityError) {
+      // Fall back to the raw agent name — typing indicator is cosmetic, not load-bearing.
+      console.warn('[agent-typing] identity lookup failed:', (identityError as Error).message);
+    }
+
+    typing.emitAgentTypingStart({
+      podId: event.podId,
+      agentName: event.agentName,
+      instanceId: event.instanceId || 'default',
+      displayName,
+      avatar,
+    });
+  } catch (err) {
+    console.warn('[agent-typing] signal failed:', (err as Error).message);
+  }
+};
+
 class AgentEventService {
   static getContextOverflowRetryLimit(): number {
     const parsed = Number.parseInt(process.env.AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT || '', 10);
@@ -606,13 +679,69 @@ class AgentEventService {
       })
       : payload;
 
+    // Pre-resolve the installation to decide routing. Native-runtime
+    // installations skip the external event queue entirely and run the agent
+    // loop in-process instead. Non-native installations continue to land in
+    // the pending queue exactly as before.
+    let routedToNative = false;
+    let nativeInstallation: InstallationDoc | null = null;
+    try {
+      const installationDoc = await AgentInstallation.findOne({
+        agentName: agentName.toLowerCase(),
+        instanceId,
+        podId,
+        status: 'active',
+      }).lean() as InstallationDoc | null;
+      if (installationDoc) {
+        const installationRuntimeCfg = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
+        const installationRuntimeType = String(installationRuntimeCfg.runtimeType || '').toLowerCase();
+        if (installationRuntimeType === 'native') {
+          routedToNative = true;
+          nativeInstallation = installationDoc;
+        }
+      }
+    } catch (lookupErr) {
+      console.warn(
+        '[native-runtime] routing lookup failed, falling back to external queue:',
+        (lookupErr as Error).message,
+      );
+    }
+
     const event = await AgentEvent.create({
       agentName: agentName.toLowerCase(),
       instanceId,
       podId,
       type,
       payload: eventPayload,
+      // Native runs resolve in-process, so we mark the event delivered
+      // immediately — it remains in the DB for auditability but never
+      // sits in the pending queue polled by external runtimes.
+      ...(routedToNative
+        ? { status: 'delivered', deliveredAt: new Date() }
+        : {}),
     }) as EventDoc;
+
+    if (routedToNative && nativeInstallation) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { runAgent } = require('./nativeRuntimeService');
+        const eventIdStr = String((event._id as { toString?: () => string })?.toString?.() || '');
+        // Fire-and-forget — callers of enqueue() must never block on the
+        // loop. Errors are logged but never rethrown.
+        Promise.resolve(runAgent(nativeInstallation, {
+          type,
+          eventId: eventIdStr,
+          payload: event.payload,
+        })).catch((err: Error) => {
+          console.error('[native-runtime] runAgent failed:', err?.message || err);
+        });
+      } catch (dispatchErr) {
+        console.warn(
+          '[native-runtime] dispatch error:',
+          (dispatchErr as Error).message,
+        );
+      }
+    }
 
     this.logEventLifecycle('enqueued', {
       eventId: String((event._id as { toString?: () => string })?.toString?.() || ''),
@@ -637,6 +766,13 @@ class AgentEventService {
         createdAt: event.createdAt,
       });
     }
+
+    // Fire-and-forget: surface a typing indicator in the target pod so
+    // humans see that an agent is working on a response. Typing_stop is
+    // emitted when AgentMessageService.postMessage runs.
+    signalAgentTyping(event).catch((err) => {
+      console.warn('[agent-typing] dispatch failed:', (err as Error).message);
+    });
 
     AgentInstallation.find({
       agentName: event.agentName,

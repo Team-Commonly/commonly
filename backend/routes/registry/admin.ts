@@ -315,9 +315,24 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
 
     const instanceId = requestedInstanceId || `sess-${randomSecret(8)}`;
 
+    // Default to Commonly's existing `<Primary> (Context)` parenthetical naming
+    // pattern — see live DB examples like 'Backend Engineer (Nova)', 'Dev PM (Theo)'.
+    // Derive a readable primary label from the instanceId (stripping the 'sess-'
+    // prefix when it's an auto-generated session id), postfix with the runtime.
+    // If the caller already passed a displayName containing '(Claude Code)', use
+    // it as-is so explicit names don't get doubled.
+    const primaryLabel = (() => {
+      if (displayName && !displayName.includes('(Claude Code)')) return displayName;
+      if (instanceId.startsWith('sess-')) return instanceId.slice(5, 13); // 8 readable hex chars
+      return instanceId;
+    })();
+    const finalDisplayName = displayName?.includes('(Claude Code)')
+      ? displayName
+      : `${primaryLabel} (Claude Code)`;
+
     const agentUser = await AgentIdentityService.getOrCreateAgentUser('claude-code', {
       instanceId,
-      displayName: displayName || 'Claude Code',
+      displayName: finalDisplayName,
     });
 
     // Ensure pod membership — plain ObjectId array per Pod.members invariant
@@ -335,6 +350,7 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
           agentName: 'claude-code',
           podId,
           instanceId,
+          displayName: finalDisplayName,
           version: '1.0.0',
           installedBy: req.user._id,
           scopes: ['context:read', 'messages:write', 'memory:read'],

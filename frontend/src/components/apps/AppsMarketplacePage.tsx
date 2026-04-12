@@ -308,73 +308,102 @@ const AppsMarketplacePage: React.FC = () => {
       disableGutters
       sx={{ py: { xs: 3, md: 4 }, px: { xs: 2, sm: 3, md: 4 } }}
     >
+      {/* Hero section — gradient backdrop with a large headline, subtitle,
+          and inline search. Replaces the flat header + separate search row. */}
       <Box
         sx={{
           mb: 4,
-          display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
-          justifyContent: 'space-between',
-          alignItems: { xs: 'flex-start', md: 'center' },
-          gap: 2,
+          px: { xs: 3, md: 6 },
+          py: { xs: 4, md: 6 },
+          borderRadius: 3,
+          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark || theme.palette.primary.main} 60%, ${theme.palette.secondary.main || theme.palette.primary.main} 100%)`,
+          color: theme.palette.primary.contrastText,
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        <Box>
-          <Typography variant="h4" fontWeight={700} gutterBottom>
-            Apps Marketplace
+        <Box sx={{ position: 'relative', zIndex: 1, maxWidth: 920 }}>
+          <Typography variant="h3" fontWeight={800} sx={{ mb: 1.5, lineHeight: 1.15 }}>
+            Discover apps to extend your Commonly pods
           </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Install apps and connect official integrations for your pods
+          <Typography variant="body1" sx={{ opacity: 0.92, mb: 3, maxWidth: 640 }}>
+            Browse agents, integrations, and webhook apps built by the community.
+            Install one into a pod in seconds — your agents and teammates will see it instantly.
           </Typography>
-        </Box>
-
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button
-            variant="outlined"
-            href={contribUrl}
-            target="_blank"
-            rel="noreferrer"
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1.5,
+              alignItems: 'center',
+            }}
           >
-            Submit App
-          </Button>
-          <FormControl sx={{ minWidth: 220 }} size="small">
-            <InputLabel>Install to Pod</InputLabel>
-            <Select
-              value={selectedPodId || ''}
-              label="Install to Pod"
-              onChange={(e) => setSelectedPodId(e.target.value as string)}
+            <TextField
+              placeholder="Search apps, agents, integrations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: 'text.secondary' }} />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                flex: '1 1 320px',
+                minWidth: { xs: '100%', sm: 320 },
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 999,
+                  backgroundColor: theme.palette.background.paper,
+                },
+                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+              }}
+            />
+            <FormControl
+              size="small"
+              sx={{
+                minWidth: { xs: '100%', sm: 200 },
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 999,
+                  backgroundColor: theme.palette.background.paper,
+                },
+                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+              }}
             >
-              {userPods.map((pod) => (
-                <MenuItem key={pod._id} value={pod._id}>
-                  {pod.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              <InputLabel>Install to Pod</InputLabel>
+              <Select
+                value={selectedPodId || ''}
+                label="Install to Pod"
+                onChange={(e) => setSelectedPodId(e.target.value as string)}
+              >
+                {userPods.map((pod) => (
+                  <MenuItem key={pod._id} value={pod._id}>
+                    {pod.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button
+              variant="contained"
+              color="inherit"
+              href={contribUrl}
+              target="_blank"
+              rel="noreferrer"
+              sx={{
+                borderRadius: 999,
+                fontWeight: 600,
+                backgroundColor: theme.palette.background.paper,
+                color: theme.palette.text.primary,
+                '&:hover': { backgroundColor: theme.palette.background.default },
+              }}
+            >
+              Submit App
+            </Button>
+          </Box>
         </Box>
       </Box>
 
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 3 }}>
-        <TextField
-          placeholder="Search apps..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon color="action" />
-              </InputAdornment>
-            ),
-          }}
-          sx={{
-            minWidth: { xs: '100%', sm: 320 },
-            flex: '1 1 240px',
-            '& .MuiOutlinedInput-root': {
-              borderRadius: 3,
-              backgroundColor: theme.palette.background.paper,
-            },
-          }}
-        />
-
         <FormControl sx={{ minWidth: { xs: '100%', sm: 180 }, flex: '1 1 180px' }} size="small">
           <InputLabel>Type</InputLabel>
           <Select
@@ -432,18 +461,41 @@ const AppsMarketplacePage: React.FC = () => {
               <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
                 Featured Apps
               </Typography>
-              <Grid container spacing={3}>
+              {/* Horizontal scroll strip so featured apps don't compete with
+                  the main grid for vertical real estate. Snap-scroll on
+                  touch; arrows show on desktop hover. */}
+              <Box
+                sx={{
+                  display: 'flex',
+                  gap: 2,
+                  overflowX: 'auto',
+                  pb: 1,
+                  scrollSnapType: 'x mandatory',
+                  '&::-webkit-scrollbar': { height: 8 },
+                  '&::-webkit-scrollbar-thumb': {
+                    backgroundColor: theme.palette.divider,
+                    borderRadius: 4,
+                  },
+                }}
+              >
                 {featured.map((app) => (
-                  <Grid item xs={12} md={4} key={app.id}>
+                  <Box
+                    key={app.id}
+                    sx={{
+                      flex: '0 0 auto',
+                      width: { xs: 280, sm: 320, md: 340 },
+                      scrollSnapAlign: 'start',
+                    }}
+                  >
                     <AppCard
                       app={app}
                       installed={isInstalled(app.id)}
                       onInstall={handleInstall}
                       onRemove={handleRemove}
                     />
-                  </Grid>
+                  </Box>
                 ))}
-              </Grid>
+              </Box>
             </Box>
           )}
 

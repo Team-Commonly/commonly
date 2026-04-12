@@ -1,5 +1,8 @@
 interface PgPool {
-  query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
+  query: (sql: string, params?: unknown[]) => Promise<{
+    rows: Record<string, unknown>[];
+    rowCount?: number;
+  }>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -185,6 +188,23 @@ class Message {
     const query = `DELETE FROM messages WHERE pod_id = $1 RETURNING *`;
     const result = await (pool as PgPool).query(query, [podId]);
     return result.rows as unknown as MessageRow[];
+  }
+
+  /**
+   * Bulk-delete messages older than `days` days. Used by the retention cron
+   * (pgRetentionService) to enforce the 30-day message retention window on
+   * the PostgreSQL chat store.
+   */
+  static async deleteOlderThan(days: number): Promise<{ deleted: number }> {
+    if (!Number.isFinite(days) || days <= 0) {
+      return { deleted: 0 };
+    }
+    const query = `DELETE FROM messages WHERE created_at < NOW() - $1::interval RETURNING id`;
+    const result = await (pool as PgPool).query(query, [`${Math.trunc(days)} days`]);
+    const deleted = typeof result.rowCount === 'number'
+      ? result.rowCount
+      : (Array.isArray(result.rows) ? result.rows.length : 0);
+    return { deleted };
   }
 
   static async findActivityHint(podId: unknown, since: unknown): Promise<ActivityHintResult> {

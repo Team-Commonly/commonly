@@ -35,7 +35,11 @@ import {
     OpenInNew as OpenInNewIcon,
     History as HistoryIcon,
     Block as BlockIcon,
-    PlayArrow as UnblockIcon
+    PlayArrow as UnblockIcon,
+    SubdirectoryArrowRight as SubdirectoryArrowRightIcon,
+    InboxOutlined as InboxOutlinedIcon,
+    GifBoxOutlined as GifBoxOutlinedIcon,
+    Lock as LockOutlineIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -50,7 +54,37 @@ import AgentEnsemblePanel from './agents/AgentEnsemblePanel';
 import axios from 'axios';
 import getApiBaseUrl, { normalizeUploadUrl } from '../utils/apiBaseUrl';
 import EmojiPicker from 'emoji-picker-react';
+import * as nodeEmoji from 'node-emoji';
+import {
+    DndContext,
+    DragOverlay,
+    PointerSensor,
+    useDraggable,
+    useDroppable,
+    useSensor,
+    useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import './ChatRoom.css';
+
+/**
+ * Replace :shortcode: occurrences with the matching unicode emoji, but
+ * leave code blocks (fenced ``` and inline `...`) untouched so colons
+ * in source examples don't get corrupted.
+ */
+const emojifyPreserveCode = (raw: string): string => {
+    if (!raw || typeof raw !== 'string' || raw.indexOf(':') === -1) return raw || '';
+    // Split on fenced code blocks first, then on inline backtick runs. Even
+    // indices are prose segments (emojified); odd indices are code (kept as-is).
+    const parts = raw.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
+    const emojify: (text: string) => string = (nodeEmoji as unknown as {
+        emojify: (text: string) => string;
+    }).emojify;
+    if (typeof emojify !== 'function') return raw;
+    return parts
+        .map((part, idx) => (idx % 2 === 0 ? emojify(part) : part))
+        .join('');
+};
 
 /**
  * Parse bot message content - detects structured bot messages
@@ -212,6 +246,231 @@ const buildAgentUsername = (agentName, instanceId) => {
 
 const normalizeIdentityKey = (value) => String(value || '').trim().toLowerCase();
 
+interface TypingAgentEntry {
+    key: string;
+    agentName: string;
+    instanceId?: string;
+    displayName: string;
+    avatar?: string;
+}
+
+const AgentTypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) => {
+    if (!agents || agents.length === 0) return null;
+
+    const names = agents.map(a => a.displayName);
+    let label: string;
+    if (names.length === 1) {
+        label = `${names[0]} is typing…`;
+    } else if (names.length === 2) {
+        label = `${names[0]} and ${names[1]} are typing…`;
+    } else {
+        label = `${names[0]}, ${names[1]} and ${names.length - 2} other${names.length - 2 === 1 ? '' : 's'} are typing…`;
+    }
+
+    return (
+        <Box
+            aria-live="polite"
+            sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 2,
+                py: 0.75,
+                minHeight: 32,
+                bgcolor: 'action.hover',
+                borderTop: '1px solid',
+                borderColor: 'divider',
+                '@keyframes typingDot': {
+                    '0%, 60%, 100%': { transform: 'translateY(0)', opacity: 0.35 },
+                    '30%': { transform: 'translateY(-3px)', opacity: 1 },
+                },
+            }}
+        >
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {agents.slice(0, 3).map((a, idx) => (
+                    <Avatar
+                        key={a.key}
+                        src={a.avatar}
+                        alt={a.displayName}
+                        sx={{
+                            width: 24,
+                            height: 24,
+                            fontSize: '0.7rem',
+                            bgcolor: getAvatarColor(a.displayName || a.agentName || 'agent'),
+                            border: '2px solid',
+                            borderColor: 'background.paper',
+                            ml: idx === 0 ? 0 : -0.75,
+                        }}
+                    >
+                        {(a.displayName || a.agentName || '?').charAt(0).toUpperCase()}
+                    </Avatar>
+                ))}
+            </Box>
+            <Typography
+                variant="caption"
+                sx={{ fontSize: '0.8rem', color: 'text.secondary', flexShrink: 0 }}
+            >
+                {label}
+            </Typography>
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '3px', ml: 0.25 }}>
+                {[0, 1, 2].map(i => (
+                    <Box
+                        key={i}
+                        sx={{
+                            width: 4,
+                            height: 4,
+                            borderRadius: '50%',
+                            bgcolor: 'text.secondary',
+                            animation: 'typingDot 1.2s infinite',
+                            animationDelay: `${i * 0.18}s`,
+                        }}
+                    />
+                ))}
+            </Box>
+        </Box>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Task board — Drag-and-drop primitives
+// ---------------------------------------------------------------------------
+// These live at module scope so the `useDraggable` / `useDroppable` hooks are
+// called from component functions (not inside a .map() callback inside
+// ChatRoom) — satisfying the React rules of hooks.
+
+interface BoardColumnMeta {
+    key: 'pending' | 'claimed' | 'blocked' | 'done';
+    label: string;
+    color: string;
+    borderColor: string;
+}
+
+interface DroppableColumnProps {
+    col: BoardColumnMeta;
+    children: React.ReactNode;
+}
+
+const DroppableColumn: React.FC<DroppableColumnProps> = ({ col, children }) => {
+    const { isOver, setNodeRef } = useDroppable({ id: col.key });
+    return (
+        <Box
+            ref={setNodeRef}
+            sx={{
+                overflowY: 'auto',
+                pr: 0.5,
+                borderRadius: 1,
+                transition: 'background-color 0.15s ease, box-shadow 0.15s ease',
+                ...(isOver && {
+                    bgcolor: `${col.borderColor}14`,
+                    boxShadow: `inset 0 0 0 2px ${col.borderColor}`,
+                }),
+            }}
+        >
+            {children}
+        </Box>
+    );
+};
+
+interface DraggableTaskCardProps {
+    task: any;
+    col: BoardColumnMeta;
+    tasks: any[];
+    onOpen: (task: any) => void;
+    isDragging: boolean;
+}
+
+const DraggableTaskCard: React.FC<DraggableTaskCardProps> = ({ task, col, tasks, onOpen, isDragging }) => {
+    const { attributes, listeners, setNodeRef, transform, isDragging: dndDragging } = useDraggable({
+        id: task.taskId,
+        data: { task },
+    });
+    const childCount = tasks.filter(t => t.parentTask === task.taskId).length;
+    const translate = transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined;
+    const showAsDragging = isDragging || dndDragging;
+    return (
+        <Card
+            ref={setNodeRef}
+            variant="outlined"
+            onClick={() => onOpen(task)}
+            {...attributes}
+            {...listeners}
+            sx={{
+                mb: 1.5,
+                borderLeft: `2px solid ${col.borderColor}`,
+                cursor: showAsDragging ? 'grabbing' : 'pointer',
+                transition: 'box-shadow 0.15s ease, transform 0.15s ease',
+                opacity: showAsDragging ? 0.5 : 1,
+                transform: translate,
+                touchAction: 'none',
+                '&:hover': { boxShadow: 3, transform: translate || 'translateY(-1px)' },
+            }}
+        >
+            <CardContent sx={{ p: '14px !important' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.75, flexWrap: 'wrap' }}>
+                    <Chip label={task.taskId} size="small" sx={{ fontSize: '0.72rem', height: 20, bgcolor: `${col.borderColor}15`, color: col.color, fontWeight: 600 }} />
+                    {task.assignee && (
+                        <Chip label={task.assignee} size="small" sx={{ fontSize: '0.72rem', height: 20 }} />
+                    )}
+                </Box>
+                <Tooltip title={task.title} arrow placement="top">
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            fontSize: '0.9rem',
+                            fontWeight: 500,
+                            lineHeight: 1.4,
+                            color: col.key === 'done' ? 'text.secondary' : 'text.primary',
+                            textDecoration: col.key === 'done' ? 'line-through' : 'none',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}
+                    >
+                        {task.title}
+                    </Typography>
+                </Tooltip>
+                {task.prUrl && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.75 }}>
+                        <OpenInNewIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>PR linked</Typography>
+                    </Box>
+                )}
+                {task.updates?.length > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <HistoryIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.85rem' }}>{task.updates.length} update{task.updates.length !== 1 ? 's' : ''}</Typography>
+                    </Box>
+                )}
+                {task.parentTask && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <SubdirectoryArrowRightIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.85rem' }}>
+                            Sub-task of {task.parentTask}
+                        </Typography>
+                    </Box>
+                )}
+                {task.dep && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <BlockIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                        <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.85rem' }}>
+                            Blocked by {task.dep}
+                        </Typography>
+                    </Box>
+                )}
+                {childCount > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.85rem', color: 'info.main' }}>
+                            {childCount} sub-task{childCount !== 1 ? 's' : ''}
+                        </Typography>
+                    </Box>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
+
 const ChatRoom = () => {
     const { currentUser } = useAuth();
     const { socket, connected, pgAvailable, joinPod, leavePod, sendMessage } = useSocket();
@@ -232,7 +491,9 @@ const ChatRoom = () => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState('');
     const [isUploading, setIsUploading] = useState(false);
+    const [isInlineUploading, setIsInlineUploading] = useState(false);
     const fileInputRef = useRef(null);
+    const inlineImageInputRef = useRef<HTMLInputElement | null>(null);
     const messageInputRef = useRef(null);
     const emojiPickerRef = useRef(null);
     const sidebarRef = useRef(null);
@@ -251,6 +512,15 @@ const ChatRoom = () => {
     const [podAgentsLoading, setPodAgentsLoading] = useState(false);
     const [podAgentsError, setPodAgentsError] = useState('');
     const [onlineMemberIds, setOnlineMemberIds] = useState([]);
+    // Agent typing indicator — keyed by `${agentName}:${instanceId || ''}`
+    const [typingAgents, setTypingAgents] = useState<Array<{
+        key: string;
+        agentName: string;
+        instanceId?: string;
+        displayName: string;
+        avatar?: string;
+    }>>([]);
+    const typingAgentTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const [integrationCatalogEntries, setIntegrationCatalogEntries] = useState([]);
     const [memberActionError, setMemberActionError] = useState('');
     const [removingMemberIds, setRemovingMemberIds] = useState({});
@@ -340,6 +610,11 @@ const ChatRoom = () => {
     const [taskUpdateText, setTaskUpdateText] = useState('');
     const [taskUpdating, setTaskUpdating] = useState(false);
     const [taskPatching, setTaskPatching] = useState(false);
+    // Drag-and-drop state for the task board
+    const [activeDragTaskId, setActiveDragTaskId] = useState<string | null>(null);
+    const boardSensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    );
 
     // Parent pod info for child pods — derive from room.parentPod
     const parentPodId = room?.parentPod
@@ -695,16 +970,18 @@ const ChatRoom = () => {
         initialScrollDoneRef.current = false;
     }, [roomId]);
 
-    // Fetch tasks from API when Board tab is active
+    // Fetch tasks from API when Board tab is active.
+    // Uses 20s polling as a safety net, plus a socket subscription to
+    // `task_updated` for real-time sync between users viewing the same board.
     useEffect(() => {
         if (activeTab !== 'board' || !roomId) return;
         let cancelled = false;
+        const boardPodId = parentPodId || roomId;
         const load = async () => {
             setTaskBoardLoading(true);
             try {
                 const token = localStorage.getItem('token');
-                const podId = parentPodId || roomId;
-                const res = await axios.get(`/api/v1/tasks/${podId}`, {
+                const res = await axios.get(`/api/v1/tasks/${boardPodId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 if (!cancelled) {
@@ -721,8 +998,46 @@ const ChatRoom = () => {
         };
         load();
         const interval = setInterval(load, 20000);
-        return () => { cancelled = true; clearInterval(interval); };
-    }, [activeTab, roomId, parentPodId]);
+
+        // Real-time task sync: listen for server-pushed task_updated events.
+        // Payload: { podId, task, kind: 'created' | 'updated' | 'deleted' }
+        const handleTaskUpdated = (payload) => {
+            if (!payload || !payload.task) return;
+            // Only react to events for the board we're currently viewing
+            if (payload.podId && String(payload.podId) !== String(boardPodId)) return;
+            const incoming = payload.task;
+            const kind = payload.kind || 'updated';
+            if (kind === 'deleted') {
+                setTasks(prev => prev.filter(t => t.taskId !== incoming.taskId));
+                setSelectedTask(prev => (prev && prev.taskId === incoming.taskId ? null : prev));
+                return;
+            }
+            setTasks(prev => {
+                const idx = prev.findIndex(t => t.taskId === incoming.taskId);
+                if (idx === -1) {
+                    // 'created' (or 'updated' for a task we somehow missed) — append
+                    return [...prev, incoming];
+                }
+                // 'updated' — replace in place
+                const next = prev.slice();
+                next[idx] = incoming;
+                return next;
+            });
+            setSelectedTask(prev => (prev && prev.taskId === incoming.taskId ? incoming : prev));
+        };
+
+        if (socket) {
+            socket.on('task_updated', handleTaskUpdated);
+        }
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+            if (socket) {
+                socket.off('task_updated', handleTaskUpdated);
+            }
+        };
+    }, [activeTab, roomId, parentPodId, socket]);
 
     const fetchOlderMessages = async () => {
         if (!roomId || !hasMoreMessages || isLoadingOlder) {
@@ -1586,6 +1901,78 @@ const ChatRoom = () => {
             socket.off('podPresence', handlePresence);
         };
     }, [connected, roomId, socket]);
+
+    // Clear typing agents whenever the active pod changes so we never
+    // carry indicators from another room into the current view.
+    useEffect(() => {
+        setTypingAgents([]);
+        Object.values(typingAgentTimersRef.current).forEach(clearTimeout);
+        typingAgentTimersRef.current = {};
+    }, [roomId]);
+
+    // Subscribe to agent typing events. Backend is wiring
+    // `agent_typing_start` / `agent_typing_stop` separately — these
+    // listeners no-op gracefully until the server starts emitting.
+    useEffect(() => {
+        if (!connected || !roomId || !socket) return undefined;
+
+        const keyFor = (p: { agentName?: string; instanceId?: string }) =>
+            `${p?.agentName || ''}:${p?.instanceId || ''}`;
+
+        const scheduleAutoStop = (key: string) => {
+            if (typingAgentTimersRef.current[key]) {
+                clearTimeout(typingAgentTimersRef.current[key]);
+            }
+            typingAgentTimersRef.current[key] = setTimeout(() => {
+                setTypingAgents(prev => prev.filter(a => a.key !== key));
+                delete typingAgentTimersRef.current[key];
+            }, 30000); // 30s safety timeout
+        };
+
+        const handleTypingStart = (payload) => {
+            if (!payload || (payload.podId && payload.podId !== roomId)) return;
+            const agentName = payload.agentName || payload.username;
+            if (!agentName) return;
+            const key = keyFor({ agentName, instanceId: payload.instanceId });
+            scheduleAutoStop(key);
+            setTypingAgents(prev => {
+                const existing = prev.find(a => a.key === key);
+                const next = {
+                    key,
+                    agentName,
+                    instanceId: payload.instanceId,
+                    displayName: payload.displayName || payload.instanceId || agentName,
+                    avatar: payload.avatar || payload.iconUrl,
+                };
+                if (existing) {
+                    return prev.map(a => (a.key === key ? next : a));
+                }
+                return [...prev, next];
+            });
+        };
+
+        const handleTypingStop = (payload) => {
+            if (!payload) return;
+            const agentName = payload.agentName || payload.username;
+            if (!agentName) return;
+            const key = keyFor({ agentName, instanceId: payload.instanceId });
+            if (typingAgentTimersRef.current[key]) {
+                clearTimeout(typingAgentTimersRef.current[key]);
+                delete typingAgentTimersRef.current[key];
+            }
+            setTypingAgents(prev => prev.filter(a => a.key !== key));
+        };
+
+        socket.on('agent_typing_start', handleTypingStart);
+        socket.on('agent_typing_stop', handleTypingStop);
+
+        return () => {
+            socket.off('agent_typing_start', handleTypingStart);
+            socket.off('agent_typing_stop', handleTypingStop);
+            Object.values(typingAgentTimersRef.current).forEach(clearTimeout);
+            typingAgentTimersRef.current = {};
+        };
+    }, [connected, roomId, socket]);
     
     // Add debugging for messages
     useEffect(() => {
@@ -1644,15 +2031,68 @@ const ChatRoom = () => {
                 alert('Please select an image file');
                 return;
             }
-            
+
             setSelectedFile(file);
-            
+
             // Create a preview
             const reader = new FileReader();
             reader.onload = () => {
                 setPreviewUrl(reader.result as string);
             };
             reader.readAsDataURL(file);
+        }
+    };
+
+    /**
+     * Upload a GIF / still image directly and inject a markdown image
+     * link into the message composer. Unlike handleFileSelect (which
+     * attaches as a separate image message on submit), this keeps the
+     * draft open so the user can add a caption and still click Send.
+     */
+    const handleInlineImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        // Clear the input so the same file can be selected again later.
+        if (event.target) event.target.value = '';
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            setError('Only image files (gif/png/jpeg/webp) are allowed.');
+            return;
+        }
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setError('Authentication required. Please log in again.');
+            return;
+        }
+        try {
+            setIsInlineUploading(true);
+            const formData = new FormData();
+            // Backend `/api/uploads` expects the field name `image` (see
+            // backend/routes/uploads.ts). Keep this aligned.
+            formData.append('image', file);
+            const response = await axios.post('/api/uploads', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+            const url = response?.data?.url;
+            if (!url) {
+                setError('Upload succeeded but no URL was returned.');
+                return;
+            }
+            // Inject an inline markdown image on its own line so the
+            // MarkdownContent renderer picks it up naturally.
+            const snippet = `\n![image](${url})\n`;
+            setMessage(prev => (prev ? `${prev}${snippet}` : snippet.trimStart()));
+            // Keep focus in the composer so the user can type a caption.
+            requestAnimationFrame(() => {
+                messageInputRef.current?.focus();
+            });
+        } catch (err) {
+            console.error('Failed to upload inline image:', err);
+            setError('Failed to upload image. Please try again.');
+        } finally {
+            setIsInlineUploading(false);
         }
     };
     
@@ -2259,6 +2699,34 @@ const ChatRoom = () => {
             // silently fail
         } finally {
             setTaskPatching(false);
+        }
+    };
+
+    // Drag-and-drop: change a task's status by patching the API.
+    // Does an optimistic in-place update first so the card appears in the
+    // new column immediately; reverts to the previous task if the request fails.
+    const handleChangeTaskStatus = async (task, targetStatus: 'pending' | 'claimed' | 'blocked' | 'done') => {
+        if (!task || !task.taskId) return;
+        if (task.status === targetStatus) return;
+        const previous = task;
+        // Optimistic update
+        setTasks(prev => prev.map(t => (t.taskId === task.taskId ? { ...t, status: targetStatus } : t)));
+        setSelectedTask(prev => (prev && prev.taskId === task.taskId ? { ...prev, status: targetStatus } : prev));
+        try {
+            const token = localStorage.getItem('token');
+            const podId = parentPodId || roomId;
+            const res = await axios.patch(
+                `/api/v1/tasks/${podId}/${task.taskId}`,
+                { status: targetStatus },
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+            const updated = res.data.task;
+            setTasks(prev => prev.map(t => (t.taskId === updated.taskId ? updated : t)));
+            setSelectedTask(prev => (prev && prev.taskId === updated.taskId ? updated : prev));
+        } catch {
+            // Revert optimistic update on failure
+            setTasks(prev => prev.map(t => (t.taskId === previous.taskId ? previous : t)));
+            setSelectedTask(prev => (prev && prev.taskId === previous.taskId ? previous : prev));
         }
     };
 
@@ -3597,12 +4065,33 @@ const ChatRoom = () => {
                     
                     {/* Board Tab */}
                     {activeTab === 'board' && (() => {
-                        const COLS = [
+                        const COLS: BoardColumnMeta[] = [
                             { key: 'pending', label: 'Pending', color: '#555', borderColor: '#9e9e9e' },
                             { key: 'claimed', label: 'In Progress', color: '#1565c0', borderColor: '#1976d2' },
                             { key: 'blocked', label: 'Blocked', color: '#c62828', borderColor: '#e53935' },
                             { key: 'done', label: 'Done', color: '#2e7d32', borderColor: '#43a047' },
                         ];
+                        const activeDragTask = activeDragTaskId
+                            ? tasks.find(t => t.taskId === activeDragTaskId)
+                            : null;
+                        const activeDragCol = activeDragTask
+                            ? COLS.find(c => c.key === activeDragTask.status) || COLS[0]
+                            : null;
+                        const handleDragStart = (event: DragStartEvent) => {
+                            setActiveDragTaskId(String(event.active.id));
+                        };
+                        const handleDragCancel = () => setActiveDragTaskId(null);
+                        const handleDragEnd = (event: DragEndEvent) => {
+                            setActiveDragTaskId(null);
+                            const { active, over } = event;
+                            if (!over) return;
+                            const targetStatus = over.id as 'pending' | 'claimed' | 'blocked' | 'done';
+                            if (!targetStatus) return;
+                            const sourceTask = (active.data.current as { task?: any } | undefined)?.task
+                                || tasks.find(t => t.taskId === active.id);
+                            if (!sourceTask || sourceTask.status === targetStatus) return;
+                            handleChangeTaskStatus(sourceTask, targetStatus);
+                        };
                         return (
                             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                                 {/* Board header */}
@@ -3620,91 +4109,119 @@ const ChatRoom = () => {
                                     </Button>
                                 </Box>
                                 {taskBoardLoading && tasks.length === 0 && <LinearProgress sx={{ flexShrink: 0 }} />}
-                                {/* Kanban columns */}
-                                <Box sx={{ display: 'flex', gap: 2, p: 2, overflowX: 'auto', overflowY: 'hidden', flex: 1, alignItems: 'flex-start' }}>
-                                    {COLS.map(col => {
-                                        const colTasks = tasks.filter(t => t.status === col.key);
-                                        return (
-                                            <Box key={col.key} sx={{ minWidth: 240, flex: '1 1 240px', maxWidth: 320, display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                    <Typography variant="caption" sx={{ fontWeight: 700, color: col.color, textTransform: 'uppercase', letterSpacing: 0.8, fontSize: '0.7rem' }}>
-                                                        {col.label}
-                                                    </Typography>
-                                                    <Chip label={colTasks.length} size="small" sx={{ height: 18, fontSize: '0.68rem', bgcolor: `${col.borderColor}22`, color: col.color }} />
-                                                </Box>
-                                                <Box sx={{ overflowY: 'auto', pr: 0.5 }}>
-                                                    {colTasks.length === 0 && (
-                                                        <Typography variant="caption" color="text.disabled" sx={{ display: 'block', px: 1, py: 0.5 }}>No tasks</Typography>
-                                                    )}
-                                                    {colTasks.map(task => (
-                                                        <Card
-                                                            key={task.taskId}
-                                                            variant="outlined"
-                                                            onClick={() => handleOpenTask(task)}
-                                                            sx={{ mb: 1.5, borderLeft: `3px solid ${col.borderColor}`, cursor: 'pointer', '&:hover': { boxShadow: 2 } }}
-                                                        >
-                                                            <CardContent sx={{ p: '10px 12px !important' }}>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5, flexWrap: 'wrap' }}>
-                                                                    <Chip label={task.taskId} size="small" sx={{ fontSize: '0.68rem', height: 18, bgcolor: `${col.borderColor}15`, color: col.color }} />
-                                                                    {task.assignee && (
-                                                                        <Chip label={task.assignee} size="small" sx={{ fontSize: '0.68rem', height: 18 }} />
-                                                                    )}
-                                                                </Box>
-                                                                <Typography variant="body2" sx={{ fontSize: '0.8rem', lineHeight: 1.4, color: col.key === 'done' ? 'text.secondary' : 'text.primary', textDecoration: col.key === 'done' ? 'line-through' : 'none' }}>
-                                                                    {task.title}
+                                {/* Kanban columns — drag-and-drop enabled */}
+                                <DndContext
+                                    sensors={boardSensors}
+                                    onDragStart={handleDragStart}
+                                    onDragEnd={handleDragEnd}
+                                    onDragCancel={handleDragCancel}
+                                >
+                                    <Box sx={{ display: 'flex', gap: 2, p: 2, overflowX: 'auto', overflowY: 'hidden', flex: 1, alignItems: 'flex-start' }}>
+                                        {COLS.map(col => {
+                                            const colTasks = tasks.filter(t => t.status === col.key);
+                                            const emptyHelper = col.key === 'pending'
+                                                ? 'Nothing pending'
+                                                : col.key === 'claimed'
+                                                    ? 'Nothing in progress'
+                                                    : col.key === 'blocked'
+                                                        ? 'All clear'
+                                                        : 'None complete yet';
+                                            return (
+                                                <Box key={col.key} sx={{ minWidth: 260, flex: '1 1 260px', maxWidth: 340, display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: col.color, textTransform: 'uppercase', letterSpacing: 0.4, fontSize: '0.75rem' }}>
+                                                            {col.label}
+                                                        </Typography>
+                                                        <Chip label={colTasks.length} size="small" sx={{ height: 20, fontSize: '0.72rem', bgcolor: `${col.borderColor}22`, color: col.color }} />
+                                                    </Box>
+                                                    <DroppableColumn col={col}>
+                                                        {colTasks.length === 0 && (
+                                                            <Box
+                                                                sx={{
+                                                                    display: 'flex',
+                                                                    flexDirection: 'column',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    py: 3,
+                                                                    px: 1,
+                                                                    gap: 0.5,
+                                                                    border: '1px dashed',
+                                                                    borderColor: 'divider',
+                                                                    borderRadius: 1,
+                                                                    color: 'text.disabled',
+                                                                }}
+                                                            >
+                                                                <InboxOutlinedIcon sx={{ fontSize: 28, opacity: 0.5 }} />
+                                                                <Typography variant="caption" sx={{ fontSize: '0.85rem', color: 'text.secondary', fontWeight: 500 }}>
+                                                                    No tasks
                                                                 </Typography>
-                                                                {task.prUrl && (
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.5 }}>
-                                                                        <OpenInNewIcon sx={{ fontSize: 12, color: 'text.secondary' }} />
-                                                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>PR linked</Typography>
-                                                                    </Box>
-                                                                )}
-                                                                {task.updates?.length > 0 && (
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.3 }}>
-                                                                        <HistoryIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
-                                                                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.68rem' }}>{task.updates.length} update{task.updates.length !== 1 ? 's' : ''}</Typography>
-                                                                    </Box>
-                                                                )}
-                                                                {/* Relationship indicators */}
-                                                                {task.parentTask && (
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.3 }}>
-                                                                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.68rem' }}>
-                                                                            ↳ sub-task of {task.parentTask}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                )}
-                                                                {task.dep && (
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.3 }}>
-                                                                        <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.68rem' }}>
-                                                                            ⛔ blocked by {task.dep}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                )}
-                                                                {(() => {
-                                                                    const childCount = tasks.filter(t => t.parentTask === task.taskId).length;
-                                                                    return childCount > 0 ? (
-                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, mt: 0.3 }}>
-                                                                            <Typography variant="caption" sx={{ fontSize: '0.68rem', color: 'info.main' }}>
-                                                                                {childCount} sub-task{childCount !== 1 ? 's' : ''}
-                                                                            </Typography>
-                                                                        </Box>
-                                                                    ) : null;
-                                                                })()}
-                                                            </CardContent>
-                                                        </Card>
-                                                    ))}
+                                                                <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.disabled' }}>
+                                                                    {emptyHelper}
+                                                                </Typography>
+                                                            </Box>
+                                                        )}
+                                                        {colTasks.map(task => (
+                                                            <DraggableTaskCard
+                                                                key={task.taskId}
+                                                                task={task}
+                                                                col={col}
+                                                                tasks={tasks}
+                                                                onOpen={handleOpenTask}
+                                                                isDragging={activeDragTaskId === task.taskId}
+                                                            />
+                                                        ))}
+                                                    </DroppableColumn>
                                                 </Box>
-                                            </Box>
-                                        );
-                                    })}
-                                </Box>
+                                            );
+                                        })}
+                                    </Box>
+                                    <DragOverlay dropAnimation={null}>
+                                        {activeDragTask && activeDragCol ? (
+                                            <Card
+                                                variant="outlined"
+                                                sx={{
+                                                    borderLeft: `2px solid ${activeDragCol.borderColor}`,
+                                                    boxShadow: 6,
+                                                    cursor: 'grabbing',
+                                                    minWidth: 260,
+                                                    maxWidth: 340,
+                                                    bgcolor: 'background.paper',
+                                                }}
+                                            >
+                                                <CardContent sx={{ p: '14px !important' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.75, flexWrap: 'wrap' }}>
+                                                        <Chip label={activeDragTask.taskId} size="small" sx={{ fontSize: '0.72rem', height: 20, bgcolor: `${activeDragCol.borderColor}15`, color: activeDragCol.color, fontWeight: 600 }} />
+                                                        {activeDragTask.assignee && (
+                                                            <Chip label={activeDragTask.assignee} size="small" sx={{ fontSize: '0.72rem', height: 20 }} />
+                                                        )}
+                                                    </Box>
+                                                    <Typography
+                                                        variant="body2"
+                                                        sx={{
+                                                            fontSize: '0.9rem',
+                                                            fontWeight: 500,
+                                                            lineHeight: 1.4,
+                                                            display: '-webkit-box',
+                                                            WebkitLineClamp: 3,
+                                                            WebkitBoxOrient: 'vertical',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                        }}
+                                                    >
+                                                        {activeDragTask.title}
+                                                    </Typography>
+                                                </CardContent>
+                                            </Card>
+                                        ) : null}
+                                    </DragOverlay>
+                                </DndContext>
 
                                 {/* Task detail drawer */}
                                 <Drawer
                                     anchor="right"
                                     open={taskDrawerOpen}
                                     onClose={() => setTaskDrawerOpen(false)}
-                                    PaperProps={{ sx: { width: { xs: '100vw', sm: 420 }, p: 0 } }}
+                                    PaperProps={{ sx: { width: { xs: 'min(420px, calc(100vw - 48px))', sm: 420 }, p: 0 } }}
                                 >
                                     {selectedTask && (
                                         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -3726,13 +4243,14 @@ const ChatRoom = () => {
                                                         <Box sx={{ mt: 0.75, display: 'flex', flexDirection: 'column', gap: 0.4 }}>
                                                             {selectedTask.parentTask && (
                                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem' }}>
-                                                                        ↳ Sub-task of:
+                                                                    <SubdirectoryArrowRightIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                                                                        Sub-task of:
                                                                     </Typography>
                                                                     <Chip
                                                                         label={selectedTask.parentTask}
                                                                         size="small"
-                                                                        sx={{ height: 18, fontSize: '0.68rem', cursor: 'pointer' }}
+                                                                        sx={{ height: 20, fontSize: '0.75rem', cursor: 'pointer' }}
                                                                         onClick={() => {
                                                                             const parent = tasks.find(t => t.taskId === selectedTask.parentTask);
                                                                             if (parent) handleOpenTask(parent);
@@ -3742,13 +4260,14 @@ const ChatRoom = () => {
                                                             )}
                                                             {selectedTask.dep && (
                                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                    <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.72rem' }}>⛔ Blocked by:</Typography>
+                                                                    <BlockIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                                                                    <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.8rem' }}>Blocked by:</Typography>
                                                                     <Chip
                                                                         label={selectedTask.dep}
                                                                         size="small"
                                                                         color="warning"
                                                                         variant="outlined"
-                                                                        sx={{ height: 18, fontSize: '0.68rem', cursor: 'pointer' }}
+                                                                        sx={{ height: 20, fontSize: '0.75rem', cursor: 'pointer' }}
                                                                         onClick={() => {
                                                                             const depTask = tasks.find(t => t.taskId === selectedTask.dep);
                                                                             if (depTask) handleOpenTask(depTask);
@@ -3756,15 +4275,16 @@ const ChatRoom = () => {
                                                                     />
                                                                     {(() => {
                                                                         const depTask = tasks.find(t => t.taskId === selectedTask.dep);
-                                                                        return depTask ? <Chip label={depTask.status} size="small" color={depTask.status === 'done' ? 'success' : 'default'} sx={{ height: 18, fontSize: '0.68rem' }} /> : null;
+                                                                        return depTask ? <Chip label={depTask.status} size="small" color={depTask.status === 'done' ? 'success' : 'default'} sx={{ height: 20, fontSize: '0.75rem' }} /> : null;
                                                                     })()}
                                                                 </Box>
                                                             )}
                                                             {tasks.some(t => t.dep === selectedTask.taskId) && (
                                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-                                                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem' }}>🔒 Blocks:</Typography>
+                                                                    <LockOutlineIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                                                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Blocks:</Typography>
                                                                     {tasks.filter(t => t.dep === selectedTask.taskId).map(t => (
-                                                                        <Chip key={t.taskId} label={t.taskId} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.68rem', cursor: 'pointer' }} onClick={() => handleOpenTask(t)} />
+                                                                        <Chip key={t.taskId} label={t.taskId} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.75rem', cursor: 'pointer' }} onClick={() => handleOpenTask(t)} />
                                                                     ))}
                                                                 </Box>
                                                             )}
@@ -4023,10 +4543,16 @@ const ChatRoom = () => {
                                         const resolvedMessageAvatar = isAgentMessage ? agentMessageAvatar : humanMessageAvatar;
                                         
                                         // Get message content with fallbacks
-                                        const messageContent = msg.content || msg.text || '';
+                                        const rawMessageContent = msg.content || msg.text || '';
 
                                         // Get message type with fallback
                                         const messageType = msg.messageType || msg.message_type || 'text';
+
+                                        // Shortcode emoji (:fire: → 🔥) for text messages. We preserve
+                                        // code blocks so colons in source examples aren't corrupted.
+                                        const messageContent = messageType === 'text'
+                                            ? emojifyPreserveCode(rawMessageContent)
+                                            : rawMessageContent;
 
                                         // Get message timestamp with fallbacks
                                         const messageTime = msg.createdAt || msg.created_at || new Date();
@@ -4215,6 +4741,10 @@ const ChatRoom = () => {
                     </Box>}
                 </div>
 
+                {/* Agent typing indicator — sits between the message list and
+                    the composer. Collapses to nothing when no agents are typing. */}
+                <AgentTypingIndicator agents={typingAgents} />
+
                 {/* Message input */}
                 <Paper
                     component="form"
@@ -4257,15 +4787,33 @@ const ChatRoom = () => {
                     <div className="composer-row">
                         <div className="composer-tools">
                             <Tooltip title="Emoji" placement="top">
-                                <IconButton 
-                                    onClick={toggleEmojiPicker} 
+                                <IconButton
+                                    onClick={toggleEmojiPicker}
                                     className={`emoji-button ${showEmojiPicker ? 'active' : ''}`}
                                     aria-label="Insert emoji"
                                 >
                                     <EmojiIcon />
                                 </IconButton>
                             </Tooltip>
-                            
+
+                            <Tooltip title="GIF or image" placement="top">
+                                <IconButton
+                                    onClick={() => inlineImageInputRef.current?.click()}
+                                    disabled={isInlineUploading}
+                                    className="inline-image-button"
+                                    aria-label="Insert GIF or image"
+                                >
+                                    {isInlineUploading ? <CircularProgress size={20} /> : <GifBoxOutlinedIcon />}
+                                </IconButton>
+                            </Tooltip>
+                            <input
+                                ref={inlineImageInputRef}
+                                type="file"
+                                accept="image/gif,image/png,image/jpeg,image/webp"
+                                style={{ display: 'none' }}
+                                onChange={handleInlineImageSelect}
+                            />
+
                             <Tooltip title="Attach" placement="top">
                                 <IconButton 
                                     component="label"

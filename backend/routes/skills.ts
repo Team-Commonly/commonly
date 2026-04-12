@@ -20,6 +20,8 @@ const PodAssetService = require('../services/podAssetService');
 const SkillsCatalogService = require('../services/skillsCatalogService');
 // eslint-disable-next-line global-require
 const { getOpenClawConfigPath, syncOpenClawSkills, getGatewaySkillEntries, syncGatewaySkillEnv } = require('../services/agentProvisionerService');
+// eslint-disable-next-line global-require
+const SkillRating = require('../models/SkillRating');
 
 interface AuthReq {
   user?: { id: string };
@@ -157,7 +159,21 @@ router.get('/catalog', auth, async (req: AuthReq, res: Res) => {
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePage = Math.min(page, totalPages);
     const start = (safePage - 1) * limit;
-    return res.json({ source: catalog.source || source, updatedAt: catalog.updatedAt || null, items: sorted.slice(start, start + limit), total, page: safePage, limit, totalPages, categories });
+    const refreshedAt = typeof SkillsCatalogService.getLastRefreshedAt === 'function'
+      ? SkillsCatalogService.getLastRefreshedAt(source)
+      : { localRefreshedAt: null, upstreamRefreshedAt: null };
+    return res.json({
+      source: catalog.source || source,
+      updatedAt: catalog.updatedAt || null,
+      localRefreshedAt: refreshedAt.localRefreshedAt || catalog.updatedAt || null,
+      upstreamRefreshedAt: refreshedAt.upstreamRefreshedAt || null,
+      items: sorted.slice(start, start + limit),
+      total,
+      page: safePage,
+      limit,
+      totalPages,
+      categories,
+    });
   } catch (error) {
     console.error('Error loading skills catalog:', error);
     return res.status(500).json({ error: 'Failed to load skills catalog' });
@@ -287,6 +303,134 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
     const e = error as PodError;
     console.error('Error importing skill:', error);
     return res.status(e.code === 'POD_ACCESS_DENIED' ? 403 : 500).json({ error: e.message || 'Failed to import skill' });
+  }
+});
+
+// ============================================================================
+// Skill ratings + comments
+// ============================================================================
+
+const normalizeSkillId = (raw: string | undefined): string => String(raw || '').trim();
+
+const clampRating = (raw: unknown): number | null => {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  if (rounded < 1 || rounded > 5) return null;
+  return rounded;
+};
+
+// POST /api/skills/:skillId/rating — create or update the caller's rating.
+router.post('/:skillId/rating', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+    const skillId = normalizeSkillId(req.params?.skillId);
+    if (!skillId) return res.status(400).json({ error: 'skillId is required' });
+    const rating = clampRating((req.body || {}).rating);
+    if (rating === null) return res.status(400).json({ error: 'rating must be an integer 1-5' });
+    const rawComment = (req.body || {}).comment;
+    const comment = typeof rawComment === 'string' ? rawComment.trim().slice(0, 2000) : '';
+    const doc = await SkillRating.findOneAndUpdate(
+      { skillId, userId },
+      { $set: { rating, comment } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+    return res.status(200).json({ rating: doc });
+  } catch (error) {
+    console.error('Error saving skill rating:', error);
+    return res.status(500).json({ error: 'Failed to save rating' });
+  }
+});
+
+// GET /api/skills/:skillId/ratings — paginated list, newest first.
+router.get('/:skillId/ratings', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const skillId = normalizeSkillId(req.params?.skillId);
+    if (!skillId) return res.status(400).json({ error: 'skillId is required' });
+    const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
+    const limit = clamp(Number.parseInt(String(req.query?.limit || '20'), 10) || 20, 1, 100);
+    const skip = Math.max(0, Number.parseInt(String(req.query?.skip || '0'), 10) || 0);
+    const rows = await SkillRating.find({ skillId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('userId', 'username profilePicture')
+      .lean();
+    const items = (rows as Array<Record<string, unknown>>).map((row) => {
+      const user = row.userId as { _id?: unknown; username?: string; profilePicture?: string } | null;
+      return {
+        _id: row._id,
+        skillId: row.skillId,
+        rating: row.rating,
+        comment: row.comment || '',
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        user: user ? {
+          _id: user._id,
+          username: user.username || 'unknown',
+          profilePicture: user.profilePicture || 'default',
+        } : null,
+      };
+    });
+    return res.json({ items, total: items.length, skip, limit });
+  } catch (error) {
+    console.error('Error listing skill ratings:', error);
+    return res.status(500).json({ error: 'Failed to load ratings' });
+  }
+});
+
+// GET /api/skills/:skillId/ratings/summary — aggregate stats.
+router.get('/:skillId/ratings/summary', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const skillId = normalizeSkillId(req.params?.skillId);
+    if (!skillId) return res.status(400).json({ error: 'skillId is required' });
+    const summary = await SkillRating.getAggregated(skillId);
+    const userId = getUserId(req);
+    let mine: { rating: number; comment: string } | null = null;
+    if (userId) {
+      const own = await SkillRating.findOne({ skillId, userId }).lean() as { rating?: number; comment?: string } | null;
+      if (own) mine = { rating: own.rating || 0, comment: own.comment || '' };
+    }
+    return res.json({ ...summary, mine });
+  } catch (error) {
+    console.error('Error loading skill rating summary:', error);
+    return res.status(500).json({ error: 'Failed to load rating summary' });
+  }
+});
+
+// DELETE /api/skills/:skillId/rating — remove the caller's own rating.
+router.delete('/:skillId/rating', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+    const skillId = normalizeSkillId(req.params?.skillId);
+    if (!skillId) return res.status(400).json({ error: 'skillId is required' });
+    const result = await SkillRating.findOneAndDelete({ skillId, userId });
+    if (!result) return res.status(404).json({ error: 'Rating not found' });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting skill rating:', error);
+    return res.status(500).json({ error: 'Failed to delete rating' });
+  }
+});
+
+// GET /api/skills/ratings/summary?skillIds=a,b,c — batch aggregate (for the
+// catalog list so we don't issue one HTTP call per card).
+router.get('/ratings/summary', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const raw = String(req.query?.skillIds || '').trim();
+    if (!raw) return res.json({ summaries: {} });
+    const ids = raw.split(',').map((id) => id.trim()).filter(Boolean).slice(0, 500);
+    const map = await SkillRating.getAggregatedMany(ids);
+    const summaries: Record<string, unknown> = {};
+    map.forEach((value: unknown, key: string) => {
+      summaries[key] = value;
+    });
+    return res.json({ summaries });
+  } catch (error) {
+    console.error('Error loading batch skill rating summaries:', error);
+    return res.status(500).json({ error: 'Failed to load rating summaries' });
   }
 });
 
