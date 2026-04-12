@@ -1995,23 +1995,38 @@ const provisionOpenClawAccount = async ({
     console.warn('[k8s-provisioner] Failed to sync account to /state/moltbot.json:', err.message);
   }
 
+  // Customization protection: skip overwriting SOUL.md / HEARTBEAT.md when the
+  // user has marked them as customized. The `customizations` flags are set by
+  // the UI when the user edits the files directly; provisioner preserves them
+  // unless explicitly reset (force=true forces overwrite regardless).
+  const customizations = heartbeat?.customizations || {};
+  const skipHeartbeat = customizations.heartbeat === true && !heartbeat?.forceOverwrite;
+  const skipSoul = customizations.soul === true && !heartbeat?.forceOverwrite;
   try {
-    const heartbeatPath = await ensureHeartbeatTemplate(accountId, heartbeat, {
-      gateway,
-      customContent: heartbeat?.customContent || null,
-      // Force-overwrite only when explicitly declared via presetId (not just instanceId match)
-      forceOverwrite: Boolean(heartbeat?.forceOverwrite),
-    });
-    if (heartbeatPath) {
-      console.log(`[k8s-provisioner] ensured heartbeat template for ${accountId}: ${heartbeatPath}`);
+    if (skipHeartbeat) {
+      console.log(`[k8s-provisioner] skipping HEARTBEAT.md for ${accountId} (user-customized)`);
+    } else {
+      const heartbeatPath = await ensureHeartbeatTemplate(accountId, heartbeat, {
+        gateway,
+        customContent: heartbeat?.customContent || null,
+        // Force-overwrite only when explicitly declared via presetId (not just instanceId match)
+        forceOverwrite: Boolean(heartbeat?.forceOverwrite),
+      });
+      if (heartbeatPath) {
+        console.log(`[k8s-provisioner] ensured heartbeat template for ${accountId}: ${heartbeatPath}`);
+      }
     }
   } catch (error: any) {
     console.warn('[k8s-provisioner] Failed to ensure HEARTBEAT.md template:', (error as Error).message);
   }
   try {
-    const soulPath = await ensureWorkspaceSoulFile(accountId, heartbeat?.soulContent, { gateway });
-    if (soulPath) {
-      console.log(`[k8s-provisioner] wrote SOUL.md for ${accountId}: ${soulPath}`);
+    if (skipSoul) {
+      console.log(`[k8s-provisioner] skipping SOUL.md for ${accountId} (user-customized)`);
+    } else {
+      const soulPath = await ensureWorkspaceSoulFile(accountId, heartbeat?.soulContent, { gateway });
+      if (soulPath) {
+        console.log(`[k8s-provisioner] wrote SOUL.md for ${accountId}: ${soulPath}`);
+      }
     }
   } catch (error: any) {
     console.warn('[k8s-provisioner] Failed to write SOUL.md:', (error as Error).message);

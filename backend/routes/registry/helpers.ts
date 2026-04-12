@@ -196,6 +196,8 @@ const buildAgentInstallationPayload = (installation: any, {
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     runtime: runtimeConfig,
     config: normalizedConfig ? {
+      presetId: normalizedConfig.presetId || null,
+      customizations: normalizedConfig.customizations || null,
       heartbeat: normalizedConfig.heartbeat || null,
       autonomy: normalizedConfig.autonomy || null,
       errorRouting: normalizedConfig.errorRouting || null,

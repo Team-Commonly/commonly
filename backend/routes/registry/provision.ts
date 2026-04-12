@@ -251,6 +251,9 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: an
           forceOverwrite: Boolean(explicitPresetId),
         } : {}),
         ...(matchedPreset?.soulTemplate ? { soulContent: matchedPreset.soulTemplate } : {}),
+        // Customization flags — provisioner skips writing SOUL.md / HEARTBEAT.md
+        // when the user has marked them as customized (UI sets these flags).
+        customizations: configPayload.customizations || null,
       };
       provisioned = await provisionAgentRuntime({
         runtimeType,

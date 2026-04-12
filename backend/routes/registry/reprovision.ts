@@ -137,6 +137,8 @@ const reprovisionInstallation = async ({
       forceOverwrite: Boolean(explicitPresetId),
     } : {}),
     ...(matchedPreset?.soulTemplate ? { soulContent: matchedPreset.soulTemplate } : {}),
+    // Customization flags — provisioner honors user edits to SOUL.md/HEARTBEAT.md
+    customizations: configPayload.customizations || null,
   };
   const provisioned = await provisionAgentRuntime({
     runtimeType,
