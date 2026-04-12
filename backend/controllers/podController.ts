@@ -162,8 +162,8 @@ exports.getAllPods = async (req: any, res: any) => {
       .populate('parentPod', 'name _id')
       .sort({ updatedAt: -1 });
 
-    // When fetching agent-admin pods, restrict to pods the requester belongs to
-    if (type === 'agent-admin' && req.userId) {
+    // Personal pod types: only return pods the requester belongs to
+    if ((type === 'agent-admin' || type === 'agent-room') && req.userId) {
       const uid = String(req.userId);
       pods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
     }
@@ -189,7 +189,7 @@ exports.getPodsByType = async (req: any, res: any) => {
       .populate('members', 'username profilePicture')
       .sort({ updatedAt: -1 });
 
-    if (type === 'agent-admin' && req.userId) {
+    if ((type === 'agent-admin' || type === 'agent-room') && req.userId) {
       const uid = String(req.userId);
       const memberPods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
       return res.json(memberPods);
