@@ -43,61 +43,59 @@ spec:
             # So we must place the module next to config.yaml.
             cat > /app/rate_limit_signal.py <<'PYEOF'
             """LiteLLM callback: writes a signal file when a request hits a rate limit (429).
-            The codex-auth-rotator sidecar polls this file and rotates accounts immediately."""
+            The codex-auth-rotator sidecar polls this file and rotates accounts immediately.
+            Must extend CustomLogger for LiteLLM to invoke the hooks."""
             import json
             import os
             import time
+            from litellm.integrations.custom_logger import CustomLogger
 
             SIGNAL_FILE = '/chatgpt-auth/rotate-now'
-            RECENT_WINDOW_SEC = 120  # signals older than this are ignored by the rotator
 
-            class RateLimitSignaler:
+            def _is_rate_limit(exc_str: str) -> bool:
+                s = exc_str.lower()
+                return any(t in s for t in (
+                    '429', 'rate_limit', 'ratelimit', 'rate limit', 'too many requests',
+                    'ratelimiterror',
+                ))
+
+            def _write_signal(model: str, exc_str: str):
+                try:
+                    tmp = SIGNAL_FILE + '.tmp'
+                    with open(tmp, 'w') as f:
+                        json.dump({
+                            'timestamp': time.time(),
+                            'model': model,
+                            'exception': exc_str[:200],
+                        }, f)
+                    os.replace(tmp, SIGNAL_FILE)
+                    print(f'[rate-limit-signaler] SIGNALED rotate-now (model={model})', flush=True)
+                except Exception as e:
+                    print(f'[rate-limit-signaler] write failed: {e}', flush=True)
+
+            class RateLimitSignaler(CustomLogger):
+                def log_pre_api_call(self, model, messages, kwargs):
+                    pass
+
+                def log_success_event(self, kwargs, response_obj, start_time, end_time):
+                    pass
+
+                def log_failure_event(self, kwargs, response_obj, start_time, end_time):
+                    exc = kwargs.get('exception')
+                    if not exc: return
+                    exc_str = str(exc)
+                    if _is_rate_limit(exc_str):
+                        _write_signal(kwargs.get('model', 'unknown'), exc_str)
+
+                async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
+                    pass
+
                 async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
                     exc = kwargs.get('exception')
-                    if not exc:
-                        return
-                    s = str(exc).lower()
-                    # Heuristic match — LiteLLM wraps exceptions from many providers
-                    if not any(t in s for t in ('429', 'rate_limit', 'ratelimit', 'rate limit', 'too many requests')):
-                        return
-                    model = kwargs.get('model', 'unknown')
-                    try:
-                        # Atomic write via rename
-                        tmp = SIGNAL_FILE + '.tmp'
-                        with open(tmp, 'w') as f:
-                            json.dump({
-                                'timestamp': time.time(),
-                                'model': model,
-                                'exception': str(exc)[:200],
-                            }, f)
-                        os.replace(tmp, SIGNAL_FILE)
-                        print(f'[rate-limit-signaler] signaled rotate-now (model={model})', flush=True)
-                    except Exception as e:
-                        print(f'[rate-limit-signaler] failed to write signal: {e}', flush=True)
-
-                # LiteLLM may also call the sync version
-                def log_failure_event(self, kwargs, response_obj, start_time, end_time):
-                    # Re-use the async logic — import asyncio only if needed
-                    import asyncio
-                    try:
-                        loop = asyncio.get_event_loop()
-                        loop.create_task(self.async_log_failure_event(kwargs, response_obj, start_time, end_time))
-                    except RuntimeError:
-                        # No running loop — do sync write
-                        exc = kwargs.get('exception')
-                        if not exc: return
-                        s = str(exc).lower()
-                        if not any(t in s for t in ('429', 'rate_limit', 'ratelimit', 'rate limit', 'too many requests')):
-                            return
-                        model = kwargs.get('model', 'unknown')
-                        try:
-                            tmp = SIGNAL_FILE + '.tmp'
-                            with open(tmp, 'w') as f:
-                                json.dump({'timestamp': time.time(), 'model': model, 'exception': str(exc)[:200]}, f)
-                            os.replace(tmp, SIGNAL_FILE)
-                            print(f'[rate-limit-signaler] signaled rotate-now (model={model})', flush=True)
-                        except Exception as e:
-                            print(f'[rate-limit-signaler] failed to write signal: {e}', flush=True)
+                    if not exc: return
+                    exc_str = str(exc)
+                    if _is_rate_limit(exc_str):
+                        _write_signal(kwargs.get('model', 'unknown'), exc_str)
 
             proxy_handler_instance = RateLimitSignaler()
             PYEOF
