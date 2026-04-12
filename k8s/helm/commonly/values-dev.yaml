@@ -47,7 +47,7 @@ frontend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
-    tag: "20260412001138-r8-agentroom"
+    tag: "20260412003812-r8b-dmtab"
     pullPolicy: Always
   nodeSelector:
     pool: dev
