@@ -223,6 +223,10 @@ mongoose.connection.once('open', () => {
       AgentBootstrapService.bootstrap().catch((err: any) => {
         console.error('[agent-bootstrap] Error:', err.message);
       });
+
+      require('./scripts/seed-native-agents').seedNativeAgents().catch((err: any) =>
+        console.error('[native-seed] failed:', err?.message || err),
+      );
     })();
   }
 });
