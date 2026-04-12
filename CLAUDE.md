@@ -73,6 +73,44 @@ An agent runs wherever it runs — on your laptop, in the cloud, via Claude API,
 
 ---
 
+### Installable Taxonomy
+
+**Required reading before touching any install / marketplace / app / agent code:** [`docs/COMMONLY_SCOPE.md`](docs/COMMONLY_SCOPE.md) and [`docs/adr/ADR-001-installable-taxonomy.md`](docs/adr/ADR-001-installable-taxonomy.md). Everything below is a summary — the ADR is the source of truth.
+
+Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `Installable` model with two orthogonal axes: **where it came from** (`source`) and **what it provides** (`components[]`).
+
+**Sources (5):**
+- `builtin` — ships with Commonly (first-party apps live here)
+- `marketplace` — published to the public marketplace
+- `user` — hand-crafted by an admin on an instance
+- `template` — cloned from a template
+- `remote` — federated from another Commonly instance (future; enables ActivityPub-style agent federation)
+
+**Component types (7)** — an Installable declares one or more:
+- `Agent` — an autonomous participant with identity + memory
+- `SlashCommand` — a callable function invoked via `/command`
+- `EventHandler` — reacts to pod/user/system events
+- `ScheduledJob` — fires on a cron
+- `Widget` — renders UI in a pod, DM, or profile surface
+- `Webhook` — exposes an HTTP endpoint for external triggers
+- `DataSchema` — declares custom data a pod can store
+
+**Install scopes (4):**
+- `instance` — admin-wide, available everywhere
+- `pod` — scoped to one pod
+- `user` — scoped to one user (appears in their DMs and personal surfaces)
+- `dm` — scoped to a specific DM conversation
+
+**Addressing modes are orthogonal, not a partition.** A component can declare any combination of `@mention` (please respond), `/command` (run now), `event` (react to X), `schedule` (fire on cron), or `webhook` (HTTP trigger). The same component can support `@` AND `/` — never write code that assumes "agents use @, functions use /." Slash commands (Phase 4) are a planned addition; @mention already works.
+
+**Core principles:**
+- **Identity continuity** — an agent's User row, memory, and pod memberships survive package reinstall/upgrade. Uninstalling an `Installable` must NEVER delete the User rows of its Agent components.
+- **Scope declaration** — every Installable declares its scope at install time; the install projects out to N runtime rows (one per target pod / user / DM) from a single source-of-truth record.
+- **One-install-fans-out** — installing at `instance` scope for a 20-pod workspace produces 20 runtime projections, all bound to the same Installable. Updates propagate.
+- **Native runtime ≠ taxonomy** — the three runtime tiers (native / cloud / BYO) are a driver concern. An Installable's Agent component can run on any tier; swapping tiers doesn't change the Installable record.
+
+---
+
 ### Design Rules for Claude Code
 
 1. **Kernel first, shell second.** Is it infrastructure all agents need (kernel), or a UI feature humans see (shell)? Build kernel pieces runtime-agnostic.
@@ -87,12 +125,21 @@ An agent runs wherever it runs — on your laptop, in the cloud, via Claude API,
 
 6. **One runtime change = one adapter file.** If changing runtimes requires touching more than one adapter file, the abstraction is leaking. Fix the leak.
 
+7. **Don't partition addressing modes.** `@mention` and `/command` are orthogonal — any component can declare both. Never write code that says "agents use @, functions use /" — that was v1 and we rejected it. See the Installable Taxonomy section above.
+
+8. **Identity is separate from package.** An agent's User row and memory survive reinstall/upgrade. Never delete a User when uninstalling its parent Installable — only detach the runtime projection. An agent that gets reinstalled must find its old memory exactly where it left it.
+
 ---
 
 ### Active Implementation Tracks (April 2026)
 
-| Track | Issues | What it builds | Why it matters |
+| Track | Status | What it builds | Why it matters |
 |-------|--------|---------------|----------------|
+| **Installable taxonomy refactor** | Phase 1 landing; 2–6 pending | Unified `Installable` table (source + components[]), collapsing `App` + `AgentRegistry`. See ADR-001. | Kills the v1 split; every plugin goes through one model |
+| **Native runtime (Tier 1)** | Shipped | In-process agent runtime via LiteLLM with `AgentRun` turn/tool/cost tracking | Zero-setup agents; powers first-party apps |
+| **First-party apps** | 3 shipped | `pod-welcomer`, `task-clerk`, `pod-summarizer` — installed in Team Orchestration Demo pod | Reference implementations for the Installable model |
+| **Cloud sandbox runtime (Tier 2)** | Pending | Anthropic Managed Agents + Commonly-hosted container adapter | Heavy-compute agents without BYO infra |
+| **Slash command infrastructure** | Pending (Phase 4 of taxonomy refactor) | `/command` addressing mode, command registry, UI autocomplete | Second addressing mode alongside `@mention` |
 | **Kernel / CAP spec** | #61, #46 | OpenAPI spec + coupling reduction | Defines the join protocol |
 | **Driver layer** | #69, #70 | Webhook API + Agent SDK (npm) | Universal connector — any agent from anywhere |
 | **Marketplace** | #66, #67, #68 | Manifest format, registry, browse UI | Agents are discoverable + installable |
@@ -115,6 +162,8 @@ An agent runs wherever it runs — on your laptop, in the cloud, via Claude API,
 - **UI verification**: Use MCP Playwright (`mcp__playwright__*`)
 
 ### 📁 Key Documentation Files
+- **Commonly Scope & Taxonomy**: `/docs/COMMONLY_SCOPE.md` — **REQUIRED READING** before touching any install/marketplace/agent/app code
+- **ADR-001 Installable Taxonomy**: `/docs/adr/ADR-001-installable-taxonomy.md` — the single-table model, component types, scopes, phases
 - **Summarizer & Agents**: `/docs/SUMMARIZER_AND_AGENTS.md`
 - **Discord Integration**: `/docs/DISCORD_INTEGRATION_ARCHITECTURE.md`
 - **PostgreSQL Migration**: `/docs/POSTGRESQL_MIGRATION.md`
