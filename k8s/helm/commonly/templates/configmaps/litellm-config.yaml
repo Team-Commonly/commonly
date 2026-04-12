@@ -198,6 +198,12 @@ data:
     litellm_settings:
       # Drop unsupported params instead of erroring (important for OpenRouter quirks)
       drop_params: true
+      # Custom callback that writes /chatgpt-auth/rotate-now when any request hits a
+      # rate limit. The codex-auth-rotator sidecar polls that file and rotates
+      # accounts immediately (instead of waiting for its next scheduled tick).
+      # The callback module is installed at /tmp/callbacks/rate_limit_signal.py by
+      # the container startup script; PYTHONPATH is set accordingly.
+      callbacks: rate_limit_signal.proxy_handler_instance
 
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY

@@ -36,7 +36,73 @@ spec:
                 print('LiteLLM patch applied: string input -> list for chatgpt responses API')
             else:
                 print('LiteLLM patch: pattern not found, may already be fixed upstream')
-            " && exec litellm --config /app/config.yaml
+            "
+            # Write the custom callback that signals the rotator on 429s.
+            # LiteLLM's get_instance_fn resolves callbacks via spec_from_file_location
+            # relative to the config file's directory (/app/), NOT via importlib.
+            # So we must place the module next to config.yaml.
+            cat > /app/rate_limit_signal.py <<'PYEOF'
+            """LiteLLM callback: writes a signal file when a request hits a rate limit (429).
+            The codex-auth-rotator sidecar polls this file and rotates accounts immediately."""
+            import json
+            import os
+            import time
+
+            SIGNAL_FILE = '/chatgpt-auth/rotate-now'
+            RECENT_WINDOW_SEC = 120  # signals older than this are ignored by the rotator
+
+            class RateLimitSignaler:
+                async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
+                    exc = kwargs.get('exception')
+                    if not exc:
+                        return
+                    s = str(exc).lower()
+                    # Heuristic match — LiteLLM wraps exceptions from many providers
+                    if not any(t in s for t in ('429', 'rate_limit', 'ratelimit', 'rate limit', 'too many requests')):
+                        return
+                    model = kwargs.get('model', 'unknown')
+                    try:
+                        # Atomic write via rename
+                        tmp = SIGNAL_FILE + '.tmp'
+                        with open(tmp, 'w') as f:
+                            json.dump({
+                                'timestamp': time.time(),
+                                'model': model,
+                                'exception': str(exc)[:200],
+                            }, f)
+                        os.replace(tmp, SIGNAL_FILE)
+                        print(f'[rate-limit-signaler] signaled rotate-now (model={model})', flush=True)
+                    except Exception as e:
+                        print(f'[rate-limit-signaler] failed to write signal: {e}', flush=True)
+
+                # LiteLLM may also call the sync version
+                def log_failure_event(self, kwargs, response_obj, start_time, end_time):
+                    # Re-use the async logic — import asyncio only if needed
+                    import asyncio
+                    try:
+                        loop = asyncio.get_event_loop()
+                        loop.create_task(self.async_log_failure_event(kwargs, response_obj, start_time, end_time))
+                    except RuntimeError:
+                        # No running loop — do sync write
+                        exc = kwargs.get('exception')
+                        if not exc: return
+                        s = str(exc).lower()
+                        if not any(t in s for t in ('429', 'rate_limit', 'ratelimit', 'rate limit', 'too many requests')):
+                            return
+                        model = kwargs.get('model', 'unknown')
+                        try:
+                            tmp = SIGNAL_FILE + '.tmp'
+                            with open(tmp, 'w') as f:
+                                json.dump({'timestamp': time.time(), 'model': model, 'exception': str(exc)[:200]}, f)
+                            os.replace(tmp, SIGNAL_FILE)
+                            print(f'[rate-limit-signaler] signaled rotate-now (model={model})', flush=True)
+                        except Exception as e:
+                            print(f'[rate-limit-signaler] failed to write signal: {e}', flush=True)
+
+            proxy_handler_instance = RateLimitSignaler()
+            PYEOF
+            echo "rate-limit-signaler callback installed at /app/rate_limit_signal.py"
+            exec litellm --config /app/config.yaml
         ports:
         - name: http
           containerPort: 4000
@@ -153,6 +219,41 @@ spec:
           ROTATION_INTERVAL_SEC = int(os.environ.get('CODEX_ROTATION_INTERVAL_SEC', '600'))  # 10 min
           STATE_FILE = '/chatgpt-auth/rotator_state.json'
           AUTH_FILE = '/chatgpt-auth/auth.json'
+          SIGNAL_FILE = '/chatgpt-auth/rotate-now'
+          SIGNAL_POLL_SEC = 10  # how often to check for rate-limit signal during sleep
+          SIGNAL_MAX_AGE_SEC = 120  # ignore stale signals older than this
+
+          def check_and_consume_signal():
+              """Check if LiteLLM's rate-limit callback wrote a signal file. Returns True if we should rotate NOW."""
+              if not os.path.exists(SIGNAL_FILE):
+                  return False
+              try:
+                  with open(SIGNAL_FILE) as f:
+                      sig = json.load(f)
+                  age = time.time() - sig.get('timestamp', 0)
+                  if age > SIGNAL_MAX_AGE_SEC:
+                      # Stale — clean up and ignore
+                      os.remove(SIGNAL_FILE)
+                      return False
+                  # Consume the signal
+                  model = sig.get('model', '?')
+                  os.remove(SIGNAL_FILE)
+                  print(f'[rotator] rate-limit signal consumed — model={model}, rotating early', flush=True)
+                  return True
+              except Exception as e:
+                  print(f'[rotator] signal read failed: {e}', flush=True)
+                  return False
+
+          def interruptible_sleep(total_seconds):
+              """Sleep in small chunks so we can respond quickly to rate-limit signals."""
+              slept = 0
+              while slept < total_seconds:
+                  if check_and_consume_signal():
+                      return True  # triggered early
+                  sleep_this = min(SIGNAL_POLL_SEC, total_seconds - slept)
+                  time.sleep(sleep_this)
+                  slept += sleep_this
+              return False
 
           def token_exp(tok):
               if not tok: return 0
@@ -229,17 +330,21 @@ spec:
               exp_str = datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat() if exp else 'unknown'
               print(f'[rotator] active account-{label} (expires {exp_str})', flush=True)
 
-          print(f'[rotator] starting — rotation every {ROTATION_INTERVAL_SEC}s', flush=True)
+          print(f'[rotator] starting — rotation every {ROTATION_INTERVAL_SEC}s (or on 429 signal)', flush=True)
           client_id = os.environ.get('OPENAI_CODEX_CLIENT_ID', '')
-          # Skip the first rotation so the init container's selection stays active briefly
-          time.sleep(ROTATION_INTERVAL_SEC)
+          # Clean any stale signal file from a previous pod instance
+          if os.path.exists(SIGNAL_FILE):
+              try: os.remove(SIGNAL_FILE)
+              except Exception: pass
+          # Give init container's selection a moment to settle
+          interruptible_sleep(ROTATION_INTERVAL_SEC)
 
           while True:
               now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
               candidates = get_candidates()
               if not candidates:
                   print('[rotator] no candidates configured, sleeping', flush=True)
-                  time.sleep(ROTATION_INTERVAL_SEC)
+                  interruptible_sleep(ROTATION_INTERVAL_SEC)
                   continue
 
               state = load_state()
@@ -267,7 +372,8 @@ spec:
                   write_auth(label, access, refresh, id_tok, exp)
                   save_state({'last_index': idx, 'timestamp': now_ts})
 
-              time.sleep(ROTATION_INTERVAL_SEC)
+              # Sleep until next scheduled tick OR until a rate-limit signal fires
+              interruptible_sleep(ROTATION_INTERVAL_SEC)
         env:
         - name: CODEX_ROTATION_INTERVAL_SEC
           value: "600"
