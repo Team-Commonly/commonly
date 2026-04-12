@@ -1303,6 +1303,25 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
+  const handleTalkToAgent = async (agent) => {
+    try {
+      const response = await axios.post('/api/agents/runtime/room', {
+        agentName: agent?.name || agent?.agentName,
+        instanceId: agent?.instanceId || 'default',
+        podId: selectedPodId || undefined,
+      }, {
+        headers: getAuthHeaders(),
+      });
+      const roomPodId = response.data?.room?._id;
+      if (!roomPodId) {
+        throw new Error('Agent room not returned');
+      }
+      navigate(`/pods/agent-room/${roomPodId}`);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to open agent room');
+    }
+  };
+
   const currentPodId = selectedPodId;
 
   const modelOptions = [
@@ -2709,6 +2728,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                       onConfigure={openConfigDialog}
                       onRemove={handleRemove}
                       onMessage={handleMessageAgent}
+                      onTalkTo={handleTalkToAgent}
                       canRemove={canRemoveAgent(agent)}
                       onEdit={agent.templateId && agent.createdBy === currentUserId ? openEditTemplateDialog : null}
                       canEdit={agent.templateId && agent.createdBy === currentUserId}
@@ -2973,6 +2993,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                     onConfigure={(target) => (canManage ? openConfigDialog(target) : openAgentOverviewDialog(target))}
                     onRemove={handleRemove}
                     onMessage={handleMessageAgent}
+                    onTalkTo={handleTalkToAgent}
                     canConfigure={true}
                     installedActionLabel={canManage ? 'Configure' : 'View'}
                     canRemove={canManage}

@@ -475,6 +475,120 @@ router.post('/dm', auth, async (req: any, res: any) => {
 });
 
 /**
+ * POST /room — Find or create an agent room (many humans × one agent).
+ *
+ * Agent rooms are the primary human↔agent consultation surface — durable pods
+ * where the agent is the host and the requesting user is the first member.
+ * Other humans can be invited later.
+ *
+ * Request: { agentName, instanceId?, podId? }
+ * Response: { room: Pod }
+ */
+router.post('/room', auth, async (req: any, res: any) => {
+  try {
+    const userId = req.userId || req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const {
+      agentName: rawAgentName,
+      instanceId: rawInstanceId,
+      podId: requestedPodId,
+    } = req.body || {};
+
+    const agentName = String(rawAgentName || '').trim().toLowerCase();
+    const instanceId = String(rawInstanceId || '').trim() || null;
+    if (!agentName) {
+      return res.status(400).json({ message: 'agentName is required' });
+    }
+
+    // Find an active installation the requesting user has access to.
+    const installationQuery: any = { agentName, status: 'active' };
+    if (instanceId) installationQuery.instanceId = instanceId;
+    if (requestedPodId) installationQuery.podId = requestedPodId;
+
+    let installations = await AgentInstallation.find(installationQuery)
+      .select('agentName instanceId podId installedBy')
+      .lean();
+
+    // Backward-compat fallback for single-install agents.
+    if (!installations.length && instanceId) {
+      const fallbackQuery: any = { agentName, status: 'active' };
+      if (requestedPodId) fallbackQuery.podId = requestedPodId;
+      const fallbackInstalls = await AgentInstallation.find(fallbackQuery)
+        .select('agentName instanceId podId installedBy')
+        .limit(2)
+        .lean();
+      if (fallbackInstalls.length === 1) installations = fallbackInstalls;
+    }
+
+    if (!installations.length) {
+      return res.status(404).json({ message: 'No active installation found for that agent' });
+    }
+
+    // Authorization: user must be installer or a member of an installed pod.
+    const candidatePodIds = installations
+      .map((i: any) => i.podId).filter(Boolean);
+    const accessiblePods = await Pod.find({
+      _id: { $in: candidatePodIds },
+      members: userId,
+    }).select('_id').lean();
+    const accessibleSet = new Set(accessiblePods.map((p: any) => p._id.toString()));
+
+    const authorized = installations.filter((i: any) => (
+      String(i.installedBy || '') === String(userId)
+      || accessibleSet.has(String(i.podId))
+    ));
+
+    if (!authorized.length) {
+      return res.status(403).json({ message: 'Not authorized to talk to this agent' });
+    }
+
+    // Pick the installation — prefer exact instanceId match, fall back to sole.
+    const normalizedInstanceId = instanceId?.toLowerCase() || null;
+    const normalized = authorized.map((i: any) => ({
+      ...i,
+      instanceId: String(i.instanceId || 'default'),
+    }));
+    let selected: any = null;
+    const byExact = normalizedInstanceId
+      ? normalized.filter((i: any) => i.instanceId.toLowerCase() === normalizedInstanceId)
+      : [];
+    if (byExact.length === 1) {
+      selected = byExact[0];
+    } else if (normalized.length === 1) {
+      selected = normalized[0];
+    } else {
+      return res.status(409).json({
+        message: 'Multiple installations found. Specify instanceId.',
+        installations: normalized.map((i: any) => ({
+          instanceId: i.instanceId,
+          podId: String(i.podId || ''),
+        })),
+      });
+    }
+
+    // Resolve the agent's User row.
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(
+      selected.agentName,
+      { instanceId: selected.instanceId || 'default' },
+    );
+
+    // Get or create the agent room.
+    const room = await DMService.getOrCreateAgentRoom(agentUser._id, userId, {
+      agentName: selected.agentName,
+      instanceId: selected.instanceId || 'default',
+    });
+
+    return res.json({ room });
+  } catch (error: any) {
+    console.error('Error creating/fetching agent room:', error);
+    return res.status(500).json({ message: 'Failed to create/fetch agent room' });
+  }
+});
+
+/**
  * POST /bot/events/:id/ack (user API token auth)
  * For bot users to acknowledge events
  */

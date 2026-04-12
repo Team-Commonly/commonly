@@ -4018,7 +4018,11 @@ const ChatRoom = () => {
                             <IconButton
                                 edge="start"
                                 color="inherit"
-                                onClick={() => navigate(room?.type === 'agent-admin' ? '/pods/agent-admin' : `/pods/${podType}`)}
+                                onClick={() => {
+                                    if (room?.type === 'agent-admin') navigate('/pods/agent-admin');
+                                    else if (room?.type === 'agent-room') navigate('/pods/agent-room');
+                                    else navigate(`/pods/${podType}`);
+                                }}
                                 sx={{ mr: { xs: 0.5, sm: 1.5 }, flexShrink: 0 }}
                             >
                                 <ArrowBackIcon />
@@ -4037,10 +4041,12 @@ const ChatRoom = () => {
                                 <Typography variant="caption" className="chat-room-subtitle">
                                     {room?.type === 'agent-admin'
                                         ? 'Admin Channel'
-                                        : `${room?.members?.length || 0} members`}
+                                        : room?.type === 'agent-room'
+                                            ? 'Agent Room'
+                                            : `${room?.members?.length || 0} members`}
                                 </Typography>
                             </Box>
-                            {room?.type !== 'agent-admin' && !isMobile && (
+                            {room?.type !== 'agent-admin' && room?.type !== 'agent-room' && !isMobile && (
                                 <Button
                                     size="small"
                                     variant="outlined"

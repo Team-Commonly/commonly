@@ -251,6 +251,66 @@ class DMService {
 
     return dmPod;
   }
+  /**
+   * Find or create an agent-room pod for a given agent. Agent rooms are the
+   * "pro agent's office" — a durable pod where one agent is the host and many
+   * humans can converge to consult it. Distinct from the agent-admin DM (1:1
+   * debug channel) and from regular team pods (N×N).
+   *
+   * If the requesting user already has an agent room with this agent, the
+   * existing pod is returned. Otherwise a new one is created.
+   */
+  static async getOrCreateAgentRoom(agentUserId: unknown, requestingUserId: unknown, { agentName, instanceId }: DMOptions = {}): Promise<InstanceType<typeof Pod>> {
+    const agentId = String(agentUserId);
+    const userId = String(requestingUserId);
+    const label = agentName || 'agent';
+    const instanceSuffix = instanceId && instanceId !== 'default' ? ` (${instanceId})` : '';
+
+    // Look for an existing agent-room pod where both the agent and the user
+    // are members. This finds rooms this user already opened with the agent.
+    const existing = await Pod.findOne({
+      type: 'agent-room',
+      members: { $all: [agentId, userId] },
+    });
+    if (existing) return existing;
+
+    // Create a new agent-room pod. The agent is the conceptual "host" — listed
+    // first in members and set as createdBy so the UI can display the agent's
+    // avatar in the pod header.
+    const roomPod = new Pod({
+      name: `${label}${instanceSuffix}`,
+      description: `Agent room — talk with ${label}`,
+      type: 'agent-room',
+      joinPolicy: 'invite-only',
+      createdBy: agentId,
+      members: [agentId, userId],
+    });
+    await roomPod.save();
+
+    // Sync to PostgreSQL
+    try {
+      if (process.env.PG_HOST && PGPod) {
+        await PGPod.create(
+          roomPod.name,
+          roomPod.description || '',
+          'agent-room',
+          agentId,
+          roomPod._id.toString(),
+        );
+        await PGPod.addMember(roomPod._id.toString(), agentId);
+        await PGPod.addMember(roomPod._id.toString(), userId);
+      }
+    } catch (pgError) {
+      console.error('Failed to sync agent-room pod to PostgreSQL:', (pgError as Error).message);
+    }
+
+    console.log(
+      `[dm-service] Created agent-room pod=${roomPod._id}`
+      + ` agent=${label} user=${userId}`,
+    );
+
+    return roomPod;
+  }
 }
 
 export default DMService;

@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export type PodType = 'chat' | 'study' | 'games' | 'agent-ensemble' | 'agent-admin' | 'team';
+export type PodType = 'chat' | 'study' | 'games' | 'agent-ensemble' | 'agent-admin' | 'agent-room' | 'team';
 export type PodJoinPolicy = 'open' | 'invite-only';
 export type EnsembleParticipantRole = 'starter' | 'responder' | 'synthesizer' | 'observer';
 export type HumanParticipation = 'none' | 'read-only' | 'participate';
@@ -48,7 +48,7 @@ const PodSchema = new Schema<IPod>(
     description: { type: String, trim: true },
     type: {
       type: String,
-      enum: ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'team'],
+      enum: ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'agent-room', 'team'],
       default: 'chat',
     },
     joinPolicy: {

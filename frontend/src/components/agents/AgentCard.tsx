@@ -101,6 +101,7 @@ interface AgentCardProps {
   onConfigure?: (agent: Agent) => void;
   onRemove?: (agent: Agent) => void;
   onMessage?: (agent: Agent) => void;
+  onTalkTo?: (agent: Agent) => void;
   onEdit?: (agent: Agent) => void;
   onViewProfile?: (agent: Agent) => void;
   canRemove?: boolean;
@@ -122,6 +123,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
   onConfigure,
   onRemove,
   onMessage,
+  onTalkTo,
   onEdit,
   onViewProfile,
   canRemove = false,
@@ -358,13 +360,13 @@ const AgentCard: React.FC<AgentCardProps> = ({
           {installed ? (
             <>
               <Button
-                variant="outlined"
+                variant={onTalkTo ? 'contained' : 'outlined'}
                 size="small"
                 startIcon={<ChatIcon />}
-                onClick={() => onMessage?.(agent)}
+                onClick={() => (onTalkTo ? onTalkTo(agent) : onMessage?.(agent))}
                 sx={{ minHeight: 36 }}
               >
-                Message
+                {onTalkTo ? 'Talk to' : 'Message'}
               </Button>
               <Button
                 variant="outlined"
@@ -541,14 +543,27 @@ const AgentCard: React.FC<AgentCardProps> = ({
       >
         {installed ? (
           <>
-            <Button
-              size="small"
-              startIcon={<ChatIcon />}
-              onClick={() => onMessage?.(agent)}
-              sx={{ minHeight: 34 }}
-            >
-              Message
-            </Button>
+            {onTalkTo && (
+              <Button
+                size="small"
+                variant="contained"
+                startIcon={<ChatIcon />}
+                onClick={() => onTalkTo(agent)}
+                sx={{ minHeight: 34, mr: 'auto' }}
+              >
+                Talk to
+              </Button>
+            )}
+            {!onTalkTo && (
+              <Button
+                size="small"
+                startIcon={<ChatIcon />}
+                onClick={() => onMessage?.(agent)}
+                sx={{ minHeight: 34 }}
+              >
+                Message
+              </Button>
+            )}
             <Button
               size="small"
               disabled={!canConfigure}

@@ -12,6 +12,7 @@ import {
     ChevronLeft as ChevronLeftIcon,
     Email as EmailIcon,
     SmartToy as AgentsIcon,
+    SupportAgent as AgentRoomIcon,
     Forum as ForumIcon,
     Timeline as ActivityIcon,
     Apps as AppsIcon,
@@ -128,12 +129,21 @@ const Dashboard: React.FC = () => {
 
                 <ListItemButton
                     onClick={() => handleNavigation('/pods')}
-                    selected={location.pathname.startsWith('/pods') && !location.pathname.includes('agent-admin')}
+                    selected={location.pathname.startsWith('/pods') && !location.pathname.includes('agent-admin') && !location.pathname.includes('agent-room')}
                 >
                     <ListItemIcon>
                         <ChatIcon />
                     </ListItemIcon>
                     <ListItemText primary="Pods" />
+                </ListItemButton>
+                <ListItemButton
+                    onClick={() => handleNavigation('/pods/agent-room')}
+                    selected={location.pathname.startsWith('/pods/agent-room')}
+                >
+                    <ListItemIcon>
+                        <AgentRoomIcon />
+                    </ListItemIcon>
+                    <ListItemText primary="Agent Rooms" />
                 </ListItemButton>
                 <ListItemButton
                     onClick={() => handleNavigation('/pods/agent-admin')}
