@@ -60,20 +60,13 @@ test('shows feed item when expanded', () => {
   expect(container.textContent).toContain('Feed');
 });
 
-test('shows Agent Rooms sidebar item when expanded', () => {
-  useAppContext.mockReturnValue({ currentUser: { username: 'u', email: 'e' }, userLoading: false, refreshData: jest.fn() });
-  useLayout.mockReturnValue({ isDashboardCollapsed: false, toggleDashboard: jest.fn() });
-  useLocation.mockReturnValue({ pathname: '/other' });
-  renderDashboard();
-  expect(container.textContent).toContain('Agent Rooms');
-});
-
-test('shows Pods and Agent Admin alongside Agent Rooms', () => {
+test('shows Pods and Agent Admin in sidebar (Agent DMs live in Pod tabs)', () => {
   useAppContext.mockReturnValue({ currentUser: { username: 'u', email: 'e' }, userLoading: false, refreshData: jest.fn() });
   useLayout.mockReturnValue({ isDashboardCollapsed: false, toggleDashboard: jest.fn() });
   useLocation.mockReturnValue({ pathname: '/other' });
   renderDashboard();
   expect(container.textContent).toContain('Pods');
-  expect(container.textContent).toContain('Agent Rooms');
   expect(container.textContent).toContain('Agent Admin');
+  // Agent DMs are a pod tab, not a sidebar item
+  expect(container.textContent).not.toContain('Agent Rooms');
 });

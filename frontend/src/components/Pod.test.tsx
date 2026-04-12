@@ -292,7 +292,7 @@ test('tab change navigates', async () => {
   
   // Get all tabs and click the second one (Study tab)
   const tabs = screen.getAllByRole('tab');
-  expect(tabs).toHaveLength(5); // Chat, Study, Games, Ensemble, Teams
+  expect(tabs).toHaveLength(6); // Chat, Study, Games, Ensemble, Teams, Agent DMs
   
   const studyTab = tabs[1]; // Study is the second tab
   expect(studyTab).toHaveTextContent('Study');

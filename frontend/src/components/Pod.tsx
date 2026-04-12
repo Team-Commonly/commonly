@@ -123,6 +123,7 @@ const Pod = () => {
             case 2: return 'games';
             case 3: return 'agent-ensemble';
             case 4: return 'team';
+            case 5: return 'agent-room';
             default: return 'chat';
         }
     }, [podType, tabValue]);
@@ -135,6 +136,7 @@ const Pod = () => {
                 case 'games': setTabValue(2); break;
                 case 'agent-ensemble': setTabValue(3); break;
                 case 'team': setTabValue(4); break;
+                case 'agent-room': setTabValue(5); break;
                 default: setTabValue(0);
             }
         }
@@ -494,6 +496,7 @@ const Pod = () => {
                             <Tab label="Games" className="pod-tab" />
                             <Tab label="Ensemble" className="pod-tab" />
                             <Tab label="Teams" className="pod-tab" />
+                            <Tab label="Agent DMs" className="pod-tab" />
                         </Tabs>
                         <Box className="pod-membership-filter-row">
                             <Button size="small" variant={membershipFilter === 'all' ? 'contained' : 'outlined'} className="pod-filter-button" onClick={() => setMembershipFilter('all')}>All</Button>

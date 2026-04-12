@@ -4021,7 +4021,7 @@ const ChatRoom = () => {
                                 onClick={() => {
                                     if (room?.type === 'agent-admin') navigate('/pods/agent-admin');
                                     else if (room?.type === 'agent-room') navigate('/pods/agent-room');
-                                    else navigate(`/pods/${podType}`);
+                                    else navigate(`/pods/${podType || 'chat'}`);
                                 }}
                                 sx={{ mr: { xs: 0.5, sm: 1.5 }, flexShrink: 0 }}
                             >
@@ -4042,7 +4042,7 @@ const ChatRoom = () => {
                                     {room?.type === 'agent-admin'
                                         ? 'Admin Channel'
                                         : room?.type === 'agent-room'
-                                            ? 'Agent Room'
+                                            ? 'Agent DM'
                                             : `${room?.members?.length || 0} members`}
                                 </Typography>
                             </Box>

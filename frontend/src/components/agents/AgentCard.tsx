@@ -543,27 +543,15 @@ const AgentCard: React.FC<AgentCardProps> = ({
       >
         {installed ? (
           <>
-            {onTalkTo && (
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<ChatIcon />}
-                onClick={() => onTalkTo(agent)}
-                sx={{ minHeight: 34, mr: 'auto' }}
-              >
-                Talk to
-              </Button>
-            )}
-            {!onTalkTo && (
-              <Button
-                size="small"
-                startIcon={<ChatIcon />}
-                onClick={() => onMessage?.(agent)}
-                sx={{ minHeight: 34 }}
-              >
-                Message
-              </Button>
-            )}
+            <Button
+              size="small"
+              variant={onTalkTo ? 'contained' : 'text'}
+              startIcon={<ChatIcon />}
+              onClick={() => (onTalkTo ? onTalkTo(agent) : onMessage?.(agent))}
+              sx={{ minHeight: 34 }}
+            >
+              {onTalkTo ? 'Talk to' : 'Message'}
+            </Button>
             <Button
               size="small"
               disabled={!canConfigure}

@@ -59,6 +59,20 @@ describe('AgentCard', () => {
     expect(onTalkTo).toHaveBeenCalledWith(baseAgent);
   });
 
+  it('Talk to button renders as contained variant (visually prominent)', () => {
+    const onTalkTo = jest.fn();
+    const { container } = render(
+      <AgentCard
+        agent={baseAgent}
+        installed
+        onTalkTo={onTalkTo}
+      />,
+    );
+    const btn = screen.getByRole('button', { name: /talk to/i });
+    // MUI contained variant adds MuiButton-contained class
+    expect(btn.className).toContain('contained');
+  });
+
   it('shows "Message" button when installed but onTalkTo is NOT provided', () => {
     const onMessage = jest.fn();
     render(
