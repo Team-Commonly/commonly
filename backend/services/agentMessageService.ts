@@ -84,6 +84,7 @@ interface PostTargetOptions {
   metadata?: MetadataDoc;
   agentUser: AgentUserDoc;
   displayName?: string;
+  replyToMessageId?: string | null;
   skipDeliveryUpdate?: boolean;
   skipSummaryPersistence?: boolean;
 }
@@ -972,6 +973,7 @@ class AgentMessageService {
       metadata,
       agentUser,
       displayName,
+      replyToMessageId,
     });
 
     return {
@@ -1028,7 +1030,7 @@ class AgentMessageService {
   static async _postToTarget(options: PostTargetOptions): Promise<{ message: MessageNormalized; summary: unknown }> {
     const {
       agentName, instanceId = 'default', podId, content, messageType = 'text',
-      metadata = {}, agentUser, displayName, skipDeliveryUpdate = false, skipSummaryPersistence = false,
+      metadata = {}, agentUser, displayName, replyToMessageId = null, skipDeliveryUpdate = false, skipSummaryPersistence = false,
     } = options;
 
     const senderDisplayName = agentUser?.botMetadata?.displayName || displayName || agentUser?.username;
