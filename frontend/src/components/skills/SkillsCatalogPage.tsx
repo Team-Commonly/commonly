@@ -48,6 +48,7 @@ interface CatalogItem {
   sourceUrl?: string;
   license?: { name?: string; text?: string; path?: string } | string;
   stars?: number;
+  forks?: number;
   type?: string;
   repo?: string;
 }
@@ -1157,6 +1158,13 @@ const SkillsCatalogPage: React.FC = () => {
                             sx={{ mb: 1 }}
                           />
                         )}
+                        {Number.isFinite(item.forks) && (item.forks ?? -1) > 0 && (
+                          <Chip
+                            size="small"
+                            label={`🍴 ${item.forks!.toLocaleString()}`}
+                            sx={{ mb: 1 }}
+                          />
+                        )}
                         {item.type && (
                           <Chip
                             size="small"
@@ -1777,7 +1785,10 @@ const SkillsCatalogPage: React.FC = () => {
               </Typography>
               <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
                 {Number.isFinite(detailItem.stars) && (detailItem.stars ?? -1) >= 0 && (
-                  <Chip size="small" label={`★ ${detailItem.stars!.toLocaleString()} GitHub stars`} />
+                  <Chip size="small" label={`★ ${detailItem.stars!.toLocaleString()} stars`} />
+                )}
+                {Number.isFinite(detailItem.forks) && (detailItem.forks ?? -1) > 0 && (
+                  <Chip size="small" label={`🍴 ${detailItem.forks!.toLocaleString()} forks`} />
                 )}
                 {detailItem.sourceUrl && (
                   <Button

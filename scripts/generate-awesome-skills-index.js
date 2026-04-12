@@ -228,6 +228,7 @@ const fetchRepoInfo = async (owner, repo) => {
   const payload = await res.json();
   return {
     stars: Number.isFinite(payload.stargazers_count) ? payload.stargazers_count : 0,
+    forks: Number.isFinite(payload.forks_count) ? payload.forks_count : 0,
   };
 };
 
@@ -248,12 +249,13 @@ const enrichRepoStats = async (itemsList) => {
         try {
           cache.set(repoKey, await fetchRepoInfo(repoInfo.owner, repoInfo.repo));
         } catch (err) {
-          cache.set(repoKey, { stars: 0 });
+          cache.set(repoKey, { stars: 0, forks: 0 });
         }
       }
       const payload = cache.get(repoKey);
       current.item.repo = repoKey;
       current.item.stars = payload?.stars ?? 0;
+      current.item.forks = payload?.forks ?? 0;
     }
   };
 

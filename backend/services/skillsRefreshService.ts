@@ -116,10 +116,10 @@ const parseRepoString = (repo: unknown): { owner: string; name: string } | null 
   return { owner: parts[0], name: parts[1] };
 };
 
-const fetchRepoStars = async (
+const fetchRepoStats = async (
   owner: string,
   name: string,
-): Promise<{ stars: number | null; rateLimited: boolean; authFailed: boolean }> => {
+): Promise<{ stars: number | null; forks: number | null; rateLimited: boolean; authFailed: boolean }> => {
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
   const response = await fetch(url, { headers: buildGitHubHeaders() });
   if (response.status === 401 || response.status === 403) {
@@ -127,24 +127,25 @@ const fetchRepoStars = async (
     // from an auth failure by checking the header.
     const remaining = response.headers.get('x-ratelimit-remaining');
     if (remaining === '0') {
-      return { stars: null, rateLimited: true, authFailed: false };
+      return { stars: null, forks: null, rateLimited: true, authFailed: false };
     }
     if (response.status === 401) {
-      return { stars: null, rateLimited: false, authFailed: true };
+      return { stars: null, forks: null, rateLimited: false, authFailed: true };
     }
     // A plain 403 with no rate-limit header — treat as auth failure to be safe.
-    return { stars: null, rateLimited: false, authFailed: true };
+    return { stars: null, forks: null, rateLimited: false, authFailed: true };
   }
   if (response.status === 404) {
-    // Repo moved or private — leave stars alone.
-    return { stars: null, rateLimited: false, authFailed: false };
+    // Repo moved or private — leave stats alone.
+    return { stars: null, forks: null, rateLimited: false, authFailed: false };
   }
   if (!response.ok) {
     throw new Error(`GitHub repo fetch failed: ${response.status} ${response.statusText}`);
   }
-  const body = await response.json() as { stargazers_count?: number };
+  const body = await response.json() as { stargazers_count?: number; forks_count?: number };
   return {
     stars: typeof body.stargazers_count === 'number' ? body.stargazers_count : null,
+    forks: typeof body.forks_count === 'number' ? body.forks_count : null,
     rateLimited: false,
     authFailed: false,
   };
@@ -209,7 +210,7 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
   });
   result.reposTotal = uniqueRepos.size;
 
-  const starByRepo = new Map<string, number>();
+  const statsByRepo = new Map<string, { stars: number; forks: number }>();
   let stopDueToAuth = false;
   let stopDueToRateLimit = false;
 
@@ -217,7 +218,7 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
   for (const [key, parsed] of uniqueRepos) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const { stars, rateLimited, authFailed } = await fetchRepoStars(parsed.owner, parsed.name);
+      const { stars, forks, rateLimited, authFailed } = await fetchRepoStats(parsed.owner, parsed.name);
       if (authFailed) {
         stopDueToAuth = true;
         errors.push(new Error(`GitHub auth failed for ${key} — check GITHUB_PAT`));
@@ -229,7 +230,10 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
         break;
       }
       if (typeof stars === 'number') {
-        starByRepo.set(key, stars);
+        statsByRepo.set(key, {
+          stars,
+          forks: typeof forks === 'number' ? forks : 0,
+        });
       }
     } catch (error) {
       errors.push(error as Error);
@@ -241,29 +245,31 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
   }
 
   if (stopDueToAuth) {
-    // Without valid auth we can't trust the stars we got (may be empty).
+    // Without valid auth we can't trust the stats we got (may be empty).
     // Still write the upstream index though — that's a net improvement.
-    console.warn('[skills-refresh] GitHub auth failed; writing upstream index without fresh stars.');
+    console.warn('[skills-refresh] GitHub auth failed; writing upstream index without fresh stats.');
   }
   if (stopDueToRateLimit) {
-    console.warn('[skills-refresh] Hit GitHub rate limit mid-run; partial stars will be applied.');
+    console.warn('[skills-refresh] Hit GitHub rate limit mid-run; partial stats will be applied.');
   }
 
-  // Overlay fresh stars onto each catalog item.
+  // Overlay fresh stars and forks onto each catalog item.
   let refreshedCount = 0;
   items.forEach((item) => {
     const parsed = parseRepoString(item.repo);
     if (!parsed) return;
     const key = `${parsed.owner}/${parsed.name}`;
-    const stars = starByRepo.get(key);
-    if (typeof stars === 'number') {
+    const stats = statsByRepo.get(key);
+    if (stats) {
       // eslint-disable-next-line no-param-reassign
-      (item as { stars: number }).stars = stars;
+      (item as { stars: number }).stars = stats.stars;
+      // eslint-disable-next-line no-param-reassign
+      (item as { forks: number }).forks = stats.forks;
       refreshedCount += 1;
     }
   });
   result.refreshed = refreshedCount;
-  result.reposUpdated = starByRepo.size;
+  result.reposUpdated = statsByRepo.size;
 
   // Stamp the catalog for frontend "last updated X ago" display.
   // If upstream fetch succeeded, record now as the upstreamRefreshedAt.
@@ -301,7 +307,7 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
     }
     console.log(
       `[skills-refresh] Wrote ${items.length} items to ${targetPath} `
-      + `(stars updated on ${refreshedCount} item(s) across ${starByRepo.size}/${uniqueRepos.size} repo(s))`,
+      + `(stats updated on ${refreshedCount} item(s) across ${statsByRepo.size}/${uniqueRepos.size} repo(s))`,
     );
   } catch (error) {
     const err = error as Error;
