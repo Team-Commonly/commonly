@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
-    tag: "20260411164845-r5-agents"
+    tag: "20260411181247-r6-native"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
