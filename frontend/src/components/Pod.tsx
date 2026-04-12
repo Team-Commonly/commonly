@@ -326,7 +326,7 @@ const Pod = () => {
     const handleCreateRoom = async () => {
         try {
             if (!roomName.trim()) { setError('Pod name is required'); return; }
-            const podTypes = ['chat', 'study', 'games', 'agent-ensemble', 'team'];
+            const podTypes = ['chat', 'study', 'games', 'agent-ensemble', 'team', 'agent-room'];
             const newPodType = podTypes[tabValue] || 'chat';
             const response = await axios.post('/api/pods', {
                 name: roomName,
@@ -413,7 +413,7 @@ const Pod = () => {
 
     const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
         setTabValue(newValue);
-        const podTypes = ['chat', 'study', 'games', 'agent-ensemble', 'team'];
+        const podTypes = ['chat', 'study', 'games', 'agent-ensemble', 'team', 'agent-room'];
         navigate(`/pods/${podTypes[newValue]}`);
     };
 
