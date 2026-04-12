@@ -1,35 +1,27 @@
 import type { NativeAgentDefinition } from './types';
+import { podWelcomerApp } from './pod-welcomer';
+import { taskClerkApp } from './task-clerk';
+import { podSummarizerApp } from './pod-summarizer';
 
 export type { NativeAgentDefinition, NativeAgentTrigger, CommonlyTool } from './types';
 
 /**
- * Backend-side hook for first-party native agents.
+ * First-party native agent registry — loaded at backend startup by
+ * `scripts/seed-native-agents.ts`, upserted into AgentRegistry, and
+ * executed in-process by `services/nativeRuntimeService.ts`.
  *
- * The canonical registry lives in `packages/commonly-apps/src/index.ts`.
- * Backend's tsconfig is scoped to `backend/` (see tsconfig.typescheck.json),
- * so we can't statically import across the package boundary — a dynamic
- * `require` resolved at runtime via `ts-node --transpile-only` is the
- * pragmatic bridge. The result is coerced into the backend-local mirror
- * type (`./types.ts`), which is kept byte-identical with the package's
- * canonical `types.ts`.
+ * Canonical source is here in backend/config/native-agents/ for the MVP.
+ * The parallel `packages/commonly-apps/` package holds the same definitions
+ * as "future state" — when we set up a proper monorepo build that bundles
+ * cross-package code into the backend Docker context, the source of truth
+ * moves to packages/ and this file becomes a thin re-export. For now,
+ * editing either location is fine as long as they stay in sync.
  *
- * If `packages/commonly-apps` isn't present at runtime (or fails to load)
- * we fall back to an empty array so the seed becomes a no-op instead of
- * crashing backend startup.
+ * To add a new app: create a new file in this directory exporting a
+ * NativeAgentDefinition, then import + add to FIRST_PARTY_APPS below.
  */
-let LOADED_APPS: NativeAgentDefinition[] = [];
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pkg = require('../../../packages/commonly-apps/src');
-  const raw = (pkg && pkg.FIRST_PARTY_APPS) || [];
-  LOADED_APPS = Array.isArray(raw) ? (raw as NativeAgentDefinition[]) : [];
-} catch (err: unknown) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    '[native-agents] failed to load packages/commonly-apps — FIRST_PARTY_APPS empty:',
-    (err as { message?: string })?.message || err,
-  );
-  LOADED_APPS = [];
-}
-
-export const FIRST_PARTY_APPS: NativeAgentDefinition[] = LOADED_APPS;
+export const FIRST_PARTY_APPS: NativeAgentDefinition[] = [
+  podWelcomerApp,
+  taskClerkApp,
+  podSummarizerApp,
+];
