@@ -3280,7 +3280,25 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           )}
           {agentOverview && (
             <Stack spacing={1.5}>
-              <Chip size="small" variant="outlined" label={`Instance: ${agentOverview.instanceId || 'default'}`} />
+              <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                <Chip size="small" variant="outlined" label={`Instance: ${agentOverview.instanceId || 'default'}`} />
+                {(agentOverview as any).config?.presetId && (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`preset: ${(agentOverview as any).config.presetId}`}
+                    sx={{ borderColor: 'rgba(99, 102, 241, 0.5)', color: '#6366f1' }}
+                  />
+                )}
+                {((agentOverview as any).config?.customizations?.soul || (agentOverview as any).config?.customizations?.heartbeat) && (
+                  <Chip
+                    size="small"
+                    label="customized"
+                    variant="outlined"
+                    sx={{ bgcolor: 'rgba(251, 191, 36, 0.15)', color: '#b45309', borderColor: 'rgba(251, 191, 36, 0.5)' }}
+                  />
+                )}
+              </Stack>
               <Typography variant="body2" color="text.secondary">
                 {agentOverview.profile?.purpose || agentOverview.description || 'No description provided.'}
               </Typography>
@@ -3329,6 +3347,29 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             <Alert severity="info" sx={{ mb: 2 }}>
               Instance ID: {configAgent.instanceId}
             </Alert>
+          )}
+          {((configAgent as any)?.config?.presetId || (configAgent as any)?.config?.customizations?.soul || (configAgent as any)?.config?.customizations?.heartbeat) && (
+            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+              {(configAgent as any).config?.presetId && (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={`preset: ${(configAgent as any).config.presetId}`}
+                  sx={{ borderColor: 'rgba(99, 102, 241, 0.5)', color: '#6366f1' }}
+                />
+              )}
+              {((configAgent as any).config?.customizations?.soul || (configAgent as any).config?.customizations?.heartbeat) && (
+                <Chip
+                  size="small"
+                  label={`customized: ${[
+                    (configAgent as any).config.customizations?.soul && 'SOUL',
+                    (configAgent as any).config.customizations?.heartbeat && 'HEARTBEAT',
+                  ].filter(Boolean).join(' + ')}`}
+                  variant="outlined"
+                  sx={{ bgcolor: 'rgba(251, 191, 36, 0.15)', color: '#b45309', borderColor: 'rgba(251, 191, 36, 0.5)' }}
+                />
+              )}
+            </Stack>
           )}
           <FormControl fullWidth>
             <InputLabel id="agent-model-label">Model Override</InputLabel>
