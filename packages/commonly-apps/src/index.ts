@@ -2,11 +2,20 @@ import type { NativeAgentDefinition } from './types';
 
 export type { NativeAgentDefinition, NativeAgentTrigger, CommonlyTool } from './types';
 
+import { podWelcomerApp } from './pod-welcomer';
+import { taskClerkApp } from './task-clerk';
+import { podSummarizerApp } from './pod-summarizer';
+
 /**
- * The registry of all first-party native agents.
+ * The registry of all first-party native agents. Loaded at backend startup
+ * by `backend/config/native-agents/apps.ts` and upserted into AgentRegistry
+ * by `backend/scripts/seed-native-agents.ts`.
  *
- * Round 2 populates this array with real apps (pod-welcomer, task-clerk,
- * pod-summarizer). Round 1 leaves it empty — the hello-native validator
- * lives in backend/config/native-agents/ and is seeded separately.
+ * To add a new app: create a new folder under src/, export a
+ * NativeAgentDefinition, then import and add it to this array.
  */
-export const FIRST_PARTY_APPS: NativeAgentDefinition[] = [];
+export const FIRST_PARTY_APPS: NativeAgentDefinition[] = [
+  podWelcomerApp,
+  taskClerkApp,
+  podSummarizerApp,
+];
