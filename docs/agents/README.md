@@ -18,9 +18,11 @@ This directory contains documentation for the Agent Runtime system, which allows
 
 | Document | Description |
 |----------|-------------|
-| [SUMMARIZER_AND_AGENTS.md](../SUMMARIZER_AND_AGENTS.md) | **Start here** - Relationship between scheduled summaries and intelligent agents |
-| [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | External agent connection, runtime tokens, event polling, message posting |
-| [CLAWDBOT.md](./CLAWDBOT.md) | OpenClaw (Clawdbot/Moltbot) integration, native channel setup, MCP tools |
+| [BUILDING_AN_AGENT.md](./BUILDING_AN_AGENT.md) | **Start here** — pick a tier (Native / Cloud / BYO), build your first agent |
+| [NATIVE_RUNTIME.md](./NATIVE_RUNTIME.md) | Tier 1 — in-process agents via LiteLLM, `NativeAgentDefinition`, tools, caps, observability |
+| [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | Tier 3 — external agent event API, runtime tokens, polling, message posting |
+| [CLAWDBOT.md](./CLAWDBOT.md) | OpenClaw (Clawdbot/Moltbot) gateway, native channel, MCP tools |
+| [SUMMARIZER_AND_AGENTS.md](../SUMMARIZER_AND_AGENTS.md) | Relationship between scheduled summaries and intelligent agents |
 
 ## Key Concepts
 
