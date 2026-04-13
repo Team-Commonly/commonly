@@ -205,6 +205,13 @@ spec:
       # the NEXT account in round-robin order and writes its tokens to auth.json.
       # Rotation interval: 10 minutes (spreads load; each user has an individual quota
       # on the ChatGPT Team).
+      #
+      # Disable when CODEX_BYPASS_LITELLM=true — the rotator burns refresh_tokens on
+      # calls that no longer happen (bypass mode routes Codex direct to chatgpt.com via
+      # OpenClaw's native handler, LiteLLM's chatgpt/ bridge is unused). Keeping the
+      # rotator on would invalidate the OAuth tokens we seed into each agent's
+      # auth-profiles.json via injectCodexTokenToAgentAuthProfiles.
+      {{- if .Values.litellm.codexAuthRotator.enabled }}
       - name: codex-auth-rotator
         image: python:3-alpine
         command:
@@ -405,6 +412,7 @@ spec:
         volumeMounts:
         - name: chatgpt-auth
           mountPath: /chatgpt-auth
+      {{- end }}
       initContainers:
       # Write the best available (non-expired) Codex token to auth.json for LiteLLM's chatgpt/ provider.
       # Account-1 entries in litellm-config have no api_key — the chatgpt/ provider reads

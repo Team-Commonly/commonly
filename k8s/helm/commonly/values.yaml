@@ -322,6 +322,11 @@ cloudflared:
 # LiteLLM proxy (model gateway + request logging)
 litellm:
   enabled: false
+  # Codex account rotator sidecar. Disable while CODEX_BYPASS_LITELLM=true
+  # (LiteLLM's chatgpt/ bridge isn't used; rotator would just burn refresh
+  # tokens). Re-enable once the upstream LiteLLM bug is fixed.
+  codexAuthRotator:
+    enabled: true
   image:
     repository: ghcr.io/berriai/litellm
     tag: v1.82.3-stable

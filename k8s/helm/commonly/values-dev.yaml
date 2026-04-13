@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
-    tag: "20260412122129"
+    tag: "20260413131714"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -191,6 +191,13 @@ cloudflared:
 
 litellm:
   enabled: true
+  # Disable the codex-auth-rotator sidecar — we're in CODEX_BYPASS_LITELLM
+  # mode, so LiteLLM's chatgpt/ provider isn't used for Codex calls, and the
+  # rotator would burn refresh_tokens on calls that never happen, invalidating
+  # the tokens we inject into per-agent auth-profiles.json. Re-enable when
+  # bypass is off (BerriAI/litellm#25429 fix lands).
+  codexAuthRotator:
+    enabled: false
   nodeSelector:
     pool: dev
   tolerations:
