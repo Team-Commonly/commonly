@@ -4,6 +4,10 @@ const express = require('express');
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const AgentManifest = require('../models/AgentManifest');
+// eslint-disable-next-line global-require
+const fs = require('fs');
+// eslint-disable-next-line global-require
+const path = require('path');
 
 const router = express.Router();
 
@@ -106,6 +110,17 @@ router.put('/agents/:slug', auth, async (req: AuthReq, res: Res) => {
   if (req.body.slug) agent.slug = String(req.body.slug).toLowerCase();
   await agent.save();
   return res.json({ agent });
+});
+
+router.get('/official', async (_req: AuthReq, res: Res) => {
+  try {
+    const marketplacePath = path.resolve(__dirname, '../../packages/commonly-marketplace/marketplace.json');
+    const marketplaceData = JSON.parse(fs.readFileSync(marketplacePath, 'utf8'));
+    return res.json(marketplaceData);
+  } catch (error: any) {
+    console.error('Error loading marketplace data:', error.message);
+    return res.status(500).json({ message: 'Failed to load marketplace data' });
+  }
 });
 
 module.exports = router;

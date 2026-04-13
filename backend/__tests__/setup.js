@@ -2,6 +2,9 @@
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-jwt-secret';
 
+// Set MongoDB memory server version to be compatible with Debian 12+
+process.env.MONGOMS_VERSION = '7.0.4';
+
 // Suppress console logs during tests unless needed
 if (process.env.TEST_VERBOSE !== 'true') {
   const originalConsole = console;

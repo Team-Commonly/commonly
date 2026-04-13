@@ -76,4 +76,15 @@ describe('marketplace routes', () => {
     const res = await request(app).put('/api/marketplace/agents/owned-agent').send({ description: 'changed' });
     expect(res.status).toBe(403);
   });
+
+  test('returns official marketplace entries', async () => {
+    const res = await request(app).get('/api/marketplace/official');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('version');
+    expect(res.body).toHaveProperty('entries');
+    expect(Array.isArray(res.body.entries)).toBe(true);
+    const discord = res.body.entries.find((entry) => entry.id === 'discord');
+    expect(discord).toBeTruthy();
+    expect(discord.type).toBe('integration');
+  });
 });
