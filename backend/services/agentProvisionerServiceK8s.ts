@@ -1864,8 +1864,16 @@ const provisionOpenClawAccount = async ({
   const { codexCredentials, devAgentIds, devAgentModel } = await applyOpenClawModelDefaults(config);
 
   const isDevAgent = devAgentIds.includes(accountId);
+  const codexBypassLiteLLM = /^(1|true|yes)$/i.test(process.env.CODEX_BYPASS_LITELLM || '');
   let codexVirtualKey = null;
-  if (isDevAgent) {
+  if (codexBypassLiteLLM) {
+    // Bypass mode: openai-codex provider points at chatgpt.com directly and
+    // OpenClaw's native handler decodes access as a JWT. Write the raw OAuth
+    // tokens (from secrets) for every agent that has an active codex install.
+    // The rotator sidecar keeps these fresh; LiteLLM virtual keys are not used
+    // for Codex while this toggle is on.
+    await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+  } else if (isDevAgent) {
     // Only dev agents get Codex credentials. Community agents use OpenRouter/Gemini only
     // and must NOT have openai-codex:codex-cli keys — acpx_run uses that profile and would
     // burn shared Codex rate limits if community agents have access.
