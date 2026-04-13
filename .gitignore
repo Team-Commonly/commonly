@@ -39,6 +39,9 @@ _external/*/
 # Claude Code — local dev tooling, not for OSS contributors
 .claude/
 
+# Codex skills backup after migration to commonly-skills repo (2026-04-12)
+.codex/skills.bak.*
+
 # Local env overrides (copy from .env.example, never commit real values)
 frontend/.env.local
 frontend/.env.development.local
