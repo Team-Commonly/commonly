@@ -325,6 +325,11 @@ spec:
           value: "http://litellm:4000"
         - name: LITELLM_CHAT_MODEL
           value: "chatgpt/gpt-5.4-mini"
+        # Temporary: bypass LiteLLM's broken chatgpt/ bridge (BerriAI/litellm#25429)
+        # and route Codex directly via OpenClaw's native openai-codex-responses handler.
+        # Flip to "false" / remove once LiteLLM ships a fix for empty-output responses.
+        - name: CODEX_BYPASS_LITELLM
+          value: {{ .Values.backend.env.codexBypassLitellm | default "true" | quote }}
         - name: SKILLS_CATALOG_PATH
           value: /app/docs/skills/awesome-agent-skills-index.json
         - name: MARKETPLACE_MANIFEST_PATH

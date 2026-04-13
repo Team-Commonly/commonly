@@ -1492,7 +1492,14 @@ const applyOpenClawCodexProviderConfig = async (config: any) => {
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
 
-  const litellmBase = process.env.LITELLM_BASE_URL;
+  // Toggle: when CODEX_BYPASS_LITELLM=true, point openai-codex straight at
+  // chatgpt.com instead of the LiteLLM proxy. Workaround for
+  // BerriAI/litellm#25429 — the chatgpt/ bridge returns empty output but
+  // still debits Codex quota, so we skip the proxy entirely until upstream
+  // is fixed. Flip back to false (or unset) once the bridge is healthy so
+  // we regain multi-account rotation via LiteLLM.
+  const codexBypassLiteLLM = /^(1|true|yes)$/i.test(process.env.CODEX_BYPASS_LITELLM || '');
+  const litellmBase = codexBypassLiteLLM ? null : process.env.LITELLM_BASE_URL;
   if (litellmBase) {
     // Route Codex through LiteLLM: OpenClaw uses openai-completions format, LiteLLM routes
     // to chatgpt/gpt-5.4 using OAuth tokens seeded by the codex-auth-seed init container.
@@ -1692,16 +1699,20 @@ const applyOpenClawModelDefaults = async (config: any) => {
     'openrouter/arcee-ai/trinity-large-preview:free',
   ];
 
-  // Global default: mini for all agents. ChatGPT Team accounts don't accept
-  // gpt-5.4-nano via the Codex OAuth path — it returns 400
-  // "The 'gpt-5.4-nano' model is not supported when using Codex with a
-  // ChatGPT account", which then cascades into the OpenRouter fallback and
-  // exhausts the daily free tier.
+  // Global default: gpt-5.4-mini for all agents. ChatGPT Team accounts
+  // don't accept gpt-5.4-nano via the Codex OAuth path (400 "not supported
+  // when using Codex with a ChatGPT account"), so we use mini — cheap
+  // enough for community agents and actually accepted by the endpoint.
+  // When CODEX_BYPASS_LITELLM=true, this routes direct to chatgpt.com
+  // through OpenClaw's native openai-codex-responses handler instead of
+  // the broken LiteLLM chatgpt/ bridge (BerriAI/litellm#25429).
   config.agents.defaults.model.primary = 'openai-codex/gpt-5.4-mini';
   config.agents.defaults.model.fallbacks = Array.from(new Set([
+    'google/gemini-2.5-flash',
+    'google/gemini-2.5-flash-lite',
+    'google/gemini-2.0-flash',
     'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
     'openrouter/arcee-ai/trinity-large-preview:free',
-    ...GEMINI_FALLBACKS,
   ]));
 
   // Always set up Codex provider config so dev agents can use it via per-agent override.
@@ -1744,10 +1755,11 @@ const applyOpenClawModelDefaults = async (config: any) => {
     ? modelConfig.openclaw.devAgentIds
     : DEFAULT_DEV_AGENT_IDS;
 
-  // Dev agents get an explicit Codex per-agent model override.
-  // gpt-5.4-mini uses only 30% of the weekly Codex quota vs full gpt-5.4,
-  // making it ideal for heartbeat orchestration (list pods, check tasks, post updates).
-  // acpx_run coding tasks still use full gpt-5.4 via LiteLLM (hardcoded in tools.ts).
+  // Dev agents use openai-codex/gpt-5.4-mini for heartbeat orchestration.
+  // gpt-5.4-mini uses ~30% of weekly Codex quota vs full gpt-5.4, making
+  // it ideal for heartbeat orchestration (list pods, check tasks, post
+  // updates). acpx_run coding tasks still use full gpt-5.4 via LiteLLM
+  // (hardcoded in tools.ts).
   const devAgentModel = {
     primary: 'openai-codex/gpt-5.4-mini',
     fallbacks: Array.from(new Set([...OPENROUTER_FREE_FALLBACKS, ...GEMINI_FALLBACKS])),
