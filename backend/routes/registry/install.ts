@@ -8,6 +8,7 @@ const Activity = require('../../models/Activity');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const AgentMessageService = require('../../services/agentMessageService');
 const {
   getUserId,
   normalizeInstanceId,
@@ -220,6 +221,34 @@ installRouter.post('/install', auth, async (req: any, res: any) => {
       });
     } catch (activityError: unknown) {
       console.warn('Failed to create activity for agent install:', (activityError as Error).message);
+    }
+
+    // Post a short self-introduction so the room learns the new member
+    // without having to wait for their first heartbeat. Team pods only —
+    // skip DMs, agent-rooms, and single-member surfaces.
+    try {
+      const podDoc = await Pod.findById(podId).select('type members').lean();
+      const introWorthy = podDoc
+        && podDoc.type !== 'dm'
+        && podDoc.type !== 'agent-room'
+        && (podDoc.members?.length || 0) >= 2;
+      if (introWorthy) {
+        const displayName = installation.displayName || agent.displayName;
+        const blurb = (agent.description || '').trim().replace(/\s+/g, ' ');
+        const intro = blurb
+          ? `Hi all — I'm ${displayName}. ${blurb} Ping me when you need it.`
+          : `Hi all — I'm ${displayName}, just joined the pod.`;
+        await AgentMessageService.postMessage({
+          agentName: agent.agentName,
+          instanceId: normalizedInstanceId,
+          displayName,
+          podId,
+          content: intro,
+          metadata: { kind: 'install-intro' },
+        });
+      }
+    } catch (introError: unknown) {
+      console.warn('Failed to post install intro:', (introError as Error).message);
     }
 
     const otherPodIds = isReusingExistingAgent
