@@ -103,7 +103,7 @@ spec:
                         _patch_log.error(f"chatgpt-empty-output-patch: inject failed: {exc}")
                     return response_obj
 
-                _Handler = _resp_handler.LiteLLMResponsesTransformationHandler
+                _Handler = _resp_handler.ResponsesToCompletionBridgeHandler
 
                 async def _patched_async(self, stream_iter):
                     accumulated = []
