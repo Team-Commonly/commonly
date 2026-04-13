@@ -44,11 +44,109 @@ spec:
             cat > /app/rate_limit_signal.py <<'PYEOF'
             """LiteLLM callback: writes a signal file when a request hits a rate limit (429).
             The codex-auth-rotator sidecar polls this file and rotates accounts immediately.
-            Must extend CustomLogger for LiteLLM to invoke the hooks."""
+            Must extend CustomLogger for LiteLLM to invoke the hooks.
+
+            Also monkey-patches LiteLLM's chatgpt/* responses bridge to work around
+            BerriAI/litellm#25429 — chatgpt.com Codex /responses currently returns
+            empty `output: []` in the final completed event, but text deltas come
+            through correctly. We capture the deltas during stream iteration and
+            inject a synthetic message item when the final output is empty.
+            Patch applies at module-load (LiteLLM imports this as a callback)."""
             import json
             import os
             import time
+            import logging
             from litellm.integrations.custom_logger import CustomLogger
+
+            # ---------- BerriAI/litellm#25429 patch ----------
+            try:
+                from litellm.completion_extras.litellm_responses_transformation import (
+                    handler as _resp_handler,
+                )
+                from litellm.types.llms.openai import ResponsesAPIResponse as _ResponsesAPIResponse
+
+                _patch_log = logging.getLogger("litellm-patches.chatgpt-empty-output")
+
+                def _accumulate_text(event, acc):
+                    et = getattr(event, "type", None)
+                    delta = getattr(event, "delta", None)
+                    if et == "response.output_text.delta" and isinstance(delta, str):
+                        acc.append(delta)
+                    elif et == "response.refusal.delta" and isinstance(delta, str):
+                        acc.append(delta)
+
+                def _maybe_inject(response_obj, accumulated):
+                    if not response_obj:
+                        return response_obj
+                    output = getattr(response_obj, "output", None)
+                    if output:
+                        return response_obj
+                    if not accumulated:
+                        return response_obj
+                    text = "".join(accumulated).strip()
+                    if not text:
+                        return response_obj
+                    synthetic = {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": text, "annotations": []}],
+                    }
+                    try:
+                        if isinstance(output, list):
+                            output.append(synthetic)
+                        else:
+                            setattr(response_obj, "output", [synthetic])
+                        _patch_log.warning(
+                            f"chatgpt-empty-output-patch: synthesized {len(text)} chars from deltas"
+                        )
+                    except Exception as exc:
+                        _patch_log.error(f"chatgpt-empty-output-patch: inject failed: {exc}")
+                    return response_obj
+
+                _Handler = _resp_handler.LiteLLMResponsesTransformationHandler
+
+                async def _patched_async(self, stream_iter):
+                    accumulated = []
+                    async for chunk in stream_iter:
+                        _accumulate_text(chunk, accumulated)
+                    completed = getattr(stream_iter, "completed_response", None)
+                    response_obj = getattr(completed, "response", None) if completed else None
+                    if response_obj is None:
+                        raise ValueError("Stream ended without a completed response")
+                    response_obj = _maybe_inject(response_obj, accumulated)
+                    hidden_params = getattr(stream_iter, "_hidden_params", None)
+                    response = self._coerce_response_object(response_obj, hidden_params)
+                    if not isinstance(response, _ResponsesAPIResponse):
+                        raise ValueError("Stream completed response is invalid")
+                    return response
+
+                def _patched_sync(self, stream_iter):
+                    accumulated = []
+                    for chunk in stream_iter:
+                        _accumulate_text(chunk, accumulated)
+                    completed = getattr(stream_iter, "completed_response", None)
+                    response_obj = getattr(completed, "response", None) if completed else None
+                    if response_obj is None:
+                        raise ValueError("Stream ended without a completed response")
+                    response_obj = _maybe_inject(response_obj, accumulated)
+                    hidden_params = getattr(stream_iter, "_hidden_params", None)
+                    response = self._coerce_response_object(response_obj, hidden_params)
+                    if not isinstance(response, _ResponsesAPIResponse):
+                        raise ValueError("Stream completed response is invalid")
+                    return response
+
+                _Handler._collect_response_from_stream_async = _patched_async
+                _Handler._collect_response_from_stream = _patched_sync
+                print(
+                    "[litellm-patches] chatgpt-empty-output (BerriAI #25429) APPLIED",
+                    flush=True,
+                )
+            except Exception as _patch_err:
+                print(
+                    f"[litellm-patches] chatgpt-empty-output FAILED to apply: {_patch_err}",
+                    flush=True,
+                )
+            # ---------- end patch ----------
 
             SIGNAL_FILE = '/chatgpt-auth/rotate-now'
 
