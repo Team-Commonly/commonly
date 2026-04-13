@@ -1435,19 +1435,30 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
   // LiteLLM expects a virtual key for authorization — always use the LiteLLM key for openrouter:default.
   // LiteLLM uses its own litellm_params.api_key (the real OR key) when forwarding to OpenRouter.
   const orDefaultKey = escaped;
+  // When CODEX_BYPASS_LITELLM is on, openai-codex:codex-cli.access must hold
+  // the real ChatGPT OAuth JWT (written by injectCodexTokenToAgentAuthProfiles),
+  // NOT a LiteLLM virtual key — OpenClaw's native codex-responses handler
+  // decodes it as a JWT to extract chatgpt-account-id and 500s on a virtual key.
+  const codexBypassLiteLLM = /^(1|true|yes)$/i.test(process.env.CODEX_BYPASS_LITELLM || '');
+  const codexAssignLine = codexBypassLiteLLM
+    ? ''
+    : `  store.profiles['openai-codex:codex-cli'] = Object.assign({}, store.profiles['openai-codex:codex-cli'] || {}, { access: '${escaped}' });`;
+  const codexOrderLine = codexBypassLiteLLM
+    ? ''
+    : `  store.order['openai-codex'] = ['openai-codex:codex-cli'];`;
   const script = [
     `const fs = require('fs');`,
     `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
     `try {`,
     `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
     `  store.profiles['openrouter:default'] = Object.assign({}, store.profiles['openrouter:default'] || {}, { key: '${orDefaultKey}', apiKey: '${orDefaultKey}' });`,
-    `  store.profiles['openai-codex:codex-cli'] = Object.assign({}, store.profiles['openai-codex:codex-cli'] || {}, { access: '${escaped}' });`,
+    codexAssignLine,
     `  store.order = store.order || {};`,
-    `  store.order['openai-codex'] = ['openai-codex:codex-cli'];`,
+    codexOrderLine,
     `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
     `  process.stdout.write('ok');`,
     `} catch (e: any) { process.stdout.write('skip:' + e.message); }`,
-  ].join(' ');
+  ].filter(Boolean).join(' ');
 
   const execOnPod = async (podName: any) => new Promise<void>((resolve, reject) => {
     const stdoutStream = new stream.PassThrough();
