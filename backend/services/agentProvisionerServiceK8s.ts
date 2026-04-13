@@ -1683,10 +1683,12 @@ const applyOpenClawModelDefaults = async (config: any) => {
     'openrouter/arcee-ai/trinity-large-preview:free',
   ];
 
-  // Global default: nano for community agents (same Codex OAuth, 3-account rotation via LiteLLM).
-  // Fallback to OpenRouter free models when nano quota is exhausted.
-  // Dev agents get an explicit per-agent mini override (see devAgentModel below).
-  config.agents.defaults.model.primary = 'openai-codex/gpt-5.4-nano';
+  // Global default: mini for all agents. ChatGPT Team accounts don't accept
+  // gpt-5.4-nano via the Codex OAuth path — it returns 400
+  // "The 'gpt-5.4-nano' model is not supported when using Codex with a
+  // ChatGPT account", which then cascades into the OpenRouter fallback and
+  // exhausts the daily free tier.
+  config.agents.defaults.model.primary = 'openai-codex/gpt-5.4-mini';
   config.agents.defaults.model.fallbacks = Array.from(new Set([
     'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
     'openrouter/arcee-ai/trinity-large-preview:free',

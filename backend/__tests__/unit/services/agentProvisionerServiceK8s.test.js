@@ -275,7 +275,7 @@ describe('agentProvisionerServiceK8s', () => {
     expect(config.agents.defaults.contextPruning.mode).toBe('cache-ttl');
     expect(config.agents.defaults.contextPruning.ttl).toBe('90m');
     expect(config.agents.defaults.contextPruning.keepLastAssistants).toBe(2);
-    expect(config.agents.defaults.model.primary).toBe('openai-codex/gpt-5.4-nano');
+    expect(config.agents.defaults.model.primary).toBe('openai-codex/gpt-5.4-mini');
     expect(config.agents.defaults.model.fallbacks).toEqual(
       expect.arrayContaining(['openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'google/gemini-2.5-flash']),
     );
