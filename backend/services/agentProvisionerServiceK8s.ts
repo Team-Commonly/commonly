@@ -1372,12 +1372,17 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
       try {
         const check = await axios.get(`${baseUrl}/key/info?key=${existingKey}`, { headers });
         const info = check.data?.info;
-        if (info && (info.metadata?.agent_id === agentId || info.user_id === agentId)) {
+        const ownedByAgent = info && (info.metadata?.agent_id === agentId || info.user_id === agentId);
+        // Model allowlist on the key must contain gpt-5.4-mini — that's the
+        // current default primary. Keys issued before the nano→mini switch
+        // still have the old allowlist and 401 on every call; force re-issue.
+        const allowsMini = Array.isArray(info?.models) && info.models.includes('gpt-5.4-mini');
+        if (ownedByAgent && allowsMini) {
           return existingKey;
         }
         if (info) {
           await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
-          console.log(`[litellm] Deleted stale/misowned OpenRouter key for ${agentId}`);
+          console.log(`[litellm] Deleted ${ownedByAgent ? 'stale-allowlist' : 'misowned'} OpenRouter key for ${agentId}`);
         }
       } catch (_: any) { /* key not in DB — fall through */ }
     }
@@ -1389,6 +1394,10 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
         models: [
           'gpt-5.4-nano',
           'openai-codex/gpt-5.4-nano',
+          'gpt-5.4-mini',
+          'openai-codex/gpt-5.4-mini',
+          'gpt-5.4',
+          'openai-codex/gpt-5.4',
           'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
           'nvidia/nemotron-3-super-120b-a12b:free',
           'openrouter/arcee-ai/trinity-large-preview:free',
