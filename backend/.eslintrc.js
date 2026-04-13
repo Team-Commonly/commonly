@@ -41,6 +41,7 @@ module.exports = {
         'no-undef': 'off',
         'no-const-assign': 'off', // For test mocks
         'no-trailing-spaces': 'off', // Disable trailing spaces in test files
+        'import/extensions': 'off',
       },
     },
     {
@@ -69,6 +70,14 @@ module.exports = {
         'object-curly-newline': 'off',
         'comma-dangle': ['error', 'always-multiline'],
         'no-trailing-spaces': 'error',
+      },
+    },
+    {
+      // For TypeScript routes
+      files: ['**/routes/*.ts', '**/routes/*.tsx'],
+      rules: {
+        'import/extensions': 'off',
+        'global-require': 'off',
       },
     },
   ],
