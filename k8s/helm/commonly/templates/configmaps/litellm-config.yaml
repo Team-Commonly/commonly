@@ -181,16 +181,21 @@ data:
       enable_pre_call_checks: true
       # When the active Codex account is rate-limited, fall back to OpenRouter.
       # This applies to acpx_run calls that route gpt-5.4 through LiteLLM.
+      # Fallback order: try Gemini FIRST (high quality, real free tier),
+      # then OpenRouter free models. The chatgpt/ provider currently hits
+      # "Unknown items in responses API response: []" parser errors that
+      # cascade into fallbacks, so the fallback model needs to be one that
+      # produces actually-useful output, not just any responding model.
       fallbacks:
-        - {"gpt-5.4": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"openai-codex/gpt-5.4": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"gpt-5.4-mini": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"openai-codex/gpt-5.4-mini": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"gpt-5.4-nano": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"openai-codex/gpt-5.4-nano": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        # OpenRouter models fall back to each other — prevents crash when one 429s
-        - {"openrouter/nvidia/nemotron-3-super-120b-a12b:free": ["openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"nvidia/nemotron-3-super-120b-a12b:free": ["openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"gpt-5.4": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"openai-codex/gpt-5.4": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"gpt-5.4-mini": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"openai-codex/gpt-5.4-mini": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"gpt-5.4-nano": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"openai-codex/gpt-5.4-nano": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        # OpenRouter models fall back to Gemini, then each other — prevents crash when one 429s
+        - {"openrouter/nvidia/nemotron-3-super-120b-a12b:free": ["google/gemini-2.5-flash", "openrouter/arcee-ai/trinity-large-preview:free"]}
+        - {"nvidia/nemotron-3-super-120b-a12b:free": ["google/gemini-2.5-flash", "openrouter/arcee-ai/trinity-large-preview:free"]}
       # Retry once before triggering fallback to catch transient errors
       num_retries: 1
       retry_after: 5
