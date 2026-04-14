@@ -5,7 +5,13 @@ export interface IFile extends Document {
   originalName: string;
   contentType: string;
   size: number;
-  data: Buffer;
+  /**
+   * Legacy inline byte storage. For records created before ADR-002 Phase 1
+   * this holds the full payload. New records leave it empty — bytes live in
+   * the configured ObjectStore driver, keyed by `fileName`. Phase 2 removes
+   * this field entirely after backfilling legacy records.
+   */
+  data?: Buffer;
   uploadedBy: Types.ObjectId;
   createdAt: Date;
 }
@@ -19,7 +25,7 @@ const fileSchema = new Schema<IFile>({
   originalName: { type: String, required: true },
   contentType: { type: String, required: true },
   size: { type: Number, required: true },
-  data: { type: Buffer, required: true },
+  data: { type: Buffer, required: false },
   uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   createdAt: { type: Date, default: Date.now },
 });

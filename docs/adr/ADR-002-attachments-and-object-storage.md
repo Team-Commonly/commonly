@@ -274,16 +274,30 @@ Deferred. The `POST /api/media` stream-through keeps upload simpler to reason ab
 
 ### Phase 1 — Abstraction without behavior change (one PR)
 
-**Goal:** Introduce the driver interface, wrap the current Mongo-inline code as the `mongo` driver, no user-visible change.
+**Goal:** Introduce the driver interface, route bytes through it, no user-visible change.
 
-- [ ] `backend/services/objectStore/ObjectStore.ts` — interface.
-- [ ] `backend/services/objectStore/drivers/mongo.ts` — wraps the existing `File` model.
-- [ ] `backend/services/objectStore/index.ts` — singleton; selects driver from `OBJECT_STORE_DRIVER` env (defaults to `mongo`).
-- [ ] Refactor `backend/routes/uploads.ts` to call into `ObjectStore` instead of `File` directly.
-- [ ] **Fix the auth gap on GET** — add `auth` middleware, plus a minimal access check (`referrerUserId == file.uploadedBy || exists(Post|Message).refs this id`). Not perfect but closes the public-read hole.
-- [ ] Tests: driver contract suite + mongo driver implementation.
+- [x] `backend/services/objectStore/ObjectStore.ts` — interface.
+- [x] `backend/services/objectStore/drivers/mongoDriver.ts` — writes bytes to a new `MediaObject` collection (decoupled from `File`, which continues to hold display/ownership metadata for Phase 1 compat).
+- [x] `backend/services/objectStore/index.ts` — singleton; selects driver from `OBJECT_STORE_DRIVER` env (defaults to `mongo`).
+- [x] Refactor `backend/routes/uploads.ts` to call the driver; GET falls back to legacy `File.data` for pre-ADR-002 records; size cap driven by driver capability (multer `limits.fileSize`).
+- [x] Make `File.data` optional so new records are metadata-only; legacy records remain readable.
+- [x] Tests: mongo driver contract, env-based selection, and route GET/POST (driver path, legacy fallback, 404, metadata-only save).
 
-**No migration needed** — schema unchanged, route paths unchanged, existing data unchanged.
+**Scope discipline:** `filesystem` and `gcs`/`s3` drivers are deferred to their respective phases. Shipping `filesystem` in Phase 1 without a Helm caller would be half of Phase 5 dressed as Phase 1 (REVIEW.md §Over-engineering: *"no abstraction for <3 current users"*). One production driver is enough to validate the interface; contract tests cover behavioral parity.
+
+**No data migration needed** — schema change is additive (`File.data` optional; `MediaObject` is a new collection), route paths unchanged, existing records still readable via the route's fallback.
+
+### Phase 1b — Close the GET authorization gap (followup PR)
+
+**Split out of Phase 1** because the real fix requires coordinated frontend + backend changes: adding plain `auth` middleware on `GET /api/uploads/:fileName` breaks every `<img src>` in the app (browsers do not attach `Authorization` headers to image requests), and cookie auth isn't currently wired for the API. Phase 1 therefore leaves GET's existing public-read behavior untouched.
+
+- [ ] Backend: issue short-TTL (5 min) signed tokens scoped to `fileName + viewerUserId`; GET accepts `?t=<token>` alongside header auth.
+- [ ] Backend: per-request ACL check before minting the token — requester must own the file or have read on a pod/post that references it. Phase 1 references are URL substrings (slow scan); Phase 2's structured `attachments` makes this an indexed lookup.
+- [ ] Frontend: `rewriteAttachmentUrl(url)` helper at render time that calls `GET /api/media/:id/url` and caches the signed URL until expiry.
+- [ ] Rate limiting on the token-mint endpoint.
+- [ ] Audit log entry on each mint (`file_id, viewer_id, ip`).
+
+**Ships before:** any production-scale launch. The ADR-002 invariant in REVIEW.md §Attachments is not satisfied until Phase 1b is live.
 
 ### Phase 2 — Structured `attachments` model (one PR)
 
