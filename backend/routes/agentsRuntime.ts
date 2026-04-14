@@ -21,7 +21,7 @@ const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
-const { mirrorContentFromSections } = require('../services/agentMemoryService');
+const { mirrorContentFromSections, stampSectionsForWrite } = require('../services/agentMemoryService');
 const DMService = require('../services/dmService');
 const ChatSummarizerService = require('../services/chatSummarizerService');
 const AgentMentionService = require('../services/agentMentionService');
@@ -1283,13 +1283,24 @@ router.get('/memory', agentRuntimeAuth, async (req: any, res: any) => {
  * Accepts v1 (`{ content }`) or v2 (`{ sections, sourceRuntime? }`) or both.
  *
  * Semantics:
- * - Sections are MERGED per-key. Sibling sections the caller did not include
- *   are preserved (e.g. writing just `dedup_state` leaves `long_term` alone).
+ * - Single-object sections (`soul | long_term | dedup_state | shared |
+ *   runtime_meta`) are MERGED per-key. Sibling sections the caller did not
+ *   include are preserved (e.g. writing just `dedup_state` leaves
+ *   `long_term` alone).
+ * - Array sections (`daily`, `relationships`) are **whole-array replace**.
+ *   Sending `{ relationships: [...] }` replaces the entire stored array.
+ *   Phase 2's POST /memory/sync with `mode: 'patch'` will add element-level
+ *   merge. Callers that need to add a single entry must resend the full
+ *   array for now.
  * - `content` is mirrored from `sections.long_term.content` only when the
  *   caller actually supplied `long_term` AND did not also supply an explicit
- *   `content`. Otherwise existing `content` is untouched.
+ *   `content`. Sending `{ sections: { long_term: { content: '' } } }` is a
+ *   deliberate clear and will blank `content`. Otherwise existing `content`
+ *   is untouched.
  * - `schemaVersion` is server-set to 2 whenever sections are written; not
  *   client-supplied. Phase 2 (/memory/sync) introduces explicit mode flags.
+ * - `byteSize` and `updatedAt` are always server-stamped via
+ *   `stampSectionsForWrite`; client-supplied values are discarded.
  */
 router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
   try {
@@ -1314,14 +1325,16 @@ router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
 
     const setOps: Record<string, unknown> = {};
     if (sections !== undefined) {
+      // Server-stamp byteSize + updatedAt so clients can't fabricate them.
+      const stamped = stampSectionsForWrite(sections);
       // Per-key merge via dotted $set paths — preserves sibling sections the
       // caller didn't include in this write.
-      for (const key of Object.keys(sections)) {
-        setOps[`sections.${key}`] = sections[key];
+      for (const key of Object.keys(stamped)) {
+        setOps[`sections.${key}`] = (stamped as any)[key];
       }
       setOps.schemaVersion = 2;
-      if (content === undefined && sections.long_term !== undefined) {
-        setOps.content = mirrorContentFromSections(sections);
+      if (content === undefined && stamped.long_term !== undefined) {
+        setOps.content = mirrorContentFromSections(stamped);
       }
     }
     if (content !== undefined) setOps.content = content;
