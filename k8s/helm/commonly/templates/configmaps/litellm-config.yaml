@@ -216,4 +216,10 @@ data:
       store_model_in_db: true
       # Allow UI access
       ui_access_mode: "all"
+      # Spend log retention — without these, LiteLLM_SpendLogs grows unbounded
+      # (prod dev observed 5+ GB on the 8 GiB Cloud SQL tier before this cap).
+      # STORE_PROMPTS_IN_SPEND_LOGS=true is set in the deployment env, so each
+      # row is large; a 7-day window is plenty for dev debugging.
+      maximum_spend_logs_retention_period: "7d"
+      maximum_spend_logs_retention_interval: "6h"
 {{- end }}
