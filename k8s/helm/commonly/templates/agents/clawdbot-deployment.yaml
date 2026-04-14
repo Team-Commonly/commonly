@@ -51,15 +51,19 @@ spec:
           const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
           const codexAccess = (process.env.OPENAI_CODEX_ACCESS_TOKEN || '').trim();
           const codexRefresh = (process.env.OPENAI_CODEX_REFRESH_TOKEN || '').trim();
-          const codexExpires = parseInt(process.env.OPENAI_CODEX_EXPIRES_AT || '0', 10);
+          // OpenClaw compares profile.expires against Date.now() (milliseconds).
+          // The secret stores expires_at as Unix SECONDS (10-digit) from the OAuth
+          // device flow. Convert to ms here; pass-through if already 13-digit ms.
+          const _toMs = (s) => { const n = parseInt(s || '0', 10); return n > 0 && n < 10_000_000_000 ? n * 1000 : n; };
+          const codexExpires = _toMs(process.env.OPENAI_CODEX_EXPIRES_AT);
           const codexAccess2 = (process.env.OPENAI_CODEX_ACCESS_TOKEN_2 || '').trim();
           const codexRefresh2 = (process.env.OPENAI_CODEX_REFRESH_TOKEN_2 || '').trim();
-          const codexExpires2 = parseInt(process.env.OPENAI_CODEX_EXPIRES_AT_2 || '0', 10);
+          const codexExpires2 = _toMs(process.env.OPENAI_CODEX_EXPIRES_AT_2);
           const codexIdToken2 = (process.env.OPENAI_CODEX_ID_TOKEN_2 || '').trim();
           const codexAccountId2 = (process.env.OPENAI_CODEX_ACCOUNT_ID_2 || '').trim();
           const codexAccess3 = (process.env.OPENAI_CODEX_ACCESS_TOKEN_3 || '').trim();
           const codexRefresh3 = (process.env.OPENAI_CODEX_REFRESH_TOKEN_3 || '').trim();
-          const codexExpires3 = parseInt(process.env.OPENAI_CODEX_EXPIRES_AT_3 || '0', 10);
+          const codexExpires3 = _toMs(process.env.OPENAI_CODEX_EXPIRES_AT_3);
           const codexIdToken3 = (process.env.OPENAI_CODEX_ID_TOKEN_3 || '').trim();
           const codexAccountId3 = (process.env.OPENAI_CODEX_ACCOUNT_ID_3 || '').trim();
           if (!fs.existsSync(configPath)) {
@@ -167,7 +171,9 @@ spec:
               } else if (hasLiteLLMKey) {
                 console.log('[auth-seed] skipped codex oauth upsert (LiteLLM key in place):', authPath);
               }
-              codexOrder.push('openai-codex:codex-cli');
+              // Push codex-cli (account-1) LAST below, after acct-2 + acct-3, so
+              // rotation tries the fresh tokens first. Track with a flag.
+              var _hasCodexCli = true;
             }
             // Account 2 fallback — skip entirely when LiteLLM key is in place so
             // raw OAuth JWTs are never written to this profile.
@@ -277,6 +283,11 @@ spec:
               fs.writeFileSync(sharedAuth3Path, JSON.stringify(auth3Json, null, 2));
               console.log('[auth-seed] wrote codex auth-3.json to shared PVC:', sharedAuth3Path);
               codexOrder.push('openai-codex:account-3');
+            }
+            // Append account-1 at the END so rotation tries fresh accts first.
+            // Remove this when account-1 is re-logged-in and fresh.
+            if (typeof _hasCodexCli !== 'undefined' && _hasCodexCli) {
+              codexOrder.push('openai-codex:codex-cli');
             }
             // Persist auth order so OpenClaw falls back across accounts on rate-limit
             // NOTE: field must be 'order' (not 'authOrder') — OpenClaw reads store.order
