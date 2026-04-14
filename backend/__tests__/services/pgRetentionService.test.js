@@ -91,19 +91,22 @@ describe('pgRetentionService.runMessageRetention', () => {
 
   it('respects PG_RETENTION_STEP_DAYS when stepping down', async () => {
     process.env.PG_RETENTION_STEP_DAYS = '7';
-    // Always over target — forces stepping until floor (8 probes).
-    mockSizeQueries([8, 8, 8, 8, 8, 8, 8, 8]);
+    // Sizes slowly decrease but stay over the 6 GiB target so the loop runs all
+    // the way to the 1-day floor. A plateau would trigger the vacuumCantReclaim
+    // bailout — the floor path is exercised by a different test.
+    mockSizeQueries([8, 7.99, 7.98, 7.97, 7.96, 7.95, 7.94, 7.93]);
     Message.deleteOlderThan.mockResolvedValue({ deleted: 1 });
 
     await runMessageRetention();
 
-    // 30 → 23 → 16 → 9 → 2 → 1 (floor); next iter would also be 1, loop exits.
+    // 30 → 23 → 16 → 9 → 2 → 1 (floor); loop exits because currentDays <= FLOOR.
     expect(Message.deleteOlderThan.mock.calls.map((c) => c[0])).toEqual([30, 23, 16, 9, 2, 1]);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('still over target'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('still over target at floor'));
   });
 
   it('floors at 1 day and warns when still over target', async () => {
-    mockSizeQueries(Array(40).fill(7.9));
+    // 31 tiny-decreasing probes (7.9 → 7.87) — enough to reach floor, all over target.
+    mockSizeQueries(Array.from({ length: 31 }, (_, i) => 7.9 - i * 0.001));
     Message.deleteOlderThan.mockResolvedValue({ deleted: 5 });
 
     await runMessageRetention();
@@ -112,7 +115,22 @@ describe('pgRetentionService.runMessageRetention', () => {
     expect(daysUsed[0]).toBe(30);
     expect(daysUsed[daysUsed.length - 1]).toBe(1);
     expect(daysUsed).toHaveLength(30); // 30..1 inclusive
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('still over target'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('still over target at floor'));
+  });
+
+  it('bails early when VACUUM cannot reclaim (size plateaus)', async () => {
+    // Size stays constant over target — regular VACUUM isn't freeing file
+    // bytes. Expect one step-down, a plateau, and a distinct WARN that points
+    // operators at VACUUM FULL / pg_repack / capacity upgrade.
+    mockSizeQueries([6.75, 6.75, 6.75]);
+    Message.deleteOlderThan.mockResolvedValue({ deleted: 100 });
+
+    await runMessageRetention();
+
+    // First tier at 30d, one step-down to 29d, then bail — no further tiers.
+    expect(Message.deleteOlderThan.mock.calls.map((c) => c[0])).toEqual([30, 29]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('vacuum stopped reclaiming'));
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('still over target at floor'));
   });
 
   it('skips tiering gracefully when pg_database_size query fails', async () => {

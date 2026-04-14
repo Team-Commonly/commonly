@@ -119,38 +119,68 @@ export async function runMessageRetention(): Promise<void> {
 
     let totalDeleted = 0;
     let currentDays = Math.max(FLOOR_DAYS, Math.trunc(startDays));
-    const { deleted } = await Message.deleteOlderThan(currentDays);
-    totalDeleted += deleted || 0;
-    console.log(`[pg-retention] tier ${currentDays}d: deleted ${deleted || 0}`);
 
+    const first = await Message.deleteOlderThan(currentDays);
+    totalDeleted += first.deleted || 0;
+    await vacuumMessages();
     let size = await getDatabaseSizeBytes();
-    while (size !== null && size > targetBytes && currentDays > FLOOR_DAYS) {
-      const nextDays = Math.max(FLOOR_DAYS, currentDays - stepDays);
-      if (nextDays >= currentDays) break;
-      currentDays = nextDays;
+    console.log(
+      `[pg-retention] tier ${currentDays}d: deleted ${first.deleted || 0} ` +
+      `size=${size !== null ? formatBytes(size) : 'unknown'}`,
+    );
+
+    // Bail reason governs the final log. "vacuumCantReclaim" means regular
+    // VACUUM can't shrink the physical file — stepping deeper would over-delete
+    // history without reclaiming disk (operator needs VACUUM FULL / pg_repack /
+    // bigger tier).
+    let bailReason: 'underTarget' | 'floorReached' | 'vacuumCantReclaim' = 'underTarget';
+
+    while (true) {
+      if (size === null || size <= targetBytes) {
+        bailReason = 'underTarget';
+        break;
+      }
+      if (currentDays <= FLOOR_DAYS) {
+        bailReason = 'floorReached';
+        break;
+      }
+      const sizeBefore = size;
+      currentDays = Math.max(FLOOR_DAYS, currentDays - stepDays);
       const tierResult = await Message.deleteOlderThan(currentDays);
       totalDeleted += tierResult.deleted || 0;
+      await vacuumMessages();
+      size = await getDatabaseSizeBytes();
       console.log(
         `[pg-retention] tier ${currentDays}d: deleted ${tierResult.deleted || 0} ` +
-        `(size=${formatBytes(size)} > target=${formatBytes(targetBytes)})`,
+        `size=${size !== null ? formatBytes(size) : 'unknown'} ` +
+        `(was ${formatBytes(sizeBefore)} > target=${formatBytes(targetBytes)})`,
       );
-      size = await getDatabaseSizeBytes();
+      if (size !== null && size >= sizeBefore) {
+        bailReason = 'vacuumCantReclaim';
+        break;
+      }
     }
 
-    await vacuumMessages();
-    const finalSize = await getDatabaseSizeBytes();
-
-    if (finalSize !== null && finalSize > targetBytes) {
-      console.warn(
-        `[pg-retention] WARN: still over target after floor=${FLOOR_DAYS}d — ` +
-        `size=${formatBytes(finalSize)} target=${formatBytes(targetBytes)}. ` +
-        `Capacity upgrade or non-message table audit needed.`,
-      );
+    if (size !== null && size > targetBytes) {
+      if (bailReason === 'vacuumCantReclaim') {
+        console.warn(
+          `[pg-retention] still over target after vacuum stopped reclaiming — ` +
+          `size=${formatBytes(size)} target=${formatBytes(targetBytes)} retention=${currentDays}d. ` +
+          `Regular VACUUM cannot shrink the physical file; run VACUUM FULL / pg_repack, ` +
+          `audit non-message tables, or upgrade the Cloud SQL tier.`,
+        );
+      } else {
+        console.warn(
+          `[pg-retention] still over target at floor=${FLOOR_DAYS}d — ` +
+          `size=${formatBytes(size)} target=${formatBytes(targetBytes)}. ` +
+          `Capacity upgrade or non-message table audit needed.`,
+        );
+      }
     }
 
     console.log(
       `[pg-retention] done: totalDeleted=${totalDeleted} finalRetention=${currentDays}d ` +
-      `size=${finalSize !== null ? formatBytes(finalSize) : 'unknown'}`,
+      `size=${size !== null ? formatBytes(size) : 'unknown'}`,
     );
   } catch (err) {
     // Swallow so cron keeps running — never crash the host process from a
