@@ -43,6 +43,11 @@ export interface IAgentMemory extends Document {
   sections?: IAgentMemorySections;
   sourceRuntime?: string;
   schemaVersion?: number;
+  // ADR-003 Phase 2: idempotent-dedup key for POST /memory/sync, scoped
+  // (dayBucket + sourceRuntime + contentHash). Repeated identical syncs
+  // within the same day bucket return early with { deduped: true }.
+  lastSyncKey?: string;
+  lastSyncAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -105,6 +110,8 @@ const agentMemorySchema = new Schema<IAgentMemory>(
     sections: { type: agentMemorySectionsSchema, default: undefined },
     sourceRuntime: { type: String, default: undefined },
     schemaVersion: { type: Number, default: undefined },
+    lastSyncKey: { type: String, default: undefined },
+    lastSyncAt: { type: Date, default: undefined },
   },
   { timestamps: true },
 );

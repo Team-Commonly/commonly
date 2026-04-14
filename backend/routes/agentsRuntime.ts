@@ -21,7 +21,13 @@ const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
-const { mirrorContentFromSections, stampSectionsForWrite } = require('../services/agentMemoryService');
+const {
+  mirrorContentFromSections,
+  stampSectionsForWrite,
+  mergePatchSections,
+  computeSyncDedupKey,
+  isValidYMD,
+} = require('../services/agentMemoryService');
 const DMService = require('../services/dmService');
 const ChatSummarizerService = require('../services/chatSummarizerService');
 const AgentMentionService = require('../services/agentMentionService');
@@ -1236,7 +1242,7 @@ function validateSectionsPayload(sections: any): string | null {
   if (sections.daily !== undefined) {
     if (!Array.isArray(sections.daily)) return 'sections.daily must be an array';
     for (const d of sections.daily) {
-      if (typeof d?.date !== 'string') return 'sections.daily[].date must be a string';
+      if (!isValidYMD(d?.date)) return 'sections.daily[].date must be YYYY-MM-DD';
       if (d.visibility !== undefined && !VALID_VISIBILITIES.has(d.visibility)) {
         return 'sections.daily[].visibility must be one of private|pod|public';
       }
@@ -1340,9 +1346,13 @@ router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
     if (content !== undefined) setOps.content = content;
     if (sourceRuntime !== undefined) setOps.sourceRuntime = sourceRuntime;
 
+    // Invalidate the /memory/sync dedup cache: any non-sync writer mutates
+    // state the sync dedup key may no longer reflect. Without this, a sync
+    // path that promoted the same bytes earlier in the day will get wrongly
+    // short-circuited after a PUT/native-runtime write landed between.
     await AgentMemory.findOneAndUpdate(
       { agentName, instanceId },
-      { $set: setOps },
+      { $set: setOps, $unset: { lastSyncKey: '', lastSyncAt: '' } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     console.log('[agent-memory PUT]', {
@@ -1356,6 +1366,115 @@ router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
   } catch (err: any) {
     console.error('PUT /memory error:', err);
     return res.status(500).json({ message: 'Failed to write agent memory' });
+  }
+});
+
+/**
+ * POST /memory/sync (agent runtime token auth)
+ * ADR-003 Phase 2. Runtime-driver promotion of memory into the kernel.
+ *
+ * Body:
+ *   {
+ *     sections: {...},              // required, validated as in PUT /memory
+ *     sourceRuntime?: string,       // driver self-id (e.g. "openclaw")
+ *     mode: "full" | "patch"        // required
+ *   }
+ *
+ * Modes:
+ *   - "full":  replaces `sections` wholesale with the payload. Sections not
+ *              in the payload are cleared. Use when the driver is pushing a
+ *              complete snapshot.
+ *   - "patch": merges with existing state. Single-object sections are $set
+ *              per-key (siblings preserved). Array sections (`daily`,
+ *              `relationships`) merge element-wise, keyed by `date` and
+ *              `otherInstanceId`. Use for incremental updates.
+ *
+ * Idempotency: repeated identical payloads within the same UTC day bucket
+ * are deduped (no write, returns `{ deduped: true }`). Key is
+ * `(dayBucket, sourceRuntime, sha256(sections+mode))`.
+ *
+ * `byteSize` and `updatedAt` are server-stamped. `schemaVersion` auto-set to 2.
+ * v1 `content` is mirrored from `long_term.content` (same rule as PUT).
+ */
+router.post('/memory/sync', agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { agentName, instanceId } = resolveMemoryIdentity(req);
+    if (!agentName) {
+      return res.status(403).json({ message: 'Could not resolve agent identity' });
+    }
+    const { sections, sourceRuntime, mode } = req.body || {};
+    const rejectAndLog = (msg: string) => {
+      console.log('[agent-memory SYNC reject]', { agentName, instanceId, msg });
+      return res.status(400).json({ message: msg });
+    };
+    if (sections === undefined) return rejectAndLog('sections is required');
+    const sectionsError = validateSectionsPayload(sections);
+    if (sectionsError) return rejectAndLog(sectionsError);
+    if (sourceRuntime !== undefined && typeof sourceRuntime !== 'string') {
+      return rejectAndLog('sourceRuntime must be a string');
+    }
+    if (mode !== 'full' && mode !== 'patch') {
+      return rejectAndLog("mode must be 'full' or 'patch'");
+    }
+
+    const now = new Date();
+    const dedupKey = computeSyncDedupKey(sections, sourceRuntime, mode, now);
+
+    const existing = await AgentMemory.findOne({ agentName, instanceId }).lean();
+    if (existing?.lastSyncKey === dedupKey) {
+      console.log('[agent-memory SYNC deduped]', { agentName, instanceId, mode, sourceRuntime });
+      return res.json({ ok: true, deduped: true });
+    }
+
+    const stamped = stampSectionsForWrite(sections, now);
+
+    let finalSections: any;
+    if (mode === 'full') {
+      finalSections = stamped;
+    } else {
+      finalSections = mergePatchSections(existing?.sections, stamped);
+    }
+
+    const update: Record<string, unknown> = {
+      sections: finalSections,
+      schemaVersion: 2,
+      lastSyncKey: dedupKey,
+      lastSyncAt: now,
+    };
+    if (sourceRuntime !== undefined) update.sourceRuntime = sourceRuntime;
+
+    // v1 `content` mirror rules:
+    // - full mode: always reflects whatever `long_term` is in the new
+    //   sections — including `''` when the caller omitted long_term, since
+    //   full mode means "no long_term from now on." Otherwise v1 readers
+    //   see phantom data the kernel no longer stores.
+    // - patch mode: only mirrored when the caller explicitly wrote
+    //   long_term (so an incremental patch that ignored long_term doesn't
+    //   stomp v1 content).
+    if (mode === 'full') {
+      update.content = mirrorContentFromSections(finalSections);
+    } else if ((stamped as any).long_term !== undefined) {
+      update.content = mirrorContentFromSections(stamped);
+    }
+
+    await AgentMemory.findOneAndUpdate(
+      { agentName, instanceId },
+      { $set: update },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+
+    console.log('[agent-memory SYNC]', {
+      agentName,
+      instanceId,
+      mode,
+      sectionKeys: Object.keys(stamped),
+      sourceRuntime,
+    });
+
+    return res.json({ ok: true, schemaVersion: 2 });
+  } catch (err: any) {
+    console.error('POST /memory/sync error:', err);
+    return res.status(500).json({ message: 'Failed to sync agent memory' });
   }
 });
 
