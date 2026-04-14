@@ -21,6 +21,7 @@ const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
+const { mirrorContentFromSections } = require('../services/agentMemoryService');
 const DMService = require('../services/dmService');
 const ChatSummarizerService = require('../services/chatSummarizerService');
 const AgentMentionService = require('../services/agentMentionService');
@@ -1188,26 +1189,89 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req: any, re
   }
 });
 
+// ADR-003 Phase 1: GET/PUT /memory accept both v1 (`{ content }`) and
+// v2 (`{ sections, sourceRuntime }`) shapes. GET always returns both for
+// compatibility. `schemaVersion` is server-set (2 whenever sections are
+// written), not client-supplied. New CAP endpoint (POST /memory/sync) with
+// explicit full/patch mode lands in Phase 2.
+
+// Single source of truth — shared with the model schema.
+const { VISIBILITY_VALUES } = require('../models/AgentMemory');
+const VALID_VISIBILITIES = new Set(VISIBILITY_VALUES);
+
+function resolveMemoryIdentity(req: any): { agentName?: string; instanceId: string } {
+  const agentInstallation = req.agentInstallation;
+  const agentName =
+    agentInstallation?.agentName ||
+    req.agentUser?.botMetadata?.agentName ||
+    req.agentUser?.username;
+  const instanceId =
+    agentInstallation?.instanceId ||
+    req.agentUser?.botMetadata?.instanceId ||
+    'default';
+  return { agentName, instanceId };
+}
+
+function validateSectionsPayload(sections: any): string | null {
+  if (typeof sections !== 'object' || sections === null || Array.isArray(sections)) {
+    return 'sections must be an object';
+  }
+  if (Object.keys(sections).length === 0) {
+    return 'sections must have at least one key';
+  }
+  const allowed = new Set(['soul', 'long_term', 'dedup_state', 'shared', 'runtime_meta', 'daily', 'relationships']);
+  for (const key of Object.keys(sections)) {
+    if (!allowed.has(key)) return `unknown section: ${key}`;
+  }
+  const singleSectionKeys = ['soul', 'long_term', 'dedup_state', 'shared', 'runtime_meta'];
+  for (const key of singleSectionKeys) {
+    const s = sections[key];
+    if (s === undefined) continue;
+    if (typeof s !== 'object' || s === null) return `sections.${key} must be an object`;
+    if (s.content !== undefined && typeof s.content !== 'string') return `sections.${key}.content must be a string`;
+    if (s.visibility !== undefined && !VALID_VISIBILITIES.has(s.visibility)) {
+      return `sections.${key}.visibility must be one of private|pod|public`;
+    }
+  }
+  if (sections.daily !== undefined) {
+    if (!Array.isArray(sections.daily)) return 'sections.daily must be an array';
+    for (const d of sections.daily) {
+      if (typeof d?.date !== 'string') return 'sections.daily[].date must be a string';
+      if (d.visibility !== undefined && !VALID_VISIBILITIES.has(d.visibility)) {
+        return 'sections.daily[].visibility must be one of private|pod|public';
+      }
+    }
+  }
+  if (sections.relationships !== undefined) {
+    if (!Array.isArray(sections.relationships)) return 'sections.relationships must be an array';
+    for (const r of sections.relationships) {
+      if (typeof r?.otherInstanceId !== 'string') return 'sections.relationships[].otherInstanceId must be a string';
+      if (r.visibility !== undefined && !VALID_VISIBILITIES.has(r.visibility)) {
+        return 'sections.relationships[].visibility must be one of private|pod|public';
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * GET /memory (agent runtime token auth)
- * Read this agent's personal MEMORY.md (persistent across sessions)
+ * Returns this agent's memory in both v1 (`content`) and v2 (`sections`)
+ * shapes. v1 callers read `content`; v2 callers read `sections` directly.
  */
 router.get('/memory', agentRuntimeAuth, async (req: any, res: any) => {
   try {
-    const agentInstallation = req.agentInstallation;
-    const agentName =
-      agentInstallation?.agentName ||
-      req.agentUser?.botMetadata?.agentName ||
-      req.agentUser?.username;
-    const instanceId =
-      agentInstallation?.instanceId ||
-      req.agentUser?.botMetadata?.instanceId ||
-      'default';
+    const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
       return res.status(403).json({ message: 'Could not resolve agent identity' });
     }
     const record = await AgentMemory.findOne({ agentName, instanceId }).lean();
-    return res.json({ content: record?.content ?? '' });
+    return res.json({
+      content: record?.content ?? '',
+      sections: record?.sections,
+      sourceRuntime: record?.sourceRuntime,
+      schemaVersion: record?.schemaVersion,
+    });
   } catch (err: any) {
     console.error('GET /memory error:', err);
     return res.status(500).json({ message: 'Failed to read agent memory' });
@@ -1216,31 +1280,65 @@ router.get('/memory', agentRuntimeAuth, async (req: any, res: any) => {
 
 /**
  * PUT /memory (agent runtime token auth)
- * Write this agent's personal MEMORY.md (overwrites full content)
+ * Accepts v1 (`{ content }`) or v2 (`{ sections, sourceRuntime? }`) or both.
+ *
+ * Semantics:
+ * - Sections are MERGED per-key. Sibling sections the caller did not include
+ *   are preserved (e.g. writing just `dedup_state` leaves `long_term` alone).
+ * - `content` is mirrored from `sections.long_term.content` only when the
+ *   caller actually supplied `long_term` AND did not also supply an explicit
+ *   `content`. Otherwise existing `content` is untouched.
+ * - `schemaVersion` is server-set to 2 whenever sections are written; not
+ *   client-supplied. Phase 2 (/memory/sync) introduces explicit mode flags.
  */
 router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
   try {
-    const agentInstallation = req.agentInstallation;
-    const agentName =
-      agentInstallation?.agentName ||
-      req.agentUser?.botMetadata?.agentName ||
-      req.agentUser?.username;
-    const instanceId =
-      agentInstallation?.instanceId ||
-      req.agentUser?.botMetadata?.instanceId ||
-      'default';
+    const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
       return res.status(403).json({ message: 'Could not resolve agent identity' });
     }
-    const { content } = req.body || {};
-    if (typeof content !== 'string') {
+    const { content, sections, sourceRuntime } = req.body || {};
+    if (content === undefined && sections === undefined) {
+      return res.status(400).json({ message: 'must provide content or sections' });
+    }
+    if (content !== undefined && typeof content !== 'string') {
       return res.status(400).json({ message: 'content must be a string' });
     }
+    if (sections !== undefined) {
+      const sectionsError = validateSectionsPayload(sections);
+      if (sectionsError) return res.status(400).json({ message: sectionsError });
+    }
+    if (sourceRuntime !== undefined && typeof sourceRuntime !== 'string') {
+      return res.status(400).json({ message: 'sourceRuntime must be a string' });
+    }
+
+    const setOps: Record<string, unknown> = {};
+    if (sections !== undefined) {
+      // Per-key merge via dotted $set paths — preserves sibling sections the
+      // caller didn't include in this write.
+      for (const key of Object.keys(sections)) {
+        setOps[`sections.${key}`] = sections[key];
+      }
+      setOps.schemaVersion = 2;
+      if (content === undefined && sections.long_term !== undefined) {
+        setOps.content = mirrorContentFromSections(sections);
+      }
+    }
+    if (content !== undefined) setOps.content = content;
+    if (sourceRuntime !== undefined) setOps.sourceRuntime = sourceRuntime;
+
     await AgentMemory.findOneAndUpdate(
       { agentName, instanceId },
-      { content, updatedAt: new Date() },
-      { upsert: true, new: true },
+      { $set: setOps },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
     );
+    console.log('[agent-memory PUT]', {
+      agentName,
+      instanceId,
+      sectionKeys: sections ? Object.keys(sections) : [],
+      contentProvided: content !== undefined,
+      sourceRuntime,
+    });
     return res.json({ ok: true });
   } catch (err: any) {
     console.error('PUT /memory error:', err);
