@@ -1575,6 +1575,22 @@ const applyOpenClawCodexProviderConfig = async (config: any) => {
       if (!config.auth.profiles[profileId]) {
         config.auth.profiles[profileId] = { provider: 'openai-codex', mode: 'oauth' };
       }
+      // expires must be stored in MILLISECONDS — OpenClaw compares against
+      // Date.now(). The secret stores Unix seconds (10-digit) from the
+      // OAuth device-auth flow; multiply by 1000 to get ms. If the secret
+      // ever changes to ISO format (would parse via Date.parse), the else
+      // branch still handles it.
+      let expiresMs: number | null = null;
+      if (expiresAt) {
+        const n = Number(expiresAt);
+        if (Number.isFinite(n) && n > 0) {
+          // 10-digit = seconds; 13-digit = already ms
+          expiresMs = n < 10_000_000_000 ? n * 1000 : n;
+        } else {
+          const parsed = new Date(expiresAt).getTime();
+          if (Number.isFinite(parsed)) expiresMs = parsed;
+        }
+      }
       credentials.push({
         profileId,
         credential: {
@@ -1582,8 +1598,7 @@ const applyOpenClawCodexProviderConfig = async (config: any) => {
           provider: 'openai-codex',
           access,
           ...(refresh && { refresh }),
-          // Parse ISO date string to milliseconds; Number() of ISO string gives NaN
-          ...(expiresAt && { expires: new Date(expiresAt).getTime() || null }),
+          ...(expiresMs && { expires: expiresMs }),
         },
       });
     }
