@@ -1555,10 +1555,15 @@ const applyOpenClawCodexProviderConfig = async (config: any) => {
 
   // Account definitions: suffix -> profileId
   // openai-codex:codex-cli is the established rotation name for account-1 (suffix '').
+  // Order matters for OpenClaw rotation: profile listed first is tried first.
+  // While account-1's OAuth tokens are stale (user hasn't re-logged-in this week),
+  // put account-2 and account-3 ahead so fresh tokens are attempted first and
+  // codex-cli is only hit as a last resort. Revert to original order once acct-1
+  // is refreshed.
   const CODEX_ACCOUNTS = [
-    { suffix: '', profileId: 'openai-codex:codex-cli' },
     { suffix: '-2', profileId: 'openai-codex:account-2' },
     { suffix: '-3', profileId: 'openai-codex:account-3' },
+    { suffix: '', profileId: 'openai-codex:codex-cli' },
   ];
 
   const credentials = [];
