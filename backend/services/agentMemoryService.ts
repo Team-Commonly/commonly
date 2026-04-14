@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 import type {
   IAgentMemorySections,
   IDailySection,
@@ -5,6 +7,24 @@ import type {
   IRelationshipNote,
   MemoryVisibility,
 } from '../models/AgentMemory';
+
+// Valid YYYY-MM-DD — ADR-003 daily[].date shape. Strict: must be a calendar-
+// valid date (Date.parse rejects e.g. 2026-02-30).
+export const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export function isValidYMD(s: unknown): boolean {
+  if (typeof s !== 'string') return false;
+  const m = s.match(YMD_RE);
+  if (!m) return false;
+  const [, y, mo, d] = m;
+  const dt = new Date(`${y}-${mo}-${d}T00:00:00Z`);
+  if (Number.isNaN(dt.getTime())) return false;
+  return (
+    dt.getUTCFullYear() === Number(y)
+    && dt.getUTCMonth() + 1 === Number(mo)
+    && dt.getUTCDate() === Number(d)
+  );
+}
 
 // ADR-003 Phase 1: parse legacy v1 `content` blobs into a v2 section envelope.
 // The parser splits markdown on top-level `## ` headers and buckets each
@@ -166,4 +186,78 @@ export function stampSectionsForWrite(
     out[key] = makeSection(s.content ?? '', s.visibility ?? 'private', now);
   }
   return out;
+}
+
+// ADR-003 Phase 2: element-level merge for array sections under
+// `mode: 'patch'`. `daily[]` is keyed by `date`; `relationships[]` is keyed by
+// `otherInstanceId`. Incoming entries overwrite existing ones with the same
+// key; existing entries with keys not in the payload are preserved. Caller
+// is expected to pass already-stamped incoming sections.
+//
+// Concurrency caveat: the `/memory/sync` handler does a read-merge-write
+// (findOne → mergePatchSections → findOneAndUpdate). Drivers are expected to
+// serialize promotions per (agentName, instanceId) — typical heartbeat
+// cadence. When webhook drivers land (Phase 2b / later), revisit with an
+// update-pipeline `$mergeObjects` / optimistic-concurrency version check.
+export function mergePatchSections(
+  existing: IAgentMemorySections | undefined,
+  incoming: IAgentMemorySections,
+): IAgentMemorySections {
+  const out: IAgentMemorySections = { ...(existing || {}) };
+
+  for (const key of Object.keys(incoming) as (keyof IAgentMemorySections)[]) {
+    const inc = incoming[key];
+    if (inc === undefined) continue;
+
+    if (key === 'daily') {
+      const byDate = new Map<string, IDailySection>();
+      for (const d of existing?.daily || []) byDate.set(d.date, d);
+      for (const d of inc as IDailySection[]) byDate.set(d.date, d);
+      out.daily = Array.from(byDate.values());
+      continue;
+    }
+
+    if (key === 'relationships') {
+      const byId = new Map<string, IRelationshipNote>();
+      for (const r of existing?.relationships || []) byId.set(r.otherInstanceId, r);
+      for (const r of inc as IRelationshipNote[]) byId.set(r.otherInstanceId, r);
+      out.relationships = Array.from(byId.values());
+      continue;
+    }
+
+    out[key] = inc as IMemorySection;
+  }
+
+  return out;
+}
+
+// Canonical stringify: sorts object keys recursively so semantically identical
+// payloads hash identically regardless of emit order. JSON.stringify is NOT
+// canonical. Used only for dedup key computation.
+function canonicalStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (value instanceof Date) return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(',')}]`;
+  const rec = value as Record<string, unknown>;
+  const keys = Object.keys(rec).sort();
+  const parts = keys.map((k) => `${JSON.stringify(k)}:${canonicalStringify(rec[k])}`);
+  return `{${parts.join(',')}}`;
+}
+
+// Dedup key for /memory/sync — combines day bucket (UTC) with sourceRuntime
+// and a stable content hash of the sections payload. Two syncs with the same
+// *semantic* payload on the same day collapse to one write (see
+// canonicalStringify: key order is normalized).
+// 32 hex chars = 128 bits of collision resistance — ample for a per-instance,
+// per-day dedup where a miss just means one extra write.
+export function computeSyncDedupKey(
+  sections: IAgentMemorySections,
+  sourceRuntime: string | undefined,
+  mode: 'full' | 'patch',
+  now: Date = new Date(),
+): string {
+  const day = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const payload = canonicalStringify({ sections, sourceRuntime: sourceRuntime ?? null, mode });
+  const hash = crypto.createHash('sha256').update(payload).digest('hex').slice(0, 32);
+  return `${day}:${sourceRuntime ?? '-'}:${hash}`;
 }

@@ -7,6 +7,9 @@ const {
   buildSectionsFromLegacyContent,
   mirrorContentFromSections,
   stampSectionsForWrite,
+  mergePatchSections,
+  computeSyncDedupKey,
+  isValidYMD,
 } = require('../../../services/agentMemoryService');
 
 describe('parseContentIntoSections', () => {
@@ -223,5 +226,172 @@ describe('stampSectionsForWrite', () => {
     const a = stampSectionsForWrite(input, FIXED);
     const b = stampSectionsForWrite(a, FIXED);
     expect(b).toEqual(a);
+  });
+});
+
+describe('isValidYMD', () => {
+  it('accepts valid YYYY-MM-DD', () => {
+    expect(isValidYMD('2026-04-14')).toBe(true);
+    expect(isValidYMD('2000-01-01')).toBe(true);
+    expect(isValidYMD('2024-02-29')).toBe(true); // leap year
+  });
+
+  it('rejects malformed strings', () => {
+    expect(isValidYMD('2026-4-14')).toBe(false);    // not zero-padded
+    expect(isValidYMD('2026/04/14')).toBe(false);
+    expect(isValidYMD('14-04-2026')).toBe(false);
+    expect(isValidYMD('')).toBe(false);
+    expect(isValidYMD('Apr 14')).toBe(false);
+  });
+
+  it('rejects calendar-invalid dates', () => {
+    expect(isValidYMD('2026-02-30')).toBe(false);  // no Feb 30
+    expect(isValidYMD('2026-13-01')).toBe(false);  // month 13
+    expect(isValidYMD('2026-00-01')).toBe(false);  // month 0
+    expect(isValidYMD('2026-04-00')).toBe(false);  // day 0
+    expect(isValidYMD('2023-02-29')).toBe(false);  // non-leap year
+  });
+
+  it('rejects non-strings', () => {
+    expect(isValidYMD(20260414)).toBe(false);
+    expect(isValidYMD(undefined)).toBe(false);
+    expect(isValidYMD(null)).toBe(false);
+    expect(isValidYMD(new Date())).toBe(false);
+  });
+});
+
+describe('mergePatchSections', () => {
+  it('merges single-object sections per-key, preserving siblings', () => {
+    const existing = {
+      long_term: { content: 'keep', visibility: 'private', updatedAt: new Date(), byteSize: 4 },
+      shared: { content: 'bio', visibility: 'public', updatedAt: new Date(), byteSize: 3 },
+    };
+    const incoming = {
+      dedup_state: { content: '## C\n{}', visibility: 'private', updatedAt: new Date(), byteSize: 8 },
+    };
+    const out = mergePatchSections(existing, incoming);
+    expect(out.long_term?.content).toBe('keep');
+    expect(out.shared?.content).toBe('bio');
+    expect(out.dedup_state?.content).toBe('## C\n{}');
+  });
+
+  it('replaces a single-object section when incoming has the same key', () => {
+    const existing = { long_term: { content: 'old', visibility: 'private', updatedAt: new Date(), byteSize: 3 } };
+    const incoming = { long_term: { content: 'new', visibility: 'private', updatedAt: new Date(), byteSize: 3 } };
+    const out = mergePatchSections(existing, incoming);
+    expect(out.long_term?.content).toBe('new');
+  });
+
+  it('merges daily entries by date (replace same-date, keep other dates)', () => {
+    const existing = {
+      daily: [
+        { date: '2026-04-12', content: 'mon', visibility: 'private' },
+        { date: '2026-04-13', content: 'tue', visibility: 'private' },
+      ],
+    };
+    const incoming = {
+      daily: [
+        { date: '2026-04-13', content: 'tue-updated', visibility: 'private' },
+        { date: '2026-04-14', content: 'wed', visibility: 'private' },
+      ],
+    };
+    const out = mergePatchSections(existing, incoming);
+    const byDate = Object.fromEntries((out.daily || []).map((d) => [d.date, d.content]));
+    expect(byDate['2026-04-12']).toBe('mon');             // preserved
+    expect(byDate['2026-04-13']).toBe('tue-updated');     // replaced
+    expect(byDate['2026-04-14']).toBe('wed');             // added
+    expect(out.daily?.length).toBe(3);
+  });
+
+  it('merges relationships by otherInstanceId', () => {
+    const existing = {
+      relationships: [
+        { otherInstanceId: 'nova', notes: 'old nova', visibility: 'private', updatedAt: new Date() },
+        { otherInstanceId: 'theo', notes: 'old theo', visibility: 'private', updatedAt: new Date() },
+      ],
+    };
+    const incoming = {
+      relationships: [
+        { otherInstanceId: 'nova', notes: 'new nova', visibility: 'private', updatedAt: new Date() },
+        { otherInstanceId: 'liz', notes: 'new liz', visibility: 'private', updatedAt: new Date() },
+      ],
+    };
+    const out = mergePatchSections(existing, incoming);
+    const byId = Object.fromEntries((out.relationships || []).map((r) => [r.otherInstanceId, r.notes]));
+    expect(byId.nova).toBe('new nova');
+    expect(byId.theo).toBe('old theo');
+    expect(byId.liz).toBe('new liz');
+    expect(out.relationships?.length).toBe(3);
+  });
+
+  it('handles missing existing doc (returns stamped incoming as-is)', () => {
+    const incoming = { long_term: { content: 'x', visibility: 'private', updatedAt: new Date(), byteSize: 1 } };
+    const out = mergePatchSections(undefined, incoming);
+    expect(out.long_term?.content).toBe('x');
+  });
+
+  it('does not lose sections from existing that incoming omitted', () => {
+    const existing = {
+      soul: { content: 'who', visibility: 'private', updatedAt: new Date(), byteSize: 3 },
+      long_term: { content: 'why', visibility: 'private', updatedAt: new Date(), byteSize: 3 },
+    };
+    const out = mergePatchSections(existing, {});
+    expect(out.soul?.content).toBe('who');
+    expect(out.long_term?.content).toBe('why');
+  });
+});
+
+describe('computeSyncDedupKey', () => {
+  const FIXED = new Date('2026-04-14T12:00:00Z');
+
+  it('produces the same key for identical sections + runtime + mode on the same day', () => {
+    const s = { long_term: { content: 'x' } };
+    const a = computeSyncDedupKey(s, 'openclaw', 'patch', FIXED);
+    const b = computeSyncDedupKey(s, 'openclaw', 'patch', FIXED);
+    expect(a).toBe(b);
+  });
+
+  it('produces a different key when mode differs', () => {
+    const s = { long_term: { content: 'x' } };
+    expect(computeSyncDedupKey(s, 'openclaw', 'full', FIXED))
+      .not.toBe(computeSyncDedupKey(s, 'openclaw', 'patch', FIXED));
+  });
+
+  it('produces a different key when sourceRuntime differs', () => {
+    const s = { long_term: { content: 'x' } };
+    expect(computeSyncDedupKey(s, 'openclaw', 'patch', FIXED))
+      .not.toBe(computeSyncDedupKey(s, 'webhook', 'patch', FIXED));
+  });
+
+  it('produces a different key when the day rolls over', () => {
+    const s = { long_term: { content: 'x' } };
+    const day1 = new Date('2026-04-14T23:59:59Z');
+    const day2 = new Date('2026-04-15T00:00:01Z');
+    expect(computeSyncDedupKey(s, 'openclaw', 'patch', day1))
+      .not.toBe(computeSyncDedupKey(s, 'openclaw', 'patch', day2));
+  });
+
+  it('produces a different key when section content differs by a byte', () => {
+    expect(computeSyncDedupKey({ long_term: { content: 'x' } }, 'oc', 'patch', FIXED))
+      .not.toBe(computeSyncDedupKey({ long_term: { content: 'y' } }, 'oc', 'patch', FIXED));
+  });
+
+  it('key starts with the UTC day', () => {
+    const k = computeSyncDedupKey({ long_term: { content: 'x' } }, 'openclaw', 'patch', FIXED);
+    expect(k).toMatch(/^2026-04-14:/);
+  });
+
+  it('is order-invariant on object keys (canonical stringify)', () => {
+    const a = { long_term: { content: 'x', visibility: 'private' } };
+    const b = { long_term: { visibility: 'private', content: 'x' } };
+    expect(computeSyncDedupKey(a, 'openclaw', 'patch', FIXED))
+      .toBe(computeSyncDedupKey(b, 'openclaw', 'patch', FIXED));
+  });
+
+  it('is order-invariant across multiple sections', () => {
+    const a = { long_term: { content: 'x' }, shared: { content: 'y' } };
+    const b = { shared: { content: 'y' }, long_term: { content: 'x' } };
+    expect(computeSyncDedupKey(a, 'openclaw', 'patch', FIXED))
+      .toBe(computeSyncDedupKey(b, 'openclaw', 'patch', FIXED));
   });
 });

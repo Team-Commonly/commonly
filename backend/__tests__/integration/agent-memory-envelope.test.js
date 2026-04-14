@@ -548,4 +548,314 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
       expect(after.sections).toBeUndefined();
     });
   });
+
+  // ------------------------------------------------------------------- //
+  // POST /memory/sync  (ADR-003 Phase 2)                                 //
+  // ------------------------------------------------------------------- //
+
+  describe('POST /memory/sync', () => {
+    it('rejects requests without sections', async () => {
+      const res = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ mode: 'full' });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/sections is required/);
+    });
+
+    it('rejects requests without a valid mode', async () => {
+      const resA = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ sections: { long_term: { content: 'x' } } });
+      expect(resA.status).toBe(400);
+      expect(resA.body.message).toMatch(/mode must be 'full' or 'patch'/);
+
+      const resB = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ sections: { long_term: { content: 'x' } }, mode: 'merge' });
+      expect(resB.status).toBe(400);
+    });
+
+    it('rejects invalid YYYY-MM-DD date on daily entries', async () => {
+      const res = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { daily: [{ date: '2026/04/14', content: 'x' }] },
+          mode: 'full',
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/YYYY-MM-DD/);
+    });
+
+    it('also rejects calendar-invalid dates (feb 30)', async () => {
+      const res = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { daily: [{ date: '2026-02-30', content: 'x' }] },
+          mode: 'full',
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/YYYY-MM-DD/);
+    });
+
+    it('full mode: replaces the entire sections envelope', async () => {
+      // Seed with long_term + shared.
+      await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ sections: { long_term: { content: 'old' }, shared: { content: 'bio', visibility: 'public' } } })
+        .expect(200);
+
+      // full sync with only dedup_state — long_term/shared should be gone.
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { dedup_state: { content: '## Commented\n{}' } },
+          mode: 'full',
+          sourceRuntime: 'openclaw',
+        })
+        .expect(200);
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.long_term).toBeUndefined();
+      expect(get.body.sections.shared).toBeUndefined();
+      expect(get.body.sections.dedup_state.content).toContain('Commented');
+      expect(get.body.sourceRuntime).toBe('openclaw');
+    });
+
+    it('patch mode: preserves sibling sections and merges daily by date', async () => {
+      // Seed.
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            long_term: { content: 'keep me' },
+            daily: [
+              { date: '2026-04-12', content: 'mon' },
+              { date: '2026-04-13', content: 'tue' },
+            ],
+          },
+          mode: 'full',
+        })
+        .expect(200);
+
+      // Patch with updated tue + new wed; long_term should survive.
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            daily: [
+              { date: '2026-04-13', content: 'tue-updated' },
+              { date: '2026-04-14', content: 'wed' },
+            ],
+          },
+          mode: 'patch',
+        })
+        .expect(200);
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.long_term.content).toBe('keep me');
+      const byDate = Object.fromEntries(get.body.sections.daily.map((d) => [d.date, d.content]));
+      expect(byDate['2026-04-12']).toBe('mon');
+      expect(byDate['2026-04-13']).toBe('tue-updated');
+      expect(byDate['2026-04-14']).toBe('wed');
+    });
+
+    it('patch mode: merges relationships by otherInstanceId', async () => {
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            relationships: [
+              { otherInstanceId: 'nova', notes: 'old nova' },
+              { otherInstanceId: 'theo', notes: 'old theo' },
+            ],
+          },
+          mode: 'full',
+        })
+        .expect(200);
+
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            relationships: [
+              { otherInstanceId: 'nova', notes: 'new nova' },
+              { otherInstanceId: 'liz', notes: 'new liz' },
+            ],
+          },
+          mode: 'patch',
+        })
+        .expect(200);
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      const byId = Object.fromEntries(
+        get.body.sections.relationships.map((r) => [r.otherInstanceId, r.notes]),
+      );
+      expect(byId.nova).toBe('new nova');
+      expect(byId.theo).toBe('old theo');
+      expect(byId.liz).toBe('new liz');
+    });
+
+    it('mirrors v1 content when patch mode includes long_term', async () => {
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { long_term: { content: 'sync-mirrored' } },
+          mode: 'patch',
+        })
+        .expect(200);
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.content).toBe('sync-mirrored');
+    });
+
+    it('dedupes identical payloads within the same day bucket', async () => {
+      const body = {
+        sections: { long_term: { content: 'stable' } },
+        sourceRuntime: 'openclaw',
+        mode: 'patch',
+      };
+
+      const first = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send(body);
+      expect(first.status).toBe(200);
+      expect(first.body.ok).toBe(true);
+      expect(first.body.deduped).toBeUndefined();
+
+      const second = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send(body);
+      expect(second.status).toBe(200);
+      expect(second.body.ok).toBe(true);
+      expect(second.body.deduped).toBe(true);
+
+      // Count should still be 1.
+      expect(await AgentMemory.countDocuments({})).toBe(1);
+    });
+
+    it('does NOT dedupe when the payload content changes', async () => {
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { long_term: { content: 'first' } }, sourceRuntime: 'openclaw', mode: 'patch',
+        })
+        .expect(200);
+
+      const res = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { long_term: { content: 'second' } }, sourceRuntime: 'openclaw', mode: 'patch',
+        });
+      expect(res.body.deduped).toBeUndefined();
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.long_term.content).toBe('second');
+    });
+
+    it('server-stamps byteSize on sync writes', async () => {
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { long_term: { content: '😀 hi', byteSize: 9999 } },
+          mode: 'full',
+        })
+        .expect(200);
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.long_term.byteSize).toBe(Buffer.byteLength('😀 hi', 'utf8'));
+    });
+
+    it('rejects unauthenticated sync requests', async () => {
+      const res = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .send({ sections: { long_term: { content: 'x' } }, mode: 'full' });
+      expect(res.status).toBe(401);
+    });
+
+    it('full mode without long_term wipes the v1 content mirror', async () => {
+      // Seed with v1 content via mirror.
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ sections: { long_term: { content: 'v1 mirror source' } }, mode: 'full' })
+        .expect(200);
+      let get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.content).toBe('v1 mirror source');
+
+      // full sync that omits long_term — v1 content must be blanked, not stale.
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ sections: { dedup_state: { content: '## Commented\n{}' } }, mode: 'full' })
+        .expect(200);
+      get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.content).toBe('');
+      expect(get.body.sections.long_term).toBeUndefined();
+    });
+
+    it('PUT /memory invalidates the sync dedup cache (cross-writer safety)', async () => {
+      const body = {
+        sections: { long_term: { content: 'dedup-me' } },
+        sourceRuntime: 'openclaw',
+        mode: 'patch',
+      };
+
+      // Sync once so lastSyncKey is populated.
+      await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send(body)
+        .expect(200);
+
+      // A non-sync writer mutates sections directly (human operator / v1 tool).
+      await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ sections: { long_term: { content: 'stomped by PUT' } } })
+        .expect(200);
+
+      // The same sync payload must NOT be deduped now — kernel state drifted.
+      const second = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send(body);
+      expect(second.body.deduped).toBeUndefined();
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.long_term.content).toBe('dedup-me');
+    });
+  });
 });
