@@ -296,6 +296,100 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
       expect(get.body.schemaVersion).toBe(2);
     });
 
+    it('server-stamps byteSize from content and ignores client-supplied values', async () => {
+      await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            long_term: { content: '😀 hi', byteSize: 9999, updatedAt: '2000-01-01T00:00:00Z' },
+          },
+        })
+        .expect(200);
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.long_term.byteSize).toBe(Buffer.byteLength('😀 hi', 'utf8'));
+      const updatedAt = new Date(get.body.sections.long_term.updatedAt);
+      expect(Date.now() - updatedAt.getTime()).toBeLessThan(60_000);
+    });
+
+    it('array sections (relationships, daily) are whole-array replace — Phase 1 intentional', async () => {
+      // Seed two relationships.
+      await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            relationships: [
+              { otherInstanceId: 'nova', notes: 'met in dev' },
+              { otherInstanceId: 'theo', notes: 'pr review' },
+            ],
+          },
+        })
+        .expect(200);
+
+      // Partial resend with ONE relationship — old entries are replaced, not merged.
+      await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { relationships: [{ otherInstanceId: 'liz', notes: 'new' }] },
+        })
+        .expect(200);
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      const ids = (get.body.sections.relationships || []).map((r) => r.otherInstanceId);
+      expect(ids).toEqual(['liz']); // nova and theo are intentionally replaced
+    });
+
+    it('sending long_term with empty content blanks the v1 content mirror (deliberate clear)', async () => {
+      // Seed long_term with content so v1 mirror is non-empty.
+      await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ sections: { long_term: { content: 'seeded' } } })
+        .expect(200);
+
+      // Explicit clear.
+      await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ sections: { long_term: { content: '' } } })
+        .expect(200);
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.content).toBe('');
+      expect(get.body.sections.long_term.content).toBe('');
+      expect(get.body.sections.long_term.byteSize).toBe(0);
+    });
+
+    it('stamps byteSize per section when multiple sections arrive in one write', async () => {
+      await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            long_term: { content: 'abcd' },
+            shared: { content: 'hi', visibility: 'public' },
+            dedup_state: { content: '## Commented\n{}' },
+          },
+        })
+        .expect(200);
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.long_term.byteSize).toBe(4);
+      expect(get.body.sections.shared.byteSize).toBe(2);
+      expect(get.body.sections.dedup_state.byteSize).toBe(
+        Buffer.byteLength('## Commented\n{}', 'utf8'),
+      );
+    });
+
     it('preserves sibling sections when a partial sections write lands', async () => {
       // Seed with long_term + shared + v1 content.
       await request(app)

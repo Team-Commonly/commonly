@@ -6,6 +6,7 @@ const {
   parseContentIntoSections,
   buildSectionsFromLegacyContent,
   mirrorContentFromSections,
+  stampSectionsForWrite,
 } = require('../../../services/agentMemoryService');
 
 describe('parseContentIntoSections', () => {
@@ -133,5 +134,94 @@ describe('mirrorContentFromSections', () => {
     expect(mirrorContentFromSections(undefined)).toBe('');
     expect(mirrorContentFromSections({})).toBe('');
     expect(mirrorContentFromSections({ dedup_state: { content: 'x' } })).toBe('');
+  });
+});
+
+describe('stampSectionsForWrite', () => {
+  const FIXED = new Date('2026-04-14T12:00:00Z');
+
+  it('stamps updatedAt and byteSize on single-object sections', () => {
+    const out = stampSectionsForWrite({
+      long_term: { content: 'hello' },
+    }, FIXED);
+    expect(out.long_term.content).toBe('hello');
+    expect(out.long_term.updatedAt).toEqual(FIXED);
+    expect(out.long_term.byteSize).toBe(5);
+    expect(out.long_term.visibility).toBe('private');
+  });
+
+  it('computes byteSize in utf-8 bytes for multi-byte content', () => {
+    const out = stampSectionsForWrite({ long_term: { content: '😀 hi' } }, FIXED);
+    expect(out.long_term.byteSize).toBe(Buffer.byteLength('😀 hi', 'utf8'));
+  });
+
+  it('overrides client-supplied byteSize and updatedAt', () => {
+    const out = stampSectionsForWrite({
+      long_term: {
+        content: 'x',
+        byteSize: 9999,
+        updatedAt: new Date('2000-01-01'),
+      },
+    }, FIXED);
+    expect(out.long_term.byteSize).toBe(1);
+    expect(out.long_term.updatedAt).toEqual(FIXED);
+  });
+
+  it('preserves caller-supplied visibility', () => {
+    const out = stampSectionsForWrite({
+      shared: { content: 'bio', visibility: 'public' },
+    }, FIXED);
+    expect(out.shared.visibility).toBe('public');
+  });
+
+  it('defaults visibility to private when omitted', () => {
+    const out = stampSectionsForWrite({
+      long_term: { content: 'x' },
+    }, FIXED);
+    expect(out.long_term.visibility).toBe('private');
+  });
+
+  it('only stamps sections present in input (no sibling creation)', () => {
+    const out = stampSectionsForWrite({ dedup_state: { content: 'x' } }, FIXED);
+    expect(out.dedup_state).toBeDefined();
+    expect(out.long_term).toBeUndefined();
+    expect(out.shared).toBeUndefined();
+    expect(out.soul).toBeUndefined();
+  });
+
+  it('stamps daily entries without byteSize/updatedAt (per ADR shape)', () => {
+    const out = stampSectionsForWrite({
+      daily: [{ date: '2026-04-14', content: 'today', visibility: 'pod' }],
+    }, FIXED);
+    expect(out.daily).toHaveLength(1);
+    expect(out.daily[0].date).toBe('2026-04-14');
+    expect(out.daily[0].content).toBe('today');
+    expect(out.daily[0].visibility).toBe('pod');
+    expect(out.daily[0].byteSize).toBeUndefined();
+    expect(out.daily[0].updatedAt).toBeUndefined();
+  });
+
+  it('stamps relationships entries with updatedAt but no byteSize', () => {
+    const out = stampSectionsForWrite({
+      relationships: [
+        { otherInstanceId: 'nova', notes: 'met in dev', updatedAt: new Date('2000-01-01') },
+      ],
+    }, FIXED);
+    expect(out.relationships).toHaveLength(1);
+    expect(out.relationships[0].otherInstanceId).toBe('nova');
+    expect(out.relationships[0].updatedAt).toEqual(FIXED);
+    expect(out.relationships[0].byteSize).toBeUndefined();
+  });
+
+  it('is idempotent under same `now` — repeated stamping yields equivalent output (covers object + array sections)', () => {
+    const input = {
+      long_term: { content: 'x' },
+      dedup_state: { content: '## Commented\n{}' },
+      daily: [{ date: '2026-04-14', content: 'today', visibility: 'private' }],
+      relationships: [{ otherInstanceId: 'nova', notes: 'n' }],
+    };
+    const a = stampSectionsForWrite(input, FIXED);
+    const b = stampSectionsForWrite(a, FIXED);
+    expect(b).toEqual(a);
   });
 });

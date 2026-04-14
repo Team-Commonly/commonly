@@ -1,6 +1,8 @@
 import type {
   IAgentMemorySections,
+  IDailySection,
   IMemorySection,
+  IRelationshipNote,
   MemoryVisibility,
 } from '../models/AgentMemory';
 
@@ -113,4 +115,55 @@ export function mirrorContentFromSections(
   sections: IAgentMemorySections | undefined,
 ): string {
   return sections?.long_term?.content ?? '';
+}
+
+// Server-stamp metadata the caller shouldn't be trusted to compute: `byteSize`
+// (derived from `content`) and `updatedAt` (now). Callers supply `content` +
+// `visibility`; everything else is enforced server-side. Only stamps the
+// sections actually present in the input — the per-key merge in PUT /memory
+// preserves siblings, so siblings keep their previous stamp.
+//
+// Phase 1 array-section semantics (`daily`, `relationships`) are **whole-array
+// replace**: sending `{ relationships: [...] }` replaces the entire stored
+// array with the one in the payload, and every entry gets `updatedAt = now`.
+// This is consistent with the way the per-key dotted-$set merge in the PUT
+// handler stores arrays. A client that wants to add one entry must currently
+// resend all pre-existing entries. Phase 2's POST /memory/sync with explicit
+// `mode: 'patch'` will introduce key-level merge (by `otherInstanceId` /
+// `date`). Until then, if you need element-level freshness, don't persist
+// relationships via this endpoint.
+export function stampSectionsForWrite(
+  sections: IAgentMemorySections,
+  now: Date = new Date(),
+): IAgentMemorySections {
+  const out: IAgentMemorySections = {};
+  // Cast is safe here: validateSectionsPayload in the route rejects any key
+  // outside the allowed set before we get here.
+  for (const key of Object.keys(sections) as (keyof IAgentMemorySections)[]) {
+    const v = sections[key];
+    if (v === undefined) continue;
+
+    if (key === 'daily') {
+      out.daily = ((v as IDailySection[]) || []).map((d): IDailySection => ({
+        date: d.date,
+        content: d.content ?? '',
+        visibility: (d.visibility ?? 'private') as MemoryVisibility,
+      }));
+      continue;
+    }
+
+    if (key === 'relationships') {
+      out.relationships = ((v as IRelationshipNote[]) || []).map((r): IRelationshipNote => ({
+        otherInstanceId: r.otherInstanceId,
+        notes: r.notes ?? '',
+        visibility: (r.visibility ?? 'private') as MemoryVisibility,
+        updatedAt: now,
+      }));
+      continue;
+    }
+
+    const s = v as IMemorySection;
+    out[key] = makeSection(s.content ?? '', s.visibility ?? 'private', now);
+  }
+  return out;
 }
