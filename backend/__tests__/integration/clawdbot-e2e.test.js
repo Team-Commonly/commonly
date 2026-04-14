@@ -971,6 +971,10 @@ describe('Clawdbot E2E Integration Tests', () => {
     });
 
     test('should handle summary event from user chat activity', async () => {
+      // Install now posts a self-introduction message (install.ts ~L229);
+      // clear so the count below reflects only the user messages this test creates.
+      await Message.deleteMany({ podId: testPod._id });
+
       // Simulate user messages being sent to the pod
       const userMessages = [
         { userId: testUser._id, content: 'Hey team, what\'s the status on the API integration?' },
