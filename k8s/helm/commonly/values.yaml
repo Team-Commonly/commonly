@@ -322,6 +322,12 @@ cloudflared:
 # LiteLLM proxy (model gateway + request logging)
 litellm:
   enabled: false
+  # When true, bypass LiteLLM for Codex calls. moltbot.json's openai-codex
+  # provider points at chatgpt.com directly via OpenClaw's native
+  # openai-codex-responses handler. Workaround for BerriAI/litellm#25429
+  # (chatgpt/ bridge returns empty output, burns Codex quota).
+  # Flip to false once the upstream fix lands.
+  codexBypassLitellm: false
   # Codex account rotator sidecar. Disable while CODEX_BYPASS_LITELLM=true
   # (LiteLLM's chatgpt/ bridge isn't used; rotator would just burn refresh
   # tokens). Re-enable once the upstream LiteLLM bug is fixed.

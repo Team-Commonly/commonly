@@ -14,7 +14,17 @@ data:
     {
       "models": {
         "providers": {
-          {{- if .Values.litellm.enabled }}
+          {{- if .Values.litellm.codexBypassLitellm }}
+          "openai-codex": {
+            "baseUrl": "https://chatgpt.com/backend-api",
+            "api": "openai-codex-responses",
+            "models": [
+              {"id": "gpt-5.4", "name": "gpt-5.4"},
+              {"id": "gpt-5.4-mini", "name": "gpt-5.4-mini"},
+              {"id": "gpt-5.3-codex", "name": "gpt-5.3-codex"}
+            ]
+          }
+          {{- else if .Values.litellm.enabled }}
           "openai-codex": {
             "baseUrl": "http://litellm.{{ include "commonly.namespace" . }}.svc.cluster.local:4000",
             "api": "openai-completions",
@@ -31,8 +41,8 @@ data:
       "agents": {
         "defaults": {
           "model": {
-            "primary": "openai-codex/gpt-5.4-nano",
-            "fallbacks": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]
+            "primary": "openai-codex/gpt-5.4-mini",
+            "fallbacks": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]
           },
           "maxConcurrent": 4,
           "subagents": {

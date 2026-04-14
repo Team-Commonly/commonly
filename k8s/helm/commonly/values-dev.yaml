@@ -13,7 +13,7 @@ backend:
   replicaCount: 1
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
-    tag: "20260413131714"
+    tag: "20260413172823"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
     pool: dev
@@ -191,6 +191,9 @@ cloudflared:
 
 litellm:
   enabled: true
+  # BerriAI/litellm#25429 workaround: route Codex direct to chatgpt.com
+  # via OpenClaw's native handler. Flip to false when upstream fix lands.
+  codexBypassLitellm: true
   # Disable the codex-auth-rotator sidecar — we're in CODEX_BYPASS_LITELLM
   # mode, so LiteLLM's chatgpt/ provider isn't used for Codex calls, and the
   # rotator would burn refresh_tokens on calls that never happen, invalidating
