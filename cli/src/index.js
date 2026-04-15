@@ -42,7 +42,8 @@ registerPod(program);
 // Local dev environment
 registerDev(program);
 
-// Use instance flag globally
-program.option('--instance <url>', 'Override target Commonly instance');
+// Each subcommand owns its own `--instance <url>` flag; a program-level
+// duplicate shadowed the subcommand value on commander v12, causing
+// `commonly login --instance …` to silently fall back to the default URL.
 
 program.parse(process.argv);
