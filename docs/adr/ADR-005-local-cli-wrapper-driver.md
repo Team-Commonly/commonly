@@ -108,17 +108,15 @@ Target size: ~30–60 lines per adapter. Adding a new CLI is a single-file PR.
 
 ### Session continuity
 
-CLIs with per-conversation session IDs (`claude`, `codex`, `openclaw`) benefit from persistence across pod turns. The wrapper maintains a local map at `~/.commonly/sessions.json`:
+CLIs with per-conversation session IDs (`claude`, `codex`, `openclaw`) benefit from persistence across pod turns. The wrapper keeps one file per agent at `~/.commonly/sessions/<agentName>.json`:
 
 ```json
 {
-  "my-claude": {
-    "<podId>": { "sessionId": "abc123", "lastTurn": "2026-04-14T18:00:00Z" }
-  }
+  "<podId>": { "sessionId": "abc123", "lastTurn": "2026-04-14T18:00:00Z" }
 }
 ```
 
-Before each spawn, the wrapper looks up `(agentName, podId)` and passes the stored `sessionId` to the adapter. After each spawn, `SpawnResult.newSessionId` updates the map. CLIs without sessions get a fresh invocation each time.
+One file per agent — not a single shared map — so two `commonly agent run` processes for different agents never race on the same file (see §Spawning semantics). Before each spawn, the wrapper looks up `(agentName, podId)` and passes the stored `sessionId` to the adapter. After each spawn, `SpawnResult.newSessionId` updates the file. CLIs without sessions get a fresh invocation each time.
 
 ### Memory bridge
 
@@ -149,8 +147,9 @@ This is a deliberate trade: the wrapper trusts `$HOME`. If the user runs `common
 
 ### Spawning semantics
 
-- **Serialized per agent**: the wrapper handles events sequentially for each agent. No two spawns of the same agent in-flight simultaneously. Simpler than concurrency; avoids session-id races.
-- **Parallel across agents**: running `commonly agent run agent-a` and `commonly agent run agent-b` in two terminals is supported; each has its own poll loop and session state.
+- **Serialized per run process**: the wrapper handles events sequentially within a single `commonly agent run` process — no two spawns in-flight simultaneously. Simpler than concurrency; avoids session-id races within the process.
+- **Parallel across agents**: running `commonly agent run agent-a` and `commonly agent run agent-b` in two terminals is supported; each has its own poll loop and its own session file.
+- **Two terminals for the same agent are unsupported in v1.** Running `commonly agent run my-claude` twice concurrently would produce duplicate spawns and post twice to the pod. The wrapper does not enforce single-instance — it is the user's responsibility (a pidfile is a candidate post-v1).
 - **Timeout**: spawns time out at 5 minutes by default (configurable per adapter). Timed-out spawns get killed, the event is not acked, the kernel re-delivers it.
 - **Failure**: if the adapter throws, the wrapper posts nothing to the pod, logs locally, and does NOT ack. Re-delivery lets transient failures recover.
 
@@ -281,7 +280,7 @@ Publish + install instructions. Gated on CAP v1 being documented (ADR-004 Phase 
 
 ## Open questions
 
-1. **Serialization scope**: should "serialized per agent" be "serialized per `(agent, pod)`"? Matters when a single `my-claude` runs in 3 pods concurrently. Proposal for v1: per agent across pods; re-examine when concurrent load is real.
+1. **Serialization scope**: should "serialized per run process" be "serialized per `(agent, pod)`"? Matters when a single `my-claude` runs in 3 pods concurrently. Resolved for v1: serialized per run process — one `commonly agent run` means one spawn at a time. Two terminals for the same agent name are unsupported (see §Spawning semantics). Re-examine when concurrent load is real.
 2. **Memory summary generation**: if the wrapped CLI doesn't return a summary, should the wrapper auto-summarize the turn with a cheap model call? Today: no — agents whose CLI doesn't cooperate simply don't update memory, and that's fine. Revisit if we see agents accumulating stale context.
 3. **Adapter for "just a bash script"**: how much adapter is a 10-line bash script? Probably a single `script.js` adapter that takes a path + argv template at `attach` time. Could close 90% of long-tail cases. File as a follow-up if users ask.
 4. **Windows support**: is the shim shell-based (POSIX) or does it use Node's direct spawn? Node's `child_process.spawn` without a shell works cross-platform; keep that path. Windows-specific adapter paths are a later concern.

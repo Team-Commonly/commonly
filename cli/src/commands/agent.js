@@ -3,15 +3,232 @@
  *
  * register   — register a webhook agent against an instance
  * connect    — local dev loop: poll events → forward to localhost
+ * attach     — wrap a local CLI as a Commonly agent (ADR-005)
+ * run        — poll events, spawn the wrapped CLI, post results (ADR-005)
  * list       — list installed agents
  * logs       — stream recent events for an agent
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { join } from 'path';
+import { homedir, tmpdir } from 'os';
+
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller } from '../lib/poller.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
+import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
+import { getSession, setSession } from '../lib/session-store.js';
+
+// ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
+
+const tokensDir = () => join(homedir(), '.commonly', 'tokens');
+const tokenFile = (name) => join(tokensDir(), `${name}.json`);
+
+export const saveAgentToken = (name, record) => {
+  if (!existsSync(tokensDir())) mkdirSync(tokensDir(), { recursive: true });
+  writeFileSync(
+    tokenFile(name),
+    JSON.stringify({ ...record, savedAt: new Date().toISOString() }, null, 2),
+    'utf8',
+  );
+};
+
+export const loadAgentToken = (name) => {
+  const file = tokenFile(name);
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+};
+
+// Event types that carry a human/agent-authored prompt the wrapper should
+// forward to the CLI. Other event types (heartbeat, delivery, etc.) are acked
+// as no_action even if they happen to carry `content` in their payload.
+const CHAT_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message']);
+
+// ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
+
+/**
+ * Publish, install, and mint a runtime token for a local-CLI-wrapped agent.
+ * Pure core — the commander action wraps this with config loading + logging.
+ */
+export const performAttach = async ({
+  client,
+  adapterName,
+  agentName,
+  podId,
+  displayName,
+  log = () => {},
+}) => {
+  const adapter = getAdapter(adapterName);
+  if (!adapter) {
+    throw new Error(
+      `Unknown adapter "${adapterName}". Known: ${listAdapterNames().join(', ')}`,
+    );
+  }
+
+  const detected = await adapter.detect();
+  if (!detected) {
+    throw new Error(`${adapterName} not found on PATH. Install it and retry.`);
+  }
+
+  // Idempotent publish — already-published is expected and fine. Install will
+  // surface the real error if the manifest is truly unusable.
+  try {
+    await client.post('/api/registry/publish', {
+      manifest: {
+        name: agentName,
+        version: '1.0.0',
+        description: displayName || agentName,
+        runtimeType: 'local-cli',
+      },
+      displayName: displayName || agentName,
+    });
+  } catch (err) {
+    log(`publish skipped: ${err.message}`);
+  }
+
+  // config.runtime is an opaque blob the backend stores verbatim — kernel
+  // does not interpret runtimeType here. ADR-004 §Identity's `sourceRuntime`
+  // is a different field (memory-sync tag); don't conflate the two.
+  const installResult = await client.post('/api/registry/install', {
+    agentName,
+    podId,
+    displayName: displayName || agentName,
+    version: '1.0.0',
+    config: {
+      runtime: {
+        runtimeType: 'local-cli',
+        wrappedCli: adapter.name,
+      },
+    },
+    scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
+  });
+
+  const installation = installResult.installation || installResult;
+  const instanceId = installation.instanceId || 'default';
+
+  let runtimeToken = installResult.runtimeToken;
+  if (!runtimeToken) {
+    const tokenData = await client.post(
+      `/api/registry/pods/${podId}/agents/${agentName}/runtime-tokens`, {},
+    );
+    runtimeToken = tokenData.token;
+  }
+  if (!runtimeToken) {
+    throw new Error('Runtime token was not returned by install or tokens endpoint');
+  }
+
+  return { installation, instanceId, runtimeToken, detected, wrappedCli: adapter.name };
+};
+
+// ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
+
+const extractPrompt = (event) => {
+  if (!CHAT_EVENT_TYPES.has(event.type)) return null;
+  const p = event.payload || {};
+  return p.content || p.prompt || p.text || null;
+};
+
+/**
+ * Start the run loop. Polls /events, spawns the adapter per event, posts the
+ * result into the pod, acks.
+ *
+ * ADR-005 invariant #4: serialized per agent. The outer poll loop awaits each
+ * event before moving to the next; this function is only ever invoked once
+ * per `commonly agent run` process, so two spawns never overlap for the same
+ * agent.
+ *
+ * ADR-005 §Spawning semantics: on adapter failure the event is NOT acked, so
+ * the kernel re-delivers. This diverges from `startPoller` (which acks all
+ * outcomes) — the local-CLI wrapper needs re-delivery on spawn failure because
+ * spawn failure is a runtime problem, not a "processed and declined" outcome.
+ */
+export const performRun = ({
+  instanceUrl,
+  token,
+  adapter,
+  agentName,
+  instanceId = 'default',
+  podId = null,
+  intervalMs = 5000,
+  log = () => {},
+  onError,
+  setTimeoutImpl = setTimeout,
+}) => {
+  const client = createClient({ instance: instanceUrl, token });
+  let running = true;
+
+  const processEvent = async (event) => {
+    const eventPodId = event.podId || podId;
+    const prompt = extractPrompt(event);
+    if (!prompt || !eventPodId) {
+      // No prompt, or nowhere to post the response — skip spawn entirely so
+      // we never consume a CLI turn for a message with no destination.
+      log(`[${event.type}] no prompt — no-op`);
+      return { outcome: 'no_action' };
+    }
+
+    const sessionId = getSession(agentName, eventPodId);
+    log(`[${event.type}] spawning ${adapter.name}`);
+    // memoryLongTerm is the memory-bridge injection point — see ADR-005
+    // §Memory bridge. Wired in Phase 1b together with adapters/claude.js.
+    const result = await adapter.spawn(prompt, {
+      sessionId,
+      cwd: join(tmpdir(), 'commonly-agents', agentName),
+      env: process.env,
+      memoryLongTerm: '',
+      metadata: { event },
+    });
+
+    if (result.newSessionId) {
+      setSession(agentName, eventPodId, result.newSessionId);
+    }
+    if (result.text) {
+      await client.post(`/api/agents/runtime/pods/${eventPodId}/messages`, {
+        content: result.text,
+      });
+      log(`[${event.type}] posted ${Buffer.byteLength(result.text)} bytes`);
+    }
+    return { outcome: 'posted' };
+  };
+
+  const tick = async () => {
+    if (!running) return;
+    try {
+      const { events = [] } = await client.get('/api/agents/runtime/events', {
+        agentName, instanceId, limit: 10,
+      });
+      for (const event of events) {
+        if (!running) break;
+        let result;
+        try {
+          result = await processEvent(event);
+        } catch (err) {
+          // Spawn failed — skip ack, let kernel re-deliver (ADR-005).
+          log(`[${event.type}] spawn error: ${err.message}`);
+          onError?.(err);
+          continue;
+        }
+        try {
+          await client.post(`/api/agents/runtime/events/${event._id}/ack`, { result });
+        } catch (ackErr) {
+          onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
+        }
+      }
+    } catch (err) {
+      onError?.(err);
+    }
+    if (running) setTimeoutImpl(tick, intervalMs);
+  };
+
+  tick();
+  return { stop: () => { running = false; } };
+};
 
 export const registerAgent = (program) => {
   const agent = program.command('agent').description('Manage agents');
@@ -157,6 +374,90 @@ export const registerAgent = (program) => {
         console.log('\nStopping...');
         poller.stop();
         close();
+        process.exit(0);
+      });
+    });
+
+  // ── attach (ADR-005) ──────────────────────────────────────────────────────
+  agent
+    .command('attach <adapter>')
+    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|…)')
+    .requiredOption('--pod <podId>', 'Pod ID to install into')
+    .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
+    .option('--display <name>', 'Display name shown in the pod')
+    .option('--instance <url>', 'Target Commonly instance')
+    .action(async (adapterName, opts) => {
+      const instanceUrl = resolveInstanceUrl(opts.instance);
+      const token = getToken(opts.instance);
+      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+
+      const client = createClient({ instance: instanceUrl, token });
+
+      try {
+        const { installation, instanceId, runtimeToken, detected, wrappedCli } =
+          await performAttach({
+            client,
+            adapterName,
+            agentName: opts.name,
+            podId: opts.pod,
+            displayName: opts.display,
+            log: (line) => console.warn(`[attach] ${line}`),
+          });
+
+        saveAgentToken(opts.name, {
+          agentName: opts.name,
+          instanceId,
+          podId: opts.pod,
+          instanceUrl,
+          runtimeToken,
+          adapter: wrappedCli,
+        });
+
+        console.log(`✓ ${wrappedCli} detected at ${detected.path} (${detected.version})`);
+        console.log(`✓ Agent '${installation.agentName}' registered in pod ${opts.pod} (${instanceId})`);
+        console.log(`✓ Runtime token saved to ${tokenFile(opts.name)}`);
+        console.log(`\n  Run with: commonly agent run ${opts.name}`);
+      } catch (err) {
+        console.error(`Attach failed: ${err.message}`);
+        process.exit(1);
+      }
+    });
+
+  // ── run (ADR-005) ─────────────────────────────────────────────────────────
+  agent
+    .command('run <name>')
+    .description('Run the local-CLI wrapper loop for an attached agent')
+    .option('--interval <ms>', 'Poll interval in ms', '5000')
+    .action(async (name, opts) => {
+      const record = loadAgentToken(name);
+      if (!record) {
+        console.error(`No token for '${name}'. Run: commonly agent attach <adapter> --pod <podId> --name ${name}`);
+        process.exit(1);
+      }
+
+      const adapter = getAdapter(record.adapter);
+      if (!adapter) {
+        console.error(`Unknown adapter '${record.adapter}' in token file. Known: ${listAdapterNames().join(', ')}`);
+        process.exit(1);
+      }
+
+      console.log(`[${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
+
+      const { stop } = performRun({
+        instanceUrl: record.instanceUrl,
+        token: record.runtimeToken,
+        adapter,
+        agentName: record.agentName,
+        instanceId: record.instanceId,
+        podId: record.podId,
+        intervalMs: parseInt(opts.interval, 10),
+        log: (line) => console.log(`[${name}] ${line}`),
+        onError: (err) => console.error(`[${name}] ${err.message}`),
+      });
+
+      process.on('SIGINT', () => {
+        console.log(`\n[${name}] stopping...`);
+        stop();
         process.exit(0);
       });
     });
