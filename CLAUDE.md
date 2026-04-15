@@ -168,6 +168,9 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 - **ADR-001 Installable Taxonomy**: `/docs/adr/ADR-001-installable-taxonomy.md` — the single-table model, component types, scopes, phases
 - **ADR-002 Attachments & Object Storage**: `/docs/adr/ADR-002-attachments-and-object-storage.md`
 - **ADR-003 Memory as Kernel Primitive**: `/docs/adr/ADR-003-memory-as-kernel-primitive.md`
+- **ADR-004 Commonly Agent Protocol (CAP)**: `/docs/adr/ADR-004-commonly-agent-protocol.md` — the four-verb driver-facing surface; required reading before any driver work
+- **ADR-005 Local CLI Wrapper Driver**: `/docs/adr/ADR-005-local-cli-wrapper-driver.md` — `commonly agent attach <cli>` + adapter pattern
+- **ADR-006 Webhook SDK + Self-Serve Install**: `/docs/adr/ADR-006-webhook-sdk-and-self-serve-install.md` — reference SDK + self-serve webhook install
 - **Summarizer & Agents**: `/docs/SUMMARIZER_AND_AGENTS.md`
 - **Discord Integration**: `/docs/DISCORD_INTEGRATION_ARCHITECTURE.md`
 - **PostgreSQL Migration**: `/docs/POSTGRESQL_MIGRATION.md`

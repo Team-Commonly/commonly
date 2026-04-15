@@ -1,9 +1,18 @@
 # ADR-003: Memory as a Kernel Primitive
 
-**Status:** Draft — 2026-04-14
+**Status:** Accepted — 2026-04-14 (Phases 1, 1.1, 2a, 2b shipped to `commonly-dev`)
 **Author:** Lily Shen
 **Supersedes:** (none — amends the ad-hoc implementation in `backend/models/AgentMemory.ts` and `backend/routes/agentsRuntime.ts`)
-**Companion:** [`docs/COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md), [`ADR-001`](ADR-001-installable-taxonomy.md)
+**Companion:** [`docs/COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md), [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-006`](ADR-006-webhook-sdk-and-self-serve-install.md)
+
+## Revision history
+
+- **2026-04-14 (initial draft):** envelope schema, POST `/memory/sync`, 5-phase migration.
+- **2026-04-14 (post-Phase-2b amendment):** corrections from what actually shipped, and driver-coupling corrections.
+  - **Shipped to `commonly-dev`**: Phase 1 (v2 schema + backfill, PR #188), Phase 1.1 (server-stamp `byteSize` + `updatedAt`, PR #189), Phase 2a (`POST /memory/sync` with mode + dedup, PR #191), Phase 2b (OpenClaw `commonly_read_my_memory` + `commonly_save_my_memory` tool shims as the first driver consumer, PR #192).
+  - **New invariants named (8–11 below)**: cross-writer dedup invalidation; server-stamped `byteSize` / `updatedAt` / `schemaVersion`; canonical-stringify dedup keys; array-section merge is mode-dependent.
+  - **Phase 3 reframed driver-agnostic** (was "OpenClaw driver promotion"). Driver-side promotion is delegated to the per-driver ADRs: ADR-005 (local CLI wrapper) and ADR-006 (webhook SDK). OpenClaw's HEARTBEAT-template update, if done, is one OpenClaw-internal task among many, not a gate on other drivers.
+  - **Kernel-coupling to OpenClaw deliberately removed** — drivers land via ADR-005 and ADR-006 alongside the existing OpenClaw driver, not ahead of it.
 
 ---
 
@@ -155,16 +164,19 @@ The existing `GET /memory` / `PUT /memory` endpoints remain for v1 compatibility
 
 ### Tool surface
 
-OpenClaw `commonly.*` tool extension gains four tools, retires none:
+Tools are driver-local. The surface below is what a driver SHOULD expose to an agent running under it; each driver implements these by calling the kernel HTTP surface (ADR-004). The first four are required; the last two are Phase 4.
 
-| Tool | Purpose |
-|---|---|
-| `commonly_read_my_memory(section?)` | Replaces `commonly_read_agent_memory`. Reads this agent's envelope. Optional `section` param returns just one. |
-| `commonly_save_my_memory(section, content, visibility?)` | Replaces `commonly_save_agent_memory`. Writes one section. Visibility defaults to current (or `private` if new). |
-| `commonly_ask_agent(instanceId, question)` | Structured DM — owner agent receives and mediates. Returns their response. |
-| `commonly_read_shared_memory(instanceId)` | Read only the `public`/`pod`-visible sections of another agent's envelope. Returns `{}` if nothing shared. |
+| Tool | Purpose | Phase |
+|---|---|---|
+| `commonly_read_my_memory(section?)` | Reads this agent's envelope. Optional `section` param returns just one. | 2b (shipped) |
+| `commonly_save_my_memory(section, content, visibility?, entries?)` | Writes one section in patch mode. Visibility defaults to `'private'`. | 2b (shipped) |
+| `commonly_ask_agent(instanceId, question)` | Structured DM — target agent receives and mediates. Returns their response. | 4 |
+| `commonly_read_shared_memory(instanceId)` | Read only the `public`/`pod`-visible sections of another agent's envelope. Returns `{}` if nothing shared. | 4 |
 
-Old `commonly_read_agent_memory` / `commonly_save_agent_memory` remain as thin wrappers that read/write `sections.long_term` until the heartbeat templates are migrated.
+Driver-specific tool-set examples:
+- **OpenClaw extension** (shipped): ships `commonly_read_my_memory`, `commonly_save_my_memory`, plus v1-compatible `commonly_read_agent_memory`, `commonly_write_agent_memory` retained as wrappers per §Migration path.
+- **Local CLI wrapper** (ADR-005): the wrapped CLI gets memory context injected before spawn and its output promoted after — no direct tool exposure needed; the wrapper IS the tool.
+- **Webhook SDK** (ADR-006): the Python/Node SDK exposes the same surface as module-level helpers (`sdk.read_my_memory(...)`, `sdk.save_my_memory(...)`).
 
 ### Runtime driver expectations
 
@@ -172,12 +184,13 @@ Each driver maps local persistence to the envelope. Spec:
 
 | Runtime | Local persistence | Maps to kernel sections | Promotion trigger |
 |---|---|---|---|
-| **OpenClaw** | `/workspace/<agent>/MEMORY.md`, `memory/YYYY-MM-DD.md`, `SOUL.md`, `USER.md`, `/state/memory/<agent>.sqlite` | `soul ← SOUL.md`, `long_term ← MEMORY.md`, `daily[] ← memory/*.md (last 14)`, `relationships ← USER.md + peer notes`, `runtime_meta ← auto-generated` | Heartbeat step 6 if any local file changed; daily cron otherwise |
 | **Native (in-process)** | Direct DB access | Writes sections directly — no promotion step | On each turn commit |
-| **Webhook (BYO)** | Whatever the implementer chooses | `long_term` and `dedup_state` are REQUIRED to sync (even if empty) as proof-of-life; others optional | Driver contract: every processed event must sync if changed; minimum 1×/day |
-| **Claude API / managed-agents (future)** | Anthropic-managed (no file system) | Driver maintains in-memory cache of envelope, writes through to kernel | On each tool-call boundary |
+| **Local CLI wrapper (ADR-005)** | None — wrapper itself is stateless; each CLI manages its own local session | `long_term ← wrapper-generated summary of latest CLI turn`; `runtime_meta ← wrapped CLI name + version` | Wrapper run loop: every event-response cycle |
+| **Webhook SDK (ADR-006)** | Whatever the implementer chooses | `long_term` and `dedup_state` REQUIRED to sync (even if empty) as proof-of-life; others optional | Implementer contract: every processed event MAY sync if changed; floor 1×/day |
+| **OpenClaw** | `/workspace/<agent>/MEMORY.md`, `memory/YYYY-MM-DD.md`, `SOUL.md`, `USER.md`, `/state/memory/<agent>.sqlite` | `soul ← SOUL.md`, `long_term ← MEMORY.md`, `daily[] ← memory/*.md (last 14)`, `relationships ← USER.md + peer notes`, `runtime_meta ← auto-generated` | Heartbeat step 6 if any local file changed; daily cron otherwise |
+| **Managed cloud agents (future)** | Vendor-managed (no local FS) | Driver maintains in-memory cache of envelope, writes through to kernel | On each tool-call boundary |
 
-Drivers that can't persist locally at all (stateless webhook agents) rely on the kernel as their *only* memory and read with `commonly_read_my_memory` at the start of each turn — which is the entire point of having a kernel primitive.
+Drivers without local persistence (webhook-SDK stateless agents, managed cloud agents) rely on the kernel as their *only* memory and read with `commonly_read_my_memory` at the start of each turn — the core reason memory is a kernel primitive.
 
 ### Load-bearing invariants
 
@@ -188,6 +201,10 @@ Drivers that can't persist locally at all (stateless webhook agents) rely on the
 5. **The kernel is canonical under disaster.** If local state and kernel state disagree after a PVC rebuild, kernel wins. Drivers restore from the last envelope on boot.
 6. **Promotion is idempotent.** Repeated identical syncs in the same day do not bump `updatedAt` and do not fan out notifications. Required so drivers can safely retry.
 7. **No memory inheritance on uninstall/reinstall.** An `Installable` uninstall does NOT delete the `AgentMemory` row (the User survives per ADR-001; memory survives with it). Reinstall finds the old envelope intact.
+8. **Cross-writer dedup invalidation (added after Phase 2a review).** Any write path to `AgentMemory` other than `POST /memory/sync` MUST clear `lastSyncKey` + `lastSyncAt`. Without this, a sync that promoted the same bytes earlier in the day is wrongly short-circuited after a non-sync writer (PUT `/memory`, native-runtime writer, operator script) mutates state — the driver sees `{ deduped: true }` while the kernel is stuck on the intervening write.
+9. **Server-stamped metadata.** `byteSize` (UTF-8 byte length of `content`), `updatedAt` (now), and `schemaVersion: 2` are always server-computed. Client-supplied values for these fields are discarded. `visibility` defaults to `'private'` at the write layer.
+10. **Canonical stringify for dedup keys.** `lastSyncKey` is a SHA-256 over a key-sorted serialization of `{ sections, sourceRuntime, mode }` so drivers emitting JSON with different key order still collapse identical payloads.
+11. **Array-section merge is mode-dependent.** Under PUT `/memory` and `POST /memory/sync` with `mode: 'full'`, `daily[]` and `relationships[]` are whole-array replace. Under `mode: 'patch'`, they merge element-wise (by `date` and `otherInstanceId` respectively).
 
 ---
 
@@ -220,25 +237,30 @@ Five additive phases. Each is independently deployable.
 - Ship `commonly_read_my_memory` / `commonly_save_my_memory` / `commonly_ask_agent` in the OpenClaw commonly extension.
 - Old tools remain as thin wrappers — no agent changes required yet.
 
-### Phase 3 — OpenClaw driver promotion
+### Phase 3 — Driver promotion (runtime-agnostic)
 
-- Add an OpenClaw-extension hook that, at heartbeat step 6, reads `/workspace/<agent>/MEMORY.md` and `/workspace/<agent>/memory/<today>.md`, hashes them, and calls `/memory/sync` if changed.
-- Update `HEARTBEAT.md` templates in `backend/routes/registry/presets.ts`:
-  - **Step 1:** `commonly_read_my_memory()` → hydrate sections. Read today's daily note from workspace.
-  - **Step 6:** If `MEMORY.md` or daily note changed this session, promote via sync hook.
-  - **Step 7:** Cap the agent-writes-to-chat pattern: "Write significant events to `memory/YYYY-MM-DD.md` or `MEMORY.md` — not chat."
+Memory promotion is a driver-local concern: each driver decides how its agent's local state flows up to the kernel envelope. No specific driver is singled out as the reference; every driver implements the same `POST /memory/sync` contract defined in ADR-004 (CAP).
 
-### Phase 4 — Visibility + cross-agent
+**Phase 3 deliverables:**
 
-- Enforce `visibility` filtering on `GET /memory` when the reader isn't the owner.
-- Ship `commonly_read_shared_memory(instanceId)`.
-- Update a small number of curator-style agents (e.g. `chief-of-staff`) with a `shared` section listing their current priorities — pilot for the pattern.
+1. **CAP spec names memory in its minimum surface** — done in ADR-004.
+2. **Per-driver promotion playbooks** live in the per-driver ADRs:
+   - ADR-005 §Memory bridge — the local CLI wrapper reads `sections.long_term` before each spawn and writes back via `/memory/sync` patch mode.
+   - ADR-006 §Memory in the SDK — the reference Python/Node SDK exposes `get_memory()` / `sync_memory()` helpers.
+   - The existing OpenClaw driver's promotion (workspace `MEMORY.md` + daily notes → `/memory/sync`) is one driver among many. If/when its heartbeat templates are updated to use the Phase-2b tools (`commonly_read_my_memory`, `commonly_save_my_memory`), that's OpenClaw-internal work; it does not gate other drivers.
+3. **Two-driver cross-check**: once ADR-005 and ADR-006 Phase 1s land, verify that a Commonly pod can host one CLI-wrapper agent and one webhook-SDK agent, both reading and writing their OWN memory envelopes successfully. This is the end-to-end proof that memory is kernel-shaped, not OpenClaw-shaped. Acceptance: a test or demo script that spins up both and asserts each reads back what it wrote.
 
-### Phase 5 — Non-OpenClaw drivers
+### Phase 4 — Visibility + cross-agent primitives
 
-- Webhook driver contract: every webhook response may include a `memory_sync` block that the backend converts to a `/memory/sync` call on behalf of the agent.
-- Native runtime: direct writes (already in-process).
-- Document the contract in `docs/CAP.md` when that spec lands (tracked with the kernel / CAP work from #61, #46).
+- Enforce `visibility` filtering on `GET /memory` + `POST /memory/sync` response when the reader isn't the owner (today, every agent reads its own envelope; no cross-agent read path exists yet).
+- Ship `commonly_read_shared_memory(instanceId)` — returns only `public` / `pod`-scoped sections of the named agent.
+- Ship `commonly_ask_agent(instanceId, question)` — the cross-agent primitive named in the §Tool surface section. Mediated messaging, not silent reads.
+- Pilot `shared` section on one curator-style agent (e.g. `chief-of-staff`) declaring current priorities.
+
+### Phase 5 — Federation + remote memory
+
+- Federated agents (`source: remote` per ADR-001): only their `shared` sections are mirrored to the local kernel; `private` sections stay on the origin instance.
+- Federation sync cadence, signature verification, and revocation covered by a future federation ADR.
 
 ### Deprecation
 
