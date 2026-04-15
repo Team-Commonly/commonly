@@ -95,6 +95,8 @@ type SpawnResult = {
 
 Target size: ~30–60 lines per adapter. Adding a new CLI is a single-file PR.
 
+**Test seam:** adapters SHOULD accept an optional `ctx._spawnImpl` parameter that replaces `child_process.spawn` for unit tests. In production the field is `undefined` and the adapter uses the real spawn. This pattern is the sanctioned way to unit-test an adapter without module-mocking `child_process` for every spawn test — new adapters should follow it rather than inventing their own seam.
+
 ### Adapters shipped in v1
 
 | CLI | Argv template | Session flag | Notes |

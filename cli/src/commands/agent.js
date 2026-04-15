@@ -20,6 +20,7 @@ import { startPoller } from '../lib/poller.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import { getSession, setSession } from '../lib/session-store.js';
+import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
 
@@ -174,14 +175,15 @@ export const performRun = ({
     }
 
     const sessionId = getSession(agentName, eventPodId);
+    // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
+    // and (if the adapter returns a summary) patch-sync back after.
+    const memoryLongTerm = await readLongTerm(client, { onError });
     log(`[${event.type}] spawning ${adapter.name}`);
-    // memoryLongTerm is the memory-bridge injection point — see ADR-005
-    // §Memory bridge. Wired in Phase 1b together with adapters/claude.js.
     const result = await adapter.spawn(prompt, {
       sessionId,
       cwd: join(tmpdir(), 'commonly-agents', agentName),
       env: process.env,
-      memoryLongTerm: '',
+      memoryLongTerm,
       metadata: { event },
     });
 
@@ -193,6 +195,18 @@ export const performRun = ({
         content: result.text,
       });
       log(`[${event.type}] posted ${Buffer.byteLength(result.text)} bytes`);
+    }
+    if (result.memorySummary) {
+      try {
+        await syncBack(client, { summary: result.memorySummary });
+        log(`[${event.type}] memory synced (${Buffer.byteLength(result.memorySummary)} bytes)`);
+      } catch (err) {
+        // Memory-sync failure is non-fatal: the turn already posted, and the
+        // next spawn will re-read from the kernel anyway. Surface, don't
+        // throw. Preserve the original error via `cause` so the stack trace
+        // survives for CLI debugging.
+        onError?.(new Error(`memory sync failed: ${err.message}`, { cause: err }));
+      }
     }
     return { outcome: 'posted' };
   };
