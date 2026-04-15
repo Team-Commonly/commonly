@@ -5,14 +5,16 @@
  * connect    — local dev loop: poll events → forward to localhost
  * attach     — wrap a local CLI as a Commonly agent (ADR-005)
  * run        — poll events, spawn the wrapped CLI, post results (ADR-005)
+ * init       — scaffold a webhook-SDK agent in the current dir (ADR-006)
  * list       — list installed agents
  * logs       — stream recent events for an agent
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
@@ -251,6 +253,117 @@ export const performRun = ({
   return { stop: () => { running = false; } };
 };
 
+// ── init: scaffold a webhook-SDK agent (ADR-006 §Scaffolding) ───────────────
+
+const SUPPORTED_LANGUAGES = ['python'];
+
+// Resolve a repo-relative path from this module, regardless of where the CLI
+// is invoked from. agent.js lives at cli/src/commands/agent.js → repo root is
+// three levels up. The scaffolder copies the canonical SDK file from the repo
+// into the user's cwd; ADR-006 §SDK lives = "live-copy, not dependency".
+//
+// Removal condition: ADR-006 §Migration path Phase 4 — when the CLI is
+// published as `@commonly/cli` on npm, the example files won't sit at a
+// repo-relative path; we'll need to bundle them into the package at build
+// time and resolve via `import.meta.resolve` or a packaged-data lookup.
+// Until that phase, repo-relative is the simplest correct answer.
+const repoFile = (...parts) => pathResolve(
+  dirname(fileURLToPath(import.meta.url)), '..', '..', '..', ...parts,
+);
+
+const SDK_SOURCES = {
+  python: {
+    sdkSrc: () => repoFile('examples', 'sdk', 'python', 'commonly.py'),
+    botSrc: () => repoFile('examples', 'hello-world-python', 'bot.py'),
+    sdkOut: 'commonly.py',
+    botOut: (name) => `${name}.py`,
+    runHint: (name) => `COMMONLY_TOKEN=$(cat .commonly-env) python3 ${name}.py`,
+  },
+};
+
+/**
+ * Scaffold a webhook-SDK agent into `targetDir`. Pure core — the commander
+ * action wraps this with config loading, install + token-mint, and logging.
+ *
+ * Refuses to clobber any of the three output files. Self-serve install
+ * (ADR-006 §Self-serve install) makes publish unnecessary.
+ */
+export const performInit = async ({
+  client,
+  language,
+  agentName,
+  podId,
+  displayName,
+  targetDir,
+}) => {
+  const recipe = SDK_SOURCES[language];
+  if (!recipe) {
+    throw new Error(
+      `Unsupported language "${language}". Supported: ${SUPPORTED_LANGUAGES.join(', ')}`,
+    );
+  }
+
+  const sdkOutPath = join(targetDir, recipe.sdkOut);
+  const botOutPath = join(targetDir, recipe.botOut(agentName));
+  const tokenOutPath = join(targetDir, '.commonly-env');
+
+  for (const f of [sdkOutPath, botOutPath, tokenOutPath]) {
+    if (existsSync(f)) {
+      throw new Error(`Refusing to overwrite existing file: ${f}`);
+    }
+  }
+
+  if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
+
+  // Copy the SDK file verbatim; copy the bot template byte-for-byte (the
+  // user renames their handler later — file name carries the agent name).
+  writeFileSync(sdkOutPath, readFileSync(recipe.sdkSrc(), 'utf8'), 'utf8');
+  writeFileSync(botOutPath, readFileSync(recipe.botSrc(), 'utf8'), 'utf8');
+
+  // Self-serve install (ADR-006). No publish step; the backend synthesizes
+  // an ephemeral registry row when no manifest exists for this name.
+  const installResult = await client.post('/api/registry/install', {
+    agentName,
+    podId,
+    displayName: displayName || agentName,
+    version: '1.0.0',
+    config: { runtime: { runtimeType: 'webhook' } },
+    scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
+  });
+  const installation = installResult.installation || installResult;
+  const instanceId = installation.instanceId || 'default';
+
+  let runtimeToken = installResult.runtimeToken;
+  if (!runtimeToken) {
+    const tokenData = await client.post(
+      `/api/registry/pods/${podId}/agents/${agentName}/runtime-tokens`, {},
+    );
+    runtimeToken = tokenData.token;
+  }
+  if (!runtimeToken) {
+    throw new Error('Runtime token was not returned by install or tokens endpoint');
+  }
+
+  // .commonly-env uses KEY=VALUE format so `source .commonly-env`, dotenv,
+  // and standard env-loading tools work out of the box. Future keys (e.g.
+  // COMMONLY_BASE_URL) just append. Mode 0600 (POSIX) since the file holds
+  // a long-lived bearer token.
+  writeFileSync(tokenOutPath, `COMMONLY_TOKEN=${runtimeToken}\n`,
+    { encoding: 'utf8', mode: 0o600 });
+
+  return {
+    installation,
+    instanceId,
+    runtimeToken,
+    files: {
+      sdk: sdkOutPath,
+      bot: botOutPath,
+      env: tokenOutPath,
+    },
+    runHint: recipe.runHint(agentName),
+  };
+};
+
 export const registerAgent = (program) => {
   const agent = program.command('agent').description('Manage agents');
 
@@ -481,6 +594,46 @@ export const registerAgent = (program) => {
         stop();
         process.exit(0);
       });
+    });
+
+  // ── init (ADR-006) ────────────────────────────────────────────────────────
+  agent
+    .command('init')
+    .description('Scaffold a webhook-SDK agent into the current directory')
+    .requiredOption('--language <lang>', `One of: ${SUPPORTED_LANGUAGES.join(', ')}`)
+    .requiredOption('--name <name>', 'Agent name (e.g. research-bot)')
+    .requiredOption('--pod <podId>', 'Pod ID to install into')
+    .option('--display <name>', 'Display name shown in the pod')
+    .option('--dir <path>', 'Target directory (default: current dir)')
+    .option('--instance <url>', 'Target Commonly instance')
+    .action(async (opts) => {
+      const instanceUrl = resolveInstanceUrl(opts.instance);
+      const token = getToken(opts.instance);
+      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+
+      const client = createClient({ instance: instanceUrl, token });
+
+      try {
+        const result = await performInit({
+          client,
+          language: opts.language,
+          agentName: opts.name,
+          podId: opts.pod,
+          displayName: opts.display,
+          targetDir: pathResolve(opts.dir || process.cwd()),
+        });
+
+        console.log(`✓ Written: ${result.files.bot}`);
+        console.log(`✓ Written: ${result.files.sdk}`);
+        console.log(`✓ Registered '${opts.name}' in pod ${opts.pod} (${result.instanceId})`);
+        console.log(`✓ Runtime token saved to ${result.files.env}`);
+        console.log('\nNext:');
+        console.log(`  1. Edit ${opts.name}.py to handle events.`);
+        console.log(`  2. Run: ${result.runHint}`);
+      } catch (err) {
+        console.error(`Init failed: ${err.message}`);
+        process.exit(1);
+      }
     });
 
   // ── list ──────────────────────────────────────────────────────────────────
