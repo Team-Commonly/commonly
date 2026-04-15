@@ -8,9 +8,11 @@
  */
 
 import stub from './stub.js';
+import claude from './claude.js';
 
 const ADAPTERS = {
   [stub.name]: stub,
+  [claude.name]: claude,
 };
 
 export const listAdapterNames = () => Object.keys(ADAPTERS);

@@ -53,12 +53,14 @@ const makeEvent = (overrides = {}) => ({
 // setTimeout that never fires — ensures performRun executes exactly one cycle.
 const noopTimeout = () => 0;
 
-// Let the initial tick() promise chain drain before stopping. We loop
-// several times so `get → for(event) → spawn → post → ack` all settle — a
-// single setImmediate only drains one await depth and races as Phase 1b
-// adds the memory bridge.
+// Let the initial tick() promise chain drain before stopping. The longest
+// chain is currently:  get(/events) → get(/memory) → adapter.spawn →
+// post(/messages) → post(/memory/sync) → post(/events/:id/ack)  — 6 await
+// boundaries. Loop DRAIN_DEPTH setImmediates so each level resolves. Bump
+// this if another phase extends the chain.
+const DRAIN_DEPTH = 10;
 const drainMicrotasks = async () => {
-  for (let i = 0; i < 10; i += 1) {
+  for (let i = 0; i < DRAIN_DEPTH; i += 1) {
     // eslint-disable-next-line no-await-in-loop
     await new Promise((r) => setImmediate(r));
   }
@@ -198,9 +200,17 @@ describe('performRun', () => {
   });
 
   test('newSessionId from spawn is persisted and reused on the next turn', async () => {
-    const mockGet = jest.fn()
-      .mockResolvedValueOnce({ events: [makeEvent({ _id: 'turn-1' })] })
-      .mockResolvedValueOnce({ events: [makeEvent({ _id: 'turn-2' })] });
+    // Route-aware mock: /events yields a fresh event each call, /memory
+    // returns an empty envelope. `mockResolvedValueOnce` chaining broke once
+    // the memory bridge landed because `/memory` began consuming the queue.
+    let eventTurn = 0;
+    const eventIds = ['turn-1', 'turn-2'];
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      const id = eventIds[eventTurn];
+      eventTurn += 1;
+      return { events: id ? [makeEvent({ _id: id })] : [] };
+    });
     const mockPost = jest.fn().mockResolvedValue({});
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
 
@@ -251,6 +261,143 @@ describe('performRun', () => {
     expect(getSession('my-stub', 'pod-b')).toBeNull();
     // Other agents' sessions are untouched (per-agent file isolation).
     expect(getSession('other', 'pod-a')).toBe('sid-other');
+  });
+
+  test('memory bridge: reads /memory before spawn, injects into ctx.memoryLongTerm', async () => {
+    const events = [makeEvent({ _id: 'mem-1' })];
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') {
+        return { sections: { long_term: { content: 'remembered: likes dark mode' } } };
+      }
+      return { events };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    let seenCtx;
+    const spawn = jest.fn(async (_p, ctx) => {
+      seenCtx = ctx;
+      return { text: 'ok' };
+    });
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockGet).toHaveBeenCalledWith('/api/agents/runtime/memory');
+    expect(seenCtx.memoryLongTerm).toBe('remembered: likes dark mode');
+  });
+
+  test('memory bridge: syncs back when adapter returns memorySummary', async () => {
+    const events = [makeEvent({ _id: 'sum-1' })];
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      return { events };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({
+      text: 'response',
+      memorySummary: 'user complained about loading spinner',
+    }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/memory/sync',
+      expect.objectContaining({
+        mode: 'patch',
+        sourceRuntime: 'local-cli',
+        sections: {
+          long_term: {
+            content: 'user complained about loading spinner',
+            visibility: 'private',
+          },
+        },
+      }),
+    );
+  });
+
+  test('memory bridge: does NOT sync back when adapter omits memorySummary', async () => {
+    const events = [makeEvent({ _id: 'no-sum' })];
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      return { events };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'just a reply' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    const syncCalls = mockPost.mock.calls.filter(
+      ([route]) => route === '/api/agents/runtime/memory/sync',
+    );
+    expect(syncCalls).toHaveLength(0);
+  });
+
+  test('memory bridge: sync failure is non-fatal — message still posted, event still acked', async () => {
+    const events = [makeEvent({ _id: 'sync-fail' })];
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      return { events };
+    });
+    const mockPost = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory/sync') throw new Error('500 sync down');
+      return { ok: true };
+    });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'reply', memorySummary: 'summary' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const errors = [];
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      onError: (err) => errors.push(err),
+    });
+    await drainMicrotasks();
+    stop();
+
+    // Pod message still posted; event still acked as posted.
+    const msgPosts = mockPost.mock.calls.filter(([r]) => r.includes('/messages'));
+    const ackPosts = mockPost.mock.calls.filter(([r]) => r.endsWith('/ack'));
+    expect(msgPosts).toHaveLength(1);
+    expect(ackPosts).toHaveLength(1);
+    expect(ackPosts[0][1]).toEqual({ result: { outcome: 'posted' } });
+    // Sync failure surfaced via onError but didn't throw out of processEvent.
+    expect(errors.some((e) => /memory sync failed/.test(e.message))).toBe(true);
   });
 
   test('stop() prevents subsequent events within the same cycle from being processed', async () => {
