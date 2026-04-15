@@ -109,6 +109,33 @@ describe('performRun', () => {
     );
   });
 
+  test('ensures adapter cwd exists before spawning — avoids confusing spawn ENOENT on missing dir', async () => {
+    const agentCwd = path.join(os.tmpdir(), 'commonly-agents', 'cwd-fresh-agent');
+    fs.rmSync(agentCwd, { recursive: true, force: true });
+    expect(fs.existsSync(agentCwd)).toBe(false);
+
+    const mockGet = jest.fn().mockResolvedValue({ events: [] });
+    const mockPost = jest.fn();
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() };
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'cwd-fresh-agent',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    // Dir must be created at run start, NOT lazily on first spawn — otherwise
+    // a run with only heartbeat events fails silently the first time a real
+    // chat event lands.
+    expect(fs.existsSync(agentCwd)).toBe(true);
+    fs.rmSync(agentCwd, { recursive: true, force: true });
+  });
+
   test('heartbeat event with payload.content is suppressed — chat-only events spawn', async () => {
     // Regression: a heartbeat with a stray `content` field must NOT trigger
     // a spawn. Only CHAT_EVENT_TYPES are forwarded to the CLI.

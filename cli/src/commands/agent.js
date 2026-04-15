@@ -164,6 +164,13 @@ export const performRun = ({
   const client = createClient({ instance: instanceUrl, token });
   let running = true;
 
+  // Adapters default `ctx.cwd` to this path. Node's child_process.spawn
+  // rejects with "spawn <bin> ENOENT" when cwd does not exist — same shape
+  // as binary-not-found — so we ensure it up front to avoid the confusing
+  // diagnostic.
+  const agentCwd = join(tmpdir(), 'commonly-agents', agentName);
+  if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
+
   const processEvent = async (event) => {
     const eventPodId = event.podId || podId;
     const prompt = extractPrompt(event);
@@ -181,7 +188,7 @@ export const performRun = ({
     log(`[${event.type}] spawning ${adapter.name}`);
     const result = await adapter.spawn(prompt, {
       sessionId,
-      cwd: join(tmpdir(), 'commonly-agents', agentName),
+      cwd: agentCwd,
       env: process.env,
       memoryLongTerm,
       metadata: { event },
