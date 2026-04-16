@@ -104,6 +104,68 @@ describe('config.js', () => {
     expect(token).toBe('cm_from_env');
   });
 
+  test('resolveInstanceUrl("dev") returns the saved URL when "dev" is a key (not a URL)', () => {
+    // This is the asymmetry fix: historically this returned "dev" literally
+    // as a URL and any HTTP call would ENOTFOUND.
+    saveInstance({
+      key: 'dev', url: 'https://api-dev.commonly.me', token: 'cm_dev',
+      userId: 'u1', username: 'alice',
+    });
+    expect(resolveInstanceUrl('dev')).toBe('https://api-dev.commonly.me');
+  });
+
+  test('getToken("https://...") returns the saved token when the URL matches a saved key', () => {
+    // Mirror of the above: historically this returned null because getToken
+    // treated the arg as a config key and looked up instances["https://..."].
+    saveInstance({
+      key: 'dev', url: 'https://api-dev.commonly.me', token: 'cm_dev_token',
+      userId: 'u1', username: 'alice',
+    });
+    expect(getToken('https://api-dev.commonly.me')).toBe('cm_dev_token');
+    // Also works with trailing slash (normalized on both sides of compare)
+    expect(getToken('https://api-dev.commonly.me/')).toBe('cm_dev_token');
+  });
+
+  test('resolveInstanceUrl("http://brand-new-url") returns the URL with no saved match', () => {
+    // Unknown URLs still work (used for bootstrapping a new instance)
+    expect(resolveInstanceUrl('http://brand-new-url.test/')).toBe('http://brand-new-url.test');
+  });
+
+  test('resolveInstanceUrl("dev") returns the dev entry even when another key has the same URL', () => {
+    // Collision ordering: exact key match stays exact, it doesn't bleed into
+    // the URL match. Here both keys exist; "dev" must not be coerced to
+    // "prod" just because prod happens to share a URL with something.
+    saveInstance({
+      key: 'prod', url: 'https://api.commonly.me', token: 'cm_prod',
+      userId: 'u1', username: 'alice',
+    });
+    saveInstance({
+      key: 'dev', url: 'https://api-dev.commonly.me', token: 'cm_dev',
+      userId: 'u2', username: 'bob',
+    });
+    expect(resolveInstanceUrl('dev')).toBe('https://api-dev.commonly.me');
+    expect(getToken('dev')).toBe('cm_dev');
+  });
+
+  test('resolveInstanceUrl matches saved URL case-insensitively (and preserves unknown URL case)', () => {
+    saveInstance({
+      key: 'dev', url: 'https://api-dev.commonly.me', token: 'cm_dev',
+      userId: 'u1', username: 'alice',
+    });
+    // Case-variant URL finds the saved record
+    expect(getToken('HTTPS://API-DEV.commonly.me/')).toBe('cm_dev');
+    // Unknown URL keeps caller-supplied case (paths can be case-sensitive)
+    expect(resolveInstanceUrl('https://Brand-New.test/Path')).toBe('https://Brand-New.test/Path');
+  });
+
+  test('getToken("unknown-key") returns null', () => {
+    saveInstance({
+      key: 'dev', url: 'https://api-dev.commonly.me', token: 'cm_dev',
+      userId: 'u1', username: 'alice',
+    });
+    expect(getToken('unknown-key')).toBeNull();
+  });
+
   test('listInstances returns each instance with an active flag', () => {
     saveInstance({ key: 'prod', url: 'https://api.commonly.me', token: 'cm_prod', userId: 'u1', username: 'alice' });
     saveInstance({ key: 'dev', url: 'http://localhost:5000', token: 'cm_dev', userId: 'u2', username: 'bob' });
