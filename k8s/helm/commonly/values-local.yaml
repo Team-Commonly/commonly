@@ -24,6 +24,10 @@ global:
   namespace: commonly-local
   environment: local
 
+# Local install uses `helm install --create-namespace` — disable the
+# chart-side namespace template to avoid a "namespace already exists" race.
+createNamespace: false
+
 # ── Core services ─────────────────────────────────────────────────────────────
 
 backend:

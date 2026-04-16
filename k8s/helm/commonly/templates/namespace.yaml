@@ -1,3 +1,11 @@
+{{/*
+  Chart-managed namespace. Default true to preserve existing prod behavior
+  (the dev/prod releases own their namespace via this template). For fresh
+  kind/local installs that use `helm install --create-namespace`, set
+  `createNamespace: false` to avoid a "namespace already exists" conflict.
+  values-local.yaml disables this for that reason.
+*/}}
+{{- if .Values.createNamespace }}
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -5,3 +13,4 @@ metadata:
   labels:
     {{- include "commonly.labels" . | nindent 4 }}
     name: {{ include "commonly.namespace" . }}
+{{- end }}

@@ -7,6 +7,12 @@ global:
   namespace: commonly
   environment: development
 
+# Whether the chart creates its own Namespace resource. Default true to
+# preserve existing dev/prod behavior. Set to false when using
+# `helm install --create-namespace` (e.g. local kind smoke tests) —
+# otherwise both sides fight over the same namespace.
+createNamespace: true
+
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:
   enabled: true
