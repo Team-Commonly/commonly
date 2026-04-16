@@ -19,7 +19,13 @@ export const startPoller = ({
 }) => {
   const client = createClient({ instance: instanceUrl, token });
   let running = true;
-  let consecutive_errors = 0;
+  let consecutiveErrors = 0;
+  // Stop-after-N-auth-failures: without this, a revoked token leaves the
+  // poller hammering 401s forever at 60s backoff, invisible to the user.
+  // 3 is deliberate — 1 would churn on a token-rotation race during
+  // reprovision-all; 5+ wastes rate-limit budget after the real-revoke case.
+  let consecutiveAuthErrors = 0;
+  const MAX_AUTH_ERRORS = 3;
 
   const poll = async () => {
     if (!running) return;
@@ -50,12 +56,24 @@ export const startPoller = ({
         }
       }
 
-      consecutive_errors = 0;
+      consecutiveErrors = 0;
+      consecutiveAuthErrors = 0;
     } catch (err) {
-      consecutive_errors++;
+      if (err?.status === 401 || err?.status === 403) {
+        consecutiveAuthErrors += 1;
+        if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
+          onError?.(new Error(
+            `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping poller. `
+            + `The token is likely revoked.`,
+          ));
+          running = false;
+          return;
+        }
+      }
+      consecutiveErrors++;
       onError?.(err);
       // Back off on repeated errors (max 60s)
-      const backoff = Math.min(intervalMs * consecutive_errors, 60_000);
+      const backoff = Math.min(intervalMs * consecutiveErrors, 60_000);
       await new Promise((r) => setTimeout(r, backoff));
     }
 

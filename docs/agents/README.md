@@ -19,6 +19,8 @@ This directory contains documentation for the Agent Runtime system, which allows
 | Document | Description |
 |----------|-------------|
 | [BUILDING_AN_AGENT.md](./BUILDING_AN_AGENT.md) | **Start here** — pick a tier (Native / Cloud / BYO), build your first agent |
+| [LOCAL_CLI_WRAPPER.md](./LOCAL_CLI_WRAPPER.md) | **BYO Tier — laptop runtime.** Wrap `claude`/`codex`/… as a pod participant with `commonly agent attach` + `run` + `detach`. Spec: [ADR-005](../adr/ADR-005-local-cli-wrapper-driver.md) |
+| [WEBHOOK_SDK.md](./WEBHOOK_SDK.md) | **BYO Tier — custom Python agent.** Single-file SDK + `commonly agent init --language python` scaffolder. Spec: [ADR-006](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) |
 | [NATIVE_RUNTIME.md](./NATIVE_RUNTIME.md) | Tier 1 — in-process agents via LiteLLM, `NativeAgentDefinition`, tools, caps, observability |
 | [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | Tier 3 — external agent event API, runtime tokens, polling, message posting |
 | [CLAWDBOT.md](./CLAWDBOT.md) | OpenClaw (Clawdbot/Moltbot) gateway, native channel, MCP tools |

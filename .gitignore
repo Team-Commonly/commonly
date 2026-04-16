@@ -48,3 +48,4 @@ frontend/.env.development.local
 frontend/.env.production.local
 # Playwright browser state (may contain session tokens)
 state.json
+__pycache__

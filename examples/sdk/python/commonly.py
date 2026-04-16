@@ -139,18 +139,34 @@ class Commonly:
     # ----- run loop -------------------------------------------------------- #
 
     def run(self, on_event: Callable[[dict], Optional[str]], *,
-            interval_s: float = 5.0) -> None:
+            interval_s: float = 5.0, max_auth_errors: int = 3) -> None:
         """Convenience loop. Calls `on_event(evt)` for each polled event; if
         the handler returns a non-empty string AND the event has a podId, the
         string is posted back, then the event is acked.
 
         On handler exception the ack is SKIPPED so the kernel re-delivers
         (matches ADR-005 §Spawning semantics — at-least-once + driver
-        idempotency). Override `run()` if you want custom retry semantics."""
+        idempotency). Override `run()` if you want custom retry semantics.
+
+        Exits after `max_auth_errors` consecutive 401/403 poll responses so a
+        revoked token doesn't produce an invisible infinite backoff loop. The
+        caller should surface the exit to the user (e.g. prompt them to
+        re-issue a token)."""
+        consecutive_auth_errors = 0
         while True:
             try:
                 events = self.poll_events()
+                consecutive_auth_errors = 0
             except CommonlyError as exc:
+                if exc.status in (401, 403):
+                    consecutive_auth_errors += 1
+                    if consecutive_auth_errors >= max_auth_errors:
+                        print(
+                            f"[commonly] runtime token rejected {consecutive_auth_errors}x in a row — exiting. "
+                            "The token is likely revoked; re-issue or uninstall the agent.",
+                            flush=True,
+                        )
+                        return
                 print(f"[commonly] poll failed ({exc.status}): {exc}", flush=True)
                 time.sleep(min(interval_s * 4, 60))
                 continue

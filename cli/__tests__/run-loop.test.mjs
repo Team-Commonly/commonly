@@ -427,6 +427,105 @@ describe('performRun', () => {
     expect(errors.some((e) => /memory sync failed/.test(e.message))).toBe(true);
   });
 
+  test('3 consecutive 401s from /events stops the loop and surfaces a "run detach" hint', async () => {
+    // Bounded multi-cycle scheduler. Uses `setImmediate` to yield to the
+    // event loop between ticks (queueMicrotask starves drainMicrotasks).
+    // Hard cap of 20 at the scheduler level so a regression that fails to
+    // self-stop terminates the test rather than OOMing.
+    let scheduledCount = 0;
+    const boundedTimeout = (cb) => {
+      scheduledCount += 1;
+      if (scheduledCount > 20) return 0;
+      setImmediate(cb);
+      return 0;
+    };
+    const wait = async () => {
+      for (let i = 0; i < 30; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setImmediate(r));
+      }
+    };
+
+    const unauthorized = Object.assign(new Error('invalid token'), { status: 401 });
+    const mockGet = jest.fn().mockRejectedValue(unauthorized);
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const errors = [];
+    const spawn = jest.fn();
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'stale-agent',
+      setTimeoutImpl: boundedTimeout,
+      onError: (err) => errors.push(err),
+    });
+    await wait();
+    handle.stop();
+
+    // Loop stopped at the 3rd consecutive 401. The first two surface as raw
+    // onError(401); the third surfaces the "run detach" hint and halts.
+    expect(mockGet).toHaveBeenCalledTimes(3);
+    expect(spawn).not.toHaveBeenCalled();
+    const detachHint = errors.find((e) => /detach/.test(e.message));
+    expect(detachHint).toBeTruthy();
+    expect(detachHint.message).toContain('stale-agent');
+    // If this ever exceeds 3, the guard regressed and the scheduler's hard
+    // cap is the only thing saving us from OOM.
+    expect(scheduledCount).toBeLessThanOrEqual(3);
+  });
+
+  test('success after a single 401 resets the consecutive-auth counter', async () => {
+    // Scenario: one 401 (e.g. race with token rotation), then 200s forever.
+    // The counter must reset so sporadic failures don't accrete toward the
+    // exit threshold.
+    let scheduledCount = 0;
+    const boundedTimeout = (cb) => {
+      scheduledCount += 1;
+      if (scheduledCount > 5) return 0;
+      setImmediate(cb);
+      return 0;
+    };
+    const wait = async () => {
+      for (let i = 0; i < 20; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setImmediate(r));
+      }
+    };
+
+    const unauthorized = Object.assign(new Error('rate limited'), { status: 401 });
+    let call = 0;
+    const mockGet = jest.fn(async () => {
+      call += 1;
+      if (call === 1) throw unauthorized;
+      return { events: [] };
+    });
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn().mockResolvedValue({}) });
+
+    const errors = [];
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() };
+
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'flaky-agent',
+      setTimeoutImpl: boundedTimeout,
+      onError: (err) => errors.push(err),
+    });
+    await wait();
+    handle.stop();
+
+    // Flaky 401 surfaced as onError but loop kept running. No "run detach"
+    // message because successful calls 2+ reset the counter.
+    expect(errors.some((e) => /detach/.test(e.message))).toBe(false);
+    expect(errors.some((e) => e.status === 401)).toBe(true);
+    expect(call).toBeGreaterThan(1);
+  });
+
   test('stop() prevents subsequent events within the same cycle from being processed', async () => {
     const events = [makeEvent({ _id: 'e1' }), makeEvent({ _id: 'e2' })];
     const mockGet = jest.fn().mockResolvedValue({ events });

@@ -11,7 +11,7 @@
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
 import { join, dirname, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -21,7 +21,7 @@ import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller } from '../lib/poller.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
-import { getSession, setSession } from '../lib/session-store.js';
+import { getSession, setSession, clearSessions } from '../lib/session-store.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
@@ -46,6 +46,11 @@ export const loadAgentToken = (name) => {
   } catch {
     return null;
   }
+};
+
+export const deleteAgentToken = (name) => {
+  const file = tokenFile(name);
+  if (existsSync(file)) rmSync(file);
 };
 
 // Event types that carry a human/agent-authored prompt the wrapper should
@@ -165,6 +170,13 @@ export const performRun = ({
 }) => {
   const client = createClient({ instance: instanceUrl, token });
   let running = true;
+  // Stop-after-N-auth-failures: without this, a revoked token leaves the
+  // poller hammering 401s forever at 60s backoff — invisible to the user.
+  // Exiting tells them to run `commonly agent detach <name>`.
+  // 3 is deliberate — 1 would churn on a token-rotation race during
+  // reprovision-all; 5+ wastes rate-limit budget after the real-revoke case.
+  let consecutiveAuthErrors = 0;
+  const MAX_AUTH_ERRORS = 3;
 
   // Adapters default `ctx.cwd` to this path. Node's child_process.spawn
   // rejects with "spawn <bin> ENOENT" when cwd does not exist — same shape
@@ -226,6 +238,7 @@ export const performRun = ({
       const { events = [] } = await client.get('/api/agents/runtime/events', {
         agentName, instanceId, limit: 10,
       });
+      consecutiveAuthErrors = 0;
       for (const event of events) {
         if (!running) break;
         let result;
@@ -244,6 +257,17 @@ export const performRun = ({
         }
       }
     } catch (err) {
+      if (err?.status === 401 || err?.status === 403) {
+        consecutiveAuthErrors += 1;
+        if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
+          onError?.(new Error(
+            `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping. `
+            + `Run: commonly agent detach ${agentName}`,
+          ));
+          running = false;
+          return;
+        }
+      }
       onError?.(err);
     }
     if (running) setTimeoutImpl(tick, intervalMs);
@@ -362,6 +386,66 @@ export const performInit = async ({
     },
     runHint: recipe.runHint(agentName),
   };
+};
+
+// ── detach: uninstall a local-CLI-wrapped agent (ADR-005) ───────────────────
+
+/**
+ * Uninstall the agent from its pod AND clean up local token + session files.
+ *
+ * The three pieces of state created by `attach` are removed in this order:
+ *   1. Backend: AgentInstallation (DELETE /api/registry/agents/:name/pods/:podId
+ *      marks uninstalled, deletes AgentProfile, removes agent User from pod).
+ *      The runtime token tied to the User row is GC'd by the cleanup service
+ *      7 days after all installs go inactive — we don't force-revoke here
+ *      because the token may legitimately still be in use for another pod.
+ *   2. Local token file at ~/.commonly/tokens/<name>.json
+ *   3. Local session store at ~/.commonly/sessions/<name>.json
+ *
+ * Idempotent: if the backend returns 404 (already uninstalled elsewhere), we
+ * still clean up local files so the CLI state stays in sync with reality.
+ * `--force` / `skipBackend:true` short-circuits to local-only cleanup for
+ * the case where the backend has already been uninstalled via another path.
+ */
+export const performDetach = async ({
+  client,
+  agentName,
+  podId,
+  skipBackend = false,
+  log = () => {},
+}) => {
+  if (!agentName || (!skipBackend && !podId)) {
+    // A corrupted token file could leave us without a podId; without this
+    // guard `encodeURIComponent(undefined)` produces a request against
+    // `/pods/undefined` that the backend 404s, silently succeeding.
+    throw new Error(
+      'performDetach requires agentName (and podId unless skipBackend=true)',
+    );
+  }
+
+  let backendResult = { skipped: true };
+  if (!skipBackend) {
+    try {
+      const body = await client.del(`/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}`);
+      backendResult = { skipped: false, body };
+      log(`backend: uninstalled '${agentName}' from pod ${podId}`);
+    } catch (err) {
+      // 404 means "already gone" — continue to local cleanup.
+      if (err.status === 404) {
+        backendResult = { skipped: false, alreadyGone: true };
+        log(`backend: '${agentName}' already uninstalled from pod ${podId}`);
+      } else {
+        // Re-throw anything else (403 auth, 500, network) — caller decides.
+        throw err;
+      }
+    }
+  }
+
+  deleteAgentToken(agentName);
+  clearSessions(agentName);
+  log(`local: removed token file + session store for '${agentName}'`);
+
+  return { backend: backendResult, localCleaned: true };
 };
 
 export const registerAgent = (program) => {
@@ -594,6 +678,63 @@ export const registerAgent = (program) => {
         stop();
         process.exit(0);
       });
+    });
+
+  // ── detach (ADR-005) ──────────────────────────────────────────────────────
+  agent
+    .command('detach <name>')
+    .description('Uninstall an attached agent from its pod and delete local state')
+    .option('--force', 'Skip the backend uninstall call; only remove local files')
+    .action(async (name, opts) => {
+      const record = loadAgentToken(name);
+      if (!record) {
+        console.error(
+          `No local state for '${name}'. If the agent is still installed on `
+          + `the backend, uninstall it via the Agent Hub UI or:\n`
+          + `  curl -X DELETE <instance>/api/registry/agents/${name}/pods/<podId> \\\n`
+          + `    -H "Authorization: Bearer <user JWT>"`,
+        );
+        process.exit(1);
+      }
+
+      try {
+        let client = null;
+        if (!opts.force) {
+          // The DELETE endpoint expects the user's JWT, not the agent runtime
+          // token — matches the auth surface of attach/init. We use the saved
+          // instanceUrl to find the right user token (getToken accepts URL).
+          const userToken = getToken(record.instanceUrl);
+          if (!userToken) {
+            console.error(
+              `No user login found for ${record.instanceUrl}. Either run `
+              + `'commonly login --instance ${record.instanceUrl}' first, or `
+              + `'commonly agent detach ${name} --force' to clean up local files only.`,
+            );
+            process.exit(1);
+          }
+          client = createClient({ instance: record.instanceUrl, token: userToken });
+        }
+
+        const result = await performDetach({
+          client,
+          agentName: record.agentName,
+          podId: record.podId,
+          skipBackend: !!opts.force,
+          log: (line) => console.warn(`[detach] ${line}`),
+        });
+
+        if (opts.force) {
+          console.log(`✓ Removed local state for '${name}' (backend NOT notified)`);
+        } else if (result.backend?.alreadyGone) {
+          console.log(`✓ '${name}' was already uninstalled from pod ${record.podId}; cleaned local state`);
+        } else {
+          console.log(`✓ Detached '${name}' from pod ${record.podId} and removed local state`);
+        }
+      } catch (err) {
+        console.error(`Detach failed: ${err.message}`);
+        console.error(`If the backend is unreachable, retry with --force to clean up local files.`);
+        process.exit(1);
+      }
     });
 
   // ── init (ADR-006) ────────────────────────────────────────────────────────
