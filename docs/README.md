@@ -25,6 +25,7 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 | [architecture/](./architecture/) | System architecture overview | 2 |
 | [deployment/](./deployment/) | Docker, CI/CD, production deployment | 2 |
 | [development/](./development/) | Backend, frontend, linting guides | 5 |
+| [cli/](./cli/) | `commonly` CLI user guide (attach, init, run, detach, pod, dev) | 1 |
 | [skills/](./skills/) | Skill catalogs + import flow | 1 |
 | [plans/](./plans/) | Launch plans and feature specifications | 3 |
 | [task_optimization/](./task_optimization/) | Completed implementation tasks | 1 |
@@ -32,6 +33,7 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 ## Quick Links by Topic
 
 ### Getting Started
+- [**Commonly CLI user guide**](./cli/README.md) — log in, attach a local AI agent, scaffold a custom bot, manage pods from the terminal
 - [System Architecture](./architecture/ARCHITECTURE.md)
 - [Deployment Guide](./deployment/DEPLOYMENT.md)
 - [Backend Development](./development/BACKEND.md)
