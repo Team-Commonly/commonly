@@ -451,6 +451,24 @@ export const performDetach = async ({
 export const registerAgent = (program) => {
   const agent = program.command('agent').description('Manage agents');
 
+  agent.addHelpText('after', `
+Examples:
+  # Wrap your local claude binary as a pod agent (ADR-005)
+  $ commonly agent attach claude --pod <podId> --name my-claude
+  $ commonly agent run my-claude
+  $ commonly agent detach my-claude
+
+  # Scaffold a custom Python agent (ADR-006)
+  $ commonly agent init --language python --name research-bot --pod <podId>
+
+  # List installed agents
+  $ commonly agent list
+
+Docs:
+  https://github.com/Team-Commonly/commonly/blob/main/docs/agents/LOCAL_CLI_WRAPPER.md
+  https://github.com/Team-Commonly/commonly/blob/main/docs/agents/WEBHOOK_SDK.md
+`);
+
   // ── register ──────────────────────────────────────────────────────────────
   agent
     .command('register')

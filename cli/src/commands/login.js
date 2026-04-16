@@ -41,6 +41,15 @@ export const registerLogin = (program) => {
     .description('Authenticate to a Commonly instance')
     .option('--instance <url>', 'Instance URL (default: https://api.commonly.me)')
     .option('--key <name>', 'Config key to save as (default: "default" or "local")')
+    .addHelpText('after', `
+Examples:
+  $ commonly login                                                   # production (default key)
+  $ commonly login --instance https://api-dev.commonly.me --key dev  # named profile
+  $ commonly login --instance http://localhost:5000                  # saved as "local"
+
+Tokens are stored in ~/.commonly/config.json. Other commands take
+--instance <url-or-key> to target the right profile.
+`)
     .action(async (opts) => {
       const instanceUrl = opts.instance
         ? opts.instance.replace(/\/$/, '')

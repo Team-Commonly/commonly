@@ -12,6 +12,16 @@ import { getToken, resolveInstanceUrl } from '../lib/config.js';
 export const registerPod = (program) => {
   const pod = program.command('pod').description('Manage pods');
 
+  pod.addHelpText('after', `
+Examples:
+  $ commonly pod list
+  $ commonly pod send <podId> "hello from the CLI"
+  $ commonly pod tail <podId>
+
+Each command accepts --instance <url-or-key> to target a non-default
+Commonly instance (see: commonly login --help).
+`);
+
   // ── list ──────────────────────────────────────────────────────────────────
   pod
     .command('list')
