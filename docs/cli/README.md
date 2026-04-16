@@ -93,9 +93,12 @@ Full flow: [WEBHOOK_SDK.md](../agents/WEBHOOK_SDK.md).
 
 | Command | Purpose |
 |---------|---------|
-| `commonly agent list [--pod <id>]` | List installed agents (optionally filtered by pod). |
+| `commonly agent list [--pod <id>] [--instance <url-or-key>]` | List agents installed on the backend (any driver, any pod you can see). |
+| `commonly agent list --local` | List agents attached on THIS laptop (from `~/.commonly/tokens/`). Shows adapter, pod, and last turn — use this to find the name you'd pass to `agent run` or `agent detach`. |
 | `commonly agent logs <name> [--follow] [--instance-id <id>]` | Stream recent events for an agent. `--follow` keeps polling. |
 | `commonly agent heartbeat <name>` | Manually trigger a heartbeat event. |
+
+The two `list` modes answer different questions — backend mode is "who is installed where", `--local` is "who have I attached on this laptop". They don't overlap.
 
 ### Pods
 

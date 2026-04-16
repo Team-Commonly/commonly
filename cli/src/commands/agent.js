@@ -11,7 +11,7 @@
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
 import { join, dirname, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -51,6 +51,49 @@ export const loadAgentToken = (name) => {
 export const deleteAgentToken = (name) => {
   const file = tokenFile(name);
   if (existsSync(file)) rmSync(file);
+};
+
+/**
+ * Enumerate every agent attached on this laptop — i.e. every file in
+ * ~/.commonly/tokens/*.json. Cross-references the session store for a
+ * "last turn" timestamp per agent so the user sees cold vs. live agents.
+ *
+ * Returns an array of plain records so the CLI table formatter stays simple
+ * and tests can assert on shape directly.
+ */
+export const listLocalAgents = () => {
+  const dir = tokensDir();
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.slice(0, -'.json'.length))
+    .map((name) => {
+      const record = loadAgentToken(name);
+      if (!record) return null;
+      let lastTurn = null;
+      try {
+        const sessionsFile = join(homedir(), '.commonly', 'sessions', `${name}.json`);
+        if (existsSync(sessionsFile)) {
+          const sessions = JSON.parse(readFileSync(sessionsFile, 'utf8'));
+          // One entry per pod — we surface the most recent across pods.
+          Object.values(sessions).forEach((s) => {
+            if (s?.lastTurn && (!lastTurn || s.lastTurn > lastTurn)) lastTurn = s.lastTurn;
+          });
+        }
+      } catch {
+        // Corrupt session store — not a hard error, just skip.
+      }
+      return {
+        name,
+        adapter: record.adapter || '?',
+        podId: record.podId || '?',
+        instanceUrl: record.instanceUrl || '?',
+        instanceId: record.instanceId || 'default',
+        savedAt: record.savedAt || null,
+        lastTurn,
+      };
+    })
+    .filter(Boolean);
 };
 
 // Event types that carry a human/agent-authored prompt the wrapper should
@@ -798,10 +841,35 @@ Docs:
   // ── list ──────────────────────────────────────────────────────────────────
   agent
     .command('list')
-    .description('List installed agents')
-    .option('--pod <podId>', 'Filter by pod')
-    .option('--instance <url>', 'Target Commonly instance')
+    .description('List agents — installed on backend (default) or attached locally (--local)')
+    .option('--local', 'List agents attached on this laptop (~/.commonly/tokens/)')
+    .option('--pod <podId>', 'Filter by pod (backend mode only)')
+    .option('--instance <url>', 'Target Commonly instance (backend mode only)')
+    .addHelpText('after', `
+The two modes answer different questions:
+
+  backend (default)  — who is installed in pods I can see, on any driver
+  --local            — who have I attached on THIS laptop via 'agent attach'
+
+Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
+`)
     .action(async (opts) => {
+      if (opts.local) {
+        const agents = listLocalAgents();
+        if (agents.length === 0) {
+          console.log('No agents attached locally. Run: commonly agent attach <adapter> --pod <podId> --name <n>');
+          return;
+        }
+        const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
+        console.log(`${col('NAME', 20)} ${col('ADAPTER', 10)} ${col('POD', 26)} LAST TURN`);
+        console.log('─'.repeat(80));
+        agents.forEach((a) => {
+          const lastTurn = a.lastTurn ? new Date(a.lastTurn).toLocaleString() : 'never';
+          console.log(`${col(a.name, 20)} ${col(a.adapter, 10)} ${col(a.podId, 26)} ${lastTurn}`);
+        });
+        return;
+      }
+
       const token = getToken(opts.instance);
       if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
 

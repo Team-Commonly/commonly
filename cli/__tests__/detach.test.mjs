@@ -28,6 +28,7 @@ const {
   performDetach,
   saveAgentToken,
   loadAgentToken,
+  listLocalAgents,
 } = await import('../src/commands/agent.js');
 const { setSession, getSession } = await import('../src/lib/session-store.js');
 
@@ -152,5 +153,73 @@ describe('performDetach', () => {
     // clearSessions / deleteAgentToken no-op when files don't exist.
     expect(result.localCleaned).toBe(true);
     expect(del).not.toHaveBeenCalled();
+  });
+});
+
+describe('listLocalAgents', () => {
+  beforeEach(() => {
+    fs.rmSync(path.join(tmp, '.commonly'), { recursive: true, force: true });
+  });
+
+  test('returns [] when no tokens dir exists', () => {
+    expect(listLocalAgents()).toEqual([]);
+  });
+
+  test('enumerates each token file as one record with name/adapter/pod/instanceUrl', () => {
+    saveAgentToken('alpha', {
+      agentName: 'alpha', instanceId: 'default', podId: 'pod-a',
+      instanceUrl: 'http://localhost:5000', runtimeToken: 'cm_agent_a',
+      adapter: 'claude',
+    });
+    saveAgentToken('beta', {
+      agentName: 'beta', instanceId: 'default', podId: 'pod-b',
+      instanceUrl: 'https://api-dev.commonly.me', runtimeToken: 'cm_agent_b',
+      adapter: 'codex',
+    });
+
+    const agents = listLocalAgents();
+    const byName = Object.fromEntries(agents.map((a) => [a.name, a]));
+    expect(Object.keys(byName).sort()).toEqual(['alpha', 'beta']);
+    expect(byName.alpha.adapter).toBe('claude');
+    expect(byName.alpha.podId).toBe('pod-a');
+    expect(byName.alpha.instanceUrl).toBe('http://localhost:5000');
+    expect(byName.beta.adapter).toBe('codex');
+    // lastTurn is null until a session entry lands — see next test.
+    expect(byName.alpha.lastTurn).toBeNull();
+  });
+
+  test('surfaces the most-recent lastTurn across pods from the session store', () => {
+    saveAgentToken('multipod', {
+      agentName: 'multipod', instanceId: 'default', podId: 'pod-x',
+      instanceUrl: 'http://localhost:5000', runtimeToken: 'cm_agent_m',
+      adapter: 'claude',
+    });
+    // Two pods with different lastTurn timestamps. `getSession`/`setSession`
+    // write to the same file, so we can rely on the existing API.
+    setSession('multipod', 'pod-x', 'sid-x');
+    // Manually write a second pod entry to force distinct timestamps.
+    const sessionsFile = path.join(tmp, '.commonly', 'sessions', 'multipod.json');
+    const state = JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
+    state['pod-y'] = { sessionId: 'sid-y', lastTurn: '2099-01-01T00:00:00.000Z' };
+    fs.writeFileSync(sessionsFile, JSON.stringify(state), 'utf8');
+
+    const [agent] = listLocalAgents();
+    // The 2099 timestamp on pod-y should win over setSession's "now".
+    expect(agent.lastTurn).toBe('2099-01-01T00:00:00.000Z');
+  });
+
+  test('survives a corrupt session file (returns null lastTurn, does not throw)', () => {
+    saveAgentToken('corrupt', {
+      agentName: 'corrupt', instanceId: 'default', podId: 'pod-c',
+      instanceUrl: 'http://localhost:5000', runtimeToken: 'cm_agent_c',
+      adapter: 'claude',
+    });
+    const sessionsFile = path.join(tmp, '.commonly', 'sessions', 'corrupt.json');
+    fs.mkdirSync(path.dirname(sessionsFile), { recursive: true });
+    fs.writeFileSync(sessionsFile, 'not json {', 'utf8');
+
+    const [agent] = listLocalAgents();
+    expect(agent.name).toBe('corrupt');
+    expect(agent.lastTurn).toBeNull();
   });
 });
