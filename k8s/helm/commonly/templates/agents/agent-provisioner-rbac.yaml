@@ -1,4 +1,9 @@
-{{- if .Values.rbac.create }}
+{{/*
+  Legacy agent-provisioner RBAC. Superseded by templates/agent-provisioning/rbac.yaml
+  which also creates an SA named 'agent-provisioner'. Kept as a fallback for
+  installs that explicitly set agentProvisioning.enabled=false.
+*/}}
+{{- if and .Values.rbac.create (not .Values.agentProvisioning.enabled) }}
 ---
 apiVersion: v1
 kind: ServiceAccount
