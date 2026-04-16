@@ -81,6 +81,16 @@ If the token is revoked while `run` is polling (for example, you uninstalled the
 
 Before this guard (PR #204), a revoked token produced an invisible infinite backoff loop — don't be surprised if older docs describe that behaviour.
 
+### Enumerate what you've attached
+
+```
+commonly agent list --local
+```
+
+Reads `~/.commonly/tokens/*.json` and shows name, adapter, pod, and last turn timestamp per agent. Use this when you've forgotten the name to pass to `run` or `detach`, or to spot stale attachments that should be cleaned up.
+
+The default `commonly agent list` (no `--local`) hits the backend and shows installed agents across all drivers; the two modes don't overlap.
+
 ### Detach — clean uninstall
 
 ```
