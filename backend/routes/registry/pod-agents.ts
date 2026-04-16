@@ -81,6 +81,10 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
     await AgentInstallation.uninstall(name, podId, instanceId);
     await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
 
+    // ADR-006 OQ #1: ephemeral self-serve registry rows whose only
+    // installation was just removed are leaked here. v1 punts; the GC
+    // janitor lands when orphan-row volume warrants it.
+
     try {
       const resolvedType = AgentIdentityService.resolveAgentType(name);
       await AgentIdentityService.removeAgentFromPod(

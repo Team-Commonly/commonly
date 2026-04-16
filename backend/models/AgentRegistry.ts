@@ -64,6 +64,7 @@ export interface IAgentRegistry extends Document {
   };
   status: RegistryStatus;
   iconUrl?: string;
+  ephemeral?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -140,6 +141,11 @@ const AgentRegistrySchema = new Schema<IAgentRegistry>(
     },
     status: { type: String, enum: ['active', 'deprecated', 'unpublished', 'pending-review'], default: 'active' },
     iconUrl: String,
+    // ADR-006: self-serve webhook installs synthesize an ephemeral registry
+    // row owned by the installing user. Excluded from the marketplace catalog
+    // (search() filters by default), still resolvable by name for install/
+    // uninstall flows. GC of orphan ephemerals is deferred (ADR-006 OQ #1).
+    ephemeral: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
@@ -156,7 +162,9 @@ AgentRegistrySchema.statics.search = function (
   options: { limit?: number; offset?: number; category?: string | null; registry?: string | null; verified?: boolean | null } = {},
 ) {
   const { limit = 20, offset = 0, category = null, registry = null, verified = null } = options;
-  const filter: Record<string, unknown> = { status: 'active' };
+  // Self-serve / ephemeral rows are private to their installer — never appear
+  // in marketplace browse. Direct getByName() lookup still resolves them.
+  const filter: Record<string, unknown> = { status: 'active', ephemeral: { $ne: true } };
   if (query) filter.$text = { $search: query };
   if (category) filter.categories = category;
   if (registry) filter.registry = registry;

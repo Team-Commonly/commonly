@@ -82,11 +82,6 @@ installRouter.post('/install', auth, async (req: any, res: any) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const agent = await AgentRegistry.getByName(agentName);
-    if (!agent) {
-      return res.status(404).json({ error: 'Agent not found in registry' });
-    }
-
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
       return res.status(404).json({ error: 'Pod not found' });
@@ -101,6 +96,65 @@ installRouter.post('/install', auth, async (req: any, res: any) => {
 
     if (!membership && !isCreator) {
       return res.status(403).json({ error: 'You must be a member of this pod' });
+    }
+
+    let agent = await AgentRegistry.getByName(agentName);
+
+    // ADR-006 §Self-serve install: when a pod member installs a webhook-typed
+    // agent that has no published manifest, synthesize an ephemeral registry
+    // row owned by them. Marketplace catalog excludes ephemeral rows; only
+    // direct getByName() resolves them. Membership check above is the gate.
+    if (!agent) {
+      const requestedRuntimeType = String(
+        (config && config.runtime && (config.runtime as any).runtimeType) || '',
+      ).toLowerCase();
+      if (requestedRuntimeType !== 'webhook') {
+        return res.status(404).json({ error: 'Agent not found in registry' });
+      }
+      // ADR-006 §invariant 7 — self-serve is pod-scope only. The route
+      // already requires `podId` (pod 404 above guards this), but the
+      // explicit check here keeps the invariant in source so a future
+      // refactor that adds instance/user/dm scope can't bypass it.
+      if (!podId) {
+        return res.status(400).json({ error: 'podId is required for self-serve install' });
+      }
+      // The AgentRegistry schema enforces /^[a-z0-9-]+$/ at write time, so
+      // a malformed name would surface as a Mongoose 500. Reject upstream.
+      if (!/^[a-z0-9-]+$/.test(String(agentName).toLowerCase())) {
+        return res.status(400).json({
+          error: 'Invalid agentName: must match /^[a-z0-9-]+$/',
+        });
+      }
+      // manifest.runtime.type is the registry-level deployment shape
+      // (enum: 'standalone' | 'commonly-hosted' | 'hybrid'). Self-serve
+      // webhook agents run outside Commonly so they map to 'standalone'.
+      // The actual webhook routing is driven by config.runtime.runtimeType
+      // on the AgentInstallation, not on the registry manifest.
+      const synthManifest = {
+        name: String(agentName).toLowerCase(),
+        version: String(version || '1.0.0'),
+        description: String(displayName || agentName),
+        capabilities: [],
+        context: { required: [], optional: [] },
+        runtime: { type: 'standalone', connection: 'rest' },
+      };
+      agent = await AgentRegistry.create({
+        agentName: synthManifest.name,
+        displayName: String(displayName || agentName),
+        description: synthManifest.description,
+        manifest: synthManifest,
+        latestVersion: synthManifest.version,
+        versions: [{ version: synthManifest.version, manifest: synthManifest, publishedAt: new Date() }],
+        registry: 'private',
+        publisher: { userId, name: req.user?.username },
+        ephemeral: true,
+      });
+      console.log('[cap self-serve-install]', {
+        user: String(userId),
+        pod: String(podId),
+        agent: synthManifest.name,
+        runtime: 'webhook',
+      });
     }
 
     let normalizedInstanceId;
