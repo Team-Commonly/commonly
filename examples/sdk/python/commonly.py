@@ -75,6 +75,7 @@ class Commonly:
         data = json.dumps(body).encode("utf-8") if body is not None else None
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Authorization", f"Bearer {self.runtime_token}")
+        req.add_header("User-Agent", "commonly-sdk/0.1")
         if data is not None:
             req.add_header("Content-Type", "application/json")
         try:
