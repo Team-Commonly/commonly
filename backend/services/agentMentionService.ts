@@ -82,6 +82,11 @@ interface SummaryEnqueueOptions {
   pod: Record<string, unknown> | null;
 }
 
+interface SenderRow {
+  isBot?: boolean;
+  botMetadata?: { agentName?: string; instanceId?: string };
+}
+
 /**
  * Mention Aliases
  *
@@ -236,11 +241,36 @@ const enqueueMentions = async ({
   const { map: mentionMap, byAgent } = buildMentionMap(installations, profiles);
   let pod: Record<string, unknown> | null = null;
 
+  // Self-mention guard: if the sender is a bot, resolve their own
+  // (agentName, instanceId) so we can skip re-enqueuing an event on themselves.
+  // Without this, any agent whose reply echoes its own handle (e.g. the
+  // webhook-SDK "echo:" template, or a CLI-wrapper that quotes the mention)
+  // triggers an infinite chat.mention → reply → chat.mention loop.
+  let sender: SenderRow | null = null;
+  try {
+    sender = await User.findById(userId).select('isBot botMetadata').lean() as SenderRow | null;
+  } catch (error) {
+    // Non-fatal: missing sender just means we can't suppress self-mentions,
+    // which is a strictly weaker invariant than the one we had before.
+    console.warn('Agent mention sender lookup failed:', (error as Error).message);
+  }
+  const senderAgentName = sender?.isBot ? sender.botMetadata?.agentName?.toLowerCase() : null;
+  const senderInstanceId = sender?.isBot ? (sender.botMetadata?.instanceId || 'default') : null;
+  const isSelfMention = (target: MentionTarget): boolean => (
+    !!senderAgentName
+    && target.agentName.toLowerCase() === senderAgentName
+    && (target.instanceId || 'default') === senderInstanceId
+  );
+
   await Promise.all(
     rawMentions.map(async (raw) => {
       const normalized = raw.toLowerCase();
       const directMatch = mentionMap.get(normalized);
       if (directMatch) {
+        if (isSelfMention(directMatch)) {
+          skipped.push(`${directMatch.agentName}:self`);
+          return;
+        }
         try {
           if (directMatch.agentName === 'commonly-bot') {
             pod = pod || await Pod.findById(podId).lean();
@@ -292,6 +322,10 @@ const enqueueMentions = async ({
         }
         await Promise.all(
           matches.map(async (match) => {
+            if (isSelfMention({ agentName: agentType, instanceId: match.instanceId })) {
+              skipped.push(`${agentType}:self`);
+              return;
+            }
             try {
               if (agentType === 'commonly-bot') {
                 pod = pod || await Pod.findById(podId).lean();

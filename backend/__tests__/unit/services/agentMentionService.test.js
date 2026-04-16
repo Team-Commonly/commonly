@@ -41,6 +41,12 @@ const User = require('../../../models/User');
 describe('AgentMentionService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default sender for enqueueMentions lookups — a regular human user.
+    // Tests that need a bot sender (self-mention guard) override this.
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ _id: 'user-1', isBot: false }),
+    });
   });
 
   test('extractMentions finds supported agent aliases', () => {
@@ -213,6 +219,98 @@ describe('AgentMentionService', () => {
       }),
     );
     expect(result.enqueued).toEqual(['openclaw']);
+  });
+
+  test('enqueueMentions skips when the sender is the mentioned agent (self-mention loop guard)', async () => {
+    // Installation: one agent "smoke-echo" in the pod
+    AgentInstallation.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        { agentName: 'smoke-echo', instanceId: 'default', displayName: 'Smoke Echo' },
+      ]),
+    });
+    AgentProfile.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([]),
+    });
+    // Sender is the bot itself — botMetadata matches the mention target
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({
+        _id: 'agent-user-1',
+        isBot: true,
+        botMetadata: { agentName: 'smoke-echo', instanceId: 'default' },
+      }),
+    });
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'echo: @smoke-echo hello', id: 'msg-99' },
+      userId: 'agent-user-1',
+      username: 'smoke-echo',
+    });
+
+    // Must NOT re-enqueue an event back to the sender
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(res.enqueued).toEqual([]);
+    expect(res.skipped).toEqual(['smoke-echo:self']);
+  });
+
+  test('enqueueMentions still enqueues when a different bot mentions this agent', async () => {
+    AgentInstallation.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        { agentName: 'smoke-echo', instanceId: 'default', displayName: 'Smoke Echo' },
+      ]),
+    });
+    AgentProfile.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([]),
+    });
+    // Sender is a DIFFERENT bot — self-mention guard must not fire
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({
+        _id: 'agent-user-2',
+        isBot: true,
+        botMetadata: { agentName: 'other-agent', instanceId: 'default' },
+      }),
+    });
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: '@smoke-echo please help', id: 'msg-100' },
+      userId: 'agent-user-2',
+      username: 'other-agent',
+    });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ agentName: 'smoke-echo', instanceId: 'default' }),
+    );
+    expect(res.enqueued).toEqual(['smoke-echo']);
+  });
+
+  test('enqueueMentions still enqueues when sender lookup fails (guard degrades to no-op)', async () => {
+    AgentInstallation.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        { agentName: 'smoke-echo', instanceId: 'default', displayName: 'Smoke Echo' },
+      ]),
+    });
+    AgentProfile.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([]),
+    });
+    // Simulate a transient DB failure during sender lookup — the guard
+    // should log and fall through, not block the mention enqueue.
+    User.findById.mockImplementationOnce(() => {
+      throw new Error('mongo connection lost');
+    });
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: '@smoke-echo hello', id: 'msg-101' },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(res.enqueued).toEqual(['smoke-echo']);
   });
 
   test('enqueueDmEvent skips non-agent-admin pods', async () => {
