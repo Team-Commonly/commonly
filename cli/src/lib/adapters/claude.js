@@ -1,16 +1,20 @@
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
- * Contract: ADR-005 §Adapter pattern. Argv shape per ADR-005 §Adapters
- * shipped in v1: `claude -p "$prompt" --output-format text --session-id $sid`.
+ * Contract: ADR-005 §Adapter pattern.
  *
  * Memory preamble: if ctx.memoryLongTerm is non-empty, the adapter prepends
  * it to the prompt as a system-context preamble (§Memory bridge).
  *
- * Session continuity: we pass the same stable session id to claude on every
- * turn and return it as `newSessionId` so the run loop persists it. First
- * turn mints a UUID; subsequent turns re-use it. claude keeps the
- * conversation alive on its side for this id.
+ * Session continuity (IMPORTANT — the two claude flags are not interchangeable):
+ *   - First turn (no persisted id): mint a UUID and pass `--session-id <uuid>`.
+ *     claude treats `--session-id` as "CREATE a session with this exact UUID"
+ *     and rejects with "Session ID ... is already in use" if the UUID was
+ *     already used.
+ *   - Subsequent turns (persisted id present): pass `--resume <uuid>` instead.
+ *     `--resume` means "continue this existing session."
+ *   The wrapper persists the UUID so the SAME id is used across turns — this
+ *   adapter just picks the right flag for it.
  *
  * Purity (§Load-bearing invariants #1): input = argv + env + prompt;
  * output = text + session id. No direct network, no direct CAP calls.
@@ -82,18 +86,38 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
+    const isResume = !!ctx.sessionId;
     const sessionId = ctx.sessionId || randomUUID();
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm || '');
-    const args = ['-p', fullPrompt, '--output-format', 'text', '--session-id', sessionId];
+    const sessionFlag = isResume ? '--resume' : '--session-id';
+    const args = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId];
 
-    const stdout = await runClaude({
-      args,
-      cwd: ctx.cwd,
-      env: ctx.env,
-      timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
-      spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
-    });
-
-    return { text: stdout.trim(), newSessionId: sessionId };
+    try {
+      const stdout = await runClaude({
+        args,
+        cwd: ctx.cwd,
+        env: ctx.env,
+        timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+        spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
+      });
+      return { text: stdout.trim(), newSessionId: sessionId };
+    } catch (err) {
+      // Self-heal against a corrupted session store. If the persisted id is
+      // already in use (or claude has forgotten about it), discard it and
+      // restart the turn with a fresh UUID. Without this, a single bad
+      // session id poisons every subsequent event re-delivery.
+      if (isResume && /already in use|no conversation|no session/i.test(String(err.message))) {
+        const freshId = randomUUID();
+        const stdout = await runClaude({
+          args: ['-p', fullPrompt, '--output-format', 'text', '--session-id', freshId],
+          cwd: ctx.cwd,
+          env: ctx.env,
+          timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+          spawnImpl: ctx._spawnImpl,
+        });
+        return { text: stdout.trim(), newSessionId: freshId };
+      }
+      throw err;
+    }
   },
 };
