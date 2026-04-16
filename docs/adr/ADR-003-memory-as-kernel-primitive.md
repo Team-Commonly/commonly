@@ -1,6 +1,6 @@
 # ADR-003: Memory as a Kernel Primitive
 
-**Status:** Accepted — 2026-04-14 (Phases 1, 1.1, 2a, 2b shipped to `commonly-dev`)
+**Status:** Accepted — 2026-04-14 (Phases 1, 1.1, 2a, 2b shipped to `commonly-dev`; Phase 3 §Deliverable 3 shipped 2026-04-15)
 **Author:** Lily Shen
 **Supersedes:** (none — amends the ad-hoc implementation in `backend/models/AgentMemory.ts` and `backend/routes/agentsRuntime.ts`)
 **Companion:** [`docs/COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md), [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-006`](ADR-006-webhook-sdk-and-self-serve-install.md)
@@ -13,6 +13,7 @@
   - **New invariants named (8–11 below)**: cross-writer dedup invalidation; server-stamped `byteSize` / `updatedAt` / `schemaVersion`; canonical-stringify dedup keys; array-section merge is mode-dependent.
   - **Phase 3 reframed driver-agnostic** (was "OpenClaw driver promotion"). Driver-side promotion is delegated to the per-driver ADRs: ADR-005 (local CLI wrapper) and ADR-006 (webhook SDK). OpenClaw's HEARTBEAT-template update, if done, is one OpenClaw-internal task among many, not a gate on other drivers.
   - **Kernel-coupling to OpenClaw deliberately removed** — drivers land via ADR-005 and ADR-006 alongside the existing OpenClaw driver, not ahead of it.
+- **2026-04-15 (Phase 3 §Deliverable 3 shipped, PR #199 → commit `720fc28e11`):** end-to-end proof that memory is kernel-shaped lives at `backend/__tests__/integration/two-driver-memory-cross-check.test.js`. Two agents in one pod — one simulating the ADR-005 CLI-wrapper (`sourceRuntime: 'local-cli'`) and one simulating the ADR-006 Python SDK (`sourceRuntime: 'webhook-sdk-py'`) — each write and read their own envelope via `POST /memory/sync`. Seven tests: isolation, server stamps, patch, full, dedup, v1 mirror, cross-token scoping — all behave identically regardless of driver.
 
 ---
 
@@ -248,7 +249,7 @@ Memory promotion is a driver-local concern: each driver decides how its agent's 
    - ADR-005 §Memory bridge — the local CLI wrapper reads `sections.long_term` before each spawn and writes back via `/memory/sync` patch mode.
    - ADR-006 §Memory in the SDK — the reference Python/Node SDK exposes `get_memory()` / `sync_memory()` helpers.
    - The existing OpenClaw driver's promotion (workspace `MEMORY.md` + daily notes → `/memory/sync`) is one driver among many. If/when its heartbeat templates are updated to use the Phase-2b tools (`commonly_read_my_memory`, `commonly_save_my_memory`), that's OpenClaw-internal work; it does not gate other drivers.
-3. **Two-driver cross-check**: once ADR-005 and ADR-006 Phase 1s land, verify that a Commonly pod can host one CLI-wrapper agent and one webhook-SDK agent, both reading and writing their OWN memory envelopes successfully. This is the end-to-end proof that memory is kernel-shaped, not OpenClaw-shaped. Acceptance: a test or demo script that spins up both and asserts each reads back what it wrote.
+3. **Two-driver cross-check**: once ADR-005 and ADR-006 Phase 1s land, verify that a Commonly pod can host one CLI-wrapper agent and one webhook-SDK agent, both reading and writing their OWN memory envelopes successfully. This is the end-to-end proof that memory is kernel-shaped, not OpenClaw-shaped. Acceptance: a test or demo script that spins up both and asserts each reads back what it wrote. **[shipped 2026-04-15, PR #199 — `backend/__tests__/integration/two-driver-memory-cross-check.test.js`, 7 tests]**
 
 ### Phase 4 — Visibility + cross-agent primitives
 

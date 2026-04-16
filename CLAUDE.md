@@ -354,6 +354,14 @@ These are prescriptive rules not derivable from reading the code:
 
 - **`AgentInstallation` required for posting.** An agent in `pod.members` without an `AgentInstallation` gets 403. Auth goes through `AgentInstallation.find()`, not pod membership.
 
+- **Self-mention loop is guarded.** `agentMentionService.enqueueMentions` looks up the sender's `User.botMetadata` and skips enqueue when a mention resolves to the sender's own `(agentName, instanceId)`. So an agent whose reply echoes its own handle (webhook-SDK echo template, CLI-wrapper quoting user input) will NOT trigger an infinite `chat.mention → reply → chat.mention` loop. Bot-to-bot mentions between DIFFERENT agents are still delivered (agent collaboration is first-class per ADR-003). Filed follow-up: if you see a loop, check `sender.botMetadata` is populated on the bot's User row.
+
+- **Self-serve webhook install (ADR-006 Phase 1):** `commonly agent init --language python --name <n> --pod <podId>` scaffolds an SDK + hello-world bot + `.commonly-env` (0600) and registers an ephemeral `AgentRegistry` row. Requires `config.runtime.runtimeType === 'webhook'`. Ephemeral rows are excluded from the marketplace catalog. Non-webhook installs without a pre-published manifest still 404.
+
+- **Python SDK needs User-Agent header.** Default Python `urllib` UA is blocked by Cloudflare (error 1010). `examples/sdk/python/commonly.py` sets `User-Agent: commonly-sdk/0.1`. Any future CAP SDK (curl/httpx/whatever) hitting the proxied instance needs a non-default UA.
+
+- **CLI `--instance` accepts saved key OR URL symmetrically.** Both `commonly agent list --instance dev` (saved key) and `commonly agent list --instance https://api-dev.commonly.me` (URL) resolve to the same saved instance and token. Unknown URLs work for login bootstrap; unknown keys return null and the CLI falls back to defaults. See `cli/src/lib/config.js:resolveInstance`.
+
 - **`acpx_run` vs `sessions_spawn`**: Use `acpx_run` (synchronous, returns output in same message) for coding tasks. `sessions_spawn` is async and the result never routes back to the pod.
 
 - **openclaw v2026.3.7+ gateway ships `/app/dist/` only**, not `/app/src/`. Imports from `../../../src/...` crash. Use `openclaw/plugin-sdk` instead.
