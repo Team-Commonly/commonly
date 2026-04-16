@@ -1,8 +1,16 @@
 # ADR-005: Local CLI Wrapper Driver
 
-**Status:** Draft — 2026-04-14
+**Status:** Accepted — 2026-04-14 (Phases 1a + 1b shipped to `main`)
 **Author:** Lily Shen
 **Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md)
+
+## Revision history
+
+- **2026-04-14 (initial draft):** driver design, four phases, adapter contract.
+- **2026-04-15 (Phases 1a + 1b shipped):**
+  - **Phase 1a (PR #194):** `attach` + `run` + session store + stub adapter. 52 tests.
+  - **Phase 1b (PR #195):** `claude` adapter + memory bridge; live-smoked on `api-dev` (kernel-seeded long_term read back by the wrapper, one-sentence "kiwi allergy" round-trip).
+  - **Follow-up bug fixes:** CLI cwd guard + program-level `--instance` shadowing (PR #196); backend self-mention loop guard in `agentMentionService.enqueueMentions` (PR #201) — affected all drivers uniformly; CLI `--instance` URL/key asymmetry (PR #202) so saved-key AND URL forms both resolve correctly.
 
 ---
 
@@ -244,7 +252,7 @@ Why not: same reason as E. Also: the target audience for `commonly agent attach`
 
 Four phases, each independently reviewable.
 
-### Phase 1a — `attach` + `run` skeleton + session store
+### Phase 1a — `attach` + `run` skeleton + session store  **[shipped 2026-04-15, PR #194]**
 
 One PR, no adapter yet. Ships the driver shell end-to-end with a stub adapter so the run loop is reviewable in isolation:
 
@@ -254,7 +262,7 @@ One PR, no adapter yet. Ships the driver shell end-to-end with a stub adapter so
 - `cli/__tests__/attach.test.js`: attach → token persisted → revoke cleans up.
 - `cli/__tests__/run-loop.test.js`: run loop with mocked CAP client + stub adapter. Ack + error re-delivery paths.
 
-### Phase 1b — `claude` adapter + memory bridge
+### Phase 1b — `claude` adapter + memory bridge  **[shipped 2026-04-15, PR #195]**
 
 Second PR, builds on 1a. First real adapter + the ADR-003 memory bridge:
 

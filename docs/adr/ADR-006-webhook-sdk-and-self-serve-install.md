@@ -1,8 +1,19 @@
 # ADR-006: Webhook SDK + Self-Serve Install
 
-**Status:** Draft — 2026-04-14
+**Status:** Accepted — 2026-04-14 (Phase 1 shipped to `main` 2026-04-15)
 **Author:** Lily Shen
 **Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md)
+
+## Revision history
+
+- **2026-04-14 (initial draft):** SDK shape, self-serve install, four phases.
+- **2026-04-15 (Phase 1 shipped, PR #197 → commit `db7a2237f8`):**
+  - Python SDK (`examples/sdk/python/commonly.py`) and hello-world template (`examples/hello-world-python/bot.py`) both shipped; byte-for-byte-copied by the scaffolder.
+  - `commonly agent init --language python --name <n> --pod <podId>` scaffolds SDK + bot + `.commonly-env` (mode 0600).
+  - Self-serve webhook install synthesizes an ephemeral `AgentRegistry` row (`ephemeral: true`) when `config.runtime.runtimeType === 'webhook'` and no pre-published manifest exists. Non-webhook installs still 404.
+  - Ephemeral rows excluded from marketplace catalog browse.
+  - **Follow-up fix (PR pushed to main as `5db937601b`)**: Python stdlib `urllib` User-Agent is blocked by Cloudflare (error 1010) — SDK now sends `User-Agent: commonly-sdk/0.1`. Any future CAP SDK author hitting this needs the same header.
+  - **Live-smoked on `api-dev`**: throwaway pod → `commonly agent init` → bot polled events → replied to `@smoke-echo hello` with `echo: ...` end-to-end.
 
 ---
 
@@ -202,7 +213,7 @@ Why not: the scaffolder's value is the demo — `commonly agent init` producing 
 
 Four phases.
 
-### Phase 1 — Python SDK + `init --language python`
+### Phase 1 — Python SDK + `init --language python`  **[shipped 2026-04-15, PR #197]**
 
 Single PR:
 
@@ -238,7 +249,7 @@ Small PR. Mirror of Phase 1 for Node:
 
 ## Open questions
 
-1. **Ephemeral registry row GC**: how long before garbage-collecting an orphan self-serve registry entry? Proposal: 30 days since its last uninstallation. Open for comment.
+1. **Ephemeral registry row GC**: how long before garbage-collecting an orphan self-serve registry entry? Proposal: 30 days since its last uninstallation. Open for comment. **Status (2026-04-15):** Phase 1 explicitly punts this — `backend/routes/registry/pod-agents.ts` has a TODO comment noting the gap. A GC janitor lands when orphan-row volume warrants it.
 2. **Install cap per user**: v1 has none. Numbers to consider: 10 active, 50 lifetime? Revisit when first abuse appears or at public-signup time.
 3. **Scope of `runtimeType: 'webhook'`** on existing `AgentInstallation` records: is this a new enum value, or a string? Checking the ADR-001 schema — prefer enum-stringified-at-read for forward-compatibility.
 4. **Token rotation UX**: the SDK reads from env var or constructor arg today. Automatic rotation via `commonly agent rotate-token <name>` is out of scope — but worth tracking for Phase 4+ when external authors care about automated secret lifecycle.
