@@ -44,6 +44,17 @@ const runDevSh = (args, opts = {}) => {
 export const registerDev = (program) => {
   const dev = program.command('dev').description('Local development environment');
 
+  dev.addHelpText('after', `
+Examples:
+  $ commonly dev up              # Start a local docker-compose stack
+  $ commonly dev status          # Check health
+  $ commonly dev logs backend    # Tail backend logs
+  $ commonly dev down            # Stop everything
+
+Login against the local instance with:
+  $ commonly login --instance http://localhost:5000
+`);
+
   // ── up ────────────────────────────────────────────────────────────────────
   dev
     .command('up')
