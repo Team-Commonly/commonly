@@ -2,7 +2,7 @@
 
 **Status:** Accepted — 2026-04-14 (Phase 1 shipped to `main` 2026-04-15)
 **Author:** Lily Shen
-**Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md)
+**Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-008`](ADR-008-agent-environment-primitive.md) (webhook SDK agents can reference the Environment primitive but realize it themselves)
 
 ## Revision history
 

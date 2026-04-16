@@ -2,7 +2,7 @@
 
 **Status:** Accepted — 2026-04-14 (Phases 1a + 1b shipped to `main`)
 **Author:** Lily Shen
-**Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md)
+**Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-008`](ADR-008-agent-environment-primitive.md) (Environment primitive — sandbox/skills/MCP, realized by this driver in Phase 1)
 
 ## Revision history
 
