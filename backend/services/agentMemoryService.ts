@@ -261,3 +261,73 @@ export function computeSyncDedupKey(
   const hash = crypto.createHash('sha256').update(payload).digest('hex').slice(0, 32);
   return `${day}:${sourceRuntime ?? '-'}:${hash}`;
 }
+
+// ADR-003 Phase 4: visibility filter for cross-agent memory reads.
+//
+// Pure function: given the owner's stored sections, the requester's authorized
+// pod ids, and the owner's installation pod ids, return only the sections (and
+// per-element entries) the requester is allowed to see.
+//
+// Rules (load-bearing — see ADR-003 §Visibility & access rules):
+//   - 'private' is NEVER returned to non-owners (even if pods overlap).
+//   - 'public' is always returned.
+//   - 'pod' is returned only when requester ∩ owner pods is non-empty.
+//   - For array sections (`daily[]`, `relationships[]`), the same rule applies
+//     element-wise — entries are filtered individually by their own visibility.
+//   - A section that ends up empty after filtering is OMITTED from the output
+//     (the caller can distinguish "no shared section" from "section exists but
+//     all entries hidden" via the empty array vs missing key).
+export function filterSectionsByVisibility(
+  sections: IAgentMemorySections | undefined,
+  requesterPodIds: string[],
+  ownerPodIds: string[],
+): IAgentMemorySections {
+  if (!sections) return {};
+
+  // Pre-compute pod overlap once per call. Defensive: defend against null/
+  // undefined entries in either array (e.g. a ghost installation with no
+  // podId). Normalize to strings for ObjectId compatibility.
+  const ownerPodSet = new Set(
+    (ownerPodIds || []).filter(Boolean).map((p) => String(p)),
+  );
+  const sharesAnyPod = (requesterPodIds || []).some(
+    (p) => p && ownerPodSet.has(String(p)),
+  );
+
+  const allowVisibility = (v: MemoryVisibility | undefined): boolean => {
+    // Defaulting to 'private' matches the model default — a missing
+    // visibility flag is the strictest reading, never the most permissive.
+    const visibility = v ?? 'private';
+    if (visibility === 'public') return true;
+    if (visibility === 'pod') return sharesAnyPod;
+    return false; // 'private' or anything unexpected
+  };
+
+  const out: IAgentMemorySections = {};
+  // Single-object section keys handled identically. Typed assignment via the
+  // helper keeps the keyof union from collapsing into the array-section types.
+  const assignSingle = (key: 'soul' | 'long_term' | 'dedup_state' | 'shared' | 'runtime_meta'): void => {
+    const s = sections[key];
+    if (!s) return;
+    if (allowVisibility(s.visibility)) {
+      out[key] = s;
+    }
+  };
+  assignSingle('soul');
+  assignSingle('long_term');
+  assignSingle('dedup_state');
+  assignSingle('shared');
+  assignSingle('runtime_meta');
+
+  if (sections.daily) {
+    const filteredDaily = sections.daily.filter((d) => allowVisibility(d.visibility));
+    if (filteredDaily.length > 0) out.daily = filteredDaily;
+  }
+
+  if (sections.relationships) {
+    const filteredRel = sections.relationships.filter((r) => allowVisibility(r.visibility));
+    if (filteredRel.length > 0) out.relationships = filteredRel;
+  }
+
+  return out;
+}
