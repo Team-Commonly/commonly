@@ -7,6 +7,10 @@
 
 import { CommonlyClient } from "../client.js";
 import { Config } from "../index.js";
+import * as CapPoll from "./cap-poll.js";
+import * as CapAck from "./cap-ack.js";
+import * as CapPost from "./cap-post.js";
+import * as CapMemorySync from "./cap-memory-sync.js";
 
 export interface Tool {
   name: string;
@@ -202,6 +206,16 @@ export const tools: Tool[] = [
       required: ["podId"],
     },
   },
+  // ---------------------------------------------------------------------------
+  // CAP verbs (ADR-004) — added in ADR-007 Phase 2.
+  // These require COMMONLY_AGENT_TOKEN and hit /api/agents/runtime/* instead
+  // of /api/v1/*. They are ADDITIVE — the 7 user-space tools above are
+  // unchanged and continue to use the user token.
+  // ---------------------------------------------------------------------------
+  CapPoll.definition,
+  CapAck.definition,
+  CapPost.definition,
+  CapMemorySync.definition,
 ];
 
 /**
@@ -344,6 +358,46 @@ export async function handleToolCall(
         })),
         hint: "Skills are derived from team activity. Use instructions as guidance for tasks.",
       };
+    }
+
+    // -------------------------------------------------------------------------
+    // CAP verbs (ADR-004 / ADR-007 Phase 2). Each handler lives in its own
+    // module so it can be tested independently and so adding/removing CAP
+    // verbs doesn't churn the user-space switch above.
+    // -------------------------------------------------------------------------
+    case CapPoll.definition.name:
+      return CapPoll.handler(client, args as CapPoll.CapPollArgs);
+
+    case CapAck.definition.name: {
+      const eventId = args.eventId as string | undefined;
+      if (!eventId) throw new Error("eventId is required");
+      return CapAck.handler(client, { eventId });
+    }
+
+    case CapPost.definition.name: {
+      const content = args.content as string | undefined;
+      if (!content) throw new Error("content is required");
+      return CapPost.handler(
+        client,
+        {
+          podId: args.podId as string | undefined,
+          content,
+          replyToMessageId: args.replyToMessageId as string | undefined,
+          messageType: args.messageType as string | undefined,
+          metadata: args.metadata as Record<string, unknown> | undefined,
+        },
+        config
+      );
+    }
+
+    case CapMemorySync.definition.name: {
+      // Validation lives in the tool module (cap-memory-sync.ts) and in the
+      // client (client.ts). Dispatch just coerces arg shapes and forwards.
+      return CapMemorySync.handler(client, {
+        sections: args.sections as Record<string, unknown>,
+        mode: args.mode as "full" | "patch",
+        sourceRuntime: args.sourceRuntime as string | undefined,
+      });
     }
 
     default:

@@ -15,9 +15,17 @@ export interface Resource {
 }
 
 /**
- * Get list of available resources (pod memory files)
+ * Get list of available resources (pod memory files).
+ *
+ * Resources are derived from the user's pod list, which requires a user
+ * token. In agent-only mode (CAP-only deployment) the user token is absent
+ * and we have no way to enumerate pods — return an empty list rather than
+ * throwing, so the MCP `resources/list` request still succeeds.
  */
 export async function getResources(client: CommonlyClient): Promise<Resource[]> {
+  if (!client.hasUserAuth()) {
+    return [];
+  }
   const pods = await client.listPods();
 
   const resources: Resource[] = [];
