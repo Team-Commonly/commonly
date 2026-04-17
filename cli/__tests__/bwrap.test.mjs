@@ -86,10 +86,14 @@ describe('wrapArgvWithBwrap', () => {
       { sandbox: { filesystem: { 'read-outside': ['/home/user/.claude'] } } },
       { workspacePath: '/tmp/ws' },
     );
+    // bwrap binds are emitted as the triple `--ro-bind-try <source> <dest>`,
+    // so the path appears twice in a row. Assert the exact sequence rather
+    // than probing by index — the latter is fragile vs. the default
+    // read-outside additions that land in argv before the user entry.
     const idx = argv.indexOf('/home/user/.claude');
     expect(idx).toBeGreaterThan(-1);
-    expect(argv[idx - 1]).toBe('/home/user/.claude');
-    expect(argv[idx - 2]).toBe('--ro-bind-try');
+    expect(argv[idx - 1]).toBe('--ro-bind-try');
+    expect(argv[idx + 1]).toBe('/home/user/.claude');
   });
 
   itLinux('rejects empty inner argv', () => {
