@@ -6,6 +6,13 @@
  * Memory preamble: if ctx.memoryLongTerm is non-empty, the adapter prepends
  * it to the prompt as a system-context preamble (§Memory bridge).
  *
+ * Environment (ADR-008 Phase 1): if ctx.environment is present, the adapter
+ * symlinks declared Claude skills into `<cwd>/.claude/skills/`, writes an MCP
+ * config file at `<cwd>/.commonly/mcp-config.json` when `mcp` is declared,
+ * and wraps the argv with bwrap when `sandbox.mode === 'bwrap'`. The spawn
+ * binary becomes `bwrap` in that case — claude moves to the inner argv.
+ * When ctx.environment is absent, behaviour is identical to pre-ADR-008.
+ *
  * Session continuity (IMPORTANT — the two claude flags are not interchangeable):
  *   - First turn (no persisted id): mint a UUID and pass `--session-id <uuid>`.
  *     claude treats `--session-id` as "CREATE a session with this exact UUID"
@@ -32,6 +39,11 @@
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
+import { mkdir, writeFile } from 'fs/promises';
+import { join } from 'path';
+
+import { linkSkills } from '../environment.js';
+import { wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // ADR-005 §Spawning semantics
 
@@ -40,8 +52,8 @@ const buildPrompt = (prompt, memoryLongTerm) => {
   return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
 };
 
-const runClaude = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
-  const proc = spawnImpl('claude', args, { cwd, env });
+const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+  const proc = spawnImpl(cmd, args, { cwd, env });
   let stdout = '';
   let stderr = '';
   let timedOut = false;
@@ -64,6 +76,61 @@ const runClaude = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new
     resolve(stdout);
   });
 });
+
+// ── MCP config write — claude consumes this via --mcp-config <path> ─────────
+
+const buildMcpConfig = (mcpServers) => {
+  // Shape: `{ mcpServers: { <name>: { ... } } }` — the standard MCP client
+  // config, which claude's `--mcp-config` reads directly.
+  const mcpServersMap = {};
+  for (const server of mcpServers) {
+    const entry = { type: server.transport || 'stdio' };
+    if (server.url) entry.url = server.url;
+    if (server.command) {
+      const [command, ...args] = server.command;
+      entry.command = command;
+      if (args.length) entry.args = args;
+    }
+    if (server.env) entry.env = server.env;
+    mcpServersMap[server.name] = entry;
+  }
+  return { mcpServers: mcpServersMap };
+};
+
+// Regenerated on every spawn from the env spec; do not hand-edit — the file
+// is overwritten before each `claude` invocation, so any local changes are
+// silently clobbered. ADR-008 §invariant #5 (edits propagate on next spawn).
+const writeMcpConfig = async (cwd, mcpServers) => {
+  const dir = join(cwd, '.commonly');
+  await mkdir(dir, { recursive: true });
+  const file = join(dir, 'mcp-config.json');
+  await writeFile(file, JSON.stringify(buildMcpConfig(mcpServers), null, 2), 'utf8');
+  return file;
+};
+
+// ── argv preparation — environment-aware ────────────────────────────────────
+
+const prepareArgv = async (innerArgv, ctx) => {
+  const env = ctx.environment;
+  if (!env) return { cmd: 'claude', args: innerArgv };
+
+  if (Array.isArray(env.mcp) && env.mcp.length > 0 && ctx.cwd) {
+    const configPath = await writeMcpConfig(ctx.cwd, env.mcp);
+    // Insert --mcp-config immediately after the subcommand-style `-p` block
+    // so claude parses it before prompt collection begins.
+    innerArgv = [...innerArgv, '--mcp-config', configPath];
+  }
+
+  const sandboxMode = env.sandbox?.mode;
+  if (sandboxMode === 'bwrap') {
+    const wrapped = wrapArgvWithBwrap(['claude', ...innerArgv], env, {
+      workspacePath: ctx.cwd,
+    });
+    return { cmd: wrapped[0], args: wrapped.slice(1) };
+  }
+
+  return { cmd: 'claude', args: innerArgv };
+};
 
 export default {
   name: 'claude',
@@ -90,10 +157,24 @@ export default {
     const sessionId = ctx.sessionId || randomUUID();
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm || '');
     const sessionFlag = isResume ? '--resume' : '--session-id';
-    const args = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId];
+    const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId];
+
+    if (ctx.environment && ctx.cwd) {
+      const skills = await linkSkills(ctx.environment, ctx.cwd);
+      if (skills.conflicted.length > 0) {
+        for (const c of skills.conflicted) {
+          // eslint-disable-next-line no-console
+          console.warn(`[claude] skill not linked (${c.reason}): ${c.path}`);
+        }
+      }
+      if (ctx.onSkillsLinked) ctx.onSkillsLinked(skills);
+    }
+
+    const { cmd, args } = await prepareArgv(baseArgs, ctx);
 
     try {
       const stdout = await runClaude({
+        cmd,
         args,
         cwd: ctx.cwd,
         env: ctx.env,
@@ -108,8 +189,11 @@ export default {
       // session id poisons every subsequent event re-delivery.
       if (isResume && /already in use|no conversation|no session/i.test(String(err.message))) {
         const freshId = randomUUID();
+        const retryBase = ['-p', fullPrompt, '--output-format', 'text', '--session-id', freshId];
+        const retry = await prepareArgv(retryBase, ctx);
         const stdout = await runClaude({
-          args: ['-p', fullPrompt, '--output-format', 'text', '--session-id', freshId],
+          cmd: retry.cmd,
+          args: retry.args,
           cwd: ctx.cwd,
           env: ctx.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,

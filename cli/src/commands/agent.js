@@ -23,6 +23,8 @@ import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import { getSession, setSession, clearSessions } from '../lib/session-store.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
+import { parseEnvironmentFile, resolveWorkspace } from '../lib/environment.js';
+import { detectBwrap } from '../lib/sandbox/bwrap.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
 
@@ -113,6 +115,7 @@ export const performAttach = async ({
   agentName,
   podId,
   displayName,
+  envPath = null,
   log = () => {},
 }) => {
   const adapter = getAdapter(adapterName);
@@ -125,6 +128,36 @@ export const performAttach = async ({
   const detected = await adapter.detect();
   if (!detected) {
     throw new Error(`${adapterName} not found on PATH. Install it and retry.`);
+  }
+
+  // ADR-008 §invariant #4: sandbox failure is a hard stop. Validate the env
+  // here so attach refuses up front rather than handing the user a runtime
+  // that silently degrades to unsandboxed.
+  let environment = null;
+  let workspace = null;
+  if (envPath) {
+    environment = await parseEnvironmentFile(envPath);
+    workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
+    log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
+
+    const sandboxMode = environment.sandbox?.mode || 'none';
+    if (sandboxMode === 'bwrap') {
+      const bwrap = detectBwrap();
+      if (!bwrap.available) {
+        throw new Error(`sandbox.mode=bwrap requested but unavailable: ${bwrap.error}`);
+      }
+      if (environment.sandbox?.network?.policy === 'restricted') {
+        log(
+          'WARNING: bwrap mode does not enforce host allowlist; declared hosts '
+          + 'are advisory in Phase 1. Use sandbox.mode=container for enforced policy.',
+        );
+      }
+    } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
+      throw new Error(
+        `sandbox.mode=${sandboxMode} is not yet implemented in the local-CLI driver. `
+        + `Phase 1 supports: none, bwrap.`,
+      );
+    }
   }
 
   // Idempotent publish — already-published is expected and fine. Install will
@@ -146,6 +179,9 @@ export const performAttach = async ({
   // config.runtime is an opaque blob the backend stores verbatim — kernel
   // does not interpret runtimeType here. ADR-004 §Identity's `sourceRuntime`
   // is a different field (memory-sync tag); don't conflate the two.
+  // ADR-008 §Attach + run with an environment: include the resolved env spec
+  // on config.environment so cross-driver implementations can realize it
+  // server-side without re-reading the user's file.
   const installResult = await client.post('/api/registry/install', {
     agentName,
     podId,
@@ -156,6 +192,7 @@ export const performAttach = async ({
         runtimeType: 'local-cli',
         wrappedCli: adapter.name,
       },
+      ...(environment ? { environment } : {}),
     },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
   });
@@ -174,7 +211,15 @@ export const performAttach = async ({
     throw new Error('Runtime token was not returned by install or tokens endpoint');
   }
 
-  return { installation, instanceId, runtimeToken, detected, wrappedCli: adapter.name };
+  return {
+    installation,
+    instanceId,
+    runtimeToken,
+    detected,
+    wrappedCli: adapter.name,
+    environment,
+    workspace,
+  };
 };
 
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
@@ -206,6 +251,8 @@ export const performRun = ({
   agentName,
   instanceId = 'default',
   podId = null,
+  environment = null,
+  workspacePath = null,
   intervalMs = 5000,
   log = () => {},
   onError,
@@ -224,8 +271,9 @@ export const performRun = ({
   // Adapters default `ctx.cwd` to this path. Node's child_process.spawn
   // rejects with "spawn <bin> ENOENT" when cwd does not exist — same shape
   // as binary-not-found — so we ensure it up front to avoid the confusing
-  // diagnostic.
-  const agentCwd = join(tmpdir(), 'commonly-agents', agentName);
+  // diagnostic. ADR-008: when an environment spec was attached, the resolved
+  // workspace path replaces the /tmp default.
+  const agentCwd = workspacePath || join(tmpdir(), 'commonly-agents', agentName);
   if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
 
   const processEvent = async (event) => {
@@ -248,6 +296,7 @@ export const performRun = ({
       cwd: agentCwd,
       env: process.env,
       memoryLongTerm,
+      environment,
       metadata: { event },
     });
 
@@ -657,13 +706,14 @@ Docs:
       });
     });
 
-  // ── attach (ADR-005) ──────────────────────────────────────────────────────
+  // ── attach (ADR-005, ADR-008) ─────────────────────────────────────────────
   agent
     .command('attach <adapter>')
     .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|…)')
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
     .option('--display <name>', 'Display name shown in the pod')
+    .option('--env <path>', 'Path to environment.json (ADR-008 — sandbox/skills/MCP)')
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (adapterName, opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -673,15 +723,19 @@ Docs:
       const client = createClient({ instance: instanceUrl, token });
 
       try {
-        const { installation, instanceId, runtimeToken, detected, wrappedCli } =
-          await performAttach({
-            client,
-            adapterName,
-            agentName: opts.name,
-            podId: opts.pod,
-            displayName: opts.display,
-            log: (line) => console.warn(`[attach] ${line}`),
-          });
+        const envAbsPath = opts.env ? pathResolve(opts.env) : null;
+        const {
+          installation, instanceId, runtimeToken, detected, wrappedCli,
+          environment, workspace,
+        } = await performAttach({
+          client,
+          adapterName,
+          agentName: opts.name,
+          podId: opts.pod,
+          displayName: opts.display,
+          envPath: envAbsPath,
+          log: (line) => console.warn(`[attach] ${line}`),
+        });
 
         saveAgentToken(opts.name, {
           agentName: opts.name,
@@ -690,11 +744,18 @@ Docs:
           instanceUrl,
           runtimeToken,
           adapter: wrappedCli,
+          ...(environment ? {
+            environment,
+            workspacePath: workspace?.path || null,
+          } : {}),
         });
 
         console.log(`✓ ${wrappedCli} detected at ${detected.path} (${detected.version})`);
         console.log(`✓ Agent '${installation.agentName}' registered in pod ${opts.pod} (${instanceId})`);
         console.log(`✓ Runtime token saved to ${tokenFile(opts.name)}`);
+        if (workspace) {
+          console.log(`✓ Workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
+        }
         console.log(`\n  Run with: commonly agent run ${opts.name}`);
       } catch (err) {
         console.error(`Attach failed: ${err.message}`);
@@ -729,6 +790,8 @@ Docs:
         agentName: record.agentName,
         instanceId: record.instanceId,
         podId: record.podId,
+        environment: record.environment || null,
+        workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         log: (line) => console.log(`[${name}] ${line}`),
         onError: (err) => console.error(`[${name}] ${err.message}`),
