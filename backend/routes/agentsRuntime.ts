@@ -27,7 +27,9 @@ const {
   mergePatchSections,
   computeSyncDedupKey,
   isValidYMD,
+  filterSectionsByVisibility,
 } = require('../services/agentMemoryService');
+const AgentAskService = require('../services/agentAskService');
 const DMService = require('../services/dmService');
 const ChatSummarizerService = require('../services/chatSummarizerService');
 const AgentMentionService = require('../services/agentMentionService');
@@ -2164,6 +2166,213 @@ router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth
   } catch (error: any) {
     console.error('Error publishing via integration for agent:', error);
     return res.status(500).json({ message: (error as Error).message || 'Failed to publish via integration' });
+  }
+});
+
+// ===========================================================================
+// ADR-003 Phase 4 — cross-agent primitives
+// ===========================================================================
+
+/**
+ * GET /memory/shared/:agentName/:instanceId? (agent runtime token auth)
+ *
+ * ADR-003 Phase 4. Read another agent's envelope, filtered by visibility:
+ *   - 'public' sections always returned
+ *   - 'pod' sections returned only if requester ∩ owner pods is non-empty
+ *   - 'private' sections NEVER returned (owner reads via /memory)
+ *
+ * For array sections (`daily[]`, `relationships[]`), filtering is per-element.
+ * Returns `sharedPods` so the caller knows which pods grounded the access.
+ *
+ * URL shape rationale: chose `/memory/shared/...` over a separate top-level
+ * `/agents/:name/...` route because (a) it groups with the existing memory
+ * surface (GET /memory, PUT /memory, POST /memory/sync), (b) it makes the
+ * "shared view" framing explicit in the path — never ambiguous with the
+ * owner's own /memory read.
+ */
+router.get(
+  '/memory/shared/:agentName/:instanceId?',
+  agentRuntimeAuth,
+  async (req: any, res: any) => {
+    try {
+      const targetAgent = String(req.params.agentName || '').trim().toLowerCase();
+      const targetInstanceId = String(req.params.instanceId || 'default').trim() || 'default';
+      if (!targetAgent) {
+        return res.status(400).json({ message: 'agentName is required' });
+      }
+
+      const requester = resolveMemoryIdentity(req);
+      const requesterAuthorizedPodIds = Array.isArray(req.agentAuthorizedPodIds)
+        ? (req.agentAuthorizedPodIds as string[])
+        : [];
+
+      const record = await AgentMemory.findOne({
+        agentName: targetAgent,
+        instanceId: targetInstanceId,
+      }).lean();
+      if (!record) {
+        return res.status(404).json({ message: 'agent memory not found' });
+      }
+
+      // Owner reading their own envelope through this route still gets the
+      // visibility-filtered view — by design. Owners use GET /memory for the
+      // full envelope. This keeps the contract for /memory/shared simple:
+      // never returns private data, period.
+      const ownerInstallations = await AgentInstallation.find({
+        agentName: targetAgent,
+        instanceId: targetInstanceId,
+        status: 'active',
+      }).select('podId').lean();
+      const ownerPodIds = (ownerInstallations as Array<{ podId?: any }>)
+        .map((i) => (i?.podId ? String(i.podId) : ''))
+        .filter(Boolean);
+
+      const sharedPods = (requesterAuthorizedPodIds || [])
+        .filter((p) => p && ownerPodIds.includes(String(p)))
+        .map(String);
+
+      const filteredSections = filterSectionsByVisibility(
+        record.sections,
+        requesterAuthorizedPodIds,
+        ownerPodIds,
+      );
+
+      return res.json({
+        agentName: targetAgent,
+        instanceId: targetInstanceId,
+        sections: filteredSections,
+        sharedPods,
+        // sourceRuntime is metadata about who wrote the envelope, not user
+        // content — exposing it tells the requester which driver an agent
+        // runs under, which is a publicly-relevant fact (no privacy leak).
+        sourceRuntime: record.sourceRuntime,
+        schemaVersion: record.schemaVersion,
+        // Echo requester identity for debuggability — useful when an agent's
+        // logs show "got {} back" and they want to confirm who they were.
+        requester: {
+          agentName: requester?.agentName,
+          instanceId: requester?.instanceId,
+        },
+      });
+    } catch (err: any) {
+      console.error('GET /memory/shared error:', err);
+      return res.status(500).json({ message: 'Failed to read shared memory' });
+    }
+  },
+);
+
+/**
+ * POST /pods/:podId/ask (agent runtime token auth)
+ *
+ * ADR-003 Phase 4. Cross-agent ask. Body:
+ *   {
+ *     targetAgent: string,
+ *     targetInstanceId?: string,    // defaults to 'default'
+ *     question: string,
+ *     requestId?: string,           // server generates if omitted
+ *   }
+ *
+ * Returns: { requestId, expiresAt }. The target agent receives an
+ * `agent.ask` event; they call POST /asks/:requestId/respond when ready.
+ *
+ * The route requires the caller to be a participant in the named pod
+ * (their AgentInstallation podIds, set by agentRuntimeAuth, must include
+ * podId). This prevents an agent from asking across pods it doesn't share
+ * with the target.
+ */
+router.post('/pods/:podId/ask', agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const podId = String(req.params.podId || '').trim();
+    if (!podId) return res.status(400).json({ message: 'podId is required' });
+
+    const authorized = Array.isArray(req.agentAuthorizedPodIds)
+      ? (req.agentAuthorizedPodIds as string[])
+      : [];
+    if (!authorized.map(String).includes(podId)) {
+      return res.status(403).json({ message: 'agent is not a member of this pod' });
+    }
+
+    const sender = resolveMemoryIdentity(req);
+    if (!sender?.agentName) {
+      return res.status(403).json({ message: 'Could not resolve agent identity' });
+    }
+
+    const { targetAgent, targetInstanceId, question, requestId } = req.body || {};
+    if (typeof targetAgent !== 'string' || !targetAgent.trim()) {
+      return res.status(400).json({ message: 'targetAgent is required' });
+    }
+    if (typeof question !== 'string' || !question.trim()) {
+      return res.status(400).json({ message: 'question is required' });
+    }
+    if (targetInstanceId !== undefined && typeof targetInstanceId !== 'string') {
+      return res.status(400).json({ message: 'targetInstanceId must be a string' });
+    }
+    if (requestId !== undefined && typeof requestId !== 'string') {
+      return res.status(400).json({ message: 'requestId must be a string' });
+    }
+
+    try {
+      const result = await AgentAskService.askAgent({
+        fromAgent: sender.agentName,
+        fromInstanceId: sender.instanceId,
+        podId,
+        targetAgent,
+        targetInstanceId,
+        question,
+        requestId,
+      });
+      return res.json({ requestId: result.requestId, expiresAt: result.expiresAt });
+    } catch (askErr: any) {
+      if (askErr instanceof AgentAskService.AgentAskError) {
+        return res.status(askErr.status).json({ message: askErr.message, code: askErr.code });
+      }
+      throw askErr;
+    }
+  } catch (err: any) {
+    console.error('POST /pods/:podId/ask error:', err);
+    return res.status(500).json({ message: 'Failed to ask agent' });
+  }
+});
+
+/**
+ * POST /asks/:requestId/respond (agent runtime token auth)
+ *
+ * ADR-003 Phase 4. Respond to an open ask. Body: { content: string }.
+ * Only the agent identity that the ask was originally targeted at may
+ * respond — enforced inside AgentAskService.respondToAsk.
+ */
+router.post('/asks/:requestId/respond', agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const requestId = String(req.params.requestId || '').trim();
+    if (!requestId) return res.status(400).json({ message: 'requestId is required' });
+
+    const responder = resolveMemoryIdentity(req);
+    if (!responder?.agentName) {
+      return res.status(403).json({ message: 'Could not resolve agent identity' });
+    }
+
+    const { content } = req.body || {};
+    if (typeof content !== 'string' || !content.trim()) {
+      return res.status(400).json({ message: 'content is required' });
+    }
+
+    try {
+      await AgentAskService.respondToAsk({
+        fromAgent: responder.agentName,
+        fromInstanceId: responder.instanceId,
+        requestId,
+        content,
+      });
+      return res.json({ ok: true });
+    } catch (respondErr: any) {
+      if (respondErr instanceof AgentAskService.AgentAskError) {
+        return res.status(respondErr.status).json({ message: respondErr.message, code: respondErr.code });
+      }
+      throw respondErr;
+    }
+  } catch (err: any) {
+    console.error('POST /asks/:requestId/respond error:', err);
+    return res.status(500).json({ message: 'Failed to respond to ask' });
   }
 });
 
