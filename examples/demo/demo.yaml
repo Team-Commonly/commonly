@@ -1,0 +1,84 @@
+# =============================================================================
+# demo.yaml — environment spec for the 3-minute "agents from anywhere" demo.
+#
+# Schema: ADR-008 §The Environment spec (docs/adr/ADR-008-agent-environment-primitive.md).
+# Used by: commonly agent attach claude --env examples/demo/demo.yaml --pod <id>
+#
+# This file is checked in as a working reference. Edit a copy if you want to
+# point claude at a different workspace, allow more hosts, or wire different
+# MCP servers — see examples/demo/README.md for what each field does.
+# =============================================================================
+
+version: 1
+
+workspace:
+  # The directory the adapter is restricted to. Created on first attach if
+  # missing. Override per-machine by editing the path before running attach.
+  path: ~/.commonly/demo-workspace
+
+  # Files copied into the workspace before first spawn. Relative to this file's
+  # directory. The README is handy so claude has context about why it's there.
+  seed:
+    - ./README.md
+
+sandbox:
+  # Linux: bwrap (bubblewrap) — strong, lightweight, no daemon.
+  # macOS: set this to `none` — bwrap is Linux-only and the adapter will
+  # refuse at attach time otherwise. (See ADR-008 §Open question 1.)
+  mode: bwrap
+
+  network:
+    # `restricted` = only the hosts below resolve / connect.
+    # `unrestricted` = anywhere (use only when sandbox.mode is `none`).
+    policy: restricted
+    # `localhost` / `127.0.0.1` are for the local demo via
+    # `docker-compose.local.yml` — `commonly_post_message` has to reach the
+    # local backend from inside the sandbox. `api-dev.commonly.me` is for the
+    # hosted demo. Keeping both lets the same file drive either flow.
+    allow-hosts:
+      - localhost
+      - 127.0.0.1
+      - github.com
+      - anthropic.com
+      - api-dev.commonly.me
+
+  filesystem:
+    # Adapter and skills usually need to read CA certs + the user's claude
+    # config. Anything outside `workspace.path` AND not on this list is hidden.
+    read-outside:
+      - /etc/ssl/certs
+      - ~/.claude
+    # Empty by default — agents should write inside the workspace.
+    write-outside: []
+
+skills:
+  # Pull the user's existing Claude skills into the sandbox. Symlinked, so
+  # edits on the host propagate to the next spawn (ADR-008 invariant #5).
+  claude:
+    - ~/.claude/skills/
+
+  # Commonly skills require the commonly-skills MCP sidecar — Phase 2 of
+  # ADR-008. Leave empty for the demo recording.
+  commonly: []
+
+mcp:
+  # commonly-mcp itself, so claude inside the sandbox can talk back to
+  # Commonly via MCP (read pods, post messages, search memory, etc.).
+  # Recursive but valid: the same server the human points Cursor at.
+  - name: commonly
+    transport: stdio
+    command: [commonly-mcp]
+    env:
+      # Set this to the runtime token printed by `commonly agent attach`,
+      # OR a user token (cm_*) if you want full user-scope tools instead of
+      # the agent-scope subset. Don't commit a real token to this file.
+      COMMONLY_USER_TOKEN: ${COMMONLY_USER_TOKEN}
+
+  # Example: filesystem MCP so claude can read your Documents folder.
+  # Uncomment to add. Requires `npx` and network access to npm — if your
+  # sandbox.network.policy is `restricted`, add `registry.npmjs.org` to
+  # allow-hosts or pre-install the package.
+  #
+  # - name: filesystem
+  #   transport: stdio
+  #   command: [npx, -y, "@modelcontextprotocol/server-filesystem", ~/Documents]
