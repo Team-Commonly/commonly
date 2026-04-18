@@ -14,7 +14,22 @@
  */
 
 import { spawnSync } from 'child_process';
-import { isAbsolute } from 'path';
+import { isAbsolute, join } from 'path';
+import { homedir } from 'os';
+
+// Tilde-expansion lives here (and not in environment.js's expandHome) because
+// bwrap reads OS-level paths verbatim — `~` is a shell construct, not a
+// kernel one, so any `~/foo` entry in `read-outside` / `write-outside` would
+// be passed literally to `--ro-bind-try` and silently skipped (the `-try`
+// variant tolerates missing paths). Surfaced live during the 2026-04-17
+// demo validation: `~/.local/bin` was declared but `claude` still wasn't
+// reachable inside the sandbox.
+const expandHome = (p) => {
+  if (!p || typeof p !== 'string') return p;
+  if (p === '~') return homedir();
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2));
+  return p;
+};
 
 const MACOS_MESSAGE = 'bwrap is Linux-only; use sandbox.mode: none in Phase 1 or wait for sandbox-exec adapter';
 
@@ -88,7 +103,7 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   ];
 
   const userReadOutside = Array.isArray(env?.sandbox?.filesystem?.['read-outside'])
-    ? env.sandbox.filesystem['read-outside']
+    ? env.sandbox.filesystem['read-outside'].map(expandHome)
     : [];
   const roBinds = [...new Set([...DEFAULT_RO_BINDS, ...userReadOutside])];
   for (const p of roBinds) {
@@ -96,7 +111,7 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   }
 
   const userWriteOutside = Array.isArray(env?.sandbox?.filesystem?.['write-outside'])
-    ? env.sandbox.filesystem['write-outside']
+    ? env.sandbox.filesystem['write-outside'].map(expandHome)
     : [];
   for (const p of userWriteOutside) {
     flags.push('--bind-try', p, p);

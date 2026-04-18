@@ -118,10 +118,15 @@ describe('claude adapter — ctx.environment', () => {
     });
 
     expect(calls[0].cmd).toBe('bwrap');
-    // Inner argv after `--` must start with `claude`.
+    // Inner argv after `--` must invoke claude. We resolve to an absolute
+    // path before wrapping (so bwrap's execvp doesn't depend on PATH being
+    // set up correctly inside the sandbox), so the inner argv[0] is either
+    // the bare `claude` (when `which` returns nothing) or an absolute path
+    // ending in `/claude`.
     const sepIdx = calls[0].args.indexOf('--');
     expect(sepIdx).toBeGreaterThan(-1);
-    expect(calls[0].args[sepIdx + 1]).toBe('claude');
+    const innerCmd = calls[0].args[sepIdx + 1];
+    expect(innerCmd === 'claude' || innerCmd.endsWith('/claude')).toBe(true);
   });
 
   test('no environment → behaviour identical to pre-ADR-008 (cmd=claude, no MCP file)', async () => {

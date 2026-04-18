@@ -110,6 +110,24 @@ const writeMcpConfig = async (cwd, mcpServers) => {
 
 // ── argv preparation — environment-aware ────────────────────────────────────
 
+// Resolve the absolute path of `claude` so bwrap's execvp doesn't depend on
+// PATH being correctly populated inside the sandbox namespace. Surfaced live
+// during the 2026-04-17 demo validation: bwrap silently inherits parent
+// PATH but cannot reach the user's `~/.local/bin` without an absolute path
+// argv[0], even when that directory is bound read-only into the sandbox.
+const resolveClaudePath = () => {
+  // Defensive: spawnSync can return undefined under aggressive mocks (the
+  // adapters.claude.environment.test.mjs suite stubs child_process so no real
+  // process runs). Treat any failure mode as "use the bare command name."
+  let which;
+  try { which = spawnSync('which', ['claude'], { encoding: 'utf8' }); } catch { /* ignore */ }
+  if (which && which.status === 0) {
+    const p = (which.stdout || '').trim();
+    if (p) return p;
+  }
+  return 'claude';
+};
+
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
   if (!env) return { cmd: 'claude', args: innerArgv };
@@ -123,7 +141,8 @@ const prepareArgv = async (innerArgv, ctx) => {
 
   const sandboxMode = env.sandbox?.mode;
   if (sandboxMode === 'bwrap') {
-    const wrapped = wrapArgvWithBwrap(['claude', ...innerArgv], env, {
+    const claudeBin = resolveClaudePath();
+    const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
     });
     return { cmd: wrapped[0], args: wrapped.slice(1) };

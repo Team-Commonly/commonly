@@ -86,10 +86,37 @@ describe('wrapArgvWithBwrap', () => {
       { sandbox: { filesystem: { 'read-outside': ['/home/user/.claude'] } } },
       { workspacePath: '/tmp/ws' },
     );
+    // bwrap binds emit the triple `--ro-bind-try <source> <dest>`, so the
+    // path appears twice in a row. indexOf returns the FIRST occurrence
+    // (the source position), so the flag is at idx-1 and the dest at idx+1.
     const idx = argv.indexOf('/home/user/.claude');
     expect(idx).toBeGreaterThan(-1);
-    expect(argv[idx - 1]).toBe('/home/user/.claude');
-    expect(argv[idx - 2]).toBe('--ro-bind-try');
+    expect(argv[idx - 1]).toBe('--ro-bind-try');
+    expect(argv[idx + 1]).toBe('/home/user/.claude');
+  });
+
+  itLinux('expands ~ in read-outside / write-outside paths', async () => {
+    // Surfaced live during 2026-04-17 demo validation: `~/.local/bin` was
+    // declared in read-outside but bwrap saw the literal `~` and the
+    // --ro-bind-try silently no-op'd. Bind args must be host-absolute.
+    const { homedir } = await import('os');
+    const home = homedir();
+    const argv = wrapArgvWithBwrap(
+      ['claude'],
+      {
+        sandbox: {
+          filesystem: {
+            'read-outside': ['~/.claude'],
+            'write-outside': ['~/work'],
+          },
+        },
+      },
+      { workspacePath: '/tmp/ws' },
+    );
+    expect(argv).toContain(`${home}/.claude`);
+    expect(argv).toContain(`${home}/work`);
+    // The literal tilde must NOT appear as a bind arg.
+    expect(argv.some((a) => a === '~/.claude' || a === '~/work')).toBe(false);
   });
 
   itLinux('rejects empty inner argv', () => {
