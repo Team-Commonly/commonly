@@ -1,105 +1,63 @@
 // @ts-nocheck
-// ADR-003 Phase 4: agentRateLimit middleware tests.
+// ADR-003 Phase 4: agentRateLimit key-generator tests.
 //
-// Behavior-focused tests against the express-rate-limit-backed middleware.
-// No DB, no HTTP server — we hand-build req/res objects and call the
-// middleware directly. Each test instantiates a fresh middleware so the
-// internal MemoryStore is reset between cases.
+// The express-rate-limit invocation itself is inlined in
+// routes/agentsRuntime.ts (so CodeQL recognises it). This module only
+// exposes the key generator — these tests cover that the same caller
+// produces a stable key across requests, and that different callers
+// produce distinct keys.
 
-const agentRateLimit = require('../../../middleware/agentRateLimit');
+const crypto = require('crypto');
+const { agentRateLimitKeyGenerator } = require('../../../middleware/agentRateLimit');
 
-const mkReq = (tokenHash, extras = {}) => ({
-  headers: { authorization: `Bearer ${tokenHash}` },
-  agentTokenHash: tokenHash,
-  ip: '10.0.0.1',
-  // express-rate-limit expects an `app` reference and basic Express plumbing;
-  // a stubbed app with the minimum surface keeps it happy in tests.
-  app: { get: () => undefined },
-  get(name) { return this.headers[name?.toLowerCase()]; },
-  ...extras,
-});
+const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
-const mkRes = () => {
-  const headers = {};
-  return {
-    statusCode: 0,
-    body: null,
-    headersSent: false,
-    setHeader(k, v) { headers[k] = v; return this; },
-    getHeader(k) { return headers[k]; },
-    headers,
-    status(c) { this.statusCode = c; return this; },
-    json(b) { this.body = b; this.headersSent = true; return this; },
-    send(b) { this.body = b; this.headersSent = true; return this; },
-    end(b) { this.body = b; this.headersSent = true; return this; },
-  };
-};
-
-const callMw = (mw, req, res) => new Promise((resolve, reject) => {
-  try {
-    const result = mw(req, res, () => resolve('passed'));
-    if (result && typeof result.then === 'function') {
-      result.then(() => {
-        if (!res.headersSent) resolve('passed');
-        else resolve('rejected');
-      }).catch(reject);
-    } else if (res.headersSent) {
-      resolve('rejected');
-    }
-  } catch (err) { reject(err); }
-});
-
-describe('agentRateLimit', () => {
-  it('passes requests under the limit', async () => {
-    const mw = agentRateLimit({ windowMs: 60_000, max: 3 });
-    const results = [];
-    for (let i = 0; i < 3; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      results.push(await callMw(mw, mkReq('alice-token'), mkRes()));
-    }
-    expect(results).toEqual(['passed', 'passed', 'passed']);
-  });
-
-  it('rejects with 429 + code=rate_limited once the window cap is hit', async () => {
-    const mw = agentRateLimit({ windowMs: 60_000, max: 2 });
-    await callMw(mw, mkReq('alice-token'), mkRes());
-    await callMw(mw, mkReq('alice-token'), mkRes());
-    const res = mkRes();
-    await callMw(mw, mkReq('alice-token'), res);
-    expect(res.statusCode).toBe(429);
-    expect(res.body.code).toBe('rate_limited');
-  });
-
-  it('counts per-token (different tokens get independent budgets)', async () => {
-    const mw = agentRateLimit({ windowMs: 60_000, max: 1 });
-    const aliceFirst = await callMw(mw, mkReq('alice-token'), mkRes());
-    const bobFirst = await callMw(mw, mkReq('bob-token'), mkRes());
-    expect(aliceFirst).toBe('passed');
-    expect(bobFirst).toBe('passed');
-
-    // Each token's SECOND request must reject — confirms per-token isolation.
-    const aliceSecond = mkRes();
-    const bobSecond = mkRes();
-    await callMw(mw, mkReq('alice-token'), aliceSecond);
-    await callMw(mw, mkReq('bob-token'), bobSecond);
-    expect(aliceSecond.statusCode).toBe(429);
-    expect(bobSecond.statusCode).toBe(429);
-  });
-
-  it('falls back to header-hash key when agentTokenHash is absent', async () => {
-    const mw = agentRateLimit({ windowMs: 60_000, max: 1 });
-    // Same Authorization header on both, no req.agentTokenHash — the fallback
-    // hash must produce the same key, so the second request should reject.
-    const reqA = {
-      headers: { authorization: 'Bearer raw-token' },
+describe('agentRateLimitKeyGenerator', () => {
+  it('uses agentTokenHash when set (the common case after agentRuntimeAuth)', () => {
+    const k = agentRateLimitKeyGenerator({
+      agentTokenHash: 'abc123',
+      headers: { authorization: 'Bearer raw' },
       ip: '10.0.0.1',
-      app: { get: () => undefined },
-      get(name) { return this.headers[name?.toLowerCase()]; },
+    });
+    expect(k).toBe('tok:abc123');
+  });
+
+  it('falls back to a hash of the Authorization header when agentTokenHash absent', () => {
+    const k = agentRateLimitKeyGenerator({
+      headers: { authorization: 'Bearer raw-token-xyz' },
+      ip: '10.0.0.1',
+    });
+    expect(k).toBe(`hdr:${sha('Bearer raw-token-xyz')}`);
+  });
+
+  it('falls back to remote IP when no token-bearing header is present', () => {
+    const k = agentRateLimitKeyGenerator({
+      headers: {},
+      ip: '203.0.113.7',
+    });
+    expect(k).toBe('ip:203.0.113.7');
+  });
+
+  it('returns the same key for two requests with the same token', () => {
+    const req = {
+      agentTokenHash: 'same-hash',
+      headers: { authorization: 'Bearer raw' },
+      ip: '10.0.0.1',
     };
-    const reqB = { ...reqA };
-    await callMw(mw, reqA, mkRes());
-    const res = mkRes();
-    await callMw(mw, reqB, res);
-    expect(res.statusCode).toBe(429);
+    expect(agentRateLimitKeyGenerator(req)).toBe(agentRateLimitKeyGenerator({ ...req }));
+  });
+
+  it('returns different keys for different tokens', () => {
+    const a = agentRateLimitKeyGenerator({ agentTokenHash: 'alice' });
+    const b = agentRateLimitKeyGenerator({ agentTokenHash: 'bob' });
+    expect(a).not.toBe(b);
+  });
+
+  it('handles the x-commonly-agent-token header alongside Authorization', () => {
+    const k = agentRateLimitKeyGenerator({
+      headers: { 'x-commonly-agent-token': 'xtok' },
+      ip: '10.0.0.1',
+    });
+    expect(k).toBe(`hdr:${sha('xtok')}`);
   });
 });

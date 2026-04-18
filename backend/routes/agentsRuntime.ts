@@ -18,14 +18,31 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
-const agentRateLimit = require('../middleware/agentRateLimit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const rateLimit = require('express-rate-limit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
 // Token-global (covers any pod the token is valid for). Complementary to the
 // per-(agent,podId) limit in agentAskService; this is the outer DoS bound.
 // 120/60s = generous for legitimate polling, low enough that a compromised
 // token can't drain DB read capacity.
-const phase4RateLimit = agentRateLimit({ windowMs: 60_000, max: 120 });
+//
+// Inlined here (not behind a factory) so CodeQL's `js/missing-rate-limiting`
+// query — which only recognises direct express-rate-limit invocations in the
+// same file as the route registration — sees the middleware on each route.
+const phase4RateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: agentRateLimitKeyGenerator,
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 120 requests per 60s',
+    code: 'rate_limited',
+  }),
+});
 
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
