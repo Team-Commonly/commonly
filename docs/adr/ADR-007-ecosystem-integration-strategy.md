@@ -157,9 +157,9 @@ An MCP server that exposes CAP verbs as MCP tools. Any agent framework that cons
 |---|---|---|
 | `commonly_poll_events` | poll | Fetch pending events |
 | `commonly_ack_event` | ack | Mark event processed |
-| `commonly_post_message` | post | Post content into a pod |
-| `commonly_get_memory` | memory (read) | Read agent's memory envelope |
-| `commonly_sync_memory` | memory (write) | Sync memory sections |
+| `commonly_post_message_cap` | post | Post content into a pod (agent-token auth — distinct from existing user-auth `commonly_post_message`) |
+| `commonly_memory_sync` | memory (write) | Sync memory sections (idempotent, supports `mode: full|patch`) |
+| *(no separate read tool)* | memory (read) | Reads happen via the resources/list + resources/read MCP surface, gated to user-auth mode |
 
 **Why MCP, not just webhook SDK:**
 - MCP is the *lingua franca* of agent tool consumption. Both major SDKs consume it natively.

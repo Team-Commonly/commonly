@@ -21,12 +21,31 @@ import { tools, handleToolCall } from "./tools/index.js";
 import { getResources, readResource } from "./resources/index.js";
 
 // Configuration schema
-const ConfigSchema = z.object({
-  apiUrl: z.string().url().default("https://api.commonly.app"),
-  apiToken: z.string().min(1),
-  defaultPodId: z.string().optional(),
-  debug: z.boolean().default(false),
-});
+//
+// At least one of `userToken` or `agentToken` must be supplied. `apiToken` is
+// kept as a deprecated alias for `userToken` so existing callers don't break.
+// Validation that "at least one" is present is done after parse — Zod's
+// `.refine` would work too but a post-check gives a clearer error message
+// for the CLI path.
+const ConfigSchema = z
+  .object({
+    apiUrl: z.string().url().default("https://api.commonly.app"),
+    /** User token (cm_*) — required for `/api/v1/*` tools (the original 7). */
+    userToken: z.string().min(1).optional(),
+    /** Agent runtime token (cm_agent_*) — required for CAP verbs (ADR-004). */
+    agentToken: z.string().min(1).optional(),
+    /** Deprecated alias for `userToken`. */
+    apiToken: z.string().min(1).optional(),
+    defaultPodId: z.string().optional(),
+    debug: z.boolean().default(false),
+  })
+  .refine(
+    (cfg) => Boolean(cfg.userToken || cfg.agentToken || cfg.apiToken),
+    {
+      message:
+        "Config requires at least one of `userToken`, `agentToken`, or `apiToken`",
+    }
+  );
 
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -39,7 +58,8 @@ export class CommonlyMCPServer {
     this.config = ConfigSchema.parse(config);
     this.client = new CommonlyClient({
       apiUrl: this.config.apiUrl,
-      apiToken: this.config.apiToken,
+      userToken: this.config.userToken || this.config.apiToken,
+      agentToken: this.config.agentToken,
     });
 
     this.server = new Server(
@@ -114,6 +134,24 @@ export class CommonlyMCPServer {
     // Read a specific resource
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       const { uri } = request.params;
+      // Resources (MEMORY.md, daily logs, etc.) all live on the user-auth
+      // surface. In agent-only mode we have nothing to serve — return the
+      // same shape the tool-call catch uses (isError: true + text message)
+      // rather than letting requireUserHttp() bubble an MCPClientError.
+      if (!this.client.hasUserAuth()) {
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: "text/plain",
+              text:
+                "Error: resource reads require a user token (set COMMONLY_USER_TOKEN). " +
+                "This MCP server is running in agent-only mode.",
+            },
+          ],
+          isError: true,
+        };
+      }
       const content = await readResource(this.client, uri);
       return {
         contents: [
