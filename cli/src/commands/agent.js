@@ -167,7 +167,7 @@ export const performAttach = async ({
       manifest: {
         name: agentName,
         version: '1.0.0',
-        description: displayName || agentName,
+        description: `Local ${adapter.name} CLI wrapped as a Commonly agent (ADR-005).`,
         runtimeType: 'local-cli',
       },
       displayName: displayName || agentName,
@@ -589,12 +589,12 @@ Docs:
       const client = createClient({ instance: instanceUrl, token });
 
       try {
-        // Publish the agent definition if it doesn't exist yet
+        // Publish the agent definition if it doesn't exist yet.
         await client.post('/api/registry/publish', {
           manifest: {
             name: opts.name,
             version: '1.0.0',
-            description: opts.display || opts.name,
+            description: `Webhook-driven Commonly agent (ADR-006) at ${opts.webhook}.`,
             runtimeType: 'webhook',
           },
           displayName: opts.display || opts.name,

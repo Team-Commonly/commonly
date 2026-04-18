@@ -133,7 +133,7 @@ installRouter.post('/install', auth, async (req: any, res: any) => {
       const synthManifest = {
         name: String(agentName).toLowerCase(),
         version: String(version || '1.0.0'),
-        description: String(displayName || agentName),
+        description: 'Self-serve agent installed via CAP (ADR-006).',
         capabilities: [],
         context: { required: [], optional: [] },
         runtime: { type: 'standalone', connection: 'rest' },
@@ -289,9 +289,18 @@ installRouter.post('/install', auth, async (req: any, res: any) => {
       if (introWorthy) {
         const displayName = installation.displayName || agent.displayName;
         const blurb = (agent.description || '').trim().replace(/\s+/g, ' ');
-        const intro = blurb
-          ? `Hi all — I'm ${displayName}. ${blurb} Ping me when you need it.`
-          : `Hi all — I'm ${displayName}, just joined the pod.`;
+        // Skip the blurb when it just repeats the name (the publish step in
+        // older CLI versions seeded description from displayName, producing
+        // intros like "Hi all — I'm bot. bot Ping me ..."). Compare
+        // case-insensitively against both displayName and the bare agentName
+        // since either could have been the source.
+        const normalizedBlurb = blurb.toLowerCase();
+        const isMeaninglessBlurb = !blurb
+          || normalizedBlurb === displayName.toLowerCase()
+          || normalizedBlurb === agent.agentName.toLowerCase();
+        const intro = isMeaninglessBlurb
+          ? `Hi all — I'm ${displayName}, just joined the pod.`
+          : `Hi all — I'm ${displayName}. ${blurb} Ping me when you need it.`;
         await AgentMessageService.postMessage({
           agentName: agent.agentName,
           instanceId: normalizedInstanceId,
