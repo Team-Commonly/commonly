@@ -85,6 +85,82 @@ describe('agent runtime tokens', () => {
     expect(agentUser.save).toHaveBeenCalled();
   });
 
+  it('returns {existing:true} (no token) when agent user already has runtime tokens', async () => {
+    // Documents the regressive default behavior: detach preserves the
+    // agent User row's hashed token (ADR-001 identity-continuity), so a
+    // re-attach hits this branch and the CLI gets nothing usable back.
+    // The fix is the next test (force:true).
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1', createdBy: 'user-1', members: ['user-1'],
+      }),
+    });
+    const installation = {
+      agentName: 'commonly-bot',
+      podId: 'pod-1',
+      instanceId: 'default',
+      displayName: 'Commonly Bot',
+      status: 'active',
+      runtimeTokens: [],
+      save: jest.fn().mockResolvedValue(true),
+    };
+    const agentUser = {
+      agentRuntimeTokens: [{ tokenHash: 'stale', label: 'old', createdAt: new Date() }],
+      save: jest.fn().mockResolvedValue(true),
+    };
+    AgentInstallation.findOne.mockResolvedValue(installation);
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+
+    const res = await request(app)
+      .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
+      .send({ label: 'Re-attach' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.existing).toBe(true);
+    expect(res.body.token).toBeUndefined();
+  });
+
+  it('with force:true, clears existing tokens and mints a fresh one (detach + reattach race fix)', async () => {
+    // ADR-005 detach + reattach: CLI deletes its local token file, but the
+    // server-side hashed copy on the agent User row persists. Without
+    // force:true, the next runtime-tokens POST returns {existing:true}
+    // with no usable raw token. With force:true, the array is cleared
+    // and a new token is minted, mirroring reprovision.ts/provision.ts.
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1', createdBy: 'user-1', members: ['user-1'],
+      }),
+    });
+    const installation = {
+      agentName: 'commonly-bot',
+      podId: 'pod-1',
+      instanceId: 'default',
+      displayName: 'Commonly Bot',
+      status: 'active',
+      runtimeTokens: [],
+      save: jest.fn().mockResolvedValue(true),
+    };
+    const agentUser = {
+      agentRuntimeTokens: [{ tokenHash: 'stale', label: 'old', createdAt: new Date() }],
+      save: jest.fn().mockResolvedValue(true),
+    };
+    AgentInstallation.findOne.mockResolvedValue(installation);
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+
+    const res = await request(app)
+      .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
+      .send({ label: 'Re-attach', force: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.token).toMatch(/^cm_agent_/);
+    expect(res.body.existing).toBe(false);
+    // The stale token is gone; only the fresh one remains.
+    expect(agentUser.agentRuntimeTokens.length).toBe(1);
+    expect(agentUser.agentRuntimeTokens[0].label).toBe('Re-attach');
+  });
+
   it('lists shared runtime tokens from agent user', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({

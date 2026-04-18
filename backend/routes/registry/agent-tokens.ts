@@ -78,7 +78,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (r
 agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { label, instanceId } = req.body || {};
+    const { label, instanceId, force } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -123,11 +123,27 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (
     });
     await AgentIdentityService.ensureAgentInPod(agentUser, podId);
 
-    const issued = await issueRuntimeTokenForAgent(
+    let issued = await issueRuntimeTokenForAgent(
       agentUser,
       label || `Provisioned ${normalizedInstanceId}`,
       installation,
     );
+    // ADR-005 §detach + reattach: a fresh attach after detach has no local
+    // copy of the prior token (the file was deleted on detach), but the
+    // agent User row's hashed token persists per ADR-001 identity-continuity.
+    // issueRuntimeTokenForAgent then returns `{existing: true}` with no
+    // usable raw token, leaving the CLI with nothing to save. The same
+    // workaround already lives in reprovision.ts/provision.ts; surfacing it
+    // here as an explicit `force` body flag keeps the install flow honest.
+    if (issued.existing && force) {
+      agentUser.agentRuntimeTokens = [];
+      const fresh = await issueRuntimeTokenForAgent(
+        agentUser,
+        label || `Provisioned ${normalizedInstanceId}`,
+        installation,
+      );
+      issued = { ...issued, ...fresh };
+    }
     return res.json(issued);
   } catch (error) {
     console.error('Error issuing agent runtime token:', error);

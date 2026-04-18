@@ -202,8 +202,15 @@ export const performAttach = async ({
 
   let runtimeToken = installResult.runtimeToken;
   if (!runtimeToken) {
+    // ADR-005 §detach + reattach: the agent User row's hashed token persists
+    // across detach (per ADR-001 identity-continuity), so re-issuance from a
+    // fresh attach hits the "already has a runtime token" branch and gets a
+    // {existing: true} response with no usable raw token. Pass force:true so
+    // the server clears + re-mints — we just deleted the local copy on
+    // detach, the prior hash is unrecoverable from the CLI side anyway.
     const tokenData = await client.post(
-      `/api/registry/pods/${podId}/agents/${agentName}/runtime-tokens`, {},
+      `/api/registry/pods/${podId}/agents/${agentName}/runtime-tokens`,
+      { force: true },
     );
     runtimeToken = tokenData.token;
   }
@@ -451,8 +458,11 @@ export const performInit = async ({
 
   let runtimeToken = installResult.runtimeToken;
   if (!runtimeToken) {
+    // ADR-005 §detach + reattach: pass force:true so the server clears the
+    // hashed-but-unrecoverable prior token and mints fresh.
     const tokenData = await client.post(
-      `/api/registry/pods/${podId}/agents/${agentName}/runtime-tokens`, {},
+      `/api/registry/pods/${podId}/agents/${agentName}/runtime-tokens`,
+      { force: true },
     );
     runtimeToken = tokenData.token;
   }
@@ -618,7 +628,8 @@ Docs:
         if (!runtimeToken) {
           try {
             const tokenData = await client.post(
-              `/api/registry/pods/${opts.pod}/agents/${opts.name}/runtime-tokens`, {},
+              `/api/registry/pods/${opts.pod}/agents/${opts.name}/runtime-tokens`,
+              { force: true },
             );
             runtimeToken = tokenData.token;
           } catch {
