@@ -1,5 +1,11 @@
 export {};
 
+// ADR-003 Phase 4: ESM import for express-rate-limit (the rest of this file
+// uses CJS require()). CodeQL's js/missing-rate-limiting query recognises the
+// ESM import shape but has trouble tracing rate-limit middleware through
+// require() returns; using `import` here makes the recognition unambiguous.
+import rateLimit from 'express-rate-limit';
+
 const express = require('express');
 
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
@@ -18,8 +24,6 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const rateLimit = require('express-rate-limit');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 
