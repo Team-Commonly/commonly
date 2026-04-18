@@ -3,17 +3,29 @@
  * driver (ADR-002 Phase 1); GET streams them back, trying the driver first
  * and falling back to legacy `File.data` records for backward compatibility.
  *
- * Phase 1 intentionally does not close the pre-existing authorization gap on
- * GET: adding `auth` middleware here would break every `<img src>` across
- * the app, since browsers cannot attach JWTs to plain image requests. The
- * proper fix (signed short-TTL tokens in the URL, minted per-viewer after a
- * pod/post ACL check) lands in Phase 1b alongside the frontend changes that
- * rewrite upload URLs at render time. The gap is cited as a Critical in
- * REVIEW.md §Attachments (ADR-002) — do not approve Phase 1 to production
- * without Phase 1b.
+ * ADR-002 Phase 1b adds the signed-URL mint endpoint:
+ *   - `GET /:fileName/url` — bearer-auth'd, ACL-checked, rate-limited mint of
+ *     a short-TTL token scoped to `(fileName, viewerUserId)`. The frontend
+ *     exchanges this for a URL (`/api/uploads/:fileName?t=<token>`) it can
+ *     drop into `<img src>`.
+ *
+ * The public-read behavior on `GET /:fileName` is unchanged in this PR. The
+ * `?t=` query param is passed through harmlessly today; the follow-up PR
+ * flips `GET /:fileName` to require a valid token or header auth and drops
+ * the unauth fallback. Until that flip lands, the REVIEW.md §Attachments
+ * invariant ("GET must be authorized") is not fully satisfied.
  */
 
+// ADR-002 Phase 1b: ESM import (not require) so CodeQL's js/missing-rate-limiting
+// query recognises the middleware on the mint route.
+import rateLimit from 'express-rate-limit';
 import path from 'path';
+import {
+  DEFAULT_TOKEN_TTL_SECONDS,
+  canReadAttachment,
+  signAttachmentToken,
+} from '../services/attachmentAccess';
+import { logAttachmentTokenMint } from '../services/auditService';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -26,10 +38,12 @@ import { getObjectStore } from '../services/objectStore';
 
 interface AuthReq {
   userId?: string;
+  ip?: string;
   protocol?: string;
   get?: (header: string) => string | undefined;
   file?: { originalname: string; mimetype: string; size: number; buffer: Buffer };
   params?: { fileName?: string };
+  query?: { t?: string };
 }
 interface Res {
   status: (n: number) => Res;
@@ -63,6 +77,20 @@ const upload = multer({
     }
     cb(null, true);
   },
+});
+
+// 30 mints/min/user is generous for a page loading dozens of avatars + images
+// (clients cache until TTL expiry) and low enough that a compromised JWT can't
+// scrape attachments en masse. Inlined in this file so CodeQL's
+// `js/missing-rate-limiting` query sees the middleware on the mint route.
+const mintRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: AuthReq) => req.userId || req.ip || 'anon',
+  handler: (_req: unknown, res: Res) =>
+    res.status(429).json({ msg: 'rate limit exceeded: 30 mints per 60s' }),
 });
 
 const router: ReturnType<typeof express.Router> = express.Router();
@@ -103,10 +131,46 @@ router.post('/', auth, upload.single('image'), async (req: AuthReq, res: Res) =>
   }
 });
 
+// ADR-002 Phase 1b: signed-URL mint endpoint. Declared before the bare
+// `:fileName` GET so Express doesn't match `/:fileName/url` as a fileName
+// containing a slash.
+router.get('/:fileName/url', mintRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const fileName = req.params?.fileName;
+    if (!fileName) return res.status(400).json({ msg: 'fileName required' });
+    if (!req.userId) return res.status(401).json({ msg: 'auth required' });
+
+    const allowed = await canReadAttachment(fileName, req.userId);
+    if (!allowed) return res.status(403).json({ msg: 'no access to this attachment' });
+
+    const token = signAttachmentToken(fileName, req.userId);
+    const url = `/api/uploads/${fileName}?t=${encodeURIComponent(token)}`;
+
+    // Fire-and-forget: auditService swallows failures.
+    void logAttachmentTokenMint({
+      fileName,
+      userId: req.userId,
+      ip: req.ip,
+      userAgent: req.get?.('user-agent'),
+    });
+
+    return res.json({ url, expiresIn: DEFAULT_TOKEN_TTL_SECONDS });
+  } catch (err) {
+    const e = err as { message?: string };
+    console.error('Mint signed URL error:', e.message);
+    return res.status(500).json({ msg: 'Server Error' });
+  }
+});
+
 router.get('/:fileName', async (req: AuthReq, res: Res) => {
   try {
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });
+
+    // The `?t=<token>` query param minted by `GET /:fileName/url` is passed
+    // through harmlessly; Express ignores unknown query params. Validation +
+    // enforcement land in the follow-up PR that removes public-read. See
+    // ADR-002 Phase 1b "flip" note at the top of this file.
 
     const store = getObjectStore();
     const obj = await store.get(fileName);
