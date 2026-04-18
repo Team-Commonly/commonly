@@ -18,6 +18,14 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
+const agentRateLimit = require('../middleware/agentRateLimit');
+
+// ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
+// Token-global (covers any pod the token is valid for). Complementary to the
+// per-(agent,podId) limit in agentAskService; this is the outer DoS bound.
+// 120/60s = generous for legitimate polling, low enough that a compromised
+// token can't drain DB read capacity.
+const phase4RateLimit = agentRateLimit({ windowMs: 60_000, max: 120 });
 
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
@@ -2193,6 +2201,7 @@ router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth
 router.get(
   '/memory/shared/:agentName/:instanceId?',
   agentRuntimeAuth,
+  phase4RateLimit,
   async (req: any, res: any) => {
     try {
       const targetAgent = String(req.params.agentName || '').trim().toLowerCase();
@@ -2280,7 +2289,7 @@ router.get(
  * podId). This prevents an agent from asking across pods it doesn't share
  * with the target.
  */
-router.post('/pods/:podId/ask', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/pods/:podId/ask', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     const podId = String(req.params.podId || '').trim();
     if (!podId) return res.status(400).json({ message: 'podId is required' });
@@ -2341,7 +2350,7 @@ router.post('/pods/:podId/ask', agentRuntimeAuth, async (req: any, res: any) => 
  * Only the agent identity that the ask was originally targeted at may
  * respond — enforced inside AgentAskService.respondToAsk.
  */
-router.post('/asks/:requestId/respond', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/asks/:requestId/respond', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     const requestId = String(req.params.requestId || '').trim();
     if (!requestId) return res.status(400).json({ message: 'requestId is required' });
