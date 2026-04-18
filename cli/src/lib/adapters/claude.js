@@ -137,6 +137,20 @@ const prepareArgv = async (innerArgv, ctx) => {
     // Insert --mcp-config immediately after the subcommand-style `-p` block
     // so claude parses it before prompt collection begins.
     innerArgv = [...innerArgv, '--mcp-config', configPath];
+    // Pre-approve every MCP tool from the declared servers (`mcp__<name>__*`).
+    // Without this claude runs in non-interactive `-p` mode and asks for
+    // permission before invoking any MCP tool — the wrapper has no way to
+    // approve, so the model just narrates the request and bails. The user
+    // already opted into these servers by declaring them in the env spec, so
+    // auto-allowing the corresponding tool prefix is the honest default.
+    // Surfaced live during the 2026-04-17 cross-agent demo validation.
+    const allowedPatterns = env.mcp
+      .map((server) => server && server.name)
+      .filter(Boolean)
+      .map((name) => `mcp__${name}__*`);
+    if (allowedPatterns.length > 0) {
+      innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
+    }
   }
 
   const sandboxMode = env.sandbox?.mode;

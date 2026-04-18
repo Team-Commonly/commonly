@@ -116,8 +116,10 @@ describe('performInit (python)', () => {
       podId: 'pod-2', targetDir: tmp,
     });
     expect(res.runtimeToken).toBe('cm_agent_from_tokens_route');
+    // force:true required for re-attach race fix; see attach.test.mjs.
     expect(client.post).toHaveBeenCalledWith(
-      '/api/registry/pods/pod-2/agents/fallback-bot/runtime-tokens', {},
+      '/api/registry/pods/pod-2/agents/fallback-bot/runtime-tokens',
+      { force: true },
     );
   });
 

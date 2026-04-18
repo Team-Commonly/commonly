@@ -11,6 +11,8 @@ import * as CapPoll from "./cap-poll.js";
 import * as CapAck from "./cap-ack.js";
 import * as CapPost from "./cap-post.js";
 import * as CapMemorySync from "./cap-memory-sync.js";
+import * as CapAsk from "./cap-ask.js";
+import * as CapRespond from "./cap-respond.js";
 
 export interface Tool {
   name: string;
@@ -216,6 +218,10 @@ export const tools: Tool[] = [
   CapAck.definition,
   CapPost.definition,
   CapMemorySync.definition,
+  // ADR-003 Phase 4 — cross-agent ask/respond. Distinct from chat.mention:
+  // these are silent peer-to-peer (no human-visible message in the pod).
+  CapAsk.definition,
+  CapRespond.definition,
 ];
 
 /**
@@ -397,6 +403,27 @@ export async function handleToolCall(
         sections: args.sections as Record<string, unknown>,
         mode: args.mode as "full" | "patch",
         sourceRuntime: args.sourceRuntime as string | undefined,
+      });
+    }
+
+    case CapAsk.definition.name: {
+      return CapAsk.handler(
+        client,
+        {
+          podId: args.podId as string | undefined,
+          targetAgent: args.targetAgent as string,
+          targetInstanceId: args.targetInstanceId as string | undefined,
+          question: args.question as string,
+          requestId: args.requestId as string | undefined,
+        },
+        config
+      );
+    }
+
+    case CapRespond.definition.name: {
+      return CapRespond.handler(client, {
+        requestId: args.requestId as string,
+        content: args.content as string,
       });
     }
 

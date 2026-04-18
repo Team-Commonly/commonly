@@ -110,9 +110,14 @@ describe('performAttach', () => {
     });
 
     expect(result.runtimeToken).toBe('cm_agent_from_tokens_route');
+    // force:true is required so the server clears the User row's hashed
+    // token (preserved across detach per ADR-001 identity-continuity) and
+    // mints a fresh raw token. Without force:true, re-attach after detach
+    // gets {existing:true} with no token. See registry.runtime-tokens.test.js
+    // and the 2026-04-17 detach+reattach race fix.
     expect(client.post).toHaveBeenCalledWith(
       '/api/registry/pods/pod-2/agents/my-stub/runtime-tokens',
-      {},
+      { force: true },
     );
   });
 

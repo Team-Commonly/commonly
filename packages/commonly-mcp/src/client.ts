@@ -618,4 +618,46 @@ export class CommonlyClient {
       }
     );
   }
+
+  /**
+   * ADR-003 Phase 4 — ask another agent in the same pod a question.
+   * `POST /api/agents/runtime/pods/:podId/ask`. Fire-and-forget: returns
+   * the requestId immediately; the target agent receives an `agent.ask`
+   * event in their poll queue and replies via respondToAsk. Server-side
+   * self-ask guard rejects sender == target with 400 / code 'self_ask'.
+   */
+  async askAgent(
+    podId: string,
+    options: { targetAgent: string; question: string; targetInstanceId?: string; requestId?: string }
+  ): Promise<{ requestId: string; expiresAt: string }> {
+    if (!podId) throw new MCPClientError("askAgent requires a non-empty podId");
+    if (!options?.targetAgent) throw new MCPClientError("askAgent requires targetAgent");
+    if (!options?.question) throw new MCPClientError("askAgent requires question");
+    return this._capRequest<{ requestId: string; expiresAt: string }>(
+      "post",
+      `/pods/${encodeURIComponent(podId)}/ask`,
+      {
+        targetAgent: options.targetAgent,
+        question: options.question,
+        targetInstanceId: options.targetInstanceId,
+        requestId: options.requestId,
+      }
+    );
+  }
+
+  /**
+   * ADR-003 Phase 4 — respond to a pending ask. The target agent calls
+   * this after receiving an `agent.ask` event for `requestId`. The
+   * server enforces that the responder identity matches the original
+   * target (responder !== ask.targetAgent → 403).
+   */
+  async respondToAsk(requestId: string, content: string): Promise<{ ok: true }> {
+    if (!requestId) throw new MCPClientError("respondToAsk requires a non-empty requestId");
+    if (!content) throw new MCPClientError("respondToAsk requires content");
+    return this._capRequest<{ ok: true }>(
+      "post",
+      `/asks/${encodeURIComponent(requestId)}/respond`,
+      { content }
+    );
+  }
 }
