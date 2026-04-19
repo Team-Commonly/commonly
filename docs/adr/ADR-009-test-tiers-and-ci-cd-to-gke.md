@@ -82,7 +82,7 @@ Target state: the *secret* content in `values-private.yaml` moves to GCP Secret 
 
 - **OIDC audience.** WIF provider must scope to `repo:Team-Commonly/commonly:ref:refs/heads/main` (dev) and `repo:Team-Commonly/commonly:environment:prod` (prod). A forked PR cannot mint a token for either.
 - **Image registry push scope.** The WIF-backed SA has `roles/artifactregistry.writer` on the `docker` repo only. No project-wide admin.
-- **Helm upgrade scope.** Deploy SA has `roles/container.developer` on the `commonly-dev` / `commonly-prod` clusters only. No ability to create new clusters or modify node pools.
+- **Helm upgrade scope.** Deploy SA has only `roles/container.clusterViewer` at the IAM layer (auth to any cluster, no mutation). Real deploy permissions come from a Kubernetes `ClusterRoleBinding` of `edit` scoped per cluster — revoking `commonly-dev` access is `kubectl delete clusterrolebinding deploy-github` on that cluster, with no effect on `commonly-prod` or any future cluster.
 - **No secrets echoed in logs.** `set -x` banned in the deploy workflow; `::add-mask::` used for any intermediate token output.
 - **Tier 3 probes are unauthenticated only (Phase 4 scope).** `GET /api/health/live` and `GET /api/health/ready` cover the "did the pod come up and can it reach Mongo + Postgres" question — which is the overwhelming majority of deploy regressions. Authenticated round-trips (login + domain-endpoint call) need a credential story (dedicated smoke account, its User row in Mongo, ESO-rotated secret, workflow retrieval of the credential) that isn't resolved yet; deferred to a later phase so it doesn't block Phase 4.
 
@@ -134,7 +134,7 @@ Deferred. Preview environments per PR are the ideal but cost real GKE capacity p
 
 ### Phase 3 — WIF + dev deploy workflow (one PR + GCP setup)
 
-- [ ] GCP: create WIF pool + provider in `commonly-493005`; grant `artifactregistry.writer` and `container.developer` to the deploy SA scoped to dev.
+- [ ] GCP: create WIF pool + provider in `commonly-493005`; grant `artifactregistry.writer` on the `docker` repo and `container.clusterViewer` at project level; apply a `ClusterRoleBinding` of `edit` against `commonly-dev` (Kubernetes RBAC, not IAM). Details in `docs/deployment/GITHUB_DEPLOY_SETUP.md`.
 - [ ] GitHub: configure `dev` environment with no approvals (auto-deploy).
 - [ ] `.github/workflows/deploy-dev.yml`: build backend + frontend + gateway images, push to AR, `helm upgrade commonly-dev --set image.tag=${sha}`, post status.
 - [ ] Retire `values-private.yaml` for dev: migrate its content to committed `values-dev.yaml` (non-secret config) and ESO (secrets).
