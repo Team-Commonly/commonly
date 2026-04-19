@@ -116,35 +116,68 @@ Deferred. Preview environments per PR are the ideal but cost real GKE capacity p
 
 ### Phase 1 — Rename + fix Tier 1 (one PR)
 
-- [ ] Rename `__tests__/integration/` → `__tests__/service/` and update jest projects.
-- [ ] `setupMongoDb()` / `setupPgDb()` read `INTEGRATION_TEST=true` and connect to `MONGO_URI` / `PG_*` env instead of in-memory, when set.
-- [ ] Verify all existing "integration" tests still pass against the CI service containers. Fix the ones that silently relied on `MongoMemoryServer` quirks (expect a few).
-- [ ] Update `backend/TESTING.md` with the new tier names.
+- [ ] Rename `backend/__tests__/integration/` → `backend/__tests__/service/`. Update `backend/jest.config.js` only if the rename breaks discovery — current config (`testPathIgnorePatterns` excludes `utils/`, no `testMatch` override) auto-picks `*.test.js` under any path, so a directory rename alone should work. Run `npx jest --listTests` to confirm.
+- [ ] `backend/__tests__/utils/testUtils.js`: `setupMongoDb()` and `setupPgDb()` branch on `process.env.INTEGRATION_TEST === 'true'` — when set, connect to `process.env.MONGO_URI` / `process.env.PG_*` via `mongoose.connect` and `new pg.Pool` respectively, and skip the in-memory server. The existing `__tests__/setup.js` already sets those envs when `INTEGRATION_TEST=true`; no new toggle needed. Keep `MongoMemoryServer` / `pg-mem` for the unset default so Tier 0 stays in-memory.
+- [ ] Audit for likely breakage in the renamed suites. Specific patterns that silently depend on in-memory quirks:
+  - Direct calls to `mongoServer.getUri()` / `pgPool` that the test bodies import from `testUtils` (real-service branch won't export `mongoServer`). Grep: `mongoServer\.|pgDb\.`.
+  - `pg-mem` functions registered in `setupPgDb()` (e.g. `gen_random_uuid`). Real Postgres 16 has `gen_random_uuid` only with `pgcrypto` — add `CREATE EXTENSION IF NOT EXISTS pgcrypto` at start of real-services setup.
+  - Tests that expect `collection.deleteMany({})` to be instant (real Mongo is slower; adjust timeouts if any fall under `jest.setTimeout(default)`).
+  - `pg-mem` schema drift: the in-memory setup creates `pods`, `pod_members`, `messages` tables by hand — real PG gets its schema from `backend/config/init-pg-db.js`. Verify the two match; migrate the init-pg setup into the real-services branch.
+- [ ] Update `backend/TESTING.md`: add a "Tier 0 / Tier 1" section matching the Decision table; deprecate the "integration" label and point at the new dir.
+- [ ] `.github/workflows/tests.yml` already sets `INTEGRATION_TEST: "true"` and boots `mongo:7` + `postgres:16` — verify the new real-services branch actually fires in CI after the rename (add a one-line log assertion, e.g. `console.log('[tier1] using real services')` gated on the env, and grep the workflow log).
 
 ### Phase 1.5 — Chart-lint on every push (one small PR)
 
-- [ ] New job in `tests.yml` (or separate `chart-lint.yml`): `helm template k8s/helm/commonly -f values.yaml -f values-dev.yaml | kubeconform --strict --schema-location default` on every push.
-- [ ] Also run against `values-prod.yaml` once it's committed (Phase 3).
-- [ ] Required check on all PRs — it's cheap enough that "always on" is fine.
+- [ ] New job `chart-lint` added to `.github/workflows/tests.yml` (single-workflow policy, not a separate file) running on every push. Command: `helm template k8s/helm/commonly -f k8s/helm/commonly/values.yaml -f k8s/helm/commonly/values-dev.yaml | kubeconform --strict --summary -output text`.
+- [ ] CRD schemas: default `kubeconform` schemas cover core Kubernetes only. The chart uses ESO `ExternalSecret`, Ingress (GKE), and possibly cert-manager — supply these via `--schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' --schema-location default`. Pin to a specific `datreeio/CRDs-catalog` commit SHA to avoid drift.
+- [ ] Optional second invocation against `-f values-prod.yaml` — gated on that file existing in-tree (it lands in Phase 5, not Phase 3). Use `if [ -f k8s/helm/commonly/values-prod.yaml ]; then ... fi` so Phase 1.5 merges independently of Phase 5.
+- [ ] Add the `chart-lint` check to branch protection on `main`.
 
 ### Phase 2 — Gate Tier 2 on PRs (one small PR)
 
-- [ ] `smoke-test.yml`: add `on.pull_request.paths` filter for `k8s/**`, `backend/Dockerfile`, `frontend/Dockerfile`, `dev.sh`, `.github/workflows/**`. Keep post-merge trigger.
-- [ ] Surface the kind smoke as a required check on PRs with a matching path.
+- [ ] `.github/workflows/smoke-test.yml`: add `on.pull_request.paths` filter. Paths to include: `k8s/**`, `backend/Dockerfile`, `frontend/Dockerfile`, `_external/clawdbot/**` (gateway source per CLAUDE.md §Build & Deploy), `dev.sh`, `.github/workflows/**`. Keep the existing `workflow_run` post-merge trigger.
+- [ ] Add the smoke-test check to branch protection on `main` as **required only when status exists** (so PRs that don't touch the filtered paths — and thus don't run the check — aren't blocked by a missing status).
+- [ ] **Human action:** repo admin adds `kind cluster smoke test` as an "optional" required check in the branch-protection rule (GitHub's "Require status checks to pass → expect checks from each PR" with no entries forces only-when-present semantics; alternately, use `required_status_checks.checks` with `app_id: null` in a custom ruleset — document whichever the admin picks).
 
 ### Phase 3 — WIF + dev deploy workflow (one PR + GCP setup)
 
-- [ ] GCP: create WIF pool + provider in `commonly-493005`; grant `artifactregistry.writer` on the `docker` repo and `container.clusterViewer` at project level; apply a `ClusterRoleBinding` of `edit` against `commonly-dev` (Kubernetes RBAC, not IAM). Details in `docs/deployment/GITHUB_DEPLOY_SETUP.md`.
-- [ ] GitHub: configure `dev` environment with no approvals (auto-deploy).
-- [ ] `.github/workflows/deploy-dev.yml`: build backend + frontend + gateway images, push to AR, `helm upgrade commonly-dev --set image.tag=${sha}`, post status.
-- [ ] Retire `values-private.yaml` for dev: migrate its content to committed `values-dev.yaml` (non-secret config) and ESO (secrets).
-- [ ] Remove the `/home/xcjam/workspace/commonly/.dev/values-private.yaml` reference from CLAUDE.md; document the new shape.
+- [ ] **GCP setup** (follow `docs/deployment/GITHUB_DEPLOY_SETUP.md` in full): WIF pool + GitHub provider with `assertion.repository=='Team-Commonly/commonly'` condition; `deploy-github` SA with `roles/artifactregistry.writer` on the `docker` repo, `roles/container.clusterViewer` at project level; Kubernetes `ClusterRoleBinding` of `edit` against the SA's identity on `commonly-dev` only.
+- [ ] **Secrets in GitHub:** `WIF_PROVIDER`, `WIF_SERVICE_ACCOUNT`. **Environment:** create `dev` with no approvers.
+- [ ] **Submodule:** `actions/checkout@v4` with `submodules: recursive` — the gateway image is built from `_external/clawdbot/`, a git submodule. Without this the gateway build step fails immediately.
+- [ ] **Build step** (three images, one tag each, all set to the current commit SHA for simplicity and rollback symmetry):
+  ```bash
+  export IMG_TAG=${GITHUB_SHA::8}
+  export REG=us-central1-docker.pkg.dev/commonly-493005/docker
+  docker build backend  -t $REG/commonly-backend:$IMG_TAG  && docker push $REG/commonly-backend:$IMG_TAG
+  docker build frontend --build-arg REACT_APP_API_URL=https://api-dev.commonly.me -t $REG/commonly-frontend:$IMG_TAG && docker push $REG/commonly-frontend:$IMG_TAG
+  cd _external/clawdbot && docker build --build-arg OPENCLAW_EXTENSIONS=acpx --build-arg OPENCLAW_INSTALL_GH_CLI=1 -t $REG/clawdbot-gateway:$IMG_TAG . && docker push $REG/clawdbot-gateway:$IMG_TAG
+  ```
+- [ ] **Helm upgrade step** — the chart has three separate image keys at `backend.image.tag`, `frontend.image.tag`, `agents.clawdbot.image.tag` (verified against `values.yaml` line 22, 75, 182). Set all three in one command:
+  ```bash
+  helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev \
+    -f k8s/helm/commonly/values.yaml \
+    -f k8s/helm/commonly/values-dev.yaml \
+    --set backend.image.tag=$IMG_TAG \
+    --set frontend.image.tag=$IMG_TAG \
+    --set agents.clawdbot.image.tag=$IMG_TAG
+  ```
+  Note the removed third `-f values-private.yaml` — covered by the next bullet.
+- [ ] **Retire `values-private.yaml`** (this is the load-bearing migration; no agent can do it without a human pulling the actual file from Lily's laptop):
+  - **Human action**: open `/home/xcjam/workspace/commonly/.dev/values-private.yaml` and categorize each key as (a) non-secret config → `values-dev.yaml` commit, (b) secret → GCP Secret Manager entry + `ExternalSecret` manifest under `k8s/helm/commonly/templates/`.
+  - Non-secret keys expected (per CLAUDE.md §Kubernetes): `global.gcpProjectId`, `postgresql.host`, `*.image.repository` overrides. These go into `values-dev.yaml`; `values.yaml`'s `YOUR_GCP_PROJECT_ID` placeholders stay as the OSS-safe default.
+  - Any key named like a credential (`*_password`, `*_token`, `*_key`, `jwtSecret`, `*_connectionString`) → Secret Manager. The existing `api-keys` ESO pattern (CLAUDE.md §Agent Runtime) is the template.
+  - Update `docs/deployment/KUBERNETES.md` and `CLAUDE.md` §Kubernetes to remove the three-`-f` instruction and reference the new two-file shape.
+- [ ] **Status reporting:** the workflow posts **both** a GitHub status check (`deploy-dev / build-and-deploy`) and a PR/commit comment with the deploy outcome (tag, Helm revision, probe results). Agents observe via `mcp__github__pull_request_read` → `get_check_runs` or `get_comments`.
 
 ### Phase 4 — Tier 3 smoke + rollback (one PR)
 
 - [ ] `deploy-dev.yml` adds post-deploy HTTP probes against `api-dev.commonly.me` — **unauthenticated only this phase**: `GET /api/health/live` and `GET /api/health/ready`. Covers pod-came-up and DB-reachability. Auth round-trip probes deferred until a smoke credential story lands (dedicated account + ESO-rotated secret + workflow retrieval).
-- [ ] `helm rollback commonly-dev 0` on probe failure.
-- [ ] Three-consecutive-rollbacks → hard CI failure + GitHub issue auto-opened.
+- [ ] **Rollback target** — match the Decision's "last-known-good revision" design:
+  - On a passing deploy, the workflow stamps `commonly.me/last-good-revision: <helm-revision-number>` as an annotation on the Helm release (via `kubectl annotate deployment/backend` on the namespace, or on the Helm-managed `Secret` carrying release state).
+  - On a probe failure, the workflow reads that annotation and runs `helm rollback commonly-dev <last-good-revision>`. **Not** `helm rollback commonly-dev 0`.
+  - Edge case — first-ever deploy: if `helm history commonly-dev -o json | jq 'length'` is `1` (no prior revision), **skip auto-rollback**. Workflow fails loudly, leaves the broken release in place, and pages via the same GitHub-issue mechanism below. Rationale: there's nothing known-good to roll back to.
+- [ ] **Consecutive-failure escalation** — keyed on the last-good pointer, not the commit SHA:
+  - If three deploys in a row roll back and the pointer doesn't advance, the workflow (a) fails the `deploy-dev` status check hard, (b) opens a GitHub issue via `gh issue create` labeled `deploy-stuck` with the three failed SHAs, (c) stops auto-rolling-back until the issue is closed (workflow checks for open issues with that label at start).
 
 ### Phase 5 — Prod path (one PR + GCP setup)
 
@@ -161,11 +194,13 @@ Deferred. Preview environments per PR are the ideal but cost real GKE capacity p
 
 ## Open questions
 
-- **Tier 1 cost at scale.** Service-container startup adds ~20s to each CI run. If the Tier 1 suite grows beyond the budget we accept, do we shard it across jobs or start excluding routes? Track Tier 1 wall time; revisit at > 5 min.
-- **Where does cloud-agent status appear?** PR comment? Commit status? Both? A status check is the normal place; a PR comment is friendlier for the agent to observe via `mcp__github__pull_request_read`. Start with both and drop one if it's noise.
-- **Migration risk for `values-private.yaml`.** The file encodes some decisions (PG host choice, custom image repo) that may not be safe to put in a public file. Audit before migration; anything truly sensitive stays in Secret Manager.
-- **Should Tier 2 block merge or just warn?** If cluster smoke takes 20 min and PRs touch `k8s/` rarely, blocking is fine. If it becomes frequent, consider warning-only with a label (`cluster-smoke-required`) that promotes it to blocking when needed.
-- **What about `backend/TESTING.md` / `frontend/TESTING.md`?** These reference the current naming. They get updated in Phase 1. Track so they don't drift.
+- **Tier 1 cost at scale.** Service-container startup adds ~20s to each CI run. If the Tier 1 suite grows beyond the budget we accept, do we shard it across jobs or start excluding routes? Track Tier 1 wall time; revisit at > 5 min. *Not blocking any phase; monitor once Phase 1 lands.*
+- **Migration risk for `values-private.yaml`.** The file encodes keys we haven't enumerated in the repo. Audit during the Phase 3 migration (which is human-driven — see Phase 3's "Retire values-private.yaml" checklist). Anything not clearly non-secret goes to Secret Manager by default.
+
+*Previously-listed questions resolved during review:*
+- *Cloud-agent status output* → both a GitHub check-run and a PR comment (Phase 3 checklist).
+- *Tier 2 blocking-vs-warning* → blocks merge, but only when the check ran (path-filtered); see Phase 2 human-action bullet.
+- *`backend/TESTING.md` / `frontend/TESTING.md`* → updated in Phase 1 (now a checklist item).
 
 ---
 
