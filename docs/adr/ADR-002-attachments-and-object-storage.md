@@ -287,17 +287,25 @@ Deferred. The `POST /api/media` stream-through keeps upload simpler to reason ab
 
 **No data migration needed** — schema change is additive (`File.data` optional; `MediaObject` is a new collection), route paths unchanged, existing records still readable via the route's fallback.
 
-### Phase 1b — Close the GET authorization gap (followup PR)
+### Phase 1b — Close the GET authorization gap (split into 1b-a plumbing, 1b-b flip)
 
 **Split out of Phase 1** because the real fix requires coordinated frontend + backend changes: adding plain `auth` middleware on `GET /api/uploads/:fileName` breaks every `<img src>` in the app (browsers do not attach `Authorization` headers to image requests), and cookie auth isn't currently wired for the API. Phase 1 therefore leaves GET's existing public-read behavior untouched.
 
-- [ ] Backend: issue short-TTL (5 min) signed tokens scoped to `fileName + viewerUserId`; GET accepts `?t=<token>` alongside header auth.
-- [ ] Backend: per-request ACL check before minting the token — requester must own the file or have read on a pod/post that references it. Phase 1 references are URL substrings (slow scan); Phase 2's structured `attachments` makes this an indexed lookup.
-- [ ] Frontend: `rewriteAttachmentUrl(url)` helper at render time that calls `GET /api/media/:id/url` and caches the signed URL until expiry.
-- [ ] Rate limiting on the token-mint endpoint.
-- [ ] Audit log entry on each mint (`file_id, viewer_id, ip`).
+**Phase 1b-a — signed-URL plumbing (this PR):**
 
-**Ships before:** any production-scale launch. The ADR-002 invariant in REVIEW.md §Attachments is not satisfied until Phase 1b is live.
+- [x] Backend: `signAttachmentToken` / `verifyAttachmentToken` in `backend/services/attachmentAccess.ts` — JWTs with a `pur: 'upload'` purpose claim, scoped to `(fileName, viewerUserId)`, default 5-min TTL.
+- [x] Backend: `canReadAttachment` — per-request ACL check across the four Phase-1 reference surfaces (owner, profile picture, `Post.image` / `Post.content`, PG `messages.content`). Fileanme shape-guarded against ReDoS before any DB scan.
+- [x] Backend: `GET /api/uploads/:fileName/url` endpoint — bearer-auth'd, rate-limited (30/min/user), ACL-checked, returns `{ url, expiresIn }`.
+- [x] Backend: audit log entry on each mint — `AuditLog` model + `auditService.logAttachmentTokenMint`. Fire-and-forget so audit failure doesn't fail the mint.
+- [x] Frontend: `getSignedAttachmentUrl` helper in `frontend/src/utils/signedAttachmentUrl.ts` — fetches + caches signed URLs per fileName until shortly before expiry, coalesces concurrent calls.
+
+**Phase 1b-b — flip the switch (followup PR):**
+
+- [ ] Backend: `GET /api/uploads/:fileName` verifies `?t=<token>` (via `verifyAttachmentToken`) or header auth; 401s otherwise. Remove the public-read fallback.
+- [ ] Frontend: migrate every `<img src>` rendering `/api/uploads/...` to use `getSignedAttachmentUrl` (PostFeed, ChatRoom avatars, MessageContent, profile pictures).
+- [ ] Soak in dev, then prod.
+
+**Ships before:** any production-scale launch. The ADR-002 invariant in REVIEW.md §Attachments is not fully satisfied until Phase 1b-b is live — 1b-a provides the mechanism, 1b-b enforces it.
 
 ### Phase 2 — Structured `attachments` model (one PR)
 
