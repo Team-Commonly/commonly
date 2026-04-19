@@ -24,6 +24,11 @@ import getApiBaseUrl from './apiBaseUrl';
 
 const TOKEN_TTL_SECONDS = 300; // Matches backend DEFAULT_TOKEN_TTL_SECONDS.
 const CACHE_SKEW_SECONDS = 30; // Refresh ~30s before expiry to avoid races.
+// Bound the cache so a long-lived SPA scrolling through many feeds doesn't
+// grow memory unboundedly. JS `Map` preserves insertion order, so evicting
+// `keys().next().value` gives FIFO eviction — good enough for a TTL-bounded
+// cache where entries self-expire in 5 min anyway.
+const MAX_CACHE_ENTRIES = 500;
 
 interface CacheEntry {
   url: string;
@@ -32,6 +37,14 @@ interface CacheEntry {
 
 const cache: Map<string, CacheEntry> = new Map();
 const inflight: Map<string, Promise<string | null>> = new Map();
+
+function setCache(fileName: string, entry: CacheEntry): void {
+  if (cache.size >= MAX_CACHE_ENTRIES && !cache.has(fileName)) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(fileName, entry);
+}
 
 function extractFileName(uploadPath: string): string | null {
   const match = uploadPath.match(/\/api\/uploads\/([^/?#]+)/);
@@ -59,7 +72,7 @@ async function mintSignedUrl(fileName: string): Promise<string | null> {
 
   const expiresInSec = typeof data.expiresIn === 'number' ? data.expiresIn : TOKEN_TTL_SECONDS;
   const fullUrl = data.url.startsWith('http') ? data.url : `${apiBase}${data.url}`;
-  cache.set(fileName, { url: fullUrl, expiresAtMs: Date.now() + expiresInSec * 1000 });
+  setCache(fileName, { url: fullUrl, expiresAtMs: Date.now() + expiresInSec * 1000 });
   return fullUrl;
 }
 

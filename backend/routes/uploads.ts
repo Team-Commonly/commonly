@@ -133,8 +133,11 @@ router.post('/', auth, upload.single('image'), async (req: AuthReq, res: Res) =>
 
 // ADR-002 Phase 1b: signed-URL mint endpoint. Declared before the bare
 // `:fileName` GET so Express doesn't match `/:fileName/url` as a fileName
-// containing a slash.
-router.get('/:fileName/url', mintRateLimit, auth, async (req: AuthReq, res: Res) => {
+// containing a slash. `auth` runs before `mintRateLimit` so the rate
+// limiter's keyGenerator sees `req.userId` (populated by auth); without
+// that order, every caller collapses to an IP-based bucket and NAT'd
+// users share one limit.
+router.get('/:fileName/url', auth, mintRateLimit, async (req: AuthReq, res: Res) => {
   try {
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });

@@ -78,6 +78,35 @@ describe('getSignedAttachmentUrl', () => {
     await expect(getSignedAttachmentUrl('/api/uploads/denied.png')).resolves.toBeNull();
   });
 
+  it('evicts the oldest cache entry once the cap is reached', async () => {
+    // Mint 501 distinct files. The 1st should have been evicted by the time
+    // the 501st is stored, so re-requesting the 1st issues a fresh fetch
+    // while a mid-range (e.g. 250th) entry still hits cache.
+    let counter = 0;
+    (fetch as jest.Mock).mockImplementation((url: string) => {
+      counter += 1;
+      const name = decodeURIComponent(url.replace('https://api.example/api/uploads/', '').replace('/url', ''));
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ url: `/api/uploads/${name}?t=tok-${counter}`, expiresIn: 300 }),
+      });
+    });
+
+    for (let i = 0; i < 501; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await getSignedAttachmentUrl(`/api/uploads/f${i}.png`);
+    }
+    expect(fetch).toHaveBeenCalledTimes(501);
+
+    // f250 is still in cache → no new fetch
+    await getSignedAttachmentUrl('/api/uploads/f250.png');
+    expect(fetch).toHaveBeenCalledTimes(501);
+
+    // f0 was evicted → new fetch
+    await getSignedAttachmentUrl('/api/uploads/f0.png');
+    expect(fetch).toHaveBeenCalledTimes(502);
+  });
+
   it('coalesces concurrent calls for the same fileName into a single mint request', async () => {
     let resolveFetch;
     (fetch as jest.Mock).mockImplementation(

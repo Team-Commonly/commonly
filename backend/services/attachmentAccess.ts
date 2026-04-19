@@ -108,33 +108,59 @@ export async function canReadAttachment(
   if (fileDoc?.uploadedBy && String(fileDoc.uploadedBy) === String(userId)) return true;
 
   const urlFragment = `/api/uploads/${fileName}`;
+  const urlRegex = escapeRegex(urlFragment);
 
-  const profileUser = await User.findOne({ profilePicture: urlFragment }).select('_id').lean();
+  // Profile pictures are stored with varying shapes: relative `/api/uploads/<f>`,
+  // absolute `https://api-dev.commonly.me/api/uploads/<f>`, or older
+  // `http://...` forms. A substring match on the URL fragment catches all of
+  // them without needing a write-time normalization migration.
+  const profileUser = await User.findOne({
+    profilePicture: { $regex: urlRegex },
+  })
+    .select('_id')
+    .lean();
   if (profileUser) return true;
 
-  const post = await Post.findOne({
+  // Fan-out over referencing posts. `findOne` would arbitrarily pick one — if
+  // it picked a pod-scoped post the viewer can't see, a separate public post
+  // granting access would be missed. Fetching a bounded batch and checking
+  // membership against every scoped podId is both correct and O(2 queries).
+  const posts = await Post.find({
     $or: [
       { image: urlFragment },
       { image: fileName },
-      { content: { $regex: escapeRegex(urlFragment) } },
+      { content: { $regex: urlRegex } },
     ],
   })
     .select('_id podId')
+    .limit(POST_SCAN_LIMIT)
     .lean();
-  if (post) {
-    if (!post.podId) return true;
-    const pod = await Pod.findOne({ _id: post.podId, members: userId }).select('_id').lean();
-    if (pod) return true;
+  if (posts.length > 0) {
+    if (posts.some((p: { podId?: unknown }) => !p.podId)) return true;
+    const scopedPodIds = posts
+      .map((p: { podId?: unknown }) => p.podId)
+      .filter(Boolean);
+    if (scopedPodIds.length > 0) {
+      const member = await Pod.findOne({ _id: { $in: scopedPodIds }, members: userId })
+        .select('_id')
+        .lean();
+      if (member) return true;
+    }
   }
 
-  const messagePodId = await findMessagePodReferencingFile(urlFragment);
-  if (messagePodId) {
-    const pod = await Pod.findOne({ _id: messagePodId, members: userId }).select('_id').lean();
-    if (pod) return true;
+  const messagePodIds = await findMessagePodsReferencingFile(urlFragment);
+  if (messagePodIds.length > 0) {
+    const member = await Pod.findOne({ _id: { $in: messagePodIds }, members: userId })
+      .select('_id')
+      .lean();
+    if (member) return true;
   }
 
   return false;
 }
+
+const POST_SCAN_LIMIT = 20;
+const MESSAGE_SCAN_LIMIT = 20;
 
 // POST route generates `<digits>-<digits><ext>`. A permissive-but-bounded
 // pattern is enough to reject obvious abuse (regex metachars, path traversal,
@@ -149,25 +175,29 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * PG scan for a message whose `content` references `urlFragment` (the full
+ * PG scan for messages whose `content` references `urlFragment` (the full
  * `/api/uploads/<fileName>` path — narrower and ReDoS-free vs. scanning on
- * the bare fileName). Returns the earliest referencing `pod_id` or `null`
- * when no match exists or the PG pool is unavailable.
+ * the bare fileName). Returns all distinct `pod_id`s (up to a bound) that
+ * reference the file, so the caller can check pod membership against the
+ * whole set in one query — picking a single pod with `LIMIT 1` could return
+ * a pod the viewer isn't in, even when a different referencing pod would
+ * grant access. Returns `[]` when no match exists or the PG pool is
+ * unavailable.
  */
-async function findMessagePodReferencingFile(urlFragment: string): Promise<string | null> {
+async function findMessagePodsReferencingFile(urlFragment: string): Promise<string[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { pool } = require('../config/db-pg') as {
       pool?: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ pod_id: string }> }> };
     };
-    if (!pool?.query) return null;
+    if (!pool?.query) return [];
     const needle = `%${urlFragment}%`;
     const { rows } = await pool.query(
-      'SELECT pod_id FROM messages WHERE content ILIKE $1 LIMIT 1',
-      [needle],
+      'SELECT DISTINCT pod_id FROM messages WHERE content ILIKE $1 LIMIT $2',
+      [needle, MESSAGE_SCAN_LIMIT],
     );
-    return rows[0]?.pod_id ?? null;
+    return rows.map((r) => r.pod_id).filter(Boolean);
   } catch {
-    return null;
+    return [];
   }
 }
