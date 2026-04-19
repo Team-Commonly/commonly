@@ -209,7 +209,7 @@ describe('ADR-002 Phase 1b-a — signed-URL mint (integration)', () => {
     expect(String(log.userId)).toBe(String(viewer._id));
   });
 
-  it('enforces the rate limit — 31st mint in a minute returns 429 (fix #1 — keyGen sees userId)', async () => {
+  it('enforces the rate limit — 31st mint in a minute returns 429 (per-token bucket)', async () => {
     const owner = await makeUser();
     const token = generateTestToken(owner._id);
     await File.create({

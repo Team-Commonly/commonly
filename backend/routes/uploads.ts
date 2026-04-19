@@ -19,6 +19,7 @@
 // ADR-002 Phase 1b: ESM import (not require) so CodeQL's js/missing-rate-limiting
 // query recognises the middleware on the mint route.
 import rateLimit from 'express-rate-limit';
+import { createHash } from 'crypto';
 import path from 'path';
 import {
   DEFAULT_TOKEN_TTL_SECONDS,
@@ -79,16 +80,26 @@ const upload = multer({
   },
 });
 
-// 30 mints/min/user is generous for a page loading dozens of avatars + images
-// (clients cache until TTL expiry) and low enough that a compromised JWT can't
-// scrape attachments en masse. Inlined in this file so CodeQL's
-// `js/missing-rate-limiting` query sees the middleware on the mint route.
+// 30 mints/min/bucket is generous for a page loading dozens of avatars +
+// images (clients cache until TTL expiry) and low enough that a compromised
+// JWT can't scrape attachments en masse. Keyed on the Authorization header
+// (hashed) so each user's bearer token gets its own bucket — NAT'd users
+// sharing one office IP don't collide. Falling back to `req.ip` covers the
+// unauth path. Inlined in this file and applied as the FIRST middleware on
+// the route so CodeQL's `js/missing-rate-limiting` query sees it (the query
+// only recognises the limiter when it precedes other middleware).
 const mintRateLimit = rateLimit({
   windowMs: 60_000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: AuthReq) => req.userId || req.ip || 'anon',
+  keyGenerator: (req: AuthReq) => {
+    const authHeader = req.get?.('authorization');
+    if (authHeader) {
+      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+    }
+    return req.ip || 'anon';
+  },
   handler: (_req: unknown, res: Res) =>
     res.status(429).json({ msg: 'rate limit exceeded: 30 mints per 60s' }),
 });
@@ -133,11 +144,11 @@ router.post('/', auth, upload.single('image'), async (req: AuthReq, res: Res) =>
 
 // ADR-002 Phase 1b: signed-URL mint endpoint. Declared before the bare
 // `:fileName` GET so Express doesn't match `/:fileName/url` as a fileName
-// containing a slash. `auth` runs before `mintRateLimit` so the rate
-// limiter's keyGenerator sees `req.userId` (populated by auth); without
-// that order, every caller collapses to an IP-based bucket and NAT'd
-// users share one limit.
-router.get('/:fileName/url', auth, mintRateLimit, async (req: AuthReq, res: Res) => {
+// containing a slash. `mintRateLimit` runs before `auth` because (1) CodeQL's
+// js/missing-rate-limiting query only recognises the limiter as the first
+// middleware, and (2) the limiter's keyGenerator reads the Authorization
+// header directly, so it doesn't need auth to have populated `req.userId`.
+router.get('/:fileName/url', mintRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });
