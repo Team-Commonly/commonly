@@ -1,17 +1,17 @@
 # GitHub Actions → GKE deploy setup
 
-Companion to [`ADR-009`](../adr/ADR-009-test-tiers-and-ci-cd-to-gke.md). Two
-paths: **Workload Identity Federation** (recommended, no long-lived credential
-in GitHub) and **Service Account JSON key** (fast path, one secret in GitHub,
-rotatable-forever).
+Companion to [`ADR-009`](../adr/ADR-009-test-tiers-and-ci-cd-to-gke.md).
+ADR-009 commits to **Workload Identity Federation only** — no long-lived
+service account keys in GitHub. This runbook is the concrete gcloud sequence.
 
-Pick one. Run the gcloud blocks once from an account with `roles/owner` (or
+Run the blocks below once from an account with `roles/owner` (or
 `roles/iam.workloadIdentityPoolAdmin` + `roles/iam.serviceAccountAdmin` +
-`roles/resourcemanager.projectIamAdmin`) on `commonly-493005`.
+`roles/resourcemanager.projectIamAdmin`) on `commonly-493005`. Expect
+~15 minutes end-to-end.
 
 ---
 
-## Prep (both paths)
+## Prep
 
 ```bash
 # Replace if your project differs.
@@ -39,7 +39,7 @@ gcloud artifacts repositories list --location=us-central1 # should show 'docker'
 
 ---
 
-## Path A — Workload Identity Federation (recommended)
+## Setup
 
 Short-lived tokens minted per workflow run; no JSON key ever leaves GCP.
 
@@ -63,17 +63,49 @@ gcloud artifacts repositories add-iam-policy-binding docker \
   --member="serviceAccount:$DEPLOY_SA_EMAIL" \
   --role=roles/artifactregistry.writer
 
-# Talk to the dev cluster. Repeat for prod when you add it.
-gcloud container clusters get-credentials commonly-dev --region=us-central1
+# Authenticate to ANY cluster in the project (read-only). Least-privilege
+# IAM bootstrap so gcloud can fetch kubeconfig; the real deploy permissions
+# come from the Kubernetes RBAC binding below.
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:$DEPLOY_SA_EMAIL" \
-  --role=roles/container.developer \
-  --condition="expression=resource.name.endsWith('/clusters/commonly-dev'),title=commonly-dev-only"
+  --role=roles/container.clusterViewer
 ```
 
-> **Note:** `roles/container.developer` at project level with a condition is
-> simpler than cluster-level RBAC and fine for a two-cluster setup. Tighten to
-> cluster RBAC if you add a third environment.
+Then grant deploy permissions at the **Kubernetes layer**, scoped to
+`commonly-dev` only. This is the reviewer-preferred alternative to
+IAM-conditioned `roles/container.developer`: IAM conditions only evaluate
+against cluster-shaped resources, which can silently deny mid-deploy when
+Helm touches operation / node-pool / workload resources with different
+resource paths. Kubernetes RBAC scopes cleanly to one cluster and covers
+every resource type Helm needs.
+
+```bash
+gcloud container clusters get-credentials commonly-dev --region=us-central1
+
+# The SA's K8s identity follows a fixed naming pattern; RoleBinding binds
+# the existing cluster-admin or deploy-oriented ClusterRole to it.
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: deploy-github
+subjects:
+  - kind: User
+    name: $DEPLOY_SA_EMAIL
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  # `edit` is sufficient for helm upgrade on application namespaces.
+  # Use `admin` if deploys also need to create namespaces or RBAC objects,
+  # or define a custom ClusterRole and tighten to exactly helm's verbs.
+  name: edit
+  apiGroup: rbac.authorization.k8s.io
+EOF
+```
+
+Repeat the `kubectl apply` against `commonly-prod` when that cluster is
+added — each cluster gets its own binding, and revoking access to one
+cluster is a single `kubectl delete clusterrolebinding deploy-github`.
 
 ### 3. Create the WIF pool + GitHub provider
 
@@ -178,94 +210,18 @@ jobs:
 
 ---
 
-## Path B — Service Account JSON key (fast path)
-
-One secret in GitHub, long-lived credential that you rotate manually. Use if
-you need to deploy *today* and can't wait for the WIF setup to land.
-
-### 1–2. SA + roles
-
-Same as Path A steps 1 and 2. Skip WIF pool/provider/binding (steps 3–4).
-
-### 3. Create a key
-
-```bash
-gcloud iam service-accounts keys create /tmp/deploy-github-key.json \
-  --iam-account=$DEPLOY_SA_EMAIL
-
-# Base64 so GitHub accepts it as a single-line secret.
-base64 -w0 /tmp/deploy-github-key.json > /tmp/deploy-github-key.b64
-cat /tmp/deploy-github-key.b64
-```
-
-### 4. GitHub secret
-
-**Settings → Secrets and variables → Actions**:
-
-```
-GCP_SA_KEY   <paste the base64 blob>
-```
-
-### 5. Workflow usage
-
-```yaml
-# .github/workflows/deploy-dev.yml (excerpt)
-permissions:
-  contents: read   # no id-token needed
-
-jobs:
-  deploy:
-    environment: dev
-    steps:
-      - uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-```
-
-### 6. Clean up the local file
-
-```bash
-shred -u /tmp/deploy-github-key.json /tmp/deploy-github-key.b64
-```
-
-### 7. Rotation
-
-```bash
-# List active keys
-gcloud iam service-accounts keys list --iam-account=$DEPLOY_SA_EMAIL
-
-# Revoke an old key by ID (after confirming the new one works)
-gcloud iam service-accounts keys delete <KEY_ID> --iam-account=$DEPLOY_SA_EMAIL
-```
-
-Do this at least every 90 days. Set a calendar reminder — there is no
-automatic expiry.
-
----
-
-## Migration: Path B → Path A
-
-If you start with the JSON key and want to move to WIF later:
-
-1. Run Path A steps 3–6 (WIF pool, provider, binding, secrets).
-2. Update workflows to the Path A auth step.
-3. Verify one green deploy on the new path.
-4. Delete the SA key via step 7 of Path B.
-5. Delete the `GCP_SA_KEY` GitHub secret.
-
-No disruption if the workflow is updated in the same PR as the WIF binding.
-
----
-
-## Revocation (both paths)
+## Revocation
 
 ### Revoke deploy access entirely
 
 ```bash
-# Strips all IAM bindings on the SA. Deploys fail immediately.
+# Strip the K8s binding first — one cluster at a time, fastest cut-off.
+kubectl delete clusterrolebinding deploy-github
+
+# Then strip IAM so the SA can't even authenticate to other clusters.
 gcloud projects remove-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:$DEPLOY_SA_EMAIL" \
-  --role=roles/container.developer
+  --role=roles/container.clusterViewer
 
 gcloud artifacts repositories remove-iam-policy-binding docker \
   --location=us-central1 \
@@ -284,19 +240,26 @@ gcloud iam service-accounts delete $DEPLOY_SA_EMAIL
 ## Troubleshooting
 
 **`google-github-actions/auth` fails with `Permission 'iam.serviceAccounts.getAccessToken' denied`.**
-The SA binding to the pool is wrong. Re-run Path A step 4 and check that
+The SA binding to the pool is wrong. Re-run step 4 and check that
 `attribute.ref` / `attribute.environment` match the workflow's context.
 
 **Auth succeeds but `docker push` returns 403.**
-Missing `roles/artifactregistry.writer` on the `docker` repo. Re-run Path A
-step 2.
+Missing `roles/artifactregistry.writer` on the `docker` repo. Re-run step 2.
 
-**`helm upgrade` fails with `Unauthorized`.**
-Missing `roles/container.developer` OR the SA is valid but `kubectl` is using
-an old kubeconfig. Run `gcloud container clusters get-credentials` in the
-workflow before `helm`.
+**`helm upgrade` fails with `Unauthorized` or `forbidden`.**
+The Kubernetes RBAC binding is missing on this cluster. Re-run the
+`kubectl apply` block from step 2 against the target cluster. If auth
+itself is the issue, confirm the SA has `roles/container.clusterViewer`
+at project level so `gcloud container clusters get-credentials` can
+fetch kubeconfig.
+
+**`helm upgrade` returns `Forbidden: cannot create namespaces`.**
+The `edit` ClusterRole doesn't grant namespace creation. Either
+pre-create namespaces out-of-band, or switch the `roleRef.name` in the
+RBAC binding to `admin` (cluster-scoped admin on a specific cluster is
+still narrower than project-wide `roles/container.developer`).
 
 **PR from a fork triggers the workflow and `auth` succeeds.**
-`attribute-condition` on the provider was missed (Path A step 3). The
+`attribute-condition` on the provider was missed (step 3). The
 condition must include `assertion.repository=='Team-Commonly/commonly'` —
 verify with `gcloud iam workload-identity-pools providers describe`.

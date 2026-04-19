@@ -28,10 +28,13 @@ Adopt a four-tier test taxonomy with explicit names and explicit PR gating, and 
 |---|---|---|---|---|
 | 0 | **Unit** | In-memory everything; route handlers with mocked models; single-module tests | every push | required |
 | 1 | **Service** | Real Mongo + Postgres (service containers); model queries, regex semantics, ObjectId coercion, PG ILIKE | every push | required |
+| 1.5 | **Chart lint** | `helm template` + `kubeconform` / `kubeval` against the rendered manifests | every push | required |
 | 2 | **Cluster smoke** | Full Helm install on kind; pods come up, health probes pass, HTTP smoke against ingress | PRs touching `k8s/`, `Dockerfile`, `dev.sh cluster`; `workflow_dispatch` | required on eligible paths |
 | 3 | **Dev-env smoke** | Real GKE `commonly-dev` after deploy-on-merge; HTTP probes against `api-dev.commonly.me`; auto-rollback on failure | merge to `main` | informational (rolls back on fail) |
 
 **Tier 1 is the rename most of the audit turns on.** The current "integration" suite becomes Tier 1 *and* actually uses the service containers, not `MongoMemoryServer`. `setupMongoDb()` gets a `useRealServices` branch that `mongoose.connect(process.env.MONGO_URI)` when `INTEGRATION_TEST=true`, and leaves the memory server for Tier 0. `pg-mem` similarly falls back to a real `pg.Pool` against the `postgres:16` container when the env says so. Nothing else in the test body changes — same fixtures, same assertions.
+
+**Tier 1.5 (chart lint) is new** and closes a real gap: a PR that adds `process.env.NEW_REQUIRED_FLAG` to `backend/` without a matching chart update passes Tier 0 and Tier 1 (neither renders Helm) and doesn't trigger Tier 2's path filter (only `backend/` changed). It merges green and breaks dev on Phase 3 deploy. `helm template k8s/helm/commonly -f values.yaml -f values-dev.yaml | kubeconform` runs in < 30s, catches missing values / schema / required-env-var-in-ConfigMap drift, and is cheap enough to run on every push. Keeps Tier 2 as the "real cluster" signal and lets chart-lint be the always-on first line of defense.
 
 **Tier 2 is clarified, not new.** `smoke-test.yml` already spins up kind and runs `./dev.sh cluster test`. We change the trigger so it runs on PRs that touch deployment surfaces (path-filtered `on.pull_request.paths`) and keep the post-merge run. Every PR that *could* break a deploy gets cluster signal before merge.
 
@@ -53,7 +56,7 @@ Target state: the *secret* content in `values-private.yaml` moves to GCP Secret 
 
 **Image tags.** Workflow sets image tag to `${sha}` (short SHA) and passes it via `--set image.tag=...` on helm upgrade, not by editing `values-dev.yaml`. That keeps the workflow git-clean (no auto-commit back to main), keeps `values-dev.yaml` reviewable, and makes rollback a matter of `helm upgrade --set image.tag=<previous-sha>` rather than a values-file revert.
 
-**Rollback.** Tier 3 smoke is the gate. On failure, workflow runs `helm rollback commonly-dev 0` (last revision) and posts the failed probe output to the PR or commit. Human decides whether to fix forward or investigate.
+**Rollback.** Tier 3 smoke is the gate. On failure, the workflow rolls the release back to the **last known-good revision** tracked in a Helm chart annotation (`commonly.me/last-good-revision`) that the workflow stamps on every passing deploy. This avoids two failure modes of naive `helm rollback commonly-dev 0`: (1) the first-ever deploy has no prior revision to roll back to, so the workflow short-circuits to "fail loudly, don't auto-rollback" when `helm history` has one entry; (2) a second failing deploy could otherwise roll back to the first failing deploy's revision rather than the last good one. The 3-strikes escalation triggers a CI failure and an auto-opened GitHub issue when the last-known-good pointer gets stale (three consecutive rollbacks against the same pointer).
 
 ---
 
@@ -81,7 +84,7 @@ Target state: the *secret* content in `values-private.yaml` moves to GCP Secret 
 - **Image registry push scope.** The WIF-backed SA has `roles/artifactregistry.writer` on the `docker` repo only. No project-wide admin.
 - **Helm upgrade scope.** Deploy SA has `roles/container.developer` on the `commonly-dev` / `commonly-prod` clusters only. No ability to create new clusters or modify node pools.
 - **No secrets echoed in logs.** `set -x` banned in the deploy workflow; `::add-mask::` used for any intermediate token output.
-- **Tier 3 smoke uses a dedicated test account.** Smoke probes don't use real user credentials — a `smoke@commonly.me` service account gets minimal read access and is rotated via ESO.
+- **Tier 3 probes are unauthenticated only (Phase 4 scope).** `GET /api/health/live` and `GET /api/health/ready` cover the "did the pod come up and can it reach Mongo + Postgres" question — which is the overwhelming majority of deploy regressions. Authenticated round-trips (login + domain-endpoint call) need a credential story (dedicated smoke account, its User row in Mongo, ESO-rotated secret, workflow retrieval of the credential) that isn't resolved yet; deferred to a later phase so it doesn't block Phase 4.
 
 ---
 
@@ -118,6 +121,12 @@ Deferred. Preview environments per PR are the ideal but cost real GKE capacity p
 - [ ] Verify all existing "integration" tests still pass against the CI service containers. Fix the ones that silently relied on `MongoMemoryServer` quirks (expect a few).
 - [ ] Update `backend/TESTING.md` with the new tier names.
 
+### Phase 1.5 — Chart-lint on every push (one small PR)
+
+- [ ] New job in `tests.yml` (or separate `chart-lint.yml`): `helm template k8s/helm/commonly -f values.yaml -f values-dev.yaml | kubeconform --strict --schema-location default` on every push.
+- [ ] Also run against `values-prod.yaml` once it's committed (Phase 3).
+- [ ] Required check on all PRs — it's cheap enough that "always on" is fine.
+
 ### Phase 2 — Gate Tier 2 on PRs (one small PR)
 
 - [ ] `smoke-test.yml`: add `on.pull_request.paths` filter for `k8s/**`, `backend/Dockerfile`, `frontend/Dockerfile`, `dev.sh`, `.github/workflows/**`. Keep post-merge trigger.
@@ -133,7 +142,7 @@ Deferred. Preview environments per PR are the ideal but cost real GKE capacity p
 
 ### Phase 4 — Tier 3 smoke + rollback (one PR)
 
-- [ ] `deploy-dev.yml` adds post-deploy HTTP probes against `api-dev.commonly.me` (health, auth round-trip, one representative domain endpoint).
+- [ ] `deploy-dev.yml` adds post-deploy HTTP probes against `api-dev.commonly.me` — **unauthenticated only this phase**: `GET /api/health/live` and `GET /api/health/ready`. Covers pod-came-up and DB-reachability. Auth round-trip probes deferred until a smoke credential story lands (dedicated account + ESO-rotated secret + workflow retrieval).
 - [ ] `helm rollback commonly-dev 0` on probe failure.
 - [ ] Three-consecutive-rollbacks → hard CI failure + GitHub issue auto-opened.
 
