@@ -174,4 +174,29 @@ describe('Pod Model Tests', () => {
       mockExternalLinkId.toString(),
     );
   });
+
+  it('should save project metadata on project pods', async () => {
+    const pod = new Pod({
+      name: 'Project Pod',
+      description: 'Work workspace',
+      type: 'project',
+      createdBy: testUser._id,
+      projectMeta: {
+        goal: 'Launch v1',
+        scope: 'Frontend and backend',
+        successCriteria: ['launch checklist complete'],
+        status: 'planning',
+        keyLinks: [{ label: 'Figma', url: 'https://example.com/figma' }],
+      },
+    });
+
+    const savedPod = await pod.save();
+
+    expect(savedPod.type).toBe('project');
+    expect(savedPod.projectMeta.goal).toBe('Launch v1');
+    expect(savedPod.projectMeta.scope).toBe('Frontend and backend');
+    expect(savedPod.projectMeta.successCriteria).toEqual(['launch checklist complete']);
+    expect(savedPod.projectMeta.status).toBe('planning');
+    expect(savedPod.projectMeta.keyLinks).toHaveLength(1);
+  });
 });

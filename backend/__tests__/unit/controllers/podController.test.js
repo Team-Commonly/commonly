@@ -72,6 +72,56 @@ describe('podController', () => {
     expect(res.json).toHaveBeenCalledWith([]);
   });
 
+  it('createPod accepts project type and project metadata', async () => {
+    const savedPod = {
+      _id: 'project-1',
+      name: 'Website Relaunch',
+      type: 'project',
+      projectMeta: {
+        goal: 'Ship the new marketing site',
+        scope: 'Landing page and onboarding',
+        successCriteria: ['launch', 'handoff'],
+        status: 'planning',
+      },
+      populate: jest.fn().mockResolvedValue(),
+    };
+    const save = jest.fn().mockResolvedValue(savedPod);
+    Pod.mockImplementation((payload) => ({
+      ...payload,
+      save,
+    }));
+    AgentRegistry.findOne.mockResolvedValue(null);
+
+    const req = {
+      body: {
+        name: 'Website Relaunch',
+        description: 'Project pod',
+        type: 'project',
+        projectMeta: {
+          goal: 'Ship the new marketing site',
+          scope: 'Landing page and onboarding',
+          successCriteria: ['launch', 'handoff'],
+        },
+      },
+      userId: 'creator',
+    };
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    await podController.createPod(req, res);
+
+    expect(Pod).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'project',
+      projectMeta: expect.objectContaining({
+        goal: 'Ship the new marketing site',
+        scope: 'Landing page and onboarding',
+        successCriteria: ['launch', 'handoff'],
+        status: 'planning',
+        ownerIds: ['creator'],
+      }),
+    }));
+    expect(res.json).toHaveBeenCalledWith(savedPod);
+  });
+
   it('createPod accepts agent-ensemble type', async () => {
     const savedPod = { _id: 'p1', populate: jest.fn().mockResolvedValue() };
     const save = jest.fn().mockResolvedValue(savedPod);

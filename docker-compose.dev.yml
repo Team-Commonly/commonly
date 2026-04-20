@@ -23,7 +23,7 @@ services:
       POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
       POSTGRES_DB: ${PG_DATABASE:-commonly}
     volumes:
-      - postgres-data-dev:/var/lib/postgresql/data
+      - postgres-data-dev:/var/lib/postgresql
     networks:
       - app-network-dev
 

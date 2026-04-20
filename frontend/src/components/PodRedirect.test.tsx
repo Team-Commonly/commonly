@@ -49,6 +49,13 @@ describe('PodRedirect', () => {
     });
     expect(navigate).toHaveBeenCalledWith('/pods/chat');
 
+    const projectButton = buttons.find((btn) => btn.textContent === 'Project Pods');
+    expect(projectButton).toBeTruthy();
+    act(() => {
+      TestUtils.Simulate.click(projectButton);
+    });
+    expect(navigate).toHaveBeenCalledWith('/pods/project');
+
     const ensembleButton = buttons.find((btn) => btn.textContent === 'Agent Ensemble Pods');
     expect(ensembleButton).toBeTruthy();
     act(() => {

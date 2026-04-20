@@ -64,6 +64,16 @@ interface AgentInfo {
     };
 }
 
+const POD_TYPE_ORDER = ['chat', 'project', 'study', 'games', 'agent-ensemble', 'team', 'agent-room'];
+const CREATEABLE_POD_TYPE_OPTIONS = [
+    { value: 0, label: 'Chat' },
+    { value: 1, label: 'Project' },
+    { value: 2, label: 'Study' },
+    { value: 3, label: 'Games' },
+    { value: 4, label: 'Agent Ensemble' },
+    { value: 5, label: 'Team' },
+];
+
 const isLikelyAgentUsername = (username: string | undefined): boolean => {
     const normalized = String(username || '').trim().toLowerCase();
     if (!normalized) return false;
@@ -117,28 +127,13 @@ const Pod = () => {
         if (podType) {
             return podType;
         }
-        switch (tabValue) {
-            case 0: return 'chat';
-            case 1: return 'study';
-            case 2: return 'games';
-            case 3: return 'agent-ensemble';
-            case 4: return 'team';
-            case 5: return 'agent-room';
-            default: return 'chat';
-        }
+        return POD_TYPE_ORDER[tabValue] || 'chat';
     }, [podType, tabValue]);
 
     useEffect(() => {
         if (podType) {
-            switch (podType) {
-                case 'chat': setTabValue(0); break;
-                case 'study': setTabValue(1); break;
-                case 'games': setTabValue(2); break;
-                case 'agent-ensemble': setTabValue(3); break;
-                case 'team': setTabValue(4); break;
-                case 'agent-room': setTabValue(5); break;
-                default: setTabValue(0);
-            }
+            const nextIndex = POD_TYPE_ORDER.indexOf(podType);
+            setTabValue(nextIndex >= 0 ? nextIndex : 0);
         }
     }, [podType]);
 
@@ -326,13 +321,18 @@ const Pod = () => {
     const handleCreateRoom = async () => {
         try {
             if (!roomName.trim()) { setError('Pod name is required'); return; }
-            const podTypes = ['chat', 'study', 'games', 'agent-ensemble', 'team', 'agent-room'];
-            const newPodType = podTypes[tabValue] || 'chat';
+            const newPodType = POD_TYPE_ORDER[tabValue] || 'chat';
             const response = await axios.post('/api/pods', {
                 name: roomName,
                 description: roomDescription,
                 type: newPodType,
                 joinPolicy: inviteOnly ? 'invite-only' : 'open',
+                ...(newPodType === 'project' ? {
+                    projectMeta: {
+                        goal: roomDescription,
+                        status: 'planning',
+                    },
+                } : {}),
                 ...(parentPodId ? { parentPod: parentPodId } : {}),
             }, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
@@ -413,8 +413,7 @@ const Pod = () => {
 
     const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
         setTabValue(newValue);
-        const podTypes = ['chat', 'study', 'games', 'agent-ensemble', 'team', 'agent-room'];
-        navigate(`/pods/${podTypes[newValue]}`);
+        navigate(`/pods/${POD_TYPE_ORDER[newValue] || 'chat'}`);
     };
 
     const isAgentAdminView = getPodType() === 'agent-admin';
@@ -492,6 +491,7 @@ const Pod = () => {
                             className="pod-tabs"
                         >
                             <Tab label="Chat" className="pod-tab" />
+                            <Tab label="Project" className="pod-tab" />
                             <Tab label="Study" className="pod-tab" />
                             <Tab label="Games" className="pod-tab" />
                             <Tab label="Ensemble" className="pod-tab" />
@@ -528,6 +528,8 @@ const Pod = () => {
                                 <Typography variant="body1" color="textSecondary" paragraph>
                                     {isAgentAdminView
                                         ? 'Open a DM from the Agents page.'
+                                        : getPodType() === 'project'
+                                        ? 'Create a project pod to coordinate work between people and agents.'
                                         : getPodType() === 'agent-ensemble'
                                         ? 'Create a new agent ensemble pod to orchestrate multi-agent conversations.'
                                         : 'Create a new pod to start chatting with others!'}
@@ -654,23 +656,23 @@ const Pod = () => {
                 <DialogTitle>
                     <Box display="flex" alignItems="center">
                         <AddIcon sx={{ mr: 1, color: 'primary.main' }} />
-                        Create a New Pod
+                        {tabValue === 1 ? 'Create a New Project Pod' : 'Create a New Pod'}
                     </Box>
                 </DialogTitle>
                 <DialogContent>
                     <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                        Create a new pod to chat with others. Pods are spaces where you can discuss topics, share ideas, and connect with people.
+                        {tabValue === 1
+                            ? 'Create a project pod to coordinate work between people and agents with shared chat, structured tasks, and project context.'
+                            : 'Create a new pod to chat with others. Pods are spaces where you can discuss topics, share ideas, and connect with people.'}
                     </Typography>
-                    <TextField autoFocus margin="dense" label="Pod Name" type="text" fullWidth value={roomName} onChange={(e) => setRoomName(e.target.value)} sx={{ mb: 2 }} placeholder="E.g., JavaScript Developers, Book Club, etc." />
-                    <TextField margin="dense" label="Description" type="text" fullWidth multiline rows={3} value={roomDescription} onChange={(e) => setRoomDescription(e.target.value)} sx={{ mb: 2 }} placeholder="Describe what this pod is about..." />
+                    <TextField autoFocus margin="dense" label="Pod Name" type="text" fullWidth value={roomName} onChange={(e) => setRoomName(e.target.value)} sx={{ mb: 2 }} placeholder={tabValue === 1 ? 'E.g., Website Relaunch, Q2 Launch Plan, API Migration' : 'E.g., JavaScript Developers, Book Club, etc.'} />
+                    <TextField margin="dense" label="Description" type="text" fullWidth multiline rows={3} value={roomDescription} onChange={(e) => setRoomDescription(e.target.value)} sx={{ mb: 2 }} placeholder={tabValue === 1 ? 'Describe the project goal, scope, or execution context...' : 'Describe what this pod is about...'} />
                     <FormControl fullWidth sx={{ mb: 2 }}>
                         <InputLabel>Pod Type</InputLabel>
                         <Select value={tabValue} onChange={(e) => setTabValue(Number(e.target.value))}>
-                            <MenuItem value={0}>Chat</MenuItem>
-                            <MenuItem value={1}>Study</MenuItem>
-                            <MenuItem value={2}>Games</MenuItem>
-                            <MenuItem value={3}>Agent Ensemble</MenuItem>
-                            <MenuItem value={4}>Team</MenuItem>
+                            {CREATEABLE_POD_TYPE_OPTIONS.map((option) => (
+                                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                            ))}
                         </Select>
                     </FormControl>
                     <FormControl fullWidth sx={{ mb: 2 }}>

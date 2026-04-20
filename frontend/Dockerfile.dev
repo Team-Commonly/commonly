@@ -31,5 +31,8 @@ EXPOSE 3000
 # Add a label to indicate this is development
 LABEL com.commonly.environment="development"
 
-# For development, use the development server
-CMD ["npm", "start"]
+# Make dev startup script executable
+RUN chmod +x /app/start-dev.sh
+
+# For development, ensure deps then run the dev server
+CMD ["/bin/bash", "/app/start-dev.sh"]
