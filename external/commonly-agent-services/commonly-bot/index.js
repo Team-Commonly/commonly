@@ -4,6 +4,7 @@ const baseUrl = process.env.COMMONLY_BASE_URL || 'http://localhost:5000';
 const token = process.env.COMMONLY_AGENT_TOKEN;
 const userToken = process.env.COMMONLY_USER_TOKEN;
 const configPath = process.env.COMMONLY_AGENT_CONFIG_PATH;
+const optionalRuntime = process.env.COMMONLY_AGENT_OPTIONAL === '1';
 const SOCIAL_POST_LIMIT = parseInt(process.env.COMMONLY_SOCIAL_CURATION_LIMIT, 10) || 60;
 const ENABLE_SOCIAL_REPHRASE = process.env.COMMONLY_SOCIAL_REPHRASE_ENABLED !== '0';
 const ENABLE_SOCIAL_FEED_POST = process.env.COMMONLY_SOCIAL_POST_TO_FEED === '1';
@@ -60,6 +61,20 @@ const buildUserHeaders = (tokenValue) => ({
   Authorization: `Bearer ${tokenValue}`,
   'Content-Type': 'application/json',
 });
+
+let waitingForAccounts = false;
+
+const logWaitingForAccounts = () => {
+  if (waitingForAccounts) return;
+  waitingForAccounts = true;
+  console.warn('No agent tokens configured yet. Waiting for COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
+};
+
+const logAccountsDetected = (count) => {
+  if (!waitingForAccounts) return;
+  waitingForAccounts = false;
+  console.log(`Runtime config detected. Resuming polling for ${count} account(s).`);
+};
 
 const formatIntegrationSummary = (summary, sourceOverride) => {
   if (!summary) return '';
@@ -810,27 +825,44 @@ if (userToken) {
 
 const initialAccounts = buildAccounts();
 if (initialAccounts.length === 0) {
-  console.error('No agent tokens configured. Set COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
-  process.exit(1);
+  if (optionalRuntime) {
+    logWaitingForAccounts();
+  } else {
+    console.error('No agent tokens configured. Set COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
+    process.exit(1);
+  }
 }
 
-Promise.all(
-  initialAccounts.map((account) => (
-    fetchEvents(account.runtimeToken)
-      .then((events) => {
-        console.log(`Commonly Bot connected (${account.id}). ${events.length} pending events.`);
-      })
-      .catch((err) => {
-        console.error(`Commonly Bot connection failed (${account.id}):`, err.message);
-      })
-  )),
-).catch(() => {});
+if (initialAccounts.length > 0) {
+  Promise.all(
+    initialAccounts.map((account) => (
+      fetchEvents(account.runtimeToken)
+        .then((events) => {
+          console.log(`Commonly Bot connected (${account.id}). ${events.length} pending events.`);
+        })
+        .catch((err) => {
+          console.error(`Commonly Bot connection failed (${account.id}):`, err.message);
+        })
+    )),
+  ).catch(() => {});
+}
 
 let isPolling = false;
 setInterval(async () => {
   if (isPolling) return;
   isPolling = true;
   const accounts = buildAccounts();
+  if (accounts.length === 0) {
+    if (optionalRuntime) {
+      logWaitingForAccounts();
+      isPolling = false;
+      return;
+    }
+    console.error('No agent tokens configured. Set COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
+    isPolling = false;
+    return;
+  }
+  logAccountsDetected(accounts.length);
   for (const account of accounts) {
     // eslint-disable-next-line no-await-in-loop
     await pollAccount(account);
