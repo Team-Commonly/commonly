@@ -56,7 +56,6 @@ PG_PASSWORD=postgres
 PG_HOST=postgres
 PG_PORT=5432
 PG_DATABASE=commonly
-PG_SSL_CA_PATH=/app/ca.pem
 
 # Frontend
 REACT_APP_API_URL=http://localhost:5000
@@ -104,7 +103,12 @@ CLAWDBOT_GATEWAY_TOKEN=dev-token
 CLAWDBOT_GATEWAY_URL=http://clawdbot-gateway:18789
 ```
 
-2. Download the CA certificate (if using external PostgreSQL):
+Notes:
+- For the default Docker Compose Postgres container, leave SSL disabled. `PG_SSL_CA_PATH` is only for external PostgreSQL instances that require a CA certificate.
+- The repository also ships `.env.example` with these local defaults; `./dev.sh up` will create `.env` from it automatically if missing.
+- AI keys are optional for boot. If `GEMINI_API_KEY`, `OPENAI_API_KEY`, and `OPENROUTER_API_KEY` are all unset, the app still starts but AI-backed features will stay limited until you add a key and restart.
+
+2. Download the CA certificate only if you are using external PostgreSQL:
 
 ```bash
 node download-ca.js

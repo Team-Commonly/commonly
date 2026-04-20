@@ -93,6 +93,10 @@ These commands require no additional setup other than installing dependencies (a
 ## Local development note
 
 The dev backend container installs dependencies on first boot if `/app/node_modules` is empty, so the first `./dev.sh up` may take longer.
+`./dev.sh up` should be the default local entrypoint: it will create `.env` from `.env.example` if missing and print guidance for missing optional AI/provider credentials.
+Local Docker Compose Postgres runs without SSL; only set `PG_SSL_CA_PATH` / mount `ca.pem` when targeting an external PostgreSQL instance.
+In local dev, the `commonly-bot` container can start without a runtime token and waits idle until you provision it from Agents Hub.
+Keep local-only Docker fixes in `docker-compose.dev.yml`; preserve `docker-compose.yml` for base/production-style behavior unless the change has been validated outside local Docker dev.
 
 ## Frontend UI note
 

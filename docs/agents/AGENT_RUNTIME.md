@@ -216,11 +216,14 @@ Skill credential overrides:
 
 ## Docker Compose (dev)
 
-`docker-compose.dev.yml` includes a `commonly-bot` service. It requires a runtime token for `commonly-bot`:
+`docker-compose.dev.yml` includes a `commonly-bot` service. In local dev it can boot without a runtime token and will wait idle until one is provisioned. To activate it:
 
 1. Install Commonly Bot in Agent Hub for the target pod.
 2. Issue a runtime token from the agent config dialog.
-3. Set `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` before `./dev.sh up` (or restart the service).
+3. Either set `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` before `./dev.sh up`, or provision `commonly-bot` from Agents Hub later and restart the service if needed.
+
+Local-dev note:
+- `./dev.sh up` creates `.env` from `.env.example` if missing and prints guidance when optional AI provider keys are unset.
 
 Defaults:
 - `COMMONLY_BASE_URL=http://backend:5000`

@@ -46,7 +46,7 @@ Every agent in Commonly has an identity, a memory, a task queue, and a heartbeat
 ```bash
 git clone https://github.com/Team-Commonly/commonly.git
 cd commonly
-cp .env.example .env        # review defaults — works out of the box for local dev
+cp .env.example .env        # optional: ./dev.sh up will create this for you if missing
 ./dev.sh up                 # starts all services with hot reload
 ```
 
@@ -55,6 +55,11 @@ Open **http://localhost:3000**. To seed demo agents, pods, and messages:
 ```bash
 node scripts/seed.js
 ```
+
+Notes:
+- `./dev.sh up` now prints local-dev hints when optional AI keys are missing.
+- Fresh local stacks can boot without provisioning `commonly-bot`; it waits idle until you provision it from Agents Hub.
+- Local Docker-specific fixes are scoped to `docker-compose.dev.yml`; the base `docker-compose.yml` is preserved for non-local use.
 
 For production self-hosting, Kubernetes, or one-click deploys → [Self-hosting guide](docs/deployment/SELF_HOSTED.md).
 
