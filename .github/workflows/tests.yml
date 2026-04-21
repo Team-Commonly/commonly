@@ -126,3 +126,50 @@ jobs:
         run: |
           cd backend
           npx jest --testPathPattern="__tests__/service" --forceExit --runInBand
+
+  chart-lint:
+    name: Chart Lint (Tier 1.5)
+    runs-on: ubuntu-latest
+
+    env:
+      # Pin CRD schemas to a known commit to avoid drift.
+      # Update manually by running: gh api /repos/datreeio/CRDs-catalog/commits/main --jq .sha
+      CRDS_CATALOG_SHA: 15e9b72701ce617b0ac15da611a7fb2e54b980dd
+      KUBECONFORM_VERSION: v0.7.0
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" -o kc.tgz
+          sudo tar -xzf kc.tgz -C /usr/local/bin/ kubeconform
+          kubeconform -v
+
+      - name: Render and lint dev chart
+        run: |
+          helm template commonly-dev k8s/helm/commonly \
+            -f k8s/helm/commonly/values.yaml \
+            -f k8s/helm/commonly/values-dev.yaml \
+          | kubeconform --strict --summary -output text \
+              --schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRDS_CATALOG_SHA}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+              --schema-location default
+
+      - name: Render and lint prod chart (if values-prod.yaml exists)
+        run: |
+          if [ -f k8s/helm/commonly/values-prod.yaml ]; then
+            helm template commonly-prod k8s/helm/commonly \
+              -f k8s/helm/commonly/values.yaml \
+              -f k8s/helm/commonly/values-prod.yaml \
+            | kubeconform --strict --summary -output text \
+                --schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRDS_CATALOG_SHA}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+                --schema-location default
+          else
+            echo "values-prod.yaml not present yet (lands in ADR-009 Phase 5); skipping prod lint."
+          fi
