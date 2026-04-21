@@ -11,22 +11,36 @@ on:
     workflows: ["Tests"]
     branches: [main]
     types: [completed]
+  # ADR-009 Phase 2: gate Tier 2 on PRs that touch deployment surfaces.
+  # Most PRs don't hit these paths and skip the (slow, expensive) kind smoke.
+  pull_request:
+    paths:
+      - 'k8s/**'
+      - 'backend/Dockerfile'
+      - 'frontend/Dockerfile'
+      - '_external/clawdbot/**'
+      - 'dev.sh'
+      - '.github/workflows/**'
 
 permissions:
   contents: read
 
-# Only one smoke test at a time — clusters are expensive
+# Scoped per-PR / per-ref so different PRs don't block each other on the single
+# global smoke queue. Preserves cancel-in-progress: false (never kill a running
+# smoke) while letting multiple smokes run in parallel runners.
 concurrency:
-  group: smoke-test
+  group: smoke-test-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
   smoke:
     name: kind cluster smoke test
     runs-on: ubuntu-latest
-    # Only run if triggered manually OR Tests workflow succeeded on main
+    # Run on manual dispatch, on any PR that passed the path filter above,
+    # or on a successful Tests workflow_run on main.
     if: >
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     timeout-minutes: 30
 
