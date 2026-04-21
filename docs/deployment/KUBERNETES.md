@@ -333,7 +333,7 @@ The `commonly-dev` cluster uses **ExternalSecrets Operator (ESO)** to sync all s
 - `externalSecrets.enabled: true` in `values-dev.yaml`
 - ESO syncs `api-keys` and `database-credentials` k8s Secrets from GCP SM every 1 hour
 - ESO owns both secrets (`creationPolicy: Owner`) — direct `kubectl patch` is overwritten on next sync
-- **GCP project**: `YOUR_GCP_PROJECT_ID`
+- **GCP project** (dev): `commonly-493005` (committed to `values-dev.yaml`; secrets still live in GCP Secret Manager)
 - **Secret Store**: `gcpsm-secretstore` (SA key auth via `gcpsm-secret` k8s secret)
 - **Secret naming convention**: `commonly-dev-<k8s-key>` (e.g. `commonly-dev-jwt-secret`)
 

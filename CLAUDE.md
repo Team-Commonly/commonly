@@ -216,17 +216,17 @@ npm run lint                                  # 0 errors
 
 ### Kubernetes (GKE — commonly-dev)
 
-**ALWAYS use three `-f` flags — NEVER `--reuse-values`:**
+**Use two `-f` flags — NEVER `--reuse-values`:**
 ```bash
 helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev \
   -f k8s/helm/commonly/values.yaml \
-  -f k8s/helm/commonly/values-dev.yaml \
-  -f /home/xcjam/workspace/commonly/.dev/values-private.yaml
+  -f k8s/helm/commonly/values-dev.yaml
 ```
 
 - `values.yaml` — base defaults (OSS-safe placeholders)
-- `values-dev.yaml` — dev overrides; **update image tag here before every upgrade**
-- `values-private.yaml` — not committed; real GCP project ID, PG host, image repos
+- `values-dev.yaml` — dev overrides; real GCP project ID, PG host, image repos. Config only — secrets live in GCP Secret Manager, pulled in via ESO. **Update image tag here before every upgrade** (or pass `--set backend.image.tag=<sha>` from CI per ADR-009 Phase 3).
+
+The legacy `.dev/values-private.yaml` was retired in ADR-009 Phase 3 — do not re-introduce a third `-f`.
 
 ```bash
 kubectl get pods -n commonly-dev

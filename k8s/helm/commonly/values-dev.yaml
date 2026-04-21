@@ -12,7 +12,7 @@ agentProvisioning:
 backend:
   replicaCount: 1
   image:
-    repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
+    repository: us-central1-docker.pkg.dev/commonly-493005/docker/commonly-backend
     tag: "20260417214615-r4"
     pullPolicy: Always  # Always pull in dev
   nodeSelector:
@@ -33,7 +33,7 @@ backend:
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
-    pgHost: "YOUR_PG_HOST"
+    pgHost: "commonly-psql-commonly.b.aivencloud.com"
     pgPort: "25450"
     pgDatabase: "defaultdb"
     pgUser: "avnadmin"
@@ -46,7 +46,7 @@ backend:
 frontend:
   replicaCount: 1
   image:
-    repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
+    repository: us-central1-docker.pkg.dev/commonly-493005/docker/commonly-frontend
     tag: "20260412125218"
     pullPolicy: Always
   nodeSelector:
@@ -88,17 +88,23 @@ redis:
 
 externalSecrets:
   enabled: true
+  gcpProjectId: commonly-493005
   secretStore:
     name: gcpsm-secretstore
-    projectId: YOUR_GCP_PROJECT_ID
+    projectId: commonly-493005
     clusterLocation: us-central1
     clusterName: commonly-dev
+  serviceAccount:
+    gcpServiceAccount: commonly-secrets-sa@commonly-493005.iam.gserviceaccount.com
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: commonly-secrets-sa@commonly-493005.iam.gserviceaccount.com
 
 agents:
   clawdbot:
     enabled: true
     image:
-      repository: gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway
+      repository: us-central1-docker.pkg.dev/commonly-493005/docker/clawdbot-gateway
       tag: "20260414192025"
       pullPolicy: Always
     strategy:
@@ -123,7 +129,7 @@ agents:
   commonlyBot:
     enabled: true
     image:
-      repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-bot
+      repository: us-central1-docker.pkg.dev/commonly-493005/docker/commonly-bot
       tag: "20260411055334"
       pullPolicy: Always
     nodeSelector:
@@ -166,7 +172,7 @@ skillsCatalogStorage:
   storageClassName: standard-rwo
   accessMode: ReadWriteOnce
   bootstrapFromImage: true
-  downloadUrl: "https://storage.googleapis.com/YOUR_GCP_PROJECT_ID_cloudbuild/awesome-agent-skills-index.json"
+  downloadUrl: "https://storage.googleapis.com/commonly-493005_cloudbuild/awesome-agent-skills-index.json"
 
 autoscaling:
   backend:
