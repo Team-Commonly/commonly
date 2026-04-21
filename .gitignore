@@ -39,6 +39,11 @@ _external/*/
 # Claude Code — local dev tooling, not for OSS contributors
 .claude/
 
+# Local-only dev materials: values-private.yaml (Helm overrides with real
+# GCP project ID / PG host / image repos) and git worktrees under .dev/worktree/.
+# Never commit — contents include credentials and embedded git repos.
+.dev/
+
 # Codex skills backup after migration to commonly-skills repo (2026-04-12)
 .codex/skills.bak.*
 
