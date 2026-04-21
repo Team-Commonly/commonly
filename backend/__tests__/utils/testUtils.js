@@ -16,7 +16,11 @@ const setupMongoDb = async () => {
       const uri = process.env.MONGO_URI;
       if (!uri) throw new Error('INTEGRATION_TEST=true but MONGO_URI is not set');
       await mongoose.connect(uri);
-      console.log('[tier1] Connected to real MongoDB:', uri);
+      // Real Mongo is shared across test files in a single Jest --runInBand run;
+      // drop the DB per-suite so each file starts with a clean slate and is
+      // isolated from data seeded by prior files.
+      await mongoose.connection.dropDatabase();
+      console.log('[tier1] Connected to real MongoDB and dropped DB:', uri);
       return;
     }
 
@@ -90,7 +94,10 @@ const setupPgDb = async () => {
       const schemaPath = path.join(__dirname, '..', '..', 'config', 'schema.sql');
       const schema = fs.readFileSync(schemaPath, 'utf8');
       await pgPool.query(schema);
-      console.log('[tier1] Connected to real Postgres and applied schema.sql');
+      // Same cross-file-contamination concern as Mongo: TRUNCATE on setup so
+      // each suite starts with an empty schema.
+      await pgPool.query('TRUNCATE TABLE messages, pod_members, pods, users RESTART IDENTITY CASCADE');
+      console.log('[tier1] Connected to real Postgres, applied schema.sql, truncated tables');
       return pgPool;
     }
 
