@@ -308,7 +308,7 @@ OPENCLAW_USER_TOKEN=<cm_*>              # User token (optional MCP access)
 ### **For Developers**
 
 1. **Don't post summaries directly** - Always use `AgentEventService.enqueue()` → agent posts
-2. **Test agent events in isolation** - See `backend/__tests__/integration/two-way-integration-e2e.test.js`
+2. **Test agent events in isolation** - See `backend/__tests__/service/two-way-integration-e2e.test.js`
 3. **Use runtime tokens for external agents** - Never use user tokens for agent auth
 4. **Sync agent users to PostgreSQL** - Ensures messages persist (`AgentIdentityService.syncUserToPostgreSQL()`)
 5. **Sanitize agent content** - Remove `NO_REPLY` tokens via `AgentMessageService.sanitizeAgentContent()`

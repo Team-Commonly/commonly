@@ -1,17 +1,32 @@
+const fs = require('fs');
+const path = require('path');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { newDb } = require('pg-mem');
 const jwt = require('jsonwebtoken');
 
-// MongoDB in-memory setup
+const useRealServices = () => process.env.INTEGRATION_TEST === 'true';
+
+// MongoDB setup — Tier 1 (real services) or Tier 0 (in-memory)
 let mongoServer;
 
 const setupMongoDb = async () => {
   try {
-    // Use compatible MongoDB version for current system
+    if (useRealServices()) {
+      const uri = process.env.MONGO_URI;
+      if (!uri) throw new Error('INTEGRATION_TEST=true but MONGO_URI is not set');
+      await mongoose.connect(uri);
+      // Real Mongo is shared across test files in a single Jest --runInBand run;
+      // drop the DB per-suite so each file starts with a clean slate and is
+      // isolated from data seeded by prior files.
+      await mongoose.connection.dropDatabase();
+      console.log('[tier1] Connected to real MongoDB and dropped DB:', uri);
+      return;
+    }
+
     mongoServer = await MongoMemoryServer.create({
       binary: {
-        version: '7.0.11', // Use a more recent stable version
+        version: '7.0.11',
         skipMD5: true,
       },
       instance: {
@@ -19,12 +34,10 @@ const setupMongoDb = async () => {
       },
     });
 
-    const mongoUri = mongoServer.getUri();
-
-    await mongoose.connect(mongoUri);
+    await mongoose.connect(mongoServer.getUri());
     console.log('Connected to in-memory MongoDB');
   } catch (error) {
-    console.error('Error setting up in-memory MongoDB:', error);
+    console.error('Error setting up MongoDB:', error);
     throw error;
   }
 };
@@ -34,10 +47,11 @@ const closeMongoDb = async () => {
     await mongoose.disconnect();
     if (mongoServer) {
       await mongoServer.stop();
+      mongoServer = undefined;
     }
-    console.log('In-memory MongoDB stopped');
+    console.log(useRealServices() ? 'Real MongoDB disconnected' : 'In-memory MongoDB stopped');
   } catch (error) {
-    console.error('Error stopping in-memory MongoDB:', error);
+    console.error('Error stopping MongoDB:', error);
     throw error;
   }
 };
@@ -59,24 +73,43 @@ const clearMongoDb = async () => {
   }
 };
 
-// PostgreSQL in-memory setup
+// PostgreSQL setup — Tier 1 (real services via schema.sql) or Tier 0 (pg-mem)
 let pgDb;
 let pgPool;
 
 const setupPgDb = async () => {
   try {
+    if (useRealServices()) {
+      // eslint-disable-next-line global-require
+      const { Pool } = require('pg');
+      pgPool = new Pool({
+        host: process.env.PG_HOST,
+        port: Number(process.env.PG_PORT || 5432),
+        database: process.env.PG_DATABASE,
+        user: process.env.PG_USER,
+        password: process.env.PG_PASSWORD,
+        ssl: false,
+      });
+      await pgPool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+      const schemaPath = path.join(__dirname, '..', '..', 'config', 'schema.sql');
+      const schema = fs.readFileSync(schemaPath, 'utf8');
+      await pgPool.query(schema);
+      // Same cross-file-contamination concern as Mongo: TRUNCATE on setup so
+      // each suite starts with an empty schema.
+      await pgPool.query('TRUNCATE TABLE messages, pod_members, pods, users RESTART IDENTITY CASCADE');
+      console.log('[tier1] Connected to real Postgres, applied schema.sql, truncated tables');
+      return pgPool;
+    }
+
     pgDb = newDb();
 
-    // Enable UUID extension
     pgDb.public.registerFunction({
       name: 'gen_random_uuid',
       implementation: () => require('crypto').randomUUID(),
     });
 
-    // Connect to the in-memory PostgreSQL
     pgPool = pgDb.adapters.createPg().pool();
 
-    // Create tables - modify this based on your schema
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS pods (
         id VARCHAR(24) PRIMARY KEY,
@@ -112,14 +145,18 @@ const setupPgDb = async () => {
 
     return pgPool;
   } catch (error) {
-    console.error('Error setting up in-memory PostgreSQL:', error);
+    console.error('Error setting up PostgreSQL:', error);
     throw error;
   }
 };
 
 const clearPgDb = async () => {
   try {
-    if (pgPool) {
+    if (!pgPool) return;
+    // Real PG: TRUNCATE ... CASCADE handles FK ordering; pg-mem doesn't support TRUNCATE.
+    if (useRealServices()) {
+      await pgPool.query('TRUNCATE TABLE messages, pod_members, pods, users RESTART IDENTITY CASCADE');
+    } else {
       await pgPool.query('DELETE FROM messages');
       await pgPool.query('DELETE FROM pod_members');
       await pgPool.query('DELETE FROM pods');
@@ -134,10 +171,11 @@ const closePgDb = async () => {
   try {
     if (pgPool) {
       await pgPool.end();
-      console.log('In-memory PostgreSQL stopped');
+      pgPool = undefined;
+      console.log(useRealServices() ? 'Real PostgreSQL disconnected' : 'In-memory PostgreSQL stopped');
     }
   } catch (error) {
-    console.error('Error stopping in-memory PostgreSQL:', error);
+    console.error('Error stopping PostgreSQL:', error);
     throw error;
   }
 };

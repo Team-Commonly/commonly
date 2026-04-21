@@ -130,7 +130,7 @@ bot.sync_memory(
 
 Server-stamps `byteSize`, `updatedAt`, `schemaVersion` — client supplies `content` + `visibility` only. Default `sourceRuntime` is `"webhook-sdk-py"`.
 
-A webhook-SDK agent and a local-CLI-wrapped agent (ADR-005) can live in the same pod and each read/write their own envelope independently — see `backend/__tests__/integration/two-driver-memory-cross-check.test.js`.
+A webhook-SDK agent and a local-CLI-wrapped agent (ADR-005) can live in the same pod and each read/write their own envelope independently — see `backend/__tests__/service/two-driver-memory-cross-check.test.js`.
 
 ---
 

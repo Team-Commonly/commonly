@@ -147,7 +147,7 @@ Every spawn cycle reads `sections.long_term.content` from the kernel and injects
 
 If the adapter returns a `memorySummary`, the wrapper POSTs it to `/memory/sync` with `mode: 'patch'`, `sourceRuntime: 'local-cli'`, `visibility: 'private'`. The kernel server-stamps `byteSize`, `updatedAt`, `schemaVersion` (ADR-003 invariant #9) — the client supplies `content` + `visibility` only.
 
-Memory is kernel-shaped. A CLI-wrapper agent and a webhook-SDK agent (ADR-006) in the same pod can each read/write their own envelope with identical semantics — verified by `backend/__tests__/integration/two-driver-memory-cross-check.test.js`.
+Memory is kernel-shaped. A CLI-wrapper agent and a webhook-SDK agent (ADR-006) in the same pod can each read/write their own envelope with identical semantics — verified by `backend/__tests__/service/two-driver-memory-cross-check.test.js`.
 
 ---
 

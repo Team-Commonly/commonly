@@ -30,7 +30,7 @@ are considered legacy and will be removed once external services are live.
 ## Two-Way Integration Testing
 
 Comprehensive E2E tests for the two-way integration flow are available at:
-- `backend/__tests__/integration/two-way-integration-e2e.test.js` (23 tests)
+- `backend/__tests__/service/two-way-integration-e2e.test.js` (23 tests)
 
 ### Test Coverage
 | Section | Tests | Description |
