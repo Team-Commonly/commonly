@@ -95,10 +95,15 @@ subjects:
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole
-  # `edit` is sufficient for helm upgrade on application namespaces.
-  # Use `admin` if deploys also need to create namespaces or RBAC objects,
-  # or define a custom ClusterRole and tighten to exactly helm's verbs.
-  name: edit
+  # `admin` is required when the chart manages RBAC resources
+  # (Role/RoleBinding/ServiceAccount). `edit` omits rbac.authorization.k8s.io
+  # verbs and causes `helm upgrade` to fail with "roles.rbac.authorization.k8s.io
+  # ... is forbidden" once the chart renders a Role. `admin` is still
+  # namespace-scoped by the binding's target cluster — this is narrower than
+  # the project-wide IAM role `roles/container.developer`, and narrower than
+  # cluster-admin. Tighten further with a custom ClusterRole only if helm's
+  # set of verbs is well-understood.
+  name: admin
   apiGroup: rbac.authorization.k8s.io
 EOF
 ```
@@ -253,11 +258,16 @@ itself is the issue, confirm the SA has `roles/container.clusterViewer`
 at project level so `gcloud container clusters get-credentials` can
 fetch kubeconfig.
 
-**`helm upgrade` returns `Forbidden: cannot create namespaces`.**
-The `edit` ClusterRole doesn't grant namespace creation. Either
-pre-create namespaces out-of-band, or switch the `roleRef.name` in the
-RBAC binding to `admin` (cluster-scoped admin on a specific cluster is
-still narrower than project-wide `roles/container.developer`).
+**`helm upgrade` returns `Forbidden: cannot get/create resource "roles"` or `cannot create namespaces`.**
+The `edit` ClusterRole doesn't grant `rbac.authorization.k8s.io` verbs
+or namespace creation. The default here is `admin` (see step 2). If a
+cluster still has a legacy `edit` binding, recreate it:
+```bash
+kubectl delete clusterrolebinding deploy-github
+# then re-apply the block from step 2 with name: admin
+```
+Note: `roleRef` is immutable — `kubectl patch` returns
+"cannot change roleRef", delete+re-apply is the only path.
 
 **PR from a fork triggers the workflow and `auth` succeeds.**
 `attribute-condition` on the provider was missed (step 3). The
