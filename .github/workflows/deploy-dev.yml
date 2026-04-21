@@ -25,7 +25,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PROJECT_ID: commonly-493005
+  # PROJECT_ID read from DEV_GCP_PROJECT_ID secret (not committed per sensitive-data policy).
+  # Exported per-job via a setup step below.
   REGION: us-central1
   AR_REPO: docker
   CLUSTER: commonly-dev
@@ -52,6 +53,11 @@ jobs:
           else
             echo "tag=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Export PROJECT_ID from secret
+        env:
+          DEV_GCP_PROJECT_ID: ${{ secrets.DEV_GCP_PROJECT_ID }}
+        run: echo "PROJECT_ID=${DEV_GCP_PROJECT_ID}" >> "$GITHUB_ENV"
 
       - name: Authenticate to GCP via WIF
         uses: google-github-actions/auth@v2
