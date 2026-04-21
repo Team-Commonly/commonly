@@ -1,312 +1,92 @@
 # Backend Testing Guide
 
-## Current Status ✅
-- **All Tests Passing**: Backend test suite fully functional
-- **Test Coverage**: Comprehensive unit and integration tests
-- **Database Testing**: MongoDB Memory Server and pg-mem for isolation
-- **GitHub Actions**: ✅ Test & Coverage check passing
+This guide describes the two backend test tiers introduced by **[ADR-009](../docs/adr/ADR-009-test-tiers-and-ci-cd-to-gke.md)** (Phase 1) and how each runs locally and in CI.
 
-## Quick Commands
+## Tiers at a glance
+
+| Tier | Location | What it exercises | `INTEGRATION_TEST` | Runs on |
+|---|---|---|---|---|
+| **0 — Unit** | `__tests__/unit/`, `__tests__/services/`, route-handler tests with mocks | In-memory / mocked everything | unset | every push (CI job `Test & Coverage`) |
+| **1 — Service** | `__tests__/service/` | Real MongoDB + PostgreSQL from service containers | `true` | every push (CI job `Service Tests (Tier 1 — real DBs)`) |
+
+Higher tiers (1.5 chart-lint, 2 cluster smoke, 3 dev-env smoke) are out of scope for this doc — see ADR-009.
+
+## Tier 0 — Unit
+
+Default mode. `setupMongoDb()` spins up `MongoMemoryServer`; `setupPgDb()` uses `pg-mem`. No network, no ports, no containers. Everything under `__tests__/unit/`, `__tests__/services/`, and route-handler tests that mock their DB models falls here.
+
 ```bash
-# Run all backend tests
 cd backend && npm test
-
-# Run tests with coverage
 cd backend && npm run test:coverage
-
-# Run tests in watch mode
 cd backend && npm run test:watch
-
-# Run specific test file
-npm test -- registry.runtime-tokens.test.js
-
-# Run tests in Docker (recommended)
-./dev.sh test
+npm test -- registry.runtime-tokens.test.js        # single file
 ```
 
-## Test Environment Setup
+## Tier 1 — Service (real DBs)
 
-### Test Database Isolation
-- **MongoDB**: Uses MongoDB Memory Server for isolated testing
-- **PostgreSQL**: Uses pg-mem for in-memory PostgreSQL testing
-- **No Real Database**: Tests don't affect development/production databases
+Everything under `__tests__/service/`. When `INTEGRATION_TEST=true` is set, `__tests__/setup.js` populates `MONGO_URI` / `PG_*` defaults and `testUtils.js` connects to the real Mongo / Postgres instead of the in-memory servers. Same test bodies, same assertions — only the DB layer changes.
 
-### Environment Variables in Tests
-```javascript
-process.env.NODE_ENV = 'test'
-process.env.JWT_SECRET = 'test-jwt-secret'
-process.env.PG_HOST = 'localhost' // for PostgreSQL availability checks
-```
+Run locally against Docker Compose:
 
-## Test Structure
-
-### Unit Tests
-Located in `__tests__/unit/` directory:
-- `services/summarizerService.test.js` - AI summarization functionality
-- `services/dailyDigestService.test.js` - Daily digest generation
-- `middleware/auth.test.js` - Authentication middleware
-- `routes/registry.runtime-tokens.test.js` - Agent runtime token issuance
-
-### Integration Tests
-- Database integration tests with both MongoDB and PostgreSQL
-- API endpoint testing with full request/response cycles
-- Discord integration testing with mock Discord API
-
-## Database Testing Patterns
-
-### MongoDB Memory Server Setup
-```javascript
-const { MongoMemoryServer } = require('mongodb-memory-server');
-
-let mongoServer;
-
-beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const mongoUri = mongoServer.getUri();
-  await mongoose.connect(mongoUri);
-});
-
-afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
-});
-```
-
-### PostgreSQL pg-mem Setup
-```javascript
-const { newDb } = require('pg-mem');
-
-let db;
-let pool;
-
-beforeAll(async () => {
-  db = newDb();
-  db.public.registerFunction({
-    implementation: () => 'test',
-    name: 'version',
-  });
-
-  pool = db.adapters.createPg().Pool;
-});
-```
-
-## Mocking Patterns
-
-### Service Dependencies
-```javascript
-// Mock external dependencies
-jest.mock('../../../models/User');
-jest.mock('../../../models/Pod');
-jest.mock('../../../models/pg/Message');
-jest.mock('../../../config/socket');
-jest.mock('../../../config/db-pg');
-```
-
-### Socket.io Mocking
-```javascript
-const mockIo = {
-  to: jest.fn().mockReturnThis(),
-  emit: jest.fn(),
-};
-socketConfig.getIO.mockReturnValue(mockIo);
-```
-
-### Database Mock Setup
-```javascript
-beforeEach(() => {
-  // MongoDB mocks
-  User.findOne.mockResolvedValue(mockBot);
-  Pod.findById.mockResolvedValue(mockPod);
-
-  // PostgreSQL mocks
-  PGMessage.create.mockResolvedValue({
-    id: 'msg123',
-    content: 'test message',
-    created_at: new Date(),
-  });
-
-  jest.clearAllMocks();
-});
-```
-
-## Common Test Scenarios
-
-### Testing Discord Integration
-```javascript
-describe('postDiscordSummaryToPod', () => {
-  it('should post Discord summary to pod successfully', async () => {
-    const discordSummary = {
-      content: 'Test summary content',
-      messageCount: 5,
-      serverName: 'Test Server',
-      channelName: 'general',
-    };
-
-    const result = await botService.postDiscordSummaryToPod(
-      'pod123',
-      discordSummary,
-      'integration123',
-    );
-
-    expect(result.success).toBe(true);
-    expect(PGMessage.create).toHaveBeenCalledWith(
-      'pod123',
-      'bot123',
-      expect.stringContaining('Discord Update from #general'),
-      'text',
-    );
-  });
-});
-```
-
-### Testing Database Fallback Logic
-```javascript
-it('should fallback to MongoDB when PostgreSQL fails', async () => {
-  // Mock PostgreSQL failure
-  PGMessage.create.mockRejectedValue(new Error('PostgreSQL Error'));
-
-  const result = await botService.postDiscordSummaryToPod(
-    'pod123',
-    discordSummary,
-    'integration123',
-  );
-
-  expect(result.success).toBe(true);
-  // Verify MongoDB fallback was used
-  expect(Message).toHaveBeenCalledWith(
-    expect.objectContaining({
-      content: expect.any(String),
-      userId: 'bot123',
-      podId: 'pod123',
-    }),
-  );
-});
-```
-
-### Testing Error Conditions
-```javascript
-it('should return error if pod not found', async () => {
-  Pod.findById.mockResolvedValue(null);
-
-  const result = await botService.postDiscordSummaryToPod(
-    'invalid-pod',
-    {},
-    'integration123',
-  );
-
-  expect(result.success).toBe(false);
-  expect(result.error).toContain('Pod invalid-pod not found');
-});
-```
-
-## Test Organization Best Practices
-
-### Describe Block Structure
-```javascript
-describe('ServiceName', () => {
-  describe('methodName', () => {
-    it('should handle success case', async () => {
-      // Test implementation
-    });
-
-    it('should handle error case', async () => {
-      // Test implementation
-    });
-
-    it('should handle edge case', async () => {
-      // Test implementation
-    });
-  });
-});
-```
-
-### Mock Data Management
-```javascript
-// Define reusable mock data
-const mockBot = {
-  _id: 'bot123',
-  username: 'commonly-bot',
-  email: 'bot@commonly.app',
-  profilePicture: 'purple',
-  createdAt: new Date(),
-  save: jest.fn().mockResolvedValue(true),
-};
-
-const mockPod = {
-  _id: 'pod123',
-  name: 'Test Pod',
-  members: ['user1'],
-  save: jest.fn().mockResolvedValue(true),
-};
-```
-
-## Troubleshooting Common Issues
-
-### Static Method Conversion
-**Symptom**: `TypeError: [instance].[method] is not a function`
-**Solution**: Update test calls to use static method syntax
-```javascript
-// Change from instance call
-await botService.methodName(args);
-
-// To static call
-await ServiceClass.methodName(args);
-```
-
-### MongoDB Connection Issues
-**Symptom**: Connection timeout or database not found
-**Solution**: Ensure MongoDB Memory Server is properly set up in beforeAll/afterAll
-
-### PostgreSQL Mock Issues
-**Symptom**: pg-mem errors or connection failures
-**Solution**: Verify pg-mem setup and function registration
-
-### Jest Mock Clearing
-**Symptom**: Mock state bleeding between tests
-**Solution**: Always call `jest.clearAllMocks()` in beforeEach
-
-## Test File Structure
-```
-backend/
-├── __tests__/
-│   ├── unit/
-│   │   ├── services/
-│   │   │   ├── registry.runtime-tokens.test.js
-│   │   │   ├── summarizerService.test.js
-│   │   │   └── dailyDigestService.test.js
-│   │   ├── middleware/
-│   │   │   └── auth.test.js
-│   │   └── utils/
-│   └── integration/
-│       ├── discord.test.js
-│       └── database.test.js
-├── services/
-├── models/
-└── [other directories]
-```
-
-## Performance Testing
-- Database operation performance with large datasets
-- Memory usage testing with MongoDB Memory Server
-- Concurrent request handling
-- Background job processing
-
-## Docker Testing
 ```bash
-# Run tests in Docker container
-./dev.sh test
-
-# Interactive testing in container
-./dev.sh shell backend
-npm test
-
-# Specific test in Docker
-docker exec -e NODE_ENV=test backend-dev npm test -- registry.runtime-tokens.test.js
+./dev.sh up                        # boots mongo:27017 and postgres:5432
+./dev.sh test:integration          # INTEGRATION_TEST=true npm --prefix backend test
 ```
 
-## Continuous Integration
-Tests run automatically on:
-- GitHub Actions on PR creation/updates
-- Local development with watch mode
-- Docker environment testing
-- Coverage reporting integration
+Run only the service directory (matches CI):
+
+```bash
+cd backend && INTEGRATION_TEST=true \
+  MONGO_URI=mongodb://localhost:27017/commonly-test \
+  PG_HOST=localhost PG_PORT=5432 PG_DATABASE=commonly-test \
+  PG_USER=postgres PG_PASSWORD=postgres PG_SSL_ENABLED=false \
+  npx jest --testPathPattern="__tests__/service" --forceExit --runInBand
+```
+
+Schema source: `backend/config/schema.sql`. `testUtils.setupPgDb()` applies it verbatim after `CREATE EXTENSION IF NOT EXISTS pgcrypto`.
+
+Tier-1 setup logs `[tier1] Connected to real MongoDB …` and `[tier1] Connected to real Postgres …` so the CI run log makes the mode obvious.
+
+## Test helpers (`__tests__/utils/testUtils.js`)
+
+| Helper | Tier 0 behavior | Tier 1 behavior |
+|---|---|---|
+| `setupMongoDb()` | `MongoMemoryServer.create` + `mongoose.connect` | `mongoose.connect(process.env.MONGO_URI)` |
+| `closeMongoDb()` | disconnect + stop memory server | disconnect |
+| `clearMongoDb()` | `deleteMany({})` per collection | same |
+| `setupPgDb()` | `pg-mem` + hand-crafted pods/pod_members/messages tables | `new pg.Pool(...)` + `pgcrypto` + apply `schema.sql` |
+| `clearPgDb()` | ordered `DELETE FROM` | `TRUNCATE … RESTART IDENTITY CASCADE` |
+| `closePgDb()` | `pool.end()` | `pool.end()` |
+| `generateTestToken(userId)` | signs with `process.env.JWT_SECRET` | same |
+| `createTestUser / Pod / Message` | Mongoose model instantiation | same |
+
+The branch is controlled by `process.env.INTEGRATION_TEST === 'true'`. `__tests__/setup.js` reads this at suite start and populates `MONGO_URI` / `PG_*` defaults when set; when unset, it nulls them so accidental real-DB connections fail loudly.
+
+## Authoring rules
+
+- **Tier 0 tests don't cross-import `mongoServer` / `pgDb`.** The real-services branch doesn't export them. Use the helpers; if you need direct access, add a narrow helper in `testUtils.js` that works in both tiers.
+- **Real PG needs `pgcrypto` for `gen_random_uuid()`.** `setupPgDb` creates the extension for Tier 1 — don't call `gen_random_uuid()` in a test that only runs under Tier 0 unless you're also registering the pg-mem function.
+- **FK ordering matters under real PG.** `pod_members.pod_id` and `messages.pod_id` reference `pods(id) ON DELETE CASCADE`. Tests that insert raw rows must insert into `pods` first. `clearPgDb()` uses `TRUNCATE … CASCADE` to sidestep this on teardown.
+- **Timeouts.** Real Mongo operations are slower than in-memory. `jest.setTimeout(30000)` is set globally in `__tests__/setup.js`; avoid hardcoded shorter timeouts in Tier 1 tests.
+- **New test file, which tier?** Put it under `__tests__/service/` if it exercises real query semantics (Mongo index behavior, regex, ObjectId coercion, PG ILIKE, transactions). Put it under `__tests__/unit/` or similar if a mocked DB is sufficient.
+
+## Frontend and other suites
+
+Frontend testing is documented separately at `frontend/TESTING.md`. Contracts tests (`__tests__/contracts/`) are Tier 0 by default and use provider mocks.
+
+## Docker-based runs
+
+```bash
+./dev.sh test                   # Tier 0 in backend container
+./dev.sh shell backend          # interactive shell; run `npm test` inside
+./dev.sh test:integration       # Tier 1 against Docker Compose services (./dev.sh up required)
+```
+
+## CI
+
+`.github/workflows/tests.yml` defines both tiers:
+
+- `test` job → Tier 0 (unit + coverage) on every push
+- `service-test` job → Tier 1 with `mongo:7` and `postgres:16` service containers, depends on `test`
+
+Both are required checks on `main` via branch protection.

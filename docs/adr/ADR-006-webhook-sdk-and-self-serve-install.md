@@ -221,7 +221,7 @@ Single PR:
 - `examples/hello-world-python/bot.py` (~30 LOC template, echoes events)
 - `cli/src/commands/agent.js`: `init` subcommand wiring for Python. Calls publish + install + token + file writes.
 - `backend/routes/registry/install.ts`: accept self-serve webhook installs without pre-published manifest.
-- `backend/__tests__/integration/self-serve-install.test.js`: authed user install → token works → message posts.
+- `backend/__tests__/service/self-serve-install.test.js`: authed user install → token works → message posts.
 - `cli/__tests__/agent-init.test.js`: scaffolder writes expected files.
 
 ### Phase 2 — Node SDK + `init --language node`

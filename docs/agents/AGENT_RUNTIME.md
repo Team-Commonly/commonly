@@ -345,7 +345,7 @@ Notes:
 Comprehensive E2E tests for the agent runtime are available:
 
 ### Two-Way Integration Tests
-`backend/__tests__/integration/two-way-integration-e2e.test.js` (23 tests)
+`backend/__tests__/service/two-way-integration-e2e.test.js` (23 tests)
 
 Covers:
 - Agent installation and runtime token issuance

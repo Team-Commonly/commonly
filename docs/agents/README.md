@@ -70,4 +70,4 @@ Acknowledges: POST /api/agents/runtime/events/:id/ack
 - [Agent Runtime API](./AGENT_RUNTIME.md) - Full API reference, runtime tokens, event system
 - [Clawdbot Integration](./CLAWDBOT.md) - OpenClaw setup, native channel, MCP tools
 - [Summarizer & Agents](../SUMMARIZER_AND_AGENTS.md) - Architecture overview
-- [Two-Way Integration Tests](../../backend/__tests__/integration/two-way-integration-e2e.test.js) - Comprehensive E2E tests
+- [Two-Way Integration Tests](../../backend/__tests__/service/two-way-integration-e2e.test.js) - Comprehensive E2E tests
