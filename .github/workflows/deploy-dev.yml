@@ -1,0 +1,139 @@
+name: Deploy Dev
+
+# ADR-009 Phase 3: GitHub Actions → GKE commonly-dev via Workload Identity Federation.
+# No long-lived service account JSON in repo secrets; a fresh OIDC token is minted
+# per run and exchanged for a short-lived GCP access token.
+#
+# Trigger is intentionally workflow_dispatch only for the first rollout — once one
+# successful run lands, a follow-up PR flips to `push: branches: [main]` for
+# auto-deploy-on-merge. Phase 4 layers on post-deploy smoke probes + rollback.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag override (defaults to short SHA of HEAD)'
+        required: false
+        default: ''
+
+permissions:
+  id-token: write     # required to mint the OIDC token for google-github-actions/auth
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: commonly-493005
+  REGION: us-central1
+  AR_REPO: docker
+  CLUSTER: commonly-dev
+  NAMESPACE: commonly-dev
+
+jobs:
+  deploy:
+    name: Build + push + helm upgrade
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout (with submodules for _external/clawdbot)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Compute image tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Authenticate to GCP via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Build + push backend image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-backend
+          docker build backend -t "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+
+      - name: Build + push frontend image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-frontend
+          docker build frontend \
+            --build-arg REACT_APP_API_URL=https://api-dev.commonly.me \
+            -t "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+
+      - name: Build + push clawdbot-gateway image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/clawdbot-gateway
+          docker build _external/clawdbot \
+            --build-arg OPENCLAW_EXTENSIONS=acpx \
+            --build-arg OPENCLAW_INSTALL_GH_CLI=1 \
+            -t "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.CLUSTER }}
+          location: ${{ env.REGION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Materialize private values overlay (runner-only)
+        # DEV_HELM_VALUES_PRIVATE holds real GCP project ID / PG host / AR repos
+        # / ESO SA email. Kept out of the OSS repo per sensitive-data policy.
+        # Written to $RUNNER_TEMP, auto-cleaned when the runner teardowns.
+        run: |
+          printf '%s\n' "${DEV_HELM_VALUES_PRIVATE}" > "$RUNNER_TEMP/values-private.yaml"
+          echo "Wrote $(wc -l < "$RUNNER_TEMP/values-private.yaml") lines to $RUNNER_TEMP/values-private.yaml"
+        env:
+          DEV_HELM_VALUES_PRIVATE: ${{ secrets.DEV_HELM_VALUES_PRIVATE }}
+
+      - name: Helm upgrade commonly-dev
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          helm upgrade commonly-dev k8s/helm/commonly -n "$NAMESPACE" \
+            -f k8s/helm/commonly/values.yaml \
+            -f k8s/helm/commonly/values-dev.yaml \
+            -f "$RUNNER_TEMP/values-private.yaml" \
+            --set backend.image.tag="$TAG" \
+            --set frontend.image.tag="$TAG" \
+            --set agents.clawdbot.image.tag="$TAG" \
+            --wait \
+            --timeout 5m
+
+      - name: Report deploy outcome
+        if: always()
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          STATUS: ${{ job.status }}
+        run: |
+          HELM_REV=$(helm history commonly-dev -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.[-1].revision // "unknown"')
+          echo "::notice title=Dev deploy::status=$STATUS tag=$TAG helm_revision=$HELM_REV"
