@@ -42,6 +42,7 @@ paths = [
   '''frontend/src/components/ApiDevPage\.js''',
   # Integration test with hardcoded test constant (not a real key)
   '''backend/__tests__/integration/integrations-e2e\.test\.js''',
+  '''backend/__tests__/integration/uploads\.signedurl\.integration\.test\.js''',
 ]
 
 [[rules]]
