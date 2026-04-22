@@ -234,7 +234,14 @@ export interface IVersionEntry {
 export interface IInstallableStats {
   totalInstalls: number;
   activeInstalls: number;
+  forkCount: number;
   lastActivity?: Date;
+}
+
+export interface IForkedFrom {
+  installableId: string;
+  version: string;
+  forkedAt: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +285,12 @@ export interface IInstallable extends Document {
 
   // Version history (for marketplace packages with deprecation/rollback)
   versions?: IVersionEntry[];
+
+  // Fork lineage
+  forkedFrom?: IForkedFrom;
+
+  // Long-form description for detail page
+  readme?: string;
 
   // Stats
   stats: IInstallableStats;
@@ -451,6 +464,15 @@ const VersionSubSchema = new Schema<IVersionEntry>(
   { _id: false },
 );
 
+const ForkedFromSubSchema = new Schema<IForkedFrom>(
+  {
+    installableId: { type: String, required: true },
+    version: { type: String, required: true },
+    forkedAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 // ---------------------------------------------------------------------------
 // Top-level schema
 // ---------------------------------------------------------------------------
@@ -462,8 +484,8 @@ const InstallableSchema = new Schema<IInstallable>(
       required: true,
       unique: true,
       lowercase: true,
-      // Allow either "bare-name" or "scope/name"
-      match: /^[a-z0-9-]+(\/[a-z0-9-]+)?$/,
+      // Allow "bare-name", "scope/name", or "@scope/name"
+      match: /^(@[a-z0-9-]+\/)?[a-z0-9-]+$/,
     },
     name: { type: String, required: true },
     description: { type: String, required: true, default: '' },
@@ -503,9 +525,13 @@ const InstallableSchema = new Schema<IInstallable>(
 
     versions: { type: [VersionSubSchema], default: undefined },
 
+    forkedFrom: { type: ForkedFromSubSchema },
+    readme: { type: String },
+
     stats: {
       totalInstalls: { type: Number, default: 0 },
       activeInstalls: { type: Number, default: 0 },
+      forkCount: { type: Number, default: 0 },
       lastActivity: { type: Date },
     },
   },
@@ -523,6 +549,11 @@ InstallableSchema.index({ source: 1, status: 1 });
 InstallableSchema.index({ kind: 1, 'marketplace.published': 1 });
 InstallableSchema.index({ 'marketplace.published': 1, 'marketplace.category': 1 });
 InstallableSchema.index({ 'publisher.userId': 1 });
+InstallableSchema.index({ 'forkedFrom.installableId': 1 });
+InstallableSchema.index(
+  { name: 'text', description: 'text', 'marketplace.tags': 'text' },
+  { name: 'marketplace_text_search' },
+);
 
 // ---------------------------------------------------------------------------
 // Model export (HMR guard)

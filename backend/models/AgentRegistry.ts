@@ -109,7 +109,7 @@ const ManifestSchema = new Schema(
 
 const AgentRegistrySchema = new Schema<IAgentRegistry>(
   {
-    agentName: { type: String, required: true, unique: true, lowercase: true, match: /^[a-z0-9-]+$/ },
+    agentName: { type: String, required: true, unique: true, lowercase: true, match: /^(@[a-z0-9-]+\/)?[a-z0-9-]+$/ },
     displayName: { type: String, required: true },
     description: { type: String, required: true },
     readme: String,
