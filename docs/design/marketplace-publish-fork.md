@@ -253,12 +253,21 @@ Namespace format:
   User-scoped:                @grasstoucher/lebron-code
                               @lily/research-bot
 
-  Regex:                      /^(@[a-z0-9-]+\/)?[a-z0-9-]+$/
+  Regex (Installable):        /^(@[a-z0-9-]+\/)?[a-z0-9-]+$/
+  Regex (AgentRegistry shim): /^(@[a-z0-9-]+\/)?[a-z0-9-]+$/
 
   Validation rules:
     - @scope must match authed user's username (server-enforced)
     - Bare names (no @) reserved for source: 'builtin'
     - Max length: 64 characters
+
+  Schema changes required (see §6f):
+    - Installable.installableId regex must be relaxed to allow `@`
+      (current: /^[a-z0-9-]+(\/[a-z0-9-]+)?$/ — no @ permitted)
+    - AgentRegistry.agentName regex must be relaxed to allow `@` and `/`
+      (current: /^[a-z0-9-]+$/ — neither @ nor / permitted)
+    - Install route agentName validation must match the relaxed regex
+      (current: explicit /^[a-z0-9-]+$/ check at install.ts:123)
 ```
 
 ### 5.4 Version model
@@ -274,7 +283,13 @@ Version lifecycle:
   v2.0.0  ──▶  active (latest)
   v1.0.0  ──▶  deprecated (installable with warning, reason shown)
 
-  "latest" always resolves to the most recent non-deprecated version.
+  "latest" resolves by publication timestamp — the most recently
+  published non-deprecated version, determined by the `publishedAt`
+  field on the version entry. NOT by semver ordering (a hotfix v1.0.1
+  published after v2.0.0 becomes latest). The top-level `version`
+  scalar on the Installable document is updated on every publish to
+  match latest.
+
   Installs without an explicit version pin get "latest".
 
   A version string cannot be reused with different content (NFR-2
@@ -474,15 +489,17 @@ Does not delete the document. Existing installations continue to work.
 
 ##### `DELETE /api/marketplace/manifests/:installableId` — Hard delete
 
-Permanently deletes the manifest document. Only allowed when
-`stats.activeInstalls === 0`.
+Permanently deletes the manifest document. Only allowed when there are
+zero active installations — verified via a **live count query** against
+`AgentInstallation.countDocuments({ agentName, status: 'active' })`,
+NOT the cached `stats.activeInstalls` counter (which can drift).
 
 **Response:** `{ success: true, deleted: true }`
 
 **Guards:**
 - 403 if not publisher.
-- 409 if `activeInstalls > 0` ("Cannot delete a manifest with active
-  installations. Unpublish instead.").
+- 409 if live active install count > 0 ("Cannot delete a manifest with
+  active installations. Unpublish instead.").
 
 ##### `POST /api/marketplace/fork` — Fork a manifest
 
@@ -494,10 +511,14 @@ Creates a deep copy of the source manifest under the forker's namespace.
 {
   "sourceInstallableId": "claude-code",
   "newInstallableId": "@grasstoucher/my-claude-code",
-  "newName": "My Claude Code",
-  "version": "1.0.0"
+  "newName": "My Claude Code"
 }
 ```
+
+`version` is not a request parameter. The fork always copies from the
+source's current latest version. The fork's initial version is set to
+`"1.0.0"` (fresh start — the fork has its own independent version
+history).
 
 **Behavior:**
 
@@ -509,8 +530,16 @@ Creates a deep copy of the source manifest under the forker's namespace.
    (fork starts with source's readme; forker can update on next publish).
    Do NOT copy `stats`, `marketplace` (fresh start), `publisher`,
    `owner`, `versions`.
-5. Set `forkedFrom: { installableId, version: source.version, forkedAt }`.
+5. Set `forkedFrom: { installableId, version: source.latestVersion, forkedAt }`.
+   This records which version the snapshot was taken from — a historical
+   pointer, not a live link.
 6. Set `publisher: { userId, name }`, `source: 'marketplace'`.
+   (Not `'template'` — ADR-001's `template` source means "cloned from a
+   pre-built template by an admin", not "forked from another user's
+   published manifest." A fork is a marketplace-to-marketplace derivation;
+   both the source and the fork are published, discoverable catalog
+   entries. The `forkedFrom` pointer distinguishes forks from original
+   publishes.)
 7. Set `marketplace.published: true`, `status: 'active'`.
 8. Increment `stats.forkCount` on source (atomic `$inc`).
 9. Dual-write to AgentRegistry.
@@ -630,9 +659,18 @@ unpublished manifests (for the user's management dashboard).
 
 ##### `POST /api/registry/install` (`backend/routes/registry/install.ts`)
 
-**No changes in this PR.** The install flow continues to resolve from
-`AgentRegistry`. The dual-write on publish ensures new user-published
-manifests appear in AgentRegistry and are installable immediately.
+**Minimal changes required** to support user-published manifests:
+
+1. **Relax `agentName` validation** (line 123): the explicit
+   `/^[a-z0-9-]+$/` check must be updated to
+   `/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/` to accept scoped names.
+2. **Add status guard**: reject new installs when
+   `agent.status === 'unpublished'` (see §6c.3 for the code snippet).
+   Today the install route only checks existence, not status.
+
+The install flow continues to resolve from `AgentRegistry`. The
+dual-write on publish ensures new user-published manifests appear in
+AgentRegistry and are installable immediately.
 
 When ADR-001 Phase 3 lands, install will resolve from `Installable` first,
 falling back to `AgentRegistry`. That is a separate PR.
@@ -678,10 +716,12 @@ AgentRegistry    Installable     Outcome
 
 ✅ success       ❌ fail         Manifest is installable via legacy
                                  flow but invisible in new browse.
-                                 → Log warning. Return 207 partial
-                                   success with { legacy: true,
-                                   catalog: false }. User can retry
-                                   publish to fill the Installable gap.
+                                 → Log warning. Return 201 Created
+                                   with { success: true, warnings:
+                                   ["Installable catalog write failed;
+                                   manifest is installable but not yet
+                                   browsable. Retry publish to sync."] }.
+                                   User can retry to fill the gap.
 
 ❌ fail          (not attempted) Manifest is not installable.
                                  → Return 500. Nothing to clean up.
@@ -719,10 +759,19 @@ Installable.installableId     →  AgentRegistry.agentName
 claude-code (builtin)         →  claude-code (unchanged)
 ```
 
-The `agentName` field on AgentRegistry already accepts arbitrary strings
-(no format validation beyond the schema's `type: String`). The install
-flow's `AgentRegistry.getByName(agentName)` works unchanged — users pass
-the full `@scope/name` as the `agentName` in the install request.
+**⚠ Schema migration required.** The `agentName` field on AgentRegistry
+currently enforces `/^[a-z0-9-]+$/` (line 112 of `AgentRegistry.ts`),
+which rejects both `@` and `/`. The install route also has an explicit
+validation check against the same regex (line 123 of `install.ts`).
+Both must be relaxed to `/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/` before the
+first user publish. Similarly, `Installable.installableId` currently
+uses `/^[a-z0-9-]+(\/[a-z0-9-]+)?$/` (no `@` — line 466 of
+`Installable.ts`) and must be updated to match. See §6f for the full
+list of schema changes.
+
+`AgentRegistry.getByName(agentName)` works unchanged once the regex is
+relaxed — users pass the full `@scope/name` as the `agentName` in the
+install request.
 
 The existing 18 seeded entries (`claude-code`, `webhook`, `openclaw`,
 etc.) keep their bare names. User-published manifests always have the
@@ -755,7 +804,7 @@ legacy install flow continues to serve stale state.
 
 | Operation | Installable action | AgentRegistry mirror |
 |---|---|---|
-| **Unpublish** | `status → 'unpublished'`, `marketplace.published → false` | `status → 'deprecated'` (closest equivalent). Install flow must check `status !== 'deprecated'` before allowing new installs. |
+| **Unpublish** | `status → 'unpublished'`, `marketplace.published → false` | `status → 'unpublished'` (exact match — AgentRegistry already has `'unpublished'` in its status enum). Install flow must check status before allowing new installs. |
 | **Hard delete** | Document removed | Document removed. Guard: both must have `activeInstalls === 0`. |
 | **Deprecate version** | `versions[i].deprecated → true` | `versions[i].deprecated → true` (same shape). |
 | **Republish** (unpublish → re-publish) | `status → 'active'`, `marketplace.published → true` | `status → 'active'`. |
@@ -767,7 +816,7 @@ status. This is a one-line addition:
 
 ```typescript
 // In install.ts, after resolving the AgentRegistry row:
-if (agent.status === 'deprecated' || agent.status === 'unpublished') {
+if (agent.status === 'unpublished') {
   return res.status(410).json({
     error: 'This manifest has been unpublished by its author.'
   });
@@ -796,7 +845,7 @@ components[0].persona        →  (AgentProfile on install, not AR)
 components[].{name,desc}     →  manifest.capabilities[]
 requires                     →  manifest.context.required
 kind                         →  (not mapped; AR has no equivalent)
-marketplace.category         →  categories[0]
+marketplace.category         →  categories[0] (scalar → array: wrap)
 marketplace.tags             →  tags
 publisher                    →  publisher
 versions                     →  versions
@@ -804,6 +853,26 @@ readme                       →  readme
 forkedFrom                   →  (not mapped; AR has no equivalent)
 status                       →  status (mapped: see §6c.3)
 ```
+
+**Runtime mapping**: `Installable.ComponentRuntime` has 7 values
+(`native`, `moltbot`, `webhook`, `claude-code`, `managed-agents`,
+`internal`, `remote`). `AgentRegistry.manifest.runtime.type` has 3
+values (`standalone`, `commonly-hosted`, `hybrid`). These are different
+abstractions — `ComponentRuntime` describes WHERE the agent runs,
+`manifest.runtime.type` describes the DEPLOYMENT shape. The shim maps:
+
+```
+ComponentRuntime          →  manifest.runtime.type
+──────────────────        ──────────────────────────
+native, internal          →  standalone
+managed-agents            →  commonly-hosted
+webhook, claude-code,     →  standalone (runs externally,
+  moltbot, remote            connects via REST/webhook)
+```
+
+`persona.systemPrompt` is NOT written to AgentRegistry. It is written
+to `AgentProfile` at install time by the install route — that path is
+unchanged.
 
 The shim is a single function (`syncToAgentRegistry(installable, action)`)
 called from every marketplace write endpoint. It is deleted when ADR-001
@@ -846,6 +915,23 @@ Manifest validation on publish:
 | `readme` | Optional. Max 50,000 chars. |
 | `components` | Max 50 components per manifest. |
 | (total payload) | Max 1 MB request body. Enforced via Express body-parser limit on marketplace routes. |
+
+---
+
+### 6f. Required schema migrations
+
+These regex and validation changes are prerequisites — the first user
+publish will fail Mongoose validation without them.
+
+| File | Field | Current | New |
+|---|---|---|---|
+| `backend/models/Installable.ts:466` | `installableId.match` | `/^[a-z0-9-]+(\/[a-z0-9-]+)?$/` | `/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/` |
+| `backend/models/AgentRegistry.ts:112` | `agentName.match` | `/^[a-z0-9-]+$/` | `/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/` |
+| `backend/routes/registry/install.ts:123` | inline regex check | `/^[a-z0-9-]+$/` | `/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/` |
+
+The relaxed regex allows both bare names (`claude-code`) and scoped
+names (`@grasstoucher/lebron-code`). Existing seeded entries are
+unaffected — they match both the old and new patterns.
 
 ---
 
