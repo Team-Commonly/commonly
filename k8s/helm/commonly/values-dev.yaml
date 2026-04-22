@@ -191,6 +191,13 @@ cloudflared:
 
 litellm:
   enabled: true
+  # Pinned override on top of values.yaml's v1.82.3-stable default. Testing
+  # whether v1.83.7-stable resolves the chatgpt/gpt-5.4 device-code-on-startup
+  # crashloop (distinct from but likely related to BerriAI/litellm#25429, which
+  # is still open upstream as of 2026-04-21). Roll back here if it regresses.
+  image:
+    repository: ghcr.io/berriai/litellm
+    tag: v1.83.7-stable
   # BerriAI/litellm#25429 workaround: route Codex direct to chatgpt.com
   # via OpenClaw's native handler. Flip to false when upstream fix lands.
   codexBypassLitellm: true
