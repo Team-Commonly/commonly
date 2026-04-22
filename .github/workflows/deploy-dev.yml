@@ -100,6 +100,14 @@ jobs:
             -t "$REPO:$TAG"
           docker push "$REPO:$TAG"
 
+      - name: Build + push commonly-bot image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-bot
+          docker build external/commonly-agent-services -t "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+
       - name: Get GKE credentials
         uses: google-github-actions/get-gke-credentials@v2
         with:
@@ -132,6 +140,7 @@ jobs:
             --set backend.image.tag="$TAG" \
             --set frontend.image.tag="$TAG" \
             --set agents.clawdbot.image.tag="$TAG" \
+            --set agents.commonlyBot.image.tag="$TAG" \
             --wait \
             --timeout 5m
 
