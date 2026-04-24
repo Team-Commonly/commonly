@@ -35,6 +35,7 @@ const RUNTIME_MAP: Record<string, string> = {
   'claude-code': 'standalone',
   moltbot: 'standalone',
   remote: 'standalone',
+  'local-cli': 'standalone', // ADR-005 local CLI wrapper driver
 };
 
 const syncToAgentRegistry = async (installable: any, action: 'publish' | 'unpublish' | 'delete' | 'deprecate') => {
@@ -201,7 +202,29 @@ router.post('/publish', auth, async (req: any, res: any) => {
         });
       }
 
-      await existing.save();
+      try {
+        await existing.save();
+      } catch (saveError) {
+        // AR succeeded but Installable save failed. Mirror the new-manifest
+        // drift-warning path so the caller knows to retry rather than
+        // assuming publish fully succeeded.
+        console.warn(
+          '[marketplace] Installable save failed on update (AR succeeded):',
+          (saveError as any).message,
+        );
+        return res.status(201).json({
+          success: true,
+          warnings: [
+            'Installable catalog write failed; manifest is installable but not yet browsable. Retry publish to sync.',
+          ],
+          manifest: {
+            installableId: existing.installableId,
+            version,
+            status: existing.status,
+            isNew: false,
+          },
+        });
+      }
 
       return res.json({
         success: true,
@@ -340,7 +363,10 @@ router.delete('/manifests/:installableId(*)', auth, async (req: any, res: any) =
       });
     }
 
-    // Delete AR first, then Installable
+    // ADR-001 invariant #5: Agent User rows, memory, and pod memberships
+    // are intentionally NOT cascade-deleted here — identity outlives the
+    // manifest. Uninstall-time teardown runs via the AgentInstallation
+    // lifecycle elsewhere. Do not add a User / memory cascade to this path.
     try { await AgentRegistry.deleteOne({ agentName: installableId.toLowerCase() }); } catch (e) {
       console.warn('[marketplace] AR delete failed:', (e as any).message);
     }
@@ -423,7 +449,30 @@ router.post('/fork', auth, async (req: any, res: any) => {
       return res.status(500).json({ error: 'Failed to fork manifest' });
     }
 
-    const created = await Installable.create(forkDoc);
+    let created;
+    try {
+      created = await Installable.create(forkDoc);
+    } catch (installableError) {
+      // AR succeeded but the Installable row didn't land. Mirror the publish
+      // path: return 201 with a drift warning so the caller knows to retry.
+      // Skip the source forkCount increment — we'll bump it on the retry
+      // that actually creates the Installable row.
+      console.warn(
+        '[marketplace] Installable create failed on fork (AR succeeded):',
+        (installableError as any).message,
+      );
+      return res.status(201).json({
+        success: true,
+        warnings: [
+          'Installable catalog write failed; fork is registered but not yet browsable. Retry fork to sync.',
+        ],
+        manifest: {
+          installableId: forkDoc.installableId,
+          version: '1.0.0',
+          forkedFrom: forkDoc.forkedFrom,
+        },
+      });
+    }
 
     // Increment fork count on source (atomic)
     await Installable.updateOne(
