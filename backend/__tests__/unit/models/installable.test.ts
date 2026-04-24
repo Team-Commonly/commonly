@@ -33,7 +33,7 @@ describe('Installable taxonomy scaffolding', () => {
 
   it('saves an Installable with nested component + marketplace meta', async () => {
     const doc = new Installable({
-      installableId: 'commonly/pod-welcomer',
+      installableId: 'pod-welcomer',
       name: 'Pod Welcomer',
       description: 'Greets new members when they join a pod.',
       version: '1.0.0',
@@ -65,7 +65,7 @@ describe('Installable taxonomy scaffolding', () => {
 
     const saved = await doc.save();
     expect(saved._id).toBeDefined();
-    expect(saved.installableId).toBe('commonly/pod-welcomer');
+    expect(saved.installableId).toBe('pod-welcomer');
     expect(saved.kind).toBe('app');
     expect(saved.status).toBe('active'); // default
     expect(saved.components).toHaveLength(1);
@@ -75,7 +75,7 @@ describe('Installable taxonomy scaffolding', () => {
 
   it("defaults kind to 'app' when the manifest omits it", async () => {
     const doc = new Installable({
-      installableId: 'commonly/no-kind-specified',
+      installableId: 'no-kind-specified',
       name: 'No Kind',
       description: 'Legacy-shaped manifest — no kind field.',
       version: '1.0.0',
@@ -90,7 +90,7 @@ describe('Installable taxonomy scaffolding', () => {
 
   it('saves a kind:agent Installable with an Agent + Skill components', async () => {
     const doc = new Installable({
-      installableId: 'marketplace/sarah-legal',
+      installableId: '@marketplace/sarah-legal',
       name: 'Sarah — Legal Researcher',
       description: 'Pro agent specialized in US case law research.',
       version: '1.2.0',
@@ -147,7 +147,7 @@ describe('Installable taxonomy scaffolding', () => {
 
   it('saves a kind:skill standalone Installable (no runtime components)', async () => {
     const doc = new Installable({
-      installableId: 'commonly/bluebook-citation',
+      installableId: 'bluebook-citation',
       name: 'Bluebook Citation',
       description: 'Teaches any agent to format legal citations in Bluebook style.',
       version: '0.1.0',
@@ -237,7 +237,7 @@ describe('Installable taxonomy scaffolding', () => {
     const userId = new mongoose.Types.ObjectId();
 
     const install = new InstallableInstallation({
-      installableId: 'commonly/pod-welcomer',
+      installableId: 'pod-welcomer',
       installableVersion: '1.0.0',
       targetType: 'pod',
       targetId: podId,
@@ -266,7 +266,7 @@ describe('Installable taxonomy scaffolding', () => {
 
   it('rejects an InstallableInstallation with invalid targetType enum', async () => {
     const bad = new InstallableInstallation({
-      installableId: 'commonly/x',
+      installableId: 'test-installable-x',
       installableVersion: '1.0.0',
       targetType: 'planet',
       targetId: new mongoose.Types.ObjectId(),
@@ -279,7 +279,7 @@ describe('Installable taxonomy scaffolding', () => {
 
   it('rejects an InstallableInstallation missing installedBy', async () => {
     const bad = new InstallableInstallation({
-      installableId: 'commonly/x',
+      installableId: 'test-installable-x',
       installableVersion: '1.0.0',
       targetType: 'pod',
       targetId: new mongoose.Types.ObjectId(),
