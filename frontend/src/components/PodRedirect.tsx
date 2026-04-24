@@ -7,6 +7,7 @@ import SchoolIcon from '@mui/icons-material/School';
 import SportsEsportsIcon from '@mui/icons-material/SportsEsports';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import GroupsIcon from '@mui/icons-material/Groups';
+import WorkspacesIcon from '@mui/icons-material/Workspaces';
 
 const PodRedirect: React.FC = () => {
   const navigate = useNavigate();
@@ -60,6 +61,17 @@ const PodRedirect: React.FC = () => {
             sx={{ py: 2, px: 4, borderRadius: 2, flex: 1 }}
           >
             Chat Pods
+          </Button>
+
+          <Button
+            variant="contained"
+            color="secondary"
+            size="large"
+            startIcon={<WorkspacesIcon />}
+            onClick={() => handleNavigate('project')}
+            sx={{ py: 2, px: 4, borderRadius: 2, flex: 1, backgroundColor: '#f59e0b', '&:hover': { backgroundColor: '#d97706' } }}
+          >
+            Project Pods
           </Button>
 
           <Button

@@ -1,4 +1,4 @@
-export type PodType = 'chat' | 'team' | 'study' | 'games' | 'agent-admin' | 'dm';
+export type PodType = 'chat' | 'team' | 'study' | 'games' | 'project' | 'agent-admin' | 'dm';
 export type PodJoinPolicy = 'open' | 'invite-only' | 'request';
 
 export interface IPod {
@@ -7,6 +7,15 @@ export interface IPod {
   description?: string;
   type: PodType;
   joinPolicy: PodJoinPolicy;
+  projectMeta?: {
+    goal?: string;
+    scope?: string;
+    successCriteria?: string[];
+    status?: 'planning' | 'on-track' | 'at-risk' | 'blocked' | 'complete';
+    dueDate?: string | Date | null;
+    ownerIds?: string[];
+    keyLinks?: Array<{ label: string; url: string }>;
+  };
   members: string[];
   createdBy: string;
   isPrivate?: boolean;

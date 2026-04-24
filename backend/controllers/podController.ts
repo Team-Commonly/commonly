@@ -16,7 +16,7 @@ if (process.env.PG_HOST) {
   PGMessage = require('../models/pg/Message');
 }
 
-const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'agent-room', 'team'];
+const VALID_POD_TYPES = ['chat', 'study', 'games', 'project', 'agent-ensemble', 'agent-admin', 'agent-room', 'team'];
 const DEFAULT_POD_AGENT = process.env.DEFAULT_POD_AGENT_NAME || 'commonly-bot';
 const DEFAULT_POD_AGENT_SCOPES = [
   'context:read',
@@ -242,7 +242,7 @@ exports.getPodById = async (req: any, res: any) => {
 exports.createPod = async (req: any, res: any) => {
   try {
     const {
-      name, description, type, joinPolicy, parentPod,
+      name, description, type, joinPolicy, parentPod, projectMeta,
     } = req.body;
 
     if (!name || !type) {
@@ -258,6 +258,19 @@ exports.createPod = async (req: any, res: any) => {
       description,
       type,
       joinPolicy: joinPolicy === 'invite-only' ? 'invite-only' : 'open',
+      projectMeta: type === 'project'
+        ? {
+            goal: projectMeta?.goal || description || '',
+            scope: projectMeta?.scope || '',
+            successCriteria: Array.isArray(projectMeta?.successCriteria) ? projectMeta.successCriteria : [],
+            status: projectMeta?.status || 'planning',
+            dueDate: projectMeta?.dueDate || null,
+            ownerIds: Array.isArray(projectMeta?.ownerIds) && projectMeta.ownerIds.length
+              ? projectMeta.ownerIds
+              : [req.userId],
+            keyLinks: Array.isArray(projectMeta?.keyLinks) ? projectMeta.keyLinks : [],
+          }
+        : undefined,
       parentPod: parentPod || null,
       createdBy: req.userId,
       members: [req.userId],
@@ -304,6 +317,74 @@ exports.createPod = async (req: any, res: any) => {
   } catch (err: any) {
     console.error(err.message);
     res.status(500).send('Server Error');
+  }
+};
+
+exports.updatePod = async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const {
+      name, description, joinPolicy, parentPod, projectMeta,
+    } = req.body || {};
+
+    const pod = await Pod.findById(id);
+    if (!pod) {
+      return res.status(404).json({ msg: 'Pod not found' });
+    }
+
+    const requesterId = req.userId || req.user?.id || req.user?._id;
+    const isCreator = pod.createdBy.toString() === requesterId?.toString();
+    const isGlobalAdmin = await isGlobalAdminRequest(req);
+    if (!isCreator && !isGlobalAdmin) {
+      return res.status(403).json({ msg: 'Not authorized to update this pod' });
+    }
+
+    if (typeof name === 'string') pod.name = name.trim();
+    if (typeof description === 'string') pod.description = description.trim();
+    if (joinPolicy === 'invite-only' || joinPolicy === 'open') pod.joinPolicy = joinPolicy;
+    if (parentPod !== undefined) pod.parentPod = parentPod || null;
+
+    if (pod.type === 'project' && projectMeta && typeof projectMeta === 'object') {
+      if (typeof projectMeta.goal === 'string') pod.projectMeta.goal = projectMeta.goal.trim();
+      if (typeof projectMeta.scope === 'string') pod.projectMeta.scope = projectMeta.scope.trim();
+      if (Array.isArray(projectMeta.successCriteria)) {
+        pod.projectMeta.successCriteria = projectMeta.successCriteria
+          .map((value: unknown) => String(value || '').trim())
+          .filter(Boolean);
+      }
+      if (['planning', 'on-track', 'at-risk', 'blocked', 'complete'].includes(String(projectMeta.status))) {
+        pod.projectMeta.status = String(projectMeta.status);
+      }
+      if (projectMeta.dueDate === null || projectMeta.dueDate === '') {
+        pod.projectMeta.dueDate = null;
+      } else if (projectMeta.dueDate) {
+        pod.projectMeta.dueDate = new Date(projectMeta.dueDate);
+      }
+      if (Array.isArray(projectMeta.ownerIds)) {
+        pod.projectMeta.ownerIds = projectMeta.ownerIds;
+      }
+      if (Array.isArray(projectMeta.keyLinks)) {
+        pod.projectMeta.keyLinks = projectMeta.keyLinks
+          .map((link: any) => ({
+            label: String(link?.label || '').trim(),
+            url: String(link?.url || '').trim(),
+          }))
+          .filter((link: any) => link.label || link.url);
+      }
+    }
+
+    pod.updatedAt = Date.now();
+    await pod.save();
+    await pod.populate('createdBy', 'username profilePicture');
+    await pod.populate('members', 'username profilePicture');
+
+    return res.json(pod);
+  } catch (err: any) {
+    console.error('Error updating pod:', err.message);
+    if (err.kind === 'ObjectId') {
+      return res.status(404).json({ msg: 'Pod not found' });
+    }
+    return res.status(500).json({ msg: 'Server Error' });
   }
 };
 

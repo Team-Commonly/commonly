@@ -16,6 +16,7 @@ import Layout from './components/Layout';
 import Pod from './components/Pod';
 import PodRedirect from './components/PodRedirect';
 import ChatRoom from './components/ChatRoom';
+import PodRoomRouter from './components/PodRoomRouter';
 import ApiDevPage from './components/ApiDevPage';
 import PodContextDevPage from './components/PodContextDevPage';
 import DiscordCallback from './components/DiscordCallback';
@@ -232,7 +233,7 @@ function App(): React.ReactElement {
                       } />
                       <Route path="/pods" element={<PodRedirect />} />
                       <Route path="/pods/:podType" element={<Pod />} />
-                      <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />
+                      <Route path="/pods/:podType/:roomId" element={<PodRoomRouter />} />
                       <Route path="/dev/api" element={
                         <ProtectedRoute requireAdmin={true}>
                           <ApiDevPage />

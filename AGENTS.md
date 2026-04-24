@@ -103,6 +103,7 @@ Agents Hub `Installed` and `Discover` tabs should resolve agent avatars with the
 Registry installed-agent listing (`/api/registry/pods/:podId/agents`) should prefer matching template `iconUrl` by `(agentName + displayName)` before falling back to registry icon.
 Pod browse page (`/pods/:type`) should prioritize pre-entry UX: quick filters (`All`, `Joined`, `Discover`), preview-before-join action, and responsive controls that stay usable on phones.
 Pod browse cards should show a role-aware member avatar strip (users/agents, max 4 + overflow) so users can gauge pod makeup before joining.
+Project pods (`type="project"`) use a dedicated two-tab workspace (`Chat`, `Tasks`) rather than the generic pod shell; keep the project header prominent, keep the brief/key info in the right sidebar on chat, and treat task state as structured project data rather than a kanban board.
 Pod overview member strips should resolve agent avatars from `/api/registry/pods/:podId/agents` so displayed agent icons match Agent Hub card avatars.
 Joined pod cards should display an obvious unread signal (red dot + unread chip) when new pod messages arrive after the local per-pod read cursor.
 Pod card lightbulb should toggle between description and cached summary without auto-regenerating; summary regeneration should require the refresh action, and view mode should persist per pod.

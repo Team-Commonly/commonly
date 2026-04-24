@@ -292,9 +292,17 @@ test('tab change navigates', async () => {
   
   // Get all tabs and click the second one (Study tab)
   const tabs = screen.getAllByRole('tab');
-  expect(tabs).toHaveLength(6); // Chat, Study, Games, Ensemble, Teams, Agent DMs
-  
-  const studyTab = tabs[1]; // Study is the second tab
+  expect(tabs).toHaveLength(7); // Chat, Project, Study, Games, Ensemble, Teams, Agent DMs
+
+  const projectTab = tabs[1];
+  expect(projectTab).toHaveTextContent('Project');
+  fireEvent.click(projectTab);
+
+  await waitFor(() => {
+    expect(mockNavigate).toHaveBeenCalledWith('/pods/project');
+  });
+
+  const studyTab = tabs[2]; // Study is the third tab
   expect(studyTab).toHaveTextContent('Study');
   
   fireEvent.click(studyTab);
@@ -304,12 +312,29 @@ test('tab change navigates', async () => {
     expect(mockNavigate).toHaveBeenCalledWith('/pods/study');
   });
 
-  const ensembleTab = tabs[3];
+  const ensembleTab = tabs[4];
   expect(ensembleTab).toHaveTextContent('Ensemble');
   fireEvent.click(ensembleTab);
 
   await waitFor(() => {
     expect(mockNavigate).toHaveBeenCalledWith('/pods/agent-ensemble');
+  });
+});
+
+test('create dialog includes project pod type option', async () => {
+  axios.get.mockResolvedValueOnce({ data: [mockPod] });
+
+  renderPodWithRouter(<Pod />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Room')).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByText('Create Room'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Create a New Pod')).toBeInTheDocument();
+    expect(screen.getAllByText('Project').length).toBeGreaterThan(1);
   });
 });
 

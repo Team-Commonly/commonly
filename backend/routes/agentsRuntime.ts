@@ -1676,7 +1676,7 @@ router.post('/pods', agentRuntimeAuth, async (req: any, res: any) => {
       return res.status(400).json({ message: 'name and type are required' });
     }
 
-    const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin'];
+    const VALID_POD_TYPES = ['chat', 'project', 'study', 'games', 'agent-ensemble', 'agent-admin'];
     if (!VALID_POD_TYPES.includes(type)) {
       return res.status(400).json({ message: `Invalid pod type. Must be one of: ${VALID_POD_TYPES.join(', ')}` });
     }

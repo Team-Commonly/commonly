@@ -7,7 +7,7 @@ const multer = require('multer');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
-const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
+const { getAllPods, getPodsByType, getPodById, createPod, updatePod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -59,6 +59,7 @@ const upload = multer({
 
 router.get('/', auth, getAllPods);
 router.post('/', auth, createPod);
+router.patch('/:id', auth, updatePod);
 
 router.post('/announcement', auth, async (req: AuthReq, res: Res) => {
   try {
