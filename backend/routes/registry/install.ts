@@ -100,6 +100,12 @@ installRouter.post('/install', auth, async (req: any, res: any) => {
 
     let agent = await AgentRegistry.getByName(agentName);
 
+    if (agent && agent.status === 'unpublished') {
+      return res.status(410).json({
+        error: 'This manifest has been unpublished by its author.',
+      });
+    }
+
     // ADR-006 §Self-serve install: when a pod member installs a webhook-typed
     // agent that has no published manifest, synthesize an ephemeral registry
     // row owned by them. Marketplace catalog excludes ephemeral rows; only
@@ -118,11 +124,9 @@ installRouter.post('/install', auth, async (req: any, res: any) => {
       if (!podId) {
         return res.status(400).json({ error: 'podId is required for self-serve install' });
       }
-      // The AgentRegistry schema enforces /^[a-z0-9-]+$/ at write time, so
-      // a malformed name would surface as a Mongoose 500. Reject upstream.
-      if (!/^[a-z0-9-]+$/.test(String(agentName).toLowerCase())) {
+      if (!/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(String(agentName).toLowerCase())) {
         return res.status(400).json({
-          error: 'Invalid agentName: must match /^[a-z0-9-]+$/',
+          error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/',
         });
       }
       // manifest.runtime.type is the registry-level deployment shape

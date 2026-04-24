@@ -34,6 +34,7 @@ const federationRoutes = require('./routes/federation');
 const moltbotProviderRoutes = require('./routes/providers/moltbot');
 const activityRoutes = require('./routes/activity');
 const marketplaceRoutes = require('./routes/marketplace');
+const marketplaceApiRoutes = require('./routes/marketplace-api');
 const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
@@ -178,6 +179,7 @@ app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration
 app.use('/api/activity', activityRoutes); // Activity feed
 app.use('/api/marketplace', marketplaceRoutes); // Official marketplace manifest
+app.use('/api/marketplace', marketplaceApiRoutes); // Publish, fork, browse APIs
 app.use('/api/gateways', gatewayRoutes); // Gateway registry (admin)
 app.use('/api/skills', skillsRoutes); // Skill catalogs + imports
 app.use('/api/admin/integrations/global', globalIntegrationsRoutes); // Admin global integrations
