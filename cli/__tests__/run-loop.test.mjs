@@ -557,4 +557,179 @@ describe('performRun', () => {
     expect(ackCalls).toHaveLength(1);
     expect(ackCalls[0][0]).toContain('/events/e1/ack');
   });
+
+  // ── ADR-003 Phase 4 — cross-agent ask handling ─────────────────────────────
+
+  test('agent.ask event → spawn with structured prompt (requestId, fromAgent, question)', async () => {
+    const askEvent = makeEvent({
+      _id: 'evt-ask',
+      type: 'agent.ask',
+      payload: {
+        requestId: '63677411-f573-48f2-b55b-d6c8346f8a97',
+        fromAgent: 'demo-claude2',
+        fromInstanceId: 'default',
+        question: 'What is one feature users will overlook?',
+        podId: 'pod-abc',
+      },
+    });
+    const mockGet = jest.fn().mockResolvedValue({ events: [askEvent] });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'Called commonly_respond_to_ask successfully.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'demo-target',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const renderedPrompt = spawn.mock.calls[0][0];
+    expect(renderedPrompt).toContain('63677411-f573-48f2-b55b-d6c8346f8a97');
+    expect(renderedPrompt).toContain('demo-claude2');
+    expect(renderedPrompt).toContain('What is one feature users will overlook?');
+    expect(renderedPrompt).toContain('commonly_respond_to_ask');
+    // Outcome is 'responded', not 'posted'.
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-ask/ack',
+      { result: { outcome: 'responded' } },
+    );
+  });
+
+  test('agent.ask never posts a chat message — response goes via MCP tool, not pod chat', async () => {
+    const askEvent = makeEvent({
+      _id: 'evt-ask-2',
+      type: 'agent.ask',
+      payload: {
+        requestId: 'req-xyz',
+        fromAgent: 'asker',
+        fromInstanceId: 'default',
+        question: 'ping?',
+      },
+    });
+    const mockGet = jest.fn().mockResolvedValue({ events: [askEvent] });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    // Adapter returns text — proves we suppress the post even when there IS
+    // text to post (chat events still post; ask events never do).
+    const spawn = jest.fn(async () => ({ text: 'pong (responded via MCP)' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'demo-target',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    const postedMessages = mockPost.mock.calls.filter(
+      ([route]) => route.includes('/messages'),
+    );
+    expect(postedMessages).toHaveLength(0);
+  });
+
+  test('agent.ask with missing requestId or question → no spawn, acked as no_action', async () => {
+    const malformed = makeEvent({
+      _id: 'evt-bad-ask',
+      type: 'agent.ask',
+      payload: { fromAgent: 'asker', question: 'q without id' /* no requestId */ },
+    });
+    const mockGet = jest.fn().mockResolvedValue({ events: [malformed] });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn();
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'demo-target',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-bad-ask/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('agent.ask.response is passive-acked — no spawn, no post (v1 behaviour)', async () => {
+    const responseEvent = makeEvent({
+      _id: 'evt-resp',
+      type: 'agent.ask.response',
+      payload: {
+        requestId: 'req-xyz',
+        fromAgent: 'demo-target',
+        question: 'original question',
+        response: 'the answer',
+      },
+    });
+    const mockGet = jest.fn().mockResolvedValue({ events: [responseEvent] });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn();
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'asker',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    const postedMessages = mockPost.mock.calls.filter(
+      ([route]) => route.includes('/messages'),
+    );
+    expect(postedMessages).toHaveLength(0);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-resp/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('runtimeToken + instanceUrl flow into adapter.spawn ctx (Track B prep)', async () => {
+    const events = [makeEvent()];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api-dev.commonly.me',
+      token: 'cm_agent_specific_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    // Adapters need both to substitute ${COMMONLY_AGENT_TOKEN} and
+    // ${COMMONLY_API_URL} placeholders in MCP env entries (Track B).
+    const ctx = spawn.mock.calls[0][1];
+    expect(ctx.runtimeToken).toBe('cm_agent_specific_token');
+    expect(ctx.instanceUrl).toBe('https://api-dev.commonly.me');
+  });
 });

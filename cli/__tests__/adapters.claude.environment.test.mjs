@@ -137,4 +137,124 @@ describe('claude adapter — ctx.environment', () => {
     expect(fs.existsSync(path.join(cwd, '.commonly'))).toBe(false);
     expect(fs.existsSync(path.join(cwd, '.claude'))).toBe(false);
   });
+
+  // ── ADR-003 Phase 4 follow-up: env placeholder substitution ─────────────────
+
+  test('${COMMONLY_AGENT_TOKEN} in MCP env values is substituted with ctx.runtimeToken', async () => {
+    const { impl } = makeSpawnImpl();
+    const environment = {
+      mcp: [
+        {
+          name: 'commonly',
+          transport: 'stdio',
+          command: ['commonly-mcp'],
+          env: {
+            COMMONLY_API_URL: '${COMMONLY_API_URL}',
+            COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            CUSTOM: 'literal-value-${COMMONLY_AGENT_TOKEN}-suffix',
+          },
+        },
+      ],
+    };
+    await claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment,
+      runtimeToken: 'cm_agent_real_token_12345',
+      instanceUrl: 'https://api-dev.commonly.me',
+      _spawnImpl: impl,
+    });
+    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    expect(cfg.mcpServers.commonly.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_real_token_12345');
+    expect(cfg.mcpServers.commonly.env.COMMONLY_API_URL).toBe('https://api-dev.commonly.me');
+    // Substitution is literal — interpolation works inside larger strings.
+    expect(cfg.mcpServers.commonly.env.CUSTOM).toBe(
+      'literal-value-cm_agent_real_token_12345-suffix',
+    );
+  });
+
+  test('${COMMONLY_INSTANCE_URL} alias substitutes to the same value as ${COMMONLY_API_URL}', async () => {
+    const { impl } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: { mcp: [{ name: 'x', transport: 'stdio', command: ['m'], env: { U: '${COMMONLY_INSTANCE_URL}' } }] },
+      runtimeToken: 'cm_agent_t',
+      instanceUrl: 'http://localhost:5000',
+      _spawnImpl: impl,
+    });
+    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    expect(cfg.mcpServers.x.env.U).toBe('http://localhost:5000');
+  });
+
+  test('placeholders in command args + url are also substituted', async () => {
+    const { impl } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: {
+        mcp: [
+          {
+            name: 'sse-server',
+            transport: 'sse',
+            url: '${COMMONLY_API_URL}/mcp/sse',
+          },
+          {
+            name: 'arg-server',
+            transport: 'stdio',
+            command: ['some-bin', '--token', '${COMMONLY_AGENT_TOKEN}'],
+          },
+        ],
+      },
+      runtimeToken: 'cm_agent_x',
+      instanceUrl: 'https://api-dev.commonly.me',
+      _spawnImpl: impl,
+    });
+    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    expect(cfg.mcpServers['sse-server'].url).toBe('https://api-dev.commonly.me/mcp/sse');
+    expect(cfg.mcpServers['arg-server'].args).toEqual(['--token', 'cm_agent_x']);
+  });
+
+  test('unknown ${COMMONLY_*} placeholders are left intact (so misspellings surface as MCP errors, not silent empties)', async () => {
+    const { impl } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: {
+        mcp: [{
+          name: 'x',
+          transport: 'stdio',
+          command: ['m'],
+          env: { TYPO: '${COMMONLY_AGNT_TOKEN}' /* typo, not a real key */ },
+        }],
+      },
+      runtimeToken: 'cm_agent_t',
+      instanceUrl: 'http://localhost:5000',
+      _spawnImpl: impl,
+    });
+    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    expect(cfg.mcpServers.x.env.TYPO).toBe('${COMMONLY_AGNT_TOKEN}');
+  });
+
+  test('substitution is a no-op when ctx.runtimeToken / instanceUrl are absent (pre-existing literal env values pass through)', async () => {
+    const { impl } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: {
+        mcp: [{
+          name: 'x',
+          transport: 'stdio',
+          command: ['m'],
+          env: { LITERAL: 'plain-string', PLACEHOLDER: '${COMMONLY_AGENT_TOKEN}' },
+        }],
+      },
+      _spawnImpl: impl,
+      // Note: no runtimeToken, no instanceUrl.
+    });
+    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    expect(cfg.mcpServers.x.env.LITERAL).toBe('plain-string');
+    // Empty token → placeholder left intact (not substituted with empty string).
+    expect(cfg.mcpServers.x.env.PLACEHOLDER).toBe('${COMMONLY_AGENT_TOKEN}');
+  });
 });

@@ -98,10 +98,24 @@ export const listLocalAgents = () => {
     .filter(Boolean);
 };
 
-// Event types that carry a human/agent-authored prompt the wrapper should
-// forward to the CLI. Other event types (heartbeat, delivery, etc.) are acked
-// as no_action even if they happen to carry `content` in their payload.
+// Event types that carry a human/agent-authored chat prompt — claude should
+// reply with a public message in the pod. Other event types (heartbeat,
+// delivery, etc.) are acked as no_action even if they happen to carry
+// `content` in their payload.
 const CHAT_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message']);
+
+// ADR-003 Phase 4 — peer-to-peer cross-agent ask. The target receives this
+// in their poll queue when another agent calls `commonly_ask_agent`. The
+// response goes back via the `commonly_respond_to_ask` MCP tool, NOT via a
+// chat message. The wrapper renders a structured prompt that includes the
+// requestId so claude can route its reply correctly.
+const ASK_EVENT_TYPES = new Set(['agent.ask']);
+
+// ADR-003 Phase 4 — the answer to a prior commonly_ask_agent call lands here.
+// v1 behaviour: ack and drop. The asker is expected to look up the answer via
+// memory or a follow-up context call. Auto-resuming the original session with
+// the response is post-v1 (needs requestId-keyed session state).
+const PASSIVE_ACK_EVENT_TYPES = new Set(['agent.ask.response']);
 
 // ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
 
@@ -231,10 +245,39 @@ export const performAttach = async ({
 
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
 
-const extractPrompt = (event) => {
-  if (!CHAT_EVENT_TYPES.has(event.type)) return null;
-  const p = event.payload || {};
-  return p.content || p.prompt || p.text || null;
+/**
+ * Convert a CAP event into the prompt string that gets forwarded to the
+ * adapter. Returns null when the event type isn't actionable (poll loop
+ * acks-and-drops in that case).
+ *
+ * Chat events forward the raw user message verbatim. Cross-agent asks
+ * (ADR-003 Phase 4) are wrapped in a small instruction header so claude
+ * knows to call `commonly_respond_to_ask` instead of replying in the pod.
+ */
+const buildPromptForEvent = (event) => {
+  if (CHAT_EVENT_TYPES.has(event.type)) {
+    const p = event.payload || {};
+    return p.content || p.prompt || p.text || null;
+  }
+  if (ASK_EVENT_TYPES.has(event.type)) {
+    const p = event.payload || {};
+    if (!p.requestId || !p.question) return null;
+    const fromLabel = p.fromInstanceId && p.fromInstanceId !== 'default'
+      ? `${p.fromAgent}:${p.fromInstanceId}`
+      : p.fromAgent;
+    return [
+      'You received an inbound question from another Commonly agent (ADR-003 Phase 4 cross-agent ask).',
+      '',
+      `From: ${fromLabel}`,
+      `requestId: ${p.requestId}`,
+      `Question: ${p.question}`,
+      '',
+      'Reply by calling the `commonly_respond_to_ask` MCP tool with `requestId` set to the value above '
+      + 'and your answer as `content`. Do NOT post a chat message — this is a peer-to-peer ask, not a '
+      + 'public conversation. After the tool call succeeds, output a one-line confirmation and stop.',
+    ].join('\n');
+  }
+  return null;
 };
 
 /**
@@ -284,14 +327,29 @@ export const performRun = ({
   if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
 
   const processEvent = async (event) => {
+    if (PASSIVE_ACK_EVENT_TYPES.has(event.type)) {
+      // ADR-003 Phase 4 §asker side: the answer to a prior commonly_ask_agent
+      // call lands here. v1 ack-and-drop — claude will pick up the answer
+      // from memory or a context call on the next chat.mention turn. Auto-
+      // resuming the original session with the response is post-v1 work
+      // (needs requestId-keyed session state).
+      log(`[${event.type}] passive ack — answer to ${event.payload?.requestId || '?'} dropped (v1)`);
+      return { outcome: 'no_action' };
+    }
+
     const eventPodId = event.podId || podId;
-    const prompt = extractPrompt(event);
+    const prompt = buildPromptForEvent(event);
     if (!prompt || !eventPodId) {
       // No prompt, or nowhere to post the response — skip spawn entirely so
       // we never consume a CLI turn for a message with no destination.
       log(`[${event.type}] no prompt — no-op`);
       return { outcome: 'no_action' };
     }
+
+    // Cross-agent asks reply via MCP (commonly_respond_to_ask), not by
+    // posting a chat message. The adapter still produces stdout for
+    // diagnostics, but suppress the pod-post step so we don't double-reply.
+    const isAsk = ASK_EVENT_TYPES.has(event.type);
 
     const sessionId = getSession(agentName, eventPodId);
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
@@ -304,17 +362,21 @@ export const performRun = ({
       env: process.env,
       memoryLongTerm,
       environment,
+      runtimeToken: token,
+      instanceUrl,
       metadata: { event },
     });
 
     if (result.newSessionId) {
       setSession(agentName, eventPodId, result.newSessionId);
     }
-    if (result.text) {
+    if (result.text && !isAsk) {
       await client.post(`/api/agents/runtime/pods/${eventPodId}/messages`, {
         content: result.text,
       });
       log(`[${event.type}] posted ${Buffer.byteLength(result.text)} bytes`);
+    } else if (result.text) {
+      log(`[${event.type}] ask handled — ${Buffer.byteLength(result.text)} bytes of stdout (not posted)`);
     }
     if (result.memorySummary) {
       try {
@@ -328,7 +390,7 @@ export const performRun = ({
         onError?.(new Error(`memory sync failed: ${err.message}`, { cause: err }));
       }
     }
-    return { outcome: 'posted' };
+    return { outcome: isAsk ? 'responded' : 'posted' };
   };
 
   const tick = async () => {
