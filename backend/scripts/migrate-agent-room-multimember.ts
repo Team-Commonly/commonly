@@ -85,6 +85,13 @@ export async function migrateAgentRoomMultimember(
       isBotById.set(String(u._id), Boolean((u as any).isBot));
     }
 
+    // Orphan handling: a member ID with no corresponding User row returns
+    // `undefined` from isBotById.get(). Such orphans are NOT counted as
+    // humans (the `=== false` check excludes them); they fall through to
+    // dropIds in the human↔agent branch and may end up in keepIds at
+    // index 0/1 in the agent↔agent branch (we treat them as inert and
+    // preserve them so an operator can triage). Either way the migration
+    // never silently elevates an orphan to "the human" of a DM.
     const humans = memberIds.filter((id) => isBotById.get(id) === false);
     const hostId = idStr(pod.createdBy);
 
@@ -94,9 +101,15 @@ export async function migrateAgentRoomMultimember(
       action = 'restore-1to1-human-agent';
       keepIds = [hostId, humans[0]];
     } else if (humans.length === 0) {
-      // Agent↔agent DM. Insertion-order is reliable: getOrCreateAgentRoom
-      // creates pods with `members: [hostAgent, otherParty]`, and Mongoose
-      // arrays preserve insertion order. Anything beyond index 1 is a rogue.
+      // Agent↔agent DM. Insertion-order is reliable because:
+      //   1. dmService.getOrCreateAgentRoom creates pods with
+      //      `members: [hostAgent, otherParty]`.
+      //   2. Mongoose `.push()` (the only mutation path used by
+      //      ensureAgentInPod / joinPod) appends to the end.
+      //   3. No code path uses `$set: { members: [...] }` to reorder
+      //      (verified via repo-wide grep at PR-time).
+      // So memberIds[0] is always the host agent and memberIds[1] is
+      // always the original counter-party. Anything beyond is a rogue.
       action = 'restore-1to1-agent-agent';
       keepIds = [memberIds[0], memberIds[1]];
     } else {
@@ -106,8 +119,24 @@ export async function migrateAgentRoomMultimember(
       keepIds = memberIds;
     }
 
-    // De-dupe keepIds in case createdBy already coincides with members[0],
-    // which is the normal case.
+    // Defensive: if the human↔agent branch picked a `hostId` that isn't
+    // actually in `pod.members` (data corruption — a `createdBy` that
+    // points outside the membership), skip the pod rather than silently
+    // ghosting a 2-member pod with an ID nobody can post as. Logged so
+    // an operator can investigate. Detected via the keep-set check rather
+    // than upstream because the agent↔agent branch trusts memberIds[0]
+    // and memberIds[1] which by construction are real members.
+    const skipIfGhost = action === 'restore-1to1-human-agent'
+      && !memberIds.includes(hostId);
+    if (skipIfGhost) {
+      console.warn(
+        `[migrate-agent-room] SKIP pod ${pod._id}: createdBy=${hostId} is not in members `
+        + `[${memberIds.join(', ')}]. Manual triage required.`,
+      );
+      result.skipped += 1;
+      continue;
+    }
+
     const keepSet = new Set(keepIds);
     const dropIds = memberIds.filter((id) => !keepSet.has(id));
 

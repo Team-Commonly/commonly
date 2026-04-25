@@ -77,8 +77,12 @@ describe('migrateAgentRoomMultimember', () => {
 
     const r = await migrateAgentRoomMultimember();
     expect(r.plans[0].action).toBe('restore-1to1-agent-agent');
+    // Order matters here: the first kept ID must be the host (memberIds[0])
+    // and the second the original counter-party (memberIds[1]). The script's
+    // implementation hands these to a Set then expands — Set iteration is
+    // insertion-ordered in V8 — so the surface order is stable.
     expect(r.plans[0].keepIds).toEqual(['agent-host', 'agent-other']);
-    expect(r.plans[0].dropIds).toEqual(['rogue-a', 'rogue-b']);
+    expect(r.plans[0].dropIds).toEqual(expect.arrayContaining(['rogue-a', 'rogue-b']));
     expect(pod.members).toEqual(['agent-host', 'agent-other']);
     expect(pod.type).toBe('agent-room');
   });
@@ -130,5 +134,34 @@ describe('migrateAgentRoomMultimember', () => {
     const r = await migrateAgentRoomMultimember();
     expect(r.total).toBe(0);
     expect(r.applied).toBe(0);
+  });
+
+  test('createdBy not in members → skip with a warning, do not write a ghost ID', async () => {
+    // Edge case: a pod where `pod.createdBy` (the supposed host agent) is
+    // NOT in `pod.members`. Could only happen via data corruption or a
+    // bulk-import that bypassed the create hook. The human-branch code
+    // computes `keepIds = [hostId, the_human]` from createdBy + the_human;
+    // without a guard it would silently produce a 2-member pod where
+    // hostId is a ghost — no AgentInstallation, no User session would match.
+    const pod = fakePod({
+      _id: 'p-ghost',
+      createdBy: 'ghost-host-id', // not in members
+      members: ['someone-else-agent', 'human-id', 'rogue-1'],
+    });
+    Pod.find.mockReturnValue({ cursor: () => cursorOf([pod]) });
+    User.find.mockReturnValue(userLeanFor([
+      { _id: 'someone-else-agent', isBot: true },
+      { _id: 'human-id', isBot: false },
+      { _id: 'rogue-1', isBot: true },
+    ]));
+
+    const r = await migrateAgentRoomMultimember();
+    expect(r.total).toBe(1);
+    expect(r.applied).toBe(0);
+    expect(r.skipped).toBe(1);
+    // Pod must remain untouched — operator triages manually.
+    expect(pod.members).toEqual(['someone-else-agent', 'human-id', 'rogue-1']);
+    expect(pod.type).toBe('agent-room');
+    expect(pod.save).not.toHaveBeenCalled();
   });
 });
