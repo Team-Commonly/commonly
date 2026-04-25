@@ -162,10 +162,16 @@ exports.getAllPods = async (req: any, res: any) => {
       .populate('parentPod', 'name _id')
       .sort({ updatedAt: -1 });
 
-    // Personal pod types: only return pods the requester belongs to
+    // Personal pod types: only return pods the requester belongs to.
+    // Global admins bypass the membership filter so they can audit every
+    // agent-room / agent-admin in the instance — the moderation surface
+    // for the 1:1 invariant on agent-rooms (ADR-001 §3.10).
     if ((type === 'agent-admin' || type === 'agent-room') && req.userId) {
-      const uid = String(req.userId);
-      pods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
+      const isAdmin = await isGlobalAdminRequest(req);
+      if (!isAdmin) {
+        const uid = String(req.userId);
+        pods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
+      }
     }
 
     return res.json(pods);
@@ -189,10 +195,14 @@ exports.getPodsByType = async (req: any, res: any) => {
       .populate('members', 'username profilePicture')
       .sort({ updatedAt: -1 });
 
+    // Same admin-bypass rule as getAllPods — see comment there.
     if ((type === 'agent-admin' || type === 'agent-room') && req.userId) {
-      const uid = String(req.userId);
-      const memberPods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
-      return res.json(memberPods);
+      const isAdmin = await isGlobalAdminRequest(req);
+      if (!isAdmin) {
+        const uid = String(req.userId);
+        const memberPods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
+        return res.json(memberPods);
+      }
     }
 
     return res.json(pods);
@@ -347,6 +357,18 @@ exports.joinPod = async (req: any, res: any) => {
 
     if (isMember) {
       return res.status(400).json({ msg: 'Already a member of this pod' });
+    }
+
+    // Agent DMs are strictly 1:1 (ADR-001 §3.10). The pod is created with
+    // exactly two members at `DMService.getOrCreateAgentRoom()` time —
+    // the agent and the user who opened the DM. No third party can join
+    // afterwards: not another human, not another agent, not even the
+    // creator (the agent itself). For multi-party human↔agent surfaces,
+    // use `type: 'chat'` instead.
+    if (pod.type === 'agent-room') {
+      return res.status(403).json({
+        msg: 'Agent DMs are 1:1 — third-person joins are not allowed. Use a chat pod for multi-party conversations.',
+      });
     }
 
     // Enforce invite-only policy

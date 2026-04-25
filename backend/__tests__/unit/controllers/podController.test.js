@@ -190,4 +190,86 @@ describe('podController', () => {
     expect(pod.populate).toHaveBeenCalledWith('members', 'username profilePicture');
     expect(res.json).toHaveBeenCalledWith(pod);
   });
+
+  // ── ADR-001 §3.10: agent-rooms are 1:1 DMs ──────────────────────────────
+
+  it('joinPod rejects a third-person join on agent-room with 403', async () => {
+    const pod = {
+      _id: 'agent-room-1',
+      type: 'agent-room',
+      members: ['agent-id', 'user-a-id'],
+      createdBy: { toString: () => 'agent-id' },
+      joinPolicy: 'invite-only',
+      save: jest.fn(),
+    };
+    Pod.findById.mockResolvedValue(pod);
+    const req = { params: { id: 'agent-room-1' }, userId: 'user-b-id', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.joinPod(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ msg: expect.stringMatching(/1:1.*third-person/i) }),
+    );
+    expect(pod.save).not.toHaveBeenCalled();
+  });
+
+  it('joinPod still works on regular chat pods (regression guard)', async () => {
+    const pod = {
+      _id: 'chat-1',
+      type: 'chat',
+      members: [
+        { toString: () => 'creator-id' },
+      ],
+      createdBy: { toString: () => 'creator-id' },
+      joinPolicy: 'open',
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    Pod.findById
+      .mockResolvedValueOnce(pod)
+      .mockReturnValueOnce({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockResolvedValue({ ...pod, members: [...pod.members, 'new-user-id'] }),
+        }),
+      });
+    const req = { params: { id: 'chat-1' }, userId: 'new-user-id', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.joinPod(req, res);
+    expect(pod.save).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(403);
+  });
+
+  it('getPodsByType filters agent-room to caller membership for non-admins', async () => {
+    const otherPod = { _id: 'p1', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'someone-else' }] };
+    const myPod = { _id: 'p2', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'me' }] };
+    const sort = jest.fn().mockResolvedValue([otherPod, myPod]);
+    const populateSecond = jest.fn(() => ({ sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'user' }) }),
+    });
+
+    const req = { params: { type: 'agent-room' }, userId: 'me', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getPodsByType(req, res);
+    expect(res.json).toHaveBeenCalledWith([myPod]);
+  });
+
+  it('getPodsByType returns ALL agent-rooms when caller is a global admin', async () => {
+    const otherPod = { _id: 'p1', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'someone-else' }] };
+    const myPod = { _id: 'p2', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'me' }] };
+    const sort = jest.fn().mockResolvedValue([otherPod, myPod]);
+    const populateSecond = jest.fn(() => ({ sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'admin' }) }),
+    });
+
+    const req = { params: { type: 'agent-room' }, userId: 'admin-id', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getPodsByType(req, res);
+    // Admin sees both pods, not just their own.
+    expect(res.json).toHaveBeenCalledWith([otherPod, myPod]);
+  });
 });

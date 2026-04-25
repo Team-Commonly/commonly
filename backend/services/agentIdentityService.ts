@@ -262,6 +262,18 @@ class AgentIdentityService {
     const pod = await Pod.findById(podId);
     if (!pod) return null;
     if (!pod.members.includes(agentUser._id)) {
+      // Agent DMs are 1:1 (ADR-001 §3.10). Auto-install paths must not
+      // sneak a third member into someone else's agent-room — the room
+      // already has exactly its host agent + one human. If the requested
+      // agent isn't already in this room, refuse to add. Caller should
+      // create a NEW agent-room for this agent + user pair instead.
+      if (pod.type === 'agent-room') {
+        console.warn(
+          `[ensureAgentInPod] refused: pod ${pod._id} is an agent-room (1:1) `
+          + `and agent ${agentUser._id} is not already a member. ADR-001 §3.10.`,
+        );
+        return null;
+      }
       pod.members.push(agentUser._id);
       await pod.save();
     }
