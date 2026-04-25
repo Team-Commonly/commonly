@@ -464,6 +464,29 @@ spec:
           readOnly: true
         - name: clawdbot-state
           mountPath: /state
+      # ADR-005 Stage 2: install codex CLI + @commonly/cli into a shared
+      # volume the gateway container mounts. Avoids modifying the
+      # _external/clawdbot Dockerfile (which is a submodule on the openclaw
+      # fork) — the install lives in helm so it ships with the deploy.
+      # `node:22-bookworm-slim` matches the runtime container's Node major
+      # so binaries built for libc are compatible.
+      - name: codex-tools-installer
+        image: node:22-bookworm-slim
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          export NPM_CONFIG_PREFIX=/tools
+          npm install --global --no-audit --no-fund \
+            @openai/codex@latest \
+            @commonly/cli@latest
+          ls -la /tools/bin/ || true
+          /tools/bin/codex --version || true
+          /tools/bin/commonly --version || true
+        volumeMounts:
+        - name: codex-tools
+          mountPath: /tools
       containers:
       - name: clawdbot-gateway
         image: "{{ .Values.agents.clawdbot.image.repository }}:{{ .Values.agents.clawdbot.image.tag }}"
@@ -485,6 +508,12 @@ spec:
               - -c
               - mkdir -p /home/node/.codex && cp /state/.codex/auth.json /home/node/.codex/auth.json 2>/dev/null || true
         env:
+        # ADR-005 Stage 2: prepend the codex-tools volume to PATH so
+        # `codex` and `commonly` are on PATH for operator `kubectl exec`
+        # invocations and the run-loop process. Order matters — these
+        # binaries shadow any same-named ones in the openclaw image.
+        - name: PATH
+          value: "/tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         - name: CLAWDBOT_GATEWAY_PORT
           value: {{ .Values.agents.clawdbot.config.gatewayPort | default 18789 | quote }}
         - name: CLAWDBOT_GATEWAY_BIND
@@ -594,6 +623,12 @@ spec:
           mountPath: /state
         - name: clawdbot-workspace
           mountPath: /workspace
+        # ADR-005 Stage 2 — codex + commonly CLIs installed by the
+        # codex-tools-installer init container. Mounted read-only here
+        # since nothing in the main container needs to write to it.
+        - name: codex-tools
+          mountPath: /tools
+          readOnly: true
       volumes:
       - name: clawdbot-config
         configMap:
@@ -604,6 +639,11 @@ spec:
       - name: clawdbot-workspace
         persistentVolumeClaim:
           claimName: clawdbot-workspace-pvc
+      # emptyDir is fine — re-populated on every pod start by the init
+      # container. Adds ~30s to startup but avoids a PVC + invalidation
+      # logic. Revisit if pod-restart latency becomes a real concern.
+      - name: codex-tools
+        emptyDir: {}
       {{- with .Values.agents.clawdbot.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
