@@ -513,11 +513,17 @@ router.post('/dm', auth, async (req: any, res: any) => {
 });
 
 /**
- * POST /room — Find or create an agent room (many humans × one agent).
+ * POST /room — Find or create an agent-room (1:1 DM) per ADR-001 §3.10.
  *
- * Agent rooms are the primary human↔agent consultation surface — durable pods
- * where the agent is the host and the requesting user is the first member.
- * Other humans can be invited later.
+ * Agent rooms are personal 1:1 DMs whose two members can be (human + agent)
+ * or (agent + agent), never three. The earlier "many humans × one agent
+ * office" framing was rejected during product review; the join/auto-install
+ * paths in podController/agentIdentityService now enforce strict 1:1.
+ *
+ * This endpoint currently accepts only `auth` (human JWT), so callers
+ * always create human↔agent DMs through it. Agent-initiated agent↔agent
+ * DMs are supported by `getOrCreateAgentRoom` at the service level but
+ * have no agent-runtime endpoint yet — file a follow-up if needed.
  *
  * Request: { agentName, instanceId?, podId? }
  * Response: { room: Pod }
