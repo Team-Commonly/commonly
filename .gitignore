@@ -36,8 +36,10 @@ external/commonly-bot-state/
 _external/*/
 !_external/clawdbot
 
-# Claude Code — local dev tooling, not for OSS contributors
-.claude/
+# Claude Code — local dev tooling, not for OSS contributors.
+# Keep the shared skills symlink tracked so .agents/skills can point at it.
+.claude/*
+!.claude/skills
 
 # Local-only dev materials: values-private.yaml (Helm overrides with real
 # GCP project ID / PG host / image repos) and git worktrees under .dev/worktree/.

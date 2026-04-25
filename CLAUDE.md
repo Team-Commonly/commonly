@@ -1,6 +1,8 @@
-# CLAUDE.md
+# CLAUDE.md / AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code, Codex, and compatible agent tooling
+when working with code in this repository. `AGENTS.md` is a symlink to this
+file so instruction updates stay aligned across tools.
 
 ---
 
@@ -193,6 +195,11 @@ npm run lint                                  # 0 errors
 ### 🎯 If Tests Are Failing
 1. **Frontend issues**: Check `frontend/TESTING.md` — likely axios mocking or ES modules
 2. **Backend issues**: Check `backend/TESTING.md` — likely static method calls
+
+### Local Skill Paths
+- `.claude/skills` is the tracked source-path symlink for local development skills.
+- `.agents/skills` is the OpenAI/Codex agent-facing symlink and should point to `../.claude/skills`.
+- Do not recreate `.codex/skills`; it was replaced by `.agents/skills`.
 
 ---
 
