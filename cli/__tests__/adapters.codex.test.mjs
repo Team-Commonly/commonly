@@ -133,6 +133,19 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].args[calls[0].args.length - 1]).toBe('hi');
   });
 
+  test('spawn opts force stdin to ignore — regression for codex blocking on piped stdin', async () => {
+    // Without this, codex 0.125.0 blocks on "Reading additional input from
+    // stdin..." when spawned from a non-TTY parent (e.g. the run loop).
+    // The fix lives in runCodex; this test pins it so a "cleanup" PR can't
+    // silently regress it.
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('hi', { sessionId: null, _spawnImpl: impl });
+    expect(calls[0].opts.stdio).toEqual(['ignore', 'pipe', 'pipe']);
+  });
+
   test('subsequent turn (persisted id): uses `codex exec resume <sid>` and threads the prompt last', async () => {
     const sid = 'sid-deadbeef';
     const { impl, calls } = makeSpawnImpl({

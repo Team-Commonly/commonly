@@ -96,7 +96,14 @@ const makeEventParser = () => {
 };
 
 const runCodex = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
-  const proc = spawnImpl('codex', args, { cwd, env });
+  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
+  // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
+  // `Reading additional input from stdin...` because it sees an open pipe
+  // and waits for input that never arrives. Interactive runs are fine because
+  // codex detects a TTY and uses the argv prompt directly. Setting stdin to
+  // `'ignore'` gives codex /dev/null → immediate EOF → it falls back to the
+  // argv prompt as intended. Surfaced live during ADR-005 Phase 2 smoke.
+  const proc = spawnImpl('codex', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = '';
   let timedOut = false;
   const events = makeEventParser();
