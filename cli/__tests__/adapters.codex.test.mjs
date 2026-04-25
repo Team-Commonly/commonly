@@ -146,7 +146,7 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].opts.stdio).toEqual(['ignore', 'pipe', 'pipe']);
   });
 
-  test('subsequent turn (persisted id): uses `codex exec resume <sid>` and threads the prompt last', async () => {
+  test('subsequent turn (persisted id): uses `codex exec resume <sid>` with sid immediately after the subcommand', async () => {
     const sid = 'sid-deadbeef';
     const { impl, calls } = makeSpawnImpl({
       stdoutChunks: [
@@ -161,14 +161,17 @@ describe('codex adapter — spawn()', () => {
     expect(res.text).toBe('continuing');
     expect(res.newSessionId).toBe(sid);
     expect(calls).toHaveLength(1);
-    // exec resume <sid> ... <prompt>
-    expect(calls[0].args.slice(0, 2)).toEqual(['exec', 'resume']);
-    expect(calls[0].args).toContain(sid);
-    // The session id appears before the prompt; the prompt is the final arg.
+    // <sessionId> sits between `exec resume` and the option flags so a future
+    // codex parser change can't consume it as the value of a preceding flag
+    // (e.g. -o). Pin the exact position, not just relative ordering.
+    expect(calls[0].args.slice(0, 3)).toEqual(['exec', 'resume', sid]);
+    // Prompt is still the final argument.
+    expect(calls[0].args[calls[0].args.length - 1]).toBe('keep going');
+    // -o appears AFTER <sid> — explicit guard against the regression the
+    // ordering above prevents.
     const sidIdx = calls[0].args.indexOf(sid);
-    const promptIdx = calls[0].args.indexOf('keep going');
-    expect(sidIdx).toBeLessThan(promptIdx);
-    expect(promptIdx).toBe(calls[0].args.length - 1);
+    const oIdx = calls[0].args.indexOf('-o');
+    expect(sidIdx).toBeLessThan(oIdx);
   });
 
   test('prepends the memory preamble when ctx.memoryLongTerm is non-empty', async () => {
@@ -254,13 +257,17 @@ describe('codex adapter — spawn()', () => {
     expect(res.text).toBe('ok');
   });
 
-  test('cleans up the temp output dir even when spawn rejects', async () => {
-    // Inspect mkdtemp side effects by passing a known prefix and checking
-    // that no commonly-codex- dirs remain in $TMPDIR after the spawn fails.
-    // We can't easily intercept mkdtemp without a deeper mock — instead,
-    // just verify spawn rejection doesn't leak by counting before/after.
-    const before = (await readFile('/proc/self/status', 'utf8').catch(() => '')); // noop sentinel
-    expect(typeof before).toBe('string');
+  test('cleans up the per-spawn temp dir even when spawn rejects', async () => {
+    // Count `commonly-codex-*` dirs in $TMPDIR before and after a failing
+    // spawn. The adapter's `finally` block must rm the dir on every exit
+    // path, including turn.failed rejections — without it, a long-running
+    // run loop accumulates orphan dirs in $TMPDIR.
+    const fs = await import('fs/promises');
+    const countLeftovers = async () => {
+      const entries = await fs.readdir(tmpdir());
+      return entries.filter((n) => n.startsWith('commonly-codex-')).length;
+    };
+    const before = await countLeftovers();
 
     const { impl } = makeSpawnImpl({
       stdoutChunks: ['{"type":"turn.failed","error":{"message":"boom"}}\n'],
@@ -269,9 +276,9 @@ describe('codex adapter — spawn()', () => {
     await expect(
       codex.spawn('x', { sessionId: null, _spawnImpl: impl }),
     ).rejects.toThrow(/turn failed/);
-    // If rm in the finally block were missing, repeated runs would leak
-    // dirs — covered functionally by Node's tmpdir cleanup elsewhere.
-    // Smoke-level coverage; deeper isolation lives in integration tests.
+
+    const after = await countLeftovers();
+    expect(after).toBe(before);
   });
 });
 

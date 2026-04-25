@@ -16,8 +16,9 @@
  *   - stderr = Rust tracing logs (timestamped), unrelated to model output.
  *
  * We capture session id from the `thread.started` event and read the agent's
- * final reply from the file written via `--output-last-message <FILE>` —
- * cleaner than parsing every event-type variant the model can emit.
+ * final reply from the file written via `-o <FILE>` (codex's
+ * `--output-last-message` short alias) — cleaner than parsing every
+ * event-type variant the model can emit.
  *
  * Memory preamble: if ctx.memoryLongTerm is non-empty, the adapter prepends
  * it to the prompt as a system-context preamble (§Memory bridge), matching
@@ -54,7 +55,12 @@ const buildPrompt = (prompt, memoryLongTerm) => {
 const buildArgs = ({ sessionId, prompt, outputFile }) => {
   const common = ['--json', '--skip-git-repo-check', '-o', outputFile];
   if (sessionId) {
-    return ['exec', 'resume', ...common, sessionId, prompt];
+    // Place <sessionId> immediately after the `exec resume` subcommand so a
+    // future codex parser change can't accidentally consume it as the value
+    // of a preceding flag (e.g. -o). Codex's CLI signature is documented as
+    // `codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]`, and this ordering
+    // matches that intent unambiguously regardless of clap version.
+    return ['exec', 'resume', sessionId, ...common, prompt];
   }
   return ['exec', ...common, prompt];
 };
