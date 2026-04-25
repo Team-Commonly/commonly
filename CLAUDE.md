@@ -197,7 +197,7 @@ npm run lint                                  # 0 errors
 2. **Backend issues**: Check `backend/TESTING.md` — likely static method calls
 
 ### Local Skill Paths
-- `.claude/skills` is the source path for local development skills.
+- `.claude/skills` is the tracked source-path symlink for local development skills.
 - `.agents/skills` is the OpenAI/Codex agent-facing symlink and should point to `../.claude/skills`.
 - Do not recreate `.codex/skills`; it was replaced by `.agents/skills`.
 
