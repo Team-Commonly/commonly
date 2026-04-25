@@ -188,6 +188,14 @@ agents:
       repository: gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway
       tag: latest
       pullPolicy: IfNotPresent
+    # ADR-005 Stage 2 — codex + @commonly/cli installed by an init
+    # container into a shared /tools volume. codexVersion pins the
+    # @openai/codex npm package; commonlyCliRef pins the git ref this
+    # repo's cli/ subdirectory is installed from. @commonly/cli is not
+    # yet on npm (ADR-005 Phase 4), so we install from source.
+    codexTools:
+      codexVersion: "0.125.0"
+      commonlyCliRef: "main"
     config:
       gatewayPort: 18789
       bridgePort: 18790
