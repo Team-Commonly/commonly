@@ -252,10 +252,14 @@ class DMService {
     return dmPod;
   }
   /**
-   * Find or create an agent-room pod for a given agent. Agent rooms are the
-   * "pro agent's office" — a durable pod where one agent is the host and many
-   * humans can converge to consult it. Distinct from the agent-admin DM (1:1
-   * debug channel) and from regular team pods (N×N).
+   * Find or create an agent-room pod for a given agent. Agent rooms are
+   * personal 1:1 DMs (ADR-001 §3.10) — one user, one agent, no third
+   * party. The original "pro agent's office" framing (N humans × 1 agent)
+   * was rejected during product review; agent-rooms are strictly 1:1 and
+   * the join/auto-install paths in podController/agentIdentityService
+   * enforce that invariant. For multi-party human↔agent surfaces, use
+   * `type: 'chat'`. The legacy `type: 'agent-admin'` (multi-admin debug
+   * channel) is separate and slated for deprecation.
    *
    * If the requesting user already has an agent room with this agent, the
    * existing pod is returned. Otherwise a new one is created.

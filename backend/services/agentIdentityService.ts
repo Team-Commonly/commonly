@@ -261,8 +261,38 @@ class AgentIdentityService {
     if (!agentUser || !podId) return null;
     const pod = await Pod.findById(podId);
     if (!pod) return null;
-    if (!pod.members.includes(agentUser._id)) {
-      pod.members.push(agentUser._id);
+
+    // ObjectId equality: Mongoose stores `pod.members` as an array of
+    // ObjectId instances. JS `Array.includes` uses `===`, which compares
+    // object references and ALWAYS returns false for two different
+    // ObjectId instances even when they represent the same id. Use
+    // `.equals()` (Mongoose ObjectId / Document method) with a string
+    // fallback for populated refs. Same pattern as `removeAgentFromPod`
+    // below. Mirrors the bug the agent-room guard exposed: under the old
+    // `.includes()` the host agent was treated as "not a member" of its
+    // own room, the guard fired, and `null` propagated to callers as
+    // "pod not found."
+    const agentId = agentUser._id;
+    const isAlreadyMember = pod.members.some((m: any) => (
+      m && typeof m.equals === 'function'
+        ? m.equals(agentId)
+        : String(m) === String(agentId)
+    ));
+
+    if (!isAlreadyMember) {
+      // Agent DMs are 1:1 (ADR-001 §3.10). Auto-install paths must not
+      // sneak a third member into someone else's agent-room — the room
+      // already has exactly its host agent + one human. If the requested
+      // agent isn't already in this room, refuse to add. Caller should
+      // create a NEW agent-room for this agent + user pair instead.
+      if (pod.type === 'agent-room') {
+        console.warn(
+          `[ensureAgentInPod] refused: pod ${pod._id} is an agent-room (1:1) `
+          + `and agent ${agentId} is not already a member. ADR-001 §3.10.`,
+        );
+        return null;
+      }
+      pod.members.push(agentId);
       await pod.save();
     }
     return pod;
