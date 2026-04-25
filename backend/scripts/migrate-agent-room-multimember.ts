@@ -7,7 +7,22 @@
  * members, and createdBy — only the type field changes.
  *
  * Idempotent: a second run after the migration finds zero offenders. Run
- * with `--dry` to print the offenders without writing.
+ * with `--dry` to print the offenders without writing. Partially-applied
+ * runs are safe to re-run — the script picks up where it left off.
+ *
+ * Downstream consequences operators should be aware of before running:
+ *   - UI: migrated pods move from the "Agent DMs" tab to the regular chats
+ *     surface. Users with a stale URL bookmarked under /pods/agent-room/<id>
+ *     may need to refresh.
+ *   - Privacy filter: `agent-room` pods are membership-filtered in
+ *     getAllPods/getPodsByType; `chat` pods are not. After conversion the
+ *     pod becomes visible to non-members of the same type filter (i.e.,
+ *     it now behaves like any other chat pod the user is a member of).
+ *   - Auto-join: `agentAutoJoinService` scans pods by `createdBy` without
+ *     a type filter. Migrated pods retain their `createdBy: <agent>` field
+ *     and become candidates for the agent-owned-pod auto-join scan. If
+ *     `autoJoinAgentOwnedPods` is set anywhere, audit the resulting
+ *     candidate list before running on prod.
  *
  * Usage:
  *   ts-node backend/scripts/migrate-agent-room-multimember.ts          # apply

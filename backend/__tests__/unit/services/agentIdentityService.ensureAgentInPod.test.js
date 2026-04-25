@@ -48,23 +48,26 @@ describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', (
     expect(pod.members).toContain('agent-1');
   });
 
-  it('is a no-op when the agent is already a member of an agent-room', async () => {
-    // The host agent re-running ensureAgentInPod for its own DM must not
-    // be rejected — the guard only triggers when the agent isn't already in.
+  it('is a no-op when the agent is already a member of an agent-room (Mongoose ObjectId equality)', async () => {
+    // Regression for the .includes()-vs-ObjectId bug: production stores
+    // pod.members as ObjectId instances whose `===` always differs even
+    // for equal ids. Members carry .equals(); the production code now
+    // uses .some(.equals) instead of .includes(). This test exercises
+    // that path with no manual override.
+    const hostId = 'agent-host-id';
+    const fakeObjectId = (val) => ({
+      equals: (other) => String(other) === val,
+      toString: () => val,
+    });
     const pod = {
       _id: 'p-room',
       type: 'agent-room',
-      members: [
-        { equals: (id) => id === 'agent-host-id', toString: () => 'agent-host-id' },
-        { equals: (id) => id === 'human-id', toString: () => 'human-id' },
-      ],
+      members: [fakeObjectId(hostId), fakeObjectId('human-id')],
       save: jest.fn(),
     };
-    // Mongoose Array.includes uses equals(); fake it.
-    pod.members.includes = (id) => pod.members.some((m) => m.equals(id));
     Pod.findById.mockResolvedValue(pod);
 
-    const hostAgent = { _id: 'agent-host-id' };
+    const hostAgent = { _id: hostId };
     const result = await AgentIdentityService.ensureAgentInPod(hostAgent, 'p-room');
 
     expect(result).toBe(pod);

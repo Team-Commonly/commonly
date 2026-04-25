@@ -361,10 +361,12 @@ exports.joinPod = async (req: any, res: any) => {
 
     // Agent DMs are strictly 1:1 (ADR-001 §3.10). The pod is created with
     // exactly two members at `DMService.getOrCreateAgentRoom()` time —
-    // the agent and the user who opened the DM. No third party can join
-    // afterwards: not another human, not another agent, not even the
-    // creator (the agent itself). For multi-party human↔agent surfaces,
-    // use `type: 'chat'` instead.
+    // the agent (host, set as `pod.createdBy`) and the user who opened
+    // the DM. No third party can join afterwards: not another human, not
+    // another agent. The invite-only/creator-bypass branch below is
+    // effectively dead for agent-rooms because `pod.createdBy` is the
+    // host *agent*, not a human user. For multi-party human↔agent
+    // surfaces, use `type: 'chat'` instead.
     if (pod.type === 'agent-room') {
       return res.status(403).json({
         msg: 'Agent DMs are 1:1 — third-person joins are not allowed. Use a chat pod for multi-party conversations.',

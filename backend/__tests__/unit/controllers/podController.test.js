@@ -272,4 +272,23 @@ describe('podController', () => {
     // Admin sees both pods, not just their own.
     expect(res.json).toHaveBeenCalledWith([otherPod, myPod]);
   });
+
+  it('getAllPods returns ALL agent-rooms when caller is a global admin (parity with getPodsByType)', async () => {
+    const otherPod = { _id: 'p1', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'someone-else' }] };
+    const myPod = { _id: 'p2', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'me' }] };
+    // getAllPods has an extra .populate() chain (parentPod) — match it.
+    const sort = jest.fn().mockResolvedValue([otherPod, myPod]);
+    const populateThird = jest.fn(() => ({ sort }));
+    const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'admin' }) }),
+    });
+
+    const req = { query: { type: 'agent-room' }, userId: 'admin-id', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+    expect(res.json).toHaveBeenCalledWith([otherPod, myPod]);
+  });
 });
