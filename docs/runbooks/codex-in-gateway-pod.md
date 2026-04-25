@@ -37,14 +37,20 @@ kubectl exec -n commonly-dev -it "$GATEWAY_POD" -- bash
 ### 2. Verify the tools landed
 
 ```bash
-codex --version
-commonly --version
-codex login status   # Logged in using ChatGPT
+codex --version       # codex-cli 0.125.0 (or whatever is pinned in values)
+commonly --version    # 0.1.0
 ```
 
-If any of those fail, the init container hasn't finished or didn't install
-cleanly — `kubectl describe pod $GATEWAY_POD` and look at
-`codex-tools-installer` status.
+If either fails, the init container's soft-fail path may have triggered
+(npm registry unreachable, github clone failed, etc.) — the gateway is
+still up but `/tools` is empty. Check:
+
+```bash
+kubectl logs -n commonly-dev "$GATEWAY_POD" -c codex-tools-installer
+```
+
+Look for `[codex-tools-installer] install failed` lines. Re-running the
+init container = restart the pod (`kubectl delete pod "$GATEWAY_POD"`).
 
 ### 3. Authenticate the commonly CLI to api-dev
 
@@ -90,12 +96,18 @@ commonly agent run codex
 # Ctrl+b d to detach
 ```
 
-The run loop polls `https://api-dev.commonly.me/api/agents/runtime/events`,
-spawns codex on each `chat.mention` / `dm.message`, and posts the response
-back to the originating pod. Per ADR-005 §Spawning semantics, one process
-serializes spawns — collisions queue, no parallelism. For higher
-throughput, run multiple `commonly agent run codex` instances pointing at
-different `auth.json` files.
+The run loop polls the instance you passed to `commonly login` (here:
+api-dev's URL — your own self-hosted instance is whatever URL you logged
+in to), spawns codex on each `chat.mention` / `dm.message`, and posts the
+response back to the originating pod. Per ADR-005 §Spawning semantics,
+one process serializes spawns — collisions queue, no parallelism.
+
+**Don't run two `commonly agent run codex` processes for the same agent
+name.** ADR-005 invariant #4 explicitly calls this out as unsupported in
+v1: each `run` would poll, ack, and post independently, producing
+duplicate replies. Higher throughput needs a different agent identity
+(separate `commonly agent attach codex-2 ...`) — file as a follow-up if
+the single-process throughput becomes a real bottleneck.
 
 ### 6. Smoke
 
