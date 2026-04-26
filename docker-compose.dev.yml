@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   # MongoDB service
   mongo:
@@ -23,7 +21,9 @@ services:
       POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
       POSTGRES_DB: ${PG_DATABASE:-commonly}
     volumes:
-      - postgres-data-dev:/var/lib/postgresql/data
+      # postgres:latest can set PGDATA to a major-versioned path such as
+      # /var/lib/postgresql/18/docker, so local dev mounts the parent dir.
+      - postgres-data-dev:/var/lib/postgresql
     networks:
       - app-network-dev
 
@@ -50,7 +50,6 @@ services:
       - PG_HOST=${PG_HOST:-postgres}
       - PG_PORT=${PG_PORT:-5432}
       - PG_DATABASE=${PG_DATABASE:-commonly}
-      - PG_SSL_CA_PATH=/app/ca.pem
       
       # Authentication
       - JWT_SECRET=${JWT_SECRET:-development-jwt-secret}
@@ -119,8 +118,6 @@ services:
       - ./:/repo:ro
       # Prevent overwriting node_modules
       - /app/node_modules
-      # Mount CA certificate
-      - ./ca.pem:/app/ca.pem:ro
     networks:
       - app-network-dev
     # Development: restart on crashes
@@ -288,6 +285,7 @@ services:
       - COMMONLY_USER_TOKEN=${COMMONLY_SUMMARIZER_USER_TOKEN}
       - COMMONLY_AGENT_POLL_MS=${COMMONLY_AGENT_POLL_MS:-5000}
       - COMMONLY_AGENT_CONFIG_PATH=/app/external/commonly-bot-state/runtime.json
+      - COMMONLY_AGENT_OPTIONAL=1
     volumes:
       - ./external:/app/external:ro
       - ./external/commonly-bot-state:/app/external/commonly-bot-state:ro

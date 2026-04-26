@@ -14,9 +14,71 @@ CLUSTER_NAME="${COMMONLY_CLUSTER_NAME:-commonly-local}"
 K8S_NAMESPACE="${COMMONLY_K8S_NAMESPACE:-commonly-local}"
 HELM_RELEASE="${COMMONLY_HELM_RELEASE:-commonly}"
 HELM_CHART="k8s/helm/commonly"
+ENV_FILE=".env"
+ENV_EXAMPLE_FILE=".env.example"
+
+has_nonempty_env_value() {
+    local key="$1"
+    if [ -n "${!key:-}" ]; then
+        return 0
+    fi
+
+    if [ ! -f "$ENV_FILE" ]; then
+        return 1
+    fi
+
+    grep -Eq "^${key}=.+" "$ENV_FILE"
+}
+
+ensure_local_env_file() {
+    if [ -f "$ENV_FILE" ]; then
+        return
+    fi
+
+    if [ -f "$ENV_EXAMPLE_FILE" ]; then
+        cp "$ENV_EXAMPLE_FILE" "$ENV_FILE"
+        echo "📝 Created $ENV_FILE from $ENV_EXAMPLE_FILE"
+        echo "   Review it before enabling optional integrations or AI features."
+        echo ""
+        return
+    fi
+
+    echo "⚠️  $ENV_FILE is missing and $ENV_EXAMPLE_FILE was not found."
+    echo "   Docker Compose may still start if your shell env already has the needed values."
+    echo ""
+}
+
+print_local_dev_notes() {
+    echo ""
+    echo "Local dev notes:"
+
+    if has_nonempty_env_value "GEMINI_API_KEY" \
+        || has_nonempty_env_value "OPENAI_API_KEY" \
+        || has_nonempty_env_value "OPENROUTER_API_KEY"; then
+        echo "  • AI provider credentials detected."
+    else
+        echo "  • No AI provider key configured. AI features will stay limited until you set one of:"
+        echo "    GEMINI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY in $ENV_FILE"
+        echo "    Then run: ./dev.sh restart"
+    fi
+
+    if has_nonempty_env_value "COMMONLY_SUMMARIZER_RUNTIME_TOKEN"; then
+        echo "  • commonly-bot runtime token detected."
+    else
+        echo "  • commonly-bot will stay idle until you provision it from Agents Hub."
+        echo "    That is expected for fresh local setups."
+    fi
+
+    if has_nonempty_env_value "CLAWDBOT_GATEWAY_TOKEN"; then
+        echo "  • Clawdbot gateway token detected. Start it with: ./dev.sh clawdbot up"
+    else
+        echo "  • Clawdbot services are optional. Add CLAWDBOT_GATEWAY_TOKEN in $ENV_FILE if you want local OpenClaw."
+    fi
+}
 
 case "$1" in
     up)
+        ensure_local_env_file
         echo "🚀 Starting development environment..."
         # Set higher timeout for frontend npm install
         export COMPOSE_HTTP_TIMEOUT=300
@@ -28,6 +90,7 @@ case "$1" in
         echo "🐘 PostgreSQL: localhost:5432"
         echo ""
         echo "💡 To start Clawdbot: ./dev.sh clawdbot up"
+        print_local_dev_notes
         ;;
     
     down)
@@ -37,9 +100,11 @@ case "$1" in
         ;;
     
     restart)
+        ensure_local_env_file
         echo "🔄 Restarting development environment..."
         docker-compose -f $COMPOSE_FILE restart
         echo "✅ Development environment restarted!"
+        print_local_dev_notes
         ;;
     
     logs)
