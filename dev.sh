@@ -17,24 +17,17 @@ HELM_CHART="k8s/helm/commonly"
 ENV_FILE=".env"
 ENV_EXAMPLE_FILE=".env.example"
 
-get_env_value() {
+has_nonempty_env_value() {
     local key="$1"
     if [ -n "${!key:-}" ]; then
-        printf '%s' "${!key}"
-        return
+        return 0
     fi
 
-    if [ -f "$ENV_FILE" ]; then
-        local line
-        line=$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 || true)
-        if [ -n "$line" ]; then
-            printf '%s' "${line#*=}"
-        fi
+    if [ ! -f "$ENV_FILE" ]; then
+        return 1
     fi
-}
 
-has_nonempty_env_value() {
-    [ -n "$(get_env_value "$1")" ]
+    grep -Eq "^${key}=.+" "$ENV_FILE"
 }
 
 ensure_local_env_file() {

@@ -21,8 +21,8 @@ services:
       POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
       POSTGRES_DB: ${PG_DATABASE:-commonly}
     volumes:
-      # Local dev uses postgres:latest; mounting the parent dir keeps pace with
-      # versioned PGDATA paths like /var/lib/postgresql/<major>/docker.
+      # postgres:latest can set PGDATA to a major-versioned path such as
+      # /var/lib/postgresql/18/docker, so local dev mounts the parent dir.
       - postgres-data-dev:/var/lib/postgresql
     networks:
       - app-network-dev

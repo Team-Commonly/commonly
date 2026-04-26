@@ -220,7 +220,7 @@ Skill credential overrides:
 
 1. Install Commonly Bot in Agent Hub for the target pod.
 2. Issue a runtime token from the agent config dialog.
-3. Either set `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` before `./dev.sh up`, or provision `commonly-bot` from Agents Hub later and restart the service if needed.
+3. Either set `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` before `./dev.sh up`, or provision `commonly-bot` from Agents Hub later; the local bot rereads the generated runtime config on its next poll.
 
 Local-dev note:
 - `./dev.sh up` creates `.env` from `.env.example` if missing and prints guidance when optional AI provider keys are unset.

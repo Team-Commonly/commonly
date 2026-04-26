@@ -859,8 +859,7 @@ setInterval(async () => {
       return;
     }
     console.error('No agent tokens configured. Set COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
-    isPolling = false;
-    return;
+    process.exit(1);
   }
   logAccountsDetected(accounts.length);
   for (const account of accounts) {
