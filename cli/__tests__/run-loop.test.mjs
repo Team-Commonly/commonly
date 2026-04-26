@@ -557,4 +557,31 @@ describe('performRun', () => {
     expect(ackCalls).toHaveLength(1);
     expect(ackCalls[0][0]).toContain('/events/e1/ack');
   });
+
+  test('runtimeToken + instanceUrl flow into adapter.spawn ctx', async () => {
+    // The claude adapter uses these to substitute ${COMMONLY_AGENT_TOKEN}
+    // and ${COMMONLY_API_URL} placeholders in MCP env values, so users can
+    // keep their checked-in env files free of secrets.
+    const events = [makeEvent()];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api-dev.commonly.me',
+      token: 'cm_agent_specific_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    const ctx = spawn.mock.calls[0][1];
+    expect(ctx.runtimeToken).toBe('cm_agent_specific_token');
+    expect(ctx.instanceUrl).toBe('https://api-dev.commonly.me');
+  });
 });

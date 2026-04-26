@@ -79,19 +79,56 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
 
 // ── MCP config write — claude consumes this via --mcp-config <path> ─────────
 
-const buildMcpConfig = (mcpServers) => {
+// Substitute Commonly-supplied placeholders in MCP env values, command args,
+// and URLs so users don't have to hand-paste secrets into their env file
+// every time they re-attach. Surfaced during the 2026-04-17 cross-agent demo:
+// every spec referencing commonly-mcp had to be rewritten with the agent's
+// runtime token after attach, because the token is minted at attach time and
+// only known to the wrapper.
+//
+// Recognised placeholders (substituted everywhere a string appears in the
+// MCP config):
+//   ${COMMONLY_AGENT_TOKEN}   — the per-(agent, pod) cm_agent_* runtime token
+//   ${COMMONLY_API_URL}       — the instance URL the agent is attached to
+//   ${COMMONLY_INSTANCE_URL}  — alias for COMMONLY_API_URL (clearer in context)
+//
+// Substitution is one-pass + literal — no nested expansion, no shell quoting.
+// Unknown placeholders are left intact so the user sees a clear runtime error
+// from the MCP server rather than a silent empty string.
+const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
+const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
+
+const substitutePlaceholders = (value, ctx) => {
+  if (typeof value !== 'string') return value;
+  if (!value.includes('${COMMONLY_')) return value;
+  const subs = {
+    COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
+    COMMONLY_API_URL: ctx.instanceUrl || '',
+    COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
+  };
+  return value.replace(PLACEHOLDER_RE, (whole, key) => (
+    SUBSTITUTION_KEYS.includes(key) && subs[key] ? subs[key] : whole
+  ));
+};
+
+const buildMcpConfig = (mcpServers, ctx = {}) => {
   // Shape: `{ mcpServers: { <name>: { ... } } }` — the standard MCP client
   // config, which claude's `--mcp-config` reads directly.
   const mcpServersMap = {};
   for (const server of mcpServers) {
     const entry = { type: server.transport || 'stdio' };
-    if (server.url) entry.url = server.url;
+    if (server.url) entry.url = substitutePlaceholders(server.url, ctx);
     if (server.command) {
       const [command, ...args] = server.command;
       entry.command = command;
-      if (args.length) entry.args = args;
+      if (args.length) entry.args = args.map((a) => substitutePlaceholders(a, ctx));
     }
-    if (server.env) entry.env = server.env;
+    if (server.env) {
+      entry.env = {};
+      for (const [k, v] of Object.entries(server.env)) {
+        entry.env[k] = substitutePlaceholders(v, ctx);
+      }
+    }
     mcpServersMap[server.name] = entry;
   }
   return { mcpServers: mcpServersMap };
@@ -100,11 +137,11 @@ const buildMcpConfig = (mcpServers) => {
 // Regenerated on every spawn from the env spec; do not hand-edit — the file
 // is overwritten before each `claude` invocation, so any local changes are
 // silently clobbered. ADR-008 §invariant #5 (edits propagate on next spawn).
-const writeMcpConfig = async (cwd, mcpServers) => {
+const writeMcpConfig = async (cwd, mcpServers, ctx = {}) => {
   const dir = join(cwd, '.commonly');
   await mkdir(dir, { recursive: true });
   const file = join(dir, 'mcp-config.json');
-  await writeFile(file, JSON.stringify(buildMcpConfig(mcpServers), null, 2), 'utf8');
+  await writeFile(file, JSON.stringify(buildMcpConfig(mcpServers, ctx), null, 2), 'utf8');
   return file;
 };
 
@@ -133,7 +170,10 @@ const prepareArgv = async (innerArgv, ctx) => {
   if (!env) return { cmd: 'claude', args: innerArgv };
 
   if (Array.isArray(env.mcp) && env.mcp.length > 0 && ctx.cwd) {
-    const configPath = await writeMcpConfig(ctx.cwd, env.mcp);
+    const configPath = await writeMcpConfig(ctx.cwd, env.mcp, {
+      runtimeToken: ctx.runtimeToken,
+      instanceUrl: ctx.instanceUrl,
+    });
     // Insert --mcp-config immediately after the subcommand-style `-p` block
     // so claude parses it before prompt collection begins.
     innerArgv = [...innerArgv, '--mcp-config', configPath];
