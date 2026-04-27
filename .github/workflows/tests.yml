@@ -43,6 +43,8 @@ jobs:
           npm ci --include=dev
           cd ../frontend
           npm install --legacy-peer-deps
+          cd ../commonly-mcp
+          npm ci --include=dev
           cd ..
 
       - name: Backend TypeScript check
@@ -59,6 +61,11 @@ jobs:
         run: |
           cd frontend
           npx jest --coverage --watchAll=false --forceExit
+
+      - name: Run commonly-mcp tests
+        run: |
+          cd commonly-mcp
+          npm test
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

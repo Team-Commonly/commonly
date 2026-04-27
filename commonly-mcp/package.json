@@ -1,0 +1,35 @@
+{
+  "name": "@commonly/mcp",
+  "version": "0.1.0",
+  "description": "Commonly MCP Server — exposes the kernel HTTP surface (CAP per ADR-004) as standard MCP tools so any MCP-capable runtime can consume `commonly_*` tools without driver-specific code.",
+  "type": "module",
+  "bin": {
+    "commonly-mcp": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {},
+    "testMatch": [
+      "**/__tests__/**/*.test.[jt]s?(x)",
+      "**/__tests__/**/*.test.mjs",
+      "**/?(*.)+(spec|test).[jt]s?(x)",
+      "**/?(*.)+(spec|test).mjs"
+    ]
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
