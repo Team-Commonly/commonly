@@ -2,7 +2,7 @@
 
 **Status:** Draft — 2026-04-16
 **Author:** Lily Shen
-**Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-006`](ADR-006-webhook-sdk-and-self-serve-install.md)
+**Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-006`](ADR-006-webhook-sdk-and-self-serve-install.md), [`ADR-010`](ADR-010-commonly-mcp-server.md) (the Commonly-side MCP server that `mcp[]` entries can point at)
 
 ---
 
