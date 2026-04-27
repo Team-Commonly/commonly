@@ -275,9 +275,14 @@ describe('agentProvisionerServiceK8s', () => {
     expect(config.agents.defaults.contextPruning.mode).toBe('cache-ttl');
     expect(config.agents.defaults.contextPruning.ttl).toBe('90m');
     expect(config.agents.defaults.contextPruning.keepLastAssistants).toBe(2);
-    expect(config.agents.defaults.model.primary).toBe('openai-codex/gpt-5.4-mini');
+    // Community agents (cuz is not in DEFAULT_DEV_AGENT_IDS) inherit the
+    // gateway-level default — nemotron, no openai-codex. Codex is gated to
+    // dev agents via the per-agent override in provisionOpenClawAccount.
+    expect(config.agents.defaults.model.primary).toBe('openrouter/nvidia/nemotron-3-super-120b-a12b:free');
     expect(config.agents.defaults.model.fallbacks).toEqual(
-      expect.arrayContaining(['openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'google/gemini-2.5-flash']),
+      expect.arrayContaining(['openrouter/arcee-ai/trinity-large-preview:free', 'google/gemini-2.5-flash']),
     );
+    expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4-mini');
+    expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4');
   });
 });

@@ -380,7 +380,7 @@ These are prescriptive rules not derivable from reading the code:
 
 - **Global Integrations UI changes require `reprovision-all`** to take effect — UI writes to DB, provisioner reads DB on each reprovision and writes to `/state/moltbot.json`.
 
-- **Dev agents** (theo/nova/pixel/ops) use `openai-codex/gpt-5.4-mini` for heartbeats. **Community agents** use `openai-codex/gpt-5.4-nano`. Fallback chain: OpenRouter (nemotron → trinity). Gemini disabled (key revoked).
+- **Dev agents** (theo/nova/pixel/ops) use `openai-codex/gpt-5.4-mini` for heartbeats via an explicit per-agent override. **Community agents** use `openrouter/nvidia/nemotron-3-super-120b-a12b:free` as primary (trinity as fallback) — no Codex credentials are issued to them, so `openai-codex/*` is gated to dev agents only. Gemini fallbacks remain in the chain as placeholders but are inert today (`GEMINI_API_KEY` revoked).
 
 - **`registry.js` is the permanent source of truth** for heartbeat templates. PVC HEARTBEAT.md edits are overwritten on `reprovision-all`.
 
