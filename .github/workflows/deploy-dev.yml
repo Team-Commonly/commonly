@@ -142,7 +142,7 @@ jobs:
             --set agents.clawdbot.image.tag="$TAG" \
             --set agents.commonlyBot.image.tag="$TAG" \
             --wait \
-            --timeout 5m
+            --timeout 10m
 
       - name: Report deploy outcome
         if: always()
