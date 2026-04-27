@@ -1334,9 +1334,14 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
 };
 
 /**
- * Issue a LiteLLM virtual key scoped to community models (nano + OpenRouter fallbacks).
- * Community agents use gpt-5.4-nano as primary (same Codex OAuth, lowest quota cost)
- * with nemotron/trinity as fallbacks — without granting access to full gpt-5.4/mini (dev-only).
+ * Issue a LiteLLM virtual key for a community agent. Community agents'
+ * runtime primary is `openrouter/nvidia/nemotron-3-super-120b-a12b:free`
+ * (set as the gateway default in applyOpenClawModelDefaults); they never
+ * get openai-codex credentials injected. The allowlist on this key still
+ * permits the gpt-5.4-{nano,mini,full} model names as a safety net so the
+ * default can be flipped back without per-key re-issuance — calls to
+ * those models will fail at the auth layer (no Codex creds), not at
+ * LiteLLM's allowlist check.
  */
 const issueLiteLLMOpenRouterKey = async (agentId: any) => {
   const baseUrl = process.env.LITELLM_BASE_URL;
@@ -1373,9 +1378,11 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
         const check = await axios.get(`${baseUrl}/key/info?key=${existingKey}`, { headers });
         const info = check.data?.info;
         const ownedByAgent = info && (info.metadata?.agent_id === agentId || info.user_id === agentId);
-        // Model allowlist on the key must contain gpt-5.4-mini — that's the
-        // current default primary. Keys issued before the nano→mini switch
-        // still have the old allowlist and 401 on every call; force re-issue.
+        // Sentinel for "key was issued with the current allowlist." We use
+        // gpt-5.4-mini as the marker because it joined the allowlist in the
+        // nano→mini switch and stayed in for the codex-restricted-to-dev
+        // change; pre-switch keys lack it and would 401 on any retry, so
+        // we force re-issue.
         const allowsMini = Array.isArray(info?.models) && info.models.includes('gpt-5.4-mini');
         if (ownedByAgent && allowsMini) {
           return existingKey;
@@ -1737,20 +1744,23 @@ const applyOpenClawModelDefaults = async (config: any) => {
     'openrouter/arcee-ai/trinity-large-preview:free',
   ];
 
-  // Global default: gpt-5.4-mini for all agents. ChatGPT Team accounts
-  // don't accept gpt-5.4-nano via the Codex OAuth path (400 "not supported
-  // when using Codex with a ChatGPT account"), so we use mini — cheap
-  // enough for community agents and actually accepted by the endpoint.
-  // When CODEX_BYPASS_LITELLM=true, this routes direct to chatgpt.com
-  // through OpenClaw's native openai-codex-responses handler instead of
-  // the broken LiteLLM chatgpt/ bridge (BerriAI/litellm#25429).
-  config.agents.defaults.model.primary = 'openai-codex/gpt-5.4-mini';
+  // Global default for non-dev (community) agents: free OpenRouter models
+  // only. Codex quota is finite and shared; reserving it for dev agents
+  // keeps heartbeat orchestration responsive without burning weekly quota
+  // on community agents that would just fall back to OpenRouter on auth
+  // failure anyway (community agents aren't issued openai-codex
+  // credentials — see provisionOpenClawAccount). Dev agents bypass this
+  // default via the per-agent override (see devAgentModel below) — they
+  // still get openai-codex/gpt-5.4-mini.
+  config.agents.defaults.model.primary = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
+  // Gemini entries are kept as a placeholder — current GEMINI_API_KEY is
+  // revoked so they're inert today; reinstating the key restores the chain
+  // without a code change.
   config.agents.defaults.model.fallbacks = Array.from(new Set([
+    'openrouter/arcee-ai/trinity-large-preview:free',
     'google/gemini-2.5-flash',
     'google/gemini-2.5-flash-lite',
     'google/gemini-2.0-flash',
-    'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-    'openrouter/arcee-ai/trinity-large-preview:free',
   ]));
 
   // Always set up Codex provider config so dev agents can use it via per-agent override.
