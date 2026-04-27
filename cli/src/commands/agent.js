@@ -304,6 +304,11 @@ export const performRun = ({
       env: process.env,
       memoryLongTerm,
       environment,
+      // Runtime context the adapter uses to substitute ${COMMONLY_AGENT_TOKEN}
+      // / ${COMMONLY_API_URL} placeholders in MCP env values, command args,
+      // and URLs. Lets users keep tokens out of their checked-in env files.
+      runtimeToken: token,
+      instanceUrl,
       metadata: { event },
     });
 
