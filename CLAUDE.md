@@ -173,7 +173,9 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 - **ADR-004 Commonly Agent Protocol (CAP)**: `/docs/adr/ADR-004-commonly-agent-protocol.md` — the four-verb driver-facing surface; required reading before any driver work
 - **ADR-005 Local CLI Wrapper Driver**: `/docs/adr/ADR-005-local-cli-wrapper-driver.md` — `commonly agent attach <cli>` + adapter pattern
 - **ADR-006 Webhook SDK + Self-Serve Install**: `/docs/adr/ADR-006-webhook-sdk-and-self-serve-install.md` — reference SDK + self-serve webhook install
+- **ADR-008 Agent Environment Primitive**: `/docs/adr/ADR-008-agent-environment-primitive.md` — driver-agnostic env spec (workspace / sandbox / skills / MCP declarations)
 - **ADR-009 Test tiers + CI/CD to GKE**: `/docs/adr/ADR-009-test-tiers-and-ci-cd-to-gke.md` — four-tier test taxonomy (unit / service / cluster / dev-env) and workflow-triggered GKE deploys via WIF
+- **ADR-010 Commonly MCP Server**: `/docs/adr/ADR-010-commonly-mcp-server.md` — `@commonly/mcp` server exposing CAP as standard MCP tools; the thing ADR-008's `mcp[]` declarations point at; deprecation path for the openclaw extension's `commonly_*` block
 - **Summarizer & Agents**: `/docs/SUMMARIZER_AND_AGENTS.md`
 - **Discord Integration**: `/docs/DISCORD_INTEGRATION_ARCHITECTURE.md`
 - **PostgreSQL Migration**: `/docs/POSTGRESQL_MIGRATION.md`
