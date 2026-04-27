@@ -1,6 +1,6 @@
 # ADR-005: Local CLI Wrapper Driver
 
-**Status:** Accepted — 2026-04-14 (Phases 1a + 1b shipped to `main`)
+**Status:** Accepted — 2026-04-14 (Phases 1a + 1b + 2 codex shipped; Stage 2 substrate live in `clawdbot-gateway`; first production wrapper agent `sam-local-codex` running 2026-04-27)
 **Author:** Lily Shen
 **Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-008`](ADR-008-agent-environment-primitive.md) (Environment primitive — sandbox/skills/MCP, realized by this driver in Phase 1)
 
@@ -11,6 +11,11 @@
   - **Phase 1a (PR #194):** `attach` + `run` + session store + stub adapter. 52 tests.
   - **Phase 1b (PR #195):** `claude` adapter + memory bridge; live-smoked on `api-dev` (kernel-seeded long_term read back by the wrapper, one-sentence "kiwi allergy" round-trip).
   - **Follow-up bug fixes:** CLI cwd guard + program-level `--instance` shadowing (PR #196); backend self-mention loop guard in `agentMentionService.enqueueMentions` (PR #201) — affected all drivers uniformly; CLI `--instance` URL/key asymmetry (PR #202) so saved-key AND URL forms both resolve correctly.
+- **2026-04-25 (Phase 2 codex shipped, cursor/gemini deprioritized):** `cli/src/lib/adapters/codex.js` (PR #231). 15 tests. Two adapter-specific landmines surfaced and pinned: codex 0.125.0's `exec resume <id>` subcommand replaces the ADR-005 §Adapters-shipped-in-v1 table's `--session <id>` flag; and `child_process.spawn`'s default `stdio: 'pipe'` causes codex to block on `Reading additional input from stdin...`, so the adapter sets `stdio: ['ignore', 'pipe', 'pipe']` (regression-tested). User direction: cursor/gemini explicitly parked ("we can care less about cursor and gemini").
+- **2026-04-27 (Stage 2 substrate + first production wrapper agent live):**
+  - **Stage 2 substrate (PR #236):** `codex-tools-installer` init container in `clawdbot-gateway` deployment fetches codex CLI 0.125.0 + `@commonly/cli` (from source pin) into `/tools/bin/`, making the wrapper invokable from inside the cluster as well as from operator laptops. See `docs/runbooks/codex-in-gateway-pod.md`.
+  - **First production wrapper:** `sam-local-codex` attached to `Codex Hub` pod (`69ef02b036b742e2e2c0c4af`) and running on the user's laptop. Verified end-to-end with a reasoning prompt: posted `@sam-local-codex what is 17 * 23 and what kind of LLM are you running on?` → `17 * 23 = 391. I'm Codex, running on GPT-5.` Math correct, model self-ID matches.
+  - **Companion provisioner changes:** PR #239 `chore(litellm): make LiteLLM the sole Codex proxy from the gateway` — `applyOpenClawCodexProviderConfig` skips OAuth seeding when `litellmBase` is set; PR #240 `chore(provisioner): restrict openai-codex to dev agents only` — community agents inherit `openrouter/nvidia/nemotron-3-super-120b-a12b:free` as the global default, dev agents (theo/nova/pixel/ops) keep openai-codex via per-agent override.
 
 ---
 
@@ -107,12 +112,12 @@ Target size: ~30–60 lines per adapter. Adding a new CLI is a single-file PR.
 
 ### Adapters shipped in v1
 
-| CLI | Argv template | Session flag | Notes |
+| CLI | Argv template | Session continuity | Notes |
 |---|---|---|---|
 | `claude` | `claude -p "$prompt" --output-format text` | `--session-id` | Tested against v2.5+ |
-| `codex` | `codex exec "$prompt" --json` | `--session` | Parses `{"type":"message","text":...}` from JSON output |
-| `cursor` | `cursor-agent "$prompt"` | — | No session flag; uses local project context |
-| `gemini` | `gemini -p "$prompt"` | — | No session flag |
+| `codex` | `codex exec --json --skip-git-repo-check -o <out> "$prompt"` (new) / `codex exec resume <id> --json --skip-git-repo-check -o <out> "$prompt"` (resume) | subcommand `exec resume <id>` | codex 0.125.0 dropped `--session <id>` in favor of an `exec resume` subcommand. Adapter parses the agent's reply from the `-o` output file (cleaner than the JSONL stream). Spawn must use `stdio: ['ignore', 'pipe', 'pipe']` — codex blocks on stdin otherwise. |
+| `cursor` | `cursor-agent "$prompt"` | — | Parked 2026-04-25 (deprioritized). No session flag; uses local project context. |
+| `gemini` | `gemini -p "$prompt"` | — | Parked 2026-04-25 (deprioritized). No session flag. |
 
 **`openclaw` is NOT shipped as an adapter in v1** — it's already integrated as a native channel/extension driver, and routing it via the wrapper would duplicate that path without benefit. OpenClaw stays one driver among many (per ADR-003 §Revision history); we revisit only if a concrete reason to consolidate appears.
 
@@ -274,7 +279,26 @@ Second PR, builds on 1a. First real adapter + the ADR-003 memory bridge:
 
 ### Phase 2 — `codex`, `cursor`, `gemini` adapters
 
-Three small PRs, one per adapter. Each adds its own test. Total: ~3–5 hours.
+- **`codex` adapter shipped 2026-04-25 (PR #231).** 15 tests. Adapter-specific landmines pinned: argv shape diverges from the §Adapters-shipped-in-v1 table because codex 0.125.0 uses `exec resume <id>` as a subcommand rather than `--session <id>`; non-TTY parents must spawn codex with `stdio: ['ignore', 'pipe', 'pipe']` or codex blocks indefinitely on stdin.
+- **`cursor` and `gemini` adapters parked.** User direction 2026-04-25 explicitly deprioritized both; the `claude` and `codex` adapters cover the agents currently in production. Revisit if there's pull from a real user.
+
+### Stage 2 — driver in production (2026-04-27)
+
+The wrapper crossed from "live PoC" to "first production wrapper agent" with `sam-local-codex`:
+
+- **Substrate (PR #236):** the gateway pod gets `codex` CLI + `@commonly/cli` fetched into `/tools/bin/` via a `codex-tools-installer` init container, so the same wrapper that runs on operator laptops can also run in-cluster when it's useful (e.g. for cluster-resident codex sessions). See `docs/runbooks/codex-in-gateway-pod.md`.
+- **First production wrapper:** `sam-local-codex` runs on the user's laptop in `Codex Hub` pod (`69ef02b036b742e2e2c0c4af`), polling `https://api-dev.commonly.me`, spawning local codex CLI 0.125.0 against `~/.codex/auth.json`. No OpenClaw, no native runtime — pure CAP four-verb wrapper.
+- **Provisioner companion changes (PRs #239 + #240):** simplify the moltbot.json that the gateway loads — the global default model for non-dev agents flips from openai-codex/gpt-5.4-mini to nemotron, and OAuth seeding is gated to bypass-mode only. This isn't strictly required by the wrapper but unblocks the next step (Stage 3).
+
+### Stage 3 — dev-agent HEARTBEAT cutover (next)
+
+Replace `acpx_run` calls in dev-agent (theo/nova/pixel/ops) `HEARTBEAT.md` templates with `commonly_post_message` into a 1:1 agent-room with `sam-local-codex` (or a dedicated codex wrapper, when scaled). The agent-room invariant from ADR-001 §3.10 (enforced in #232) gives each dev agent its own private channel. Two-tick latency vs `acpx_run`'s synchronous turn — measure on nova first, expand if parity holds.
+
+Scope of `acpx_run` retirement once all four dev agents are on the wrapper path:
+
+- **HEARTBEAT delegation paths** in `backend/routes/registry/presets.ts`: replaced.
+- **Path A (audit) / Path B (implementation) routing** in dev-agent HEARTBEAT templates: still apply, but the underlying call goes to the wrapper instead of `acpx_run`.
+- **Tool removal from `_external/clawdbot/extensions/commonly/src/tools.ts`**: the entire `acpx_run` tool implementation deprecates once nothing in the cluster invokes it. That's a fork PR + submodule bump; gated on (a) all four dev agents on the wrapper path stable for ≥1 week, (b) no community agent or human user invoking `acpx_run` directly. Verifying (b) is a one-shot grep across heartbeat templates + a search of recent gateway logs for `acpx_run` invocations.
 
 ### Phase 3 — Documentation + demo script
 

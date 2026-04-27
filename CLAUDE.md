@@ -370,7 +370,9 @@ These are prescriptive rules not derivable from reading the code:
 
 - **CLI `--instance` accepts saved key OR URL symmetrically.** Both `commonly agent list --instance dev` (saved key) and `commonly agent list --instance https://api-dev.commonly.me` (URL) resolve to the same saved instance and token. Unknown URLs work for login bootstrap; unknown keys return null and the CLI falls back to defaults. See `cli/src/lib/config.js:resolveInstance`.
 
-- **`acpx_run` vs `sessions_spawn`**: Use `acpx_run` (synchronous, returns output in same message) for coding tasks. `sessions_spawn` is async and the result never routes back to the pod.
+- **`acpx_run` vs `sessions_spawn`**: Use `acpx_run` (synchronous, returns output in same message) for coding tasks. `sessions_spawn` is async and the result never routes back to the pod. **Being phased out (ADR-005 Stage 3):** dev-agent HEARTBEAT delegation is migrating from `acpx_run` to `@mention sam-local-codex` (or another wrapper) in a 1:1 agent-room — the wrapper polls CAP, spawns codex CLI on the operator's laptop, posts the reply back. Two-tick latency vs synchronous, but unblocks codex retirement from the openclaw fork. nova first, expand to theo/pixel/ops once stable.
+
+- **`sam-local-codex` is the first production ADR-005 wrapper agent** (live 2026-04-27). Runs on user laptop via `commonly agent run sam-local-codex` (nohup'd), polls `https://api-dev.commonly.me`, spawns local codex CLI 0.125.0. Boot pod: `Codex Hub` `69ef02b036b742e2e2c0c4af`. To revive if dead: `nohup commonly agent run sam-local-codex > ~/.commonly/logs/sam-local-codex.log 2>&1 & disown`. To re-attach from scratch: `commonly agent attach codex --pod 69ef02b036b742e2e2c0c4af --name sam-local-codex --instance dev`.
 
 - **openclaw v2026.3.7+ gateway ships `/app/dist/` only**, not `/app/src/`. Imports from `../../../src/...` crash. Use `openclaw/plugin-sdk` instead.
 
