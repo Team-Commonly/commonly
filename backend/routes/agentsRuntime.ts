@@ -48,6 +48,26 @@ const phase4RateLimit = rateLimit({
   }),
 });
 
+// Dual-auth dispatcher (mirrors `backend/routes/tasksApi.ts:34-36`). Routes
+// that accept BOTH human JWTs and agent runtime tokens use this — the token
+// prefix distinguishes the two. `cm_agent_*` → `agentRuntimeAuth` (stamps
+// `req.agentUser`), anything else → `auth` (stamps `req.userId`/`req.user`).
+//
+// Both `Authorization: Bearer <token>` and `x-commonly-agent-token: <token>`
+// are checked because `agentRuntimeAuth` accepts either; missing one would
+// silently route the alternate-header caller to the human path and 401.
+//
+// Per ADR-010, MCP tools wrap routes the agent runtime token can already
+// authenticate against; for `/room` (the agent-room endpoint) that means
+// adding the agent path without breaking the existing human path.
+const dualAuth = (req: any, res: any, next: any) => {
+  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
+  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
+  const token = bearer || altHeader;
+  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
+  return auth(req, res, next);
+};
+
 const Integration = require('../models/Integration');
 const AgentMemory = require('../models/AgentMemory');
 const {
@@ -520,16 +540,72 @@ router.post('/dm', auth, async (req: any, res: any) => {
  * office" framing was rejected during product review; the join/auto-install
  * paths in podController/agentIdentityService now enforce strict 1:1.
  *
- * This endpoint currently accepts only `auth` (human JWT), so callers
- * always create human↔agent DMs through it. Agent-initiated agent↔agent
- * DMs are supported by `getOrCreateAgentRoom` at the service level but
- * have no agent-runtime endpoint yet — file a follow-up if needed.
+ * Dual-auth (ADR-010 Phase 1):
+ *   - Human path (JWT): existing semantics — caller must be the agent's
+ *     installer or a member of an installed pod, then opens a human↔agent
+ *     room with the target agent.
+ *   - Agent path (`cm_agent_*` runtime token): caller is identified by the
+ *     token's resolved User row (`req.agentUser`). No installation match
+ *     required — any agent can open a 1:1 with any other agent. The 1:1
+ *     invariant in `getOrCreateAgentRoom` is the correctness guard, and the
+ *     only side effect is a new pod with two agent members. Self-DMs are
+ *     refused because they would degenerate the 1:1.
  *
  * Request: { agentName, instanceId?, podId? }
  * Response: { room: Pod }
  */
-router.post('/room', auth, async (req: any, res: any) => {
+router.post('/room', dualAuth, async (req: any, res: any) => {
   try {
+    // Agent-initiated path — caller authorized purely by their runtime token.
+    // `agentRuntimeAuth` populates `req.agentUser` for User-row tokens
+    // (`User.agentRuntimeTokens`) but NOT for the legacy installation-token
+    // path (`AgentInstallation.runtimeTokens`, line 119-122 in the middleware).
+    // For Phase 1 we resolve the missing User row from the installation's
+    // (agentName, instanceId) so both shapes work.
+    let callerAgentUser = req.agentUser;
+    if (!callerAgentUser && req.agentInstallation) {
+      callerAgentUser = await AgentIdentityService.getOrCreateAgentUser(
+        req.agentInstallation.agentName,
+        { instanceId: req.agentInstallation.instanceId || 'default' },
+      );
+    }
+    const callerAgentUserId = callerAgentUser?._id;
+    if (callerAgentUserId) {
+      const {
+        agentName: rawAgentName,
+        instanceId: rawInstanceId,
+      } = req.body || {};
+      const agentName = String(rawAgentName || '').trim().toLowerCase();
+      const instanceId = String(rawInstanceId || '').trim() || 'default';
+      if (!agentName) {
+        return res.status(400).json({ message: 'agentName is required' });
+      }
+
+      // Resolve target agent's User row. `getOrCreateAgentUser` is upsert,
+      // which means a misspelled `agentName` materialises a ghost bot User
+      // row. ADR-010 Phase 1 accepts this side effect (it mirrors the
+      // existing human-path semantics on the same route, and the blast
+      // radius is bounded — the ghost is just an unattached User). A name-
+      // existence check or rate limit is filed for v1.x if abuse surfaces.
+      const targetAgentUser = await AgentIdentityService.getOrCreateAgentUser(
+        agentName,
+        { instanceId },
+      );
+
+      if (String(targetAgentUser._id) === String(callerAgentUserId)) {
+        return res.status(400).json({ message: 'Cannot DM yourself' });
+      }
+
+      const room = await DMService.getOrCreateAgentRoom(
+        targetAgentUser._id,
+        callerAgentUserId,
+        { agentName, instanceId },
+      );
+
+      return res.json({ room });
+    }
+
+    // Human path — existing implementation, unchanged below this line.
     const userId = req.userId || req.user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Authentication required' });
