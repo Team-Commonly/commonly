@@ -37,6 +37,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useV2Embedded } from '../../v2/hooks/useV2Embedded';
 
 const XIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -82,6 +83,7 @@ const OPENCLAW_MODEL_OPTIONS = {
 };
 
 const GlobalIntegrations = () => {
+  const v2Embedded = useV2Embedded();
   const location = useLocation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -499,12 +501,18 @@ const GlobalIntegrations = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Global Social Feed Integrations
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Configure global OAuth tokens for X and Instagram. These accounts will be used by all curator agents to fetch social content.
-      </Typography>
+      {/* The v2 shell renders its own page header, so hide this legacy
+          title + intro to avoid stacked headings. */}
+      {!v2Embedded && (
+        <>
+          <Typography variant="h4" gutterBottom>
+            Global Social Feed Integrations
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Configure global OAuth tokens for X and Instagram. These accounts will be used by all curator agents to fetch social content.
+          </Typography>
+        </>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>

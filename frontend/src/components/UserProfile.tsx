@@ -41,6 +41,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import AppsManagement from './AppsManagement';
 import AvatarGenerator from './agents/AvatarGenerator';
 import AdminUsers from './admin/AdminUsers';
+import { useV2Embedded } from '../v2/hooks/useV2Embedded';
 
 interface ProfileUser {
     _id: string;
@@ -85,6 +86,7 @@ interface SnackbarState {
 }
 
 const UserProfile = () => {
+    const v2Embedded = useV2Embedded();
     const { refreshAvatars } = useAppContext();
     const { currentUser } = useAuth();
     const navigate = useNavigate();
@@ -377,10 +379,10 @@ const UserProfile = () => {
                                 <Box sx={{ position: 'relative' }}>
                                     <Avatar
                                         sx={{
-                                            width: 96,
-                                            height: 96,
+                                            width: v2Embedded ? 72 : 96,
+                                            height: v2Embedded ? 72 : 96,
                                             bgcolor: getAvatarColor(user.profilePicture),
-                                            fontSize: '2.2rem'
+                                            fontSize: v2Embedded ? '1.6rem' : '2.2rem',
                                         }}
                                         src={getAvatarSrc(user.profilePicture)}
                                     >
@@ -405,9 +407,19 @@ const UserProfile = () => {
                                     )}
                                 </Box>
                                 <Box>
-                                    <Typography variant="h4" gutterBottom>
-                                        {user.username}
-                                    </Typography>
+                                    {/* The v2 shell already names the page (Profile),
+                                        so under v2 we drop the in-card h4 username
+                                        and keep the secondary metadata only. */}
+                                    {!v2Embedded && (
+                                        <Typography variant="h4" gutterBottom>
+                                            {user.username}
+                                        </Typography>
+                                    )}
+                                    {v2Embedded && (
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                                            {user.username}
+                                        </Typography>
+                                    )}
                                     <Typography variant="body2" color="text.secondary">
                                         {user.email}
                                     </Typography>

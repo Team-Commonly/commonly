@@ -65,6 +65,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { resolveHeartbeatEditorContent } from '../../utils/heartbeatUtils';
+import { useV2Embedded } from '../../v2/hooks/useV2Embedded';
 
 const categories = [
   { id: 'all', label: 'All Agents' },
@@ -130,6 +131,7 @@ const ADMIN_VIEW_INSTALLATIONS = 'installations';
 const ADMIN_VIEW_EVENTS = 'events';
 
 const AgentsHub = ({ currentPodId: propPodId = null }) => {
+  const v2Embedded = useV2Embedded();
   const theme = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
@@ -2548,14 +2550,18 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
           gap: 2,
         }}
       >
-        <Box>
-          <Typography variant="h4" fontWeight={700} gutterBottom>
-            Agent Hub
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Discover, install, and manage pod-native agents.
-          </Typography>
-        </Box>
+        {/* The v2 shell renders its own page header, so hide this legacy
+            title to avoid a duplicated heading echo. */}
+        {!v2Embedded && (
+          <Box>
+            <Typography variant="h4" fontWeight={700} gutterBottom>
+              Agent Hub
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Discover, install, and manage pod-native agents.
+            </Typography>
+          </Box>
+        )}
 
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           <Button variant="outlined" size="small" onClick={openCreateDialog}>

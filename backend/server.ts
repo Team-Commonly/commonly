@@ -203,11 +203,18 @@ connectDB();
 // Bootstrap agent registry after MongoDB connects
 const mongoose = require('mongoose');
 const AgentBootstrapService = require('./services/agentBootstrapService');
+const { ensureLocalDevLogin } = require('./services/localDevLoginService');
 const { AgentInstallation } = require('./models/AgentRegistry');
 
 mongoose.connection.once('open', () => {
   if (process.env.NODE_ENV !== 'test') {
     (async () => {
+      try {
+        await ensureLocalDevLogin();
+      } catch (localDevLoginError: any) {
+        console.error('[local-dev-login] Error:', localDevLoginError.message);
+      }
+
       try {
         const indexes = await AgentInstallation.collection.indexes();
         const legacyIndex = indexes.find(
