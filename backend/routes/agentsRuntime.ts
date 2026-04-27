@@ -554,7 +554,7 @@ router.post('/dm', auth, async (req: any, res: any) => {
  * Request: { agentName, instanceId?, podId? }
  * Response: { room: Pod }
  */
-router.post('/room', dualAuth, async (req: any, res: any) => {
+router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     // Agent-initiated path — caller authorized purely by their runtime token.
     // `agentRuntimeAuth` populates `req.agentUser` for User-row tokens
