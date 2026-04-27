@@ -36,6 +36,7 @@ import { formatDistanceToNow } from 'date-fns';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import AnalyticsDashboard from './analytics/AnalyticsDashboard';
+import { useV2Embedded } from '../v2/hooks/useV2Embedded';
 
 interface DigestAnalytics {
   quotes?: unknown[];
@@ -61,6 +62,7 @@ interface DigestData {
 }
 
 const DailyDigest: React.FC = () => {
+  const v2Embedded = useV2Embedded();
   const [digest, setDigest] = useState<DigestData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -167,19 +169,35 @@ const DailyDigest: React.FC = () => {
       <Paper elevation={0} sx={{ mb: 3, borderRadius: 3, overflow: 'hidden' }}>
         {/* Header */}
         <Box sx={{ p: { xs: 2, md: 3 }, borderBottom: 1, borderColor: 'divider' }}>
-          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { md: 'center' }, justifyContent: 'space-between', gap: 2 }}>
+          <Box
+            className={v2Embedded ? 'v2-filter-bar v2-filter-bar--flat' : undefined}
+            sx={v2Embedded ? undefined : {
+              display: 'flex',
+              flexDirection: { xs: 'column', md: 'row' },
+              alignItems: { md: 'center' },
+              justifyContent: 'space-between',
+              gap: 2,
+            }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-              <EmailIcon sx={{ mr: 1, color: 'primary.main' }} />
-              <Typography variant="h6" component="h2" sx={{ fontWeight: 600 }}>
-                Daily Digest
-              </Typography>
+              {/* The v2 shell renders its own page header. Inside v2 we
+                  drop the in-card Daily Digest title and keep the Latest
+                  chip as the only inline marker. */}
+              {!v2Embedded && (
+                <>
+                  <EmailIcon sx={{ mr: 1, color: 'primary.main' }} />
+                  <Typography variant="h6" component="h2" sx={{ fontWeight: 600 }}>
+                    Daily Digest
+                  </Typography>
+                </>
+              )}
               {digest && (
                 <Chip
                   size="small"
                   label="Latest"
                   color="primary"
                   variant="outlined"
-                  sx={{ ml: 1, fontSize: '0.7rem', height: 20 }}
+                  sx={{ ml: v2Embedded ? 0 : 1, fontSize: '0.7rem', height: 20 }}
                 />
               )}
             </Box>
@@ -203,6 +221,14 @@ const DailyDigest: React.FC = () => {
                 {generating ? 'Generating\u2026' : 'Generate'}
               </Button>
             </Box>
+            {v2Embedded && (
+              <span className="v2-filter-bar__summary">
+                {digest?.metadata?.totalItems
+                  ? `${digest.metadata.totalItems} items analyzed`
+                  : 'No digest data yet'}
+                {digest?.createdAt ? ` · Updated ${formatDistanceToNow(new Date(digest.createdAt), { addSuffix: true })}` : ''}
+              </span>
+            )}
           </Box>
 
           {/* Quick Stats */}

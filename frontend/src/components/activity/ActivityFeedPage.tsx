@@ -5,7 +5,7 @@
  * Fetches activity data and provides filtering.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Container,
   Box,
@@ -39,6 +39,7 @@ import ActivityFeed, { Activity } from './ActivityFeed';
 import axios from 'axios';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
+import { useV2Embedded } from '../../v2/hooks/useV2Embedded';
 
 interface UserPod {
   _id: string;
@@ -70,6 +71,7 @@ interface SnackbarState {
 }
 
 const ActivityFeedPage: React.FC = () => {
+  const v2Embedded = useV2Embedded();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +90,60 @@ const ActivityFeedPage: React.FC = () => {
   });
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
+
+  const activityFilterOptions = useMemo(() => {
+    const countWhere = (predicate: (activity: Activity) => boolean) => (
+      activities.filter(predicate).length
+    );
+    if (mode === 'actions') {
+      return [
+        { value: 'all', label: 'All', count: activities.length },
+        {
+          value: 'agents',
+          label: 'Agents',
+          count: countWhere((activity) => activity.actor?.type === 'agent'
+            || activity.involves?.some((participant) => participant.type === 'agent') === true),
+        },
+        {
+          value: 'humans',
+          label: 'Humans',
+          count: countWhere((activity) => activity.actor?.type === 'human'
+            || activity.involves?.some((participant) => participant.type === 'human') === true),
+        },
+        {
+          value: 'skills',
+          label: 'Skills',
+          count: countWhere((activity) => activity.type?.includes('skill') === true
+            || activity.flags?.skill === true),
+        },
+      ];
+    }
+    return [
+      { value: 'all', label: 'All', count: activities.length },
+      {
+        value: 'mentions',
+        label: 'Mentions',
+        count: countWhere((activity) => activity.type?.includes('mention') === true
+          || activity.flags?.mention === true),
+      },
+      {
+        value: 'following',
+        label: 'Following',
+        count: countWhere((activity) => activity.flags?.following === true),
+      },
+      {
+        value: 'threads',
+        label: 'Threads',
+        count: countWhere((activity) => activity.type?.includes('thread') === true
+          || (activity.replyCount || 0) > 0),
+      },
+      {
+        value: 'pods',
+        label: 'Pods',
+        count: countWhere((activity) => Boolean(activity.pod)),
+      },
+    ];
+  }, [activities, mode]);
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('token');
@@ -437,14 +493,18 @@ const ActivityFeedPage: React.FC = () => {
       <Box
         sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
       >
-        <Box>
-          <Typography variant="h4" fontWeight={700} gutterBottom>
-            Activity
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Real-time social updates across your pods, threads, and follows
-          </Typography>
-        </Box>
+        {/* The v2 shell renders its own page header, so hide this legacy
+            title to avoid a duplicated heading echo. */}
+        {!v2Embedded && (
+          <Box>
+            <Typography variant="h4" fontWeight={700} gutterBottom>
+              Activity
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              Real-time social updates across your pods, threads, and follows
+            </Typography>
+          </Box>
+        )}
 
         {/* Pod Selector */}
         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -559,54 +619,76 @@ const ActivityFeedPage: React.FC = () => {
         </Tabs>
       </Paper>
 
-      {/* Filter tabs */}
-      <Paper elevation={0} sx={{ mb: 3, borderRadius: 2 }}>
-        <Tabs
-          value={filter}
-          onChange={(_e, v: string) => setFilter(v)}
-          variant="scrollable"
-          allowScrollButtonsMobile
-          sx={{ '& .MuiTab-root': { minHeight: 44, textTransform: 'none', fontWeight: 500 } }}
-        >
-          <Tab icon={<AllIcon />} iconPosition="start" label="All" value="all" />
-          {mode === 'updates' && (
-            <Tab
-              icon={<MentionsIcon />}
-              iconPosition="start"
-              label="Mentions"
-              value="mentions"
-            />
-          )}
-          {mode === 'updates' && (
-            <Tab
-              icon={<FollowingIcon />}
-              iconPosition="start"
-              label="Following"
-              value="following"
-            />
-          )}
-          {mode === 'updates' && (
-            <Tab
-              icon={<ThreadsIcon />}
-              iconPosition="start"
-              label="Threads"
-              value="threads"
-            />
-          )}
-          {mode === 'updates' && (
-            <Tab icon={<PodsIcon />} iconPosition="start" label="Pods" value="pods" />
-          )}
-          {mode === 'actions' && (
-            <Tab icon={<AgentsIcon />} iconPosition="start" label="Agents" value="agents" />
-          )}
-          {mode === 'actions' && (
-            <Tab icon={<HumansIcon />} iconPosition="start" label="Humans" value="humans" />
-          )}
-          {mode === 'actions' && (
-            <Tab icon={<SkillsIcon />} iconPosition="start" label="Skills" value="skills" />
-          )}
-        </Tabs>
-      </Paper>
+      {/* Type filters: under v2 these are filters, not a second navigation row. */}
+      {v2Embedded ? (
+        <Box className="v2-filter-bar v2-filter-bar--flat">
+          <Box className="v2-filter-segment" aria-label="Activity filters">
+            {activityFilterOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`v2-filter-segment__item${filter === option.value ? ' v2-filter-segment__item--active' : ''}`}
+                aria-pressed={filter === option.value}
+                onClick={() => setFilter(option.value)}
+              >
+                {option.label}
+                <span className="v2-filter-count">{option.count}</span>
+              </button>
+            ))}
+          </Box>
+          <span className="v2-filter-bar__summary">
+            {selectedPodId === 'all' ? 'All pods' : 'Pod scoped'} · {activities.length} visible
+          </span>
+        </Box>
+      ) : (
+        <Paper elevation={0} sx={{ mb: 3, borderRadius: 2 }}>
+          <Tabs
+            value={filter}
+            onChange={(_e, v: string) => setFilter(v)}
+            variant="scrollable"
+            allowScrollButtonsMobile
+            sx={{ '& .MuiTab-root': { minHeight: 44, textTransform: 'none', fontWeight: 500 } }}
+          >
+            <Tab icon={<AllIcon />} iconPosition="start" label="All" value="all" />
+            {mode === 'updates' && (
+              <Tab
+                icon={<MentionsIcon />}
+                iconPosition="start"
+                label="Mentions"
+                value="mentions"
+              />
+            )}
+            {mode === 'updates' && (
+              <Tab
+                icon={<FollowingIcon />}
+                iconPosition="start"
+                label="Following"
+                value="following"
+              />
+            )}
+            {mode === 'updates' && (
+              <Tab
+                icon={<ThreadsIcon />}
+                iconPosition="start"
+                label="Threads"
+                value="threads"
+              />
+            )}
+            {mode === 'updates' && (
+              <Tab icon={<PodsIcon />} iconPosition="start" label="Pods" value="pods" />
+            )}
+            {mode === 'actions' && (
+              <Tab icon={<AgentsIcon />} iconPosition="start" label="Agents" value="agents" />
+            )}
+            {mode === 'actions' && (
+              <Tab icon={<HumansIcon />} iconPosition="start" label="Humans" value="humans" />
+            )}
+            {mode === 'actions' && (
+              <Tab icon={<SkillsIcon />} iconPosition="start" label="Skills" value="skills" />
+            )}
+          </Tabs>
+        </Paper>
+      )}
 
       {error && (
         <Alert

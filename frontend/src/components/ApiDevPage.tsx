@@ -20,8 +20,10 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import { useV2Embedded } from '../v2/hooks/useV2Embedded';
 
 const ApiDevPage = () => {
+    const v2Embedded = useV2Embedded();
     const [responses, setResponses] = useState({});
     const [loading, setLoading] = useState({});
     const [customInputs, setCustomInputs] = useState({});
@@ -639,26 +641,32 @@ const ApiDevPage = () => {
     return (
         <Box className="api-dev-root">
             <Box className="api-dev-container">
-                <Box className="api-dev-hero">
-                    <Box className="api-dev-hero-text">
-                        <Typography variant="overline" className="api-dev-eyebrow">
-                            Developer Utilities
-                        </Typography>
-                        <Typography variant="h3" className="api-dev-title">
-                            API Dev Console
-                        </Typography>
-                        <Typography variant="body1" className="api-dev-subtitle">
-                            Exercise REST endpoints, inspect LLM routing, and queue agent events without leaving the app.
-                        </Typography>
-                    </Box>
-                    <Box className="api-dev-hero-meta">
-                        <Chip size="small" label="LLM Gateway" />
-                        <Chip size="small" label="Agent Queue" />
-                        <Chip size="small" label="REST Playground" />
-                    </Box>
-                </Box>
+                {/* The v2 shell renders its own page header. Drop the
+                    in-page hero so the route opens with content, not chrome. */}
+                {!v2Embedded && (
+                    <>
+                        <Box className="api-dev-hero">
+                            <Box className="api-dev-hero-text">
+                                <Typography variant="overline" className="api-dev-eyebrow">
+                                    Developer Utilities
+                                </Typography>
+                                <Typography variant="h3" className="api-dev-title">
+                                    API Dev Console
+                                </Typography>
+                                <Typography variant="body1" className="api-dev-subtitle">
+                                    Exercise REST endpoints, inspect LLM routing, and queue agent events without leaving the app.
+                                </Typography>
+                            </Box>
+                            <Box className="api-dev-hero-meta">
+                                <Chip size="small" label="LLM Gateway" />
+                                <Chip size="small" label="Agent Queue" />
+                                <Chip size="small" label="REST Playground" />
+                            </Box>
+                        </Box>
 
-                <Divider className="api-dev-divider" />
+                        <Divider className="api-dev-divider" />
+                    </>
+                )}
 
                 {!token && (
                     <Alert severity="warning" sx={{ mb: 3 }}>

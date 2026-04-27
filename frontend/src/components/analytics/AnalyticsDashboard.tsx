@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import ActivityTimeline from './ActivityTimeline';
 import KeywordCloud from './KeywordCloud';
+import { useV2Embedded } from '../../v2/hooks/useV2Embedded';
 
 interface QuickStats {
   totalSummaries: number;
@@ -27,6 +28,7 @@ interface AnalyticsDashboardProps {
 const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   defaultTimeRange = '24h',
 }) => {
+  const v2Embedded = useV2Embedded();
   const [timeRange, setTimeRange] = useState(defaultTimeRange);
   const [viewMode, setViewMode] = useState('timeline');
 
@@ -102,7 +104,8 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     <Box sx={{ p: 2 }}>
       {/* Header Controls */}
       <Box
-        sx={{
+        className={v2Embedded ? 'v2-filter-bar' : undefined}
+        sx={v2Embedded ? undefined : {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -111,12 +114,16 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           gap: 2,
         }}
       >
-        <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>
-          📊 Community Analytics
-        </Typography>
+        {/* The v2 shell renders its own page header, so hide this duplicate
+            Community Analytics title. */}
+        {!v2Embedded && (
+          <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>
+            📊 Community Analytics
+          </Typography>
+        )}
 
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <FormControl size="small">
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FormControl className="v2-filter-bar__control" size="small">
             <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>Time Range</FormLabel>
             <Select
               value={timeRange}
@@ -129,7 +136,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
             </Select>
           </FormControl>
 
-          <FormControl size="small">
+          <FormControl className="v2-filter-bar__control" size="small">
             <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>View</FormLabel>
             <Select
               value={viewMode}
@@ -142,6 +149,11 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
             </Select>
           </FormControl>
         </Box>
+        {v2Embedded && (
+          <span className="v2-filter-bar__summary">
+            Scope: community activity · Range: {timeRange} · View: {viewMode}
+          </span>
+        )}
       </Box>
 
       {/* Quick Stats */}

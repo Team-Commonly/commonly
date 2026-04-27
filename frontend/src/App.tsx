@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
 import Login from './components/Login';
@@ -31,9 +31,46 @@ import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { LayoutProvider } from './context/LayoutContext';
+import V2App from './v2/V2App';
 import { setupFocusManagement } from './utils/focusUtils';
 import { checkAndRefresh } from './utils/refreshUtils';
 import './App.css';
+
+class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('App runtime error:', error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{
+          minHeight: '100vh',
+          padding: 32,
+          background: '#0b1220',
+          color: '#e2e8f0',
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        }}
+        >
+          <h1 style={{ marginTop: 0 }}>Something went wrong</h1>
+          <pre style={{ whiteSpace: 'pre-wrap', color: '#fca5a5' }}>
+            {this.state.error.message}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Create a theme
 const theme = createTheme({
@@ -156,11 +193,50 @@ const theme = createTheme({
   },
 });
 
+const getV2EquivalentPath = (pathname: string, search: string): string | null => {
+  if (pathname === '/') return '/v2';
+  if (pathname === '/login') return '/v2/login';
+  if (pathname === '/register' || pathname === '/register/invite-required') return `/v2${pathname}${search}`;
+  if (pathname === '/verify-email') return `/v2${pathname}${search}`;
+  if (pathname.startsWith('/discord/')) return `/v2${pathname}${search}`;
+  if (pathname.startsWith('/use-cases/')) return `/v2${pathname}${search}`;
+  if (pathname === '/feed') return `/v2/feed${search}`;
+  if (pathname.startsWith('/thread/')) return `/v2${pathname}${search}`;
+  if (pathname === '/dashboard') return `/v2/dashboard${search}`;
+  if (pathname === '/digest') return `/v2/digest${search}`;
+  if (pathname === '/agents') return `/v2/agents${search}`;
+  if (pathname === '/skills') return `/v2/skills${search}`;
+  if (pathname === '/activity') return `/v2/activity${search}`;
+  if (pathname === '/apps') return `/v2/marketplace${search}`;
+  if (pathname === '/profile' || pathname.startsWith('/profile/')) return `/v2${pathname}${search}`;
+  if (pathname === '/admin/users') return '/v2/profile?tab=user-admin';
+  if (pathname === '/admin/integrations/global') return `/v2${pathname}${search}`;
+  if (pathname === '/dev/api' || pathname === '/dev/pod-context') return `/v2${pathname}${search}`;
+  if (pathname === '/pods') return `/v2${search}`;
+  if (pathname.startsWith('/pods/')) return `/v2${pathname}${search}`;
+  if (pathname.startsWith('/chat/')) return `/v2${pathname}${search}`;
+  return null;
+};
+
 // Component to handle navigation events
 function NavigationHandler(): null {
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
+    try {
+      const v2Active = sessionStorage.getItem('commonly.v2.active') === '1';
+      if (v2Active && !location.pathname.startsWith('/v2')) {
+        const v2Path = getV2EquivalentPath(location.pathname, location.search);
+        if (v2Path) {
+          navigate(v2Path, { replace: true });
+          return;
+        }
+      }
+    } catch {
+      // sessionStorage may be blocked; navigation still works normally.
+    }
+
     // Force a re-render when the location changes
     const handleNavigation = (): void => {
       // Force a re-render by adding and removing a class
@@ -171,7 +247,7 @@ function NavigationHandler(): null {
     };
 
     handleNavigation();
-  }, [location]);
+  }, [location, navigate]);
 
   return null;
 }
@@ -193,16 +269,18 @@ function App(): React.ReactElement {
   }, []);
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <AuthProvider>
-        <AppProvider>
-          <SocketProvider>
-            <LayoutProvider>
-              <BrowserRouter>
-                <NavigationHandler />
-                <div className="App">
-                  <Routes>
+    <AppErrorBoundary>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <AuthProvider>
+          <AppProvider>
+            <SocketProvider>
+              <LayoutProvider>
+                <BrowserRouter>
+                  <NavigationHandler />
+                  <div className="App">
+                    <Routes>
+                    <Route path="/v2/*" element={<V2App />} />
                     <Route path="/" element={<LandingPage />} />
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/login" element={<Login />} />
@@ -248,14 +326,15 @@ function App(): React.ReactElement {
                     <Route path="/discord/callback" element={<DiscordCallback />} />
                     <Route path="/discord/success" element={<DiscordCallback type="success" />} />
                     <Route path="/discord/error" element={<DiscordCallback type="error" />} />
-                  </Routes>
-                </div>
-              </BrowserRouter>
-            </LayoutProvider>
-          </SocketProvider>
-        </AppProvider>
-      </AuthProvider>
-    </ThemeProvider>
+                    </Routes>
+                  </div>
+                </BrowserRouter>
+              </LayoutProvider>
+            </SocketProvider>
+          </AppProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </AppErrorBoundary>
   );
 }
 
