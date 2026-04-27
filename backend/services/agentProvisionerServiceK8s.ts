@@ -1503,12 +1503,13 @@ const applyOpenClawCodexProviderConfig = async (config: any) => {
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
 
-  // Toggle: when CODEX_BYPASS_LITELLM=true, point openai-codex straight at
-  // chatgpt.com instead of the LiteLLM proxy. Workaround for
-  // BerriAI/litellm#25429 — the chatgpt/ bridge returns empty output but
-  // still debits Codex quota, so we skip the proxy entirely until upstream
-  // is fixed. Flip back to false (or unset) once the bridge is healthy so
-  // we regain multi-account rotation via LiteLLM.
+  // CODEX_BYPASS_LITELLM is the permanent escape hatch from the LiteLLM
+  // proxy — when set, the gateway points openai-codex straight at chatgpt.com
+  // and seeds raw OAuth tokens into per-agent auth profiles. Default behavior
+  // (flag unset, LITELLM_BASE_URL set) routes Codex through LiteLLM with
+  // per-agent virtual keys; gateway-level OAuth is not seeded because every
+  // agent already has its virtual key written by
+  // injectOpenRouterKeyToAgentAuthProfiles.
   const codexBypassLiteLLM = /^(1|true|yes)$/i.test(process.env.CODEX_BYPASS_LITELLM || '');
   const litellmBase = codexBypassLiteLLM ? null : process.env.LITELLM_BASE_URL;
   if (litellmBase) {
@@ -1547,19 +1548,31 @@ const applyOpenClawCodexProviderConfig = async (config: any) => {
   config.auth.profiles = config.auth.profiles || {};
   config.auth.order = config.auth.order || {};
 
-  // moltbot.json schema only accepts mode (not type) and no actual token fields.
-  // The actual OAuth token is injected into per-agent auth-profiles.json separately
-  // via injectCodexTokenToAgentAuthProfiles() below.
-  // NOTE: do NOT delete openai-codex:codex-cli — it's the canonical rotation slot
-  // for account-1; the inject below overwrites it with the real OAuth token each provision.
+  // moltbot.json schema requires the canonical openai-codex:codex-cli profile
+  // stub regardless of which auth path is active. The `access` field is
+  // overlaid per-agent later: LiteLLM virtual key (default) or real OAuth
+  // (CODEX_BYPASS_LITELLM=true).
+  if (!config.auth.profiles['openai-codex:codex-cli']) {
+    config.auth.profiles['openai-codex:codex-cli'] = { provider: 'openai-codex', mode: 'oauth' };
+  }
 
-  // Account definitions: suffix -> profileId
-  // openai-codex:codex-cli is the established rotation name for account-1 (suffix '').
-  // Order matters for OpenClaw rotation: profile listed first is tried first.
-  // While account-1's OAuth tokens are stale (user hasn't re-logged-in this week),
-  // put account-2 and account-3 ahead so fresh tokens are attempted first and
-  // codex-cli is only hit as a last resort. Revert to original order once acct-1
-  // is refreshed.
+  if (litellmBase) {
+    // LiteLLM is the proxy. Every agent authenticates with its per-agent
+    // LiteLLM virtual key (sk-xxx), written to openai-codex:codex-cli.access
+    // by injectOpenRouterKeyToAgentAuthProfiles. Seeding gateway-level OAuth
+    // credentials here was the source of `[openai-codex] Token refresh
+    // failed: 401` lines in the gateway logs — refresh attempts that never
+    // produce a usable token because the LiteLLM-routed path doesn't need
+    // them. Skip the secret read entirely.
+    config.auth.order['openai-codex'] = ['openai-codex:codex-cli'];
+    return null;
+  }
+
+  // Direct chatgpt.com — gateway needs real OAuth tokens seeded into
+  // moltbot.json. Reached when CODEX_BYPASS_LITELLM is set OR LITELLM_BASE_URL
+  // is unset (the provider URL above falls back to chatgpt.com in either
+  // case). Account order enables OpenClaw's rate-limit rotation;
+  // openai-codex:codex-cli is the canonical slot for account-1 (suffix '').
   const CODEX_ACCOUNTS = [
     { suffix: '-2', profileId: 'openai-codex:account-2' },
     { suffix: '-3', profileId: 'openai-codex:account-3' },
@@ -1611,15 +1624,9 @@ const applyOpenClawCodexProviderConfig = async (config: any) => {
     // Not in k8s mode or secret unavailable
   }
 
-  // Set auth.order to all configured accounts (enables rotation on rate-limit)
   config.auth.order['openai-codex'] = credentials.length > 0
     ? credentials.map((c) => c.profileId)
     : ['openai-codex:codex-cli'];
-
-  // Ensure at least the default profile stub exists
-  if (!config.auth.profiles['openai-codex:codex-cli']) {
-    config.auth.profiles['openai-codex:codex-cli'] = { provider: 'openai-codex', mode: 'oauth' };
-  }
 
   return credentials.length > 0 ? credentials : null;
 };
@@ -1938,7 +1945,18 @@ const provisionOpenClawAccount = async ({
             { profileId: 'openai-codex:account-3', credential: masterCredential },
           ]);
         } else {
-          // No master key either — fall back to raw OAuth token injection
+          // No master key either. Under LiteLLM-proxy mode, codexCredentials
+          // is null (gateway-level OAuth seeding is intentionally skipped),
+          // so this inject is a no-op — the agent ends up with the stub
+          // openai-codex:codex-cli profile and no usable Codex auth.
+          // Calls will fail until LITELLM_MASTER_KEY is set or LiteLLM
+          // virtual-key issuance starts succeeding again. Loud-warn so the
+          // condition is diagnosable without trawling gateway 401 logs.
+          console.warn(
+            `[k8s-provisioner] no Codex auth available for ${accountId}: `
+            + 'LiteLLM virtual-key issuance failed and LITELLM_MASTER_KEY is unset. '
+            + 'Agent will have no Codex access until one of those is restored.',
+          );
           await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
         }
       }
