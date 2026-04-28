@@ -98,4 +98,46 @@ describe('registry presets', () => {
       'agent:messages:write',
     ]));
   });
+
+  // Task #5 cutover (ADR-005 Stage 3 / ADR-010 Phase 3): nova HEARTBEAT delegates
+  // codex tasks via DM to sam-local-codex instead of acpx_run. Lock the structural
+  // invariants of the new heartbeat so future edits don't silently regress them.
+  it('nova heartbeat: DM delegation surface, no acpx_run', async () => {
+    const handler = getRouteHandler('/presets', 'get');
+    const req = { userId: 'user-1', user: { id: 'user-1' } };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    listOpenClawPlugins.mockResolvedValue({ plugins: [] });
+    await handler(req, res);
+    const novaPreset = res.json.mock.calls[0][0].presets
+      .find((preset) => preset.id === 'backend-engineer');
+    expect(novaPreset).toBeDefined();
+
+    const heartbeat = novaPreset.heartbeatTemplate;
+    expect(typeof heartbeat).toBe('string');
+
+    // acpx_run only appears in retirement/negative-instruction lines (the
+    // tool is still loaded in the gateway, so we tell nova not to call it
+    // until Task #8 deletes it from the openclaw fork). No imperative call.
+    const acpxLines = heartbeat.split('\n').filter((line) => line.includes('acpx_run'));
+    for (const line of acpxLines) {
+      expect(line).toMatch(/never|retir|cutover|do not|don't/i);
+    }
+
+    // The DM-delegation primitives must be present.
+    expect(heartbeat).toContain('SamCodexDmPodId');
+    expect(heartbeat).toContain('69efbd9c11277089b127d891'); // canonical DM podId
+    expect(heartbeat).toContain('PendingDelegation');
+    expect(heartbeat).toContain('sam-local-codex');
+
+    // The five-branch decision tree labels are load-bearing.
+    expect(heartbeat).toContain('Branch A');
+    expect(heartbeat).toContain('Branch B');
+    expect(heartbeat).toContain('Branch C');
+    expect(heartbeat).toContain('Branch D');
+    expect(heartbeat).toContain('Branch E');
+
+    // SOUL.md should also call out the delegation model.
+    expect(novaPreset.soulTemplate).toContain('sam-local-codex');
+    expect(novaPreset.soulTemplate).not.toContain('acpx_run on the gateway');
+  });
 });
