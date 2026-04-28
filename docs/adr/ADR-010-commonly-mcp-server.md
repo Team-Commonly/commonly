@@ -1,8 +1,41 @@
 # ADR-010: Commonly MCP Server — kernel surface as a standard MCP endpoint
 
-**Status:** Draft — 2026-04-27
+**Status:** Phase 1 shipped (PR #243, 2026-04-27); **Phase 2+ deferred** 2026-04-27 — see [ADR-011](ADR-011-shell-first-pre-gtm.md).
 **Author:** Lily Shen
-**Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-008`](ADR-008-agent-environment-primitive.md) (per-agent MCP declarations point at this server)
+**Companion:** [`ADR-001`](ADR-001-installable-taxonomy.md), [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-008`](ADR-008-agent-environment-primitive.md) (per-agent MCP declarations point at this server), [`ADR-011`](ADR-011-shell-first-pre-gtm.md) (track pause)
+
+---
+
+## Status update — 2026-04-27 — Phase 2+ deferred
+
+Phase 1 is in main: `@commonly/mcp` ships as a stdio MCP server with ~14 tools, the `POST /room` endpoint is dual-auth, and `sam-local-codex` is the live consumer. Task #5 (nova HEARTBEAT cutover via DM delegation) merged on top in PR #247 using the openclaw extension's `commonly_*` block — *not* the MCP server — so the architectural cutover remains pending.
+
+**Phase 2 (OpenClaw → MCP migration), Phase 2.5 (extension `commonly_*` deprecation), and Phase 4 (extension block removal) are paused** under [ADR-011](ADR-011-shell-first-pre-gtm.md). Phase 3 (Task #5 cutover) is technically complete via the extension path; re-routing it onto MCP is part of Phase 2 and is paused with it.
+
+### Why deferred (not abandoned)
+
+Two unresolved concerns from the original ADR are real engineering — not blockers Phase 1 closed:
+
+1. **Per-agent token wiring through acpx is unsolved.** acpx loads `pluginConfig.mcpServers` plugin-globally; every agent on the gateway sees the same MCP server with the same token. Per-agent identity requires a wrapper script that injects per-agent tokens at acpx startup, an upstream feature added to our openclaw fork for per-agent `mcpServers`, or one acpx process per agent. Each option is real work, not a one-line config.
+2. **Two `commonly_update_task` shapes coexist.** The extension's PATCH `{status, notes}` and the MCP server's POST `/updates {text}` are not interchangeable. Migrating an agent's HEARTBEAT.md from one to the other requires either tool-shape reconciliation on the server, or a second MCP tool with the PATCH semantics, or rewriting every HEARTBEAT call site. Open question, no decided answer.
+
+Both are tractable. Neither is urgent enough to do before the shell work that gates GTM.
+
+### What's still in effect from Phase 1
+
+- `@commonly/mcp` package remains shipped and consumable. The CLI-wrapper driver (sam-local-codex and any future `commonly agent attach <cli>` invocations) keeps using it.
+- The `/room` dual-auth refactor stays — it's load-bearing for any agent→agent DM flow, MCP or not.
+- Load-bearing invariants (§Load-bearing invariants below) remain authoritative for any future Phase 2 work.
+
+### Reactivation triggers
+
+Lift the pause when any of these become true:
+
+- A second runtime needs `commonly_*` tools mid-turn and the openclaw extension can't serve it (forcing function returns).
+- The per-agent token wiring story converges on a chosen approach (wrapper script designed, or acpx fork patch landed).
+- Post-GTM, when shell quality is no longer the binding constraint.
+
+Until then: do not extend the openclaw extension's `commonly_*` block with new verbs, but do not remove it either. The two surfaces coexist as documented in §Migration path.
 
 ---
 

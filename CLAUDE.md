@@ -135,21 +135,25 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 
 ### Active Implementation Tracks (April 2026)
 
+**Strategic mode: shell-first pre-GTM (ADR-011, 2026-04-27).** Kernel work has reached a usable plateau; the binding constraint is now the surface humans see. Below, "🟢 active" tracks are in scope; "⏸️ paused" tracks have stated reactivation triggers in ADR-011 and should not be extended without lifting the pause.
+
 | Track | Status | What it builds | Why it matters |
 |-------|--------|---------------|----------------|
-| **Installable taxonomy refactor** | Phase 1.5 done; 2–6 pending | Unified `Installable` table (source + components[] + kind), `Skill` 8th component type. See ADR-001. | Kills the v1 split; every plugin goes through one model |
-| **Agent DMs** | Shipped | Personal 1:1 agent chat (`Pod.type: 'agent-room'`). "Talk to" button in Agent Hub, "Agent DMs" pod tab, privacy-filtered. | Primary human↔agent interaction surface |
-| **Native runtime (Tier 1)** | Shipped | In-process agent runtime via LiteLLM with `AgentRun` turn/tool/cost tracking | Zero-setup agents; powers first-party apps |
-| **First-party apps** | 3 shipped | `pod-welcomer`, `task-clerk`, `pod-summarizer` — installed in Team Orchestration Demo pod | Reference implementations for the Installable model |
-| **Cloud sandbox runtime (Tier 2)** | Pending | Anthropic Managed Agents + Commonly-hosted container adapter | Heavy-compute agents without BYO infra |
-| **Slash command infrastructure** | Pending (Phase 4 of taxonomy refactor) | `/command` addressing mode, command registry, UI autocomplete | Second addressing mode alongside `@mention` |
-| **Kernel / CAP spec** | #61, #46 | OpenAPI spec + coupling reduction | Defines the join protocol |
-| **Driver layer** | #69, #70 | Webhook API + Agent SDK (npm) | Universal connector — any agent from anywhere |
-| **Marketplace** | #66, #67, #68 | Manifest format, registry, browse UI | Agents are discoverable + installable |
-| **Self-hosting** | #60 | Docker Compose + Helm one-liner | Commonly as a protocol, not just a product |
-| **Shell polish** | #62, #64, #65 | Rich media, activity indicators, onboarding | Makes humans want to be there |
-| **OSS launch** | #57–#59, #63 | README, community files, landing page | Ecosystem growth |
-| **YC demo** | #71, #72 | Live stats API, demo infrastructure | Shows the vision working end-to-end |
+| 🟢 **Shell polish** | #62, #64, #65 — top of queue | Rich media, activity indicators, onboarding, empty/error states, mobile | Makes humans want to be there |
+| 🟢 **Agent install + first-DM flow** | Top of queue | Hero path: install your first agent → talk to it. Agent Hub UX, install confirmation, first-message coaching | The 60-second value prop |
+| 🟢 **Landing + demo** | #71, #72 — mid-queue | Live stats API, public demo loop, landing page, README front-door | Gates external traffic |
+| 🟢 **OSS launch prep** | #57–#59, #63 — tail of queue | README, community files, contribution path, self-hosting one-liner | Ecosystem growth |
+| 🟢 **Agent DMs** | Shipped (stays) | Personal 1:1 agent chat (`Pod.type: 'agent-room'`). "Talk to" in Agent Hub, "Agent DMs" pod tab. | Primary human↔agent interaction surface |
+| 🟢 **Native runtime (Tier 1)** | Shipped (stays) | In-process agent runtime via LiteLLM with `AgentRun` turn/tool/cost tracking | Zero-setup agents; powers first-party apps |
+| 🟢 **First-party apps** | 3 shipped (stays) | `pod-welcomer`, `task-clerk`, `pod-summarizer` in Team Orchestration Demo pod | Reference implementations for the Installable model |
+| ⏸️ **ADR-010 Phase 2+** | Paused (Phase 1 shipped) | OpenClaw → MCP migration, extension `commonly_*` retirement | Re-activates when a second runtime needs `commonly_*` mid-turn |
+| ⏸️ **Installable taxonomy refactor** | Paused (Phase 1.5 done; 2–6 hold) | Unified `Installable` table evolution beyond Phase 1.5 | Re-activates when marketplace UI build needs the unified query path |
+| ⏸️ **Cloud sandbox runtime (Tier 2)** | Paused | Anthropic Managed Agents + Commonly-hosted container adapter | Re-activates on real demand from a heavy-compute agent |
+| ⏸️ **Slash command infrastructure** | Paused (taxonomy Phase 4) | `/command` addressing mode, command registry, UI autocomplete | Re-activates when an app/marketplace listing needs `/command` primary |
+| ⏸️ **Kernel / CAP spec** | Paused — #61, #46 | OpenAPI spec + coupling reduction | Re-activates when federation work begins or a second instance comes online |
+| ⏸️ **Driver layer expansion** | Paused — #69, #70 | Webhook SDK Phase 2 (OAuth, signatures), Agent SDK npm publish | Re-activates on real external developer demand |
+| ⏸️ **Marketplace** | Paused — #66, #67, #68 | Manifest format, registry, browse UI | Re-activates when audit shows install flow needs marketplace browse |
+| ⏸️ **Self-hosting one-liner** | Paused — #60 | Docker Compose + Helm one-liner polish | Re-activates if OSS launch credibility demands it |
 
 ---
 
@@ -175,7 +179,8 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 - **ADR-006 Webhook SDK + Self-Serve Install**: `/docs/adr/ADR-006-webhook-sdk-and-self-serve-install.md` — reference SDK + self-serve webhook install
 - **ADR-008 Agent Environment Primitive**: `/docs/adr/ADR-008-agent-environment-primitive.md` — driver-agnostic env spec (workspace / sandbox / skills / MCP declarations)
 - **ADR-009 Test tiers + CI/CD to GKE**: `/docs/adr/ADR-009-test-tiers-and-ci-cd-to-gke.md` — four-tier test taxonomy (unit / service / cluster / dev-env) and workflow-triggered GKE deploys via WIF
-- **ADR-010 Commonly MCP Server**: `/docs/adr/ADR-010-commonly-mcp-server.md` — `@commonly/mcp` server exposing CAP as standard MCP tools; the thing ADR-008's `mcp[]` declarations point at; deprecation path for the openclaw extension's `commonly_*` block
+- **ADR-010 Commonly MCP Server**: `/docs/adr/ADR-010-commonly-mcp-server.md` — `@commonly/mcp` server exposing CAP as standard MCP tools; the thing ADR-008's `mcp[]` declarations point at; deprecation path for the openclaw extension's `commonly_*` block. **Phase 1 shipped; Phase 2+ paused under ADR-011.**
+- **ADR-011 Shell-first pre-GTM**: `/docs/adr/ADR-011-shell-first-pre-gtm.md` — **active strategic track as of 2026-04-27.** Pauses ADR-010 Phase 2+, cloud sandbox, slash-commands, driver-layer expansion, CAP OpenAPI, and Installable refactor Phase 2-6. Active: shell polish, agent install flow, landing/demo, OSS launch prep. Read before starting any kernel feature work.
 - **Summarizer & Agents**: `/docs/SUMMARIZER_AND_AGENTS.md`
 - **Discord Integration**: `/docs/DISCORD_INTEGRATION_ARCHITECTURE.md`
 - **PostgreSQL Migration**: `/docs/POSTGRESQL_MIGRATION.md`
