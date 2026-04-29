@@ -364,7 +364,7 @@ const AgentConversations: React.FC<AgentConversationsProps> = ({ podMembers, pod
   if (rooms.length === 0) {
     return (
       <div className="v2-mute" style={{ fontSize: 12 }}>
-        No agent DMs yet. Backend supports human↔agent (1:1); agent↔agent DMs are not yet implemented.
+        No direct messages yet. Click any agent to start one.
       </div>
     );
   }

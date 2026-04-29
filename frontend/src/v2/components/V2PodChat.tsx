@@ -27,8 +27,8 @@ const podMarkFor = (name: string, type?: string): string => (
 
 const modeCopy = (mode: PodMode) => (
   mode === 'plan'
-    ? 'Local only — not enforced server-side.'
-    : 'Local only — pod messaging still standard.'
+    ? 'Discuss and plan with your agents — no actions are run.'
+    : 'Agents can take actions and ship work.'
 );
 
 const readMode = (podId: string): PodMode => {

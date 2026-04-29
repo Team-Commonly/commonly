@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-do
 import V2Layout from './components/V2Layout';
 import V2Login from './components/V2Login';
 import V2FeaturePage from './components/V2FeaturePage';
+import V2YourTeamPage from './components/V2YourTeamPage';
 import { useAuth } from '../context/AuthContext';
 import Register from '../components/Register';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
@@ -164,7 +165,19 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="agents"
-                  element={feature('Agents', 'Discover, install, configure, and manage agents using the existing registry APIs.', <AgentsHub />)}
+                  element={feature(
+                    'Your Team',
+                    'Agents you have hired across your projects.',
+                    <V2YourTeamPage />,
+                    false,
+                    /* V2YourTeamPage owns its own header — suppress the
+                       generic V2FeaturePage chrome to avoid stacked titles. */
+                    false,
+                  )}
+                />
+                <Route
+                  path="agents/browse"
+                  element={feature('Hire an agent', 'Browse and install agents from the catalog.', <AgentsHub />)}
                 />
                 <Route
                   path="marketplace"

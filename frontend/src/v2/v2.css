@@ -2655,3 +2655,178 @@
     gap: 4px;
   }
 }
+
+/* ============================================================
+   "Your Team" page (v2/agents) — roster of installed agents
+   ============================================================ */
+
+.v2-team {
+  padding: 32px 40px 64px;
+  max-width: 1120px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.v2-team__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.v2-team__title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+
+.v2-team__subtitle {
+  margin: 0;
+  color: #5f6470;
+  font-size: 14px;
+}
+
+.v2-root button.v2-team__hire-cta {
+  background: #4c52d8;
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease;
+}
+.v2-root button.v2-team__hire-cta:hover { background: #3d43c4; }
+.v2-root button.v2-team__hire-cta:focus-visible { outline: 2px solid #4c52d8; outline-offset: 2px; }
+
+.v2-team__error {
+  padding: 12px 14px;
+  background: #fdf2f2;
+  border: 1px solid #f4caca;
+  border-radius: 8px;
+  color: #8a2929;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.v2-team__empty {
+  border: 1px dashed #d9dce3;
+  border-radius: 12px;
+  padding: 56px 32px;
+  text-align: center;
+  background: #fafbfc;
+}
+.v2-team__empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.v2-team__empty-text {
+  color: #5f6470;
+  margin-bottom: 24px;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+  font-size: 14px;
+}
+
+.v2-team__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.v2-team-card {
+  display: flex;
+  gap: 14px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e4e6eb;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+  align-items: flex-start;
+}
+.v2-team-card:hover {
+  border-color: #c7c9d4;
+  transform: translateY(-1px);
+}
+.v2-team-card:focus-visible {
+  outline: 2px solid #4c52d8;
+  outline-offset: 2px;
+}
+
+.v2-team-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.v2-team-card__name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.v2-team-card__name {
+  font-weight: 600;
+  font-size: 15px;
+  color: #1a1c22;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-team-card__runtime {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #6b6f7a;
+  background: #f1f2f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.v2-team-card__pod {
+  font-size: 13px;
+  color: #5f6470;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2-team-card__pod em {
+  font-style: normal;
+  color: #1a1c22;
+  font-weight: 500;
+}
+
+.v2-team-card__activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6b6f7a;
+}
+
+.v2-team-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c8cbd2;
+  display: inline-block;
+}
+.v2-team-card__dot[data-active="true"] {
+  background: #25c281;
+}
+
+@media (max-width: 760px) {
+  .v2-team { padding: 20px 16px 48px; }
+  .v2-team__header { flex-direction: column; }
+}
