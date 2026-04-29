@@ -309,6 +309,29 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
               )}
             </div>
 
+            <div className={`v2-chat__mode-toggle v2-chat__mode-toggle--header v2-chat__mode-toggle--${mode}`} role="group" aria-label="Pod mode preference">
+              <button
+                type="button"
+                className={`v2-chat__mode-option${mode === 'plan' ? ' v2-chat__mode-option--active' : ''}`}
+                onClick={() => handleSetMode('plan')}
+                aria-pressed={mode === 'plan'}
+                title={modeCopy('plan')}
+              >
+                <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                Plan
+              </button>
+              <button
+                type="button"
+                className={`v2-chat__mode-option${mode === 'execute' ? ' v2-chat__mode-option--active' : ''}`}
+                onClick={() => handleSetMode('execute')}
+                aria-pressed={mode === 'execute'}
+                title={modeCopy('execute')}
+              >
+                <Icon d="M5 3l14 9-14 9V3z" />
+                Execute
+              </button>
+            </div>
+
             <button
               type="button"
               className="v2-chat__btn"
@@ -325,39 +348,10 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
             <div className="v2-chat__goal">
               <span className="v2-chat__goal-label">Goal: </span>
               {pod.description}
+              <span className="v2-chat__goal-meta"> · {liveState}</span>
             </div>
           )}
         </header>
-
-        <section className={`v2-chat__state-strip v2-chat__state-strip--${mode}`}>
-          <div className="v2-chat__state-primary">
-            <span className="v2-chat__state-dot" />
-            <span className="v2-chat__state-label">{mode === 'plan' ? 'Plan preference' : 'Execute preference'}</span>
-          </div>
-          <div className="v2-chat__state-copy">{modeCopy(mode)}</div>
-          <div className="v2-chat__state-meta">{liveState}</div>
-          <div className="v2-chat__mode-toggle" role="group" aria-label="Local pod mode preference">
-            <button
-              type="button"
-              className={`v2-chat__mode-option${mode === 'plan' ? ' v2-chat__mode-option--active' : ''}`}
-              onClick={() => handleSetMode('plan')}
-              aria-pressed={mode === 'plan'}
-            >
-              <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-              Plan
-            </button>
-
-            <button
-              type="button"
-              className={`v2-chat__mode-option${mode === 'execute' ? ' v2-chat__mode-option--active' : ''}`}
-              onClick={() => handleSetMode('execute')}
-              aria-pressed={mode === 'execute'}
-            >
-              <Icon d="M5 3l14 9-14 9V3z" />
-              Execute
-            </button>
-          </div>
-        </section>
 
         <div className="v2-chat__tabs">
           {TABS.map((item) => (
@@ -464,7 +458,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
                 {composerError ? (
                   <span className="v2-chat__composer-error">{composerError}</span>
                 ) : (
-                  <span>Attachments are available. Commands and agent targeting are not enabled yet.</span>
+                  <span>Attach files with the paperclip. @-mention an agent to direct your message.</span>
                 )}
               </div>
             </div>

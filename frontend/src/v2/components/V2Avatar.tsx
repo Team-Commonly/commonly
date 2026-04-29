@@ -26,17 +26,24 @@ const V2Avatar: React.FC<V2AvatarProps> = ({ name, src, size = 'md', online, tit
   const bg = colorFor(seed);
   const initials = initialsFor(seed);
   const display = title || seed || undefined;
+  const cleanSrc = typeof src === 'string' && src.trim().length > 0 ? src.trim() : null;
+  const [imgFailed, setImgFailed] = React.useState(false);
 
-  if (src) {
+  React.useEffect(() => {
+    setImgFailed(false);
+  }, [cleanSrc]);
+
+  if (cleanSrc && !imgFailed) {
     return (
       <span
         className={sizeClass(size)}
-        style={{ background: '#f3f4f8' }}
+        style={{ background: bg }}
         title={display}
       >
         <img
-          src={src}
+          src={cleanSrc}
           alt={display || 'avatar'}
+          onError={() => setImgFailed(true)}
           style={{
             width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%',
           }}
