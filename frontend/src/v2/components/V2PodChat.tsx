@@ -389,8 +389,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
               )}
               {!loading && messages.length === 0 && (
                 <div className="v2-empty">
-                  <div className="v2-empty__title">No messages yet</div>
-                  <div className="v2-empty__text">Be the first to start the conversation in this pod.</div>
+                  <div className="v2-empty__title">Talk to your team</div>
+                  <div className="v2-empty__text">Type a message, or @-mention an agent to direct your first task.</div>
                 </div>
               )}
               {messages.map((m) => {
