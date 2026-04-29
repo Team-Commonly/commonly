@@ -2848,3 +2848,39 @@
   color: var(--v2-text-muted);
   font-weight: 500;
 }
+
+/* Reactions row under message body — fixture-rendered (read-only).
+   Real reactions backend ships post-YC; this just renders [[reactions:...]]
+   tokens populated by the demo seed. */
+.v2-msg__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.v2-msg__reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  color: #4b5563;
+  font-variant-emoji: emoji;
+}
+.v2-msg__reaction:hover {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+.v2-msg__reaction-emoji {
+  font-size: 13px;
+  line-height: 1;
+}
+.v2-msg__reaction-count {
+  font-weight: 600;
+  font-size: 11px;
+}
