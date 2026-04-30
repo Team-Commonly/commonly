@@ -7,7 +7,11 @@ const MongoMessage = require('../models/Message');
 // eslint-disable-next-line global-require
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line global-require
+const PGPod = require('../models/pg/Pod');
+// eslint-disable-next-line global-require
 const AgentMentionService = require('../services/agentMentionService');
+// eslint-disable-next-line global-require
+const { syncPodFromMongo } = require('../services/pgPodSyncService');
 
 interface AuthRequest extends Request {
   userId?: string;
@@ -162,6 +166,24 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     }
 
     let message: NormalizedMessage;
+
+    // Best-effort backfill: pods created via the Mongo-only POST /api/pods
+    // path (podController) have no row in the PG `pods` table, so the
+    // subsequent PGMessage.create fails the messages.pod_id foreign key
+    // and the message lands in the Mongo fallback indefinitely.
+    // pgMessageController already does this; mirror it here so the dual-DB
+    // path stays consistent with the PG-primary path. Swallow errors —
+    // if PG is unreachable, PGMessage.create below will throw and the
+    // existing Mongo fallback handles it.
+    try {
+      const pgPodExists = await PGPod.findById(podId);
+      if (!pgPodExists) {
+        await syncPodFromMongo(podId, userId);
+      }
+    } catch (syncErr) {
+      const e = syncErr as { message?: string };
+      console.warn('[messageController] PG pod backfill skipped:', e.message);
+    }
 
     try {
       const created = await PGMessage.create(
