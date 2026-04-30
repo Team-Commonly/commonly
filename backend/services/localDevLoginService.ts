@@ -76,7 +76,7 @@ const ensureLocalDevLogin = async () => {
   });
 
   await user.save();
-  console.log(`[local-dev-login] Ready: ${email} / ${password}`);
+  console.log(`[local-dev-login] Ready: ${email}`);
   return user;
 };
 
