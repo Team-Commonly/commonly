@@ -212,6 +212,13 @@
   grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) 1fr;
 }
 
+/* Collapsed inspector keeps a thin column with just a chevron toggle, so the
+ * "expand inspector" affordance stays discoverable without the full panel
+ * eating chat width. Width matches the rail so the visual rhythm holds. */
+.v2-shell--inspector-collapsed {
+  grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) 1fr 32px;
+}
+
 .v2-shell--feature {
   grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) minmax(0, 1fr);
 }
@@ -242,6 +249,45 @@
   border-right: none;
   border-left: 1px solid var(--v2-border-soft);
   background: var(--v2-surface-tint);
+}
+
+.v2-pane--inspector-collapsed {
+  background: var(--v2-bg-subtle);
+  align-items: center;
+  padding-top: 10px;
+}
+
+/* Toggle chevrons — one for "collapse" inside the full inspector header, one
+ * for "expand" in the slim collapsed inspector. Both are subtle so they read
+ * as utility, not destination. */
+.v2-inspector__toggle {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--v2-border-soft);
+  background: var(--v2-surface);
+  color: var(--v2-text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.v2-inspector__toggle:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+  border-color: var(--v2-border-strong);
+}
+
+.v2-inspector__toggle--collapse {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.v2-inspector__toggle--expand {
+  margin: 4px 0 0 0;
 }
 
 /* ---------- Nav rail ---------- */
@@ -1427,6 +1473,7 @@
   display: flex;
   flex-direction: column;
   gap: 0;
+  position: relative;
 }
 
 .v2-inspector__now {
