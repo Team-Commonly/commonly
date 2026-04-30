@@ -35,21 +35,31 @@ const pgAvailable = (): boolean => {
   }
 };
 
-const normalizeMongo = (m: Record<string, unknown>): NormalizedMessage => ({
-  id: (m._id as { toString(): string }).toString(),
-  pod_id: (m.podId as { toString(): string }).toString(),
-  user_id: (m.userId as { toString(): string }).toString(),
-  content: m.content as string,
-  message_type: (m.messageType as string) || 'text',
-  created_at: m.createdAt,
-  updated_at: m.updatedAt,
-  user: (m.userId as { username?: string } | undefined)?.username
-    ? {
-        username: (m.userId as { username: string }).username,
-        profile_picture: (m.userId as { profilePicture?: string }).profilePicture,
-      }
-    : undefined,
-});
+const normalizeMongo = (m: Record<string, unknown>): NormalizedMessage => {
+  // When .populate('userId') ran, m.userId is a populated User document. Calling
+  // .toString() on a Mongoose document returns util.inspect output
+  // ("{\n  _id: new ObjectId(\"...\"),\n  username: '...'\n}"), which then leaks
+  // into the user_id field of the response. Pull just the _id when populated.
+  const rawUserId = m.userId as { _id?: { toString(): string }; toString(): string; username?: string; profilePicture?: string } | string | null | undefined;
+  const idSource = rawUserId && typeof rawUserId === 'object' && rawUserId._id ? rawUserId._id : rawUserId;
+  const populatedUsername = (typeof rawUserId === 'object' && rawUserId) ? rawUserId.username : undefined;
+  const populatedProfilePicture = (typeof rawUserId === 'object' && rawUserId) ? rawUserId.profilePicture : undefined;
+  return {
+    id: (m._id as { toString(): string }).toString(),
+    pod_id: (m.podId as { toString(): string }).toString(),
+    user_id: idSource ? (idSource as { toString(): string }).toString() : '',
+    content: m.content as string,
+    message_type: (m.messageType as string) || 'text',
+    created_at: m.createdAt,
+    updated_at: m.updatedAt,
+    user: populatedUsername
+      ? {
+          username: populatedUsername,
+          profile_picture: populatedProfilePicture,
+        }
+      : undefined,
+  };
+};
 
 exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
