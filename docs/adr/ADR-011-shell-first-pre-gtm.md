@@ -40,7 +40,8 @@ The forcing function is GTM. We can't ship the platform vision without humans on
 | **Driver layer expansion** (#69, #70 — Webhook API + Agent SDK npm publish) | ADR-006 Phase 1 substrate stays; no Phase 2 features (OAuth, webhook signatures, npm publish) | Real external developer asking to build against it |
 | **CAP OpenAPI spec** (#61, #46) | No formal OpenAPI generation, no coupling-reduction refactor | Federation work begins (ADR-003 Phase 5) or a second instance comes online |
 | **Self-hosting one-liner** (#60) | No Docker Compose / Helm chart polish for OSS contributors | OSS launch is the active track (see Active below — this re-activates) |
-| **Installable taxonomy refactor** Phase 2-6 | Schema work pauses except where it unblocks shell features | Marketplace UI build needs the unified `Installable` query path |
+| **Installable taxonomy refactor** Phase 2-6 | Phase 2's marketplace-operations slice already shipped (PR #215 + #230 — `marketplace-api.ts`, dual-write to `Installable` + `AgentRegistry`). Remaining Phase 2-6 work pauses: ADR-001 Phase 3 read-path switch, reconciliation cron for Installable ↔ AR drift, semver validation, per-component runtime validation. | Marketplace frontend (active below) reveals a drift bug, OR a new Installable shape lands that requires the read-path switch |
+| **Marketplace backend extensions** | The 9 endpoints under `/api/marketplace` are shipped but unverified end-to-end on dev. No new endpoints, no schema additions, until the shipped ones have user traffic. | Frontend reveals a missing capability in real use |
 
 ### What's active
 
@@ -48,6 +49,7 @@ The forcing function is GTM. We can't ship the platform vision without humans on
 |---|---|---|
 | **Shell polish** (#62, #64, #65) | Onboarding flow, rich media in chat, activity indicators, empty/error states, mobile responsiveness | Top of queue; iterate weekly |
 | **Agent install + first-DM flow** | The "install your first agent → talk to it" hero path: Agent Hub UX, install confirmation, first-message coaching, identity polish | Top of queue |
+| **Marketplace frontend** | Browse page, manifest detail page, publish flow, fork button — all wiring on top of the already-shipped `/api/marketplace/*` endpoints (PR #215 + #230). Pre-flight: end-to-end verify the 9 endpoints on `api-dev.commonly.me` before frontend work begins. | Mid-queue; promotes to top once Agent Hub install flow lands |
 | **Landing + demo** (#71, #72) | Live stats API, public demo loop, landing page, README front-door | Mid-queue; gates external traffic |
 | **OSS launch prep** (#57–#59, #63) | README polish, community files, contribution path, self-hosting one-liner if needed for credibility | Tail of queue but reuses self-hosting work above |
 
@@ -84,7 +86,7 @@ The forcing function is GTM. We can't ship the platform vision without humans on
 1. **What's the GTM target?** "OSS launch," "YC demo," and "first 100 users on commonly.me" are different bars and would prioritize different shell work. Sub-decision needed before the audit converges into a feature plan.
 2. **Mobile-first or desktop-first audit?** The current shell renders on both but isn't optimized for either. The first-impression audit needs to pick one to go deep on first; the other gets a triage pass.
 3. **First-party agent showcase.** The three first-party apps (`pod-welcomer`, `task-clerk`, `pod-summarizer`) live in the Team Orchestration Demo pod. Are they the demo loop, or do we need a different shape (e.g., a single hero agent with a richer interaction) to anchor first-impression?
-4. **Marketplace before or after audit?** Marketplace UI (#66, #67, #68) is paused, but Agent Hub *is* the proto-marketplace UX. Audit may surface that we need marketplace browse to make agent install feel real.
+4. **Marketplace frontend sequencing.** Backend is shipped (PR #215 + #230); the question is no longer "build the marketplace?" but "where in the queue does it land?" Two reads: (a) frontend follows Agent Hub install polish, since marketplace browse is meaningless if install itself feels rough; (b) marketplace browse and Agent Hub install are the same surface from a user's POV, so build them as one push. The audit should resolve this by surfacing whether install-without-browse is coherent or whether users immediately ask "where do I find more agents?"
 
 ---
 
