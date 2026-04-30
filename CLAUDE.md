@@ -139,7 +139,7 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 
 | Track | Status | What it builds | Why it matters |
 |-------|--------|---------------|----------------|
-| 🟢 **Shell polish** | #62, #64, #65 — top of queue | Rich media, activity indicators, onboarding, empty/error states, mobile | Makes humans want to be there |
+| 🟢 **Shell polish** | Phase 1 shipped 2026-04-29 (v2 mount on main, nav-rail trim, Plan/Execute pill, Your Team page, displayName-overrides for chat author render) — #62, #64, #65 still queue for next polish pass | Rich media, activity indicators, onboarding, empty/error states, mobile | Makes humans want to be there |
 | 🟢 **Agent install + first-DM flow** | Top of queue | Hero path: install your first agent → talk to it. Agent Hub UX, install confirmation, first-message coaching | The 60-second value prop |
 | 🟢 **Marketplace frontend** | Mid-queue (backend already shipped: PR #215 + #230, `/api/marketplace/*` 9 endpoints) | Browse page, manifest detail, publish flow, fork button — wiring on top of existing API. Pre-flight: end-to-end verify backend on dev. | Makes "discover an agent" real, not just "talk to the one we installed for you" |
 | 🟢 **Landing + demo** | #71, #72 — mid-queue | Live stats API, public demo loop, landing page, README front-door | Gates external traffic |
@@ -163,10 +163,8 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 ### CURRENT STATE (April 2026)
 - **Repository**: Team-Commonly/commonly, branch: `main`
 - **Live**: `app-dev.commonly.me` / `api-dev.commonly.me`
-- **Latest image tags**: see `k8s/helm/commonly/values-dev.yaml`
-- **GKE context**: `gke_commonly-493005_us-central1_commonly-dev`
-- **GCP account**: `lilyshen20021002@gmail.com`, project `commonly-493005`
-- **Image registry**: `us-central1-docker.pkg.dev/commonly-493005/docker/`
+- **Live image tags**: `kubectl get deploy -n commonly-dev -o custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image` (the file `values-dev.yaml` lags reality between deploys — trust the cluster, not the chart).
+- **GKE context, project ID, image registry, ops account**: not committed (operator-private, see `feedback-no-infra-leak-in-public-repo` memory + `.dev/values-private.yaml` / `.dev/ops-credentials.md` locally). Anything that needs a project-scoped identifier is supplied at deploy time via GitHub Actions secrets (`DEV_GCP_PROJECT_ID`, `WIF_PROVIDER`, `WIF_SERVICE_ACCOUNT`) or via ExternalSecrets.
 - **UI verification**: Use MCP Playwright (`mcp__playwright__*`)
 
 ### 📁 Key Documentation Files
@@ -231,45 +229,46 @@ npm run lint                                  # 0 errors
 
 ### Kubernetes (GKE — commonly-dev)
 
-**ALWAYS use three `-f` flags — NEVER `--reuse-values`:**
-```bash
-helm upgrade commonly-dev k8s/helm/commonly -n commonly-dev \
-  -f k8s/helm/commonly/values.yaml \
-  -f k8s/helm/commonly/values-dev.yaml \
-  -f /home/xcjam/workspace/commonly/.dev/values-private.yaml
-```
-
-- `values.yaml` — base defaults (OSS-safe placeholders)
-- `values-dev.yaml` — dev overrides; **update image tag here before every upgrade**
-- `values-private.yaml` — not committed; real GCP project ID, PG host, image repos
-
 ```bash
 kubectl get pods -n commonly-dev
 kubectl logs -n commonly-dev -l app=backend
+helm history commonly-dev -n commonly-dev    # rollback target
+kubectl rollout undo deploy/<name> -n commonly-dev --to-revision=<N>
 ```
+
+Helm chart layout:
+- `values.yaml` — base defaults, OSS-safe placeholders.
+- `values-dev.yaml` — dev overrides (image tags, replica counts, public hostnames).
+- `.dev/values-private.yaml` — operator-local, NOT committed; project ID + PG host + AR repo. Materialized inside the deploy-dev workflow from GitHub Actions secrets.
+
+`Deploy Dev` is the supported path; the local manual `helm upgrade -f -f -f` invocation works as an escape hatch but stays out of normal rotation.
 
 ### Build & Deploy
+
+**Primary path: GitHub Actions `Deploy Dev` workflow** (`.github/workflows/deploy-dev.yml`, ADR-009 Phase 3).
+
 ```bash
-# NOTE: Cloud Build org policy blocks AR uploads — use local Docker instead
-# Backend
-BACKEND_TAG=$(date +%Y%m%d%H%M%S)
-docker build backend -t us-central1-docker.pkg.dev/commonly-493005/docker/commonly-backend:${BACKEND_TAG}
-docker push us-central1-docker.pkg.dev/commonly-493005/docker/commonly-backend:${BACKEND_TAG}
+gh workflow run deploy-dev.yml --ref main --repo Team-Commonly/commonly
+gh run list --workflow=deploy-dev.yml -L 1 --repo Team-Commonly/commonly   # most-recent run
+```
 
-# Frontend (must bake REACT_APP_API_URL at build time)
-FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
-docker build frontend \
-  --build-arg REACT_APP_API_URL=https://api-dev.commonly.me \
-  -t us-central1-docker.pkg.dev/commonly-493005/docker/commonly-frontend:${FRONTEND_TAG}
-docker push us-central1-docker.pkg.dev/commonly-493005/docker/commonly-frontend:${FRONTEND_TAG}
+Builds backend + frontend + clawdbot-gateway + commonly-bot in parallel from the dispatched ref, pushes to AR, helm-upgrades the dev cluster (~8–12 min). All four images get the same tag (short SHA of `HEAD`). **Whatever's on the dispatched ref is what ends up live** — see `feedback-deploy-dev-builds-only-main` memory; if a feature branch isn't merged yet, dispatching from `main` will strip it from the deployed images.
 
-# Gateway — build from _external/clawdbot/ (acpx + gh CLI pre-install)
-cd _external/clawdbot && docker build \
+**Escape hatch — local docker build** (only when CI is broken or for a hotfix the user explicitly wants by hand):
+
+```bash
+TAG=$(date +%Y%m%d%H%M%S)
+REG=<AR_REGISTRY_HOST>/<DEV_GCP_PROJECT_ID>/docker     # locally-resolved, never committed
+docker build backend  -t "$REG/commonly-backend:$TAG"  && docker push "$REG/commonly-backend:$TAG"
+docker build frontend --build-arg REACT_APP_API_URL=https://api-dev.commonly.me \
+  -t "$REG/commonly-frontend:$TAG" && docker push "$REG/commonly-frontend:$TAG"
+(cd _external/clawdbot && docker build \
   --build-arg OPENCLAW_EXTENSIONS=acpx \
   --build-arg OPENCLAW_INSTALL_GH_CLI=1 \
-  -t us-central1-docker.pkg.dev/commonly-493005/docker/clawdbot-gateway:${BACKEND_TAG} .
-docker push us-central1-docker.pkg.dev/commonly-493005/docker/clawdbot-gateway:${BACKEND_TAG}
+  -t "$REG/clawdbot-gateway:$TAG" . && docker push "$REG/clawdbot-gateway:$TAG")
 ```
+
+`gcloud builds submit` is blocked by the dev project's org policy on AR uploads, so don't reach for it.
 
 ### Testing
 ```bash

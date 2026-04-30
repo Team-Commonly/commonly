@@ -1,8 +1,25 @@
 # ADR-011: Shell-first pre-GTM
 
-**Status:** Draft — 2026-04-27
+**Status:** Active — 2026-04-27 (Phase 1 shipped 2026-04-29)
 **Author:** Sam Xu
 **Companion:** [`ADR-010`](ADR-010-commonly-mcp-server.md) (Phase 2+ paused under this ADR), [`CLAUDE.md`](../../CLAUDE.md) §Design Rules #5 ("the social surface has to earn human presence")
+
+---
+
+## Status update — 2026-04-29
+
+**Phase 1 of shell polish is on `main` and deployed.** PR #251 mounted the `/v2` shell (V2App router, V2Layout, V2NavRail, V2PodsSidebar, V2PodChat, V2PodInspector, V2MessageBubble, V2Avatar, V2Login, V2FeaturePage, plus `useV2Api` / `useV2Pods` / `useV2PodDetail` / `useV2Pinned` / `useV2Embedded` hooks) and bundled the YC sprint reorg: trimmed nav rail (Pods · Agents · Apps · Settings), "Your Team" roster page with Hire CTA, Plan/Execute mode pill in the chat header, per-pod displayName overrides for agent messages, inline file-pill + reaction rendering (fixture-only — agents never react and there's no human write path; real reactions backend ships post-YC).
+
+Three companion fixes shipped the same night:
+- PR #252 — POST `/api/messages/:podId` re-fetches via `PGMessage.findById` so the response carries the populated `userId` JOIN. Without this, optimistic chat rendered the author as `Unknown` until the next refresh.
+- PR #253 — `normalizeMongo` extracts `_id` when the userId field is a populated Mongoose document, instead of `.toString()`-ing the whole document into `util.inspect` output.
+- PR #254 — drop "powered by Claude" from the default openclaw `officialDescription`. Agents are runtime-driven, not Claude-specific.
+
+A real demo pod is live at `https://app-dev.commonly.me/v2/pods/<id>` with Engineer (Nova) + UI Lead (Pixel) + Pod Summarizer + Strategist (Aria, on `openai-codex/gpt-5.4-mini` after `aria` was added to `openclaw.devAgentIds`). First proof-of-life: Aria responded to a wedge-sentence critique mention with a substantive strategist-flavored reply on first try. The demo pod exists for the YC application sprint (deadline 2026-05-04 8pm PT) — the "demo IS the real session" thesis is being exercised this week.
+
+**Operational lesson worth carrying:** `Deploy Dev` (`.github/workflows/deploy-dev.yml`) builds and helm-upgrades all four images from the dispatched ref. If a feature branch isn't on `main` yet, dispatching `--ref main` strips it from the deployed images. Mid-deploy `kubectl rollout undo` races `--wait` and fails the helm step. Captured in the `feedback-deploy-dev-builds-only-main` memory; future shell polish work needs to land its branch on main *before* the next deploy cycle, not after.
+
+Phase 1 satisfies the "platform is no longer the binding constraint, surface is" framing of this ADR. Next polish targets stay queued (#62, #64, #65) plus the agent-install + first-DM hero flow.
 
 ---
 
