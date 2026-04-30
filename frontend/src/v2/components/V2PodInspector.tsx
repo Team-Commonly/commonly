@@ -10,9 +10,25 @@ import { formatRelativeTime } from '../utils/grouping';
 interface V2PodInspectorProps {
   detail: UseV2PodDetailResult;
   podsState?: UseV2PodsResult;
-  collapsed?: boolean;
-  onToggle?: () => void;
+  // V2Layout decides whether to mount this at all; collapsed-state used to
+  // be rendered as a thin chevron column, but the entry is now the chat
+  // header avatar group (see V2PodChat). onClose dismisses it.
+  onClose?: () => void;
 }
+
+type InspectorTab = 'people' | 'activity' | 'settings';
+const INSPECTOR_TAB_KEY = 'v2.inspectorTab';
+const readInspectorTab = (): InspectorTab => {
+  try {
+    const v = localStorage.getItem(INSPECTOR_TAB_KEY);
+    return v === 'activity' || v === 'settings' ? v : 'people';
+  } catch {
+    return 'people';
+  }
+};
+const writeInspectorTab = (tab: InspectorTab) => {
+  try { localStorage.setItem(INSPECTOR_TAB_KEY, tab); } catch { /* ignore */ }
+};
 
 // Only openclaw-runtime agents can hold a real DM session — they have a chat
 // runtime that responds. commonly-bot is the internal Tier 1 summarizer (no
@@ -65,7 +81,7 @@ const Icon = ({ d, size = 14 }: { d: string; size?: number }) => (
 );
 
 const V2PodInspector: React.FC<V2PodInspectorProps> = ({
-  detail, podsState, collapsed = false, onToggle,
+  detail, podsState, onClose,
 }) => {
   const { pod, members, agents } = detail;
   const api = useV2Api();
@@ -75,6 +91,11 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const [privateError, setPrivateError] = useState<string | null>(null);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [externalLinks, setExternalLinks] = useState<ExternalLinkItem[]>([]);
+  const [tab, setTab] = useState<InspectorTab>(() => readInspectorTab());
+  const handleSetTab = (next: InspectorTab) => {
+    setTab(next);
+    writeInspectorTab(next);
+  };
 
   // For each agent, find their most recent active task. This is our best
   // approximation of "Working on X" since the backend doesn't track a
@@ -132,24 +153,6 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
 
   if (!pod) return <aside className="v2-pane v2-pane--inspector" />;
 
-  if (collapsed) {
-    return (
-      <aside className="v2-pane v2-pane--inspector v2-pane--inspector-collapsed">
-        <button
-          type="button"
-          className="v2-inspector__toggle v2-inspector__toggle--expand"
-          onClick={onToggle}
-          title="Show pod inspector"
-          aria-label="Show pod inspector"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 6 9 12 15 18" />
-          </svg>
-        </button>
-      </aside>
-    );
-  }
-
   const isPrivatePod = pod.type === 'agent-room';
   const humanCount = members.filter((member) => !member.isBot).length;
   const agentCount = agents.length;
@@ -186,139 +189,105 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     if (deleted) navigate('/v2', { replace: true });
   };
 
-  return (
-    <aside className="v2-pane v2-pane--inspector">
-      <div className="v2-inspector">
+  const podOverview = (
+    <section className="v2-inspector__card">
+      <div className="v2-inspector__pod-card">
+        <div className="v2-inspector__pod-head">
+          <V2Avatar name={pod.name} size="md" />
+          <div className="v2-inspector__pod-name">{pod.name}</div>
+        </div>
+        <div className="v2-inspector__pod-meta">
+          Created by {pod.createdBy?.username || 'unknown'} · {created}
+        </div>
+        <div className="v2-inspector__pod-counts">
+          {!isPrivatePod && <span>{agentCount} agent{agentCount === 1 ? '' : 's'}</span>}
+          {!isPrivatePod && <span>·</span>}
+          <span>{humanCount} human{humanCount === 1 ? '' : 's'}</span>
+        </div>
+        {pod.description && <div className="v2-inspector__objective">{pod.description}</div>}
+      </div>
+    </section>
+  );
+
+  const peopleSection = !isPrivatePod && (
+    <section className="v2-inspector__card">
+      <div className="v2-inspector__section-head">
+        <span className="v2-inspector__section-title">Team ({agentCount + humanCount})</span>
         <button
           type="button"
-          className="v2-inspector__toggle v2-inspector__toggle--collapse"
-          onClick={onToggle}
-          title="Hide pod inspector"
-          aria-label="Hide pod inspector"
+          className="v2-inspector__section-action"
+          onClick={() => navigate(`/v2/agents?podId=${pod._id}`)}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 6 15 12 9 18" />
-          </svg>
+          Manage
         </button>
-        <section className="v2-inspector__now">
-          <div className="v2-inspector__now-kicker">Now</div>
-          <div className="v2-inspector__now-state">
-            <span className={`v2-inspector__now-dot v2-inspector__now-dot--${onlineAgentCount > 0 ? 'running' : 'idle'}`} />
-            {liveState}
-          </div>
-          <div className="v2-inspector__now-copy">
-            {onlineAgentCount > 0
-              ? `${onlineAgentCount} agent${onlineAgentCount === 1 ? '' : 's'} recently active in this pod.`
-              : 'No agent heartbeat was detected in the recent activity window.'}
-          </div>
-        </section>
-
-        <section className="v2-inspector__card">
-          <div className="v2-inspector__section-head">
-            <span className="v2-inspector__section-title">Overview</span>
-            <button
-              type="button"
-              className="v2-inspector__section-action"
-              onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
-            >
-              Edit
-            </button>
-          </div>
-          <div className="v2-inspector__pod-card">
-            <div className="v2-inspector__pod-head">
-              <V2Avatar name={pod.name} size="md" />
-              <div className="v2-inspector__pod-name">{pod.name}</div>
-            </div>
-            <div className="v2-inspector__pod-meta">
-              Created by {pod.createdBy?.username || 'unknown'} · {created}
-            </div>
-            <div className="v2-inspector__pod-counts">
-              {!isPrivatePod && <span>{agentCount} agent{agentCount === 1 ? '' : 's'}</span>}
-              {!isPrivatePod && <span>·</span>}
-              <span>{humanCount} human{humanCount === 1 ? '' : 's'}</span>
-            </div>
-            {pod.description && <div className="v2-inspector__objective">{pod.description}</div>}
-          </div>
-        </section>
-
-        {!isPrivatePod && (
-        <section className="v2-inspector__card">
-          <div className="v2-inspector__section-head">
-            <span className="v2-inspector__section-title">People & Agents ({agentCount + humanCount})</span>
-            <button
-              type="button"
-              className="v2-inspector__section-action"
-              onClick={() => navigate(`/v2/agents?podId=${pod._id}`)}
-            >
-              Manage
-            </button>
-          </div>
-          {agents.length === 0 && (
-            <div className="v2-mute" style={{ fontSize: 12 }}>
-              No agents installed in this pod.
-            </div>
-          )}
-          {privateError && <div className="v2-chat__error">{privateError}</div>}
-          {agents.map((agent: V2Agent) => {
-            const name = agent.profile?.displayName || agent.displayName || agent.agentName;
-            const key = agent.instanceId || agent.agentName;
-            const isOnline = !!agent.lastHeartbeatAt
-              && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000;
-            const task = agentTasks[key];
-            return (
-              <div key={key} className="v2-inspector__agent-row">
-                <V2Avatar
-                  name={name}
-                  src={agent.profile?.avatarUrl || agent.profile?.iconUrl || agent.iconUrl || undefined}
-                  size="md"
-                  online={isOnline}
-                />
-                <div className="v2-inspector__agent-info">
-                  <div className="v2-inspector__agent-head">
-                    <span className="v2-inspector__agent-name">{name}</span>
-                  </div>
-                  <div className="v2-inspector__agent-status">
-                    <span className="v2-online-dot" style={{ background: isOnline ? 'var(--v2-success)' : 'var(--v2-text-muted)' }} />
-                    {isOnline ? 'Online' : 'Idle'}
-                  </div>
-                  <div className="v2-inspector__agent-task">
-                    {task ? (
-                      <>
-                        <span className="v2-inspector__agent-task-label">Working on </span>
-                        <span className="v2-inspector__agent-task-value">{task.title}</span>
-                      </>
-                    ) : (
-                      <span className="v2-inspector__agent-task-label">No active task</span>
-                    )}
-                  </div>
-                </div>
-                {isAgentDmable(agent) && (
-                  <button
-                    type="button"
-                    className="v2-inspector__more-btn"
-                    title="Open private pod"
-                    onClick={() => openPrivatePod(agent)}
-                  >
-                    DM
-                  </button>
-                )}
+      </div>
+      {agents.length === 0 && (
+        <div className="v2-mute" style={{ fontSize: 12 }}>No agents installed in this pod.</div>
+      )}
+      {privateError && <div className="v2-chat__error">{privateError}</div>}
+      {agents.map((agent: V2Agent) => {
+        const name = agent.profile?.displayName || agent.displayName || agent.agentName;
+        const key = agent.instanceId || agent.agentName;
+        const isOnline = !!agent.lastHeartbeatAt
+          && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000;
+        const task = agentTasks[key];
+        return (
+          <div key={key} className="v2-inspector__agent-row">
+            <V2Avatar
+              name={name}
+              src={agent.profile?.avatarUrl || agent.profile?.iconUrl || agent.iconUrl || undefined}
+              size="md"
+              online={isOnline}
+            />
+            <div className="v2-inspector__agent-info">
+              <div className="v2-inspector__agent-head">
+                <span className="v2-inspector__agent-name">{name}</span>
               </div>
-            );
-          })}
-        </section>
-        )}
+              <div className="v2-inspector__agent-status">
+                <span className="v2-online-dot" style={{ background: isOnline ? 'var(--v2-success)' : 'var(--v2-text-muted)' }} />
+                {isOnline ? 'Online' : 'Idle'}
+              </div>
+              {task && (
+                <div className="v2-inspector__agent-task">
+                  <span className="v2-inspector__agent-task-label">Working on </span>
+                  <span className="v2-inspector__agent-task-value">{task.title}</span>
+                </div>
+              )}
+            </div>
+            {isAgentDmable(agent) && (
+              <button
+                type="button"
+                className="v2-inspector__more-btn"
+                title="Open private pod"
+                onClick={() => openPrivatePod(agent)}
+              >
+                DM
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </section>
+  );
 
-        {!isPrivatePod && (
+  const activitySection = (
+    <>
+      <section className="v2-inspector__card">
+        <div className="v2-inspector__now-state">
+          <span className={`v2-inspector__now-dot v2-inspector__now-dot--${onlineAgentCount > 0 ? 'running' : 'idle'}`} />
+          {liveState}
+        </div>
+        <div className="v2-inspector__now-copy">
+          {onlineAgentCount > 0
+            ? `${onlineAgentCount} agent${onlineAgentCount === 1 ? '' : 's'} recently active in this pod.`
+            : 'No agent heartbeat was detected in the recent activity window.'}
+        </div>
+      </section>
+      {!isPrivatePod && (
         <section className="v2-inspector__card">
           <div className="v2-inspector__section-head">
             <span className="v2-inspector__section-title">Direct Threads</span>
-            <button
-              type="button"
-              className="v2-inspector__section-action"
-              onClick={() => navigate('/v2')}
-            >
-              See all
-            </button>
+            <button type="button" className="v2-inspector__section-action" onClick={() => navigate('/v2')}>See all</button>
           </div>
           <AgentConversations
             podMembers={members.map((m) => m.username || '').filter(Boolean)}
@@ -326,9 +295,13 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             currentUserId={currentUser?._id || null}
           />
         </section>
-        )}
+      )}
+    </>
+  );
 
-        {!isPrivatePod && (announcements.length > 0 || externalLinks.length > 0) && (
+  const settingsSection = (
+    <>
+      {!isPrivatePod && (announcements.length > 0 || externalLinks.length > 0) && (
         <section className="v2-inspector__card">
           <div className="v2-inspector__section-head">
             <span className="v2-inspector__section-title">Resources</span>
@@ -352,41 +325,79 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             </a>
           ))}
         </section>
-        )}
+      )}
+      <section className="v2-inspector__card">
+        <div className="v2-inspector__settings-menu">
+          <button
+            type="button"
+            className="v2-inspector__settings-chip"
+            onClick={() => navigate(`/v2/agents?podId=${pod._id}`)}
+          >
+            <Icon d="M12 5v14M5 12h14" />
+            Add agents
+          </button>
+          <button
+            type="button"
+            className="v2-inspector__settings-chip"
+            onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
+          >
+            <Icon d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+            Pod settings
+          </button>
+          {podsState && (
+            <button
+              type="button"
+              className="v2-inspector__settings-chip v2-inspector__settings-chip--danger"
+              onClick={handleDeletePod}
+            >
+              <Icon d="M3 6h18M8 6V4h8v2M10 11v6M14 11v6M5 6l1 14h12l1-14" />
+              Delete pod
+            </button>
+          )}
+        </div>
+      </section>
+    </>
+  );
 
-        <section className="v2-inspector__card">
-          <div className="v2-inspector__section-head">
-            <span className="v2-inspector__section-title">Settings</span>
-          </div>
-          <div className="v2-inspector__settings-menu">
+  return (
+    <aside className="v2-pane v2-pane--inspector">
+      <div className="v2-inspector">
+        <header className="v2-inspector__header">
+          {podOverview}
+          {onClose && (
             <button
               type="button"
-              className="v2-inspector__settings-chip"
-              onClick={() => navigate(`/v2/agents?podId=${pod._id}`)}
+              className="v2-inspector__close"
+              onClick={onClose}
+              title="Hide pod team"
+              aria-label="Hide pod team"
             >
-              <Icon d="M12 5v14M5 12h14" />
-              Add agents
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
             </button>
+          )}
+        </header>
+        <nav className="v2-inspector__tabs" role="tablist">
+          {(['people', 'activity', 'settings'] as const).map((key) => (
             <button
+              key={key}
               type="button"
-              className="v2-inspector__settings-chip"
-              onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
+              role="tab"
+              aria-selected={tab === key}
+              className={`v2-inspector__tab${tab === key ? ' v2-inspector__tab--active' : ''}`}
+              onClick={() => handleSetTab(key)}
             >
-              <Icon d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
-              Pod settings
+              {key === 'people' ? 'People' : key === 'activity' ? 'Activity' : 'Settings'}
             </button>
-            {podsState && (
-              <button
-                type="button"
-                className="v2-inspector__settings-chip v2-inspector__settings-chip--danger"
-                onClick={handleDeletePod}
-              >
-                <Icon d="M3 6h18M8 6V4h8v2M10 11v6M14 11v6M5 6l1 14h12l1-14" />
-                Delete pod
-              </button>
-            )}
-          </div>
-        </section>
+          ))}
+        </nav>
+        <div className="v2-inspector__body">
+          {tab === 'people' && peopleSection}
+          {tab === 'activity' && activitySection}
+          {tab === 'settings' && settingsSection}
+        </div>
       </div>
     </aside>
   );

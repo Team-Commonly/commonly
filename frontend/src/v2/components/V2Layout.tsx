@@ -58,23 +58,27 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);
 
-  const shellClass = [
-    'v2-shell',
-    selectedPodId ? '' : 'v2-shell--no-inspector',
-    selectedPodId && inspectorCollapsed ? 'v2-shell--inspector-collapsed' : '',
-  ].filter(Boolean).join(' ');
+  // The inspector is a separate column only when expanded. When collapsed,
+  // it's not rendered at all and the chat extends to the right edge — the
+  // entry point is the avatar group in the chat header (see V2PodChat).
+  const showInspector = Boolean(selectedPodId && !inspectorCollapsed);
+  const shellClass = ['v2-shell', !showInspector ? 'v2-shell--no-inspector' : ''].filter(Boolean).join(' ');
 
   return (
     <div className={shellClass}>
       <V2NavRail />
       <V2PodsSidebar selectedPodId={selectedPodId} podsState={podsState} />
-      <V2PodChat detail={detail} podsState={podsState} />
-      {selectedPodId && (
+      <V2PodChat
+        detail={detail}
+        podsState={podsState}
+        inspectorCollapsed={inspectorCollapsed}
+        onToggleInspector={selectedPodId ? toggleInspector : undefined}
+      />
+      {selectedPodId && !inspectorCollapsed && (
         <V2PodInspector
           detail={detail}
           podsState={podsState}
-          collapsed={inspectorCollapsed}
-          onToggle={toggleInspector}
+          onClose={toggleInspector}
         />
       )}
     </div>

@@ -124,6 +124,11 @@ const writeMode = (podId: string, mode: PodMode) => {
 interface V2PodChatProps {
   detail: UseV2PodDetailResult;
   podsState?: UseV2PodsResult;
+  // Inspector wiring — when present, the avatar group becomes the "show team"
+  // entry. Inspector itself is rendered by V2Layout so this is just the
+  // hand-off point.
+  inspectorCollapsed?: boolean;
+  onToggleInspector?: () => void;
 }
 
 const Icon = ({ d }: { d: string }) => (
@@ -241,7 +246,7 @@ const V2SummaryView: React.FC<{ podId: string; description?: string }> = ({ podI
   );
 };
 
-const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
+const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector }) => {
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
   const navigate = useNavigate();
   const api = useV2Api();
@@ -614,14 +619,32 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
               </button>
             </div>
 
-            <div className="v2-chat__avatars">
-              {visibleMembers.map((m) => (
-                <V2Avatar key={m._id || m.username} name={m.username} src={m.profilePicture || undefined} size="md" />
-              ))}
-              {memberCountExtra > 0 && (
-                <span className="v2-chat__avatars-more">+{memberCountExtra}</span>
-              )}
-            </div>
+            {onToggleInspector ? (
+              <button
+                type="button"
+                className={`v2-chat__avatars v2-chat__avatars--button${inspectorCollapsed ? '' : ' v2-chat__avatars--active'}`}
+                onClick={onToggleInspector}
+                title={inspectorCollapsed ? 'View pod team' : 'Hide pod team'}
+                aria-label={inspectorCollapsed ? 'View pod team' : 'Hide pod team'}
+                aria-pressed={!inspectorCollapsed}
+              >
+                {visibleMembers.map((m) => (
+                  <V2Avatar key={m._id || m.username} name={m.username} src={m.profilePicture || undefined} size="md" />
+                ))}
+                {memberCountExtra > 0 && (
+                  <span className="v2-chat__avatars-more">+{memberCountExtra}</span>
+                )}
+              </button>
+            ) : (
+              <div className="v2-chat__avatars">
+                {visibleMembers.map((m) => (
+                  <V2Avatar key={m._id || m.username} name={m.username} src={m.profilePicture || undefined} size="md" />
+                ))}
+                {memberCountExtra > 0 && (
+                  <span className="v2-chat__avatars-more">+{memberCountExtra}</span>
+                )}
+              </div>
+            )}
 
             <div className={`v2-chat__mode-toggle v2-chat__mode-toggle--header v2-chat__mode-toggle--${mode}`} role="group" aria-label="Pod mode preference">
               <button
