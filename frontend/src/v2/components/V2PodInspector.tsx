@@ -4,12 +4,32 @@ import V2Avatar from './V2Avatar';
 import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useV2Api } from '../hooks/useV2Api';
+import { useAuth } from '../../context/AuthContext';
 import { formatRelativeTime } from '../utils/grouping';
 
 interface V2PodInspectorProps {
   detail: UseV2PodDetailResult;
   podsState?: UseV2PodsResult;
+  collapsed?: boolean;
+  onToggle?: () => void;
 }
+
+// Only openclaw-runtime agents can hold a real DM session — they have a chat
+// runtime that responds. commonly-bot is the internal Tier 1 summarizer (no
+// chat runtime); pod-summarizer is Tier 1 native (also no DM). Future native
+// agents that want to show up here should declare a chat-capable runtime; the
+// frontend gates on agentName so we don't paper over a missing capability.
+const isAgentDmable = (agent: { agentName?: string }): boolean => (
+  agent.agentName === 'openclaw'
+);
+
+// Direct-thread room names that should never appear in the user's "Direct
+// Threads" list, regardless of who's a member. Mirrors isAgentDmable above —
+// these agents have no chat runtime, so a DM room would just sit there empty.
+const NON_DMABLE_ROOM_NAME_PREFIXES = ['commonly-bot', 'pod-summarizer'];
+const isRoomDmable = (name: string): boolean => (
+  !NON_DMABLE_ROOM_NAME_PREFIXES.some((prefix) => name === prefix || name.startsWith(`${prefix} `))
+);
 
 interface AgentTaskMap {
   [agentName: string]: { taskId: string; title: string } | null;
@@ -39,10 +59,13 @@ const Icon = ({ d, size = 14 }: { d: string; size?: number }) => (
   </svg>
 );
 
-const V2PodInspector: React.FC<V2PodInspectorProps> = ({ detail, podsState }) => {
+const V2PodInspector: React.FC<V2PodInspectorProps> = ({
+  detail, podsState, collapsed = false, onToggle,
+}) => {
   const { pod, members, agents } = detail;
   const api = useV2Api();
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [agentTasks, setAgentTasks] = useState<AgentTaskMap>({});
   const [privateError, setPrivateError] = useState<string | null>(null);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
@@ -104,6 +127,24 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({ detail, podsState }) =>
 
   if (!pod) return <aside className="v2-pane v2-pane--inspector" />;
 
+  if (collapsed) {
+    return (
+      <aside className="v2-pane v2-pane--inspector v2-pane--inspector-collapsed">
+        <button
+          type="button"
+          className="v2-inspector__toggle v2-inspector__toggle--expand"
+          onClick={onToggle}
+          title="Show pod inspector"
+          aria-label="Show pod inspector"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 6 9 12 15 18" />
+          </svg>
+        </button>
+      </aside>
+    );
+  }
+
   const isPrivatePod = pod.type === 'agent-room';
   const humanCount = members.filter((member) => !member.isBot).length;
   const agentCount = agents.length;
@@ -143,6 +184,17 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({ detail, podsState }) =>
   return (
     <aside className="v2-pane v2-pane--inspector">
       <div className="v2-inspector">
+        <button
+          type="button"
+          className="v2-inspector__toggle v2-inspector__toggle--collapse"
+          onClick={onToggle}
+          title="Hide pod inspector"
+          aria-label="Hide pod inspector"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 6 15 12 9 18" />
+          </svg>
+        </button>
         <section className="v2-inspector__now">
           <div className="v2-inspector__now-kicker">Now</div>
           <div className="v2-inspector__now-state">
@@ -235,14 +287,16 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({ detail, podsState }) =>
                     )}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="v2-inspector__more-btn"
-                  title="Open private pod"
-                  onClick={() => openPrivatePod(agent)}
-                >
-                  DM
-                </button>
+                {isAgentDmable(agent) && (
+                  <button
+                    type="button"
+                    className="v2-inspector__more-btn"
+                    title="Open private pod"
+                    onClick={() => openPrivatePod(agent)}
+                  >
+                    DM
+                  </button>
+                )}
               </div>
             );
           })}
@@ -264,6 +318,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({ detail, podsState }) =>
           <AgentConversations
             podMembers={members.map((m) => m.username || '').filter(Boolean)}
             podCreatedAt={pod.updatedAt}
+            currentUserId={currentUser?._id || null}
           />
         </section>
         )}
@@ -335,11 +390,26 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({ detail, podsState }) =>
 interface AgentConversationsProps {
   podMembers: string[];
   podCreatedAt?: string;
+  currentUserId: string | null;
+}
+
+interface RoomMember { _id?: string; username?: string }
+interface AgentRoomPayload {
+  _id: string;
+  name: string;
+  updatedAt?: string;
+  members?: RoomMember[];
 }
 
 // Best-effort: list this user's agent-room DM pods. Backend currently exposes
 // 1:1 human↔agent DMs; this view only renders rooms returned by the API.
-const AgentConversations: React.FC<AgentConversationsProps> = ({ podMembers, podCreatedAt }) => {
+//
+// /api/pods?type=agent-room returns ALL agent-rooms instance-wide for global
+// admins (intentional, for moderation per ADR-001 §3.10), so we filter to
+// rooms the current user is a member of before rendering. We also drop rooms
+// for agents that don't actually hold DMs (commonly-bot, pod-summarizer —
+// see isRoomDmable above), and dedupe by id as a defensive measure.
+const AgentConversations: React.FC<AgentConversationsProps> = ({ podMembers, podCreatedAt, currentUserId }) => {
   const api = useV2Api();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<Array<{ id: string; name: string; updatedAt?: string }>>([]);
@@ -348,16 +418,29 @@ const AgentConversations: React.FC<AgentConversationsProps> = ({ podMembers, pod
     let cancelled = false;
     (async () => {
       try {
-        const data = await api.get<Array<{ _id: string; name: string; updatedAt?: string }>>('/api/pods?type=agent-room');
+        const data = await api.get<AgentRoomPayload[]>('/api/pods?type=agent-room');
         if (cancelled) return;
         const list = Array.isArray(data) ? data : [];
-        setRooms(list.slice(0, 5).map((r) => ({ id: r._id, name: r.name, updatedAt: r.updatedAt })));
+        const seen = new Set<string>();
+        const filtered: Array<{ id: string; name: string; updatedAt?: string }> = [];
+        for (const r of list) {
+          if (!r || !r._id || seen.has(r._id)) continue;
+          if (!isRoomDmable(r.name || '')) continue;
+          if (currentUserId) {
+            const isMember = (r.members || []).some((m) => m && m._id === currentUserId);
+            if (!isMember) continue;
+          }
+          seen.add(r._id);
+          filtered.push({ id: r._id, name: r.name, updatedAt: r.updatedAt });
+          if (filtered.length >= 5) break;
+        }
+        setRooms(filtered);
       } catch {
         if (!cancelled) setRooms([]);
       }
     })();
     return () => { cancelled = true; };
-  }, [api]);
+  }, [api, currentUserId]);
 
   if (rooms.length === 0) {
     return (
