@@ -18,7 +18,7 @@
 
 // ADR-002 Phase 1b: ESM import (not require) so CodeQL's js/missing-rate-limiting
 // query recognises the middleware on the mint route.
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createHash } from 'crypto';
 import path from 'path';
 import {
@@ -98,7 +98,7 @@ const mintRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip || 'anon';
+    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
   },
   handler: (_req: unknown, res: Res) =>
     res.status(429).json({ msg: 'rate limit exceeded: 30 mints per 60s' }),
