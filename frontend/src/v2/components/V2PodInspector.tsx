@@ -18,10 +18,15 @@ interface V2PodInspectorProps {
 // runtime that responds. commonly-bot is the internal Tier 1 summarizer (no
 // chat runtime); pod-summarizer is Tier 1 native (also no DM). Future native
 // agents that want to show up here should declare a chat-capable runtime; the
-// frontend gates on agentName so we don't paper over a missing capability.
-const isAgentDmable = (agent: { agentName?: string }): boolean => (
-  agent.agentName === 'openclaw'
-);
+// frontend gates on the agent name so we don't paper over a missing capability.
+//
+// The wire payload (per buildAgentInstallationPayload) returns `name`, but the
+// V2Agent type also declares `agentName`. Read both — same shape mismatch as
+// V2PodChat works around for the displayName map.
+const isAgentDmable = (agent: { name?: string; agentName?: string }): boolean => {
+  const n = agent.name || agent.agentName;
+  return n === 'openclaw';
+};
 
 // Direct-thread room names that should never appear in the user's "Direct
 // Threads" list, regardless of who's a member. Mirrors isAgentDmable above —
