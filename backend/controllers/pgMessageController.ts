@@ -6,34 +6,12 @@ const PGPod = require('../models/pg/Pod');
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line global-require
 const MongoPod = require('../models/Pod');
+// eslint-disable-next-line global-require
+const { syncPodFromMongo } = require('../services/pgPodSyncService');
 
 interface AuthRequest extends Request {
   userId?: string;
   user?: { id: string };
-}
-
-async function syncPodFromMongo(podId: string, requestingUserId: string): Promise<unknown> {
-  const mongoPod = await MongoPod.findById(podId).lean() as {
-    name?: string;
-    description?: string;
-    type?: string;
-    members?: Array<{ toString(): string }>;
-  } | null;
-  if (!mongoPod) return null;
-  const pod = await PGPod.create(
-    mongoPod.name,
-    mongoPod.description || '',
-    mongoPod.type || 'chat',
-    requestingUserId,
-    podId,
-  );
-  // Sync all MongoDB members to PG pod_members
-  if (Array.isArray(mongoPod.members)) {
-    await Promise.allSettled(
-      mongoPod.members.map((m) => PGPod.addMember(podId, m.toString())),
-    );
-  }
-  return pod;
 }
 
 // Check if user is a member via PG, falling back to MongoDB as source of truth
