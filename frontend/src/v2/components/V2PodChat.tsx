@@ -332,13 +332,42 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
     return map;
   }, [agents]);
 
-  // Build the @-mention list: pod members (humans) + installed agents. Same
-  // shape and dedup rules as v1 ChatRoom — agent identity is keyed on the
-  // computed username so we don't list the same agent twice when it appears
-  // both as a member and as an installation.
+  // Build the @-mention list. members[] is User rows (humans + agent users);
+  // agents[] is AgentInstallation rows that carry the instanceId. We want
+  // @nova in the dropdown, not @openclaw-nova — so for any member that has
+  // a matching installation, promote it to the agent shape (instance handle,
+  // role subtitle). Agents that aren't (yet) members are appended at the end.
   const mentionableItems: MentionItem[] = useMemo(() => {
     const items: MentionItem[] = [];
     const seen = new Set<string>();
+
+    const agentByUsername = new Map<string, V2Agent>();
+    (agents || []).forEach((a) => {
+      const rawName = (a as { name?: string; agentName?: string }).name || a.agentName || '';
+      if (!rawName) return;
+      agentByUsername.set(buildAgentUsername(rawName, a.instanceId), a);
+    });
+
+    const itemFromAgent = (a: V2Agent, fallbackAvatar: string | null = null): MentionItem | null => {
+      const rawName = (a as { name?: string; agentName?: string }).name || a.agentName || '';
+      if (!rawName) return null;
+      const username = buildAgentUsername(rawName, a.instanceId);
+      const display = a.displayName || a.profile?.displayName || rawName;
+      const instance = (a.instanceId || 'default').toLowerCase();
+      const mentionValue = instance && instance !== 'default' && instance !== rawName.toLowerCase()
+        ? instance
+        : rawName.toLowerCase();
+      const avatar = a.profile?.avatarUrl || a.profile?.iconUrl || a.iconUrl || fallbackAvatar;
+      return {
+        id: username,
+        label: display,
+        labelLower: `${display} ${rawName} ${username} ${mentionValue}`.toLowerCase(),
+        subtitle: `Agent · @${mentionValue}`,
+        avatar,
+        isAgent: true,
+        value: mentionValue,
+      };
+    };
 
     (members || []).forEach((m: V2PodMember) => {
       const username = m.username || '';
@@ -346,16 +375,20 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
       const key = username.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
-      const overridden = agentDisplayNames.get(key);
-      const isAgent = Boolean(overridden);
+      const agentMatch = agentByUsername.get(key);
+      if (agentMatch) {
+        const item = itemFromAgent(agentMatch, m.profilePicture || null);
+        if (item) items.push(item);
+        return;
+      }
       items.push({
         id: m._id || username,
-        label: overridden || username,
-        labelLower: `${overridden || ''} ${username}`.toLowerCase(),
-        subtitle: isAgent ? 'Agent' : 'Member',
+        label: username,
+        labelLower: username.toLowerCase(),
+        subtitle: 'Member',
         avatar: m.profilePicture || null,
-        isAgent,
-        value: isAgent ? username : username,
+        isAgent: false,
+        value: username,
       });
     });
 
@@ -366,27 +399,12 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
       const key = username.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
-      const display = a.displayName || a.profile?.displayName || rawName;
-      const instance = (a.instanceId || 'default').toLowerCase();
-      // Prefer instanceId for the mention value when it's distinct — disambiguates
-      // multi-instance agents (e.g. @nova vs the base @openclaw).
-      const mentionValue = instance && instance !== 'default' && instance !== rawName.toLowerCase()
-        ? instance
-        : rawName.toLowerCase();
-      const avatar = a.profile?.avatarUrl || a.profile?.iconUrl || a.iconUrl || null;
-      items.push({
-        id: username,
-        label: display,
-        labelLower: `${display} ${rawName} ${username} ${mentionValue}`.toLowerCase(),
-        subtitle: `Agent · @${mentionValue}`,
-        avatar,
-        isAgent: true,
-        value: mentionValue,
-      });
+      const item = itemFromAgent(a);
+      if (item) items.push(item);
     });
 
     return items;
-  }, [members, agents, agentDisplayNames]);
+  }, [members, agents]);
 
   const filteredMentions: MentionItem[] = useMemo(() => {
     if (!mentionOpen) return [];
