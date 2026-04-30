@@ -38,6 +38,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useAuth } from '../../context/AuthContext';
+import { useV2Embedded } from '../../v2/hooks/useV2Embedded';
 
 interface CatalogItem {
   id?: string;
@@ -136,6 +137,7 @@ const getAuthHeaders = (): { headers: { Authorization: string } } => {
 };
 
 const SkillsCatalogPage: React.FC = () => {
+  const v2Embedded = useV2Embedded();
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState('');
@@ -1003,11 +1005,16 @@ const SkillsCatalogPage: React.FC = () => {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-        <AutoAwesomeIcon sx={{ color: '#7DD3FC' }} />
-        <Typography variant="h4">Skills Catalog</Typography>
-      </Box>
+    <Container className="v2-skills-catalog" maxWidth="lg" sx={{ py: v2Embedded ? 0 : 4 }}>
+      {/* The v2 shell renders its own page header, so hide this legacy
+          icon + title + decorative row to avoid stacked headings. */}
+      {!v2Embedded && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+          <AutoAwesomeIcon sx={{ color: '#7DD3FC' }} />
+          <Typography variant="h4">Skills Catalog</Typography>
+        </Box>
+      )}
+      {!v2Embedded && (
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
         <Typography variant="body2" color="text.secondary">
           {catalogLocalRefreshedAt
@@ -1025,7 +1032,97 @@ const SkillsCatalogPage: React.FC = () => {
           </Typography>
         )}
       </Stack>
+      )}
 
+      {v2Embedded && (
+        <>
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+            <Tabs value={activeTab} onChange={(_event, value: string) => setActiveTab(value)}>
+              <Tab value="catalog" label={`Catalog (${catalogTotalItems})`} />
+              <Tab value="installed" label={`Installed (${importedSkills.size})`} />
+              {isGlobalAdmin && <Tab value="gateway" label="Gateway Credentials" />}
+            </Tabs>
+          </Box>
+          <Box className="v2-filter-bar">
+            <TextField
+              className="v2-filter-bar__search"
+              label="Search skills"
+              size="small"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+            <FormControl className="v2-filter-bar__control" size="small">
+              <InputLabel id="vendor-filter-label-v2">Category</InputLabel>
+              <Select
+                labelId="vendor-filter-label-v2"
+                value={selectedCategory}
+                label="Category"
+                onChange={(event) => setSelectedCategory(event.target.value)}
+              >
+                <MenuItem value="all">All categories</MenuItem>
+                {categories.map((category) => (
+                  <MenuItem key={category} value={category}>
+                    {category}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl className="v2-filter-bar__control" size="small">
+              <InputLabel id="pod-select-label-v2">Target Pod</InputLabel>
+              <Select
+                labelId="pod-select-label-v2"
+                value={selectedPodId}
+                label="Target Pod"
+                onChange={(event) => setSelectedPodId(event.target.value)}
+              >
+                <MenuItem value="">
+                  <em>Select a pod</em>
+                </MenuItem>
+                {pods.map((pod) => (
+                  <MenuItem key={pod._id} value={pod._id}>
+                    {pod.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl className="v2-filter-bar__control" size="small">
+              <InputLabel id="skills-sort-label-v2">Sort</InputLabel>
+              <Select
+                labelId="skills-sort-label-v2"
+                value={sortBy}
+                label="Sort"
+                onChange={(event) => setSortBy(event.target.value)}
+              >
+                <MenuItem value="default">Name</MenuItem>
+                <MenuItem value="stars">Most stars</MenuItem>
+                <MenuItem value="rating">Highest rated</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControlLabel
+              className="v2-filter-bar__action"
+              control={
+                <Switch
+                  size="small"
+                  checked={groupByCategory}
+                  onChange={(event) => setGroupByCategory(event.target.checked)}
+                />
+              }
+              label="Group"
+            />
+            <Tooltip title="Refresh catalog">
+              <IconButton className="v2-filter-bar__action" size="small" onClick={() => fetchCatalog()}>
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <span className="v2-filter-bar__summary">
+              {filteredItems.length} results
+              {catalogLocalRefreshedAt ? ` · Updated ${formatRelativeTime(catalogLocalRefreshedAt)}` : ''}
+            </span>
+          </Box>
+        </>
+      )}
+
+      {!v2Embedded && (
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 3 }}>
         <FormControl sx={{ minWidth: 240 }}>
           <InputLabel id="pod-select-label">Target Pod</InputLabel>
@@ -1099,6 +1196,7 @@ const SkillsCatalogPage: React.FC = () => {
           {isGlobalAdmin && <Tab value="gateway" label="Gateway Credentials" />}
         </Tabs>
       </Box>
+      )}
 
       {catalogLoading && <Typography>Loading catalog...</Typography>}
       {catalogError && <Typography color="error">{catalogError}</Typography>}

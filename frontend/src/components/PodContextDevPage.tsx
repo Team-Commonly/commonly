@@ -24,6 +24,7 @@ import {
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useAuth } from '../context/AuthContext';
+import { useV2Embedded } from '../v2/hooks/useV2Embedded';
 
 function formatDate(value) {
   if (!value) return 'Unknown time';
@@ -34,6 +35,7 @@ function formatDate(value) {
 
 const PodContextDevPage = () => {
   const { token } = useAuth();
+  const v2Embedded = useV2Embedded();
   const [pods, setPods] = useState([]);
   const [podId, setPodId] = useState('');
   const [task, setTask] = useState('');
@@ -343,24 +345,28 @@ const PodContextDevPage = () => {
   return (
     <Box className="pod-context-dev-root">
       <Container maxWidth="lg" className="pod-context-dev-container">
-        <Box className="pod-context-hero">
-          <Box className="pod-context-hero-main">
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <PsychologyIcon className="pod-context-hero-icon" />
-              <Typography variant="h4" className="pod-context-hero-title">
-                Pod Context Inspector
+        {/* The v2 shell renders its own page header, so hide this in-page
+            hero/title block to avoid stacked headings. */}
+        {!v2Embedded && (
+          <Box className="pod-context-hero">
+            <Box className="pod-context-hero-main">
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <PsychologyIcon className="pod-context-hero-icon" />
+                <Typography variant="h4" className="pod-context-hero-title">
+                  Pod Context Inspector
+                </Typography>
+              </Stack>
+              <Typography variant="body1" className="pod-context-hero-subtitle">
+                Inspect the structured context that pods expose to agents, including LLM-generated markdown skills.
               </Typography>
-            </Stack>
-            <Typography variant="body1" className="pod-context-hero-subtitle">
-              Inspect the structured context that pods expose to agents, including LLM-generated markdown skills.
-            </Typography>
+            </Box>
+            <Box className="pod-context-hero-tags">
+              <Chip size="small" label="Memory Search" />
+              <Chip size="small" label="Vector Index" />
+              <Chip size="small" label="LLM Skills" />
+            </Box>
           </Box>
-          <Box className="pod-context-hero-tags">
-            <Chip size="small" label="Memory Search" />
-            <Chip size="small" label="Vector Index" />
-            <Chip size="small" label="LLM Skills" />
-          </Box>
-        </Box>
+        )}
 
         {!token && (
           <Alert severity="warning" sx={{ mb: 3 }}>

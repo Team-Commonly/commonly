@@ -23,6 +23,7 @@ import { normalizeUploadUrl } from '../utils/apiBaseUrl';
 import { AgentAvatar, isAgentUsername } from './common/AgentIndicator';
 import MarkdownContent from './common/MarkdownContent';
 import { useAppContext } from '../context/AppContext';
+import { useV2Embedded } from '../v2/hooks/useV2Embedded';
 import { blurActiveElement } from '../utils/focusUtils';
 import { formatDistanceToNowSafe } from '../utils/dateUtils';
 import EmojiPicker from 'emoji-picker-react';
@@ -78,6 +79,7 @@ interface ResolvedAuthor {
 }
 
 const PostFeed = () => {
+    const v2Embedded = useV2Embedded();
     const {
         currentUser,
         setPosts: setContextPosts,
@@ -509,10 +511,17 @@ const PostFeed = () => {
         return (userPods || []).find((pod) => pod._id === activePodParam) || null;
     }, [activePodParam, userPods]);
 
-    if (error) return <Typography color="error" sx={{ p: 2, mt: 8 }}>{error}</Typography>;
+    if (error) return <Typography color="error" sx={{ p: 2, mt: v2Embedded ? 0 : 8 }}>{error}</Typography>;
 
     return (
-        <Container maxWidth="md" sx={{ py: 2, mt: 8 }} className="post-feed-container">
+        // Inside the v2 shell V2FeaturePage owns the top spacing; drop the
+        // legacy `mt: 8` so the compose card lands where the v2 page body
+        // actually starts, not behind a phantom legacy AppBar.
+        <Container
+            maxWidth="md"
+            sx={{ py: v2Embedded ? 0 : 2, mt: v2Embedded ? 0 : 8 }}
+            className="post-feed-container"
+        >
             {lightboxImage && (
                 <div className="image-lightbox" onClick={closeLightbox} role="presentation">
                     <img

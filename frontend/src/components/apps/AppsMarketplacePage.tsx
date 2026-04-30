@@ -35,6 +35,7 @@ import {
 import axios from 'axios';
 import AppCard from './AppCard';
 import OfficialIntegrationCard from './OfficialIntegrationCard';
+import { useV2Embedded } from '../../v2/hooks/useV2Embedded';
 
 interface Category {
   id: string;
@@ -102,6 +103,7 @@ interface SnackbarState {
 }
 
 const AppsMarketplacePage: React.FC = () => {
+  const v2Embedded = useV2Embedded();
   const theme = useTheme();
   const [apps, setApps] = useState<App[]>([]);
   const [featured, setFeatured] = useState<App[]>([]);
@@ -304,72 +306,67 @@ const AppsMarketplacePage: React.FC = () => {
 
   return (
     <Container
+      className="v2-apps-marketplace"
       maxWidth="xl"
       disableGutters
-      sx={{ py: { xs: 3, md: 4 }, px: { xs: 2, sm: 3, md: 4 } }}
+      sx={{ py: v2Embedded ? 0 : { xs: 3, md: 4 }, px: v2Embedded ? 0 : { xs: 2, sm: 3, md: 4 } }}
     >
       {/* Hero section — gradient backdrop with a large headline, subtitle,
-          and inline search. Replaces the flat header + separate search row. */}
-      <Box
-        sx={{
-          mb: 4,
-          px: { xs: 3, md: 6 },
-          py: { xs: 4, md: 6 },
-          borderRadius: 3,
-          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark || theme.palette.primary.main} 60%, ${theme.palette.secondary.main || theme.palette.primary.main} 100%)`,
-          color: theme.palette.primary.contrastText,
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        <Box sx={{ position: 'relative', zIndex: 1, maxWidth: 920 }}>
-          <Typography variant="h3" fontWeight={800} sx={{ mb: 1.5, lineHeight: 1.15 }}>
-            Discover apps to extend your Commonly pods
-          </Typography>
-          <Typography variant="body1" sx={{ opacity: 0.92, mb: 3, maxWidth: 640 }}>
-            Browse agents, integrations, and webhook apps built by the community.
-            Install one into a pod in seconds — your agents and teammates will see it instantly.
-          </Typography>
-          <Box
-            sx={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 1.5,
-              alignItems: 'center',
-            }}
-          >
+          and inline search. The v2 shell already names the page, so under v2
+          we collapse this into a compact controls row to remove the
+          duplicated marketing intro. */}
+      {v2Embedded ? (
+        <>
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+            <Tabs value={activeTab} onChange={(_e: React.SyntheticEvent, v: number) => setActiveTab(v)}>
+              <Tab label={`Discover (${apps.length})`} icon={<AppsIcon />} iconPosition="start" />
+              <Tab label={`Installed (${installedApps.length})`} />
+            </Tabs>
+          </Box>
+          <Box className="v2-filter-bar">
             <TextField
+              className="v2-filter-bar__search"
               placeholder="Search apps, agents, integrations..."
+              size="small"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <SearchIcon sx={{ color: 'text.secondary' }} />
+                    <SearchIcon fontSize="small" />
                   </InputAdornment>
                 ),
               }}
-              sx={{
-                flex: '1 1 320px',
-                minWidth: { xs: '100%', sm: 320 },
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 999,
-                  backgroundColor: theme.palette.background.paper,
-                },
-                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-              }}
             />
-            <FormControl
-              size="small"
-              sx={{
-                minWidth: { xs: '100%', sm: 200 },
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 999,
-                  backgroundColor: theme.palette.background.paper,
-                },
-                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-              }}
-            >
+            <FormControl className="v2-filter-bar__control" size="small">
+              <InputLabel>Type</InputLabel>
+              <Select
+                value={typeFilter}
+                label="Type"
+                onChange={(e) => setTypeFilter(e.target.value as string)}
+              >
+                {types.map((t) => (
+                  <MenuItem key={t.id} value={t.id}>
+                    {t.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl className="v2-filter-bar__control" size="small">
+              <InputLabel>Category</InputLabel>
+              <Select
+                value={category}
+                label="Category"
+                onChange={(e) => setCategory(e.target.value as string)}
+              >
+                {categories.map((cat) => (
+                  <MenuItem key={cat.id} value={cat.id}>
+                    {cat.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl className="v2-filter-bar__control" size="small">
               <InputLabel>Install to Pod</InputLabel>
               <Select
                 value={selectedPodId || ''}
@@ -384,25 +381,126 @@ const AppsMarketplacePage: React.FC = () => {
               </Select>
             </FormControl>
             <Button
-              variant="contained"
-              color="inherit"
+              className="v2-filter-bar__action"
+              variant="outlined"
+              size="small"
+              startIcon={<RefreshIcon />}
+              onClick={fetchMarketplace}
+            >
+              Refresh
+            </Button>
+            <Button
+              className="v2-filter-bar__action"
+              variant="outlined"
+              size="small"
               href={contribUrl}
               target="_blank"
               rel="noreferrer"
-              sx={{
-                borderRadius: 999,
-                fontWeight: 600,
-                backgroundColor: theme.palette.background.paper,
-                color: theme.palette.text.primary,
-                '&:hover': { backgroundColor: theme.palette.background.default },
-              }}
             >
               Submit App
             </Button>
+            <span className="v2-filter-bar__summary">
+              {activeTab === 0 ? `${apps.length} results` : `${installedApps.length} installed`}
+            </span>
+          </Box>
+        </>
+      ) : (
+        <Box
+          className="v2-apps-hero"
+          sx={{
+            mb: 4,
+            px: { xs: 3, md: 6 },
+            py: { xs: 4, md: 6 },
+            borderRadius: 3,
+            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark || theme.palette.primary.main} 60%, ${theme.palette.secondary.main || theme.palette.primary.main} 100%)`,
+            color: theme.palette.primary.contrastText,
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          <Box sx={{ position: 'relative', zIndex: 1, maxWidth: 920 }}>
+            <Typography variant="h3" fontWeight={800} sx={{ mb: 1.5, lineHeight: 1.15 }}>
+              Discover apps to extend your Commonly pods
+            </Typography>
+            <Typography variant="body1" sx={{ opacity: 0.92, mb: 3, maxWidth: 640 }}>
+              Browse agents, integrations, and webhook apps built by the community.
+              Install one into a pod in seconds — your agents and teammates will see it instantly.
+            </Typography>
+            <Box
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 1.5,
+                alignItems: 'center',
+              }}
+            >
+              <TextField
+                placeholder="Search apps, agents, integrations..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ color: 'text.secondary' }} />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{
+                  flex: '1 1 320px',
+                  minWidth: { xs: '100%', sm: 320 },
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 999,
+                    backgroundColor: theme.palette.background.paper,
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                }}
+              />
+              <FormControl
+                size="small"
+                sx={{
+                  minWidth: { xs: '100%', sm: 200 },
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 999,
+                    backgroundColor: theme.palette.background.paper,
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                }}
+              >
+                <InputLabel>Install to Pod</InputLabel>
+                <Select
+                  value={selectedPodId || ''}
+                  label="Install to Pod"
+                  onChange={(e) => setSelectedPodId(e.target.value as string)}
+                >
+                  {userPods.map((pod) => (
+                    <MenuItem key={pod._id} value={pod._id}>
+                      {pod.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Button
+                variant="contained"
+                color="inherit"
+                href={contribUrl}
+                target="_blank"
+                rel="noreferrer"
+                sx={{
+                  borderRadius: 999,
+                  fontWeight: 600,
+                  backgroundColor: theme.palette.background.paper,
+                  color: theme.palette.text.primary,
+                  '&:hover': { backgroundColor: theme.palette.background.default },
+                }}
+              >
+                Submit App
+              </Button>
+            </Box>
           </Box>
         </Box>
-      </Box>
+      )}
 
+      {!v2Embedded && (
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 3 }}>
         <FormControl sx={{ minWidth: { xs: '100%', sm: 180 }, flex: '1 1 180px' }} size="small">
           <InputLabel>Type</InputLabel>
@@ -427,7 +525,9 @@ const AppsMarketplacePage: React.FC = () => {
           Refresh
         </Button>
       </Box>
+      )}
 
+      {!v2Embedded && (
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 4 }}>
         {categories.map((cat) => (
           <Chip
@@ -440,8 +540,9 @@ const AppsMarketplacePage: React.FC = () => {
           />
         ))}
       </Box>
+      )}
 
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3, display: v2Embedded ? 'none' : 'block' }}>
         <Tabs value={activeTab} onChange={(_e: React.SyntheticEvent, v: number) => setActiveTab(v)}>
           <Tab label="Discover" icon={<AppsIcon />} iconPosition="start" />
           <Tab label={`Installed ${installedApps.length ? `(${installedApps.length})` : ''}`} />

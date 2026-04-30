@@ -1,18 +1,35 @@
 services:
   # MongoDB service
   mongo:
-    image: mongo:latest
+    image: mongo:8.2
     container_name: mongodb-dev
     ports:
       - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-password}
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-commonly}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:-commonly_dev}
+      MONGO_APP_DATABASE: ${MONGO_APP_DATABASE:-commonly}
     volumes:
       - mongo-data-dev:/data/db
+      - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet -u \"$${MONGO_INITDB_ROOT_USERNAME}\" -p \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval \"db.adminCommand({ ping: 1 })\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     networks:
       - app-network-dev
 
   # PostgreSQL service
   postgres:
-    image: postgres:latest
+    image: postgres:17
     container_name: postgres-dev
     ports:
       - "5432:5432"
@@ -36,23 +53,27 @@ services:
     ports:
       - "5000:5000"
     depends_on:
-      - mongo
-      - postgres
+      mongo:
+        condition: service_healthy
     environment:
       # Application settings
       - NODE_ENV=development
       - PORT=5000
       
       # Database settings
-      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017/commonly}
+      - MONGO_URI=${DOCKER_MONGO_URI:-mongodb://commonly:commonly_dev@mongo:27017/commonly?authSource=admin}
       - PG_USER=${PG_USER:-postgres}
       - PG_PASSWORD=${PG_PASSWORD:-postgres}
-      - PG_HOST=${PG_HOST:-postgres}
+      - PG_HOST=${DOCKER_PG_HOST:-postgres}
       - PG_PORT=${PG_PORT:-5432}
       - PG_DATABASE=${PG_DATABASE:-commonly}
       
       # Authentication
       - JWT_SECRET=${JWT_SECRET:-development-jwt-secret}
+      - LOCAL_DEV_LOGIN_ENABLED=${LOCAL_DEV_LOGIN_ENABLED:-1}
+      - LOCAL_DEV_LOGIN_EMAIL=${LOCAL_DEV_LOGIN_EMAIL:-dev@commonly.local}
+      - LOCAL_DEV_LOGIN_PASSWORD=${LOCAL_DEV_LOGIN_PASSWORD:-password123}
+      - LOCAL_DEV_LOGIN_USERNAME=${LOCAL_DEV_LOGIN_USERNAME:-localdev}
       
       # Email settings (SMTP2GO)
       - SMTP2GO_API_KEY=${SMTP2GO_API_KEY}
