@@ -154,13 +154,20 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     let message: NormalizedMessage;
 
     try {
-      message = await PGMessage.create(
+      const created = await PGMessage.create(
         podId,
         userId,
         messageContent || '',
         'text',
         replyToMessageId || null,
-      ) as NormalizedMessage;
+      );
+      // create() returns the raw INSERT row with no users JOIN, so the
+      // response would lack username/profile_picture and the v2 chat would
+      // render the author as "Unknown" until a refresh pulled the joined
+      // row. findById re-fetches with the JOIN so the optimistic render
+      // already has the right author identity.
+      const populated = created?.id ? await PGMessage.findById(created.id) : null;
+      message = (populated || created) as NormalizedMessage;
     } catch (pgErr) {
       const e = pgErr as { message?: string };
       console.warn('PG unavailable for createMessage, falling back to MongoDB:', e.message);
@@ -170,7 +177,9 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
         content: messageContent || '',
         messageType: 'text',
       });
-      message = normalizeMongo(mongoMsg);
+      const populated = await MongoMessage.findById(mongoMsg._id)
+        .populate('userId', 'username profilePicture');
+      message = normalizeMongo(populated || mongoMsg);
     }
 
     const username = req.user?.username;
