@@ -1,7 +1,21 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { formatRelativeTime } from '../utils/grouping';
+
+// Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
+// styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
+// of [[file:...]] / [[reactions:...]] tokens above, so this is purely for
+// agent-authored prose: bold/italic, lists, inline code, fenced code, links.
+const messageMarkdownComponents = {
+  a: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>
+  ),
+  // Inline code vs fenced code share `<code>`; only fenced code is wrapped in
+  // `<pre>`. Both fall through to v2.css selectors `.v2-msg__content code`
+  // and `.v2-msg__content pre`.
+};
 
 interface V2MessageBubbleProps {
   message: V2Message;
@@ -131,7 +145,11 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
             <img src={imageUrl} alt="Uploaded attachment" className="v2-msg__image" />
           </a>
         ) : (
-          stripped && <div className="v2-msg__content">{stripped}</div>
+          stripped && (
+            <div className="v2-msg__content">
+              <ReactMarkdown components={messageMarkdownComponents}>{stripped}</ReactMarkdown>
+            </div>
+          )
         )}
         {files.map((file, idx) => (
           <FilePill key={`${file.name}-${idx}`} file={file} />

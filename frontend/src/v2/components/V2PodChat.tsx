@@ -1,13 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import V2MessageBubble from './V2MessageBubble';
 import {
   UseV2PodDetailResult,
+  V2Agent,
 } from '../hooks/useV2PodDetail';
 import { useV2Pinned } from '../hooks/useV2Pinned';
 import { useV2Api } from '../hooks/useV2Api';
-import { UseV2PodsResult } from '../hooks/useV2Pods';
+import { UseV2PodsResult, V2PodMember } from '../hooks/useV2Pods';
+import { useSocket } from '../../context/SocketContext';
 import { initialsFor } from '../utils/avatars';
 
 const TABS = [
@@ -24,6 +26,77 @@ type PodMode = 'plan' | 'execute';
 const podMarkFor = (name: string, type?: string): string => (
   type === 'agent-room' ? 'DM' : initialsFor(name).slice(0, 2)
 );
+
+const normalizeAgentSegment = (value: string | undefined): string =>
+  (value || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
+
+// Mirrors backend AgentIdentityService.buildAgentUsername — instance suffix
+// elides when default/empty/equal to base name. Used to wire a mention back
+// to the agent's User row username.
+const buildAgentUsername = (agentName: string | undefined, instanceId: string | undefined): string => {
+  const base = normalizeAgentSegment(agentName);
+  const inst = normalizeAgentSegment(instanceId);
+  if (!inst || inst === 'default' || inst === base) return base || 'agent';
+  return `${base}-${inst}`;
+};
+
+// Find an "active" @-mention context in the textarea: the closest @ to the
+// left of the cursor that's at start-of-string or preceded by whitespace/
+// quotation, with no whitespace between it and the cursor. Mirrors v1
+// ChatRoom.getMentionContext so behavior matches.
+const getMentionContext = (text: string, cursor: number | null): { start: number; query: string } | null => {
+  if (!text || cursor == null) return null;
+  const atIndex = text.lastIndexOf('@', cursor - 1);
+  if (atIndex < 0) return null;
+  const beforeChar = text[atIndex - 1];
+  if (beforeChar && !/\s|[([{"'`]/.test(beforeChar)) return null;
+  const between = text.slice(atIndex + 1, cursor);
+  if (/\s/.test(between)) return null;
+  return { start: atIndex, query: between };
+};
+
+interface MentionItem {
+  id: string;
+  label: string;
+  labelLower: string;
+  subtitle: string;
+  avatar?: string | null;
+  isAgent: boolean;
+  // Value inserted after `@`. For agents, prefer instanceId so mentions land
+  // on the right instance ("@nova" not "@openclaw").
+  value: string;
+}
+
+interface TypingAgentEntry {
+  key: string;
+  agentName: string;
+  instanceId?: string;
+  displayName: string;
+  avatar?: string;
+}
+
+const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) => {
+  if (!agents || agents.length === 0) return null;
+  const names = agents.map((a) => a.displayName);
+  const label = names.length === 1
+    ? `${names[0]} is thinking…`
+    : names.length === 2
+      ? `${names[0]} and ${names[1]} are thinking…`
+      : `${names[0]}, ${names[1]} and ${names.length - 2} other${names.length - 2 === 1 ? '' : 's'} are thinking…`;
+  return (
+    <div className="v2-chat__typing" aria-live="polite">
+      <div className="v2-chat__typing-avatars">
+        {agents.slice(0, 3).map((a) => (
+          <V2Avatar key={a.key} name={a.displayName || a.agentName} src={a.avatar} size="sm" />
+        ))}
+      </div>
+      <span className="v2-chat__typing-label">{label}</span>
+      <span className="v2-chat__typing-dots" aria-hidden="true">
+        <span /><span /><span />
+      </span>
+    </div>
+  );
+};
 
 const modeCopy = (mode: PodMode) => (
   mode === 'plan'
@@ -172,6 +245,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
   const navigate = useNavigate();
   const api = useV2Api();
+  const { socket, connected } = useSocket();
   const { isPinned, toggle: togglePin } = useV2Pinned();
   const [tab, setTab] = useState<Tab>('Chat');
   const [draft, setDraft] = useState('');
@@ -182,6 +256,21 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
   const [taskCount, setTaskCount] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const mentionDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Agent typing indicator state. Backend already emits agent_typing_start/
+  // agent_typing_stop via agentTypingService — this just listens and renders.
+  // Keyed by `${agentName}:${instanceId || ''}` to handle multi-instance.
+  const [typingAgents, setTypingAgents] = useState<TypingAgentEntry[]>([]);
+  const typingAgentTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // @-mention dropdown state. mentionStart is the index of the `@` in the
+  // textarea so we know the slice to replace on select.
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionStart, setMentionStart] = useState(-1);
+  const [mentionIndex, setMentionIndex] = useState(0);
 
   useEffect(() => {
     if (pod) setMode(readMode(pod._id));
@@ -242,6 +331,186 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
     }
     return map;
   }, [agents]);
+
+  // Build the @-mention list: pod members (humans) + installed agents. Same
+  // shape and dedup rules as v1 ChatRoom — agent identity is keyed on the
+  // computed username so we don't list the same agent twice when it appears
+  // both as a member and as an installation.
+  const mentionableItems: MentionItem[] = useMemo(() => {
+    const items: MentionItem[] = [];
+    const seen = new Set<string>();
+
+    (members || []).forEach((m: V2PodMember) => {
+      const username = m.username || '';
+      if (!username) return;
+      const key = username.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      const overridden = agentDisplayNames.get(key);
+      const isAgent = Boolean(overridden);
+      items.push({
+        id: m._id || username,
+        label: overridden || username,
+        labelLower: `${overridden || ''} ${username}`.toLowerCase(),
+        subtitle: isAgent ? 'Agent' : 'Member',
+        avatar: m.profilePicture || null,
+        isAgent,
+        value: isAgent ? username : username,
+      });
+    });
+
+    (agents || []).forEach((a: V2Agent) => {
+      const rawName = (a as { name?: string; agentName?: string }).name || a.agentName || '';
+      if (!rawName) return;
+      const username = buildAgentUsername(rawName, a.instanceId);
+      const key = username.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      const display = a.displayName || a.profile?.displayName || rawName;
+      const instance = (a.instanceId || 'default').toLowerCase();
+      // Prefer instanceId for the mention value when it's distinct — disambiguates
+      // multi-instance agents (e.g. @nova vs the base @openclaw).
+      const mentionValue = instance && instance !== 'default' && instance !== rawName.toLowerCase()
+        ? instance
+        : rawName.toLowerCase();
+      const avatar = a.profile?.avatarUrl || a.profile?.iconUrl || a.iconUrl || null;
+      items.push({
+        id: username,
+        label: display,
+        labelLower: `${display} ${rawName} ${username} ${mentionValue}`.toLowerCase(),
+        subtitle: `Agent · @${mentionValue}`,
+        avatar,
+        isAgent: true,
+        value: mentionValue,
+      });
+    });
+
+    return items;
+  }, [members, agents, agentDisplayNames]);
+
+  const filteredMentions: MentionItem[] = useMemo(() => {
+    if (!mentionOpen) return [];
+    const q = mentionQuery.trim().toLowerCase();
+    return mentionableItems.filter((item) => item.labelLower.includes(q)).slice(0, 8);
+  }, [mentionOpen, mentionQuery, mentionableItems]);
+
+  const updateMentionState = useCallback((nextValue: string, cursorPosition: number | null) => {
+    const ctx = getMentionContext(nextValue, cursorPosition);
+    if (!ctx) {
+      setMentionOpen(false);
+      setMentionQuery('');
+      setMentionStart(-1);
+      return;
+    }
+    setMentionOpen(true);
+    setMentionQuery(ctx.query);
+    setMentionStart(ctx.start);
+    setMentionIndex(0);
+  }, []);
+
+  const handleMentionSelect = useCallback((item: MentionItem) => {
+    const input = composerInputRef.current;
+    if (!input) return;
+    const cursor = input.selectionStart ?? draft.length;
+    const start = mentionStart >= 0 ? mentionStart : draft.lastIndexOf('@', cursor);
+    if (start < 0) return;
+    const insert = `@${item.value || item.label}`;
+    const next = `${draft.slice(0, start)}${insert} ${draft.slice(cursor)}`;
+    setDraft(next);
+    setMentionOpen(false);
+    setMentionQuery('');
+    setMentionStart(-1);
+    requestAnimationFrame(() => {
+      const nextCursor = start + insert.length + 1;
+      input.focus();
+      input.setSelectionRange(nextCursor, nextCursor);
+    });
+  }, [draft, mentionStart]);
+
+  // Clear typing indicators on pod change so we never carry indicators from
+  // another room into the current view.
+  useEffect(() => {
+    setTypingAgents([]);
+    Object.values(typingAgentTimersRef.current).forEach(clearTimeout);
+    typingAgentTimersRef.current = {};
+  }, [pod?._id]);
+
+  // Subscribe to agent typing events. Backend emits via agentTypingService;
+  // safety timeout drops stale entries if a stop event is missed.
+  useEffect(() => {
+    const podId = pod?._id;
+    if (!podId || !socket || !connected) return undefined;
+
+    const keyFor = (p: { agentName?: string; instanceId?: string }) =>
+      `${p?.agentName || ''}:${p?.instanceId || ''}`;
+    const scheduleAutoStop = (key: string) => {
+      if (typingAgentTimersRef.current[key]) clearTimeout(typingAgentTimersRef.current[key]);
+      typingAgentTimersRef.current[key] = setTimeout(() => {
+        setTypingAgents((prev) => prev.filter((a) => a.key !== key));
+        delete typingAgentTimersRef.current[key];
+      }, 30000);
+    };
+
+    interface TypingPayload {
+      podId?: string;
+      agentName?: string;
+      username?: string;
+      instanceId?: string;
+      displayName?: string;
+      avatar?: string;
+      iconUrl?: string;
+    }
+    const handleStart = (payload: TypingPayload) => {
+      if (!payload || (payload.podId && payload.podId !== podId)) return;
+      const agentName = payload.agentName || payload.username;
+      if (!agentName) return;
+      const key = keyFor({ agentName, instanceId: payload.instanceId });
+      scheduleAutoStop(key);
+      setTypingAgents((prev) => {
+        const next: TypingAgentEntry = {
+          key,
+          agentName,
+          instanceId: payload.instanceId,
+          displayName: payload.displayName || payload.instanceId || agentName,
+          avatar: payload.avatar || payload.iconUrl,
+        };
+        const exists = prev.find((a) => a.key === key);
+        return exists ? prev.map((a) => (a.key === key ? next : a)) : [...prev, next];
+      });
+    };
+    const handleStop = (payload: TypingPayload) => {
+      const agentName = payload?.agentName || payload?.username;
+      if (!agentName) return;
+      const key = keyFor({ agentName, instanceId: payload.instanceId });
+      if (typingAgentTimersRef.current[key]) {
+        clearTimeout(typingAgentTimersRef.current[key]);
+        delete typingAgentTimersRef.current[key];
+      }
+      setTypingAgents((prev) => prev.filter((a) => a.key !== key));
+    };
+
+    socket.on('agent_typing_start', handleStart);
+    socket.on('agent_typing_stop', handleStop);
+    return () => {
+      socket.off('agent_typing_start', handleStart);
+      socket.off('agent_typing_stop', handleStop);
+      Object.values(typingAgentTimersRef.current).forEach(clearTimeout);
+      typingAgentTimersRef.current = {};
+    };
+  }, [pod?._id, socket, connected]);
+
+  // Click outside the mention dropdown closes it.
+  useEffect(() => {
+    if (!mentionOpen) return undefined;
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (mentionDropdownRef.current && target && mentionDropdownRef.current.contains(target)) return;
+      if (composerInputRef.current && target && composerInputRef.current.contains(target)) return;
+      setMentionOpen(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [mentionOpen]);
 
   if (!pod) {
     return (
@@ -426,6 +695,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
               <div ref={messagesEndRef} />
             </div>
 
+            <TypingIndicator agents={typingAgents} />
+
             <div className="v2-chat__composer">
               <div className="v2-chat__composer-kicker">
                 <span className={`v2-chat__composer-mode v2-chat__composer-mode--${mode}`}>
@@ -436,11 +707,47 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
               </div>
               <div className="v2-chat__composer-input-wrap">
                 <textarea
+                  ref={composerInputRef}
                   className="v2-chat__composer-input"
                   placeholder={mode === 'plan' ? `Message ${pod.name} in plan preference...` : `Message ${pod.name} in execute preference...`}
                   value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setDraft(next);
+                    updateMentionState(next, e.target.selectionStart);
+                  }}
+                  onClick={(e) => updateMentionState(
+                    (e.target as HTMLTextAreaElement).value,
+                    (e.target as HTMLTextAreaElement).selectionStart,
+                  )}
+                  onKeyUp={(e) => updateMentionState(
+                    (e.target as HTMLTextAreaElement).value,
+                    (e.target as HTMLTextAreaElement).selectionStart,
+                  )}
                   onKeyDown={(e) => {
+                    if (mentionOpen && filteredMentions.length > 0) {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setMentionIndex((p) => (p + 1) % filteredMentions.length);
+                        return;
+                      }
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setMentionIndex((p) => (p - 1 + filteredMentions.length) % filteredMentions.length);
+                        return;
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setMentionOpen(false);
+                        return;
+                      }
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        const sel = filteredMentions[mentionIndex];
+                        if (sel) handleMentionSelect(sel);
+                        return;
+                      }
+                    }
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       handleSend();
@@ -448,6 +755,27 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
                   }}
                   rows={2}
                 />
+                {mentionOpen && filteredMentions.length > 0 && (
+                  <div className="v2-mention-dropdown" ref={mentionDropdownRef} role="listbox">
+                    {filteredMentions.map((item, idx) => (
+                      <button
+                        type="button"
+                        key={item.id}
+                        className={`v2-mention-item${idx === mentionIndex ? ' v2-mention-item--active' : ''}`}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleMentionSelect(item)}
+                        role="option"
+                        aria-selected={idx === mentionIndex}
+                      >
+                        <V2Avatar name={item.label} src={item.avatar || undefined} size="sm" />
+                        <span className="v2-mention-item__text">
+                          <span className="v2-mention-item__label">@{item.value || item.label}</span>
+                          <span className="v2-mention-item__sub">{item.subtitle}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="v2-chat__composer-actions">
                   <input
                     ref={fileInputRef}

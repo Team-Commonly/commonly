@@ -1113,6 +1113,56 @@
   font-weight: 600;
 }
 
+/* Agent typing indicator — sits between message list and composer.
+   Collapses to nothing when typingAgents is empty. Subtle so it doesn't
+   compete with the messages above; the animated dots carry the "alive" cue. */
+.v2-chat__typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 24px;
+  border-top: 1px solid var(--v2-border-soft);
+  color: var(--v2-text-tertiary);
+  font-size: 12px;
+  flex-shrink: 0;
+  min-height: 28px;
+}
+
+.v2-chat__typing-avatars {
+  display: inline-flex;
+}
+
+.v2-chat__typing-avatars > * + * {
+  margin-left: -6px;
+}
+
+.v2-chat__typing-label {
+  flex-shrink: 0;
+}
+
+.v2-chat__typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+}
+
+.v2-chat__typing-dots > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--v2-text-tertiary);
+  animation: v2-typing-dot 1.2s infinite ease-in-out;
+}
+
+.v2-chat__typing-dots > span:nth-child(2) { animation-delay: 0.18s; }
+.v2-chat__typing-dots > span:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes v2-typing-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30%           { transform: translateY(-3px); opacity: 1; }
+}
+
 .v2-chat__composer {
   min-height: 108px;
   padding: 12px 24px 10px;
@@ -1271,6 +1321,70 @@
   font-weight: 600;
 }
 
+/* @-mention dropdown anchored to the composer input wrap. Sits above the
+   composer in DOM order but renders above-and-out via absolute positioning. */
+.v2-mention-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 10;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v2-mention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--v2-radius-sm);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  font: inherit;
+  color: var(--v2-text-primary);
+}
+
+.v2-mention-item:hover,
+.v2-mention-item--active {
+  background: var(--v2-surface-hover);
+}
+
+.v2-mention-item__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.v2-mention-item__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-mention-item__sub {
+  font-size: 11px;
+  color: var(--v2-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .v2-tab-list {
   flex: 1;
   overflow-y: auto;
@@ -1367,14 +1481,84 @@
   line-height: 1.55;
   color: #1f2937;
   margin-top: 3px;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.v2-msg__content > *:first-child { margin-top: 0; }
+.v2-msg__content > *:last-child  { margin-bottom: 0; }
+
+.v2-msg__content p {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
 }
 
 .v2-msg__content a {
   color: var(--v2-accent-text);
   text-decoration: underline;
 }
+
+.v2-msg__content ul,
+.v2-msg__content ol {
+  margin: 4px 0 6px;
+  padding-left: 22px;
+}
+
+.v2-msg__content li {
+  margin: 2px 0;
+}
+
+.v2-msg__content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  background: var(--v2-surface-tint);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.v2-msg__content pre {
+  margin: 6px 0;
+  padding: 10px 12px;
+  background: var(--v2-surface-tint);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.v2-msg__content pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+.v2-msg__content blockquote {
+  margin: 6px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid var(--v2-border);
+  color: var(--v2-text-secondary);
+  font-style: italic;
+}
+
+.v2-msg__content h1,
+.v2-msg__content h2,
+.v2-msg__content h3 {
+  margin: 8px 0 4px;
+  font-weight: 700;
+}
+
+.v2-msg__content h1 { font-size: 15px; }
+.v2-msg__content h2 { font-size: 14.5px; }
+.v2-msg__content h3 { font-size: 14px; }
+
+.v2-msg__content hr {
+  border: none;
+  border-top: 1px solid var(--v2-border-soft);
+  margin: 8px 0;
+}
+
+.v2-msg__content strong { font-weight: 700; }
+.v2-msg__content em     { font-style: italic; }
 
 .v2-msg__image-link {
   display: inline-block;
