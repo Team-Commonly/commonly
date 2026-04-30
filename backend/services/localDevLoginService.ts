@@ -62,7 +62,9 @@ const ensureLocalDevLogin = async () => {
     existingUser.password = password;
     existingUser.verified = true;
     await existingUser.save();
-    console.log(`[local-dev-login] Ready: ${email} / ${password}`);
+    // Log email only — password lives in env (LOCAL_DEV_LOGIN_PASSWORD); avoid
+    // CodeQL js/clear-text-logging alert and don't surface secrets in pod logs.
+    console.log(`[local-dev-login] Ready: ${email}`);
     return existingUser;
   }
 

@@ -29,7 +29,13 @@ export const useV2Embedded = (): boolean => {
   // Memoize the pathname read so React doesn't recompute every render hop.
   const fromPath = useMemo(() => {
     if (typeof window === 'undefined') return false;
-    return window.location.pathname.startsWith('/v2');
+    // jsdom-based jest environments sometimes leave window.location.pathname
+    // undefined. Guard the read so the test renderer doesn't throw before the
+    // ProviderProvider has had a chance to wrap. Same intent as the
+    // `typeof window === 'undefined'` check just above; this catches the
+    // partially-stubbed-window case.
+    const path = window.location?.pathname;
+    return typeof path === 'string' && path.startsWith('/v2');
   }, []);
   return fromContext || fromPath;
 };

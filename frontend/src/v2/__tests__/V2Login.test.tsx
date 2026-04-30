@@ -5,14 +5,23 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import V2App from '../V2App';
 
-jest.mock('axios', () => ({
-  __esModule: true,
-  default: { get: jest.fn(), post: jest.fn(), patch: jest.fn(), delete: jest.fn() },
-  get: jest.fn(),
-  post: jest.fn(),
-  patch: jest.fn(),
-  delete: jest.fn(),
-}));
+// Mock surface includes `defaults` and `interceptors` so the transitive
+// import chain (Register → axiosConfig → axios.defaults.baseURL = ...) does
+// not throw when this test loads V2App.
+jest.mock('axios', () => {
+  const mock = {
+    get: jest.fn(),
+    post: jest.fn(),
+    patch: jest.fn(),
+    delete: jest.fn(),
+    defaults: { baseURL: '', headers: { common: {} } },
+    interceptors: {
+      request: { use: jest.fn(), eject: jest.fn() },
+      response: { use: jest.fn(), eject: jest.fn() },
+    },
+  };
+  return { __esModule: true, default: mock, ...mock };
+});
 
 const baseAuth = {
   currentUser: null,
