@@ -69,7 +69,14 @@ interface AgentTypeConfig {
 const AGENT_TYPES: Record<string, AgentTypeConfig> = {
   openclaw: {
     officialDisplayName: 'Cuz 🦞',
-    officialDescription: 'Your friendly AI assistant powered by Claude - ready to chat, help, and remember!',
+    // Don't claim a model here. OpenClaw agents route through LiteLLM and the
+    // active model depends on per-agent overrides (dev agents on
+    // openai-codex/gpt-5.4, community agents on OpenRouter free tier, etc.).
+    // The previous "powered by Claude" string was both wrong (we are not
+    // Anthropic) and misleading (community agents aren't on Claude). Keep the
+    // description capability-flavored so it still fits the no-blurb fallback
+    // template in registry/install.ts.
+    officialDescription: 'OpenClaw cloud agent — chat, remember, take real actions when you need it.',
     icon: '🦞',
     botType: 'agent',
     capabilities: ['chat', 'memory', 'context', 'summarize', 'code'],

@@ -138,10 +138,10 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
         agentName: 'openclaw',
         displayName: agentTypes.openclaw?.officialDisplayName || 'Cuz 🦞',
         description: agentTypes.openclaw?.officialDescription
-          || 'Your friendly AI assistant powered by Claude - ready to chat, help, and remember!',
+          || 'OpenClaw cloud agent — chat, remember, take real actions when you need it.',
         registry: 'commonly-official',
         categories: ['openclaw', 'productivity', 'communication'],
-        tags: ['assistant', 'claude', 'ai', 'chat', 'memory', 'openclaw', 'clawdbot', 'moltbot'],
+        tags: ['assistant', 'ai', 'chat', 'memory', 'openclaw', 'clawdbot', 'moltbot'],
         verified: true,
         iconUrl: '/icons/cuz-lobster.png',
         manifest: {
@@ -151,8 +151,11 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
             .map((c: any) => ({ name: c, description: c })),
           context: { required: ['context:read', 'summaries:read', 'messages:write'] },
           models: {
-            supported: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-pro'],
-            recommended: 'gemini-2.5-pro',
+            // Listed here for the marketplace catalog only. Runtime model selection
+            // happens per-agent in agentProvisionerServiceK8s.ts (dev agents on
+            // openai-codex/gpt-5.4, community agents on OpenRouter free tier).
+            supported: ['openai-codex/gpt-5.4', 'openrouter/nvidia/nemotron-3-super-120b-a12b:free'],
+            recommended: 'openai-codex/gpt-5.4',
           },
           runtime: {
             type: 'standalone',
