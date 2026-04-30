@@ -42,7 +42,7 @@ Adopt a four-tier test taxonomy with explicit names and explicit PR gating, and 
 
 ### CI/CD to GKE
 
-**Auth: Workload Identity Federation only.** No service account JSON keys in GitHub secrets. One WIF pool in the `commonly-493005` GCP project federates trust to the `Team-Commonly/commonly` repo; GitHub Actions exchanges its OIDC token for a short-lived GCP access token via `google-github-actions/auth@v2`. Keys never leave GCP.
+**Auth: Workload Identity Federation only.** No service account JSON keys in GitHub secrets. One WIF pool in the dev GCP project federates trust to the `Team-Commonly/commonly` repo; GitHub Actions exchanges its OIDC token for a short-lived GCP access token via `google-github-actions/auth@v2`. Keys never leave GCP. (Project ID is supplied to the workflow at run-time via the `DEV_GCP_PROJECT_ID` GitHub secret — it is not committed anywhere in this repo.)
 
 **Triggers:**
 - **Dev**: merge to `main` → build images → push to `us-central1-docker.pkg.dev/...` → `helm upgrade commonly-dev` → Tier 3 smoke against `api-dev.commonly.me` → `helm rollback` on smoke failure.
@@ -141,13 +141,19 @@ Deferred. Preview environments per PR are the ideal but cost real GKE capacity p
 
 ### Phase 3 — WIF + dev deploy workflow (one PR + GCP setup)
 
+> **Status:** Operational as of 2026-04-29. The `Deploy Dev` workflow has shipped multiple PRs to `commonly-dev` end-to-end (PR #250, #252, #253, #251, #254 in a single evening). WIF mints a fresh OIDC token per run, exchanges for a short-lived GCP access token, builds the four images in parallel, helm-upgrades the dev cluster. Trigger: `gh workflow run deploy-dev.yml --ref <branch> --repo Team-Commonly/commonly`. The "retire values-private.yaml" sub-task below is still outstanding (operator-local file is materialized inside the workflow from a GitHub Actions secret today, but not yet decomposed into ESO-managed entries).
+>
+> **Operational gotcha (memory: `feedback-deploy-dev-builds-only-main`)**: the workflow rebuilds **all four images** from the dispatched ref. Dispatching `--ref main` while a feature branch isn't merged yet strips that work from the live frontend/backend image. This bit us once on the v2 mount on 2026-04-29 (recovery via `kubectl rollout undo deploy/frontend --to-revision=N`). Sequence the merge before the dispatch.
+
 - [ ] **GCP setup** (follow `docs/deployment/GITHUB_DEPLOY_SETUP.md` in full): WIF pool + GitHub provider with `assertion.repository=='Team-Commonly/commonly'` condition; `deploy-github` SA with `roles/artifactregistry.writer` on the `docker` repo, `roles/container.clusterViewer` at project level; Kubernetes `ClusterRoleBinding` of `edit` against the SA's identity on `commonly-dev` only.
 - [ ] **Secrets in GitHub:** `WIF_PROVIDER`, `WIF_SERVICE_ACCOUNT`. **Environment:** create `dev` with no approvers.
 - [ ] **Submodule:** `actions/checkout@v4` with `submodules: recursive` — the gateway image is built from `_external/clawdbot/`, a git submodule. Without this the gateway build step fails immediately.
 - [ ] **Build step** (three images, one tag each, all set to the current commit SHA for simplicity and rollback symmetry):
   ```bash
   export IMG_TAG=${GITHUB_SHA::8}
-  export REG=us-central1-docker.pkg.dev/commonly-493005/docker
+  # REG is computed at workflow runtime from the DEV_GCP_PROJECT_ID secret —
+  # never committed inline (see feedback-no-infra-leak-in-public-repo memory).
+  export REG="${AR_REGISTRY_HOST}/${PROJECT_ID}/${AR_REPO}"
   docker build backend  -t $REG/commonly-backend:$IMG_TAG  && docker push $REG/commonly-backend:$IMG_TAG
   docker build frontend --build-arg REACT_APP_API_URL=https://api-dev.commonly.me -t $REG/commonly-frontend:$IMG_TAG && docker push $REG/commonly-frontend:$IMG_TAG
   cd _external/clawdbot && docker build --build-arg OPENCLAW_EXTENSIONS=acpx --build-arg OPENCLAW_INSTALL_GH_CLI=1 -t $REG/clawdbot-gateway:$IMG_TAG . && docker push $REG/clawdbot-gateway:$IMG_TAG
@@ -162,8 +168,8 @@ Deferred. Preview environments per PR are the ideal but cost real GKE capacity p
     --set agents.clawdbot.image.tag=$IMG_TAG
   ```
   Note the removed third `-f values-private.yaml` — covered by the next bullet.
-- [ ] **Retire `values-private.yaml`** (this is the load-bearing migration; no agent can do it without a human pulling the actual file from Lily's laptop):
-  - **Human action**: open `/home/xcjam/workspace/commonly/.dev/values-private.yaml` and categorize each key as (a) non-secret config → `values-dev.yaml` commit, (b) secret → GCP Secret Manager entry + `ExternalSecret` manifest under `k8s/helm/commonly/templates/`.
+- [ ] **Retire `values-private.yaml`** (this is the load-bearing migration; no agent can do it without a human pulling the actual file from the operator's laptop):
+  - **Human action**: open `.dev/values-private.yaml` (operator-local, gitignored) and categorize each key as (a) non-secret config → `values-dev.yaml` commit, (b) secret → GCP Secret Manager entry + `ExternalSecret` manifest under `k8s/helm/commonly/templates/`.
   - Non-secret keys expected (per CLAUDE.md §Kubernetes): `global.gcpProjectId`, `postgresql.host`, `*.image.repository` overrides. These go into `values-dev.yaml`; `values.yaml`'s `YOUR_GCP_PROJECT_ID` placeholders stay as the OSS-safe default.
   - Any key named like a credential (`*_password`, `*_token`, `*_key`, `jwtSecret`, `*_connectionString`) → Secret Manager. The existing `api-keys` ESO pattern (CLAUDE.md §Agent Runtime) is the template.
   - Update `docs/deployment/KUBERNETES.md` and `CLAUDE.md` §Kubernetes to remove the three-`-f` instruction and reference the new two-file shape.

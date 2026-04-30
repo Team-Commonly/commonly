@@ -65,18 +65,22 @@ already wires it to its own `OPENAI_API_KEY` env (optional, so LiteLLM boots fin
 without it — but image calls will 401 until you land the key).
 
 ```bash
+# Operator-local before running these (not committed):
+#   export GCP_PROJECT="$(gcloud config get-value project)"
+#   export GCP_ACCOUNT="$(gcloud config get-value account)"
+
 # Create the secret if it doesn't exist
 gcloud secrets create commonly-dev-openai-api-key \
   --replication-policy=automatic \
-  --project=commonly-493005 \
-  --account=lilyshen20021002@gmail.com
+  --project="$GCP_PROJECT" \
+  --account="$GCP_ACCOUNT"
 
 # Add a version with your key
 printf 'sk-proj-xxxxxxxxxxxxxxxxxxxxxx' | gcloud secrets versions add \
   commonly-dev-openai-api-key \
   --data-file=- \
-  --project=commonly-493005 \
-  --account=lilyshen20021002@gmail.com
+  --project="$GCP_PROJECT" \
+  --account="$GCP_ACCOUNT"
 
 # Force ESO to re-sync now (otherwise waits up to 1h)
 kubectl annotate externalsecret api-keys \

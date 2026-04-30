@@ -6,7 +6,7 @@ service account keys in GitHub. This runbook is the concrete gcloud sequence.
 
 Run the blocks below once from an account with `roles/owner` (or
 `roles/iam.workloadIdentityPoolAdmin` + `roles/iam.serviceAccountAdmin` +
-`roles/resourcemanager.projectIamAdmin`) on `commonly-493005`. Expect
+`roles/resourcemanager.projectIamAdmin`) on the dev GCP project. Expect
 ~15 minutes end-to-end.
 
 ---
@@ -14,8 +14,9 @@ Run the blocks below once from an account with `roles/owner` (or
 ## Prep
 
 ```bash
-# Replace if your project differs.
-export PROJECT_ID=commonly-493005
+# Operator-local: set to the dev GCP project ID (not committed; supplied
+# at workflow runtime via the DEV_GCP_PROJECT_ID GitHub Actions secret).
+export PROJECT_ID="$(gcloud config get-value project)"
 export PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
 export REPO=Team-Commonly/commonly
 
@@ -167,7 +168,8 @@ Repo **Settings → Secrets and variables → Actions → Repository secrets**:
 
 ```
 WIF_PROVIDER          <value from above>
-WIF_SERVICE_ACCOUNT   deploy-github@commonly-493005.iam.gserviceaccount.com
+WIF_SERVICE_ACCOUNT   deploy-github@<PROJECT_ID>.iam.gserviceaccount.com
+DEV_GCP_PROJECT_ID    <PROJECT_ID>          # the workflow reads this and never logs it
 ```
 
 Repo **Settings → Environments**:
