@@ -6,6 +6,11 @@ import { formatRelativeTime } from '../utils/grouping';
 interface V2MessageBubbleProps {
   message: V2Message;
   isLead?: boolean;
+  // Map of agent-user username → per-installation displayName, so messages
+  // authored by an installed agent render as "Engineer (Nova)" instead of the
+  // raw User row username "openclaw-nova". Frontend-only display layer; the
+  // underlying User row is unchanged.
+  agentDisplayNames?: Map<string, string>;
 }
 
 interface ParsedFile {
@@ -93,8 +98,10 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
   );
 };
 
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead }) => {
-  const author = message.user?.username || 'Unknown';
+const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames }) => {
+  const rawUsername = message.user?.username || 'Unknown';
+  const overriddenDisplay = agentDisplayNames?.get(rawUsername);
+  const author = overriddenDisplay || rawUsername;
   const time = formatRelativeTime(message.created_at);
   // Two-pass parse: reactions first (they live anywhere in the body), then
   // files. Order matters — files leave a trimmed body that we then read for

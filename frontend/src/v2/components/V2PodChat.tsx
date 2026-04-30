@@ -217,6 +217,32 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
   // If we re-introduce a lead concept, it needs real data on the
   // AgentInstallation row, not a frontend heuristic.
 
+  // Map of agent-user username → per-installation displayName. Mirrors
+  // backend AgentIdentityService.buildAgentUsername: '<agentName>' when
+  // instanceId is 'default' or matches the agentName, else
+  // '<agentName>-<instanceId>'. Lets V2MessageBubble render "Engineer (Nova)"
+  // instead of the raw User row username "openclaw-nova".
+  //
+  // Note: the backend payload key is `name` (per buildAgentInstallationPayload
+  // in registry helpers), but V2Agent's TypeScript shape declares `agentName`
+  // — the type doesn't match the wire. Read both to survive either source.
+  const agentDisplayNames = React.useMemo(() => {
+    const map = new Map<string, string>();
+    if (!agents) return map;
+    for (const agent of agents) {
+      const rawName = (agent as { name?: string; agentName?: string }).name
+        || agent.agentName || '';
+      const name = rawName.toLowerCase();
+      const instance = (agent.instanceId || '').toLowerCase();
+      const username = !instance || instance === 'default' || instance === name
+        ? name
+        : `${name}-${instance}`;
+      const display = agent.displayName || agent.profile?.displayName || rawName;
+      if (username && display) map.set(username, display);
+    }
+    return map;
+  }, [agents]);
+
   if (!pod) {
     return (
       <main className="v2-pane v2-pane--main">
@@ -395,7 +421,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
                 </div>
               )}
               {messages.map((m) => (
-                <V2MessageBubble key={m.id} message={m} />
+                <V2MessageBubble key={m.id} message={m} agentDisplayNames={agentDisplayNames} />
               ))}
               <div ref={messagesEndRef} />
             </div>
