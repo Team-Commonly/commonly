@@ -202,13 +202,12 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({ detail, podsState }) =>
             </div>
           )}
           {privateError && <div className="v2-chat__error">{privateError}</div>}
-          {agents.map((agent: V2Agent, idx: number) => {
+          {agents.map((agent: V2Agent) => {
             const name = agent.profile?.displayName || agent.displayName || agent.agentName;
             const key = agent.instanceId || agent.agentName;
             const isOnline = !!agent.lastHeartbeatAt
               && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000;
             const task = agentTasks[key];
-            const isLead = idx === 0;
             return (
               <div key={key} className="v2-inspector__agent-row">
                 <V2Avatar
@@ -220,7 +219,6 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({ detail, podsState }) =>
                 <div className="v2-inspector__agent-info">
                   <div className="v2-inspector__agent-head">
                     <span className="v2-inspector__agent-name">{name}</span>
-                    {isLead && <span className="v2-msg__lead-badge">Lead</span>}
                   </div>
                   <div className="v2-inspector__agent-status">
                     <span className="v2-online-dot" style={{ background: isOnline ? 'var(--v2-success)' : 'var(--v2-text-muted)' }} />

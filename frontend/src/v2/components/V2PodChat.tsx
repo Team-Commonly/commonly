@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import V2MessageBubble from './V2MessageBubble';
@@ -211,10 +211,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, tab]);
 
-  const leadAgentUsername = useMemo(() => {
-    if (!agents || agents.length === 0) return null;
-    return (agents[0].displayName || agents[0].agentName || '').toLowerCase();
-  }, [agents]);
+  // Removed: Lead-pill computation. The "Lead" label was just `idx === 0`,
+  // which made whichever agent installed first (usually auto-installed
+  // commonly-bot) appear as Lead — pure positional, no actual semantic.
+  // If we re-introduce a lead concept, it needs real data on the
+  // AgentInstallation row, not a frontend heuristic.
 
   if (!pod) {
     return (
@@ -393,13 +394,9 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail }) => {
                   <div className="v2-empty__text">Type a message, or @-mention an agent to direct your first task.</div>
                 </div>
               )}
-              {messages.map((m) => {
-                const author = (m.user?.username || '').toLowerCase();
-                const isLead = !!leadAgentUsername && author === leadAgentUsername;
-                return (
-                  <V2MessageBubble key={m.id} message={m} isLead={isLead} />
-                );
-              })}
+              {messages.map((m) => (
+                <V2MessageBubble key={m.id} message={m} />
+              ))}
               <div ref={messagesEndRef} />
             </div>
 
