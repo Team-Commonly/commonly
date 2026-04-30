@@ -212,13 +212,6 @@
   grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) 1fr;
 }
 
-/* Collapsed inspector keeps a thin column with just a chevron toggle, so the
- * "expand inspector" affordance stays discoverable without the full panel
- * eating chat width. Width matches the rail so the visual rhythm holds. */
-.v2-shell--inspector-collapsed {
-  grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) 1fr 32px;
-}
-
 .v2-shell--feature {
   grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) minmax(0, 1fr);
 }
@@ -249,45 +242,6 @@
   border-right: none;
   border-left: 1px solid var(--v2-border-soft);
   background: var(--v2-surface-tint);
-}
-
-.v2-pane--inspector-collapsed {
-  background: var(--v2-bg-subtle);
-  align-items: center;
-  padding-top: 10px;
-}
-
-/* Toggle chevrons — one for "collapse" inside the full inspector header, one
- * for "expand" in the slim collapsed inspector. Both are subtle so they read
- * as utility, not destination. */
-.v2-inspector__toggle {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  border: 1px solid var(--v2-border-soft);
-  background: var(--v2-surface);
-  color: var(--v2-text-tertiary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-}
-
-.v2-inspector__toggle:hover {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-  border-color: var(--v2-border-strong);
-}
-
-.v2-inspector__toggle--collapse {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-}
-
-.v2-inspector__toggle--expand {
-  margin: 4px 0 0 0;
 }
 
 /* ---------- Nav rail ---------- */
@@ -872,6 +826,31 @@
 
 .v2-chat__avatars > * + * {
   margin-left: -8px;
+}
+
+/* When the avatar group is the inspector entry, treat it like a button:
+   subtle hover shadow that hints "this is clickable" without an explicit
+   chevron. Active state means the inspector is open. */
+.v2-chat__avatars--button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--v2-radius-pill);
+  padding: 3px 6px;
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+
+.v2-chat__avatars--button:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-chat__avatars--active {
+  background: var(--v2-accent-soft);
+  border-color: var(--v2-accent-soft);
+}
+
+.v2-chat__avatars--active:hover {
+  background: var(--v2-accent-soft);
 }
 
 .v2-chat__avatars-more {
@@ -1653,11 +1632,75 @@
 .v2-inspector {
   height: 100%;
   overflow-y: auto;
-  padding: 24px 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 0;
   position: relative;
+}
+
+.v2-inspector__header {
+  position: relative;
+  padding: 18px 18px 8px;
+  border-bottom: 1px solid var(--v2-border-soft);
+}
+
+.v2-inspector__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.v2-inspector__close:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-inspector__tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px 0;
+  border-bottom: 1px solid var(--v2-border-soft);
+  flex-shrink: 0;
+}
+
+.v2-inspector__tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--v2-text-tertiary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 80ms ease, border-color 80ms ease;
+}
+
+.v2-inspector__tab:hover {
+  color: var(--v2-text-primary);
+}
+
+.v2-inspector__tab--active {
+  color: var(--v2-text-primary);
+  border-bottom-color: var(--v2-accent);
+}
+
+.v2-inspector__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px 20px;
 }
 
 .v2-inspector__now {
