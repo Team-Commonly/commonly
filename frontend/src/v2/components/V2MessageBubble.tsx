@@ -8,13 +8,58 @@ import { formatRelativeTime } from '../utils/grouping';
 // styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
 // of [[file:...]] / [[reactions:...]] tokens above, so this is purely for
 // agent-authored prose: bold/italic, lists, inline code, fenced code, links.
+
+// Match @username — letters/digits start, then letters/digits/underscore/hyphen.
+// Used to wrap inline mentions in a styled pill. Capturing group keeps the
+// match in `split()` output so we can render text + pill segments in order.
+const MENTION_RE = /(@[a-zA-Z0-9][a-zA-Z0-9_-]*)/g;
+
+// Walk a React children tree and replace bare `@name` text segments with a
+// styled `<span>` pill. Recurses into arrays + cloned elements so mentions
+// inside `<strong>`, `<em>`, list items, etc. still render correctly. Code
+// blocks (`<code>`, `<pre>`) are skipped — code is verbatim, mentions in code
+// are intentional and shouldn't be transformed.
+const renderWithMentions = (node: React.ReactNode): React.ReactNode => {
+  if (typeof node === 'string') {
+    if (!node.includes('@')) return node;
+    const parts = node.split(MENTION_RE);
+    return parts.map((part, i) => {
+      if (i % 2 === 1) {
+        return (
+          <span key={i} className="v2-msg__mention">{part}</span>
+        );
+      }
+      return part;
+    });
+  }
+  if (Array.isArray(node)) {
+    return node.map((child, i) => (
+      <React.Fragment key={i}>{renderWithMentions(child)}</React.Fragment>
+    ));
+  }
+  if (React.isValidElement(node)) {
+    const type = node.type;
+    if (type === 'code' || type === 'pre') return node;
+    const props = node.props as { children?: React.ReactNode };
+    const transformed = renderWithMentions(props.children);
+    return React.cloneElement(node, undefined, transformed);
+  }
+  return node;
+};
+
 const messageMarkdownComponents = {
   a: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>
+    <a {...props} target="_blank" rel="noopener noreferrer">{renderWithMentions(children)}</a>
+  ),
+  p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => (
+    <p>{renderWithMentions(children)}</p>
+  ),
+  li: ({ children }: React.HTMLAttributes<HTMLLIElement>) => (
+    <li>{renderWithMentions(children)}</li>
   ),
   // Inline code vs fenced code share `<code>`; only fenced code is wrapped in
   // `<pre>`. Both fall through to v2.css selectors `.v2-msg__content code`
-  // and `.v2-msg__content pre`.
+  // and `.v2-msg__content pre`. Mentions inside code are NOT transformed.
 };
 
 interface V2MessageBubbleProps {
