@@ -644,13 +644,16 @@
   background: var(--v2-surface-hover);
 }
 
-.v2-pods__item--active {
+/* Specificity-matched against the global button reset
+   (.v2-root button:not(.MuiButtonBase-root)) which has 0,0,2,1.
+   Source order wins. Same pattern as .v2-inspector__btn. */
+.v2-root button.v2-pods__item--active {
   background: var(--v2-accent-soft);
   border-color: transparent;
   position: relative;
 }
 
-.v2-pods__item--active::before {
+.v2-root button.v2-pods__item--active::before {
   content: '';
   position: absolute;
   left: -8px;
