@@ -1956,14 +1956,14 @@
 
 /*
  * Specificity workaround: the v2 button reset
- * `.v2-root button:not(.MuiButtonBase-root)` (top of file) has
- * specificity 0,0,2,1 and would otherwise flatten our bg/border/padding.
- * We match it (0,0,2,1) by using the element selector + class, then win
- * via source order. Same trick applies to the `<a>` variant for primary
- * links rendered as buttons (e.g. artifact "Open" link).
+ * `.v2-root button:not(.MuiButtonBase-root)` (top of file) is 0,0,2,1
+ * (one class + one type + one class for the :not arg) and would otherwise
+ * flatten bg/border/padding. We match it 0,0,2,1 with `.v2-root button.X`
+ * (two classes + one type) and win via source order. The `a.X` selector
+ * covers the artifact "Open" link variant.
  */
-button.v2-inspector__btn,
-a.v2-inspector__btn {
+.v2-root button.v2-inspector__btn,
+.v2-root a.v2-inspector__btn {
   appearance: none;
   height: 32px;
   padding: 0 14px;
@@ -1981,21 +1981,21 @@ a.v2-inspector__btn {
   transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
-button.v2-inspector__btn:hover,
-a.v2-inspector__btn:hover {
+.v2-root button.v2-inspector__btn:hover,
+.v2-root a.v2-inspector__btn:hover {
   color: var(--v2-text-primary);
   background: var(--v2-surface-hover);
 }
 
-button.v2-inspector__btn--primary,
-a.v2-inspector__btn--primary {
+.v2-root button.v2-inspector__btn--primary,
+.v2-root a.v2-inspector__btn--primary {
   background: var(--v2-accent);
   color: #fff;
   border-color: var(--v2-accent);
 }
 
-button.v2-inspector__btn--primary:hover,
-a.v2-inspector__btn--primary:hover {
+.v2-root button.v2-inspector__btn--primary:hover,
+.v2-root a.v2-inspector__btn--primary:hover {
   background: var(--v2-accent-strong);
   color: #fff;
 }
