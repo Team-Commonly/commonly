@@ -96,6 +96,18 @@ router.delete('/announcement/:id', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
+// Reject anything that isn't a real http(s) URL — guards against `javascript:`
+// or `data:` schemes ending up in an <a href> in the inspector. WeChat QR-code
+// links are exempt because their primary surface is qrCodePath, not href.
+const isSafeHttpUrl = (rawUrl: string): boolean => {
+  try {
+    const u = new URL(rawUrl);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 // URL → ExternalLinkType. Used when the client passes type='auto' (or omits
 // type with a URL present) so the v2 inspector "+ Add" flow is paste-and-go.
 // Match the most specific host first; everything unknown falls back to
@@ -155,6 +167,10 @@ router.post('/external-link', auth, upload.single('qrCode'), async (req: AuthReq
     // the v2 inspector add-link flow work as a single paste field.
     const type = (!rawType || rawType === 'auto') && url ? detectLinkType(url) : rawType;
     if (!type) return res.status(400).json({ message: 'Missing type' });
+    // Block javascript:/data: URLs before they reach the DB or the inspector
+    // <a href> render path. WeChat is the only type that can ship without a
+    // url (it carries qrCodePath instead).
+    if (url && !isSafeHttpUrl(url)) return res.status(400).json({ message: 'URL must be http or https' });
     const name = (rawName && rawName.trim()) || (url ? deriveLinkName(url) : '');
     if (!name) return res.status(400).json({ message: 'Missing name' });
     const pod = await Pod.findById(podId) as { createdBy?: { toString: () => string }; members?: Array<{ toString: () => string }>; externalLinks?: unknown[]; save: () => Promise<void> } | null;

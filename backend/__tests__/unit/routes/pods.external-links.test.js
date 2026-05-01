@@ -108,6 +108,55 @@ describe('pods routes - external links', () => {
     );
   });
 
+  it.each([
+    ['https://notion.so/workspace/page-id', 'notion'],
+    ['https://acme.notion.so/page-id', 'notion'],
+    ['https://www.figma.com/file/abc/Design', 'figma'],
+    ['https://us02web.zoom.us/j/12345', 'zoom'],
+    ['https://drive.google.com/file/d/abc/view', 'google_drive'],
+    ['https://youtu.be/abc123', 'youtube'],
+    ['https://www.loom.com/share/abc', 'loom'],
+    ['https://example.com/random', 'other_link'],
+  ])('auto-detect maps %s → %s', async (url, expected) => {
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: jest.fn(),
+    });
+    ExternalLink.mockImplementation((data) => ({
+      ...data,
+      _id: 'lx',
+      save: jest.fn(),
+    }));
+    await request(app)
+      .post('/api/pods/external-link')
+      .send({ podId: 'p1', type: 'auto', url })
+      .expect(201);
+    expect(ExternalLink).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: expected }),
+    );
+  });
+
+  it.each([
+    // eslint-disable-next-line no-script-url -- intentional: the safe-URL guard must reject this
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'file:///etc/passwd',
+    'not a url at all',
+  ])('rejects unsafe URL %s with 400', async (url) => {
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: jest.fn(),
+    });
+    await request(app)
+      .post('/api/pods/external-link')
+      .send({ podId: 'p1', type: 'other_link', url })
+      .expect(400);
+  });
+
   it('detects github PR vs issue vs repo by path', async () => {
     Pod.findById.mockResolvedValue({
       createdBy: { toString: () => 'user1' },
@@ -146,7 +195,7 @@ describe('pods routes - external links', () => {
         podId: 'p1',
         name: 'n',
         type: 'discord',
-        url: 'u',
+        url: 'https://discord.gg/x',
       })
       .expect(404);
   });
@@ -162,7 +211,7 @@ describe('pods routes - external links', () => {
         podId: 'p1',
         name: 'n',
         type: 'discord',
-        url: 'u',
+        url: 'https://discord.gg/x',
       })
       .expect(403);
   });

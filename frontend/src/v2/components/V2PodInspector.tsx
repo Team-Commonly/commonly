@@ -80,6 +80,20 @@ const ARTIFACT_KIND_META: Record<string, { icon: string; label: string }> = {
 const artifactMeta = (kind: string): { icon: string; label: string } =>
   ARTIFACT_KIND_META[kind] || { icon: kind.slice(0, 2).toUpperCase() || 'L', label: 'Link' };
 
+// Defense-in-depth at render time: never put a `javascript:` / `data:` /
+// `file:` URL into an <a href>. The POST endpoint enforces this server-side
+// (routes/pods.ts isSafeHttpUrl), but pre-existing rows from the v1 ChatRoom
+// flow are not guaranteed to be safe.
+const safeHref = (raw?: string): string | undefined => {
+  if (!raw) return undefined;
+  try {
+    const u = new URL(raw);
+    return (u.protocol === 'http:' || u.protocol === 'https:') ? raw : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 interface RunStateCounts {
   blocked: number;
   inProgress: number;
@@ -620,9 +634,9 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <div className="v2-inspector__detail-name">{found.title}</div>
           <div className="v2-inspector__detail-sub">{meta.label}</div>
         </div>
-        {found.url && (
+        {safeHref(found.url) && (
           <div className="v2-inspector__detail-actions">
-            <a className="v2-inspector__btn v2-inspector__btn--primary" href={found.url} target="_blank" rel="noreferrer">
+            <a className="v2-inspector__btn v2-inspector__btn--primary" href={safeHref(found.url)} target="_blank" rel="noreferrer">
               Open
             </a>
           </div>
