@@ -65,7 +65,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
   const navigate = useNavigate();
   const ownPodsState = useV2Pods();
   const { pods, loading, error, createPod } = podsState || ownPodsState;
-  const { pinned } = useV2Pinned();
+  const { pinned, toggle: togglePin, isPinned } = useV2Pinned();
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
@@ -239,29 +239,46 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
                     : `${memberCount} member${memberCount === 1 ? '' : 's'}`);
                 const status = podStatusFor(pod);
                 const snippet = podSnippetFor(pod, meta);
+                const pinnedNow = isPinned(pod._id);
                 return (
-                  <button
+                  <div
                     key={pod._id}
-                    type="button"
-                    className={`v2-pods__item${active ? ' v2-pods__item--active' : ''}`}
-                    onClick={() => navigate(`/v2/pods/${pod._id}`)}
+                    className={`v2-pods__row${pinnedNow ? ' v2-pods__row--pinned' : ''}`}
                   >
-                    <span className={podMarkClass(pod)}>
-                      {podMarkFor(pod)}
-                    </span>
-                    <span className="v2-pods__item-body">
-                      <span className="v2-pods__item-title-row">
-                        <span className="v2-pods__item-title">{pod.name}</span>
-                        <span className={`v2-pods__status v2-pods__status--${status.tone}`}>
-                          {status.label}
+                    <button
+                      type="button"
+                      className={`v2-pods__item${active ? ' v2-pods__item--active' : ''}`}
+                      onClick={() => navigate(`/v2/pods/${pod._id}`)}
+                    >
+                      <span className={podMarkClass(pod)}>
+                        {podMarkFor(pod)}
+                      </span>
+                      <span className="v2-pods__item-body">
+                        <span className="v2-pods__item-title-row">
+                          <span className="v2-pods__item-title">{pod.name}</span>
+                          <span className={`v2-pods__status v2-pods__status--${status.tone}`}>
+                            {status.label}
+                          </span>
+                        </span>
+                        <span className="v2-pods__item-snippet">
+                          {snippet}
                         </span>
                       </span>
-                      <span className="v2-pods__item-snippet">
-                        {snippet}
-                      </span>
-                    </span>
-                    <span className="v2-pods__item-time">{time}</span>
-                  </button>
+                      <span className="v2-pods__item-time">{time}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`v2-pods__pin${pinnedNow ? ' v2-pods__pin--active' : ''}`}
+                      onClick={() => togglePin(pod._id)}
+                      title={pinnedNow ? 'Unpin' : 'Pin'}
+                      aria-label={pinnedNow ? 'Unpin pod' : 'Pin pod'}
+                      aria-pressed={pinnedNow}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill={pinnedNow ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 17v5M9 10.76V6h6v4.76l3 3.24v2H6v-2z" />
+                      </svg>
+                    </button>
+                  </div>
                 );
               })}
             </div>

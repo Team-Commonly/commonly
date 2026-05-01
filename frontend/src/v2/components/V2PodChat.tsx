@@ -6,7 +6,6 @@ import {
   UseV2PodDetailResult,
   V2Agent,
 } from '../hooks/useV2PodDetail';
-import { useV2Pinned } from '../hooks/useV2Pinned';
 import { useV2Api } from '../hooks/useV2Api';
 import { UseV2PodsResult, V2PodMember } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
@@ -136,7 +135,6 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
   const navigate = useNavigate();
   const api = useV2Api();
   const { socket, connected } = useSocket();
-  const { isPinned, toggle: togglePin } = useV2Pinned();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -487,8 +485,6 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     writeMode(pod._id, next);
   };
 
-  const togglePodPin = () => togglePin(pod._id);
-
   const visibleMembers = members.slice(0, 3);
   const memberCountExtra = Math.max(0, members.length - visibleMembers.length);
   const onlineAgentCount = agents.filter((agent) => (
@@ -506,16 +502,6 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
             <div className="v2-chat__title">
               <span className="v2-chat__title-mark">{podMarkFor(pod.name, pod.type)}</span>
               <span className="v2-chat__title-text">{pod.name}</span>
-              <button
-                type="button"
-                className="v2-chat__star"
-                onClick={togglePodPin}
-                title={isPinned(pod._id) ? 'Unpin' : 'Pin'}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill={isPinned(pod._id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
-                </svg>
-              </button>
             </div>
 
             {onToggleInspector ? (

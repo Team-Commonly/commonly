@@ -87,6 +87,37 @@
   box-sizing: border-box;
 }
 
+/* Thin overlay-style scrollbars on every scroll container inside v2.
+   Without this, Linux + Windows Chrome show a chunky default scrollbar
+   with a gray track that clashes with the otherwise-flat surfaces.
+   macOS Chrome paints overlay scrollbars by default and is unaffected. */
+.v2-root *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.v2-root *::-webkit-scrollbar-track {
+  background: transparent;
+}
+.v2-root *::-webkit-scrollbar-thumb {
+  background: var(--v2-border-strong);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.v2-root *::-webkit-scrollbar-thumb:hover {
+  background: var(--v2-text-tertiary);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+.v2-root *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Firefox + modern Chrome standard property. */
+.v2-root * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--v2-border-strong) transparent;
+}
+
 .v2-root button:not(.MuiButtonBase-root) {
   font-family: inherit;
   cursor: pointer;
@@ -625,6 +656,50 @@
   color: var(--v2-text-muted);
 }
 
+/* Wrapper that holds the row button and the absolute-positioned pin button
+   as siblings (HTML doesn't allow <button> inside <button>, so the pin
+   sits next to the row, not nested). */
+.v2-pods__row {
+  position: relative;
+}
+
+/* Hover-shown pin button. Lives in the top-right of the row; reveals on
+   hover or persists when the pod is pinned. Mirrors Google-Chat / Slack
+   "show on hover, pinned-pods stick" pattern. */
+.v2-root button.v2-pods__pin {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--v2-text-tertiary);
+  opacity: 0;
+  transition: opacity 80ms ease, background 80ms ease, color 80ms ease;
+}
+.v2-pods__row:hover .v2-pods__pin,
+.v2-pods__pin:focus-visible,
+.v2-pods__pin--active {
+  opacity: 1;
+}
+
+/* Clean the right edge on hover: pin replaces the status pill + time so
+   the row doesn't get visually crowded. Pinned-but-not-hovered keeps
+   status + time visible — the pin tucks into the top-right corner. */
+.v2-pods__row:hover .v2-pods__status,
+.v2-pods__row:hover .v2-pods__item-time {
+  visibility: hidden;
+}
+.v2-root button.v2-pods__pin:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+.v2-root button.v2-pods__pin--active {
+  color: var(--v2-accent);
+}
+
 .v2-pods__item {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -847,14 +922,6 @@
   text-overflow: ellipsis;
 }
 
-.v2-chat__star {
-  color: var(--v2-text-muted);
-  padding: 3px;
-}
-
-.v2-chat__star:hover {
-  color: var(--v2-warning);
-}
 
 .v2-chat__avatars {
   display: flex;
