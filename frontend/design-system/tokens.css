@@ -1,0 +1,241 @@
+/* ============================================================
+   Commonly Design System — colors_and_type.css
+   Source of truth: frontend/src/v2/v2.css (production V2 system)
+   + frontend/src/theme/commonlyTheme.ts (legacy MUI tokens)
+   ============================================================ */
+
+:root {
+  /* ---------- Brand & accents ---------- */
+  --c-accent:          #2f6feb;   /* primary blue — CTAs, links, indicators */
+  --c-accent-strong:   #1f55c9;   /* hover/pressed accent */
+  --c-accent-soft:     #e8efff;   /* tinted bg for active nav, badges, soft buttons */
+  --c-accent-text:     #2456c8;   /* darker variant for text on white (AA on body) */
+  --c-accent-deep:     #14306f;   /* deep navy — section heads, dark surfaces */
+
+  --c-focus-ring:      0 0 0 3px rgba(47, 111, 235, 0.18);
+
+  /* Logo / legacy splash blue (from manifest theme-color & logo art) */
+  --c-brand-blue:      #1da1f2;
+
+  /* ---------- Backgrounds ---------- */
+  --c-bg:              #ffffff;   /* main pane */
+  --c-bg-page:         #f8f8fb;   /* page / feature bg */
+  --c-bg-subtle:       #f7f7fa;   /* rail / panel */
+  --c-surface:         #ffffff;
+  --c-surface-tint:    #f4f3f8;   /* inspector, code blocks */
+  --c-surface-hover:   #f1f2f5;
+
+  /* ---------- Borders ---------- */
+  --c-border:          #e5e7eb;   /* default */
+  --c-border-soft:     #eef0f6;   /* dividers */
+  --c-border-strong:   #d7dce7;   /* hover/focus */
+
+  /* ---------- Text ---------- */
+  --c-fg-primary:      #111827;
+  --c-fg-secondary:    #4b5563;
+  --c-fg-tertiary:     #7b8494;
+  --c-fg-muted:        #8a93a3;
+  --c-fg-on-accent:    #ffffff;
+
+  /* ---------- Semantic ---------- */
+  --c-success:         #10b981;
+  --c-success-soft:    #e3f6ec;
+  --c-warning:         #f4a23a;
+  --c-warning-soft:    #fdefdc;
+  --c-info:            #0891b2;   /* cyan — distinct from accent blue */
+  --c-info-soft:       #dff4f8;
+  --c-danger:          #ef4444;
+  --c-danger-soft:     rgba(239, 68, 68, 0.10);
+
+  /* ---------- Agent role accents (avatar tints, role chips) ---------- */
+  --c-role-pink:       #f472b6;
+  --c-role-violet:     #a78bfa;
+  --c-role-amber:      #fbbf24;
+  --c-role-emerald:    #34d399;
+  --c-role-sky:        #60a5fa;
+  --c-role-rose:       #fb7185;
+
+  /* Integrations (brand palette of supported connectors) */
+  --c-discord:         #5865F2;
+  --c-slack:           #4A154B;
+  --c-telegram:        #229ED9;
+  --c-whatsapp:        #25D366;
+  --c-github:          #333333;
+
+  /* ---------- Geometry ---------- */
+  --c-radius-sm:       8px;       /* chips, small buttons */
+  --c-radius:          10px;      /* default — inputs, cards inside panels */
+  --c-radius-lg:       12px;      /* cards, modals */
+  --c-radius-pill:     999px;
+
+  /* ---------- Spacing scale ---------- */
+  --c-space-xs:  4px;
+  --c-space-sm:  8px;
+  --c-space-md:  16px;
+  --c-space-lg:  24px;
+  --c-space-xl:  32px;
+  --c-space-2xl: 48px;
+
+  /* ---------- Layout (V2 shell widths) ---------- */
+  --c-rail-w:      76px;
+  --c-pods-w:      272px;
+  --c-inspector-w: 336px;
+
+  /* ---------- Elevation ----------
+     V2 is intentionally flat — shadows are reserved for floating UI
+     (mention dropdowns, login card, modals). Cards use borders, not shadows. */
+  --c-shadow-none: none;
+  --c-shadow-sm:   0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --c-shadow-md:   0 4px 12px rgba(15, 23, 42, 0.06);
+  --c-shadow-lg:   0 8px 24px rgba(15, 23, 42, 0.12);
+
+  /* ---------- Motion ---------- */
+  --c-ease:        cubic-bezier(0.4, 0, 0.2, 1);
+  --c-dur-fast:    80ms;        /* hover/press — V2 default */
+  --c-dur-base:    120ms;
+  --c-dur-slow:    200ms;
+  --c-dur-page:    300ms;       /* layout shifts */
+
+  /* ---------- Typography ---------- */
+  /* SF-first stack — uses the OS-installed San Francisco family on Apple
+     devices; falls through to BlinkMacSystemFont (Chrome's SF alias) and
+     finally to Segoe/Inter on non-Apple platforms. */
+  --c-font-sans:   "SF Pro Text", -apple-system, BlinkMacSystemFont,
+                   "SF Pro", "Helvetica Neue", "Segoe UI", "Inter",
+                   Roboto, sans-serif;
+  --c-font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont,
+                    "SF Pro", "Helvetica Neue", "Segoe UI", "Inter",
+                    sans-serif;
+  --c-font-mono:   "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+                   "JetBrains Mono", "Fira Code", monospace;
+
+  /* Type scale — V2 first, MUI fallbacks where larger */
+  --c-fs-xxs: 10px;   /* kickers, uppercase eyebrows */
+  --c-fs-xs:  11px;   /* timestamps, micro-meta */
+  --c-fs-sm:  12px;   /* secondary text, inspector body */
+  --c-fs-md:  13px;   /* default UI text */
+  --c-fs-base:14px;   /* messages, inputs */
+  --c-fs-lg:  15px;   /* section titles */
+  --c-fs-xl:  16px;   /* sidebar titles */
+  --c-fs-2xl: 20px;   /* chat header */
+  --c-fs-3xl: 24px;   /* feature page title */
+
+  --c-fw-regular:  400;
+  --c-fw-medium:   500;
+  --c-fw-semibold: 600;
+  --c-fw-bold:     700;
+  --c-fw-heavy:    800;
+
+  --c-lh-tight:    1.25;
+  --c-lh-base:     1.45;
+  --c-lh-comfy:    1.55;
+}
+
+/* ============================================================
+   Semantic element styles — apply naturally to base HTML
+   ============================================================ */
+
+html, body {
+  font-family: var(--c-font-sans);
+  color: var(--c-fg-primary);
+  background: var(--c-bg-page);
+  font-size: var(--c-fs-base);
+  line-height: var(--c-lh-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings — letter-spacing tightens as size grows (V2 feature page → -0.03em) */
+h1, .c-h1 {
+  font-family: var(--c-font-sans);
+  font-size: var(--c-fs-3xl);
+  font-weight: 850;            /* V2 uses 850 for feature titles */
+  line-height: var(--c-lh-tight);
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--c-fg-primary);
+}
+
+h2, .c-h2 {
+  font-size: var(--c-fs-2xl);
+  font-weight: var(--c-fw-bold);
+  line-height: 1.3;
+  letter-spacing: -0.025em;
+  margin: 0;
+  color: var(--c-fg-primary);
+}
+
+h3, .c-h3 {
+  font-size: var(--c-fs-xl);
+  font-weight: var(--c-fw-bold);
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--c-fg-primary);
+}
+
+h4, .c-h4 {
+  font-size: var(--c-fs-lg);
+  font-weight: 650;
+  line-height: 1.4;
+  margin: 0;
+  color: var(--c-fg-primary);
+}
+
+p, .c-body {
+  font-size: var(--c-fs-base);
+  line-height: var(--c-lh-comfy);
+  color: var(--c-fg-primary);
+  margin: 0 0 6px;
+}
+
+.c-body-sm {
+  font-size: var(--c-fs-sm);
+  line-height: 1.4;
+  color: var(--c-fg-secondary);
+}
+
+.c-meta {                       /* timestamps, file sizes, pod meta */
+  font-size: var(--c-fs-xs);
+  color: var(--c-fg-tertiary);
+}
+
+.c-eyebrow {                    /* "NOW", "NEXT" labels in inspector */
+  font-size: var(--c-fs-xxs);
+  font-weight: var(--c-fw-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-fg-tertiary);
+}
+
+.c-eyebrow--accent {
+  color: var(--c-accent-text);
+  letter-spacing: 0.12em;
+}
+
+a {
+  color: var(--c-accent-text);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+code, .c-code {
+  font-family: var(--c-font-mono);
+  font-size: 12.5px;
+  background: var(--c-surface-tint);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+pre, .c-pre {
+  font-family: var(--c-font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: var(--c-surface-tint);
+  border: 1px solid var(--c-border-soft);
+  border-radius: var(--c-radius-sm);
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+::selection { background: rgba(47, 111, 235, 0.20); }

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Inputs</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:28px 32px; background:var(--c-bg); color:var(--c-fg-primary); }
+  .section { display:flex; flex-direction:column; gap:14px; margin-bottom:32px; }
+  .section + .section { padding-top:24px; border-top:1px dashed var(--c-border-soft); }
+  .label { font-size:10px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+  .sub   { font-size:12px; color:var(--c-fg-secondary); margin-top:-8px; }
+  .row { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+
+  /* ---- Field ---- */
+  .field { display:flex; flex-direction:column; gap:6px; width:280px; }
+  .field__label { font-size:12px; font-weight:600; color:var(--c-fg-secondary); letter-spacing:-0.005em; }
+  .field__hint  { font-size:11px; color:var(--c-fg-tertiary); }
+  .field__error { font-size:11px; color:var(--c-danger); display:flex; align-items:center; gap:4px; }
+  .field__state { font-size:10px; color:var(--c-fg-tertiary); font-family:var(--c-font-mono); letter-spacing:.04em; }
+
+  .input {
+    appearance:none;
+    width:100%;
+    height:36px; padding:0 12px;
+    font-family:inherit; font-size:13px; line-height:1; letter-spacing:-0.005em;
+    color:var(--c-fg-primary);
+    background:var(--c-bg);
+    border:1px solid var(--c-border);
+    border-radius:var(--c-radius);
+    outline:none;
+    transition: border-color var(--c-dur-fast) var(--c-ease),
+                box-shadow var(--c-dur-fast) var(--c-ease),
+                background var(--c-dur-fast) var(--c-ease);
+  }
+  .input::placeholder { color:var(--c-fg-muted); }
+  .input.is-hover  { border-color:var(--c-border-strong); }
+  .input.is-focus  { border-color:var(--c-accent); box-shadow:var(--c-focus-ring); }
+  .input.is-error  { border-color:var(--c-danger); box-shadow: 0 0 0 3px rgba(239,68,68,.15); }
+  .input.is-disabled { background:#fafbfc; color:var(--c-fg-muted); cursor:not-allowed; }
+
+  /* ---- Search variant ---- */
+  .search { position:relative; width:340px; }
+  .search svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--c-fg-muted); width:14px; height:14px; pointer-events:none; }
+  .search .input { height:38px; padding-left:34px; border-radius:var(--c-radius); }
+  .search kbd {
+    position:absolute; right:8px; top:50%; transform:translateY(-50%);
+    height:20px; padding:0 6px; display:inline-flex; align-items:center; gap:2px;
+    font-family:var(--c-font-mono); font-size:10.5px; font-weight:600; color:var(--c-fg-tertiary);
+    background:var(--c-surface-tint); border:1px solid var(--c-border-soft); border-radius:5px;
+  }
+
+  /* ---- Textarea ---- */
+  .textarea {
+    width:100%; min-height:80px; padding:10px 12px;
+    font-family:inherit; font-size:13px; line-height:1.5; letter-spacing:-0.005em;
+    color:var(--c-fg-primary); background:var(--c-bg);
+    border:1px solid var(--c-border); border-radius:var(--c-radius);
+    outline:none; resize:vertical;
+    transition: border-color var(--c-dur-fast) var(--c-ease), box-shadow var(--c-dur-fast) var(--c-ease);
+  }
+  .textarea.is-focus { border-color:var(--c-accent); box-shadow:var(--c-focus-ring); }
+
+  /* ---- Toggle row (checkbox/radio) ---- */
+  .opt { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--c-fg-primary); cursor:pointer; }
+  .opt__box {
+    width:16px; height:16px; border-radius:4px; border:1.5px solid var(--c-border-strong);
+    background:var(--c-bg); display:inline-grid; place-items:center; flex:none;
+    transition: background var(--c-dur-fast) var(--c-ease), border-color var(--c-dur-fast) var(--c-ease);
+  }
+  .opt.is-checked .opt__box {
+    background:var(--c-accent); border-color:var(--c-accent);
+  }
+  .opt.is-checked .opt__box svg { display:block; }
+  .opt__box svg { display:none; width:10px; height:10px; color:#fff; }
+  .opt.is-focus .opt__box { box-shadow:var(--c-focus-ring); border-color:var(--c-accent); }
+
+  .radio__dot {
+    width:16px; height:16px; border-radius:50%; border:1.5px solid var(--c-border-strong);
+    background:var(--c-bg); display:inline-grid; place-items:center; flex:none;
+  }
+  .radio.is-checked .radio__dot {
+    border-color:var(--c-accent);
+  }
+  .radio.is-checked .radio__dot::after {
+    content:""; width:8px; height:8px; border-radius:50%; background:var(--c-accent);
+  }
+</style></head><body>
+
+<!-- ============== STATE MATRIX ============== -->
+<div class="section">
+  <div class="label">Text input · state matrix</div>
+  <div class="sub">Focus ring softened to 18% blue (was 14% purple). On SF, x-height is taller — 36px height keeps optical balance with 13px text.</div>
+
+  <div class="row">
+    <div class="field">
+      <span class="field__state">default</span>
+      <label class="field__label">Pod name</label>
+      <input class="input" placeholder="e.g. dev-team" />
+    </div>
+    <div class="field">
+      <span class="field__state">hover</span>
+      <label class="field__label">Pod name</label>
+      <input class="input is-hover" value="dev-team" />
+    </div>
+    <div class="field">
+      <span class="field__state">focus</span>
+      <label class="field__label">Pod name</label>
+      <input class="input is-focus" value="dev-team" />
+    </div>
+    <div class="field">
+      <span class="field__state">error</span>
+      <label class="field__label">Pod name</label>
+      <input class="input is-error" value="dev team" />
+      <span class="field__error">Use lowercase + hyphens only</span>
+    </div>
+    <div class="field">
+      <span class="field__state">disabled</span>
+      <label class="field__label">Pod name</label>
+      <input class="input is-disabled" value="archived-pod" disabled />
+      <span class="field__hint">Locked while pod is archived.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============== SEARCH ============== -->
+<div class="section">
+  <div class="label">Search · global</div>
+  <div class="sub">⌘K shortcut hint sits inline; collapses on focus.</div>
+  <div class="row">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input class="input" placeholder="Search pods, agents, messages…" />
+      <kbd>⌘K</kbd>
+    </div>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input class="input is-focus" value="nova" />
+    </div>
+  </div>
+</div>
+
+<!-- ============== TEXTAREA ============== -->
+<div class="section">
+  <div class="label">Textarea · settings, prompts</div>
+  <div class="row">
+    <div class="field" style="width:380px">
+      <label class="field__label">Agent system prompt</label>
+      <textarea class="textarea is-focus">You are Nova, a backend lead. Triage tickets, ask sharp questions, defer to the human on architecture calls.</textarea>
+      <span class="field__hint">Markdown supported. Limit ~2k tokens.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============== CHECKBOX / RADIO ============== -->
+<div class="section">
+  <div class="label">Selection controls</div>
+  <div class="sub">Filled accent on checked. Focus ring matches inputs.</div>
+  <div class="row" style="gap:24px">
+    <label class="opt">
+      <span class="opt__box"></span> Notify on @mention
+    </label>
+    <label class="opt is-checked">
+      <span class="opt__box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12 10 17 19 7"/></svg></span>
+      Notify on task assigned
+    </label>
+    <label class="opt is-checked is-focus">
+      <span class="opt__box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12 10 17 19 7"/></svg></span>
+      Auto-summarize daily
+    </label>
+  </div>
+  <div class="row" style="gap:24px">
+    <label class="opt radio is-checked">
+      <span class="radio__dot"></span> Public to org
+    </label>
+    <label class="opt radio">
+      <span class="radio__dot"></span> Private to me
+    </label>
+    <label class="opt radio">
+      <span class="radio__dot"></span> Invite only
+    </label>
+  </div>
+</div>
+
+</body></html>

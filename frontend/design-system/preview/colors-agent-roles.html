@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Agent Roles</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:24px; background:#fff; color:var(--c-fg-primary); font-family:var(--c-font-sans); }
+  .col { display:flex; flex-direction:column; gap:18px; }
+  .row { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+  .swatch {
+    width:96px; height:72px; border-radius:10px;
+    display:flex; flex-direction:column; justify-content:flex-end; padding:8px;
+    box-sizing:border-box; border:1px solid rgba(0,0,0,0.06);
+  }
+  .swatch .hex { font-family:var(--c-font-mono); font-size:10px; color:rgba(255,255,255,0.78); }
+  .swatch .name { font-size:11px; font-weight:600; color:#fff; }
+  .swatch.dark .name, .swatch.dark .hex { color:var(--c-fg-primary); }
+  .swatch.dark .hex { color:var(--c-fg-tertiary); }
+  .label { font-size:10.5px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:0.08em; text-transform:uppercase; }
+  .accent-chip {
+    display:inline-flex; align-items:center; gap:6px; height:22px;
+    padding:0 8px; border-radius:6px; background:var(--c-accent-soft);
+    font-size:11px; font-weight:600; color:var(--c-accent-text);
+    font-family:var(--c-font-mono);
+  }
+  .accent-chip .dot { width:8px; height:8px; border-radius:50%; background:var(--c-accent); }
+  .note { font-size:11.5px; color:var(--c-fg-secondary); line-height:1.5; max-width:640px; }
+  .note .mono { font-family:var(--c-font-mono); font-size:11px; background:#f4f5f8; padding:1px 5px; border-radius:4px; color:var(--c-fg-primary); }
+
+  /* avatar usage row */
+  .avs { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .av {
+    width:30px; height:30px; border-radius:50%; display:grid; place-items:center;
+    color:#fff; font-size:11px; font-weight:700; border:2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.04);
+  }
+  .av.dark { color:var(--c-fg-primary); }
+
+  /* chip usage */
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip {
+    display:inline-flex; align-items:center; gap:6px; height:22px;
+    padding:0 8px; border-radius:6px; font-size:11px; font-weight:600;
+  }
+  .chip .dot { width:8px; height:8px; border-radius:50%; }
+</style></head><body>
+<div class="col">
+
+  <div>
+    <div class="label" style="margin-bottom:8px">Accent — reserved for product UI, not agents</div>
+    <span class="accent-chip"><span class="dot"></span>#2F6FEB</span>
+  </div>
+
+  <div>
+    <div class="label" style="margin-bottom:8px">Agent role tints · re-tuned for blue accent</div>
+    <div class="row">
+      <div class="swatch" style="background:#EC4F8E"><div class="name">pink</div><div class="hex">#EC4F8E</div></div>
+      <div class="swatch" style="background:#8B5CF6"><div class="name">violet</div><div class="hex">#8B5CF6</div></div>
+      <div class="swatch dark" style="background:#F5B431"><div class="name">amber</div><div class="hex">#F5B431</div></div>
+      <div class="swatch" style="background:#10B981"><div class="name">emerald</div><div class="hex">#10B981</div></div>
+      <div class="swatch" style="background:#0EA5B7"><div class="name">teal</div><div class="hex">#0EA5B7</div></div>
+      <div class="swatch" style="background:#F0653E"><div class="name">coral</div><div class="hex">#F0653E</div></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label" style="margin-bottom:8px">In context — avatars</div>
+    <div class="avs">
+      <div class="av" style="background:#EC4F8E">LZ</div>
+      <div class="av" style="background:#8B5CF6">NV</div>
+      <div class="av dark" style="background:#F5B431">PX</div>
+      <div class="av" style="background:#10B981">OP</div>
+      <div class="av" style="background:#0EA5B7">TH</div>
+      <div class="av" style="background:#F0653E">XC</div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label" style="margin-bottom:8px">In context — role chips</div>
+    <div class="chips">
+      <span class="chip" style="background:#FCE7F0;color:#A8246A"><span class="dot" style="background:#EC4F8E"></span>Community</span>
+      <span class="chip" style="background:#EFEAFE;color:#5B3DCB"><span class="dot" style="background:#8B5CF6"></span>Backend</span>
+      <span class="chip" style="background:#FEF3D2;color:#8A5A00"><span class="dot" style="background:#F5B431"></span>Frontend</span>
+      <span class="chip" style="background:#D7F4E7;color:#057A52"><span class="dot" style="background:#10B981"></span>DevOps</span>
+      <span class="chip" style="background:#D2F1F4;color:#066574"><span class="dot" style="background:#0EA5B7"></span>PM</span>
+      <span class="chip" style="background:#FDE3D6;color:#A03B19"><span class="dot" style="background:#F0653E"></span>Curator</span>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Why the change.</strong> The new accent is blue <span class="mono">#2F6FEB</span> — that retires the old <span class="mono">sky #60A5FA</span> tint (it now reads as "primary action," not "agent identity") and the old <span class="mono">rose #FB7185</span> (too close to <span class="mono">pink</span>). Replaced with <strong>teal</strong> (cooler, clearly off-axis from the accent) and <strong>coral</strong> (warmer than rose, distinct from amber). Pink, violet, and amber were nudged a touch deeper to match the saturation of the new accent so the family feels coherent next to it. Emerald is unchanged — it was already pulling from the semantic <span class="mono">success</span> hue and reads cleanly against blue.
+  </div>
+
+</div></body></html>

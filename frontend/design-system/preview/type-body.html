@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Body</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:24px; background:#fff; color:var(--c-fg-primary); font-family:var(--c-font-sans); }
+  .col { display:flex; flex-direction:column; gap:18px; }
+  .group { display:flex; flex-direction:column; gap:10px; }
+  .label { font-size:10.5px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:0.08em; text-transform:uppercase; margin-bottom:2px; }
+  .mono { font-family:var(--c-font-mono); }
+  .row {
+    display:grid; grid-template-columns: 1fr 240px; align-items:baseline; gap:18px;
+    padding-bottom:10px; border-bottom:1px solid var(--c-border-soft);
+  }
+  .row:last-child { border-bottom:none; padding-bottom:0; }
+  .meta { font-size:11px; color:var(--c-fg-tertiary); font-family:var(--c-font-mono); }
+  .stack-card {
+    border:1px solid var(--c-border); border-radius:10px; padding:12px 14px;
+    background:#fafbfd;
+    font-family:var(--c-font-mono); font-size:11.5px; line-height:1.55;
+    color:var(--c-fg-secondary); white-space:pre-wrap; word-break:break-word;
+  }
+  .stack-card .k { color:#2456c8; font-weight:600; }
+</style></head><body>
+<div class="col">
+
+  <div class="group">
+    <div class="label">Body & UI scale · SF Pro Text</div>
+
+    <div class="row">
+      <div style="font-size:15px;font-weight:650;letter-spacing:-0.01em">Section title — the quick brown fox jumps</div>
+      <div class="meta">15px · 650 · -0.01em</div>
+    </div>
+
+    <div class="row">
+      <div style="font-size:14px;line-height:1.55">Default UI text — used for messages, inputs, list items, pod rows. The 14 / 1.55 pairing keeps long-form readable without feeling chatty.</div>
+      <div class="meta">14px · 400 · 1.55</div>
+    </div>
+
+    <div class="row">
+      <div style="font-size:13px;color:var(--c-fg-secondary);line-height:1.5">Secondary — descriptions, helper text, inspector body copy.</div>
+      <div class="meta">13px · 400 · secondary</div>
+    </div>
+
+    <div class="row">
+      <div style="font-size:12px;color:var(--c-fg-tertiary)">Meta — pod meta, member counts, snippet previews, button labels at high density.</div>
+      <div class="meta">12px · 400 · tertiary</div>
+    </div>
+
+    <div class="row">
+      <div style="font-size:11px;color:var(--c-fg-tertiary)">Micro — timestamps, file size, badge captions.</div>
+      <div class="meta">11px · 400 · tertiary</div>
+    </div>
+
+    <div class="row">
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--c-fg-tertiary)">Eyebrow — section kickers</div>
+      <div class="meta">10px · 700 · 0.08em · upper</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="label">Font stack</div>
+    <div class="stack-card"><span class="k">--c-font-sans</span>: "SF Pro Text", -apple-system, BlinkMacSystemFont, "SF Pro", "Helvetica Neue", "Segoe UI", "Inter", Roboto, sans-serif;</div>
+    <div style="font-size:11.5px;color:var(--c-fg-tertiary); line-height:1.5; max-width:640px;">
+      San Francisco loads natively on macOS, iOS, iPadOS via <span class="mono">-apple-system</span> / <span class="mono">BlinkMacSystemFont</span>. On Windows and Linux the stack falls through to Segoe UI and Inter so weights and metrics stay close. No webfont download — fast first paint, native rendering on Apple devices.
+    </div>
+  </div>
+
+</div></body></html>

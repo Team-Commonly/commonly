@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Buttons</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:28px 32px; background:var(--c-bg); color:var(--c-fg-primary); }
+
+  .section { display:flex; flex-direction:column; gap:14px; margin-bottom:32px; }
+  .section + .section { padding-top:24px; border-top:1px dashed var(--c-border-soft); }
+  .label { font-size:10px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+  .sub   { font-size:12px; color:var(--c-fg-secondary); margin-top:-8px; }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+
+  /* State-matrix grid: rows = variants, cols = states */
+  .matrix { display:grid; grid-template-columns:120px repeat(5, max-content); gap:10px 16px; align-items:center; }
+  .matrix .col-head { font-size:10px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+  .matrix .row-head { font-size:12px; color:var(--c-fg-secondary); font-weight:500; }
+
+  /* ---- Button base ---- */
+  .btn {
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    height:32px; padding:0 14px;
+    font-family:inherit; font-size:13px; font-weight:600; line-height:1;
+    border-radius:8px; border:1px solid transparent; cursor:pointer;
+    transition: background var(--c-dur-fast) var(--c-ease),
+                border-color var(--c-dur-fast) var(--c-ease),
+                color var(--c-dur-fast) var(--c-ease),
+                box-shadow var(--c-dur-fast) var(--c-ease);
+    letter-spacing:-0.005em;       /* SF tightens slightly at small sizes */
+  }
+  .btn:focus-visible { outline:none; box-shadow: var(--c-focus-ring); }
+  .btn[disabled] { cursor:not-allowed; opacity:1; }
+
+  /* Sizes */
+  .btn--sm { height:28px; padding:0 11px; font-size:12px; border-radius:7px; }
+  .btn--lg { height:38px; padding:0 18px; font-size:14px; border-radius:9px; }
+
+  /* Primary — accent fill */
+  .btn--primary { background:var(--c-accent); color:var(--c-fg-on-accent); }
+  .btn--primary.is-hover  { background:var(--c-accent-strong); }
+  .btn--primary.is-active { background:#1846a8; }
+  .btn--primary.is-focus  { background:var(--c-accent); box-shadow:var(--c-focus-ring); }
+  .btn--primary[disabled] { background:#b8c8ec; color:#fff; }
+
+  /* Secondary — neutral outline on white */
+  .btn--secondary { background:var(--c-bg); color:var(--c-fg-primary); border-color:var(--c-border); }
+  .btn--secondary.is-hover  { background:var(--c-surface-hover); border-color:var(--c-border-strong); }
+  .btn--secondary.is-active { background:#e9ebf0; border-color:var(--c-border-strong); }
+  .btn--secondary.is-focus  { border-color:var(--c-accent); box-shadow:var(--c-focus-ring); }
+  .btn--secondary[disabled] { color:var(--c-fg-muted); border-color:var(--c-border-soft); background:var(--c-bg); }
+
+  /* Ghost / link */
+  .btn--ghost { background:transparent; color:var(--c-accent-text); border-color:transparent; }
+  .btn--ghost.is-hover  { background:var(--c-accent-soft); }
+  .btn--ghost.is-active { background:#d6e3ff; }
+  .btn--ghost.is-focus  { box-shadow:var(--c-focus-ring); }
+  .btn--ghost[disabled] { color:var(--c-fg-muted); background:transparent; }
+
+  /* Soft — accent tint */
+  .btn--soft { background:var(--c-accent-soft); color:var(--c-accent-text); border-color:transparent; }
+  .btn--soft.is-hover  { background:#dae6ff; }
+  .btn--soft.is-active { background:#c8d8ff; }
+  .btn--soft.is-focus  { box-shadow:var(--c-focus-ring); }
+  .btn--soft[disabled] { color:var(--c-fg-muted); background:#eef0f6; }
+
+  /* Danger */
+  .btn--danger { background:var(--c-danger); color:#fff; }
+  .btn--danger.is-hover  { background:#dc2626; }
+  .btn--danger.is-active { background:#b91c1c; }
+  .btn--danger.is-focus  { background:var(--c-danger); box-shadow:0 0 0 3px rgba(239,68,68,.20); }
+  .btn--danger[disabled] { background:#f3b3b3; }
+
+  /* Icon-only square */
+  .btn--icon { width:32px; padding:0; }
+  .btn--icon.btn--sm { width:28px; }
+  .btn--icon.btn--lg { width:38px; }
+  .btn svg { width:14px; height:14px; }
+  .btn--lg svg { width:16px; height:16px; }
+
+  /* Pill / filter chips */
+  .chip {
+    display:inline-flex; align-items:center; gap:6px;
+    height:30px; padding:0 12px;
+    font-family:inherit; font-size:12px; font-weight:600; letter-spacing:-0.005em;
+    border-radius:var(--c-radius-pill); border:1px solid var(--c-border); background:var(--c-bg);
+    color:var(--c-fg-secondary); cursor:pointer;
+    transition: background var(--c-dur-fast) var(--c-ease), color var(--c-dur-fast) var(--c-ease), border-color var(--c-dur-fast) var(--c-ease);
+  }
+  .chip:hover { background:var(--c-surface-hover); }
+  .chip__count { font-size:11px; opacity:.7; }
+  .chip.is-active {
+    background:var(--c-accent-soft); color:var(--c-accent-text); border-color:transparent;
+  }
+  .chip.is-active .chip__count { opacity:.8; }
+</style></head><body>
+
+<!-- Reusable mini-icons for examples -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 5l7 7-7 7"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/><circle cx="5" cy="12" r="1.4" fill="currentColor"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></symbol>
+</svg>
+
+<!-- ============== STATE MATRIX ============== -->
+<div class="section">
+  <div class="label">Buttons · state matrix</div>
+  <div class="sub">Default → hover → active → focus-visible → disabled. All accents from <span style="font-family:var(--c-font-mono)">--c-accent</span> (#2F6FEB).</div>
+
+  <div class="matrix">
+    <span></span>
+    <span class="col-head">default</span>
+    <span class="col-head">hover</span>
+    <span class="col-head">active</span>
+    <span class="col-head">focus</span>
+    <span class="col-head">disabled</span>
+
+    <span class="row-head">Primary</span>
+    <button class="btn btn--primary">New pod</button>
+    <button class="btn btn--primary is-hover">New pod</button>
+    <button class="btn btn--primary is-active">New pod</button>
+    <button class="btn btn--primary is-focus">New pod</button>
+    <button class="btn btn--primary" disabled>New pod</button>
+
+    <span class="row-head">Secondary</span>
+    <button class="btn btn--secondary">Cancel</button>
+    <button class="btn btn--secondary is-hover">Cancel</button>
+    <button class="btn btn--secondary is-active">Cancel</button>
+    <button class="btn btn--secondary is-focus">Cancel</button>
+    <button class="btn btn--secondary" disabled>Cancel</button>
+
+    <span class="row-head">Ghost</span>
+    <button class="btn btn--ghost">View task</button>
+    <button class="btn btn--ghost is-hover">View task</button>
+    <button class="btn btn--ghost is-active">View task</button>
+    <button class="btn btn--ghost is-focus">View task</button>
+    <button class="btn btn--ghost" disabled>View task</button>
+
+    <span class="row-head">Soft</span>
+    <button class="btn btn--soft">Assign</button>
+    <button class="btn btn--soft is-hover">Assign</button>
+    <button class="btn btn--soft is-active">Assign</button>
+    <button class="btn btn--soft is-focus">Assign</button>
+    <button class="btn btn--soft" disabled>Assign</button>
+
+    <span class="row-head">Danger</span>
+    <button class="btn btn--danger"><svg><use href="#i-trash"/></svg>Delete</button>
+    <button class="btn btn--danger is-hover"><svg><use href="#i-trash"/></svg>Delete</button>
+    <button class="btn btn--danger is-active"><svg><use href="#i-trash"/></svg>Delete</button>
+    <button class="btn btn--danger is-focus"><svg><use href="#i-trash"/></svg>Delete</button>
+    <button class="btn btn--danger" disabled><svg><use href="#i-trash"/></svg>Delete</button>
+  </div>
+</div>
+
+<!-- ============== SIZES ============== -->
+<div class="section">
+  <div class="label">Sizes · 28 / 32 / 38</div>
+  <div class="sub">32 is the default. 28 for dense rails &amp; inspector. 38 for marketing CTAs &amp; auth.</div>
+  <div class="row">
+    <button class="btn btn--primary btn--sm">Small <svg><use href="#i-arrow"/></svg></button>
+    <button class="btn btn--primary">Default <svg><use href="#i-arrow"/></svg></button>
+    <button class="btn btn--primary btn--lg">Large <svg><use href="#i-arrow"/></svg></button>
+  </div>
+  <div class="row">
+    <button class="btn btn--secondary btn--sm">Small</button>
+    <button class="btn btn--secondary">Default</button>
+    <button class="btn btn--secondary btn--lg">Large</button>
+  </div>
+</div>
+
+<!-- ============== ICON-ONLY ============== -->
+<div class="section">
+  <div class="label">Icon-only · square</div>
+  <div class="sub">Used in pod-row actions, message hovers, composer toolbar.</div>
+  <div class="row">
+    <button class="btn btn--secondary btn--icon" title="More"><svg><use href="#i-more"/></svg></button>
+    <button class="btn btn--ghost btn--icon" title="Add"><svg><use href="#i-plus"/></svg></button>
+    <button class="btn btn--primary btn--icon" title="Send"><svg><use href="#i-arrow"/></svg></button>
+    <button class="btn btn--soft btn--icon" title="Reply"><svg><use href="#i-arrow"/></svg></button>
+    <button class="btn btn--secondary btn--icon" disabled><svg><use href="#i-more"/></svg></button>
+  </div>
+</div>
+
+<!-- ============== FILTER CHIPS ============== -->
+<div class="section">
+  <div class="label">Filter chips · pill</div>
+  <div class="sub">Active state uses <span style="font-family:var(--c-font-mono)">--c-accent-soft</span> + <span style="font-family:var(--c-font-mono)">--c-accent-text</span>. Count badge inherits.</div>
+  <div class="row">
+    <button class="chip is-active">All <span class="chip__count">12</span></button>
+    <button class="chip">Active <span class="chip__count">8</span></button>
+    <button class="chip">Archived <span class="chip__count">4</span></button>
+    <button class="chip">Mine</button>
+  </div>
+</div>
+
+</body></html>

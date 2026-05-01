@@ -19,18 +19,19 @@
   --v2-text-tertiary: #7b8494;
   --v2-text-muted: #8a93a3;
 
-  --v2-accent: #5636e8;
-  --v2-accent-strong: #4f35d7;
-  --v2-accent-soft: #eee9ff;
-  --v2-accent-text: #5636e8;
-  --v2-focus-ring: 0 0 0 3px rgba(86, 54, 232, 0.14);
+  --v2-accent: #2f6feb;
+  --v2-accent-strong: #1f55c9;
+  --v2-accent-soft: #e8efff;
+  --v2-accent-text: #2456c8;
+  --v2-accent-deep: #14306f;
+  --v2-focus-ring: 0 0 0 3px rgba(47, 111, 235, 0.18);
 
   --v2-success: #10b981;
   --v2-success-soft: #e3f6ec;
   --v2-warning: #f4a23a;
   --v2-warning-soft: #fdefdc;
-  --v2-info: #3b82f6;
-  --v2-info-soft: #e3edff;
+  --v2-info: #0891b2;
+  --v2-info-soft: #dff4f8;
   --v2-danger: #ef4444;
 
   /* Agent role colors */
@@ -41,9 +42,15 @@
   --v2-sky: #60a5fa;
   --v2-rose: #fb7185;
 
-  /* Typography */
-  --v2-font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto,
-    Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  /* Typography — SF-first stack. SF loads natively on Apple devices via
+     -apple-system / BlinkMacSystemFont; non-Apple fallbacks (Segoe / Inter)
+     keep weights and metrics close. No webfont download. */
+  --v2-font: "SF Pro Text", -apple-system, BlinkMacSystemFont, "SF Pro",
+    "Helvetica Neue", "Segoe UI", "Inter", Roboto, sans-serif;
+  --v2-font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont,
+    "SF Pro", "Helvetica Neue", "Segoe UI", "Inter", sans-serif;
+  --v2-font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "JetBrains Mono", "Fira Code", monospace;
 
   /* Geometry */
   --v2-radius-sm: 8px;
@@ -336,8 +343,8 @@
 }
 
 .v2-rail__item--active {
-  background: #eee9ff;
-  color: #4f35d7;
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
   font-weight: 600;
 }
 
@@ -599,8 +606,8 @@
 }
 
 .v2-pods__filter--active {
-  background: #eee9ff;
-  color: #5636e8;
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
   font-weight: 600;
 }
 
@@ -2381,7 +2388,7 @@
 }
 
 .v2-feature__legacy .MuiButton-containedPrimary:hover {
-  background: #4f35d7;
+  background: var(--v2-accent-strong);
 }
 
 .v2-feature__legacy .MuiButton-outlined {

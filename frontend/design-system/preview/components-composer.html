@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Composer</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:240px 32px 32px; background:var(--c-bg-page); color:var(--c-fg-primary); }
+  .section { display:flex; flex-direction:column; gap:14px; margin-bottom:32px; }
+  .section + .section { padding-top:24px; border-top:1px dashed var(--c-border-soft); }
+  .label { font-size:10px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+  .sub   { font-size:12px; color:var(--c-fg-secondary); margin-top:-8px; }
+  .state { font-size:10px; color:var(--c-fg-tertiary); font-family:var(--c-font-mono); letter-spacing:.04em; margin-bottom:6px; }
+
+  .composer-wrap {
+    background:var(--c-surface);
+    padding:12px 14px 8px;
+    max-width:640px;
+    border-radius:var(--c-radius-lg);
+    border:1px solid var(--c-border-soft);
+  }
+
+  .composer {
+    position:relative;
+    display:flex; align-items:flex-end; gap:10px;
+    min-height:60px;
+    border:1px solid var(--c-border);
+    border-radius:var(--c-radius);
+    padding:10px 10px 10px 12px;
+    background:var(--c-bg);
+    transition: border-color var(--c-dur-fast) var(--c-ease), box-shadow var(--c-dur-fast) var(--c-ease);
+  }
+  .composer.is-focus { border-color:var(--c-accent); box-shadow:var(--c-focus-ring); }
+
+  .composer__field {
+    flex:1;
+    font-family:inherit; font-size:14px; line-height:1.5; letter-spacing:-0.005em;
+    color:var(--c-fg-primary);
+    min-height:24px;
+  }
+  .composer__field .placeholder { color:var(--c-fg-muted); }
+
+  .mention {
+    color:var(--c-accent-text);
+    background:var(--c-accent-soft);
+    padding:1px 5px;
+    border-radius:5px;
+    font-weight:500;
+  }
+
+  .caret {
+    display:inline-block; width:1.5px; height:17px;
+    background:var(--c-accent);
+    margin-left:1px; vertical-align:-3px;
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity:0; } }
+
+  .composer__tools { display:flex; align-items:center; gap:4px; }
+
+  .ctool {
+    width:28px; height:28px; border-radius:7px;
+    background:transparent; color:var(--c-fg-tertiary); border:none; cursor:pointer;
+    display:grid; place-items:center;
+    transition: background var(--c-dur-fast) var(--c-ease), color var(--c-dur-fast) var(--c-ease);
+  }
+  .ctool:hover { background:var(--c-surface-hover); color:var(--c-fg-secondary); }
+  .ctool svg { width:14px; height:14px; }
+
+  .send {
+    width:32px; height:32px; border-radius:8px;
+    background:var(--c-accent); color:var(--c-fg-on-accent); border:none; cursor:pointer;
+    display:grid; place-items:center;
+    transition: background var(--c-dur-fast) var(--c-ease);
+  }
+  .send:hover { background:var(--c-accent-strong); }
+  .send[disabled] { background:#b8c8ec; cursor:not-allowed; }
+  .send svg { width:14px; height:14px; }
+
+  .composer__hint {
+    font-size:11px; color:var(--c-fg-muted);
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:6px; padding:0 4px;
+  }
+  .composer__hint kbd {
+    font-family:var(--c-font-mono); font-size:10.5px; font-weight:600;
+    color:var(--c-fg-tertiary); background:var(--c-surface-tint);
+    border:1px solid var(--c-border-soft); border-radius:4px;
+    padding:1px 5px;
+  }
+
+  /* Mention dropdown overlay */
+  .mention-pop {
+    position:absolute; bottom:calc(100% + 6px); left:0;
+    width:280px;
+    background:var(--c-surface); border:1px solid var(--c-border-soft);
+    border-radius:var(--c-radius); box-shadow:var(--c-shadow-md);
+    padding:6px;
+    display:flex; flex-direction:column; gap:2px;
+  }
+  .mention-pop__head {
+    font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--c-fg-tertiary); padding:6px 8px 4px;
+  }
+  .mention-row {
+    display:flex; align-items:center; gap:10px;
+    padding:6px 8px; border-radius:6px; cursor:pointer;
+  }
+  .mention-row.is-active { background:var(--c-accent-soft); }
+  .mention-row__avatar {
+    width:24px; height:24px; border-radius:50%;
+    display:grid; place-items:center;
+    color:#fff; font-size:11px; font-weight:700;
+  }
+  .mention-row__name { font-size:13px; color:var(--c-fg-primary); font-weight:500; }
+  .mention-row__role { font-size:11px; color:var(--c-fg-tertiary); margin-left:auto; }
+</style></head><body>
+
+<div class="section">
+  <div class="label">Message composer</div>
+  <div class="sub">Focus state lifts border to accent + 18% ring. Caret &amp; mention pill share <span style="font-family:var(--c-font-mono)">--c-accent</span>.</div>
+
+  <!-- focused, with @mention -->
+  <div class="state">focused · @mention pop open</div>
+  <div class="composer-wrap">
+    <div class="composer is-focus">
+      <div class="composer__field">
+        <span class="mention">@nova</span> can you take this one?<span class="caret"></span>
+        <!-- mention popover -->
+        <div class="mention-pop">
+          <div class="mention-pop__head">Mention agent</div>
+          <div class="mention-row is-active">
+            <div class="mention-row__avatar" style="background:var(--c-role-violet)">N</div>
+            <div class="mention-row__name">Nova</div>
+            <div class="mention-row__role">Backend lead</div>
+          </div>
+          <div class="mention-row">
+            <div class="mention-row__avatar" style="background:var(--c-role-emerald)">M</div>
+            <div class="mention-row__name">Maple</div>
+            <div class="mention-row__role">QA</div>
+          </div>
+          <div class="mention-row">
+            <div class="mention-row__avatar" style="background:var(--c-role-amber)">P</div>
+            <div class="mention-row__name">Pixel</div>
+            <div class="mention-row__role">Design</div>
+          </div>
+        </div>
+      </div>
+      <div class="composer__tools">
+        <button class="ctool" title="Attach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+        <button class="ctool" title="Slash command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="17" y1="4" x2="7" y2="20"/></svg></button>
+        <button class="send" title="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+      </div>
+    </div>
+    <div class="composer__hint">
+      <span><kbd>@</kbd> mention · <kbd>/</kbd> command</span>
+      <span><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="state">default · empty</div>
+  <div class="composer-wrap">
+    <div class="composer">
+      <div class="composer__field"><span class="placeholder">Message #dev-team — @ to mention an agent</span></div>
+      <div class="composer__tools">
+        <button class="ctool" title="Attach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+        <button class="send" disabled title="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body></html>

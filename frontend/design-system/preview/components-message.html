@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Message</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:28px 32px; background:var(--c-bg); color:var(--c-fg-primary); }
+  .section { display:flex; flex-direction:column; gap:14px; margin-bottom:32px; }
+  .section + .section { padding-top:24px; border-top:1px dashed var(--c-border-soft); }
+  .label { font-size:10px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+  .sub   { font-size:12px; color:var(--c-fg-secondary); margin-top:-8px; }
+
+  .msg {
+    display:grid; grid-template-columns:38px 1fr; gap:12px;
+    padding:8px 10px;
+    max-width:580px;
+    border-radius:var(--c-radius);
+    transition: background var(--c-dur-fast) var(--c-ease);
+  }
+  .msg:hover { background:var(--c-surface-hover); }
+  .msg.is-mention {
+    background:linear-gradient(90deg, var(--c-accent-soft), transparent 70%);
+    border-left:2px solid var(--c-accent);
+    padding-left:10px;
+  }
+
+  .msg__avatar {
+    width:34px; height:34px; border-radius:50%;
+    color:#fff; font-weight:700; font-size:12px;
+    display:grid; place-items:center;
+  }
+
+  .msg__head { display:flex; align-items:center; gap:7px; height:22px; }
+  .msg__name { font-size:13px; font-weight:700; letter-spacing:-0.005em; }
+  .msg__tag {
+    height:18px; padding:0 6px;
+    background:var(--c-accent-soft); color:var(--c-accent-text);
+    font-size:10px; font-weight:700;
+    border-radius:4px;
+    text-transform:uppercase; letter-spacing:.04em;
+    display:inline-flex; align-items:center;
+  }
+  .msg__time { font-size:11px; color:var(--c-fg-tertiary); }
+
+  .msg__body { font-size:14px; line-height:1.55; color:var(--c-fg-primary); margin-top:3px; letter-spacing:-0.005em; }
+  .mention {
+    color:var(--c-accent-text); background:var(--c-accent-soft);
+    padding:1px 5px; border-radius:5px; font-weight:500;
+  }
+  .msg__body code {
+    font-family:var(--c-font-mono); font-size:12.5px;
+    background:var(--c-surface-tint); padding:1px 5px; border-radius:4px;
+  }
+  .msg__body a { color:var(--c-accent-text); }
+  .msg__body a:hover { text-decoration:underline; }
+
+  .reactions { display:flex; gap:6px; margin-top:7px; }
+  .reaction {
+    display:inline-flex; align-items:center; gap:4px;
+    height:24px; padding:0 8px;
+    border-radius:7px;
+    background:var(--c-bg); border:1px solid var(--c-border);
+    font-size:11.5px; font-weight:600; color:var(--c-fg-secondary);
+    cursor:pointer;
+  }
+  .reaction.is-mine { background:var(--c-accent-soft); border-color:transparent; color:var(--c-accent-text); }
+
+  .thread-link {
+    display:inline-flex; align-items:center; gap:6px;
+    margin-top:7px;
+    font-size:11.5px; font-weight:600; color:var(--c-accent-text);
+    cursor:pointer;
+  }
+  .thread-link svg { width:12px; height:12px; }
+  .thread-link:hover { text-decoration:underline; }
+</style></head><body>
+
+<div class="section">
+  <div class="label">Agent message · default</div>
+  <div class="sub">Role tag uses <span style="font-family:var(--c-font-mono)">--c-accent-soft</span>. Inline links + thread link use accent text.</div>
+
+  <div class="msg">
+    <div class="msg__avatar" style="background:var(--c-role-violet)">NV</div>
+    <div>
+      <div class="msg__head">
+        <span class="msg__name">Nova</span>
+        <span class="msg__tag">LEAD</span>
+        <span class="msg__time">2:14 PM</span>
+      </div>
+      <div class="msg__body">Pushed <code>PR #214</code> — fixes the GitHub Issues sync race. Want me to <a href="#">merge after CI</a>?</div>
+      <div class="reactions">
+        <span class="reaction is-mine">👍 3</span>
+        <span class="reaction">🚀 1</span>
+      </div>
+      <div class="thread-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        4 replies · last 1h ago
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Mentioning you · highlighted</div>
+  <div class="sub">When the current user is @-mentioned, the message gets a soft accent wash + 2px accent rail.</div>
+
+  <div class="msg is-mention">
+    <div class="msg__avatar" style="background:var(--c-role-emerald)">MP</div>
+    <div>
+      <div class="msg__head">
+        <span class="msg__name">Maple</span>
+        <span class="msg__time">2:16 PM</span>
+      </div>
+      <div class="msg__body"><span class="mention">@you</span> the marketplace flow is broken on Safari — repro in <code>e2e/marketplace.spec.ts</code>. Can you take a look?</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Human turn</div>
+  <div class="sub">No role tag — just name + time. Avatar is a brand-blue tile to distinguish from agents.</div>
+
+  <div class="msg">
+    <div class="msg__avatar" style="background:var(--c-accent)">JL</div>
+    <div>
+      <div class="msg__head">
+        <span class="msg__name">Jordan Liu</span>
+        <span class="msg__time">2:18 PM</span>
+      </div>
+      <div class="msg__body">Go ahead and merge — but tag <span class="mention">@nova</span> on rollback if anything regresses.</div>
+    </div>
+  </div>
+</div>
+
+</body></html>

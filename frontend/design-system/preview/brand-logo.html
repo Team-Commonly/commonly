@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Logo & marks</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:24px; background:#fff; color:var(--c-fg-primary); font-family:var(--c-font-sans); }
+  .col { display:flex; flex-direction:column; gap:22px; }
+  .label { font-size:10.5px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:0.08em; text-transform:uppercase; margin-bottom:10px; }
+  .row { display:flex; gap:18px; align-items:flex-end; flex-wrap:wrap; }
+  .tile {
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+    padding:16px; border:1px solid var(--c-border-soft); border-radius:12px;
+    background:#fff; min-width:96px;
+  }
+  .tile .meta { font-size:11px; color:var(--c-fg-tertiary); font-family:var(--c-font-mono); }
+  .tile .name { font-size:11.5px; color:var(--c-fg-secondary); font-weight:600; }
+
+  /* Mark tiles — the SVG mark on the brand surface */
+  .mark-tile {
+    width:88px; height:88px; border-radius:14px;
+    background:var(--c-accent);
+    display:grid; place-items:center;
+    color:#fff;
+  }
+  .mark-tile.sm { width:56px; height:56px; border-radius:10px; }
+  .mark-tile.xs { width:32px; height:32px; border-radius:7px; }
+  .mark-tile.xxs { width:20px; height:20px; border-radius:5px; }
+  .mark-tile svg { width:64%; height:64%; }
+
+  .mark-tile.inverse { background:#fff; color:var(--c-accent); border:1px solid var(--c-border); }
+  .mark-tile.dark { background:var(--c-fg-primary); color:#fff; }
+
+  /* Lockup */
+  .lockup { display:flex; align-items:center; gap:10px; }
+  .lockup .word {
+    font-family:var(--c-font-display);
+    font-weight:700; letter-spacing:-0.025em;
+    color:var(--c-fg-primary);
+  }
+  .lockup.lg .word { font-size:24px; }
+  .lockup.md .word { font-size:18px; }
+  .lockup.sm .word { font-size:14px; }
+  .lockup.lg .mark-tile { width:36px; height:36px; border-radius:9px; }
+  .lockup.md .mark-tile { width:28px; height:28px; border-radius:7px; }
+  .lockup.sm .mark-tile { width:22px; height:22px; border-radius:6px; }
+
+  /* Clear space */
+  .clearspace {
+    position:relative; padding:32px;
+    background:repeating-linear-gradient(45deg, #f4f5f8 0 6px, #fff 6px 12px);
+    border-radius:12px;
+    display:inline-flex;
+  }
+  .clearspace::before, .clearspace::after,
+  .clearspace .h, .clearspace .v {
+    content:""; position:absolute; background:rgba(47,111,235,0.18); pointer-events:none;
+  }
+  .clearspace::before { top:24px; left:24px; right:24px; height:8px; }
+  .clearspace::after { bottom:24px; left:24px; right:24px; height:8px; }
+  .clearspace .v { top:24px; bottom:24px; width:8px; }
+  .clearspace .v.l { left:24px; }
+  .clearspace .v.r { right:24px; }
+
+  /* Don't / Do */
+  .rules { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; }
+  .rule {
+    display:flex; flex-direction:column; gap:8px;
+    padding:14px; border:1px solid var(--c-border); border-radius:12px; background:#fff;
+  }
+  .rule-art { height:84px; display:grid; place-items:center; border-radius:8px; background:#f8f8fb; }
+  .rule-tag {
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:10px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase;
+    padding:2px 7px; border-radius:5px; align-self:flex-start;
+  }
+  .rule-tag.dont { background:#fde7e7; color:#c4332a; }
+  .rule-tag.do   { background:var(--c-success-soft); color:#057A52; }
+  .rule-tag .dot { width:6px; height:6px; border-radius:50%; }
+  .rule-tag.dont .dot { background:#c4332a; }
+  .rule-tag.do .dot   { background:var(--c-success); }
+  .rule-copy { font-size:11.5px; color:var(--c-fg-secondary); line-height:1.45; }
+
+  .note { font-size:11.5px; color:var(--c-fg-secondary); line-height:1.5; max-width:680px; }
+  .note .mono { font-family:var(--c-font-mono); font-size:11px; background:#f4f5f8; padding:1px 5px; border-radius:4px; color:var(--c-fg-primary); }
+  .verdict {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:3px 9px; border-radius:6px;
+    background:var(--c-accent-soft); color:var(--c-accent-text);
+    font-size:11px; font-weight:700; letter-spacing:0.02em; align-self:flex-start;
+  }
+  .verdict .dot { width:7px; height:7px; border-radius:50%; background:var(--c-accent); }
+</style></head><body>
+
+<!-- Inline SVG sprite — referenced as <svg viewBox="0 0 64 64"><use href="#mark"/></svg> below.
+     Uses currentColor so the tile color drives the glyph. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 64 64">
+    <!-- C-ring as a thick open arc; gap on the right reads as bubble tail mouth -->
+    <path d="M 51.05 21 A 22 22 0 1 0 51.05 43"
+          fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
+    <!-- Three content dots in the bubble void -->
+    <circle cx="25" cy="32" r="2.4" fill="currentColor"/>
+    <circle cx="32" cy="32" r="2.4" fill="currentColor"/>
+    <circle cx="39" cy="32" r="2.4" fill="currentColor"/>
+  </symbol>
+</svg>
+
+<div class="col">
+
+  <div>
+    <div class="label">Primary mark · the C's interior void is the bubble</div>
+    <div class="row">
+      <div class="tile">
+        <div class="mark-tile"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="name">primary</div>
+        <div class="meta">accent · #2F6FEB</div>
+      </div>
+      <div class="tile">
+        <div class="mark-tile inverse"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="name">inverse</div>
+        <div class="meta">on white</div>
+      </div>
+      <div class="tile">
+        <div class="mark-tile dark"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="name">on dark</div>
+        <div class="meta">fg-primary surface</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">Sizes · same glyph, no detail loss below 20px</div>
+    <div class="row">
+      <div class="tile">
+        <div class="mark-tile"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="meta">88 · marketing</div>
+      </div>
+      <div class="tile">
+        <div class="mark-tile sm"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="meta">56 · login card</div>
+      </div>
+      <div class="tile">
+        <div class="mark-tile xs"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="meta">32 · header</div>
+      </div>
+      <div class="tile">
+        <div class="mark-tile xxs"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="meta">20 · favicon</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">Wordmark lockups</div>
+    <div class="row" style="gap:32px; align-items:center">
+      <div class="lockup lg">
+        <div class="mark-tile"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="word">Commonly</div>
+      </div>
+      <div class="lockup md">
+        <div class="mark-tile"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="word">Commonly</div>
+      </div>
+      <div class="lockup sm">
+        <div class="mark-tile"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+        <div class="word">Commonly</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">Clear space · ½ × mark width on all sides</div>
+    <div class="clearspace">
+      <span class="v l"></span><span class="v r"></span>
+      <div class="mark-tile"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">Do / Don't</div>
+    <div class="rules">
+      <div class="rule">
+        <div class="rule-art" style="background:var(--c-accent)"><div style="color:#fff;width:48px;height:48px"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div></div>
+        <span class="rule-tag do"><span class="dot"></span>Do</span>
+        <div class="rule-copy">Use the mark in <span class="mono">--c-accent</span> on white, or white on accent. Single color only.</div>
+      </div>
+      <div class="rule">
+        <div class="rule-art" style="background:linear-gradient(135deg,#ec4f8e,#f0653e)"><div style="color:#fff;width:48px;height:48px"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div></div>
+        <span class="rule-tag dont"><span class="dot"></span>Don't</span>
+        <div class="rule-copy">No gradients, photo backgrounds, or off-brand fills behind the mark.</div>
+      </div>
+      <div class="rule">
+        <div class="rule-art"><div style="color:#5636e8;width:48px;height:48px"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div></div>
+        <span class="rule-tag dont"><span class="dot"></span>Don't</span>
+        <div class="rule-copy">Don't use the legacy purple. The mark is locked to the current accent <span class="mono">#2F6FEB</span>.</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <span class="verdict"><span class="dot"></span>ALIGNED WITH NEW ACCENT</span>
+  </div>
+
+  <div class="note">
+    <strong>The idea.</strong> The C and the chat bubble are <em>one shape</em>. The empty interior of the C is read as the bubble's body; three dots float in that void as the bubble's content; a small tail extrudes from the C's right-side opening to lock the metaphor. Drawn as a single even-odd path so the void is true negative space — it stays white on the accent tile and accent-colored on white. One glyph, one color, scales from 20px favicon to a 512px marketing tile without rasterizing. Source: <span class="mono">assets/commonly-mark.svg</span>.
+  </div>
+
+</div></body></html>

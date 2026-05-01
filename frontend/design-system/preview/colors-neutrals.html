@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Neutrals</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:24px; background:#fff; color:var(--c-fg-primary); font-family:var(--c-font-sans); }
+  .col { display:flex; flex-direction:column; gap:18px; }
+  .row { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+  .swatch {
+    width:96px; height:72px; border-radius:10px;
+    display:flex; flex-direction:column; justify-content:flex-end; padding:8px;
+    box-sizing:border-box; border:1px solid rgba(0,0,0,0.06);
+  }
+  .swatch .hex { font-family:var(--c-font-mono); font-size:10px; color:var(--c-fg-tertiary); }
+  .swatch .name { font-size:11px; font-weight:600; }
+  .swatch.dark .name, .swatch.dark .hex { color:#fff; }
+  .swatch.dark .hex { color:rgba(255,255,255,0.78); }
+  .label { font-size:10.5px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:0.08em; text-transform:uppercase; }
+  .note { font-size:11.5px; color:var(--c-fg-secondary); line-height:1.5; max-width:640px; }
+  .note .mono { font-family:var(--c-font-mono); font-size:11px; background:#f4f5f8; padding:1px 5px; border-radius:4px; color:var(--c-fg-primary); }
+  .verdict {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:3px 9px; border-radius:6px;
+    background:var(--c-success-soft); color:#057A52;
+    font-size:11px; font-weight:700; letter-spacing:0.02em;
+  }
+  .verdict .dot { width:7px; height:7px; border-radius:50%; background:var(--c-success); }
+</style></head><body>
+<div class="col">
+
+  <div>
+    <div class="label" style="margin-bottom:8px">Backgrounds → text · neutral grays, accent-agnostic</div>
+    <div class="row">
+      <div class="swatch" style="background:#ffffff"><div class="name">bg / surface</div><div class="hex">#FFFFFF</div></div>
+      <div class="swatch" style="background:#f8f8fb"><div class="name">page</div><div class="hex">#F8F8FB</div></div>
+      <div class="swatch" style="background:#f7f7fa"><div class="name">subtle</div><div class="hex">#F7F7FA</div></div>
+      <div class="swatch" style="background:#f4f3f8"><div class="name">tint</div><div class="hex">#F4F3F8</div></div>
+      <div class="swatch" style="background:#f1f2f5"><div class="name">hover</div><div class="hex">#F1F2F5</div></div>
+      <div class="swatch" style="background:#e5e7eb"><div class="name">border</div><div class="hex">#E5E7EB</div></div>
+      <div class="swatch dark" style="background:#7b8494"><div class="name">tertiary</div><div class="hex">#7B8494</div></div>
+      <div class="swatch dark" style="background:#4b5563"><div class="name">secondary</div><div class="hex">#4B5563</div></div>
+      <div class="swatch dark" style="background:#111827"><div class="name">primary</div><div class="hex">#111827</div></div>
+    </div>
+  </div>
+
+  <div>
+    <span class="verdict"><span class="dot"></span>NO CHANGE NEEDED</span>
+  </div>
+
+  <div class="note">
+    <strong>Why neutrals stay put.</strong> The scale ramps from <span class="mono">#FFFFFF</span> through warm-cool grays to near-black <span class="mono">#111827</span> — the hue cast across all eight steps is intentionally neutral (a hint of cool blue at <span class="mono">#F8F8FB</span>, but barely perceivable). Because neutrals carry almost no chroma, they sit cleanly under any accent: the violet system used them, the blue system uses them, and a future swap wouldn't need them re-tuned. Re-tinting toward the accent (e.g. blue-leaning grays) would actually <em>weaken</em> the accent — the contrast between <span class="mono">--c-accent</span> and the surface comes from chroma difference, not hue match.
+  </div>
+
+</div></body></html>

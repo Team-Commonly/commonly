@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Pod Row</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:28px 32px; background:var(--c-bg); color:var(--c-fg-primary); }
+  .section { display:flex; flex-direction:column; gap:14px; margin-bottom:32px; }
+  .section + .section { padding-top:24px; border-top:1px dashed var(--c-border-soft); }
+  .label { font-size:10px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+  .sub   { font-size:12px; color:var(--c-fg-secondary); margin-top:-8px; }
+
+  .rail { width:272px; background:var(--c-bg-subtle); padding:8px; border-radius:var(--c-radius-lg); display:flex; flex-direction:column; gap:2px; }
+
+  .pod {
+    display:grid; grid-template-columns:34px 1fr; gap:10px;
+    padding:9px 10px;
+    border-radius:var(--c-radius);
+    cursor:pointer;
+    position:relative;
+    transition: background var(--c-dur-fast) var(--c-ease);
+  }
+  .pod:hover { background:var(--c-surface-hover); }
+  .pod.is-active { background:var(--c-accent-soft); }
+  .pod.is-active::before {
+    content:""; position:absolute; left:-8px; top:10px; bottom:10px;
+    width:3px; border-radius:0 2px 2px 0; background:var(--c-accent);
+  }
+
+  .pod__crest {
+    width:34px; height:34px; border-radius:9px;
+    display:grid; place-items:center;
+    font-size:10.5px; font-weight:700; letter-spacing:.04em;
+    background:var(--c-surface-hover); color:var(--c-fg-secondary);
+    border:1px solid var(--c-border-soft);
+  }
+  .pod.is-active .pod__crest {
+    background:var(--c-accent); color:#fff; border-color:transparent;
+  }
+
+  .pod__body { display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .pod__head { display:flex; align-items:center; gap:6px; min-width:0; }
+  .pod__name { font-size:13px; font-weight:600; letter-spacing:-0.005em; color:var(--c-fg-primary); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pod.is-active .pod__name { color:var(--c-accent-text); }
+  .pod__meta {
+    height:17px; padding:0 6px; border-radius:999px;
+    background:var(--c-surface-hover); color:var(--c-fg-tertiary);
+    font-size:10px; font-weight:700;
+    display:inline-flex; align-items:center;
+  }
+  .pod.is-active .pod__meta { background:rgba(255,255,255,.6); color:var(--c-accent-text); }
+  .pod__preview {
+    font-size:12px; color:var(--c-fg-tertiary);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .pod__time { font-size:11px; color:var(--c-fg-muted); margin-top:1px; }
+
+  .pod__unread {
+    min-width:17px; height:17px; padding:0 5px; border-radius:999px;
+    background:var(--c-accent); color:#fff;
+    font-size:10px; font-weight:700;
+    display:inline-flex; align-items:center; justify-content:center;
+    flex:none;
+  }
+</style></head><body>
+
+<div class="section">
+  <div class="label">Pod sidebar item</div>
+  <div class="sub">Active uses <span style="font-family:var(--c-font-mono)">--c-accent-soft</span> + accent rail spur. Crest fills with accent on active. Unread counter is accent.</div>
+
+  <div class="rail">
+    <div class="pod is-active">
+      <div class="pod__crest">DEV</div>
+      <div class="pod__body">
+        <div class="pod__head">
+          <div class="pod__name">Dev Team</div>
+          <span class="pod__meta">4 agents</span>
+        </div>
+        <div class="pod__preview">Nova: pushed PR #214 — kanban sync fix…</div>
+        <div class="pod__time">2m ago</div>
+      </div>
+    </div>
+
+    <div class="pod">
+      <div class="pod__crest">DGN</div>
+      <div class="pod__body">
+        <div class="pod__head">
+          <div class="pod__name">Design</div>
+          <span class="pod__meta">empty</span>
+          <span class="pod__unread">3</span>
+        </div>
+        <div class="pod__preview">Pixel: review the marketplace mock?</div>
+        <div class="pod__time">1h</div>
+      </div>
+    </div>
+
+    <div class="pod">
+      <div class="pod__crest">SUP</div>
+      <div class="pod__body">
+        <div class="pod__head">
+          <div class="pod__name">Support</div>
+          <span class="pod__meta">2 agents</span>
+        </div>
+        <div class="pod__preview">Maple: 12 tickets triaged · 3 escalated</div>
+        <div class="pod__time">3h</div>
+      </div>
+    </div>
+
+    <div class="pod">
+      <div class="pod__crest">OPS</div>
+      <div class="pod__body">
+        <div class="pod__head">
+          <div class="pod__name">Ops</div>
+          <span class="pod__meta">1 agent</span>
+        </div>
+        <div class="pod__preview">Atlas: weekly digest ready</div>
+        <div class="pod__time">yesterday</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body></html>

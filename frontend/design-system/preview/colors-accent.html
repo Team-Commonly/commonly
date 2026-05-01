@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Accent</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:24px; background:#fff; color:var(--c-fg-primary); font-family:var(--c-font-sans); }
+  .row { display:flex; gap:14px; align-items:stretch; flex-wrap:wrap; }
+  .col { display:flex; flex-direction:column; gap:14px; }
+  .swatch {
+    width:108px; height:88px; border-radius:10px;
+    display:flex; flex-direction:column; justify-content:space-between;
+    padding:10px; box-sizing:border-box; border:1px solid var(--c-border);
+  }
+  .swatch .name { font-size:12px; font-weight:650; letter-spacing:-0.005em; }
+  .swatch .hex  { font-family:var(--c-font-mono); font-size:10.5px; color:var(--c-fg-tertiary); }
+  .swatch .role { font-size:10px; opacity:0.7; }
+  .label { font-size:10.5px; font-weight:700; color:var(--c-fg-tertiary); margin-bottom:2px; letter-spacing:0.08em; text-transform:uppercase; }
+  .group { display:flex; flex-direction:column; gap:8px; }
+  .note  { font-size:11.5px; color:var(--c-fg-secondary); max-width:640px; line-height:1.5; }
+  .preview-row {
+    display:flex; gap:10px; align-items:center; padding:12px 14px;
+    border:1px solid var(--c-border); border-radius:10px; background:#fff;
+  }
+  .btn-primary {
+    height:32px; padding:0 14px; border:none; border-radius:8px;
+    background:#2f6feb; color:#fff; font-weight:600; font-size:13px;
+    font-family:inherit; cursor:pointer;
+  }
+  .btn-primary:hover { background:#1f55c9; }
+  .btn-soft {
+    height:32px; padding:0 12px; border:1px solid #e8efff; border-radius:8px;
+    background:#e8efff; color:#2456c8; font-weight:600; font-size:13px;
+    font-family:inherit; cursor:pointer;
+  }
+  .link { color:#2456c8; font-weight:600; font-size:13px; text-decoration:underline; }
+  .pill {
+    height:22px; padding:0 10px; display:inline-flex; align-items:center;
+    border-radius:999px; background:#e8efff; color:#2456c8;
+    font-size:11px; font-weight:700; letter-spacing:0.01em;
+  }
+</style></head><body>
+<div class="col">
+
+  <div class="group">
+    <div class="label">Accent · primary brand ramp</div>
+    <div class="row">
+      <div class="swatch" style="background:#2f6feb;color:#fff;border-color:transparent">
+        <div class="name">accent</div>
+        <div>
+          <div class="role" style="color:rgba(255,255,255,.85)">CTAs · links · focus</div>
+          <div class="hex" style="color:rgba(255,255,255,.78)">#2F6FEB</div>
+        </div>
+      </div>
+      <div class="swatch" style="background:#1f55c9;color:#fff;border-color:transparent">
+        <div class="name">accent-strong</div>
+        <div>
+          <div class="role" style="color:rgba(255,255,255,.85)">hover · pressed</div>
+          <div class="hex" style="color:rgba(255,255,255,.78)">#1F55C9</div>
+        </div>
+      </div>
+      <div class="swatch" style="background:#2456c8;color:#fff;border-color:transparent">
+        <div class="name">accent-text</div>
+        <div>
+          <div class="role" style="color:rgba(255,255,255,.85)">links on body</div>
+          <div class="hex" style="color:rgba(255,255,255,.78)">#2456C8</div>
+        </div>
+      </div>
+      <div class="swatch" style="background:#e8efff;color:#2456c8">
+        <div class="name">accent-soft</div>
+        <div>
+          <div class="role">active nav · chips</div>
+          <div class="hex" style="color:#5d7bb6">#E8EFFF</div>
+        </div>
+      </div>
+      <div class="swatch" style="background:#14306f;color:#fff;border-color:transparent">
+        <div class="name">accent-deep</div>
+        <div>
+          <div class="role" style="color:rgba(255,255,255,.85)">deep navy · headlines</div>
+          <div class="hex" style="color:rgba(255,255,255,.72)">#14306F</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="label">In context</div>
+    <div class="preview-row">
+      <button class="btn-primary">Create pod</button>
+      <button class="btn-soft">Open in inspector</button>
+      <span class="pill">Lead</span>
+      <a class="link" href="#">View task board</a>
+      <span style="margin-left:auto; font-size:11px; color:var(--c-fg-tertiary); font-family:var(--c-font-mono)">focus ring · rgba(47,111,235,0.18)</span>
+    </div>
+    <div class="note">
+      A modern cobalt blue — confident but not heavy. Used sparingly: one accent per surface (CTA, active nav, focus ring, link). Pair <span class="mono" style="font-family:var(--c-font-mono)">accent-soft</span> with <span class="mono" style="font-family:var(--c-font-mono)">accent-text</span> for active states; <span class="mono" style="font-family:var(--c-font-mono)">accent-deep</span> reserved for full-bleed dark sections and large display text.
+    </div>
+  </div>
+
+</div></body></html>
