@@ -80,14 +80,7 @@
   box-sizing: border-box;
 }
 
-/*
- * Reset wrapped in :where() so it has 0 specificity. Every v2 button class
- * (single-class selectors) now wins over the reset's bg/border/padding,
- * which previously got flattened across .v2-chat__btn, .v2-chat__send,
- * .v2-inspector__btn, etc. The reset still applies to plain `<button>`
- * elements with no v2 class — restoring browser defaults to baseline.
- */
-:where(.v2-root button:not(.MuiButtonBase-root)) {
+.v2-root button:not(.MuiButtonBase-root) {
   font-family: inherit;
   cursor: pointer;
   border: none;
@@ -1961,7 +1954,16 @@
   flex-wrap: wrap;
 }
 
-.v2-inspector__btn {
+/*
+ * Specificity workaround: the v2 button reset
+ * `.v2-root button:not(.MuiButtonBase-root)` (top of file) has
+ * specificity 0,0,2,1 and would otherwise flatten our bg/border/padding.
+ * We match it (0,0,2,1) by using the element selector + class, then win
+ * via source order. Same trick applies to the `<a>` variant for primary
+ * links rendered as buttons (e.g. artifact "Open" link).
+ */
+button.v2-inspector__btn,
+a.v2-inspector__btn {
   appearance: none;
   height: 32px;
   padding: 0 14px;
@@ -1979,18 +1981,21 @@
   transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
-.v2-inspector__btn:hover {
+button.v2-inspector__btn:hover,
+a.v2-inspector__btn:hover {
   color: var(--v2-text-primary);
   background: var(--v2-surface-hover);
 }
 
-.v2-inspector__btn--primary {
+button.v2-inspector__btn--primary,
+a.v2-inspector__btn--primary {
   background: var(--v2-accent);
   color: #fff;
   border-color: var(--v2-accent);
 }
 
-.v2-inspector__btn--primary:hover {
+button.v2-inspector__btn--primary:hover,
+a.v2-inspector__btn--primary:hover {
   background: var(--v2-accent-strong);
   color: #fff;
 }
