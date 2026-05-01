@@ -79,7 +79,12 @@ describe('pods routes - external links', () => {
     ExternalLink.mockImplementation((data) => ({ ...data, _id: 'l2', save: linkSave }));
     await request(app)
       .post('/api/pods/external-link')
-      .send({ podId: 'p1', name: 'n', type: 'notion', url: 'https://notion.so/foo' })
+      .send({
+        podId: 'p1',
+        name: 'n',
+        type: 'notion',
+        url: 'https://notion.so/foo',
+      })
       .expect(201);
     expect(linkSave).toHaveBeenCalled();
   });
@@ -110,23 +115,23 @@ describe('pods routes - external links', () => {
       externalLinks: [],
       save: jest.fn(),
     });
-    const cases = [
-      { url: 'https://github.com/Team-Commonly/commonly/pull/261', expected: 'github_pr' },
-      { url: 'https://github.com/Team-Commonly/commonly/issues/45', expected: 'github_issue' },
-      { url: 'https://github.com/Team-Commonly/commonly', expected: 'github_repo' },
-    ];
-    /* eslint-disable no-await-in-loop */
-    for (const c of cases) {
-      ExternalLink.mockImplementation((data) => ({ ...data, _id: 'l', save: jest.fn() }));
+    const expectGithubKind = async (url, expected) => {
+      ExternalLink.mockImplementation((data) => ({
+        ...data,
+        _id: 'l',
+        save: jest.fn(),
+      }));
       await request(app)
         .post('/api/pods/external-link')
-        .send({ podId: 'p1', type: 'auto', url: c.url })
+        .send({ podId: 'p1', type: 'auto', url })
         .expect(201);
       expect(ExternalLink).toHaveBeenLastCalledWith(
-        expect.objectContaining({ type: c.expected }),
+        expect.objectContaining({ type: expected }),
       );
-    }
-    /* eslint-enable no-await-in-loop */
+    };
+    await expectGithubKind('https://github.com/Team-Commonly/commonly/pull/261', 'github_pr');
+    await expectGithubKind('https://github.com/Team-Commonly/commonly/issues/45', 'github_issue');
+    await expectGithubKind('https://github.com/Team-Commonly/commonly', 'github_repo');
   });
 
   it('returns 400 when required fields missing', async () => {
