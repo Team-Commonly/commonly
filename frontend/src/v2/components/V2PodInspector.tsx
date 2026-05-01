@@ -242,15 +242,16 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             <div className="v2-inspector__agent-info">
               <div className="v2-inspector__agent-head">
                 <span className="v2-inspector__agent-name">{name}</span>
-              </div>
-              <div className="v2-inspector__agent-status">
-                <span className="v2-online-dot" style={{ background: isOnline ? 'var(--v2-success)' : 'var(--v2-text-muted)' }} />
-                {isOnline ? 'Online' : 'Idle'}
+                <span
+                  className="v2-online-dot"
+                  style={{ background: isOnline ? 'var(--v2-success)' : 'var(--v2-text-muted)' }}
+                  title={isOnline ? 'Online' : 'Idle'}
+                  aria-label={isOnline ? 'Online' : 'Idle'}
+                />
               </div>
               {task && (
-                <div className="v2-inspector__agent-task">
-                  <span className="v2-inspector__agent-task-label">Working on </span>
-                  <span className="v2-inspector__agent-task-value">{task.title}</span>
+                <div className="v2-inspector__agent-task" title={task.title}>
+                  {task.title}
                 </div>
               )}
             </div>

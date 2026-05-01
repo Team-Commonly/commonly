@@ -897,6 +897,23 @@
   color: #ffffff;
 }
 
+.v2-chat__icon-btn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.v2-chat__icon-btn:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
 .v2-chat__mode-toggle {
   display: inline-flex;
   align-items: center;
@@ -1143,40 +1160,10 @@
 }
 
 .v2-chat__composer {
-  min-height: 108px;
-  padding: 12px 24px 10px;
+  padding: 12px 24px 14px;
   border-top: 1px solid var(--v2-border-soft);
   background: var(--v2-surface);
   flex-shrink: 0;
-}
-
-.v2-chat__composer-kicker {
-  height: 22px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--v2-text-tertiary);
-  font-size: 11px;
-}
-
-.v2-chat__composer-mode {
-  height: 18px;
-  padding: 0 7px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
-  font-weight: 700;
-}
-
-.v2-chat__composer-mode--execute {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-secondary);
-}
-
-.v2-chat__composer-hint {
-  margin-left: auto;
 }
 
 .v2-chat__composer-input-wrap {
@@ -1241,13 +1228,10 @@
 }
 
 .v2-chat__send {
-  min-width: 76px;
+  width: 34px;
   height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 12px;
+  display: grid;
+  place-items: center;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent);
   color: #fff;
@@ -1883,30 +1867,13 @@
   text-overflow: ellipsis;
 }
 
-.v2-inspector__agent-status {
-  font-size: 11px;
-  color: var(--v2-success);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .v2-inspector__agent-task {
   font-size: 11px;
   color: var(--v2-text-tertiary);
-  margin-top: 1px;
+  margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.v2-inspector__agent-task-label {
-  color: var(--v2-text-tertiary);
-}
-
-.v2-inspector__agent-task-value {
-  color: var(--v2-text-secondary);
-  font-weight: 500;
 }
 
 .v2-inspector__more-btn {
