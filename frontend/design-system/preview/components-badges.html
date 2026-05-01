@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Badges & Chips</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:28px 32px; background:var(--c-bg); color:var(--c-fg-primary); }
+  .section { display:flex; flex-direction:column; gap:14px; margin-bottom:32px; }
+  .section + .section { padding-top:24px; border-top:1px dashed var(--c-border-soft); }
+  .label { font-size:10px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+  .sub   { font-size:12px; color:var(--c-fg-secondary); margin-top:-8px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+  /* Tag — squarish, uppercase. Reserved for ROLES: LEAD, OWNER, ADMIN */
+  .tag {
+    height:18px; padding:0 6px;
+    border-radius:4px;
+    font-size:10px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.04em;
+    display:inline-flex; align-items:center;
+  }
+  .tag--accent { background:var(--c-accent-soft); color:var(--c-accent-text); }
+  .tag--neutral { background:var(--c-surface-hover); color:var(--c-fg-secondary); }
+  .tag--success { background:var(--c-success-soft); color:#0c8a63; }
+
+  /* Status — pill with optional dot */
+  .status {
+    height:22px; padding:0 9px;
+    border-radius:var(--c-radius-pill);
+    font-size:11px; font-weight:600; letter-spacing:-0.005em;
+    display:inline-flex; align-items:center; gap:5px;
+  }
+  .status__dot { width:6px; height:6px; border-radius:50%; }
+  .status--online   { background:var(--c-success-soft); color:#0c8a63; }
+  .status--online   .status__dot { background:var(--c-success); }
+  .status--progress { background:var(--c-warning-soft); color:#a36410; }
+  .status--progress .status__dot { background:var(--c-warning); }
+  .status--blocked  { background:var(--c-danger-soft); color:var(--c-danger); }
+  .status--blocked  .status__dot { background:var(--c-danger); }
+  .status--info     { background:var(--c-info-soft); color:#0e6c81; }
+  .status--info     .status__dot { background:var(--c-info); }
+  .status--accent   { background:var(--c-accent-soft); color:var(--c-accent-text); }
+  .status--accent   .status__dot { background:var(--c-accent); }
+
+  /* Counter — small numeric badge */
+  .count {
+    min-width:18px; height:18px; padding:0 6px;
+    border-radius:var(--c-radius-pill);
+    font-size:10px; font-weight:700;
+    display:inline-flex; align-items:center; justify-content:center;
+  }
+  .count--neutral { background:var(--c-surface-hover); color:var(--c-fg-tertiary); }
+  .count--accent  { background:var(--c-accent); color:#fff; }
+  .count--danger  { background:var(--c-danger); color:#fff; }
+
+  /* Capsule — connector / integration tag */
+  .capsule {
+    height:24px; padding:0 10px;
+    border-radius:var(--c-radius-pill);
+    font-size:11px; font-weight:600; letter-spacing:-0.005em;
+    display:inline-flex; align-items:center; gap:6px;
+    background:var(--c-bg); color:var(--c-fg-secondary);
+    border:1px solid var(--c-border);
+  }
+  .capsule--accent { background:var(--c-accent-soft); color:var(--c-accent-text); border-color:transparent; }
+  .capsule__dot { width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.6; }
+</style></head><body>
+
+<div class="section">
+  <div class="label">Role tags</div>
+  <div class="sub">Squared, uppercase, 18px. For agent roles + access levels.</div>
+  <div class="row">
+    <span class="tag tag--accent">LEAD</span>
+    <span class="tag tag--accent">OWNER</span>
+    <span class="tag tag--neutral">MEMBER</span>
+    <span class="tag tag--success">VERIFIED</span>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Status pills · semantic</div>
+  <div class="sub">Soft tint + colored dot. Accent variant uses <span style="font-family:var(--c-font-mono)">--c-accent</span>.</div>
+  <div class="row">
+    <span class="status status--online"><span class="status__dot"></span>Online</span>
+    <span class="status status--accent"><span class="status__dot"></span>Active</span>
+    <span class="status status--progress"><span class="status__dot"></span>In progress</span>
+    <span class="status status--blocked"><span class="status__dot"></span>Blocked</span>
+    <span class="status status--info"><span class="status__dot"></span>Synced</span>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Counters · unread, queue</div>
+  <div class="row">
+    <span class="count count--neutral">3</span>
+    <span class="count count--neutral">12</span>
+    <span class="count count--accent">5</span>
+    <span class="count count--danger">99+</span>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Connector capsules · model + integration tags</div>
+  <div class="row">
+    <span class="capsule">Tier 1 · Native</span>
+    <span class="capsule capsule--accent">OpenClaw</span>
+    <span class="capsule">Codex</span>
+    <span class="capsule"><span class="capsule__dot" style="color:var(--c-discord)"></span>Discord</span>
+    <span class="capsule"><span class="capsule__dot" style="color:var(--c-github)"></span>GitHub</span>
+  </div>
+</div>
+
+</body></html>

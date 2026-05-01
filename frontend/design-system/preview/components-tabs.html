@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Tabs</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:28px 32px; background:var(--c-bg); color:var(--c-fg-primary); }
+  .section { display:flex; flex-direction:column; gap:14px; margin-bottom:32px; }
+  .section + .section { padding-top:24px; border-top:1px dashed var(--c-border-soft); }
+  .label { font-size:10px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+  .sub   { font-size:12px; color:var(--c-fg-secondary); margin-top:-8px; }
+
+  .tabs {
+    display:flex; gap:28px;
+    border-bottom:1px solid var(--c-border-soft);
+    height:42px; align-items:flex-end;
+  }
+  .tab {
+    display:flex; align-items:center; gap:6px;
+    height:42px; padding:0 2px;
+    font-size:13px; font-weight:600; letter-spacing:-0.005em;
+    color:var(--c-fg-secondary);
+    border-bottom:2px solid transparent;
+    margin-bottom:-1px;
+    cursor:pointer;
+    transition: color var(--c-dur-fast) var(--c-ease), border-color var(--c-dur-fast) var(--c-ease);
+  }
+  .tab:hover { color:var(--c-fg-primary); }
+  .tab.is-active {
+    color:var(--c-accent-text);
+    border-bottom-color:var(--c-accent);
+  }
+  .tab[aria-disabled="true"] {
+    color:var(--c-fg-muted); cursor:not-allowed;
+  }
+  .tab__count {
+    height:18px; padding:0 6px;
+    border-radius:999px;
+    background:var(--c-surface-hover); color:var(--c-fg-tertiary);
+    font-size:10px; font-weight:700;
+    display:inline-flex; align-items:center;
+  }
+  .tab.is-active .tab__count {
+    background:var(--c-accent-soft); color:var(--c-accent-text);
+  }
+
+  /* Pill-tab variant */
+  .pill-tabs { display:inline-flex; gap:4px; padding:4px; background:var(--c-surface-tint); border-radius:9px; }
+  .pill {
+    height:28px; padding:0 12px;
+    font-size:12px; font-weight:600; letter-spacing:-0.005em;
+    color:var(--c-fg-secondary);
+    background:transparent; border:none; cursor:pointer;
+    border-radius:6px;
+    display:inline-flex; align-items:center; gap:6px;
+    transition: background var(--c-dur-fast) var(--c-ease), color var(--c-dur-fast) var(--c-ease);
+  }
+  .pill:hover { color:var(--c-fg-primary); }
+  .pill.is-active {
+    background:var(--c-bg);
+    color:var(--c-fg-primary);
+    box-shadow: var(--c-shadow-sm);
+  }
+</style></head><body>
+
+<div class="section">
+  <div class="label">Underline tabs · default</div>
+  <div class="sub">Active indicator: 2px <span style="font-family:var(--c-font-mono)">--c-accent</span> bar + accent text. Count chip on active inherits soft tint.</div>
+  <div class="tabs">
+    <div class="tab is-active">Chat <span class="tab__count">12</span></div>
+    <div class="tab">Tasks</div>
+    <div class="tab">Memory <span class="tab__count">48</span></div>
+    <div class="tab" aria-disabled="true">Files</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Pill tabs · settings, inspector sub-views</div>
+  <div class="sub">Use when underline would conflict with another horizontal divider nearby.</div>
+  <div class="pill-tabs">
+    <button class="pill is-active">Overview</button>
+    <button class="pill">Members</button>
+    <button class="pill">Integrations</button>
+    <button class="pill">Danger</button>
+  </div>
+</div>
+
+</body></html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Semantic</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:24px; background:#fff; color:var(--c-fg-primary); font-family:var(--c-font-sans); }
+  .col { display:flex; flex-direction:column; gap:18px; }
+  .row { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+  .swatch {
+    width:96px; height:72px; border-radius:10px;
+    display:flex; flex-direction:column; justify-content:flex-end; padding:8px;
+    box-sizing:border-box; border:1px solid rgba(0,0,0,0.06);
+  }
+  .swatch .hex { font-family:var(--c-font-mono); font-size:10px; color:rgba(255,255,255,0.78); }
+  .swatch .name { font-size:11px; font-weight:600; color:#fff; }
+  .swatch.light .name { color:var(--c-fg-primary); }
+  .swatch.light .hex { color:var(--c-fg-tertiary); }
+  .label { font-size:10.5px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:0.08em; text-transform:uppercase; }
+  .note { font-size:11.5px; color:var(--c-fg-secondary); line-height:1.5; max-width:640px; }
+  .note .mono { font-family:var(--c-font-mono); font-size:11px; background:#f4f5f8; padding:1px 5px; border-radius:4px; color:var(--c-fg-primary); }
+
+  .compare { display:flex; gap:8px; align-items:center; }
+  .chip {
+    display:inline-flex; align-items:center; gap:6px; height:24px;
+    padding:0 9px; border-radius:6px; font-size:11px; font-weight:600;
+    font-family:var(--c-font-mono);
+  }
+  .chip .dot { width:9px; height:9px; border-radius:50%; }
+  .arrow { color:var(--c-fg-tertiary); font-size:11px; }
+
+  .strike { text-decoration:line-through; color:var(--c-fg-tertiary); font-family:var(--c-font-mono); font-size:11px; }
+</style></head><body>
+<div class="col">
+
+  <div>
+    <div class="label" style="margin-bottom:8px">Semantic — paired with soft-tint backgrounds</div>
+    <div class="row">
+      <div class="swatch" style="background:#10b981"><div class="name">success</div><div class="hex">#10B981</div></div>
+      <div class="swatch light" style="background:#e3f6ec"><div class="name">success-soft</div><div class="hex">#E3F6EC</div></div>
+      <div class="swatch" style="background:#f4a23a"><div class="name">warning</div><div class="hex">#F4A23A</div></div>
+      <div class="swatch light" style="background:#fdefdc"><div class="name">warning-soft</div><div class="hex">#FDEFDC</div></div>
+      <div class="swatch" style="background:#ef4444"><div class="name">danger</div><div class="hex">#EF4444</div></div>
+      <div class="swatch" style="background:#0891b2"><div class="name">info</div><div class="hex">#0891B2</div></div>
+      <div class="swatch light" style="background:#dff4f8"><div class="name">info-soft</div><div class="hex">#DFF4F8</div></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label" style="margin-bottom:8px">Info shifted — was too close to accent</div>
+    <div class="compare">
+      <span class="chip" style="background:#e8efff;color:#2456c8"><span class="dot" style="background:#2f6feb"></span>accent #2F6FEB</span>
+      <span class="strike">info #3B82F6</span>
+      <span class="arrow">→</span>
+      <span class="chip" style="background:#dff4f8;color:#066574"><span class="dot" style="background:#0891b2"></span>info #0891B2</span>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>What changed and why.</strong> Old <span class="mono">info #3B82F6</span> was a bright blue that sat right next to the new accent <span class="mono">#2F6FEB</span> — info banners and accent buttons would have read as the same family, blurring "neutral notification" with "primary action." Pushed info to a cyan-leaning <span class="mono">#0891B2</span> (with a matching <span class="mono">info-soft #DFF4F8</span>): clearly off-axis from accent blue, still reads unambiguously as "informational."
+  </div>
+
+  <div class="note">
+    <strong>Unchanged.</strong> Success <span class="mono">#10B981</span>, warning <span class="mono">#F4A23A</span>, and danger <span class="mono">#EF4444</span> all sit far enough from blue on the wheel that the accent swap doesn't pressure them.
+  </div>
+
+</div></body></html>

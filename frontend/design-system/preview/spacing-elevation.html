@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Elevation</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:24px; background:#fff; color:var(--c-fg-primary); font-family:var(--c-font-sans); }
+  .row { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .col { display:flex; flex-direction:column; gap:12px; }
+  .label { font-size:11px; font-weight:600; color:var(--c-fg-tertiary); margin-bottom:2px; letter-spacing:0.04em; text-transform:uppercase; }
+  .mono { font-family:var(--c-font-mono); }
+  .specimen { display:flex; align-items:baseline; gap:14px; }
+  .specimen .meta { font-size:11px; color:var(--c-fg-tertiary); font-family:var(--c-font-mono); }
+</style></head><body>
+<div class="col">
+  <div class="label">Elevation — V2 is flat. Shadows reserved for floating UI</div>
+  <div style="display:flex;gap:18px;padding:8px 4px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div style="width:120px;height:60px;background:#fff;border:1px solid #e5e7eb;border-radius:10px"></div>
+      <div style="font-size:11px;font-weight:600">flat (default)</div>
+      <div style="font-size:10px;color:var(--c-fg-tertiary)">cards & panels</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div style="width:120px;height:60px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 1px 2px 0 rgba(15,23,42,.04)"></div>
+      <div style="font-size:11px;font-weight:600">sm</div>
+      <div style="font-size:10px;color:var(--c-fg-tertiary)">subtle hover</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div style="width:120px;height:60px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 4px 12px rgba(15,23,42,.06)"></div>
+      <div style="font-size:11px;font-weight:600">md</div>
+      <div style="font-size:10px;color:var(--c-fg-tertiary)">popovers</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div style="width:120px;height:60px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12)"></div>
+      <div style="font-size:11px;font-weight:600">lg</div>
+      <div style="font-size:10px;color:var(--c-fg-tertiary)">menus, modals</div>
+    </div>
+  </div>
+</div></body></html>

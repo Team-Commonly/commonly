@@ -43,7 +43,14 @@ const V2NavRail: React.FC = () => {
     <aside className="v2-pane v2-pane--rail">
       <div className="v2-rail">
         <div className="v2-rail__brand">
-          <span className="v2-rail__brand-icon">c</span>
+          <span className="v2-rail__brand-icon" aria-label="Commonly">
+            <svg width="18" height="18" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+              <path d="M 50 17.7 A 22 22 0 1 0 50 46.3" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+              <circle cx="25" cy="32" r="2.4" fill="currentColor" />
+              <circle cx="32" cy="32" r="2.4" fill="currentColor" />
+              <circle cx="39" cy="32" r="2.4" fill="currentColor" />
+            </svg>
+          </span>
           <span>commonly</span>
         </div>
 

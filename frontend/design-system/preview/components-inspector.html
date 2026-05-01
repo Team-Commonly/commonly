@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Inspector</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin:0; padding:28px 32px; background:var(--c-bg); color:var(--c-fg-primary); }
+  .section { display:flex; flex-direction:column; gap:14px; margin-bottom:32px; }
+  .section + .section { padding-top:24px; border-top:1px dashed var(--c-border-soft); }
+  .label { font-size:10px; font-weight:700; color:var(--c-fg-tertiary); letter-spacing:.08em; text-transform:uppercase; }
+  .sub   { font-size:12px; color:var(--c-fg-secondary); margin-top:-8px; }
+
+  .inspector {
+    width:336px;
+    background:var(--c-surface-tint);
+    padding:14px;
+    border-radius:var(--c-radius-lg);
+    display:flex; flex-direction:column; gap:14px;
+  }
+
+  .card {
+    padding:14px;
+    background:var(--c-bg);
+    border:1px solid var(--c-border-soft);
+    border-radius:var(--c-radius-lg);
+  }
+
+  .eyebrow { color:var(--c-fg-tertiary); font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+  .eyebrow--accent { color:var(--c-accent-text); letter-spacing:.12em; }
+
+  .now-title {
+    margin-top:6px;
+    display:flex; align-items:center; gap:8px;
+    font-size:16px; font-weight:700; letter-spacing:-0.02em;
+  }
+  .pulse {
+    width:9px; height:9px; border-radius:50%;
+    background:var(--c-success);
+    box-shadow: 0 0 0 0 rgba(16,185,129,.5);
+    animation: pulse 1.6s var(--c-ease) infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(16,185,129,.4); }
+    70%  { box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+    100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+  }
+  .now-meta { margin-top:6px; color:var(--c-fg-secondary); font-size:12px; line-height:1.45; }
+
+  .progress {
+    margin-top:10px; height:4px; border-radius:2px;
+    background:var(--c-border-soft); overflow:hidden;
+  }
+  .progress__bar { height:100%; width:62%; background:var(--c-accent); border-radius:2px; }
+
+  /* Agent rows */
+  .agents { display:flex; flex-direction:column; gap:2px; }
+  .agent-row {
+    display:grid; grid-template-columns:34px 1fr 24px;
+    align-items:center; gap:10px;
+    padding:6px 8px;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  .agent-row:hover { background:var(--c-surface-hover); }
+  .agent-row.is-active { background:var(--c-accent-soft); }
+  .agent-row.is-active .agent-row__name { color:var(--c-accent-text); }
+
+  .agent-row__avatar {
+    width:34px; height:34px; border-radius:50%;
+    color:#fff; font-size:12px; font-weight:700;
+    display:grid; place-items:center;
+    border:2px solid var(--c-bg);
+    position:relative;
+  }
+  .agent-row__avatar::after {
+    content:""; position:absolute; bottom:-1px; right:-1px;
+    width:10px; height:10px; border-radius:50%;
+    background:var(--c-success); border:2px solid var(--c-bg);
+  }
+  .agent-row__avatar.is-idle::after { background:var(--c-fg-muted); }
+
+  .agent-row__name { font-size:12.5px; font-weight:700; letter-spacing:-0.005em; }
+  .agent-row__role { font-size:11px; color:var(--c-fg-tertiary); margin-top:2px; }
+
+  .agent-row__more {
+    width:24px; height:24px; border-radius:6px;
+    color:var(--c-fg-tertiary); background:transparent; border:none;
+    display:grid; place-items:center; cursor:pointer; font-weight:700;
+  }
+  .agent-row__more:hover { background:var(--c-surface-hover); color:var(--c-fg-secondary); }
+
+  /* Quick actions */
+  .actions { display:flex; gap:6px; flex-wrap:wrap; }
+  .qa {
+    display:inline-flex; align-items:center; gap:5px;
+    height:26px; padding:0 9px;
+    border-radius:7px;
+    background:var(--c-bg); border:1px solid var(--c-border);
+    font-family:inherit; font-size:11.5px; font-weight:600; color:var(--c-fg-secondary);
+    letter-spacing:-0.005em;
+    cursor:pointer;
+  }
+  .qa:hover { background:var(--c-surface-hover); border-color:var(--c-border-strong); }
+  .qa svg { width:12px; height:12px; }
+</style></head><body>
+
+<div class="section">
+  <div class="label">Inspector · "Now" + agent roster</div>
+  <div class="sub">Active agent row uses <span style="font-family:var(--c-font-mono)">--c-accent-soft</span>. Progress bar + accent eyebrow tie to <span style="font-family:var(--c-font-mono)">--c-accent</span>.</div>
+
+  <div class="inspector">
+
+    <div class="card">
+      <div class="eyebrow eyebrow--accent">NOW</div>
+      <div class="now-title">
+        <span class="pulse"></span> Nova merging PR #214
+      </div>
+      <div class="now-meta">CI green · syncing kanban with GitHub Issues</div>
+      <div class="progress"><div class="progress__bar"></div></div>
+    </div>
+
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px">AGENTS · 3</div>
+      <div class="agents">
+        <div class="agent-row is-active">
+          <div class="agent-row__avatar" style="background:var(--c-role-violet)">NV</div>
+          <div>
+            <div class="agent-row__name">Nova</div>
+            <div class="agent-row__role">Backend · OpenClaw + Codex</div>
+          </div>
+          <button class="agent-row__more">⋯</button>
+        </div>
+        <div class="agent-row">
+          <div class="agent-row__avatar" style="background:var(--c-role-emerald)">MP</div>
+          <div>
+            <div class="agent-row__name">Maple</div>
+            <div class="agent-row__role">QA · Claude</div>
+          </div>
+          <button class="agent-row__more">⋯</button>
+        </div>
+        <div class="agent-row">
+          <div class="agent-row__avatar is-idle" style="background:var(--c-role-amber)">PX</div>
+          <div>
+            <div class="agent-row__name">Pixel</div>
+            <div class="agent-row__role">Design · GPT-4o</div>
+          </div>
+          <button class="agent-row__more">⋯</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px">QUICK</div>
+      <div class="actions">
+        <button class="qa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Add agent</button>
+        <button class="qa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>Tasks</button>
+        <button class="qa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Memory</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body></html>
