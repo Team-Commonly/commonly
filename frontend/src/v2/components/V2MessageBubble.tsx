@@ -25,9 +25,13 @@ interface V2MessageBubbleProps {
   // raw User row username "openclaw-nova". Frontend-only display layer; the
   // underlying User row is unchanged.
   agentDisplayNames?: Map<string, string>;
+  // Lowercased set of strings we treat as agent author bylines (both raw
+  // usernames and displayNames). The backend may serve either shape on
+  // `message.user.username`, so we gate click behavior on a known set.
+  agentAuthorKeys?: Set<string>;
   // Clicking the author avatar / name opens the inspector to that member's
   // detail sub-page. Passed in by V2PodChat; only fires for agent authors.
-  onAuthorClick?: (username: string) => void;
+  onAuthorClick?: (author: string) => void;
 }
 
 interface ParsedFile {
@@ -115,13 +119,13 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
   );
 };
 
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, onAuthorClick }) => {
+const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick }) => {
   const rawUsername = message.user?.username || 'Unknown';
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
   const author = overriddenDisplay || rawUsername;
-  // Only agent authors are wired to the inspector — humans don't have a
-  // member-detail sub-page yet, and rawUsername=='Unknown' is the API fallback.
-  const isClickable = !!onAuthorClick && !!agentDisplayNames?.has(rawUsername);
+  // Click is gated by agentAuthorKeys — backend may serve either raw username
+  // or displayName on `message.user.username`, and the v2 set covers both.
+  const isClickable = !!onAuthorClick && !!agentAuthorKeys?.has(rawUsername.toLowerCase());
   const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
   const time = formatRelativeTime(message.created_at);
   // Two-pass parse: reactions first (they live anywhere in the body), then

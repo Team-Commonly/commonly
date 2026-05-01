@@ -102,6 +102,32 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     return map;
   }, [agents]);
 
+  // Set of usernames that map to an installed agent — used to filter the
+  // members[] list down to actual humans. The backend's `User.isBot` flag
+  // isn't reliably set on agent User rows in the wire payload, so we can't
+  // trust `member.isBot` alone. Mirrors AgentIdentityService.buildAgentUsername.
+  const agentUsernames = useMemo(() => {
+    const set = new Set<string>();
+    agents.forEach((a) => {
+      const rawName = ((a as { name?: string; agentName?: string }).name || a.agentName || '').toLowerCase();
+      const inst = (a.instanceId || '').toLowerCase();
+      const username = !inst || inst === 'default' || inst === rawName
+        ? rawName
+        : `${rawName}-${inst}`;
+      if (username) set.add(username);
+    });
+    return set;
+  }, [agents]);
+
+  const humanMembers = useMemo(
+    () => members.filter((m) => {
+      if (m.isBot) return false;
+      const u = (m.username || '').toLowerCase();
+      return u && !agentUsernames.has(u);
+    }),
+    [members, agentUsernames],
+  );
+
   useEffect(() => {
     const podId = pod?._id;
     if (!podId) {
@@ -189,7 +215,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   if (!pod) return <aside className="v2-pane v2-pane--inspector" />;
 
   const isPrivatePod = pod.type === 'agent-room';
-  const humanCount = members.filter((m) => !m.isBot).length;
+  const humanCount = humanMembers.length;
   const agentCount = agents.length;
   const created = pod.createdAt ? new Date(pod.createdAt).toLocaleDateString([], {
     month: 'short', day: 'numeric',
@@ -315,7 +341,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           </button>
         );
       })}
-      {members.filter((m) => !m.isBot).map((member) => {
+      {humanMembers.map((member) => {
         const role = memberRoleLabel(member, ownerId, false);
         return (
           <div key={`human-${member._id}`} className="v2-inspector__member-row v2-inspector__member-row--static">

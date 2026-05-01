@@ -200,9 +200,12 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     return map;
   }, [agents]);
 
-  // username → agent key (instanceId or agentName) so a click on a chat
-  // author byline can drive the inspector to the right member sub-page.
-  const agentKeyByUsername = React.useMemo(() => {
+  // username/displayName → agent key (instanceId or agentName) so a click on
+  // a chat author byline can drive the inspector to the right member sub-page.
+  // Backend `message.user.username` may carry either the raw User row username
+  // ("openclaw-aria") or the substituted displayName ("Strategist (Aria)") —
+  // index by both so resolution survives either shape.
+  const agentKeyByAuthorString = React.useMemo(() => {
     const map = new Map<string, string>();
     if (!agents) return map;
     for (const agent of agents) {
@@ -214,16 +217,24 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
         ? name
         : `${name}-${instance}`;
       const key = agent.instanceId || agent.agentName;
-      if (username && key) map.set(username, key);
+      if (!key) continue;
+      if (username) map.set(username, key);
+      const display = agent.displayName || agent.profile?.displayName;
+      if (display) map.set(display.toLowerCase(), key);
     }
     return map;
   }, [agents]);
 
-  const handleAuthorClick = useCallback((username: string) => {
+  const handleAuthorClick = useCallback((author: string) => {
     if (!onOpenMember) return;
-    const key = agentKeyByUsername.get(username.toLowerCase());
+    const key = agentKeyByAuthorString.get(author.toLowerCase());
     if (key) onOpenMember(key);
-  }, [agentKeyByUsername, onOpenMember]);
+  }, [agentKeyByAuthorString, onOpenMember]);
+
+  const agentAuthorKeys = React.useMemo(
+    () => new Set(agentKeyByAuthorString.keys()),
+    [agentKeyByAuthorString],
+  );
 
   // Build the @-mention list. members[] is User rows (humans + agent users);
   // agents[] is AgentInstallation rows that carry the instanceId. We want
@@ -597,6 +608,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   key={m.id}
                   message={m}
                   agentDisplayNames={agentDisplayNames}
+                  agentAuthorKeys={agentAuthorKeys}
                   onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
                 />
               ))}

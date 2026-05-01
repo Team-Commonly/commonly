@@ -80,7 +80,14 @@
   box-sizing: border-box;
 }
 
-.v2-root button:not(.MuiButtonBase-root) {
+/*
+ * Reset wrapped in :where() so it has 0 specificity. Every v2 button class
+ * (single-class selectors) now wins over the reset's bg/border/padding,
+ * which previously got flattened across .v2-chat__btn, .v2-chat__send,
+ * .v2-inspector__btn, etc. The reset still applies to plain `<button>`
+ * elements with no v2 class — restoring browser defaults to baseline.
+ */
+:where(.v2-root button:not(.MuiButtonBase-root)) {
   font-family: inherit;
   cursor: pointer;
   border: none;
