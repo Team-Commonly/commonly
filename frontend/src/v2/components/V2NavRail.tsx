@@ -81,7 +81,7 @@ const V2NavRail: React.FC = () => {
           </div>
           <button
             type="button"
-            className="v2-inspector__more-btn"
+            className="v2-rail__signout"
             onClick={logout}
             title="Sign out"
           >
