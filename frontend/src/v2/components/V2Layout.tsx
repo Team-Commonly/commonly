@@ -11,6 +11,11 @@ interface V2LayoutProps {
   selectionMode?: 'auto' | 'param';
 }
 
+export type InspectorView =
+  | { kind: 'overview' }
+  | { kind: 'member'; agentKey: string }
+  | { kind: 'artifact'; artifactId: string };
+
 const INSPECTOR_PREF_KEY = 'v2.inspectorCollapsed';
 
 const readInspectorCollapsed = (): boolean => {
@@ -40,13 +45,35 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { pods, loading } = podsState;
 
   const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(readInspectorCollapsed());
+  const [inspectorView, setInspectorView] = useState<InspectorView>({ kind: 'overview' });
   const toggleInspector = useCallback(() => {
     setInspectorCollapsed((prev) => {
       const next = !prev;
       writeInspectorCollapsed(next);
+      // Always reset to overview when re-opening, so the user lands in a
+      // predictable place rather than the last sub-page.
+      if (!next) setInspectorView({ kind: 'overview' });
       return next;
     });
   }, []);
+  const openInspectorMember = useCallback((agentKey: string) => {
+    if (!agentKey) return;
+    setInspectorView({ kind: 'member', agentKey });
+    setInspectorCollapsed(false);
+    writeInspectorCollapsed(false);
+  }, []);
+  const openInspectorArtifact = useCallback((artifactId: string) => {
+    if (!artifactId) return;
+    setInspectorView({ kind: 'artifact', artifactId });
+    setInspectorCollapsed(false);
+    writeInspectorCollapsed(false);
+  }, []);
+  const resetInspectorView = useCallback(() => setInspectorView({ kind: 'overview' }), []);
+
+  // When pod changes, drop any stale sub-page state.
+  useEffect(() => {
+    setInspectorView({ kind: 'overview' });
+  }, [paramPodId]);
 
   // Auto-pick the first pod when the user lands on /v2 directly, so the
   // three-column layout doesn't render an empty main pane on first load.
@@ -73,12 +100,17 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         podsState={podsState}
         inspectorCollapsed={inspectorCollapsed}
         onToggleInspector={selectedPodId ? toggleInspector : undefined}
+        onOpenMember={openInspectorMember}
       />
       {selectedPodId && !inspectorCollapsed && (
         <V2PodInspector
           detail={detail}
           podsState={podsState}
+          view={inspectorView}
           onClose={toggleInspector}
+          onOpenMember={openInspectorMember}
+          onOpenArtifact={openInspectorArtifact}
+          onBack={resetInspectorView}
         />
       )}
     </div>

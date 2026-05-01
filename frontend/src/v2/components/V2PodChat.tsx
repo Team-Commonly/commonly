@@ -12,13 +12,6 @@ import { UseV2PodsResult, V2PodMember } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { initialsFor } from '../utils/avatars';
 
-const TABS = [
-  { key: 'Chat', label: 'Chat', disabled: false, badge: undefined },
-  { key: 'Tasks', label: 'Tasks', disabled: false, badge: undefined },
-  { key: 'Summary', label: 'Summary', disabled: false, badge: undefined },
-] as const;
-type Tab = typeof TABS[number]['key'];
-
 const PLAN_MODE_KEY = 'v2.podMode';
 
 type PodMode = 'plan' | 'execute';
@@ -129,6 +122,7 @@ interface V2PodChatProps {
   // hand-off point.
   inspectorCollapsed?: boolean;
   onToggleInspector?: () => void;
+  onOpenMember?: (agentKey: string) => void;
 }
 
 const Icon = ({ d }: { d: string }) => (
@@ -137,128 +131,17 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
-interface V2Task {
-  taskId: string;
-  title: string;
-  status?: string;
-  assignee?: string;
-  updatedAt?: string;
-}
-
-interface V2SummaryResponse {
-  content?: string;
-  summary?: { content?: string };
-  message?: string;
-}
-
-const V2TasksView: React.FC<{ podId: string }> = ({ podId }) => {
-  const api = useV2Api();
-  const [tasks, setTasks] = useState<V2Task[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await api.get<{ tasks?: V2Task[] }>(`/api/v1/tasks/${podId}`);
-        if (!cancelled) setTasks(Array.isArray(data.tasks) ? data.tasks : []);
-      } catch (err) {
-        const e = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
-        if (!cancelled) setError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to load tasks');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [api, podId]);
-
-  if (loading) return <div className="v2-empty"><span className="v2-spinner" /></div>;
-  if (error) return <div className="v2-chat__error">{error}</div>;
-  if (tasks.length === 0) {
-    return (
-      <div className="v2-empty">
-        <div className="v2-empty__title">No tasks yet</div>
-        <div className="v2-empty__text">Tasks created by agents or humans in this pod will appear here.</div>
-      </div>
-    );
-  }
-  return (
-    <div className="v2-tab-list">
-      {tasks.map((task) => (
-        <div key={task.taskId} className="v2-tab-card">
-          <div className="v2-tab-card__title">{task.title}</div>
-          <div className="v2-tab-card__meta">
-            {task.taskId}
-            {task.status ? ` · ${task.status}` : ''}
-            {task.assignee ? ` · ${task.assignee}` : ''}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const V2SummaryView: React.FC<{ podId: string; description?: string }> = ({ podId, description }) => {
-  const api = useV2Api();
-  const [content, setContent] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadSummary = async (refresh = false) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = refresh
-        ? await api.post<V2SummaryResponse>(`/api/summaries/pod/${podId}/refresh`, {})
-        : await api.get<V2SummaryResponse>(`/api/summaries/pod/${podId}`);
-      setContent(data?.summary?.content || data?.content || '');
-    } catch (err) {
-      const e = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
-      setError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to load summary');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadSummary();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [podId]);
-
-  return (
-    <div className="v2-tab-list">
-      <div className="v2-tab-card">
-        <div className="v2-row v2-row--between">
-          <div className="v2-tab-card__title">Pod Summary</div>
-          <button type="button" className="v2-tab-card__action" onClick={() => loadSummary(true)} disabled={loading}>
-            {loading ? 'Refreshing...' : 'Refresh'}
-          </button>
-        </div>
-        {error && <div className="v2-chat__error">{error}</div>}
-        <div className="v2-tab-card__body">
-          {content || description || 'No recent activity to summarize.'}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector }) => {
+const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember }) => {
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
   const navigate = useNavigate();
   const api = useV2Api();
   const { socket, connected } = useSocket();
   const { isPinned, toggle: togglePin } = useV2Pinned();
-  const [tab, setTab] = useState<Tab>('Chat');
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [mode, setMode] = useState<PodMode>(pod ? readMode(pod._id) : 'plan');
-  const [taskCount, setTaskCount] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -281,29 +164,9 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     if (pod) setMode(readMode(pod._id));
   }, [pod?._id]);
 
-  // Lightweight count fetch so the Tasks tab can show an honest badge.
-  // Falls back silently if the API is unavailable.
-  useEffect(() => {
-    const podId = pod?._id;
-    if (!podId) {
-      setTaskCount(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await api.get<{ tasks?: V2Task[] }>(`/api/v1/tasks/${podId}?status=pending,claimed`);
-        if (!cancelled) setTaskCount(Array.isArray(data.tasks) ? data.tasks.length : 0);
-      } catch {
-        if (!cancelled) setTaskCount(null);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [pod?._id, api, tab]);
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, tab]);
+  }, [messages.length]);
 
   // Removed: Lead-pill computation. The "Lead" label was just `idx === 0`,
   // which made whichever agent installed first (usually auto-installed
@@ -336,6 +199,31 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     }
     return map;
   }, [agents]);
+
+  // username → agent key (instanceId or agentName) so a click on a chat
+  // author byline can drive the inspector to the right member sub-page.
+  const agentKeyByUsername = React.useMemo(() => {
+    const map = new Map<string, string>();
+    if (!agents) return map;
+    for (const agent of agents) {
+      const rawName = (agent as { name?: string; agentName?: string }).name
+        || agent.agentName || '';
+      const name = rawName.toLowerCase();
+      const instance = (agent.instanceId || '').toLowerCase();
+      const username = !instance || instance === 'default' || instance === name
+        ? name
+        : `${name}-${instance}`;
+      const key = agent.instanceId || agent.agentName;
+      if (username && key) map.set(username, key);
+    }
+    return map;
+  }, [agents]);
+
+  const handleAuthorClick = useCallback((username: string) => {
+    if (!onOpenMember) return;
+    const key = agentKeyByUsername.get(username.toLowerCase());
+    if (key) onOpenMember(key);
+  }, [agentKeyByUsername, onOpenMember]);
 
   // Build the @-mention list. members[] is User rows (humans + agent users);
   // agents[] is AgentInstallation rows that carry the instanceId. We want
@@ -683,39 +571,13 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
 
           {pod.description && (
             <div className="v2-chat__goal">
-              <span className="v2-chat__goal-label">Goal: </span>
               {pod.description}
               <span className="v2-chat__goal-meta"> · {liveState}</span>
             </div>
           )}
         </header>
 
-        <div className="v2-chat__tabs">
-          {TABS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={`v2-chat__tab${tab === item.key ? ' v2-chat__tab--active' : ''}${item.disabled ? ' v2-chat__tab--disabled' : ''}`}
-              onClick={() => {
-                if (!item.disabled) setTab(item.key);
-              }}
-              disabled={item.disabled}
-              title={item.disabled ? `${item.label} needs backend support` : item.label}
-            >
-              {item.label}
-              {item.key === 'Chat' && messages.length > 0 && (
-                <span className="v2-chat__tab-badge">{messages.length}</span>
-              )}
-              {item.key === 'Tasks' && taskCount !== null && taskCount > 0 && (
-                <span className="v2-chat__tab-badge">{taskCount}</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {tab === 'Chat' && (
-          <>
-            <div className="v2-chat__messages">
+        <div className="v2-chat__messages">
               {error && (
                 <div className="v2-chat__error">
                   {error}
@@ -731,7 +593,12 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                 </div>
               )}
               {messages.map((m) => (
-                <V2MessageBubble key={m.id} message={m} agentDisplayNames={agentDisplayNames} />
+                <V2MessageBubble
+                  key={m.id}
+                  message={m}
+                  agentDisplayNames={agentDisplayNames}
+                  onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
+                />
               ))}
               <div ref={messagesEndRef} />
             </div>
@@ -845,11 +712,6 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                 </div>
               )}
             </div>
-          </>
-        )}
-
-        {tab === 'Tasks' && <V2TasksView podId={pod._id} />}
-        {tab === 'Summary' && <V2SummaryView podId={pod._id} description={pod.description} />}
       </div>
     </main>
   );

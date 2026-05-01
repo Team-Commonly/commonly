@@ -25,6 +25,9 @@ interface V2MessageBubbleProps {
   // raw User row username "openclaw-nova". Frontend-only display layer; the
   // underlying User row is unchanged.
   agentDisplayNames?: Map<string, string>;
+  // Clicking the author avatar / name opens the inspector to that member's
+  // detail sub-page. Passed in by V2PodChat; only fires for agent authors.
+  onAuthorClick?: (username: string) => void;
 }
 
 interface ParsedFile {
@@ -112,10 +115,14 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
   );
 };
 
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames }) => {
+const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, onAuthorClick }) => {
   const rawUsername = message.user?.username || 'Unknown';
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
   const author = overriddenDisplay || rawUsername;
+  // Only agent authors are wired to the inspector — humans don't have a
+  // member-detail sub-page yet, and rawUsername=='Unknown' is the API fallback.
+  const isClickable = !!onAuthorClick && !!agentDisplayNames?.has(rawUsername);
+  const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
   const time = formatRelativeTime(message.created_at);
   // Two-pass parse: reactions first (they live anywhere in the body), then
   // files. Order matters — files leave a trimmed body that we then read for
@@ -129,14 +136,35 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
 
   return (
     <div className="v2-msg">
-      <V2Avatar
-        name={author}
-        src={message.user?.profile_picture || undefined}
-        size="md"
-      />
+      {isClickable ? (
+        <button
+          type="button"
+          className="v2-msg__avatar-btn"
+          onClick={handleAuthorClick}
+          aria-label={`Open ${author} details`}
+        >
+          <V2Avatar
+            name={author}
+            src={message.user?.profile_picture || undefined}
+            size="md"
+          />
+        </button>
+      ) : (
+        <V2Avatar
+          name={author}
+          src={message.user?.profile_picture || undefined}
+          size="md"
+        />
+      )}
       <div className="v2-msg__body">
         <div className="v2-msg__head">
-          <span className="v2-msg__author">{author}</span>
+          {isClickable ? (
+            <button type="button" className="v2-msg__author-btn" onClick={handleAuthorClick}>
+              {author}
+            </button>
+          ) : (
+            <span className="v2-msg__author">{author}</span>
+          )}
           {isLead && <span className="v2-msg__lead-badge">Lead</span>}
           {time && <span className="v2-msg__time">{time}</span>}
         </div>
