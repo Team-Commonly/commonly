@@ -169,6 +169,7 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 
 ### 📁 Key Documentation Files
 - **Code Review Rubric**: `/REVIEW.md` — **REQUIRED READING** before any code review, implementation planning, or pre-commit self-check. Encodes modularity / extensibility / maintainability bars, bans on temporary workarounds and over-engineering, and the load-bearing invariants every reviewer defends.
+- **Design System**: `frontend/design-system/` — tokens.css + README + brand mark + preview cards. **Source of truth for visual decisions.** Production tokens live in `frontend/src/v2/v2.css`; the two must move together. Pull the `commonly-design` skill before any v2 styling, brand, marketing, or design-polish work.
 - **Commonly Scope & Taxonomy**: `/docs/COMMONLY_SCOPE.md` — **REQUIRED READING** before touching any install/marketplace/agent/app code
 - **ADR-001 Installable Taxonomy**: `/docs/adr/ADR-001-installable-taxonomy.md` — the single-table model, component types, scopes, phases
 - **ADR-002 Attachments & Object Storage**: `/docs/adr/ADR-002-attachments-and-object-storage.md`
