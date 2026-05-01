@@ -671,12 +671,12 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
 
             <button
               type="button"
-              className="v2-chat__btn"
+              className="v2-chat__icon-btn"
               onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
-              title="Open full pod member tools"
+              title="Invite people"
+              aria-label="Invite people"
             >
               <Icon d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM20 8v6M17 11h6" />
-              Invite
             </button>
 
           </div>
@@ -739,18 +739,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
             <TypingIndicator agents={typingAgents} />
 
             <div className="v2-chat__composer">
-              <div className="v2-chat__composer-kicker">
-                <span className={`v2-chat__composer-mode v2-chat__composer-mode--${mode}`}>
-                  {mode === 'plan' ? 'Plan mode' : 'Execute mode'}
-                </span>
-                <span>Send to pod</span>
-                <span className="v2-chat__composer-hint">Enter sends, Shift+Enter adds a line</span>
-              </div>
               <div className="v2-chat__composer-input-wrap">
                 <textarea
                   ref={composerInputRef}
                   className="v2-chat__composer-input"
-                  placeholder={mode === 'plan' ? `Message ${pod.name} in plan preference...` : `Message ${pod.name} in execute preference...`}
+                  placeholder={`Message ${pod.name}…`}
                   value={draft}
                   onChange={(e) => {
                     const next = e.target.value;
@@ -840,19 +833,17 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   className={`v2-chat__send v2-chat__send--${mode}`}
                   onClick={handleSend}
                   disabled={sending || !draft.trim()}
-                  title={sending ? 'Sending...' : 'Send message'}
+                  title={sending ? 'Sending…' : 'Send message'}
+                  aria-label={sending ? 'Sending…' : 'Send message'}
                 >
                   <Icon d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-                  <span>Send</span>
                 </button>
               </div>
-              <div className="v2-chat__composer-footer">
-                {composerError ? (
+              {composerError && (
+                <div className="v2-chat__composer-footer">
                   <span className="v2-chat__composer-error">{composerError}</span>
-                ) : (
-                  <span>Attach files with the paperclip. @-mention an agent to direct your message.</span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </>
         )}
