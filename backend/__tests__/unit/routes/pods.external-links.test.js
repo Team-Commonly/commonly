@@ -34,6 +34,7 @@ describe('pods routes - external links', () => {
     const podSave = jest.fn();
     Pod.findById.mockResolvedValue({
       createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
       externalLinks: [],
       save: podSave,
     });
@@ -66,6 +67,68 @@ describe('pods routes - external links', () => {
     expect(podSave).toHaveBeenCalled();
   });
 
+  it('member (non-owner) can add a link', async () => {
+    const podSave = jest.fn();
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'someone-else' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: podSave,
+    });
+    const linkSave = jest.fn();
+    ExternalLink.mockImplementation((data) => ({ ...data, _id: 'l2', save: linkSave }));
+    await request(app)
+      .post('/api/pods/external-link')
+      .send({ podId: 'p1', name: 'n', type: 'notion', url: 'https://notion.so/foo' })
+      .expect(201);
+    expect(linkSave).toHaveBeenCalled();
+  });
+
+  it('auto-detects type when client passes type=auto', async () => {
+    const podSave = jest.fn();
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: podSave,
+    });
+    const linkSave = jest.fn();
+    ExternalLink.mockImplementation((data) => ({ ...data, _id: 'l3', save: linkSave }));
+    await request(app)
+      .post('/api/pods/external-link')
+      .send({ podId: 'p1', type: 'auto', url: 'https://docs.google.com/document/d/abc/edit' })
+      .expect(201);
+    expect(ExternalLink).toHaveBeenCalledWith(
+      expect.objectContaining({ podId: 'p1', type: 'google_doc', createdBy: 'user1' }),
+    );
+  });
+
+  it('detects github PR vs issue vs repo by path', async () => {
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: jest.fn(),
+    });
+    const cases = [
+      { url: 'https://github.com/Team-Commonly/commonly/pull/261', expected: 'github_pr' },
+      { url: 'https://github.com/Team-Commonly/commonly/issues/45', expected: 'github_issue' },
+      { url: 'https://github.com/Team-Commonly/commonly', expected: 'github_repo' },
+    ];
+    /* eslint-disable no-await-in-loop */
+    for (const c of cases) {
+      ExternalLink.mockImplementation((data) => ({ ...data, _id: 'l', save: jest.fn() }));
+      await request(app)
+        .post('/api/pods/external-link')
+        .send({ podId: 'p1', type: 'auto', url: c.url })
+        .expect(201);
+      expect(ExternalLink).toHaveBeenLastCalledWith(
+        expect.objectContaining({ type: c.expected }),
+      );
+    }
+    /* eslint-enable no-await-in-loop */
+  });
+
   it('returns 400 when required fields missing', async () => {
     await request(app).post('/api/pods/external-link').send({}).expect(400);
   });
@@ -83,8 +146,11 @@ describe('pods routes - external links', () => {
       .expect(404);
   });
 
-  it('returns 403 when user not owner', async () => {
-    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'other' } });
+  it('returns 403 when user is neither owner nor member', async () => {
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'other' },
+      members: [{ toString: () => 'someone-else' }],
+    });
     await request(app)
       .post('/api/pods/external-link')
       .send({

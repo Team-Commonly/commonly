@@ -62,4 +62,42 @@ describe('ExternalLink Model Tests', () => {
     expect(saved.type).toBe('wechat');
     expect(saved.qrCodePath).toBe('/path/to/qr.png');
   });
+
+  it.each([
+    'notion',
+    'google_doc',
+    'google_sheet',
+    'google_slides',
+    'google_drive',
+    'figma',
+    'zoom',
+    'gmail',
+    'github_pr',
+    'github_issue',
+    'github_repo',
+    'youtube',
+    'loom',
+    'other_link',
+  ])('accepts artifact type %s with url', async (type) => {
+    const link = new ExternalLink({
+      podId: pod._id,
+      name: `${type} doc`,
+      type,
+      url: 'https://example.com/x',
+      createdBy: user._id,
+    });
+    const saved = await link.save();
+    expect(saved.type).toBe(type);
+  });
+
+  it('rejects unknown type', async () => {
+    const link = new ExternalLink({
+      podId: pod._id,
+      name: 'Bogus',
+      type: 'not-a-real-type',
+      url: 'https://example.com',
+      createdBy: user._id,
+    });
+    await expect(link.save()).rejects.toThrow();
+  });
 });
