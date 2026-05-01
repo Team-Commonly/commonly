@@ -1435,6 +1435,16 @@
   white-space: nowrap;
 }
 
+/* Solid accent-soft wash + 2px accent rail when the current user is
+   @-mentioned in this message. No gradients (system rule). */
+.v2-msg--mention {
+  background: var(--v2-accent-soft);
+  border-left: 2px solid var(--v2-accent);
+  border-radius: 0 var(--v2-radius-sm) var(--v2-radius-sm) 0;
+  padding: 8px 10px 8px 10px;
+  margin-left: -12px;
+}
+
 .v2-msg__content ul,
 .v2-msg__content ol {
   margin: 4px 0 6px;

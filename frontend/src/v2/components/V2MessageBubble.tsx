@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { formatRelativeTime } from '../utils/grouping';
+import { useAuth } from '../../context/AuthContext';
 
 // Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
 // styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
@@ -165,6 +166,7 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
 };
 
 const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick }) => {
+  const { currentUser } = useAuth();
   const rawUsername = message.user?.username || 'Unknown';
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
   const author = overriddenDisplay || rawUsername;
@@ -183,8 +185,17 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
     ? stripped
     : markdownImage;
 
+  // Highlight messages that @-mention the current user. Word-boundary so
+  // `@foo` doesn't match `@foobar`. Skip for self-authored messages — no
+  // value highlighting your own outgoing message.
+  const meUsername = currentUser?.username?.toLowerCase();
+  const isSelfAuthored = meUsername === rawUsername.toLowerCase();
+  const mentionsMe = !isSelfAuthored
+    && !!meUsername
+    && new RegExp(`@${meUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(stripped);
+
   return (
-    <div className="v2-msg">
+    <div className={`v2-msg${mentionsMe ? ' v2-msg--mention' : ''}`}>
       {isClickable ? (
         <button
           type="button"
