@@ -661,7 +661,9 @@
    sits next to the row, not nested). */
 .v2-pods__row {
   position: relative;
+  margin-bottom: 6px;
 }
+.v2-pods__row:last-child { margin-bottom: 0; }
 
 /* Hover-shown pin button. Lives in the top-right of the row; reveals on
    hover or persists when the pod is pinned. Mirrors Google-Chat / Slack
@@ -685,11 +687,10 @@
   opacity: 1;
 }
 
-/* Clean the right edge on hover: pin replaces the status pill + time so
-   the row doesn't get visually crowded. Pinned-but-not-hovered keeps
-   status + time visible — the pin tucks into the top-right corner. */
-.v2-pods__row:hover .v2-pods__status,
-.v2-pods__row:hover .v2-pods__item-time {
+/* Hide the status pill on hover so the pin can take its top-right slot
+   without overlap. Time stays visible — it lives in the bottom-right
+   corner now and doesn't clash with the pin. */
+.v2-pods__row:hover .v2-pods__status {
   visibility: hidden;
 }
 /* Reserve a margin for the pin so the 2-line snippet doesn't run under
@@ -857,13 +858,16 @@
   overflow: hidden;
 }
 
+/* Bottom-right of each pod card. Float out of grid flow with absolute
+   positioning so it sits in the corner, like Slack/iMessage list rows. */
 .v2-pods__item-time {
-  grid-column: 2;
-  font-size: 11px;
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 10.5px;
   color: var(--v2-text-tertiary);
-  flex-shrink: 0;
-  align-self: end;
-  padding-top: 0;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .v2-pods__empty {
