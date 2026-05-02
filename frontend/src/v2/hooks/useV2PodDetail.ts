@@ -118,7 +118,16 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const fetchAgents = useCallback(async (id: string) => {
     try {
       const data = await api.get<AgentsResponse>(`/api/registry/pods/${id}/agents`, { timeout: REQUEST_TIMEOUT_MS });
-      setAgents(Array.isArray(data?.agents) ? data.agents : []);
+      // Registry returns each agent with `name` (e.g. "openclaw"), but the
+      // V2Agent contract is `agentName`. Normalize at the boundary so every
+      // downstream consumer (including the "Talk to" POST body) gets a
+      // populated agentName instead of silently sending undefined.
+      const raw = Array.isArray(data?.agents) ? data.agents : [];
+      const normalized = raw.map((a: V2Agent & { name?: string }) => ({
+        ...a,
+        agentName: a.agentName || a.name || '',
+      }));
+      setAgents(normalized);
     } catch {
       setAgents([]);
     }
