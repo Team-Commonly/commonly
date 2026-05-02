@@ -1,6 +1,29 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export type ExternalLinkType = 'discord' | 'telegram' | 'wechat' | 'groupme' | 'other';
+// Doc/link types added 2026-05-01: ExternalLink doubles as the pod "Artifacts"
+// store in v2 — Notion docs, Google Suite, Figma, Zoom, GitHub URLs, etc.
+// Original chat-bridge types (discord/telegram/wechat/groupme/other) are kept
+// for backward compat with QR-code-based community joins.
+export type ExternalLinkType =
+  | 'discord' | 'telegram' | 'wechat' | 'groupme' | 'other'
+  | 'notion'
+  | 'google_doc' | 'google_sheet' | 'google_slides' | 'google_drive'
+  | 'figma'
+  | 'zoom'
+  | 'gmail'
+  | 'github_pr' | 'github_issue' | 'github_repo'
+  | 'youtube' | 'loom'
+  | 'other_link';
+
+const EXTERNAL_LINK_TYPES: ExternalLinkType[] = [
+  'discord', 'telegram', 'wechat', 'groupme', 'other',
+  'notion',
+  'google_doc', 'google_sheet', 'google_slides', 'google_drive',
+  'figma', 'zoom', 'gmail',
+  'github_pr', 'github_issue', 'github_repo',
+  'youtube', 'loom',
+  'other_link',
+];
 
 export interface IExternalLink extends Document {
   podId: Types.ObjectId;
@@ -20,8 +43,8 @@ const ExternalLinkSchema = new Schema<IExternalLink>(
     type: {
       type: String,
       required: true,
-      enum: ['discord', 'telegram', 'wechat', 'groupme', 'other'],
-      default: 'other',
+      enum: EXTERNAL_LINK_TYPES,
+      default: 'other_link',
     },
     url: { type: String, trim: true },
     qrCodePath: { type: String },

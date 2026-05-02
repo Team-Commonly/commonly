@@ -51,6 +51,49 @@ interface ExternalLinkItem {
   url?: string;
 }
 
+// Per-type label for the Artifacts row icon (1-2 char glyph) and the
+// human-readable kind shown under the title. Keep aligned with the enum in
+// `backend/models/ExternalLink.ts`. Unknown kinds fall back to "L" / "Link".
+const ARTIFACT_KIND_META: Record<string, { icon: string; label: string }> = {
+  Announcement: { icon: 'AN', label: 'Announcement' },
+  notion: { icon: 'N', label: 'Notion' },
+  google_doc: { icon: 'GD', label: 'Google Doc' },
+  google_sheet: { icon: 'GS', label: 'Google Sheet' },
+  google_slides: { icon: 'GP', label: 'Google Slides' },
+  google_drive: { icon: 'DR', label: 'Google Drive' },
+  figma: { icon: 'F', label: 'Figma' },
+  zoom: { icon: 'Z', label: 'Zoom' },
+  gmail: { icon: 'GM', label: 'Gmail' },
+  github_pr: { icon: 'PR', label: 'GitHub PR' },
+  github_issue: { icon: 'IS', label: 'GitHub Issue' },
+  github_repo: { icon: 'GH', label: 'GitHub Repo' },
+  youtube: { icon: 'YT', label: 'YouTube' },
+  loom: { icon: 'LM', label: 'Loom' },
+  discord: { icon: 'DC', label: 'Discord' },
+  telegram: { icon: 'TG', label: 'Telegram' },
+  wechat: { icon: 'WX', label: 'WeChat' },
+  groupme: { icon: 'GR', label: 'GroupMe' },
+  other: { icon: 'L', label: 'Link' },
+  other_link: { icon: 'L', label: 'Link' },
+};
+
+const artifactMeta = (kind: string): { icon: string; label: string } =>
+  ARTIFACT_KIND_META[kind] || { icon: kind.slice(0, 2).toUpperCase() || 'L', label: 'Link' };
+
+// Defense-in-depth at render time: never put a `javascript:` / `data:` /
+// `file:` URL into an <a href>. The POST endpoint enforces this server-side
+// (routes/pods.ts isSafeHttpUrl), but pre-existing rows from the v1 ChatRoom
+// flow are not guaranteed to be safe.
+const safeHref = (raw?: string): string | undefined => {
+  if (!raw) return undefined;
+  try {
+    const u = new URL(raw);
+    return (u.protocol === 'http:' || u.protocol === 'https:') ? raw : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 interface RunStateCounts {
   blocked: number;
   inProgress: number;
@@ -89,6 +132,10 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [externalLinks, setExternalLinks] = useState<ExternalLinkItem[]>([]);
   const [tab, setTab] = useState<'overview' | 'members' | 'tasks' | 'manage'>('overview');
+  const [addLinkOpen, setAddLinkOpen] = useState(false);
+  const [addLinkUrl, setAddLinkUrl] = useState('');
+  const [addLinkBusy, setAddLinkBusy] = useState(false);
+  const [addLinkError, setAddLinkError] = useState<string | null>(null);
 
   // Map agent username (`openclaw-nova`) → agent record so we can look up by
   // either instance id or full username when chat clicks come in.
@@ -314,36 +361,144 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     })),
     ...externalLinks.map((l) => ({
       id: `link-${l._id}`,
-      kind: l.type || 'Link',
+      kind: l.type || 'other_link',
       title: l.name || l.url || 'External link',
       subtitle: l.url,
       url: l.url,
     })),
   ];
 
+  const handleAddLinkSubmit = async () => {
+    const url = addLinkUrl.trim();
+    if (!url || !pod) return;
+    setAddLinkBusy(true);
+    setAddLinkError(null);
+    try {
+      const created = await api.post<ExternalLinkItem>('/api/pods/external-link', {
+        podId: pod._id,
+        type: 'auto',
+        url,
+      });
+      setExternalLinks((prev) => [created, ...prev]);
+      setAddLinkUrl('');
+      setAddLinkOpen(false);
+    } catch (err) {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      setAddLinkError(e.response?.data?.message || e.message || 'Could not add link.');
+    } finally {
+      setAddLinkBusy(false);
+    }
+  };
+
   const artifactsSection = (
     <section className="v2-inspector__section">
       <div className="v2-inspector__section-head">
         <div className="v2-inspector__section-title">Artifacts</div>
+        <button
+          type="button"
+          className="v2-inspector__link"
+          onClick={() => {
+            setAddLinkOpen((v) => !v);
+            setAddLinkError(null);
+          }}
+          aria-expanded={addLinkOpen}
+        >
+          {addLinkOpen ? 'Cancel' : '+ Add'}
+        </button>
       </div>
-      {artifactItems.length === 0 ? (
-        <div className="v2-inspector__empty">No artifacts yet — share Notion, Sheets, or Figma links and they&apos;ll appear here.</div>
-      ) : (
-        <div className="v2-inspector__artifacts">
-          {artifactItems.map((a) => (
+      {addLinkOpen && (
+        <div
+          style={{
+            display: 'flex', flexDirection: 'column', gap: 6,
+            padding: '8px 0 12px',
+          }}
+        >
+          <input
+            type="url"
+            value={addLinkUrl}
+            onChange={(e) => setAddLinkUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !addLinkBusy && addLinkUrl.trim()) {
+                e.preventDefault();
+                void handleAddLinkSubmit();
+              }
+            }}
+            placeholder="Paste a Notion, Google Doc, Figma, GitHub, Zoom URL…"
+            autoFocus
+            disabled={addLinkBusy}
+            style={{
+              width: '100%',
+              padding: '8px 9px',
+              border: '1px solid var(--v2-border)',
+              borderRadius: 'var(--v2-radius-sm)',
+              background: 'var(--v2-surface)',
+              fontSize: 12,
+              color: 'var(--v2-text-primary)',
+              outline: 'none',
+            }}
+          />
+          {addLinkError && (
+            <div style={{ fontSize: 11, color: 'var(--v2-danger)' }}>{addLinkError}</div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button
-              key={a.id}
               type="button"
-              className="v2-inspector__artifact-row"
-              onClick={() => onOpenArtifact(a.id)}
+              onClick={() => { setAddLinkOpen(false); setAddLinkUrl(''); setAddLinkError(null); }}
+              disabled={addLinkBusy}
+              style={{
+                padding: '6px 9px',
+                borderRadius: 'var(--v2-radius-sm)',
+                fontSize: 11,
+                fontWeight: 700,
+                color: 'var(--v2-text-tertiary)',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+              }}
             >
-              <span className="v2-inspector__artifact-icon" aria-hidden>{a.kind.slice(0, 1).toUpperCase()}</span>
-              <span className="v2-inspector__artifact-meta">
-                <span className="v2-inspector__artifact-title">{a.title}</span>
-                <span className="v2-inspector__artifact-sub">{a.kind}{a.subtitle ? ` · ${a.subtitle.replace(/^https?:\/\//, '').slice(0, 32)}` : ''}</span>
-              </span>
+              Cancel
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => { void handleAddLinkSubmit(); }}
+              disabled={addLinkBusy || !addLinkUrl.trim()}
+              style={{
+                padding: '6px 9px',
+                borderRadius: 'var(--v2-radius-sm)',
+                fontSize: 11,
+                fontWeight: 700,
+                background: addLinkBusy || !addLinkUrl.trim() ? 'var(--v2-border-strong)' : 'var(--v2-accent)',
+                color: '#fff',
+                border: 'none',
+                cursor: addLinkBusy || !addLinkUrl.trim() ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {addLinkBusy ? 'Adding…' : 'Add'}
+            </button>
+          </div>
+        </div>
+      )}
+      {artifactItems.length === 0 && !addLinkOpen ? (
+        <div className="v2-inspector__empty">No artifacts yet — share Notion, Sheets, or Figma links and they&apos;ll appear here.</div>
+      ) : artifactItems.length > 0 && (
+        <div className="v2-inspector__artifacts">
+          {artifactItems.map((a) => {
+            const meta = artifactMeta(a.kind);
+            return (
+              <button
+                key={a.id}
+                type="button"
+                className="v2-inspector__artifact-row"
+                onClick={() => onOpenArtifact(a.id)}
+              >
+                <span className="v2-inspector__artifact-icon" aria-hidden>{meta.icon}</span>
+                <span className="v2-inspector__artifact-meta">
+                  <span className="v2-inspector__artifact-title">{a.title}</span>
+                  <span className="v2-inspector__artifact-sub">{meta.label}{a.subtitle ? ` · ${a.subtitle.replace(/^https?:\/\//, '').slice(0, 32)}` : ''}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </section>
@@ -515,18 +670,19 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     if (!found) {
       return <div className="v2-inspector__empty">Artifact not found.</div>;
     }
+    const meta = artifactMeta(found.kind);
     return (
       <div className="v2-inspector__detail">
         <div className="v2-inspector__detail-head">
           <span className="v2-inspector__artifact-icon v2-inspector__artifact-icon--lg">
-            {found.kind.slice(0, 1).toUpperCase()}
+            {meta.icon}
           </span>
           <div className="v2-inspector__detail-name">{found.title}</div>
-          <div className="v2-inspector__detail-sub">{found.kind}</div>
+          <div className="v2-inspector__detail-sub">{meta.label}</div>
         </div>
-        {found.url && (
+        {safeHref(found.url) && (
           <div className="v2-inspector__detail-actions">
-            <a className="v2-inspector__btn v2-inspector__btn--primary" href={found.url} target="_blank" rel="noreferrer">
+            <a className="v2-inspector__btn v2-inspector__btn--primary" href={safeHref(found.url)} target="_blank" rel="noreferrer">
               Open
             </a>
           </div>

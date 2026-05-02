@@ -34,6 +34,7 @@ describe('pods routes - external links', () => {
     const podSave = jest.fn();
     Pod.findById.mockResolvedValue({
       createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
       externalLinks: [],
       save: podSave,
     });
@@ -66,6 +67,122 @@ describe('pods routes - external links', () => {
     expect(podSave).toHaveBeenCalled();
   });
 
+  it('member (non-owner) can add a link', async () => {
+    const podSave = jest.fn();
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'someone-else' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: podSave,
+    });
+    const linkSave = jest.fn();
+    ExternalLink.mockImplementation((data) => ({ ...data, _id: 'l2', save: linkSave }));
+    await request(app)
+      .post('/api/pods/external-link')
+      .send({
+        podId: 'p1',
+        name: 'n',
+        type: 'notion',
+        url: 'https://notion.so/foo',
+      })
+      .expect(201);
+    expect(linkSave).toHaveBeenCalled();
+  });
+
+  it('auto-detects type when client passes type=auto', async () => {
+    const podSave = jest.fn();
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: podSave,
+    });
+    const linkSave = jest.fn();
+    ExternalLink.mockImplementation((data) => ({ ...data, _id: 'l3', save: linkSave }));
+    await request(app)
+      .post('/api/pods/external-link')
+      .send({ podId: 'p1', type: 'auto', url: 'https://docs.google.com/document/d/abc/edit' })
+      .expect(201);
+    expect(ExternalLink).toHaveBeenCalledWith(
+      expect.objectContaining({ podId: 'p1', type: 'google_doc', createdBy: 'user1' }),
+    );
+  });
+
+  it.each([
+    ['https://notion.so/workspace/page-id', 'notion'],
+    ['https://acme.notion.so/page-id', 'notion'],
+    ['https://www.figma.com/file/abc/Design', 'figma'],
+    ['https://us02web.zoom.us/j/12345', 'zoom'],
+    ['https://drive.google.com/file/d/abc/view', 'google_drive'],
+    ['https://youtu.be/abc123', 'youtube'],
+    ['https://www.loom.com/share/abc', 'loom'],
+    ['https://example.com/random', 'other_link'],
+  ])('auto-detect maps %s → %s', async (url, expected) => {
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: jest.fn(),
+    });
+    ExternalLink.mockImplementation((data) => ({
+      ...data,
+      _id: 'lx',
+      save: jest.fn(),
+    }));
+    await request(app)
+      .post('/api/pods/external-link')
+      .send({ podId: 'p1', type: 'auto', url })
+      .expect(201);
+    expect(ExternalLink).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: expected }),
+    );
+  });
+
+  it.each([
+    // eslint-disable-next-line no-script-url -- intentional: the safe-URL guard must reject this
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'file:///etc/passwd',
+    'not a url at all',
+  ])('rejects unsafe URL %s with 400', async (url) => {
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: jest.fn(),
+    });
+    await request(app)
+      .post('/api/pods/external-link')
+      .send({ podId: 'p1', type: 'other_link', url })
+      .expect(400);
+  });
+
+  it('detects github PR vs issue vs repo by path', async () => {
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'user1' },
+      members: [{ toString: () => 'user1' }],
+      externalLinks: [],
+      save: jest.fn(),
+    });
+    const expectGithubKind = async (url, expected) => {
+      ExternalLink.mockImplementation((data) => ({
+        ...data,
+        _id: 'l',
+        save: jest.fn(),
+      }));
+      await request(app)
+        .post('/api/pods/external-link')
+        .send({ podId: 'p1', type: 'auto', url })
+        .expect(201);
+      expect(ExternalLink).toHaveBeenLastCalledWith(
+        expect.objectContaining({ type: expected }),
+      );
+    };
+    await expectGithubKind('https://github.com/Team-Commonly/commonly/pull/261', 'github_pr');
+    await expectGithubKind('https://github.com/Team-Commonly/commonly/issues/45', 'github_issue');
+    await expectGithubKind('https://github.com/Team-Commonly/commonly', 'github_repo');
+  });
+
   it('returns 400 when required fields missing', async () => {
     await request(app).post('/api/pods/external-link').send({}).expect(400);
   });
@@ -78,20 +195,23 @@ describe('pods routes - external links', () => {
         podId: 'p1',
         name: 'n',
         type: 'discord',
-        url: 'u',
+        url: 'https://discord.gg/x',
       })
       .expect(404);
   });
 
-  it('returns 403 when user not owner', async () => {
-    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'other' } });
+  it('returns 403 when user is neither owner nor member', async () => {
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'other' },
+      members: [{ toString: () => 'someone-else' }],
+    });
     await request(app)
       .post('/api/pods/external-link')
       .send({
         podId: 'p1',
         name: 'n',
         type: 'discord',
-        url: 'u',
+        url: 'https://discord.gg/x',
       })
       .expect(403);
   });

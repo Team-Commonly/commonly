@@ -96,14 +96,90 @@ router.delete('/announcement/:id', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
+// Reject anything that isn't a real http(s) URL — guards against `javascript:`
+// or `data:` schemes ending up in an <a href> in the inspector. WeChat QR-code
+// links are exempt because their primary surface is qrCodePath, not href.
+const isSafeHttpUrl = (rawUrl: string): boolean => {
+  try {
+    const u = new URL(rawUrl);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+// URL → ExternalLinkType. Used when the client passes type='auto' (or omits
+// type with a URL present) so the v2 inspector "+ Add" flow is paste-and-go.
+// Match the most specific host first; everything unknown falls back to
+// 'other_link'. Keep this in sync with the enum in models/ExternalLink.ts.
+const detectLinkType = (rawUrl: string): string => {
+  if (!rawUrl) return 'other_link';
+  let host = '';
+  let pathname = '';
+  try {
+    const u = new URL(rawUrl);
+    host = u.hostname.toLowerCase();
+    pathname = u.pathname.toLowerCase();
+  } catch {
+    return 'other_link';
+  }
+  if (host === 'notion.so' || host.endsWith('.notion.so') || host.endsWith('.notion.site')) return 'notion';
+  if (host === 'docs.google.com') {
+    if (pathname.includes('/document/')) return 'google_doc';
+    if (pathname.includes('/spreadsheets/')) return 'google_sheet';
+    if (pathname.includes('/presentation/')) return 'google_slides';
+    return 'google_doc';
+  }
+  if (host === 'sheets.google.com') return 'google_sheet';
+  if (host === 'slides.google.com') return 'google_slides';
+  if (host === 'drive.google.com') return 'google_drive';
+  if (host === 'figma.com' || host.endsWith('.figma.com')) return 'figma';
+  if (host === 'zoom.us' || host.endsWith('.zoom.us')) return 'zoom';
+  if (host === 'mail.google.com') return 'gmail';
+  if (host === 'github.com' || host.endsWith('.github.com')) {
+    if (/\/pull\/\d+/.test(pathname)) return 'github_pr';
+    if (/\/issues\/\d+/.test(pathname)) return 'github_issue';
+    return 'github_repo';
+  }
+  if (host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be') return 'youtube';
+  if (host === 'loom.com' || host.endsWith('.loom.com')) return 'loom';
+  if (host.includes('discord.com') || host.includes('discord.gg')) return 'discord';
+  if (host === 't.me' || host.endsWith('.telegram.org')) return 'telegram';
+  if (host.includes('groupme.com')) return 'groupme';
+  return 'other_link';
+};
+
+const deriveLinkName = (rawUrl: string): string => {
+  try {
+    const u = new URL(rawUrl);
+    const tail = u.pathname.replace(/\/+$/, '').split('/').filter(Boolean).pop();
+    return tail ? `${u.hostname}${u.pathname.length > 1 ? ` · ${decodeURIComponent(tail).slice(0, 60)}` : ''}` : u.hostname;
+  } catch {
+    return rawUrl.slice(0, 80);
+  }
+};
+
 router.post('/external-link', auth, upload.single('qrCode'), async (req: AuthReq, res: Res) => {
   try {
-    const { podId, name, type, url } = (req.body || {}) as { podId?: string; name?: string; type?: string; url?: string };
-    if (!podId || !name || !type) return res.status(400).json({ message: 'Missing required fields' });
-    const pod = await Pod.findById(podId) as { createdBy?: { toString: () => string }; externalLinks?: unknown[]; save: () => Promise<void> } | null;
+    const { podId, name: rawName, type: rawType, url } = (req.body || {}) as { podId?: string; name?: string; type?: string; url?: string };
+    if (!podId) return res.status(400).json({ message: 'Missing podId' });
+    // Auto-detect type when client passes 'auto' or no type with a URL — lets
+    // the v2 inspector add-link flow work as a single paste field.
+    const type = (!rawType || rawType === 'auto') && url ? detectLinkType(url) : rawType;
+    if (!type) return res.status(400).json({ message: 'Missing type' });
+    // Block javascript:/data: URLs before they reach the DB or the inspector
+    // <a href> render path. WeChat is the only type that can ship without a
+    // url (it carries qrCodePath instead).
+    if (url && !isSafeHttpUrl(url)) return res.status(400).json({ message: 'URL must be http or https' });
+    const name = (rawName && rawName.trim()) || (url ? deriveLinkName(url) : '');
+    if (!name) return res.status(400).json({ message: 'Missing name' });
+    const pod = await Pod.findById(podId) as { createdBy?: { toString: () => string }; members?: Array<{ toString: () => string }>; externalLinks?: unknown[]; save: () => Promise<void> } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
-    if (pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Only pod owner can add external links' });
-    const externalLink = new ExternalLink({ podId, name, type, createdBy: req.user?.id });
+    const userId = req.user?.id;
+    const isOwner = pod.createdBy?.toString() === userId;
+    const isMember = pod.members?.some((m) => m.toString() === userId);
+    if (!isOwner && !isMember) return res.status(403).json({ message: 'Only pod members can add links' });
+    const externalLink = new ExternalLink({ podId, name, type, createdBy: userId });
     if (type === 'wechat' && req.file) externalLink.qrCodePath = req.file.path;
     else if (url) externalLink.url = url;
     else return res.status(400).json({ message: 'URL or QR code is required' });
