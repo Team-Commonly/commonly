@@ -36,9 +36,18 @@ const podStatusFor = (pod: V2Pod): { label: string; tone: 'agents' | 'empty' | '
   return { label: 'No agents', tone: 'empty' };
 };
 
-const podSnippetFor = (pod: V2Pod, meta: string): string => (
-  pod.description?.trim() || meta
-);
+// Slack/iMessage pattern: line 2 of each row is the most recent message
+// preview, with the author prefix when it's not the current user. Falls back
+// to description/meta when the pod has no messages yet (newly-created pods).
+const podSnippetFor = (pod: V2Pod, meta: string): string => {
+  const last = pod.lastMessage;
+  if (last && last.content) {
+    const author = last.username ? `${last.username}: ` : '';
+    const content = last.content.replace(/\s+/g, ' ').trim();
+    return `${author}${content}`;
+  }
+  return pod.description?.trim() || meta;
+};
 
 const matchesFilter = (pod: V2Pod, filter: Filter): boolean => {
   switch (filter) {
@@ -230,7 +239,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
               {group.items.map((pod) => {
                 const memberCount = pod.members?.length || 0;
                 const agentCount = agentCountFor(pod);
-                const time = formatRelativeTime(pod.updatedAt || pod.createdAt);
+                const time = formatRelativeTime(pod.lastMessage?.createdAt || pod.updatedAt || pod.createdAt);
                 const active = pod._id === selectedPodId;
                 const meta = podKind(pod) === 'private'
                   ? 'Direct message'

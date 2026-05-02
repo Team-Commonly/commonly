@@ -8,6 +8,12 @@ export interface V2PodMember {
   isBot?: boolean;
 }
 
+export interface V2PodLastMessage {
+  content: string;
+  createdAt: string;
+  username: string | null;
+}
+
 export interface V2Pod {
   _id: string;
   name: string;
@@ -18,6 +24,7 @@ export interface V2Pod {
   createdBy?: { _id?: string; username?: string };
   createdAt?: string;
   updatedAt?: string;
+  lastMessage?: V2PodLastMessage | null;
 }
 
 export interface UseV2PodsResult {

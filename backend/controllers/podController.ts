@@ -174,6 +174,40 @@ exports.getAllPods = async (req: any, res: any) => {
       }
     }
 
+    // Attach last-message preview per pod for the sidebar snippet. Single
+    // PG query with DISTINCT ON, batched across all returned pod IDs —
+    // O(1) round-trips regardless of pod count. Falls back silently if PG
+    // isn't available.
+    if (PGMessage && Array.isArray(pods) && pods.length > 0) {
+      try {
+        const podIds = pods.map((p: any) => String(p._id));
+        const { pool } = require('../config/db-pg');
+        const sql = `
+          SELECT DISTINCT ON (m.pod_id) m.pod_id, m.content, m.created_at, m.user_id, u.username
+          FROM messages m
+          LEFT JOIN users u ON u.id = m.user_id
+          WHERE m.pod_id = ANY($1::text[])
+          ORDER BY m.pod_id, m.created_at DESC
+        `;
+        const result = await pool.query(sql, [podIds]);
+        const byPod = new Map<string, any>();
+        for (const row of result.rows || []) {
+          byPod.set(String(row.pod_id), {
+            content: row.content,
+            createdAt: row.created_at,
+            username: row.username || null,
+          });
+        }
+        pods = pods.map((p: any) => {
+          const obj = typeof p.toObject === 'function' ? p.toObject() : { ...p };
+          obj.lastMessage = byPod.get(String(p._id)) || null;
+          return obj;
+        });
+      } catch (pgErr: any) {
+        console.warn('[getAllPods] lastMessage attach failed:', pgErr.message);
+      }
+    }
+
     return res.json(pods);
   } catch (err: any) {
     console.error(err.message);
