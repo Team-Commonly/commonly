@@ -185,7 +185,7 @@ exports.getAllPods = async (req: any, res: any) => {
         const sql = `
           SELECT DISTINCT ON (m.pod_id) m.pod_id, m.content, m.created_at, m.user_id, u.username
           FROM messages m
-          LEFT JOIN users u ON u.id = m.user_id
+          LEFT JOIN users u ON u._id = m.user_id
           WHERE m.pod_id = ANY($1::text[])
           ORDER BY m.pod_id, m.created_at DESC
         `;
