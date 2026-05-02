@@ -711,11 +711,11 @@
 
 .v2-pods__item {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  align-items: start;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
   gap: 10px;
-  min-height: 72px;
-  padding: 10px;
+  min-height: 0;
+  padding: 8px 10px 10px;
   border-radius: var(--v2-radius);
   cursor: pointer;
   width: 100%;
@@ -848,14 +848,19 @@
   text-overflow: ellipsis;
 }
 
+/* One-line preview, like Slack/iMessage. Two-line was too tall and made
+   each card eat 80-100px; one line + tighter padding keeps the list
+   dense and scannable. */
 .v2-pods__item-snippet {
   font-size: 12px;
   line-height: 1.35;
   color: var(--v2-text-tertiary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+  /* Reserve room for the bottom-right time so it doesn't overlap on
+     long previews. */
+  padding-right: 56px;
 }
 
 /* Bottom-right of each pod card. Float out of grid flow with absolute
