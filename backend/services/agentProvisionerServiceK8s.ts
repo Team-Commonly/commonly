@@ -1658,6 +1658,69 @@ const waitForReadyGatewayPod = async (timeoutMs = 90000, pollIntervalMs = 5000) 
   return null;
 };
 
+/**
+ * Strip every openai-codex:* profile + the openai-codex order from an
+ * agent's auth-profiles.json on the gateway PVC. Used when reprovisioning
+ * a community agent so leftover Codex JWTs from earlier (buggy) provisions
+ * don't keep burning shared Codex quota. Idempotent.
+ */
+const clearCodexFromAgentAuthProfiles = async (deploymentName: any, agentId: any) => {
+  const script = [
+    `const fs = require('fs');`,
+    `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
+    `try {`,
+    `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
+    `  store.profiles = store.profiles || {};`,
+    `  let removed = 0;`,
+    `  for (const k of Object.keys(store.profiles)) {`,
+    `    if (k.startsWith('openai-codex:')) { delete store.profiles[k]; removed++; }`,
+    `  }`,
+    `  if (store.order && store.order['openai-codex']) { delete store.order['openai-codex']; }`,
+    `  fs.writeFileSync(p, JSON.stringify(store, null, 2));`,
+    `  process.stdout.write('cleared:' + removed);`,
+    `} catch (e) { process.stdout.write('skip:' + e.message); }`,
+  ].join(' ');
+
+  const execOnPod = async (podName: any) => new Promise<void>((resolve, reject) => {
+    const stdoutStream = new stream.PassThrough();
+    k8sExec.exec(
+      NAMESPACE,
+      podName,
+      'clawdbot-gateway',
+      ['node', '-e', script],
+      stdoutStream,
+      stdoutStream,
+      null,
+      false,
+      (status: any) => {
+        if (status.status === 'Success') resolve();
+        else reject(new Error(status.message || 'exec failed'));
+      },
+    ).catch(reject);
+  });
+
+  const MAX_ATTEMPTS = 2;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const gwPod = await waitForReadyGatewayPod(90000, 5000);
+      if (!gwPod) {
+        console.warn(`[k8s-provisioner] codex clear skipped for ${agentId}: no ready gateway pod after 90s`);
+        return;
+      }
+      await execOnPod(gwPod.metadata.name);
+      console.log(`[k8s-provisioner] codex profiles cleared for community agent ${agentId}`);
+      return;
+    } catch (err: any) {
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[k8s-provisioner] codex clear attempt ${attempt} failed for ${agentId}: ${err.message} — retrying`);
+        await new Promise((r) => setTimeout(r, 10000));
+      } else {
+        console.warn(`[k8s-provisioner] codex clear skipped for ${agentId}: ${err.message}`);
+      }
+    }
+  }
+};
+
 const injectCodexTokenToAgentAuthProfiles = async (deploymentName: any, agentId: any, credentials: any) => {
   // credentials: array of { profileId, credential } or null
   if (!credentials || credentials.length === 0) return;
@@ -1905,11 +1968,17 @@ const provisionOpenClawAccount = async ({
   let codexVirtualKey = null;
   if (codexBypassLiteLLM) {
     // Bypass mode: openai-codex provider points at chatgpt.com directly and
-    // OpenClaw's native handler decodes access as a JWT. Write the raw OAuth
-    // tokens (from secrets) for every agent that has an active codex install.
-    // The rotator sidecar keeps these fresh; LiteLLM virtual keys are not used
-    // for Codex while this toggle is on.
-    await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+    // OpenClaw's native handler decodes access as a JWT. Only DEV agents get
+    // raw OAuth tokens — community agents must NOT have openai-codex:*
+    // profiles or they'll burn the shared Codex weekly quota whenever they
+    // resolve gpt-5.4-mini (e.g. from a stale session or an explicit
+    // override). Earlier versions of this branch injected for everyone,
+    // leaking real JWTs onto every community agent's PVC.
+    if (isDevAgent) {
+      await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
+    } else {
+      await clearCodexFromAgentAuthProfiles('clawdbot-gateway', accountId);
+    }
   } else if (isDevAgent) {
     // Only dev agents get Codex credentials. Community agents use OpenRouter/Gemini only
     // and must NOT have openai-codex:codex-cli keys — acpx_run uses that profile and would
@@ -1973,6 +2042,12 @@ const provisionOpenClawAccount = async ({
     } else {
       await injectCodexTokenToAgentAuthProfiles('clawdbot-gateway', accountId, codexCredentials);
     }
+  } else {
+    // Non-bypass community agent — clear any leftover Codex profiles. Earlier
+    // (buggy) provisions injected JWTs onto everyone, and reprovision-all
+    // inherits state from the PVC. Without an explicit clear, those
+    // profiles would re-enable Codex routing forever.
+    await clearCodexFromAgentAuthProfiles('clawdbot-gateway', accountId);
   }
 
   // Route OpenRouter calls through LiteLLM for all agents when LiteLLM is available.
