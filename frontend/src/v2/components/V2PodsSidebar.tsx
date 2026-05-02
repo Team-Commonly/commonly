@@ -5,13 +5,12 @@ import { groupPods, formatRelativeTime } from '../utils/grouping';
 import { initialsFor } from '../utils/avatars';
 import { useV2Pinned } from '../hooks/useV2Pinned';
 
-type Filter = 'all' | 'team' | 'private' | 'pod';
+type Filter = 'all' | 'team' | 'private';
 
 const FILTERS: Array<{ key: Filter; label: string }> = [
   { key: 'all', label: 'All' },
   { key: 'team', label: 'Team' },
   { key: 'private', label: 'Private' },
-  { key: 'pod', label: 'Pod' },
 ];
 
 const isDmPod = (pod: V2Pod): boolean => pod.type === 'agent-room';
@@ -29,13 +28,6 @@ const agentCountFor = (pod: V2Pod): number => (
   (pod.members || []).filter((member) => typeof member === 'object' && !!member?.isBot).length
 );
 
-const podStatusFor = (pod: V2Pod): { label: string; tone: 'agents' | 'empty' | 'direct' } => {
-  if (podKind(pod) === 'private') return { label: 'Direct', tone: 'direct' };
-  const agentCount = agentCountFor(pod);
-  if (agentCount > 0) return { label: `${agentCount} agent${agentCount === 1 ? '' : 's'}`, tone: 'agents' };
-  return { label: 'No agents', tone: 'empty' };
-};
-
 // Slack/iMessage pattern: line 2 of each row is the most recent message
 // preview, with the author prefix when it's not the current user. Falls back
 // to description/meta when the pod has no messages yet (newly-created pods).
@@ -52,13 +44,10 @@ const podSnippetFor = (pod: V2Pod, meta: string): string => {
 const matchesFilter = (pod: V2Pod, filter: Filter): boolean => {
   switch (filter) {
     // "Team" is the strictest pod-type filter — only pods explicitly typed
-    // as team (multi-human collaborative). "Pod" is the broader product
-    // bucket — every collaborative pod, i.e. anything that is not a 1:1
-    // private DM. With more pod types added later (chat, study, games),
-    // Team and Pod will naturally diverge.
+    // as team (multi-human collaborative). "Private" is 1:1 DMs.
+    // "All" covers everything (the redundant "Pod" filter was removed).
     case 'team': return pod.type === 'team';
     case 'private': return podKind(pod) === 'private';
-    case 'pod': return !isDmPod(pod);
     case 'all':
     default:
       return true;
@@ -96,7 +85,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
     FILTERS.reduce<Record<Filter, number>>((counts, item) => {
       counts[item.key] = pods.filter((pod) => matchesFilter(pod, item.key)).length;
       return counts;
-    }, { all: 0, team: 0, private: 0, pod: 0 })
+    }, { all: 0, team: 0, private: 0 })
   ), [pods]);
 
   const grouped = useMemo(() => groupPods(filtered, pinned), [filtered, pinned]);
@@ -246,7 +235,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
                   : (agentCount > 0
                     ? `${agentCount} agent${agentCount === 1 ? '' : 's'}`
                     : `${memberCount} member${memberCount === 1 ? '' : 's'}`);
-                const status = podStatusFor(pod);
                 const snippet = podSnippetFor(pod, meta);
                 const pinnedNow = isPinned(pod._id);
                 return (
@@ -265,15 +253,12 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
                       <span className="v2-pods__item-body">
                         <span className="v2-pods__item-title-row">
                           <span className="v2-pods__item-title">{pod.name}</span>
-                          <span className={`v2-pods__status v2-pods__status--${status.tone}`}>
-                            {status.label}
-                          </span>
+                          <span className="v2-pods__item-time">{time}</span>
                         </span>
                         <span className="v2-pods__item-snippet">
                           {snippet}
                         </span>
                       </span>
-                      <span className="v2-pods__item-time">{time}</span>
                     </button>
                     <button
                       type="button"
