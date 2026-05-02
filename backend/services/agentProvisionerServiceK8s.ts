@@ -1890,13 +1890,11 @@ const applyOpenClawModelDefaults = async (config: any) => {
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
   config.models.providers.openrouter = {
-    // Route DIRECT to openrouter.ai with the real OR API key from
-    // OPENROUTER_API_KEY env. The LiteLLM-mediated path required a
-    // per-agent virtual key written into the auth-profile, which broke
-    // any time LiteLLM's key cache invalidated (after a restart, after
-    // a schema change, after reprovision). LiteLLM stays the single
-    // proxy for openai-codex/* only — that's what it's good at.
-    baseUrl: 'https://openrouter.ai/api/v1',
+    // Route through LiteLLM when available so all OpenRouter calls share
+    // the same observability + spend logs as Codex, and so dev agents can
+    // reuse a single virtual key across both providers. Falls back to
+    // direct OpenRouter if LiteLLM isn't deployed.
+    baseUrl: process.env.LITELLM_BASE_URL || 'https://openrouter.ai/api/v1',
     api: 'openai-completions',
     models: [
       {
@@ -2109,18 +2107,20 @@ const provisionOpenClawAccount = async ({
     await clearCodexFromAgentAuthProfiles('clawdbot-gateway', accountId);
   }
 
-  // OpenRouter routes DIRECT to openrouter.ai now (see applyOpenClawModelDefaults
-  // openrouter.baseUrl). The agent reads OPENROUTER_API_KEY from the gateway env
-  // (real sk-or-v1-... key) — no per-agent virtual key needed. The previous
-  // LiteLLM-mediated path is dropped: it required injecting a virtual key into
-  // every agent's auth-profiles.json on every reprovision, and any LiteLLM cache
-  // invalidation broke every agent simultaneously.
-  // codexVirtualKey is still kept above for dev agents (used for openai-codex/*
-  // routing through LiteLLM, which is the only thing LiteLLM proxies now).
-  void codexVirtualKey;
-  // Strip any leftover openrouter:default profile so OpenClaw's profile-priority
-  // resolver doesn't keep using a stale LiteLLM virtual key for openrouter.ai.
-  await clearOpenRouterFromAgentAuthProfiles('clawdbot-gateway', accountId);
+  // Route OpenRouter calls through LiteLLM when available (everything-via-LiteLLM
+  // mode). Dev agents reuse their Codex virtual key (already grants OpenRouter
+  // model access); community agents get a separate OR-only key. If virtual-key
+  // issuance fails (e.g. LiteLLM DB down), fall back to LITELLM_MASTER_KEY so
+  // the agent still routes through LiteLLM rather than burning raw keys direct.
+  if (process.env.LITELLM_BASE_URL) {
+    const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
+    const openRouterKey = isDevAgent
+      ? codexVirtualKey
+      : (await issueLiteLLMOpenRouterKey(accountId)) || masterKey || null;
+    if (openRouterKey) {
+      await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
+    }
+  }
   applySkillEnvEntriesToConfig(config, skillEnv);
 
   // Update agents list

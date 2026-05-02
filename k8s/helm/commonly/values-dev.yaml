@@ -198,16 +198,18 @@ litellm:
   image:
     repository: ghcr.io/berriai/litellm
     tag: v1.83.7-stable
-  # BerriAI/litellm#25429 workaround: route Codex direct to chatgpt.com
-  # via OpenClaw's native handler. Flip to false when upstream fix lands.
-  codexBypassLitellm: true
-  # Disable the codex-auth-rotator sidecar — we're in CODEX_BYPASS_LITELLM
-  # mode, so LiteLLM's chatgpt/ provider isn't used for Codex calls, and the
-  # rotator would burn refresh_tokens on calls that never happen, invalidating
-  # the tokens we inject into per-agent auth-profiles.json. Re-enable when
-  # bypass is off (BerriAI/litellm#25429 fix lands).
+  # BerriAI/litellm#25429 workaround used to live here. Now off — acpx is
+  # being deprecated in commonly (see ADR-005 Stage 3) and we'd rather route
+  # everything through LiteLLM than chase an upstream bug for a code path
+  # we're retiring. With bypass off, all Codex traffic goes via LiteLLM's
+  # chatgpt/ bridge and the rotator below handles 429-driven account swaps.
+  codexBypassLitellm: false
+  # Re-enable the codex-auth-rotator sidecar — swaps /chatgpt-auth/auth.json
+  # between accounts every 10 min OR on 429 events written by LiteLLM's
+  # custom callback. Each ChatGPT Team user has independent quota, so
+  # rotation gives real multi-account benefit when one account exhausts.
   codexAuthRotator:
-    enabled: false
+    enabled: true
   nodeSelector:
     pool: dev
   tolerations:
