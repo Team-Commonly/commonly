@@ -366,6 +366,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         const key = agentKeyOf(agent);
         const isOnline = !!agent.lastHeartbeatAt
           && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000;
+        const purpose = agent.profile?.purpose || '';
         return (
           <button
             key={`agent-${key}`}
@@ -381,7 +382,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             />
             <span className="v2-inspector__member-meta">
               <span className="v2-inspector__member-name">{name}</span>
-              <span className="v2-inspector__member-role">AI Agent</span>
+              {purpose && <span className="v2-inspector__member-role">{purpose}</span>}
             </span>
             {isOnline && <span className="v2-online-dot" style={{ background: 'var(--v2-success)' }} />}
           </button>
@@ -389,12 +390,13 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
       })}
       {humanMembers.map((member) => {
         const role = memberRoleLabel(member, ownerId, false);
+        const showRole = role === 'Owner';
         return (
           <div key={`human-${member._id}`} className="v2-inspector__member-row v2-inspector__member-row--static">
             <V2Avatar name={member.username || 'Unknown'} src={member.profilePicture || undefined} size="md" />
             <span className="v2-inspector__member-meta">
               <span className="v2-inspector__member-name">{member.username}</span>
-              <span className="v2-inspector__member-role">{role}</span>
+              {showRole && <span className="v2-inspector__member-role">{role}</span>}
             </span>
           </div>
         );

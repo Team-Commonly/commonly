@@ -692,6 +692,14 @@
 .v2-pods__row:hover .v2-pods__item-time {
   visibility: hidden;
 }
+/* Reserve a margin for the pin so the 2-line snippet doesn't run under
+   it on hover (or on already-pinned rows). */
+.v2-pods__row:hover .v2-pods__item-snippet,
+.v2-pods__row--pinned .v2-pods__item-snippet,
+.v2-pods__row:hover .v2-pods__item-title,
+.v2-pods__row--pinned .v2-pods__item-title {
+  padding-right: 28px;
+}
 .v2-root button.v2-pods__pin:hover {
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
@@ -2161,10 +2169,11 @@
 .v2-inspector__member-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 8px 0;
+  padding: 6px 8px;
+  margin: 0 -8px;
   background: transparent;
   border: none;
   text-align: left;
@@ -2204,6 +2213,9 @@
 .v2-inspector__member-role {
   font-size: 11px;
   color: var(--v2-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- Inspector: Run State ---------- */
