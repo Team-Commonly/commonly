@@ -1570,8 +1570,15 @@ const applyOpenClawCodexProviderConfig = async (config: any) => {
   // stub regardless of which auth path is active. The `access` field is
   // overlaid per-agent later: LiteLLM virtual key (default) or real OAuth
   // (CODEX_BYPASS_LITELLM=true).
+  // mode MUST match the per-agent profile shape — OpenClaw's
+  // isProfileConfigCompatible filters profiles whose `type` doesn't match the
+  // configured `mode`. LiteLLM-routed path uses api_key (virtual key as
+  // Bearer); bypass path uses oauth (raw JWT).
+  const codexProfileMode = litellmBase ? 'api_key' : 'oauth';
   if (!config.auth.profiles['openai-codex:codex-cli']) {
-    config.auth.profiles['openai-codex:codex-cli'] = { provider: 'openai-codex', mode: 'oauth' };
+    config.auth.profiles['openai-codex:codex-cli'] = { provider: 'openai-codex', mode: codexProfileMode };
+  } else {
+    config.auth.profiles['openai-codex:codex-cli'].mode = codexProfileMode;
   }
 
   if (litellmBase) {
