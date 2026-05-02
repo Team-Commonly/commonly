@@ -1456,7 +1456,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
   const codexBypassLiteLLM = /^(1|true|yes)$/i.test(process.env.CODEX_BYPASS_LITELLM || '');
   const codexAssignLine = codexBypassLiteLLM
     ? ''
-    : `  store.profiles['openai-codex:codex-cli'] = Object.assign({}, store.profiles['openai-codex:codex-cli'] || {}, { access: '${escaped}' });`;
+    : `  store.profiles['openai-codex:codex-cli'] = Object.assign({}, store.profiles['openai-codex:codex-cli'] || {}, { type: 'api_key', provider: 'openai-codex', key: '${escaped}', apiKey: '${escaped}', access: '${escaped}' });`;
   const codexOrderLine = codexBypassLiteLLM
     ? ''
     : `  store.order['openai-codex'] = ['openai-codex:codex-cli'];`;
@@ -1465,7 +1465,11 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
     `const p = '/state/agents/${agentId}/agent/auth-profiles.json';`,
     `try {`,
     `  const store = JSON.parse(fs.readFileSync(p, 'utf8'));`,
-    `  store.profiles['openrouter:default'] = Object.assign({}, store.profiles['openrouter:default'] || {}, { key: '${orDefaultKey}', apiKey: '${orDefaultKey}' });`,
+    // type:"api_key" + provider are REQUIRED — without them OpenClaw's
+    // resolveApiKeyForProfile (auth-profiles/oauth.ts:334) treats the profile
+    // as type-incompatible and falls through to the env var, sending the
+    // real OPENROUTER_API_KEY (sk-or-v1-...) to LiteLLM and 401-ing.
+    `  store.profiles['openrouter:default'] = Object.assign({}, store.profiles['openrouter:default'] || {}, { type: 'api_key', provider: 'openrouter', key: '${orDefaultKey}', apiKey: '${orDefaultKey}' });`,
     codexAssignLine,
     `  store.order = store.order || {};`,
     codexOrderLine,
