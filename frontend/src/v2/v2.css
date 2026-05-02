@@ -2166,6 +2166,10 @@
 
 /* ---------- Inspector: Members ---------- */
 
+/* Specificity-prefixed against the v2 button reset — agent rows are
+   <button>, the reset zeros their padding/background. Match its (0,0,2,1)
+   so per-row padding actually applies. See feedback-v2-button-reset-specificity. */
+.v2-root button.v2-inspector__member-row,
 .v2-inspector__member-row {
   width: 100%;
   display: grid;
@@ -2184,13 +2188,14 @@
 
 .v2-inspector__member-row + .v2-inspector__member-row,
 .v2-inspector__member-row + .v2-inspector__member-row--static {
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .v2-inspector__member-meta {
   gap: 3px;
 }
 
+.v2-root button.v2-inspector__member-row:hover,
 .v2-inspector__member-row:hover {
   background: var(--v2-surface-hover);
 }
