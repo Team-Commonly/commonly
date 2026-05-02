@@ -1029,25 +1029,34 @@
   background: var(--v2-bg-subtle);
 }
 
-.v2-chat__mode-option {
+/* Specificity-prefix per feedback-v2-button-reset-specificity memory —
+   the global v2 button reset would otherwise flatten bg + color and the
+   active state would be visually identical to inactive. */
+.v2-root button.v2-chat__mode-option {
   height: 26px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 0 9px;
   border-radius: var(--v2-radius-sm);
+  background: transparent;
   color: var(--v2-text-secondary);
   font-size: 12px;
   font-weight: 600;
 }
 
-.v2-chat__mode-option:hover {
+.v2-root button.v2-chat__mode-option:hover {
   color: var(--v2-text-primary);
   background: var(--v2-surface);
 }
 
-.v2-chat__mode-option--active {
+.v2-root button.v2-chat__mode-option--active {
   background: var(--v2-accent);
+  color: #ffffff;
+}
+
+.v2-root button.v2-chat__mode-option--active:hover {
+  background: var(--v2-accent-strong);
   color: #ffffff;
 }
 
