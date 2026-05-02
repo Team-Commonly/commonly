@@ -679,30 +679,18 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
                     style={{ display: 'none' }}
                     onChange={(e) => handleAttachImage(e.target.files?.[0] || null)}
                   />
                   <button
                     type="button"
                     className="v2-chat__composer-icon-btn"
-                    title={uploading ? 'Uploading...' : 'Attach image'}
+                    title={uploading ? 'Uploading…' : 'Attach file'}
+                    aria-label="Attach file"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
                   >
                     <Icon d="M21 11l-9 9a5 5 0 01-7-7l9-9a3 3 0 014 4l-9 9a1 1 0 01-2-2l8-8" />
-                  </button>
-                  <button
-                    type="button"
-                    className="v2-chat__composer-icon-btn"
-                    title="Slash command (coming soon)"
-                    onClick={() => {
-                      const next = draft.length === 0 ? '/' : `${draft} /`;
-                      setDraft(next);
-                      composerInputRef.current?.focus();
-                    }}
-                  >
-                    <Icon d="M17 4L7 20" />
                   </button>
                 </div>
                 <button
@@ -713,7 +701,9 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   title={sending ? 'Sending…' : 'Send message'}
                   aria-label={sending ? 'Sending…' : 'Send message'}
                 >
-                  <Icon d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M2.5 11.4 21.2 3.1c.6-.3 1.2.3.9.9L13.8 22.7c-.3.6-1.2.6-1.4-.1l-2.7-7.4-7.4-2.7c-.7-.2-.7-1.1.2-1.1z" />
+                  </svg>
                 </button>
               </div>
               {composerError && (

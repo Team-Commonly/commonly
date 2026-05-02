@@ -88,7 +88,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const [privateError, setPrivateError] = useState<string | null>(null);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [externalLinks, setExternalLinks] = useState<ExternalLinkItem[]>([]);
-  const [tab, setTab] = useState<'overview' | 'members' | 'tasks'>('overview');
+  const [tab, setTab] = useState<'overview' | 'members' | 'tasks' | 'manage'>('overview');
 
   // Map agent username (`openclaw-nova`) → agent record so we can look up by
   // either instance id or full username when chat clicks come in.
@@ -257,18 +257,41 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   });
   const nowTask = nowAgent ? agentTasks[agentKeyOf(nowAgent)] : null;
   const nowSection = nowAgent && nowTask && (
-    <div className="v2-inspector__now">
-      <div className="v2-inspector__now-eyebrow">NOW</div>
-      <div className="v2-inspector__now-title">
-        <span className="v2-inspector__now-pulse" />
-        {(nowAgent.profile?.displayName || nowAgent.displayName || nowAgent.agentName)}
-        {' · '}
-        {nowTask.title}
+    <section className="v2-inspector__section">
+      <div className="v2-inspector__now">
+        <div className="v2-inspector__now-eyebrow">NOW</div>
+        <div className="v2-inspector__now-title">
+          <span className="v2-inspector__now-pulse" />
+          {(nowAgent.profile?.displayName || nowAgent.displayName || nowAgent.agentName)}
+          {' · '}
+          {nowTask.title}
+        </div>
+        <div className="v2-inspector__now-meta">
+          Status: {nowTask.status.replace('_', ' ')}
+        </div>
       </div>
-      <div className="v2-inspector__now-meta">
-        Status: {nowTask.status.replace('_', ' ')}
+    </section>
+  );
+
+  // ------------------------------------------------------------------
+  // PROGRESS — overall pod task completion. Hidden when the pod has
+  // no tracked tasks (avoids implying progress where there isn't any).
+  // ------------------------------------------------------------------
+  const totalTasks = runState.complete + runState.inProgress + runState.pending + runState.blocked;
+  const progressPct = totalTasks > 0 ? Math.round((runState.complete / totalTasks) * 100) : 0;
+  const progressSection = totalTasks > 0 && (
+    <section className="v2-inspector__section">
+      <div className="v2-inspector__section-title">Progress</div>
+      <div className="v2-inspector__progress-row">
+        <span className="v2-inspector__progress-stat">
+          {runState.complete} of {totalTasks} task{totalTasks === 1 ? '' : 's'} complete
+        </span>
+        <span className="v2-inspector__progress-pct">{progressPct}%</span>
       </div>
-    </div>
+      <div className="v2-inspector__progress-track">
+        <div className="v2-inspector__progress-bar" style={{ width: `${progressPct}%` }} />
+      </div>
+    </section>
   );
 
   // ------------------------------------------------------------------
@@ -383,7 +406,8 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   );
 
   const runStateSection = (
-    <section className="v2-inspector__section v2-inspector__section--quiet">
+    <section className="v2-inspector__section">
+      <div className="v2-inspector__section-title">Run state</div>
       <div className="v2-inspector__runstate">
         <div className="v2-inspector__runstate-row">
           <span className="v2-inspector__runstate-label">{runState.blocked} blocked</span>
@@ -613,18 +637,44 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                     </span>
                   )}
                 </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === 'manage'}
+                  className={`v2-inspector__tab${tab === 'manage' ? ' v2-inspector__tab--active' : ''}`}
+                  onClick={() => setTab('manage')}
+                >
+                  Manage
+                </button>
               </div>
 
               {tab === 'overview' && (
                 <>
+                  {progressSection}
                   {nowSection}
                   {pod.description && goalSection}
                   {artifactsSection}
+                </>
+              )}
+              {tab === 'members' && (
+                <>{membersSection || <div className="v2-inspector__empty">Members are not shown for direct pods.</div>}</>
+              )}
+              {tab === 'tasks' && runStateSection}
+              {tab === 'manage' && (
+                <>
+                  <section className="v2-inspector__section">
+                    <div className="v2-inspector__section-title">Pod settings</div>
+                    <div className="v2-inspector__empty">More pod settings will appear here. For now, manage members and integrations from the Agents page.</div>
+                  </section>
                   {podsState && (
-                    <section className="v2-inspector__section v2-inspector__section--quiet">
+                    <section className="v2-inspector__section v2-inspector__danger">
+                      <div className="v2-inspector__danger-title">Danger zone</div>
+                      <div className="v2-inspector__danger-text">
+                        Deleting this pod removes all messages, tasks, and artifacts. This cannot be undone.
+                      </div>
                       <button
                         type="button"
-                        className="v2-inspector__link v2-inspector__link--danger"
+                        className="v2-inspector__btn v2-inspector__btn--danger"
                         onClick={handleDeletePod}
                       >
                         Delete pod
@@ -633,10 +683,6 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                   )}
                 </>
               )}
-              {tab === 'members' && (
-                <>{membersSection || <div className="v2-inspector__empty">Members are not shown for direct pods.</div>}</>
-              )}
-              {tab === 'tasks' && runStateSection}
               {/* Use currentUser ref so AuthContext stays imported even when not surfaced here */}
               <span style={{ display: 'none' }}>{currentUser?._id || ''}</span>
             </>

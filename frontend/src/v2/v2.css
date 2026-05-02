@@ -1255,15 +1255,15 @@
 .v2-chat__composer-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   padding: 0;
   align-self: flex-end;
   order: 2;
 }
 
 .v2-chat__composer-icon-btn {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   border-radius: var(--v2-radius-sm);
@@ -1278,11 +1278,11 @@
 }
 
 .v2-chat__send {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--v2-accent);
   color: #fff;
   transition: background 80ms ease;
@@ -1800,7 +1800,8 @@
 .v2-inspector__body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 18px 24px;
+  padding: 14px 14px 24px;
+  background: var(--v2-surface-tint);
 }
 
 /* Pill tabs — see frontend/design-system/preview/components-tabs.html.
@@ -1810,9 +1811,10 @@
   display: inline-flex;
   gap: 4px;
   padding: 4px;
-  background: var(--v2-surface-hover);
+  background: var(--v2-bg);
+  border: 1px solid var(--v2-border-soft);
   border-radius: 9px;
-  margin: 4px 0 14px;
+  margin: 0 0 12px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -1841,9 +1843,8 @@
 }
 
 .v2-root button.v2-inspector__tab--active {
-  background: var(--v2-bg);
-  color: var(--v2-text-primary);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
 }
 
 .v2-inspector__tab-count {
@@ -1865,17 +1866,12 @@
   color: var(--v2-accent-text);
 }
 
-/* NOW card — currently-active agent + task. Mirrors the design preview's
-   .card with .eyebrow--accent + pulse + progress bar. */
+/* NOW card — currently-active agent + task. Now lives inside
+   .v2-inspector__section (which provides the card chrome). */
 .v2-inspector__now {
-  padding: 14px;
-  background: var(--v2-bg);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 4px;
 }
 
 .v2-inspector__now-eyebrow {
@@ -1884,6 +1880,75 @@
   color: var(--v2-accent-text);
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+/* Pod-progress card — overall task completion bar. Surfaces only when
+   the pod has at least one tracked task. */
+.v2-inspector__progress-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.v2-inspector__progress-stat {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+}
+
+.v2-inspector__progress-pct {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--v2-accent-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.v2-inspector__progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--v2-border-soft);
+  overflow: hidden;
+}
+
+.v2-inspector__progress-bar {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--v2-accent);
+  transition: width 240ms ease;
+}
+
+/* Danger zone — destructive actions (delete pod, etc.) live in the
+   Manage tab inside this red-accent card with proper warning chrome. */
+.v2-inspector__danger {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.v2-inspector__danger-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--v2-danger);
+  margin-bottom: 4px;
+}
+
+.v2-inspector__danger-text {
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.v2-root button.v2-inspector__btn--danger {
+  background: transparent;
+  border-color: var(--v2-danger);
+  color: var(--v2-danger);
+}
+
+.v2-root button.v2-inspector__btn--danger:hover {
+  background: var(--v2-danger);
+  color: #fff;
+  border-color: var(--v2-danger);
 }
 
 .v2-inspector__now-title {
@@ -1918,19 +1983,26 @@
   line-height: 1.45;
 }
 
+/* Card-style sections inside the tinted inspector body — replaces the
+   flat divider treatment. Mirrors the .card pattern in
+   components-inspector.html. */
 .v2-inspector__section {
-  padding: 16px 0 18px;
-  border-top: 1px solid var(--v2-border-soft);
+  padding: 14px;
+  background: var(--v2-bg);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  margin-bottom: 10px;
 }
 
-.v2-inspector__section:first-child {
-  border-top: none;
-  padding-top: 4px;
-}
+.v2-inspector__section:last-child { margin-bottom: 0; }
 
+/* "Quiet" sections have no card chrome — used for inline action rows
+   like the "Manage" link on the Members tab and the danger zone. */
 .v2-inspector__section--quiet {
-  border-top: none;
-  padding: 12px 0 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
 
 .v2-inspector__section-head {
