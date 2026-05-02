@@ -712,7 +712,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                 </div>
               )}
               <div className="v2-chat__composer-hint">
-                <span><kbd>@</kbd> mention <span style={{ opacity: 0.5 }}>·</span> <kbd>/</kbd> command</span>
+                <span><kbd>@</kbd> mention an agent</span>
                 <span><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
               </div>
             </div>

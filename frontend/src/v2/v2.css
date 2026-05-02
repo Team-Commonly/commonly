@@ -1277,7 +1277,10 @@
   color: var(--v2-text-primary);
 }
 
-.v2-chat__send {
+/* Specificity-matched against .v2-root button:not(.MuiButtonBase-root)
+   reset — prefix with .v2-root button.X. See
+   feedback-v2-button-reset-specificity memory. */
+.v2-root button.v2-chat__send {
   width: 36px;
   height: 36px;
   display: grid;
@@ -1294,19 +1297,19 @@
   order: 1;
 }
 
-.v2-chat__send--execute {
+.v2-root button.v2-chat__send--execute {
   background: var(--v2-accent);
 }
 
-.v2-chat__send--execute:hover {
+.v2-root button.v2-chat__send--execute:hover {
   background: var(--v2-accent-strong);
 }
 
-.v2-chat__send:hover {
+.v2-root button.v2-chat__send:hover {
   background: var(--v2-accent-strong);
 }
 
-.v2-chat__send:disabled {
+.v2-root button.v2-chat__send:disabled {
   background: var(--v2-border-strong);
   cursor: not-allowed;
 }
