@@ -88,6 +88,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const [privateError, setPrivateError] = useState<string | null>(null);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [externalLinks, setExternalLinks] = useState<ExternalLinkItem[]>([]);
+  const [tab, setTab] = useState<'overview' | 'members' | 'tasks'>('overview');
 
   // Map agent username (`openclaw-nova`) → agent record so we can look up by
   // either instance id or full username when chat clicks come in.
@@ -248,7 +249,30 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   };
 
   // ------------------------------------------------------------------
-  // OVERVIEW — Goal / Artifacts / Members / Run State
+  // NOW — first agent with an active task. Hidden if nothing is in flight.
+  // ------------------------------------------------------------------
+  const nowAgent = agents.find((a) => {
+    const key = agentKeyOf(a);
+    return !!agentTasks[key];
+  });
+  const nowTask = nowAgent ? agentTasks[agentKeyOf(nowAgent)] : null;
+  const nowSection = nowAgent && nowTask && (
+    <div className="v2-inspector__now">
+      <div className="v2-inspector__now-eyebrow">NOW</div>
+      <div className="v2-inspector__now-title">
+        <span className="v2-inspector__now-pulse" />
+        {(nowAgent.profile?.displayName || nowAgent.displayName || nowAgent.agentName)}
+        {' · '}
+        {nowTask.title}
+      </div>
+      <div className="v2-inspector__now-meta">
+        Status: {nowTask.status.replace('_', ' ')}
+      </div>
+    </div>
+  );
+
+  // ------------------------------------------------------------------
+  // OVERVIEW — Goal / Artifacts
   // ------------------------------------------------------------------
   const goalSection = (
     <section className="v2-inspector__section">
@@ -280,7 +304,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         <div className="v2-inspector__section-title">Artifacts</div>
       </div>
       {artifactItems.length === 0 ? (
-        <div className="v2-inspector__empty">No artifacts yet — share Notion, Sheets, or Figma links and they'll appear here.</div>
+        <div className="v2-inspector__empty">No artifacts yet — share Notion, Sheets, or Figma links and they&apos;ll appear here.</div>
       ) : (
         <div className="v2-inspector__artifacts">
           {artifactItems.map((a) => (
@@ -303,9 +327,8 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   );
 
   const membersSection = !isPrivatePod && (
-    <section className="v2-inspector__section">
+    <section className="v2-inspector__section v2-inspector__section--quiet">
       <div className="v2-inspector__section-head">
-        <div className="v2-inspector__section-title">Members ({agentCount + humanCount})</div>
         <button
           type="button"
           className="v2-inspector__link"
@@ -360,8 +383,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   );
 
   const runStateSection = (
-    <section className="v2-inspector__section">
-      <div className="v2-inspector__section-title">Run State</div>
+    <section className="v2-inspector__section v2-inspector__section--quiet">
       <div className="v2-inspector__runstate">
         <div className="v2-inspector__runstate-row">
           <span className="v2-inspector__runstate-label">{runState.blocked} blocked</span>
@@ -555,21 +577,66 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         <div className="v2-inspector__body">
           {view.kind === 'overview' && (
             <>
-              {pod.description && goalSection}
-              {artifactsSection}
-              {membersSection}
-              {runStateSection}
-              {podsState && (
-                <section className="v2-inspector__section v2-inspector__section--quiet">
+              <div className="v2-inspector__tabs" role="tablist" aria-label="Inspector sections">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === 'overview'}
+                  className={`v2-inspector__tab${tab === 'overview' ? ' v2-inspector__tab--active' : ''}`}
+                  onClick={() => setTab('overview')}
+                >
+                  Overview
+                </button>
+                {!isPrivatePod && (
                   <button
                     type="button"
-                    className="v2-inspector__link v2-inspector__link--danger"
-                    onClick={handleDeletePod}
+                    role="tab"
+                    aria-selected={tab === 'members'}
+                    className={`v2-inspector__tab${tab === 'members' ? ' v2-inspector__tab--active' : ''}`}
+                    onClick={() => setTab('members')}
                   >
-                    Delete pod
+                    Members
+                    <span className="v2-inspector__tab-count">{agentCount + humanCount}</span>
                   </button>
-                </section>
+                )}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === 'tasks'}
+                  className={`v2-inspector__tab${tab === 'tasks' ? ' v2-inspector__tab--active' : ''}`}
+                  onClick={() => setTab('tasks')}
+                >
+                  Tasks
+                  {(runState.blocked + runState.inProgress + runState.pending) > 0 && (
+                    <span className="v2-inspector__tab-count">
+                      {runState.blocked + runState.inProgress + runState.pending}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {tab === 'overview' && (
+                <>
+                  {nowSection}
+                  {pod.description && goalSection}
+                  {artifactsSection}
+                  {podsState && (
+                    <section className="v2-inspector__section v2-inspector__section--quiet">
+                      <button
+                        type="button"
+                        className="v2-inspector__link v2-inspector__link--danger"
+                        onClick={handleDeletePod}
+                      >
+                        Delete pod
+                      </button>
+                    </section>
+                  )}
+                </>
               )}
+              {tab === 'members' && (
+                <>{membersSection || <div className="v2-inspector__empty">Members are not shown for direct pods.</div>}</>
+              )}
+              {tab === 'tasks' && runStateSection}
               {/* Use currentUser ref so AuthContext stays imported even when not surfaced here */}
               <span style={{ display: 'none' }}>{currentUser?._id || ''}</span>
             </>

@@ -692,6 +692,18 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   >
                     <Icon d="M21 11l-9 9a5 5 0 01-7-7l9-9a3 3 0 014 4l-9 9a1 1 0 01-2-2l8-8" />
                   </button>
+                  <button
+                    type="button"
+                    className="v2-chat__composer-icon-btn"
+                    title="Slash command (coming soon)"
+                    onClick={() => {
+                      const next = draft.length === 0 ? '/' : `${draft} /`;
+                      setDraft(next);
+                      composerInputRef.current?.focus();
+                    }}
+                  >
+                    <Icon d="M17 4L7 20" />
+                  </button>
                 </div>
                 <button
                   type="button"
@@ -709,6 +721,10 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   <span className="v2-chat__composer-error">{composerError}</span>
                 </div>
               )}
+              <div className="v2-chat__composer-hint">
+                <span><kbd>@</kbd> mention <span style={{ opacity: 0.5 }}>·</span> <kbd>/</kbd> command</span>
+                <span><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
+              </div>
             </div>
       </div>
     </main>
