@@ -387,7 +387,7 @@ const ensureHeartbeatTemplate = async (accountId: any, heartbeat: any, { gateway
  * ConfigMap, so new accounts must appear there too or the init container will
  * never write their auth-profiles.json and the gateway will skip them on startup.
  */
-const syncAccountToStateMoltbot = async (accountId: any, accountEntry: any, agentEntry: any, binding: any, { gateway } : any = {}) => {
+const syncAccountToStateMoltbot = async (accountId: any, accountEntry: any, agentEntry: any, binding: any, { gateway, agentsDefaults } : any = {}) => {
   let podName;
   try {
     podName = await resolveGatewayPodNameWithRetry(gateway);
@@ -407,6 +407,13 @@ const syncAccountToStateMoltbot = async (accountId: any, accountEntry: any, agen
     `account_entry = ${JSON.stringify(accountEntry)}`,
     `agent_entry = ${JSON.stringify(agentEntry)}`,
     `binding = ${JSON.stringify(binding)}`,
+    `agents_defaults = ${JSON.stringify(agentsDefaults || null)}`,
+    // Global agents.defaults — overwrite on every sync. Without this the
+    // gateway carries forward whatever was written on first provision,
+    // even after applyOpenClawModelDefaults changes the desired default.
+    'if agents_defaults is not None:',
+    '    d.setdefault("agents", {})["defaults"] = agents_defaults',
+    '    print("[state-sync] updated agents.defaults")',
     // Accounts
     'd.setdefault("channels", {}).setdefault("commonly", {}).setdefault("accounts", {})',
     'accts = d["channels"]["commonly"]["accounts"]',
@@ -2154,7 +2161,13 @@ const provisionOpenClawAccount = async ({
     const accountEntry = config.channels.commonly.accounts[accountId];
     const agentEntry = config.agents.list.find((a: any) => a?.id === accountId) || null;
     const bindingEntry = config.bindings.find((b: any) => b?.match?.accountId === accountId) || null;
-    await syncAccountToStateMoltbot(accountId, accountEntry, agentEntry, bindingEntry, { gateway });
+    await syncAccountToStateMoltbot(accountId, accountEntry, agentEntry, bindingEntry, {
+      gateway,
+      // Persist applyOpenClawModelDefaults' work to the gateway PVC. Without
+      // this, the global default (e.g. nemotron) lives only in the in-memory
+      // config and the persisted file keeps a stale primary forever.
+      agentsDefaults: config.agents?.defaults || null,
+    });
     console.log(`[k8s-provisioner] synced ${accountId} to /state/moltbot.json`);
   } catch (err: any) {
     console.warn('[k8s-provisioner] Failed to sync account to /state/moltbot.json:', err.message);
