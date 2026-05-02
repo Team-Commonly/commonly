@@ -328,7 +328,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
 
   const membersSection = !isPrivatePod && (
     <section className="v2-inspector__section v2-inspector__section--quiet">
-      <div className="v2-inspector__section-head">
+      <div className="v2-inspector__section-head" style={{ justifyContent: 'flex-end', marginBottom: 4 }}>
         <button
           type="button"
           className="v2-inspector__link"
