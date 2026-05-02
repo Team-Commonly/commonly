@@ -42,6 +42,11 @@ backend:
     marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
     logLevel: debug
     agentSessionMaxSizeKb: "150"
+    # Bypass off — provisioner now writes LiteLLM virtual keys (not raw
+    # Codex JWTs) to per-agent auth-profiles, and LiteLLM proxies Codex
+    # via /chatgpt-auth/auth.json (rotator-managed). Pairs with
+    # litellm.codexBypassLitellm: false + litellm.codexAuthRotator.enabled: true.
+    codexBypassLitellm: "false"
 
 frontend:
   replicaCount: 1
