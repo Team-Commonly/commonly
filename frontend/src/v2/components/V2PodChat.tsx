@@ -455,25 +455,40 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     }
   };
 
-  const handleAttachImage = async (file: File | null) => {
+  // Composer attach: handles both images (sends as standalone image message,
+  // legacy v2 behavior) and other file kinds (PDF / md / txt / csv / json,
+  // inserts an [[upload:fileName|originalName|size|kind]] directive into the
+  // draft so the user can add accompanying text and send when ready). Both
+  // paths POST to /api/uploads with the active podId so the file shows up in
+  // the inspector's Artifacts section.
+  const handleAttachFile = async (file: File | null) => {
     if (!file || uploading) return;
-    if (!file.type.startsWith('image/')) {
-      setComposerError('Only image files are supported here.');
-      return;
-    }
     setUploading(true);
     setComposerError(null);
     try {
       const formData = new FormData();
-      formData.append('image', file);
-      const uploaded = await api.post<{ url?: string }>('/api/uploads', formData, {
+      formData.append('image', file); // legacy multer field name
+      formData.append('podId', pod._id);
+      const uploaded = await api.post<{
+        url?: string;
+        fileName?: string;
+        originalName?: string;
+        size?: number;
+        kind?: string;
+      }>('/api/uploads', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      if (uploaded.url) {
+      if (uploaded.kind === 'image' && uploaded.url) {
         await sendMessage(uploaded.url, 'image');
+        return;
       }
-    } catch {
-      setComposerError('Failed to upload image. Please try again.');
+      if (uploaded.fileName) {
+        const directive = `[[upload:${uploaded.fileName}|${uploaded.originalName || file.name}|${uploaded.size || file.size}|${uploaded.kind || 'file'}]]`;
+        setDraft((prev) => (prev ? `${prev.replace(/\s+$/, '')} ${directive}` : directive));
+      }
+    } catch (err) {
+      const e = err as { response?: { data?: { msg?: string } } };
+      setComposerError(e.response?.data?.msg || 'Failed to upload file. Please try again.');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -679,8 +694,9 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   <input
                     ref={fileInputRef}
                     type="file"
+                    accept="image/*,.pdf,.md,.txt,.csv,.json"
                     style={{ display: 'none' }}
-                    onChange={(e) => handleAttachImage(e.target.files?.[0] || null)}
+                    onChange={(e) => handleAttachFile(e.target.files?.[0] || null)}
                   />
                   <button
                     type="button"

@@ -15,6 +15,8 @@ const Announcement = require('../models/Announcement');
 // eslint-disable-next-line global-require
 const ExternalLink = require('../models/ExternalLink');
 // eslint-disable-next-line global-require
+const File = require('../models/File');
+// eslint-disable-next-line global-require
 const PodContextService = require('../services/podContextService');
 // eslint-disable-next-line global-require
 const PodMemorySearchService = require('../services/podMemorySearchService');
@@ -292,6 +294,28 @@ router.get('/:podId/announcements', auth, async (req: AuthReq, res: Res) => {
     return res.status(200).json(announcements);
   } catch (error) {
     console.error('Error retrieving pod announcements:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/:podId/files', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { podId } = req.params || {};
+    const pod = await Pod.findById(podId) as { members?: Array<{ toString: () => string }> } | null;
+    if (!pod) return res.status(404).json({ message: 'Pod not found' });
+    const userId = req.user?.id;
+    const isMember = pod.members?.some((m) => m.toString() === userId);
+    if (!isMember) return res.status(403).json({ message: 'Not authorized to view pod files' });
+    // Most recent 100 — file lists in the inspector are bounded by what the
+    // user can scan visually; pagination can come later if pods get heavy.
+    const files = await File.find({ podId })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .select('fileName originalName contentType size uploadedBy createdAt')
+      .populate('uploadedBy', 'username profilePicture');
+    return res.status(200).json(files);
+  } catch (error) {
+    console.error('Error fetching pod files:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });

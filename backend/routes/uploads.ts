@@ -45,6 +45,9 @@ interface AuthReq {
   file?: { originalname: string; mimetype: string; size: number; buffer: Buffer };
   params?: { fileName?: string };
   query?: { t?: string };
+  body?: { podId?: string };
+  agentUser?: { _id: { toString: () => string } };
+  agentAuthorizedPodIds?: string[];
 }
 interface Res {
   status: (n: number) => Res;
@@ -53,7 +56,29 @@ interface Res {
   send: (d: unknown) => void;
 }
 
-const ALLOWED_EXT_REGEX = /\.(jpg|jpeg|png|gif|webp|svg)$/i;
+// Per-kind extension allowlist. Replaces the original image-only regex.
+// Office docs (doc/docx/xls/xlsx/ppt/pptx) and AV media (mp4/mov/mp3/wav)
+// were considered for v1 but deferred until we have ClamAV in front of the
+// non-image upload path (ADR-002 Phase 6). For demo + beta the doc/text
+// kinds below are sufficient: agents posting briefs, users dropping notes.
+const KIND_EXTENSIONS: Record<string, string[]> = {
+  image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'],
+  document: ['pdf', 'md', 'txt'],
+  data: ['csv', 'json'],
+};
+const ALLOWED_EXT_REGEX = new RegExp(
+  `\\.(${Object.values(KIND_EXTENSIONS).flat().join('|')})$`,
+  'i',
+);
+const kindFromName = (originalName: string): string => {
+  const dot = originalName.lastIndexOf('.');
+  if (dot < 0) return 'other';
+  const ext = originalName.slice(dot + 1).toLowerCase();
+  for (const [kind, exts] of Object.entries(KIND_EXTENSIONS)) {
+    if (exts.includes(ext)) return kind;
+  }
+  return 'other';
+};
 
 // Size cap is driven by the driver's declared max. multer returns 413 itself
 // when the multipart exceeds it, so the route doesn't need a secondary check.
@@ -74,11 +99,27 @@ const upload = multer({
     cb: (err: Error | null, accept: boolean) => void,
   ) {
     if (!ALLOWED_EXT_REGEX.test(file.originalname)) {
-      return cb(new Error('Only image files are allowed!'), false);
+      return cb(new Error('File type not allowed'), false);
     }
     cb(null, true);
   },
 });
+
+// Wrap multer.single so filter / size errors become 400s instead of bubbling
+// as 500. Multer's default error path is the route's try/catch, which can't
+// distinguish "user sent a bad type" from "driver crashed".
+const uploadSingle = (field: string) => (req: AuthReq, res: Res, next: (err?: unknown) => void) => {
+  upload.single(field)(req as never, res as never, (err: unknown) => {
+    if (err) {
+      const e = err as { code?: string; message?: string };
+      if (e?.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ msg: 'File too large' });
+      }
+      return res.status(400).json({ msg: e?.message || 'Invalid upload' });
+    }
+    next();
+  });
+};
 
 // 30 mints/min/bucket is generous for a page loading dozens of avatars +
 // images (clients cache until TTL expiry) and low enough that a compromised
@@ -106,15 +147,31 @@ const mintRateLimit = rateLimit({
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
-router.post('/', auth, upload.single('image'), async (req: AuthReq, res: Res) => {
+// Shared upload handler — used by both the user-auth POST / and the
+// agent-runtime POST /agent. Caller passes the resolved uploader id and
+// (optionally) the podId scope to bind the File row to.
+//
+// Upload routes accept a `podId` form field; populating it surfaces the
+// file in the pod inspector's Artifacts section. Agent uploads must
+// supply a podId they're installed in (enforced in the agent route).
+const handleUpload = async (
+  req: AuthReq,
+  res: Res,
+  uploaderId: string,
+): Promise<void> => {
   try {
-    if (!req.file) return res.status(400).json({ msg: 'No file uploaded' });
+    if (!req.file) {
+      res.status(400).json({ msg: 'No file uploaded' });
+      return;
+    }
 
     const store = getObjectStore();
 
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const ext = path.extname(req.file.originalname);
     const fileName = `${uniqueSuffix}${ext}`;
+    const kind = kindFromName(req.file.originalname);
+    const podId = req.body?.podId?.toString().trim() || null;
 
     await store.put(fileName, req.file.buffer, req.file.mimetype);
 
@@ -126,7 +183,8 @@ router.post('/', auth, upload.single('image'), async (req: AuthReq, res: Res) =>
       originalName: req.file.originalname,
       contentType: req.file.mimetype,
       size: req.file.size,
-      uploadedBy: req.userId,
+      uploadedBy: uploaderId,
+      podId,
     });
     await newFile.save();
 
@@ -134,12 +192,28 @@ router.post('/', auth, upload.single('image'), async (req: AuthReq, res: Res) =>
     const host = req.get?.('host');
     const url = `${protocol}://${host}/api/uploads/${fileName}`;
 
-    return res.json({ url, fileName, contentType: req.file.mimetype, size: req.file.size });
+    res.json({
+      url,
+      fileName,
+      originalName: req.file.originalname,
+      contentType: req.file.mimetype,
+      size: req.file.size,
+      kind,
+      podId,
+    });
   } catch (err) {
     const e = err as { message?: string };
     console.error('Upload error:', e.message);
-    return res.status(500).json({ msg: 'Server Error' });
+    res.status(500).json({ msg: 'Server Error' });
   }
+};
+
+router.post('/', auth, uploadSingle('image'), async (req: AuthReq, res: Res) => {
+  if (!req.userId) {
+    res.status(401).json({ msg: 'auth required' });
+    return;
+  }
+  await handleUpload(req, res, req.userId);
 });
 
 // ADR-002 Phase 1b: signed-URL mint endpoint. Declared before the bare
@@ -210,6 +284,11 @@ router.get('/:fileName', async (req: AuthReq, res: Res) => {
   }
 });
 
-module.exports = router;
+// Exported so the agent-runtime upload route can reuse the shared helpers
+// without going through HTTP. The route file mounts `handleUpload` behind
+// agentRuntimeAuth and gates podId against the agent's authorized pods.
+export { handleUpload, uploadSingle };
 
-export {};
+module.exports = router;
+module.exports.handleUpload = handleUpload;
+module.exports.uploadSingle = uploadSingle;

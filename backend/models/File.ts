@@ -13,6 +13,13 @@ export interface IFile extends Document {
    */
   data?: Buffer;
   uploadedBy: Types.ObjectId;
+  /**
+   * Pod the file was uploaded into, if any. Populated when a member or agent
+   * uploads via the pod composer / agent runtime; left null for profile-
+   * picture and other personal uploads. Used to surface uploaded files in
+   * the pod inspector's Artifacts section without joining through messages.
+   */
+  podId?: Types.ObjectId | null;
   createdAt: Date;
 }
 
@@ -27,10 +34,12 @@ const fileSchema = new Schema<IFile>({
   size: { type: Number, required: true },
   data: { type: Buffer, required: false },
   uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: false, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 
 fileSchema.index({ fileName: 1 });
+fileSchema.index({ podId: 1, createdAt: -1 });
 
 fileSchema.statics.findByFileName = function (fileName: string) {
   return this.findOne({ fileName });

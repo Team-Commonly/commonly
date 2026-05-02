@@ -5,6 +5,7 @@ import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
+import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import type { InspectorView } from './V2Layout';
 
 interface V2PodInspectorProps {
@@ -51,6 +52,15 @@ interface ExternalLinkItem {
   url?: string;
 }
 
+interface PodFileItem {
+  _id: string;
+  fileName: string;
+  originalName: string;
+  contentType?: string;
+  size?: number;
+  createdAt?: string;
+}
+
 // Per-type label for the Artifacts row icon (1-2 char glyph) and the
 // human-readable kind shown under the title. Keep aligned with the enum in
 // `backend/models/ExternalLink.ts`. Unknown kinds fall back to "L" / "Link".
@@ -75,6 +85,26 @@ const ARTIFACT_KIND_META: Record<string, { icon: string; label: string }> = {
   groupme: { icon: 'GR', label: 'GroupMe' },
   other: { icon: 'L', label: 'Link' },
   other_link: { icon: 'L', label: 'Link' },
+  // Uploaded-file kinds — derived from extension by `fileKind()` below. Same
+  // visual treatment as URL artifacts so the inspector list stays uniform.
+  pdf: { icon: 'PDF', label: 'PDF' },
+  md: { icon: 'MD', label: 'Markdown' },
+  txt: { icon: 'TXT', label: 'Text' },
+  csv: { icon: 'CSV', label: 'CSV' },
+  json: { icon: 'JS', label: 'JSON' },
+  image: { icon: 'IMG', label: 'Image' },
+  file: { icon: 'F', label: 'File' },
+};
+
+// Map a file's extension to one of the keys in ARTIFACT_KIND_META so the
+// uploaded-file rows pick up the right icon/label without re-deriving in JSX.
+const fileKind = (originalName: string, contentType?: string): string => {
+  const dot = originalName.lastIndexOf('.');
+  const ext = dot >= 0 ? originalName.slice(dot + 1).toLowerCase() : '';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image';
+  if (['pdf', 'md', 'txt', 'csv', 'json'].includes(ext)) return ext;
+  if (contentType?.startsWith('image/')) return 'image';
+  return 'file';
 };
 
 const artifactMeta = (kind: string): { icon: string; label: string } =>
@@ -131,6 +161,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const [privateError, setPrivateError] = useState<string | null>(null);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [externalLinks, setExternalLinks] = useState<ExternalLinkItem[]>([]);
+  const [podFiles, setPodFiles] = useState<PodFileItem[]>([]);
   const [tab, setTab] = useState<'overview' | 'members' | 'tasks' | 'manage'>('overview');
   const [addLinkOpen, setAddLinkOpen] = useState(false);
   const [addLinkUrl, setAddLinkUrl] = useState('');
@@ -245,17 +276,20 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     if (!podId) {
       setAnnouncements([]);
       setExternalLinks([]);
+      setPodFiles([]);
       return;
     }
     let cancelled = false;
     (async () => {
-      const [announcementResult, linksResult] = await Promise.allSettled([
+      const [announcementResult, linksResult, filesResult] = await Promise.allSettled([
         api.get<AnnouncementItem[]>(`/api/pods/${podId}/announcements`),
         api.get<ExternalLinkItem[]>(`/api/pods/${podId}/external-links`),
+        api.get<PodFileItem[]>(`/api/pods/${podId}/files`),
       ]);
       if (cancelled) return;
       setAnnouncements(announcementResult.status === 'fulfilled' && Array.isArray(announcementResult.value) ? announcementResult.value : []);
       setExternalLinks(linksResult.status === 'fulfilled' && Array.isArray(linksResult.value) ? linksResult.value : []);
+      setPodFiles(filesResult.status === 'fulfilled' && Array.isArray(filesResult.value) ? filesResult.value : []);
     })();
     return () => { cancelled = true; };
   }, [pod?._id, api]);
@@ -353,7 +387,11 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     </section>
   );
 
-  const artifactItems: Array<{ id: string; kind: string; title: string; subtitle?: string; url?: string }> = [
+  // Files come last so the freshest URL artifact (added via "+ Add") still
+  // sits at the top — matches the user's expectation that the row they just
+  // pasted is visible without scrolling. Within each source, server returns
+  // newest-first.
+  const artifactItems: Array<{ id: string; kind: string; title: string; subtitle?: string; url?: string; fileName?: string }> = [
     ...announcements.map((a) => ({
       id: `ann-${a._id}`,
       kind: 'Announcement',
@@ -365,6 +403,15 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
       title: l.name || l.url || 'External link',
       subtitle: l.url,
       url: l.url,
+    })),
+    ...podFiles.map((f) => ({
+      id: `file-${f._id}`,
+      kind: fileKind(f.originalName, f.contentType),
+      title: f.originalName || f.fileName,
+      subtitle: f.contentType,
+      // No `url` here — files require a signed-URL mint. The detail view's
+      // Open button calls getSignedAttachmentUrl(`/api/uploads/${fileName}`).
+      fileName: f.fileName,
     })),
   ];
 
@@ -665,12 +712,26 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   // ------------------------------------------------------------------
   // ARTIFACT DETAIL sub-page
   // ------------------------------------------------------------------
+  // File artifacts open via a signed-URL mint (no plain href to embed). URL
+  // artifacts use safeHref. Click handler always preventDefault so we can
+  // route both kinds through one button.
+  const handleOpenArtifact = async (item: typeof artifactItems[0]) => {
+    if (item.fileName) {
+      const signed = await getSignedAttachmentUrl(`/api/uploads/${item.fileName}`);
+      if (signed) window.open(signed, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const href = safeHref(item.url);
+    if (href) window.open(href, '_blank', 'noopener,noreferrer');
+  };
+
   const renderArtifactDetail = (artifactId: string) => {
     const found = artifactItems.find((a) => a.id === artifactId);
     if (!found) {
       return <div className="v2-inspector__empty">Artifact not found.</div>;
     }
     const meta = artifactMeta(found.kind);
+    const openable = !!found.fileName || !!safeHref(found.url);
     return (
       <div className="v2-inspector__detail">
         <div className="v2-inspector__detail-head">
@@ -680,16 +741,20 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <div className="v2-inspector__detail-name">{found.title}</div>
           <div className="v2-inspector__detail-sub">{meta.label}</div>
         </div>
-        {safeHref(found.url) && (
+        {openable && (
           <div className="v2-inspector__detail-actions">
-            <a className="v2-inspector__btn v2-inspector__btn--primary" href={safeHref(found.url)} target="_blank" rel="noreferrer">
+            <button
+              type="button"
+              className="v2-inspector__btn v2-inspector__btn--primary"
+              onClick={() => { void handleOpenArtifact(found); }}
+            >
               Open
-            </a>
+            </button>
           </div>
         )}
         {found.subtitle && (
           <div className="v2-inspector__detail-card">
-            <div className="v2-inspector__detail-kicker">Source</div>
+            <div className="v2-inspector__detail-kicker">{found.fileName ? 'Type' : 'Source'}</div>
             <div className="v2-inspector__detail-body" style={{ wordBreak: 'break-all' }}>{found.subtitle}</div>
           </div>
         )}

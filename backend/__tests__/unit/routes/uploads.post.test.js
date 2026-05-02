@@ -72,11 +72,48 @@ describe('uploads POST / (ADR-002 Phase 1)', () => {
     expect(mockStore.put).not.toHaveBeenCalled();
   });
 
-  it('rejects disallowed extensions before reaching the driver', async () => {
+  it('rejects disallowed extensions with a 400 (not a 500)', async () => {
+    const res = await request(app)
+      .post('/api/uploads')
+      .attach('image', Buffer.from('data'), 'malware.exe')
+      .expect(400);
+    expect(res.body.msg).toMatch(/not allowed/i);
+    expect(mockStore.put).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['brief.pdf', 'document'],
+    ['notes.md', 'document'],
+    ['notes.txt', 'document'],
+    ['data.csv', 'data'],
+    ['payload.json', 'data'],
+    ['photo.png', 'image'],
+  ])('accepts %s and reports kind=%s', async (filename, expectedKind) => {
+    const res = await request(app)
+      .post('/api/uploads')
+      .attach('image', Buffer.from('data'), filename)
+      .expect(200);
+    expect(res.body.kind).toBe(expectedKind);
+    expect(res.body.originalName).toBe(filename);
+    expect(mockStore.put).toHaveBeenCalled();
+  });
+
+  it('persists podId on the File row when supplied', async () => {
     await request(app)
       .post('/api/uploads')
-      .attach('image', Buffer.from('data'), 'text.txt')
-      .expect(500); // multer surfaces the filter error as 500
-    expect(mockStore.put).not.toHaveBeenCalled();
+      .field('podId', 'pod-123')
+      .attach('image', Buffer.from('data'), 'brief.pdf')
+      .expect(200);
+    const fileArgs = File.mock.calls[File.mock.calls.length - 1][0];
+    expect(fileArgs.podId).toBe('pod-123');
+  });
+
+  it('leaves podId null when not supplied', async () => {
+    await request(app)
+      .post('/api/uploads')
+      .attach('image', Buffer.from('data'), 'photo.png')
+      .expect(200);
+    const fileArgs = File.mock.calls[File.mock.calls.length - 1][0];
+    expect(fileArgs.podId).toBeNull();
   });
 });

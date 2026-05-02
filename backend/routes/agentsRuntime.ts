@@ -2502,4 +2502,31 @@ router.post('/asks/:requestId/respond', agentRuntimeAuth, phase4RateLimit, async
   }
 });
 
+// Agent runtime upload endpoint — agents post non-image files (briefs,
+// notes, generated docs) into a pod they're installed in. Reuses the
+// shared multer wrapper + handleUpload helper from routes/uploads.ts so
+// the byte path, allowlist, and error shape match the user route.
+//
+// The CAP pattern is `POST /pods/:podId/<thing>`; the body is multipart
+// (field name `file`) so SDKs can stream from local disk without buffering.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { handleUpload, uploadSingle } = require('./uploads');
+router.post('/pods/:podId/uploads', agentRuntimeAuth, uploadSingle('file'), async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    if (!req.agentUser?._id) {
+      return res.status(401).json({ message: 'Agent identity required' });
+    }
+    // Pin the upload to this pod regardless of what was in the form body.
+    req.body = { ...(req.body || {}), podId };
+    return await handleUpload(req, res, req.agentUser._id.toString());
+  } catch (error: any) {
+    console.error('Agent upload error:', error);
+    return res.status(500).json({ message: 'Failed to upload file' });
+  }
+});
+
 module.exports = router;

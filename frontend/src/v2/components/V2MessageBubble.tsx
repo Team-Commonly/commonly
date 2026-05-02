@@ -4,6 +4,7 @@ import V2Avatar from './V2Avatar';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { formatRelativeTime } from '../utils/grouping';
 import { useAuth } from '../../context/AuthContext';
+import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 
 // Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
 // styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
@@ -84,6 +85,10 @@ interface ParsedFile {
   name: string;
   ext: string;
   size?: string;
+  // Set when the pill came from an [[upload:...]] directive backed by a real
+  // ObjectStore record. Click → mint signed URL → open. Plain [[file:...]]
+  // pills (used by demo fixtures) leave this undefined and render as static.
+  fileName?: string;
 }
 
 interface ParsedReaction {
@@ -111,6 +116,21 @@ const FILE_EXT_COLORS: Record<string, string> = {
 // This is a v2-only convention so we can preview file pills until the backend
 // Message model gains a real `attachments[]` field.
 const FILE_TOKEN_RE = /\[\[file:([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+// Match a real upload directive emitted by the composer / agent SDK after a
+// successful POST /api/uploads:
+//   [[upload:<fileName>|<originalName>|<size>|<kind>]]
+// fileName is the ObjectStore key (e.g. `1714678910-712345678.pdf`); the pill
+// click handler exchanges it for a short-TTL signed URL via getSignedAttachmentUrl.
+const UPLOAD_TOKEN_RE = /\[\[upload:([^\]|]+)\|([^\]|]+)\|([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+const formatBytes = (raw: string | number): string => {
+  const n = typeof raw === 'number' ? raw : parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
+  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+};
 // Match a v2 reactions token: [[reactions:👍 3, 💬 2, 🔥 1]]. Pure render —
 // no write path tonight; the YC demo seed populates this from fixtures.
 // Real reactions backend ships post-YC.
@@ -120,14 +140,24 @@ const IMAGE_URL_RE = /^https?:\/\/.+\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 
 const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } => {
   const files: ParsedFile[] = [];
-  const stripped = content.replace(FILE_TOKEN_RE, (_match, rawName, rawSize) => {
+  // Real uploads first — they carry a fileName and resolve to a signed URL on
+  // click. Then static file tokens (demo fixtures, no backend reference).
+  let working = content.replace(UPLOAD_TOKEN_RE, (_match, rawFileName, rawOriginal, rawSize) => {
+    const fileName = String(rawFileName).trim();
+    const name = String(rawOriginal).trim();
+    const dot = name.lastIndexOf('.');
+    const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : 'file';
+    files.push({ fileName, name, ext, size: formatBytes(String(rawSize).trim()) || undefined });
+    return '';
+  });
+  working = working.replace(FILE_TOKEN_RE, (_match, rawName, rawSize) => {
     const name = String(rawName).trim();
     const dot = name.lastIndexOf('.');
     const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : 'file';
     files.push({ name, ext, size: rawSize ? String(rawSize).trim() : undefined });
     return '';
-  }).trim();
-  return { stripped, files };
+  });
+  return { stripped: working.trim(), files };
 };
 
 const parseReactions = (content: string): { stripped: string; reactions: ParsedReaction[] } => {
@@ -152,8 +182,8 @@ const parseReactions = (content: string): { stripped: string; reactions: ParsedR
 
 const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
   const color = FILE_EXT_COLORS[file.ext] || '#94a3b8';
-  return (
-    <span className="v2-msg__file">
+  const inner = (
+    <>
       <span className="v2-msg__file-icon" style={{ background: color }}>
         {file.ext.slice(0, 4).toUpperCase()}
       </span>
@@ -161,7 +191,31 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
         <span className="v2-msg__file-name">{file.name}</span>
         {file.size && <span className="v2-msg__file-size">{file.size}</span>}
       </span>
-    </span>
+    </>
+  );
+  // Static demo file (no backend reference) — render as a div, no click.
+  if (!file.fileName) {
+    return <span className="v2-msg__file">{inner}</span>;
+  }
+  // Real upload — mint signed URL on click. Don't fetch eagerly: a chat with
+  // 50 file messages would mint 50 tokens on render. Mint on demand keeps the
+  // 30/min/user rate limit comfortable.
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    const signed = await getSignedAttachmentUrl(`/api/uploads/${file.fileName}`);
+    if (signed) {
+      window.open(signed, '_blank', 'noopener,noreferrer');
+    }
+  };
+  return (
+    <button
+      type="button"
+      className="v2-msg__file v2-msg__file--clickable"
+      onClick={handleClick}
+      aria-label={`Open ${file.name}`}
+    >
+      {inner}
+    </button>
   );
 };
 
