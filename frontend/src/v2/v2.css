@@ -2169,10 +2169,10 @@
 .v2-inspector__member-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
+  gap: 12px;
+  padding: 10px 8px;
   margin: 0 -8px;
   background: transparent;
   border: none;
@@ -2180,6 +2180,15 @@
   cursor: pointer;
   border-radius: var(--v2-radius-sm);
   transition: background 80ms ease;
+}
+
+.v2-inspector__member-row + .v2-inspector__member-row,
+.v2-inspector__member-row + .v2-inspector__member-row--static {
+  margin-top: 2px;
+}
+
+.v2-inspector__member-meta {
+  gap: 3px;
 }
 
 .v2-inspector__member-row:hover {

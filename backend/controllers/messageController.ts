@@ -215,7 +215,10 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     }
 
     const username = req.user?.username;
-    if (pod.type === 'agent-admin') {
+    // agent-admin (legacy 1:1 admin DM) and agent-room (1:1 user↔agent DM)
+    // both auto-route every human message to the agent — no @mention needed.
+    // Other pod types only fire on explicit @mentions.
+    if (pod.type === 'agent-admin' || pod.type === 'agent-room') {
       await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
     } else {
       await AgentMentionService.enqueueMentions({ podId, message, userId, username });

@@ -386,7 +386,7 @@ const enqueueDmEvent = async ({
   podId, message, userId, username,
 }: EnqueueDmOptions): Promise<EnqueueDmResult> => {
   const pod = await Pod.findById(podId).lean() as Record<string, unknown> | null;
-  if (!pod || pod.type !== 'agent-admin') {
+  if (!pod || (pod.type !== 'agent-admin' && pod.type !== 'agent-room')) {
     return { enqueued: false, reason: 'not_dm_pod' };
   }
 
