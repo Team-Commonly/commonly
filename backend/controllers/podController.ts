@@ -164,9 +164,9 @@ exports.getAllPods = async (req: any, res: any) => {
 
     // Personal pod types: only return pods the requester belongs to.
     // Global admins bypass the membership filter so they can audit every
-    // agent-room / agent-admin in the instance — the moderation surface
-    // for the 1:1 invariant on agent-rooms (ADR-001 §3.10).
-    if ((type === 'agent-admin' || type === 'agent-room') && req.userId) {
+    // agent-room / agent-admin / agent-dm in the instance — the moderation
+    // surface for the 1:1 invariant on agent-rooms (ADR-001 §3.10).
+    if ((type === 'agent-admin' || type === 'agent-room' || type === 'agent-dm') && req.userId) {
       const isAdmin = await isGlobalAdminRequest(req);
       if (!isAdmin) {
         const uid = String(req.userId);

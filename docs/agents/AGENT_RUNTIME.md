@@ -33,22 +33,35 @@ and easy to break — keep them in mind whenever touching `messageController`,
 
 ### DMs auto-route without `@mention`
 
-For pods where `pod.type === 'agent-admin'` (legacy admin DM) **or**
-`pod.type === 'agent-room'` (new 1:1 user↔agent DM), every human message
-fires a `chat.mention` event for the resident agent — no textual
-`@<handle>` required. `messageController.createMessage` calls
-`agentMentionService.enqueueDmEvent`. Other pod types still require an
-explicit `@mention` and go through `enqueueMentions`.
+For pods where `pod.type` is one of:
+- `agent-admin` (legacy multi-admin debug DM)
+- `agent-room` (1:1 user↔agent DM)
+- `agent-dm` (any 2-member DM, including bot↔bot)
+
+every message fires a `chat.mention` event for the non-sender member —
+no textual `@<handle>` required. `messageController.createMessage`
+calls `agentMentionService.enqueueDmEvent`. Other pod types still
+require an explicit `@mention` and go through `enqueueMentions`.
 
 Both paths emit the same `chat.mention` event type into the same queue,
 so the gateway sees one uniform shape regardless of origin.
+
+**Bot senders** are blocked in `agent-admin` and `agent-room` (those
+are operator-driven 1:1 with one agent — a bot posting there shouldn't
+auto-route to itself). They're allowed in `agent-dm` because that's
+the whole point: bot↔bot collaboration.
 
 If you add a new "private 1:1" pod type, allow-list it in **both**
 sites:
 - `backend/controllers/messageController.ts` — branch that picks
   `enqueueDmEvent` vs `enqueueMentions`
-- `backend/services/agentMentionService.ts` — the `pod.type` guard
-  inside `enqueueDmEvent`
+- `backend/services/agentMentionService.ts` — the `DM_POD_TYPES`
+  set inside `enqueueDmEvent`
+
+Skipping either makes every message in the new room silently drop on
+the way to the agent runtime. Same bug class as `e78b5df241` — covered
+by tests in `__tests__/unit/services/agentMentionService.test.js`
+(`enqueueDmEvent enqueues for agent-dm pods (allow-list)`).
 
 ### Clawdbot inbound `From` is always `commonly:<podId>`
 
@@ -131,8 +144,20 @@ The known creation paths and their status:
 |------|----------------|-----------------|
 | `getOrCreateAdminDMPod` (legacy `agent-admin`) | yes | yes — admin DM provisioning calls `install` |
 | `getOrCreateAgentRoom` (1:1 `agent-room`) | yes | yes (since `e78b5df241`) |
+| `getOrCreateAgentDmRoom` (any 2-member `agent-dm`) | yes | yes — uses `AgentInstallation.upsert` for both bot members |
 | `agentAutoJoinService.autoJoin` (heartbeat-driven) | yes | yes |
+| Mention-driven autoJoin (`agentMentionService`, behind `ENABLE_MENTION_AUTOJOIN`) | yes | yes — `AgentInstallation.upsert` |
 | `Pod.create` for team pods + agent member added later | yes | **no — must call `install` explicitly** |
+
+**`AgentInstallation.install` vs `upsert`.** The legacy `install` static
+throws when an active row already exists for the `(agentName, podId, instanceId)`
+triple — that's the right behavior for an admin-driven first install
+that should fail if the operator clicks "install" twice. Runtime paths
+that may fire many times (mention-driven autoJoin, agent-dm creation)
+use the new `upsert` static instead — atomic `findOneAndUpdate(upsert+
+setOnInsert)` so re-fires converge on the same row, and the unique
+index race-protects concurrent calls. `upsert` also reactivates an
+`uninstalled` row instead of creating a new one.
 
 Recipe — fresh agent-room install (heartbeat off because rooms are
 reactive, not scheduled):

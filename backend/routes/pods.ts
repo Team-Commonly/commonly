@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -10,6 +11,7 @@ const auth = require('../middleware/auth');
 const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
+const User = require('../models/User');
 // eslint-disable-next-line global-require
 const Announcement = require('../models/Announcement');
 // eslint-disable-next-line global-require
@@ -283,6 +285,88 @@ router.get('/:id/context', auth, async (req: AuthReq, res: Res) => {
 router.post('/:id/join', auth, joinPod);
 router.post('/:id/leave', auth, leavePod);
 router.delete('/:id/members/:memberId', auth, removeMember);
+
+// Pod admin actions hit Mongo on every call but don't need much volume.
+// Capping per-IP keeps a stuck client from re-pinging contacts at full
+// loop speed without adding code complexity.
+const podAdminRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+});
+
+/**
+ * PATCH /api/pods/:id/contacts
+ *
+ * Pin (or clear) per-pod alias bindings — see ADR / agent-collaboration
+ * plan §3.3. Body shape:
+ *   { contacts: { codex: { agentName, instanceId } | null, ... } }
+ *
+ * Setting an alias to `null` removes the binding. Bindings live on
+ * `pod.contacts` (Map default empty, so existing pods read cleanly).
+ *
+ * Auth: pod creator OR global admin only. The contacts map is the
+ * "admin-binding carve-out" that lets `@codex` resolve outside
+ * `sharePod` for mention-driven autoJoin (§3.4). Member-only writes
+ * would let any pod member autoJoin an arbitrary agent in their own
+ * contact list — a member-scoped pin trivially defeats the
+ * co-pod-member rule. Reviewer 2baa52d266 flagged this; fix here.
+ */
+router.patch('/:id/contacts', podAdminRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { id: podId } = req.params || {};
+    const userId = req.user?.id;
+    if (!podId) return res.status(400).json({ message: 'pod id is required' });
+    const pod = await Pod.findById(podId) as {
+      members?: Array<{ toString: () => string }>;
+      contacts?: Map<string, unknown>;
+      createdBy?: { toString: () => string };
+      save: () => Promise<unknown>;
+    } | null;
+    if (!pod) return res.status(404).json({ message: 'Pod not found' });
+    const isCreator = pod.createdBy && userId && pod.createdBy.toString() === String(userId);
+    let isGlobalAdmin = false;
+    if (!isCreator && userId) {
+      const userRow = await User.findById(userId).select('role').lean() as { role?: string } | null;
+      isGlobalAdmin = userRow?.role === 'admin';
+    }
+    if (!isCreator && !isGlobalAdmin) {
+      return res.status(403).json({
+        message: 'Only the pod creator or a global admin may edit pod contacts',
+      });
+    }
+
+    const incoming = (req.body && typeof req.body.contacts === 'object' && req.body.contacts) || {};
+    if (!pod.contacts) pod.contacts = new Map();
+
+    for (const [rawAlias, binding] of Object.entries(incoming)) {
+      const alias = String(rawAlias || '').trim().toLowerCase();
+      if (!alias) continue;
+      if (binding === null) {
+        pod.contacts.delete(alias);
+        continue;
+      }
+      const b = binding as { agentName?: unknown; instanceId?: unknown };
+      const agentName = String(b.agentName || '').trim().toLowerCase();
+      const instanceId = String(b.instanceId || 'default').trim();
+      if (!agentName) {
+        return res.status(400).json({ message: `contacts.${alias}.agentName is required` });
+      }
+      pod.contacts.set(alias, { agentName, instanceId });
+    }
+
+    await pod.save();
+    const flattened: Record<string, { agentName: string; instanceId: string }> = {};
+    pod.contacts.forEach((value, key) => {
+      flattened[key] = value as { agentName: string; instanceId: string };
+    });
+    return res.status(200).json({ contacts: flattened });
+  } catch (error) {
+    console.error('Error updating pod contacts:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
 
 router.get('/:podId/announcements', auth, async (req: AuthReq, res: Res) => {
   try {

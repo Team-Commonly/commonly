@@ -215,10 +215,14 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     }
 
     const username = req.user?.username;
-    // agent-admin (legacy 1:1 admin DM) and agent-room (1:1 user↔agent DM)
-    // both auto-route every human message to the agent — no @mention needed.
-    // Other pod types only fire on explicit @mentions.
-    if (pod.type === 'agent-admin' || pod.type === 'agent-room') {
+    // agent-admin (legacy 1:1 admin DM), agent-room (1:1 user↔agent DM), and
+    // agent-dm (any 2-member DM, including agent↔agent) all auto-route every
+    // human message to the agent — no @mention needed. Other pod types only
+    // fire on explicit @mentions. Adding a new private 1:1 pod type without
+    // updating this allow-list silently drops every message; see
+    // docs/agents/AGENT_RUNTIME.md "Routing Invariants" for the canonical
+    // version of this rule.
+    if (pod.type === 'agent-admin' || pod.type === 'agent-room' || pod.type === 'agent-dm') {
       await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
     } else {
       await AgentMentionService.enqueueMentions({ podId, message, userId, username });

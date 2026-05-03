@@ -27,6 +27,23 @@ export interface IFollowedThread {
   followedAt: Date;
 }
 
+// User-level alias → agent (or human) binding. Both human and bot users
+// carry this list; for bots it's the agent's "contacts" — who they go to
+// for codex review, planning, etc. For humans it's the people they DM
+// most. Aliases must be lowercase URL-safe.
+export type ContactSource = 'user' | 'pod' | 'system';
+
+export interface IContactEntry {
+  alias: string;
+  agentName?: string;
+  instanceId?: string;
+  targetUserId?: Types.ObjectId;
+  role?: string;
+  source: ContactSource;
+  pinned?: boolean;
+  addedAt: Date;
+}
+
 export interface IUser extends Document {
   username: string;
   email: string;
@@ -70,6 +87,7 @@ export interface IUser extends Document {
     capabilities: AgentCapability[];
   };
   agentRuntimeTokens: IAgentRuntimeToken[];
+  contacts: IContactEntry[];
   subscribedPods: Types.ObjectId[];
   followers: Types.ObjectId[];
   following: Types.ObjectId[];
@@ -181,6 +199,23 @@ const userSchema = new Schema<IUser>({
       expiresAt: { type: Date },
     },
   ],
+  // Alias-driven contact list — see IContactEntry above. Default empty so
+  // existing user rows return `[]` on read (never throws on `.find(...)`).
+  contacts: {
+    type: [
+      new Schema<IContactEntry>({
+        alias: { type: String, required: true, lowercase: true, trim: true },
+        agentName: { type: String, default: null },
+        instanceId: { type: String, default: null },
+        targetUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+        role: { type: String, default: null },
+        source: { type: String, enum: ['user', 'pod', 'system'], default: 'user' },
+        pinned: { type: Boolean, default: false },
+        addedAt: { type: Date, default: Date.now },
+      }, { _id: false }),
+    ],
+    default: [],
+  },
   subscribedPods: [{ type: Schema.Types.ObjectId, ref: 'Pod' }],
   followers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   following: [{ type: Schema.Types.ObjectId, ref: 'User' }],

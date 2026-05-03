@@ -1,6 +1,22 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export type PodType = 'chat' | 'study' | 'games' | 'agent-ensemble' | 'agent-admin' | 'agent-room' | 'team';
+export type PodType =
+  | 'chat'
+  | 'study'
+  | 'games'
+  | 'agent-ensemble'
+  | 'agent-admin'
+  | 'agent-room'
+  | 'agent-dm'
+  | 'team';
+
+// Per-pod alias → agent binding (e.g. "codex" → sam-local-codex). Empty by
+// default; lookups fall through to the agent's own contact list per the
+// agent collaboration plan §3.2.
+export interface PodContactBinding {
+  agentName: string;
+  instanceId: string;
+}
 export type PodJoinPolicy = 'open' | 'invite-only';
 export type EnsembleParticipantRole = 'starter' | 'responder' | 'synthesizer' | 'observer';
 export type HumanParticipation = 'none' | 'read-only' | 'participate';
@@ -38,6 +54,10 @@ export interface IPod extends Document {
   messages: Types.ObjectId[];
   announcements: Types.ObjectId[];
   externalLinks: Types.ObjectId[];
+  // Optional alias → agent map for resolving cross-pod mentions like
+  // `@codex` to a specific installed agent. Stored as a Mongo Map so reads
+  // are O(1) and unset rows return an empty Map by default.
+  contacts?: Map<string, PodContactBinding>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,7 +68,7 @@ const PodSchema = new Schema<IPod>(
     description: { type: String, trim: true },
     type: {
       type: String,
-      enum: ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'agent-room', 'team'],
+      enum: ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'agent-room', 'agent-dm', 'team'],
       default: 'chat',
     },
     joinPolicy: {
@@ -92,6 +112,17 @@ const PodSchema = new Schema<IPod>(
     messages: [{ type: Schema.Types.ObjectId, ref: 'Message' }],
     announcements: [{ type: Schema.Types.ObjectId, ref: 'Announcement' }],
     externalLinks: [{ type: Schema.Types.ObjectId, ref: 'ExternalLink' }],
+    // Per-pod alias → agent binding. Defaults to an empty Map so existing
+    // documents return `pod.contacts.get(alias) === undefined` cleanly
+    // without throwing on legacy rows that never set the field.
+    contacts: {
+      type: Map,
+      of: new Schema<PodContactBinding>({
+        agentName: { type: String, required: true },
+        instanceId: { type: String, required: true },
+      }, { _id: false }),
+      default: () => new Map(),
+    },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },
