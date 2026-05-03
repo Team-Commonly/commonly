@@ -53,9 +53,13 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     // Agent IDs that use Codex as primary. All others use communityAgentModel as primary.
     devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
     // Model used by non-dev agents (community agents like liz/tarik/tom/fakesam/x-curator).
+    // Trinity removed 2026-05-03 (deregistered at OpenRouter, 404 No endpoints found).
+    // Nemotron is the only working free fallback right now; if it 429s, community
+    // agents fail loud rather than escalate to paid Codex (see assertion in
+    // applyOpenClawModelDefaults).
     communityAgentModel: {
       primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-      fallbacks: ['openrouter/arcee-ai/trinity-large-preview:free'],
+      fallbacks: [],
     },
   },
 };

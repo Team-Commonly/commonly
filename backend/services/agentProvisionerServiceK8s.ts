@@ -1395,8 +1395,6 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
           'gemini-2.5-flash',
           'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
           'nvidia/nemotron-3-super-120b-a12b:free',
-          'openrouter/arcee-ai/trinity-large-preview:free',
-          'arcee-ai/trinity-large-preview:free',
         ],
         metadata: { agent_id: agentId, provisioned_at: new Date().toISOString() },
       },
@@ -1485,8 +1483,6 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
           'openai-codex/gpt-5.4',
           'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
           'nvidia/nemotron-3-super-120b-a12b:free',
-          'openrouter/arcee-ai/trinity-large-preview:free',
-          'arcee-ai/trinity-large-preview:free',
           'google/gemini-2.5-flash',
           'google/gemini-2.5-flash-lite',
           'google/gemini-2.0-flash',
@@ -1938,30 +1934,54 @@ const applyOpenClawModelDefaults = async (config: any) => {
     modelConfig = null;
   }
   // OpenRouter fallbacks: free models only, explicit list enforced on every provision.
-  // Nemotron is primary fallback, Trinity is secondary. No paid or Llama models.
+  // Trinity removed 2026-05-03 — endpoint was deregistered at OpenRouter (404 No
+  // endpoints found), so every fallback hop into trinity errored out and broke
+  // the chain. Nemotron is the only working free model right now.
   const OPENROUTER_FREE_FALLBACKS = [
     'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-    'openrouter/arcee-ai/trinity-large-preview:free',
   ];
 
   // Global default for non-dev (community) agents: free OpenRouter models
   // only. Codex quota is finite and shared; reserving it for dev agents
   // keeps heartbeat orchestration responsive without burning weekly quota
-  // on community agents that would just fall back to OpenRouter on auth
-  // failure anyway (community agents aren't issued openai-codex
-  // credentials — see provisionOpenClawAccount). Dev agents bypass this
-  // default via the per-agent override (see devAgentModel below) — they
-  // still get openai-codex/gpt-5.4-mini.
+  // on community agents. Community agents are NOT issued openai-codex
+  // credentials (see provisionOpenClawAccount), so even a misconfigured
+  // primary would 401 rather than burn — but the assertion below makes
+  // this guarantee explicit at the config layer too. Dev agents bypass
+  // this default via the per-agent override (see devAgentModel below) —
+  // they still get openai-codex/gpt-5.4-mini.
   config.agents.defaults.model.primary = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
-  // Gemini entries are kept as a placeholder — current GEMINI_API_KEY is
-  // revoked so they're inert today; reinstating the key restores the chain
-  // without a code change.
+  // Gemini entries are kept as inert placeholders — current GEMINI_API_KEY
+  // is revoked so they're no-ops today; reinstating the key restores the
+  // chain without a code change. If nemotron 429s while gemini is dead,
+  // community agents fail loud (silent for that minute, retry on next
+  // heartbeat) — that's the intended behavior. Better than burning Codex.
   config.agents.defaults.model.fallbacks = Array.from(new Set([
-    'openrouter/arcee-ai/trinity-large-preview:free',
     'google/gemini-2.5-flash',
     'google/gemini-2.5-flash-lite',
     'google/gemini-2.0-flash',
   ]));
+
+  // HARD GUARDRAIL: community fallback chain MUST NOT include any
+  // openai-codex/* model. Codex quota is paid and shared across the
+  // dev-agent fleet; a single community agent in a Codex fallback loop
+  // would burn the weekly quota in hours. The split is: dev agents
+  // (devAgentModel below) explicitly opt in to Codex; community agents
+  // never touch it, even on fallback. This assertion ensures any future
+  // edit that accidentally re-introduces Codex into the community chain
+  // fails the next provisioner run instead of silently burning quota.
+  const communityChain = [
+    config.agents.defaults.model.primary,
+    ...config.agents.defaults.model.fallbacks,
+  ];
+  const codexLeak = communityChain.find((m: string) => typeof m === 'string' && m.startsWith('openai-codex/'));
+  if (codexLeak) {
+    throw new Error(
+      `applyOpenClawModelDefaults: community fallback chain includes "${codexLeak}". `
+      + 'Codex models are reserved for dev-agent overrides (devAgentModel). '
+      + 'Remove from defaults.model.{primary,fallbacks} — community agents must never burn Codex quota.',
+    );
+  }
 
   // Always set up Codex provider config so dev agents can use it via per-agent override.
   const codexCredentials = await applyOpenClawCodexProviderConfig(config);
@@ -1987,15 +2007,6 @@ const applyOpenClawModelDefaults = async (config: any) => {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         maxTokens: 8000,
         contextWindow: 128000,
-      },
-      {
-        id: 'arcee-ai/trinity-large-preview:free',
-        name: 'Trinity Large (free)',
-        reasoning: false,
-        input: ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        maxTokens: 8000,
-        contextWindow: 32000,
       },
     ],
   };
