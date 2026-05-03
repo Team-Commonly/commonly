@@ -10,6 +10,7 @@ const auth = require('../middleware/auth');
 const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
+const User = require('../models/User');
 // eslint-disable-next-line global-require
 const Announcement = require('../models/Announcement');
 // eslint-disable-next-line global-require
@@ -291,9 +292,15 @@ router.delete('/:id/members/:memberId', auth, removeMember);
  * plan §3.3. Body shape:
  *   { contacts: { codex: { agentName, instanceId } | null, ... } }
  *
- * Setting an alias to `null` removes the binding. Pod members can edit;
- * non-members 403. Bindings live on `pod.contacts` (Map default empty,
- * so existing pods read cleanly).
+ * Setting an alias to `null` removes the binding. Bindings live on
+ * `pod.contacts` (Map default empty, so existing pods read cleanly).
+ *
+ * Auth: pod creator OR global admin only. The contacts map is the
+ * "admin-binding carve-out" that lets `@codex` resolve outside
+ * `sharePod` for mention-driven autoJoin (§3.4). Member-only writes
+ * would let any pod member autoJoin an arbitrary agent in their own
+ * contact list — a member-scoped pin trivially defeats the
+ * co-pod-member rule. Reviewer 2baa52d266 flagged this; fix here.
  */
 router.patch('/:id/contacts', auth, async (req: AuthReq, res: Res) => {
   try {
@@ -303,11 +310,21 @@ router.patch('/:id/contacts', auth, async (req: AuthReq, res: Res) => {
     const pod = await Pod.findById(podId) as {
       members?: Array<{ toString: () => string }>;
       contacts?: Map<string, unknown>;
+      createdBy?: { toString: () => string };
       save: () => Promise<unknown>;
     } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
-    const isMember = pod.members?.some((m) => m.toString() === userId);
-    if (!isMember) return res.status(403).json({ message: 'Not authorized to edit pod contacts' });
+    const isCreator = pod.createdBy && userId && pod.createdBy.toString() === String(userId);
+    let isGlobalAdmin = false;
+    if (!isCreator && userId) {
+      const userRow = await User.findById(userId).select('role').lean() as { role?: string } | null;
+      isGlobalAdmin = userRow?.role === 'admin';
+    }
+    if (!isCreator && !isGlobalAdmin) {
+      return res.status(403).json({
+        message: 'Only the pod creator or a global admin may edit pod contacts',
+      });
+    }
 
     const incoming = (req.body && typeof req.body.contacts === 'object' && req.body.contacts) || {};
     if (!pod.contacts) pod.contacts = new Map();

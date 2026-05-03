@@ -228,8 +228,15 @@ describe('DMService — agent-dm + sharePod', () => {
       await installed.save();
 
       const reupserted = await AgentInstallation.upsert('codex', pod._id, opts);
+      // Same row (unique-index filter matched, not a new row with a
+      // coincidentally matching ObjectId) AND identity unchanged.
       expect(reupserted._id.toString()).toBe(installed._id.toString());
+      expect(reupserted.agentName).toBe('codex');
+      expect(reupserted.podId.toString()).toBe(pod._id.toString());
+      expect(reupserted.instanceId).toBe('default');
       expect(reupserted.status).toBe('active');
+      const all = await AgentInstallation.find({ agentName: 'codex', podId: pod._id });
+      expect(all).toHaveLength(1);
     });
   });
 });

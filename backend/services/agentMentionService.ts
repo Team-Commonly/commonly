@@ -221,28 +221,30 @@ const isMentionAutoJoinEnabled = (): boolean => (
 );
 
 // Try the alias against pod-level binding first, then sender's contact
-// list. Returns the resolved (agentName, instanceId) or null. The
-// pod-binding takes priority per the §3.2 resolution order.
+// list. Returns the resolved binding *and the source* so the autoJoin
+// gate can apply the §3.2 admin-binding carve-out without re-reading
+// `pod.contacts` (which would open a TOCTOU window if an admin removed
+// the binding mid-resolution). Caller passes the already-fetched
+// pod.contacts row so we don't re-query.
+type ResolvedAlias =
+  | { agentName: string; instanceId: string; source: 'pod' | 'sender' }
+  | null;
+
 const resolveContactAlias = async (
   alias: string,
-  podId: string,
+  podContacts: Record<string, { agentName?: string; instanceId?: string }> | null | undefined,
   senderUserId: string,
-): Promise<{ agentName: string; instanceId: string } | null> => {
+): Promise<ResolvedAlias> => {
   const lower = alias.toLowerCase();
-  try {
-    const pod = await Pod.findById(podId).select('contacts').lean() as { contacts?: Record<string, { agentName?: string; instanceId?: string }> } | null;
-    const fromPod = pod?.contacts?.[lower];
-    if (fromPod?.agentName) {
-      return { agentName: fromPod.agentName.toLowerCase(), instanceId: fromPod.instanceId || 'default' };
-    }
-  } catch (err) {
-    console.warn('[mention-autojoin] pod.contacts lookup failed:', (err as Error).message);
+  const fromPod = podContacts?.[lower];
+  if (fromPod?.agentName) {
+    return { agentName: fromPod.agentName.toLowerCase(), instanceId: fromPod.instanceId || 'default', source: 'pod' };
   }
   try {
     const sender = await User.findById(senderUserId).select('contacts').lean() as { contacts?: Array<{ alias?: string; agentName?: string; instanceId?: string }> } | null;
     const fromSender = (sender?.contacts || []).find((c) => (c.alias || '').toLowerCase() === lower && c.agentName);
     if (fromSender?.agentName) {
-      return { agentName: fromSender.agentName.toLowerCase(), instanceId: fromSender.instanceId || 'default' };
+      return { agentName: fromSender.agentName.toLowerCase(), instanceId: fromSender.instanceId || 'default', source: 'sender' };
     }
   } catch (err) {
     console.warn('[mention-autojoin] sender contacts lookup failed:', (err as Error).message);
@@ -428,18 +430,20 @@ const enqueueMentions = async ({
       // pod type can ship without flipping this in the same release.
       if (isMentionAutoJoinEnabled()) {
         try {
-          // Detect whether the resolution came from a pod binding so the
-          // autoJoin auth check can fall back to the admin-binding carve-out.
+          // Single fetch of pod.contacts; both the resolver and the
+          // admin-binding carve-out read from this snapshot so a binding
+          // can't be removed between resolution and authorization (the
+          // TOCTOU window the v1 implementation had).
           const podRow = await Pod.findById(podId).select('contacts').lean() as { contacts?: Record<string, { agentName?: string; instanceId?: string }> } | null;
-          const fromPodBinding = !!podRow?.contacts?.[normalized]?.agentName;
-          const resolved = await resolveContactAlias(normalized, podId, userId);
+          const podContacts = podRow?.contacts || null;
+          const resolved = await resolveContactAlias(normalized, podContacts, userId);
           if (resolved) {
             const joined = await autoJoinAgentToPod(
               resolved.agentName,
               resolved.instanceId,
               podId,
               userId,
-              fromPodBinding,
+              resolved.source === 'pod',
             );
             if (joined) {
               await AgentEventService.enqueue({

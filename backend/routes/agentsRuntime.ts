@@ -763,6 +763,26 @@ router.post('/agent-dm', agentRuntimeAuth, async (req: any, res: any) => {
       const agentName = String(target.agentName).trim().toLowerCase();
       const instanceId = String(target.instanceId || 'default').trim();
       if (!agentName) return res.status(400).json({ message: 'target.agentName is empty' });
+      // Probe before upsert. Without this, a typo materializes a permanent
+      // ghost bot User row via getOrCreateAgentUser. Existence-check first
+      // and 404 on miss; the legacy /room endpoint had the same pattern
+      // and we explicitly choose stricter behavior on the new endpoint.
+      const expectedUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
+      const existing = await User.findOne({
+        $or: [
+          { 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId },
+          { username: expectedUsername },
+        ],
+      }).select('_id isBot username botMetadata').lean();
+      if (!existing) {
+        return res.status(404).json({
+          message: `No agent found for ${agentName} (instance "${instanceId}"). Install the agent first.`,
+          agentName,
+          instanceId,
+        });
+      }
+      // Resolve via the identity service so the User row is in canonical
+      // shape (handles legacy bot rows that pre-date botMetadata).
       targetUser = await AgentIdentityService.getOrCreateAgentUser(agentName, { instanceId });
       targetMeta = { agentName, instanceId, displayName: agentName, isBot: true };
     } else if (target.userId) {
