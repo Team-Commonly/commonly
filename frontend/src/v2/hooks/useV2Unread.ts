@@ -35,6 +35,12 @@ export interface UseV2UnreadResult {
   // selected — keeps the unread badge sticky until the user actually opens
   // the pod, even if the server-side `lastMessage` field hasn't been refetched.
   bumpLatest: (podId: string, ts: string) => void;
+  // Seed lastSeen for pods we've never observed before. Without this, every
+  // pod looks unread on first load — which it isn't, the user just hasn't
+  // opened this device before. Called once with the current pod list and
+  // their newest-message timestamps; only fills in pods missing from the
+  // map, never moves a real lastSeen backwards.
+  seedFromExisting: (entries: Array<{ podId: string; lastMessageAt?: string | null }>) => void;
 }
 
 export const useV2Unread = (selectedPodId: string | null): UseV2UnreadResult => {
@@ -78,5 +84,25 @@ export const useV2Unread = (selectedPodId: string | null): UseV2UnreadResult => 
     setLatestMap((prev) => (prev[podId] && prev[podId] >= t ? prev : { ...prev, [podId]: t }));
   }, []);
 
-  return { isUnread, markRead, bumpLatest };
+  const seedFromExisting = useCallback((entries: Array<{ podId: string; lastMessageAt?: string | null }>) => {
+    if (!entries || entries.length === 0) return;
+    setSeenMap((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const { podId, lastMessageAt } of entries) {
+        if (!podId || podId in next) continue;
+        // Treat the existing newest-message timestamp as already seen — the
+        // user can't have unread "from before they opened this device". If
+        // there's no message yet, fall back to now.
+        const t = lastMessageAt ? new Date(lastMessageAt).getTime() : Date.now();
+        next[podId] = Number.isFinite(t) ? t : Date.now();
+        changed = true;
+      }
+      if (!changed) return prev;
+      writeMap(next);
+      return next;
+    });
+  }, []);
+
+  return { isUnread, markRead, bumpLatest, seedFromExisting };
 };

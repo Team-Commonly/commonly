@@ -69,7 +69,19 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
   const { pinned, toggle: togglePin, isPinned } = useV2Pinned();
   const { socket, connected, joinPod } = useSocket();
   const { currentUser } = useAuth();
-  const { isUnread, bumpLatest } = useV2Unread(selectedPodId);
+  const { isUnread, bumpLatest, seedFromExisting } = useV2Unread(selectedPodId);
+
+  // Seed lastSeen for any pod we've never observed before, using its current
+  // newest-message timestamp. Without this, the very first load badges every
+  // pod the user is a member of as unread — they aren't. Re-runs whenever a
+  // new pod shows up; existing entries are never overwritten.
+  useEffect(() => {
+    if (!pods || pods.length === 0) return;
+    seedFromExisting(pods.map((p) => ({
+      podId: p._id,
+      lastMessageAt: p.lastMessage?.createdAt || p.updatedAt || p.createdAt,
+    })));
+  }, [pods, seedFromExisting]);
 
   // Server-side socket auth (`authorizeSocketPodAccess`) requires the user to
   // be in `pod.members` — `/api/pods` returns discoverable pods including
