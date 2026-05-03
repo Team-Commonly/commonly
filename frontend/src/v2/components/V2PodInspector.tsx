@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
@@ -138,6 +139,268 @@ const safeHref = (raw?: string): string | undefined => {
   } catch {
     return undefined;
   }
+};
+
+// ---- Artifact preview helpers ---------------------------------------------
+// Embedabble URLs for the URL-artifact kinds whose vendor allows iframe.
+// Notion/Drive/Docs return X-Frame-Options=DENY for unauth viewers, so they
+// stay click-through-only. YouTube/Loom/Figma have first-class embed flows.
+const embedUrlFor = (kind: string, raw?: string): string | undefined => {
+  const url = safeHref(raw);
+  if (!url) return undefined;
+  try {
+    const u = new URL(url);
+    if (kind === 'youtube') {
+      // youtu.be/<id>, youtube.com/watch?v=<id>, youtube.com/shorts/<id>
+      let id = '';
+      if (u.hostname.endsWith('youtu.be')) id = u.pathname.slice(1).split('/')[0];
+      else if (u.pathname.startsWith('/watch')) id = u.searchParams.get('v') || '';
+      else if (u.pathname.startsWith('/shorts/')) id = u.pathname.split('/')[2] || '';
+      else if (u.pathname.startsWith('/embed/')) id = u.pathname.split('/')[2] || '';
+      if (!id) return undefined;
+      return `https://www.youtube.com/embed/${encodeURIComponent(id)}`;
+    }
+    if (kind === 'loom') {
+      // loom.com/share/<id>
+      const m = u.pathname.match(/\/share\/([a-zA-Z0-9]+)/);
+      if (!m) return undefined;
+      return `https://www.loom.com/embed/${m[1]}`;
+    }
+    if (kind === 'figma') {
+      // Figma's official embed is https://www.figma.com/embed?embed_host=...&url=<original>
+      return `https://www.figma.com/embed?embed_host=commonly&url=${encodeURIComponent(url)}`;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+};
+
+// Cap inline text fetches so a 50MB log file doesn't lock the inspector.
+const PREVIEW_TEXT_CAP_BYTES = 200 * 1024;
+
+// Hook: load the file's signed URL once per (fileName) and surface as a
+// stateful value the preview components can render against.
+const useSignedFileUrl = (fileName?: string): { url: string | null; loading: boolean } => {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(!!fileName);
+  useEffect(() => {
+    if (!fileName) { setUrl(null); setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    void getSignedAttachmentUrl(`/api/uploads/${fileName}`).then((u) => {
+      if (cancelled) return;
+      setUrl(u || null);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [fileName]);
+  return { url, loading };
+};
+
+// Hook: fetch the bytes of a signed URL as text, with a size cap so previews
+// of huge files don't lock the inspector. Returns `truncated:true` when the
+// response exceeded PREVIEW_TEXT_CAP_BYTES.
+const useTextPreview = (signedUrl: string | null): {
+  text: string | null;
+  truncated: boolean;
+  error: string | null;
+  loading: boolean;
+} => {
+  const [text, setText] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(!!signedUrl);
+  useEffect(() => {
+    if (!signedUrl) { setText(null); setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true); setError(null);
+    (async () => {
+      try {
+        const res = await fetch(signedUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // Read up to the cap; abort the rest so we don't pull megabytes.
+        const reader = res.body?.getReader();
+        if (!reader) {
+          const t = await res.text();
+          if (cancelled) return;
+          setTruncated(t.length > PREVIEW_TEXT_CAP_BYTES);
+          setText(t.slice(0, PREVIEW_TEXT_CAP_BYTES));
+          setLoading(false);
+          return;
+        }
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        let acc = '';
+        let exceeded = false;
+        // eslint-disable-next-line no-await-in-loop
+        for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+          acc += decoder.decode(chunk.value, { stream: true });
+          if (acc.length >= PREVIEW_TEXT_CAP_BYTES) { exceeded = true; reader.cancel(); break; }
+        }
+        if (cancelled) return;
+        setTruncated(exceeded);
+        setText(acc.slice(0, PREVIEW_TEXT_CAP_BYTES));
+        setLoading(false);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Could not load file');
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [signedUrl]);
+  return { text, truncated, error, loading };
+};
+
+interface PreviewArtifact {
+  kind: string;
+  fileName?: string;
+  url?: string;
+  title: string;
+}
+
+const PreviewBox: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div
+    style={{
+      border: '1px solid var(--v2-border)',
+      borderRadius: 'var(--v2-radius-sm)',
+      background: 'var(--v2-surface)',
+      overflow: 'hidden',
+    }}
+  >
+    {children}
+  </div>
+);
+
+const PreviewMute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div style={{ padding: 12, fontSize: 12, color: 'var(--v2-text-tertiary)' }}>{children}</div>
+);
+
+const ImagePreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { url, loading } = useSignedFileUrl(artifact.fileName);
+  if (loading) return <PreviewBox><PreviewMute>Loading…</PreviewMute></PreviewBox>;
+  if (!url) return null;
+  return (
+    <PreviewBox>
+      <img src={url} alt={artifact.title} style={{ width: '100%', display: 'block', maxHeight: 480, objectFit: 'contain', background: '#fafafa' }} />
+    </PreviewBox>
+  );
+};
+
+const PdfPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { url, loading } = useSignedFileUrl(artifact.fileName);
+  if (loading) return <PreviewBox><PreviewMute>Loading PDF…</PreviewMute></PreviewBox>;
+  if (!url) return null;
+  return (
+    <PreviewBox>
+      <iframe
+        title={artifact.title}
+        src={url}
+        style={{ width: '100%', height: 480, border: 'none', display: 'block' }}
+      />
+    </PreviewBox>
+  );
+};
+
+const TextPreview: React.FC<{ artifact: PreviewArtifact; markdown?: boolean; pretty?: boolean }> = ({ artifact, markdown, pretty }) => {
+  const { url } = useSignedFileUrl(artifact.fileName);
+  const { text, truncated, error, loading } = useTextPreview(url);
+  if (loading) return <PreviewBox><PreviewMute>Loading…</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>Could not load: {error}</PreviewMute></PreviewBox>;
+  if (text == null) return null;
+  // For JSON, try to pretty-print; on parse failure fall through to raw.
+  let body = text;
+  if (pretty) {
+    try { body = JSON.stringify(JSON.parse(text), null, 2); } catch { /* leave as-is */ }
+  }
+  return (
+    <PreviewBox>
+      {markdown ? (
+        <div className="v2-msg__content" style={{ padding: '12px 14px', maxHeight: 480, overflow: 'auto' }}>
+          <ReactMarkdown>{body}</ReactMarkdown>
+        </div>
+      ) : (
+        <pre style={{
+          margin: 0, padding: '12px 14px', maxHeight: 480, overflow: 'auto',
+          fontFamily: '"SF Mono", ui-monospace, "Menlo", monospace',
+          fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        }}>{body}</pre>
+      )}
+      {truncated && <PreviewMute>Preview truncated at 200 KB. Click Open for the full file.</PreviewMute>}
+    </PreviewBox>
+  );
+};
+
+const CsvPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { url } = useSignedFileUrl(artifact.fileName);
+  const { text, truncated, error, loading } = useTextPreview(url);
+  if (loading) return <PreviewBox><PreviewMute>Loading CSV…</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>Could not load: {error}</PreviewMute></PreviewBox>;
+  if (!text) return null;
+  // Naive CSV split — handles unquoted demo data. Real RFC4180 parsing is
+  // out of scope; truncate display to 20 rows to keep the inspector usable.
+  const lines = text.split(/\r?\n/).filter((l) => l.length > 0).slice(0, 21);
+  if (lines.length === 0) return <PreviewBox><PreviewMute>Empty file</PreviewMute></PreviewBox>;
+  const rows = lines.map((line) => line.split(',').map((c) => c.trim()));
+  const [headerRow, ...bodyRows] = rows;
+  return (
+    <PreviewBox>
+      <div style={{ maxHeight: 360, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr>
+              {headerRow.map((h, i) => (
+                <th key={i} style={{ textAlign: 'left', padding: '6px 10px', borderBottom: '1px solid var(--v2-border)', fontWeight: 600, position: 'sticky', top: 0, background: 'var(--v2-surface)' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {bodyRows.map((row, i) => (
+              <tr key={i}>
+                {row.map((c, j) => (
+                  <td key={j} style={{ padding: '6px 10px', borderBottom: '1px solid var(--v2-border)' }}>{c}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {(truncated || lines.length > 20) && <PreviewMute>Preview limited to first 20 rows. Click Open for the full file.</PreviewMute>}
+    </PreviewBox>
+  );
+};
+
+const EmbedPreview: React.FC<{ src: string; title: string; allow?: string }> = ({ src, title, allow }) => (
+  <PreviewBox>
+    <iframe
+      title={title}
+      src={src}
+      allow={allow}
+      allowFullScreen
+      style={{ width: '100%', height: 480, border: 'none', display: 'block' }}
+    />
+  </PreviewBox>
+);
+
+const ArtifactPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { kind } = artifact;
+  // File previews — gated on having a fileName (i.e. it came from /api/uploads)
+  if (artifact.fileName) {
+    if (kind === 'image') return <ImagePreview artifact={artifact} />;
+    if (kind === 'pdf') return <PdfPreview artifact={artifact} />;
+    if (kind === 'md') return <TextPreview artifact={artifact} markdown />;
+    if (kind === 'txt') return <TextPreview artifact={artifact} />;
+    if (kind === 'json') return <TextPreview artifact={artifact} pretty />;
+    if (kind === 'csv') return <CsvPreview artifact={artifact} />;
+    return null; // office, archive, unknown — Open button only
+  }
+  // URL artifacts — embed where the vendor allows iframe.
+  const embed = embedUrlFor(kind, artifact.url);
+  if (embed) {
+    const allow = kind === 'youtube' ? 'accelerometer; encrypted-media; gyroscope; picture-in-picture' : undefined;
+    return <EmbedPreview src={embed} title={artifact.title} allow={allow} />;
+  }
+  return null;
 };
 
 interface RunStateCounts {
@@ -757,6 +1020,14 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <div className="v2-inspector__detail-name">{found.title}</div>
           <div className="v2-inspector__detail-sub">{meta.label}</div>
         </div>
+        <ArtifactPreview
+          artifact={{
+            kind: found.kind,
+            fileName: found.fileName,
+            url: found.url,
+            title: found.title,
+          }}
+        />
         {openable && (
           <div className="v2-inspector__detail-actions">
             <button
