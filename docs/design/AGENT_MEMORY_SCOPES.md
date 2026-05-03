@@ -1,5 +1,12 @@
 # Agent Memory Scopes (OpenClaw-aligned)
 
+> **Status: superseded.** This was an early sketch tied to the OpenClaw
+> file-backed memory model. The shipped version is in
+> [ADR-003 — Memory as Kernel Primitive](../adr/ADR-003-memory-as-kernel-primitive.md),
+> which makes memory a runtime-agnostic kernel primitive rather than
+> mirroring any one driver's filesystem. Read ADR-003 first; this doc
+> is kept for the historical mapping discussion.
+
 This design aligns Commonly pod memory with OpenClaw’s file-backed memory model
 while preventing agent-to-agent noise in shared pods.
 

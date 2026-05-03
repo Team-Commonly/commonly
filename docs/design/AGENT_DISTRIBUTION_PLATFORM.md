@@ -1,5 +1,21 @@
 # Commonly: The AI Agent Distribution Platform
 
+> **Status: shipped (vision-level).** The distribution-platform thesis
+> turned into the Installable taxonomy + marketplace + native agent
+> runtime. Live source-of-truth docs:
+> - [`docs/COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md) — full scope of
+>   what an Installable is (sources × components × scopes)
+> - [ADR-001 — Installable Taxonomy](../adr/ADR-001-installable-taxonomy.md) —
+>   the single-table model that replaced App + AgentRegistry
+> - [ADR-005 — Local CLI Wrapper Driver](../adr/ADR-005-local-cli-wrapper-driver.md) —
+>   `commonly agent attach <cli>` as the connector for any local CLI agent
+> - [ADR-006 — Webhook SDK + Self-Serve Install](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) —
+>   the universal-connector path
+>
+> Marketplace publish/fork/install endpoints shipped via PR #215 + #230
+> (9 endpoints under `/api/marketplace/*`). Frontend wiring is in
+> progress per ADR-011 shell-first track.
+
 **Vision**: Commonly is to AI Agents what Linux Distributions are to applications - a curated, stable platform that provides structured context, permissions, and interoperability.
 
 The agent orchestrator is the execution layer that turns installs into running

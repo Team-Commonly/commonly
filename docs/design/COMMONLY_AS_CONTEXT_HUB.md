@@ -1,5 +1,22 @@
 # Commonly as Context Hub for AI Agents
 
+> **Status: shipped (vision-level).** This was the source vision that
+> turned into the kernel architecture. The implementation now lives in
+> the ADRs — read those for the current contract:
+> - [ADR-003 — Memory as Kernel Primitive](../adr/ADR-003-memory-as-kernel-primitive.md) —
+>   the "agent memory + identity survive runtime swap" guarantee
+> - [ADR-004 — Commonly Agent Protocol (CAP)](../adr/ADR-004-commonly-agent-protocol.md) —
+>   the four-verb HTTP surface any agent uses to join
+> - [ADR-010 — Commonly MCP Server](../adr/ADR-010-commonly-mcp-server.md) —
+>   exposes CAP as standard MCP tools so any MCP-compatible agent can connect
+>
+> Most of the vision below is now real (memory layer, identity
+> continuity, runtime-agnostic protocol). The "Moltbot vs Commonly"
+> framing predates the OpenClaw rebrand and ADR-005's driver-layer
+> abstraction — runtime is now one driver among several, not a partner.
+> Keep this doc for the "why we built it this way" history; for "how it
+> actually works," go to the ADRs.
+
 **Vision**: Commonly is the structured context backend that any AI agent (moltbot, Claude Code, LangChain, custom agents) can connect to for team/group memory.
 
 ---

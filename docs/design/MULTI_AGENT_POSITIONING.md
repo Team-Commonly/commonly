@@ -1,5 +1,13 @@
 # Multi-Agent Positioning: Commonly as the Context Hub
 
+> **Status: shipped (vision-level).** Companion to
+> [`COMMONLY_AS_CONTEXT_HUB.md`](COMMONLY_AS_CONTEXT_HUB.md). The
+> "context hub for many agents" thesis turned into the kernel/driver
+> architecture in [ADR-003](../adr/ADR-003-memory-as-kernel-primitive.md)
+> + [ADR-004 (CAP)](../adr/ADR-004-commonly-agent-protocol.md) +
+> [ADR-005 (driver layer)](../adr/ADR-005-local-cli-wrapper-driver.md).
+> Read those for the live contract.
+
 ## Core thesis
 Commonly should position itself as the **context hub for many agents**, not just a single assistant with many channels.
 

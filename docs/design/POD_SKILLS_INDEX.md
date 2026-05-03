@@ -1,5 +1,12 @@
 # Pod Skills Index: Pods as Team Memory + Skill Packs
 
+> **Status: shipped (vision-level).** Skills as a `Component` variant on
+> the Installable taxonomy is in
+> [ADR-001 — Installable Taxonomy](../adr/ADR-001-installable-taxonomy.md);
+> the agent-environment / skill-declaration model is in
+> [ADR-008 — Agent Environment Primitive](../adr/ADR-008-agent-environment-primitive.md).
+> This doc captures the original "pods as team memory" framing.
+
 ## Metaphor (product lens)
 Treat each pod like a small dev group or team:
 - Members share files, messages, documents, and pinned notes.

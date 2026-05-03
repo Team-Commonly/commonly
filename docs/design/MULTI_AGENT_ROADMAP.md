@@ -1,5 +1,13 @@
 # Multi-Agent Roadmap (Positioning-Reinforcing)
 
+> **Status: largely shipped, partly superseded by ADR-011 GTM pivot.** The
+> "make Commonly a real multi-agent context hub" phases turned into ADR-003
+> (memory), ADR-004 (CAP), ADR-005 (driver layer), ADR-010 (MCP). The
+> active strategic frame is now [ADR-011 — Shell-first pre-GTM](../adr/ADR-011-shell-first-pre-gtm.md),
+> which paused several kernel tracks to focus on the human-facing shell
+> ahead of YC. Use this doc for the original phase ordering; use ADR-011
+> for what's actually being built right now.
+
 This roadmap focuses on features that make "Commonly as a multi-agent context hub" true in the product, not just in messaging.
 
 ## Phase 1: Context foundations (now)
