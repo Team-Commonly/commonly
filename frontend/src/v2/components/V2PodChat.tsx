@@ -455,19 +455,22 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     }
   };
 
-  // Composer attach: handles both images (sends as standalone image message,
-  // legacy v2 behavior) and other file kinds (PDF / md / txt / csv / json,
-  // inserts an [[upload:fileName|originalName|size|kind]] directive into the
-  // draft so the user can add accompanying text and send when ready). Both
-  // paths POST to /api/uploads with the active podId so the file shows up in
-  // the inspector's Artifacts section.
+  // Composer attach: pick a file → upload → send a message containing just
+  // the [[upload:fileName|originalName|size|kind]] directive (or the raw
+  // image URL for image kinds, which the bubble renders inline). Drafts the
+  // user is composing are preserved untouched — they can keep typing and
+  // hit Send when ready, and the file lands as its own message.
+  //
+  // Drag-and-drop in chat clients (Slack, Discord, Linear) all match this
+  // shape: pick → goes-now. Inserting a directive token into the textarea
+  // showed raw `[[upload:…]]` text as the user typed and felt off.
   const handleAttachFile = async (file: File | null) => {
     if (!file || uploading) return;
     setUploading(true);
     setComposerError(null);
     try {
       const formData = new FormData();
-      formData.append('image', file); // legacy multer field name
+      formData.append('image', file); // legacy multer field name; route accepts non-images
       formData.append('podId', pod._id);
       const uploaded = await api.post<{
         url?: string;
@@ -484,7 +487,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
       }
       if (uploaded.fileName) {
         const directive = `[[upload:${uploaded.fileName}|${uploaded.originalName || file.name}|${uploaded.size || file.size}|${uploaded.kind || 'file'}]]`;
-        setDraft((prev) => (prev ? `${prev.replace(/\s+$/, '')} ${directive}` : directive));
+        await sendMessage(directive);
       }
     } catch (err) {
       const e = err as { response?: { data?: { msg?: string } } };
