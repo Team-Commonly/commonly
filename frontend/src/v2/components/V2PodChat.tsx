@@ -694,7 +694,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*,.pdf,.md,.txt,.csv,.json"
+                    accept="image/*,.pdf,.md,.txt,.csv,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.zip"
                     style={{ display: 'none' }}
                     onChange={(e) => handleAttachFile(e.target.files?.[0] || null)}
                   />

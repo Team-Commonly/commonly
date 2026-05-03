@@ -92,9 +92,25 @@ const ARTIFACT_KIND_META: Record<string, { icon: string; label: string }> = {
   txt: { icon: 'TXT', label: 'Text' },
   csv: { icon: 'CSV', label: 'CSV' },
   json: { icon: 'JS', label: 'JSON' },
+  doc: { icon: 'DOC', label: 'Word' },
+  docx: { icon: 'DOC', label: 'Word' },
+  xls: { icon: 'XLS', label: 'Excel' },
+  xlsx: { icon: 'XLS', label: 'Excel' },
+  ppt: { icon: 'PPT', label: 'PowerPoint' },
+  pptx: { icon: 'PPT', label: 'PowerPoint' },
+  odt: { icon: 'ODT', label: 'OpenDocument' },
+  ods: { icon: 'ODS', label: 'OpenDocument Sheet' },
+  odp: { icon: 'ODP', label: 'OpenDocument Slides' },
+  zip: { icon: 'ZIP', label: 'Archive' },
   image: { icon: 'IMG', label: 'Image' },
   file: { icon: 'F', label: 'File' },
 };
+
+const FILE_EXTENSION_KINDS = new Set([
+  'pdf', 'md', 'txt', 'csv', 'json',
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'odt', 'ods', 'odp', 'zip',
+]);
 
 // Map a file's extension to one of the keys in ARTIFACT_KIND_META so the
 // uploaded-file rows pick up the right icon/label without re-deriving in JSX.
@@ -102,7 +118,7 @@ const fileKind = (originalName: string, contentType?: string): string => {
   const dot = originalName.lastIndexOf('.');
   const ext = dot >= 0 ? originalName.slice(dot + 1).toLowerCase() : '';
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image';
-  if (['pdf', 'md', 'txt', 'csv', 'json'].includes(ext)) return ext;
+  if (FILE_EXTENSION_KINDS.has(ext)) return ext;
   if (contentType?.startsWith('image/')) return 'image';
   return 'file';
 };

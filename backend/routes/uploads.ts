@@ -57,14 +57,22 @@ interface Res {
 }
 
 // Per-kind extension allowlist. Replaces the original image-only regex.
-// Office docs (doc/docx/xls/xlsx/ppt/pptx) and AV media (mp4/mov/mp3/wav)
-// were considered for v1 but deferred until we have ClamAV in front of the
-// non-image upload path (ADR-002 Phase 6). For demo + beta the doc/text
-// kinds below are sufficient: agents posting briefs, users dropping notes.
+//
+// Office formats (docx/xlsx/pptx + legacy doc/xls/ppt) and zip archives
+// shipped 2026-05-03 alongside the v2 inspector demo path. They store as
+// opaque bytes and download (no in-page render), so the XSS / SVG-style
+// attack surface that gates `image/*` doesn't apply. Macro execution risk
+// lives at file-OPEN on the user's machine — same model as receiving the
+// same file via email.
+//
+// Still deferred to ADR-002 Phase 6: ClamAV scanning, AV media (mp4/mov/
+// mp3/wav — large + needs streaming), virus signature feed.
 const KIND_EXTENSIONS: Record<string, string[]> = {
   image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'],
   document: ['pdf', 'md', 'txt'],
   data: ['csv', 'json'],
+  office: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp'],
+  archive: ['zip'],
 };
 const ALLOWED_EXT_REGEX = new RegExp(
   `\\.(${Object.values(KIND_EXTENSIONS).flat().join('|')})$`,

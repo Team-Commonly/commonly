@@ -88,6 +88,16 @@ describe('uploads POST / (ADR-002 Phase 1)', () => {
     ['data.csv', 'data'],
     ['payload.json', 'data'],
     ['photo.png', 'image'],
+    ['report.docx', 'office'],
+    ['legacy-report.doc', 'office'],
+    ['cap-table.xlsx', 'office'],
+    ['legacy-budget.xls', 'office'],
+    ['deck.pptx', 'office'],
+    ['legacy-deck.ppt', 'office'],
+    ['notes.odt', 'office'],
+    ['data.ods', 'office'],
+    ['slides.odp', 'office'],
+    ['logs.zip', 'archive'],
   ])('accepts %s and reports kind=%s', async (filename, expectedKind) => {
     const res = await request(app)
       .post('/api/uploads')
