@@ -364,6 +364,52 @@ class DMService {
   }
 
   /**
+   * Read-access predicate per the §3.7 co-pod-member rule. A user can
+   * view a pod's messages / agents / files / inspector data when:
+   *   - They are in `pod.members`, OR
+   *   - The pod is `agent-dm` AND they share at least one pod with any
+   *     member of the DM. (Intentional: humans should be able to read
+   *     the agent ↔ agent conversations happening between agents in
+   *     their team pods, without the agents adding the human as a
+   *     formal member of the bot-only DM.)
+   *
+   * Pass through the membership-only path for legacy `agent-room` /
+   * `agent-admin` types — the existing read rules there are stricter
+   * by design and we don't widen them here.
+   *
+   * `pod` may be a populated Mongoose doc, a `.lean()` plain object,
+   * or any shape with `type` + `members`. Members may be ObjectIds or
+   * populated User docs.
+   */
+  static async canViewPod(
+    userId: unknown,
+    pod: { type?: string; members?: unknown[] } | null | undefined,
+  ): Promise<boolean> {
+    if (!userId || !pod) return false;
+    const uid = String(userId);
+    const memberIds = (pod.members || []).map((m) => {
+      if (!m) return '';
+      if (typeof m === 'object') return String((m as { _id?: unknown })._id || m);
+      return String(m);
+    });
+    if (memberIds.includes(uid)) return true;
+    if (pod.type !== 'agent-dm') return false;
+    // §3.7 fan-out: if viewer shares any pod with any DM member, allow.
+    // Single Mongo query: find a pod whose members contain uid AND any
+    // member of `otherIds`. `$in` against the members array works
+    // regardless of whether the underlying values are ObjectId-encoded.
+    const otherIds = memberIds.filter((id) => id && id !== uid);
+    if (otherIds.length === 0) return false;
+    const count = await Pod.countDocuments({
+      $and: [
+        { members: uid },
+        { members: { $in: otherIds } },
+      ],
+    });
+    return count > 0;
+  }
+
+  /**
    * Find or create a 2-member `agent-dm` pod. Generalization of
    * `getOrCreateAgentRoom` — both members can be agents (the bot ↔ bot
    * case), agent ↔ human (parallel to legacy agent-room), or even

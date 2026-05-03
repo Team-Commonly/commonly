@@ -395,6 +395,9 @@ const isPodMember = (pod: any, userId: any) => {
   return (pod.members || []).some((member: any) => member?.toString() === userId.toString());
 };
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const DMServiceForSocketAuth = require('./services/dmService');
+
 const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) => {
   if (!podId) {
     console.warn(`Socket tried to ${action} without podId`);
@@ -409,7 +412,17 @@ const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) =>
     return null;
   }
 
-  if (!isPodMember(pod, socket.userId)) {
+  // Read paths (join, listen for newMessage / typing) accept the §3.7
+  // co-pod-member rule for `agent-dm` pods: a viewer who shares any pod
+  // with either bot member can join the room and observe. Write paths
+  // (post) check membership separately upstream — only members can
+  // post, regardless of pod type.
+  const isReadAction = action === 'join';
+  const allowed = isReadAction
+    ? await DMServiceForSocketAuth.canViewPod(socket.userId, pod)
+    : isPodMember(pod, socket.userId);
+
+  if (!allowed) {
     console.error(`Socket error: Not authorized to ${action} for this pod`, {
       podId,
       userId: socket.userId,

@@ -187,6 +187,72 @@ describe('DMService — agent-dm + sharePod', () => {
     });
   });
 
+  describe('canViewPod (§3.7 read-access fan-out)', () => {
+    it('returns true for direct member of any pod type', async () => {
+      const pod = await Pod.create({
+        name: 'Team',
+        type: 'team',
+        createdBy: alice._id,
+        members: [alice._id, bob._id],
+      });
+      expect(await DMService.canViewPod(alice._id, pod)).toBe(true);
+    });
+
+    it('returns false for non-member of a non-DM pod', async () => {
+      const pod = await Pod.create({
+        name: 'Team',
+        type: 'team',
+        createdBy: alice._id,
+        members: [alice._id],
+      });
+      expect(await DMService.canViewPod(bob._id, pod)).toBe(false);
+    });
+
+    it('returns true for non-member of agent-dm who shares a pod with a DM member', async () => {
+      // Alice + Aria co-members of a team pod; Aria + Codex have a
+      // private agent-dm. Alice should be able to read it per §3.7.
+      await Pod.create({
+        name: 'Team',
+        type: 'team',
+        createdBy: alice._id,
+        members: [alice._id, aria._id],
+      });
+      const dm = await Pod.create({
+        name: 'aria ↔ codex',
+        type: 'agent-dm',
+        createdBy: aria._id,
+        members: [aria._id, codex._id],
+      });
+      expect(await DMService.canViewPod(alice._id, dm)).toBe(true);
+    });
+
+    it('returns false when viewer shares no pod with any agent-dm member', async () => {
+      const dm = await Pod.create({
+        name: 'aria ↔ codex',
+        type: 'agent-dm',
+        createdBy: aria._id,
+        members: [aria._id, codex._id],
+      });
+      expect(await DMService.canViewPod(bob._id, dm)).toBe(false);
+    });
+
+    it('does NOT widen for non-agent-dm — agent-room reader still rejected without membership', async () => {
+      await Pod.create({
+        name: 'Team',
+        type: 'team',
+        createdBy: alice._id,
+        members: [alice._id, aria._id],
+      });
+      const room = await Pod.create({
+        name: 'aria',
+        type: 'agent-room',
+        createdBy: aria._id,
+        members: [aria._id, bob._id],
+      });
+      expect(await DMService.canViewPod(alice._id, room)).toBe(false);
+    });
+  });
+
   describe('AgentInstallation.upsert idempotency', () => {
     let pod;
     beforeEach(async () => {

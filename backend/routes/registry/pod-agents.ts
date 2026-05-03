@@ -120,13 +120,13 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
-    const membership = pod.members?.find((m: any) => {
-      if (!m) return false;
-      const memberId = m.userId?.toString?.() || m.toString?.();
-      return memberId && memberId === userId.toString();
-    });
+    // §3.7 read-access: members + creator allowed; for agent-dm, anyone
+    // sharing a pod with either bot member is also allowed.
+    // eslint-disable-next-line global-require
+    const DMService = require('../../services/dmService');
+    const canView = await DMService.canViewPod(userId, pod);
 
-    if (!membership && !isCreator) {
+    if (!canView && !isCreator) {
       return res.status(403).json({ error: 'Access denied' });
     }
 

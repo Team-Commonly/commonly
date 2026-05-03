@@ -13,6 +13,8 @@ const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, rem
 const Pod = require('../models/Pod');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const DMService = require('../services/dmService');
+// eslint-disable-next-line global-require
 const Announcement = require('../models/Announcement');
 // eslint-disable-next-line global-require
 const ExternalLink = require('../models/ExternalLink');
@@ -371,9 +373,10 @@ router.patch('/:id/contacts', podAdminRateLimit, auth, async (req: AuthReq, res:
 router.get('/:podId/announcements', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
-    const pod = await Pod.findById(podId) as { members?: Array<{ toString: () => string }> } | null;
+    const pod = await Pod.findById(podId) as { type?: string; members?: Array<{ toString: () => string }> } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
-    if (!pod.members?.some((member) => member.toString() === req.user?.id)) return res.status(403).json({ message: 'Not authorized to view pod announcements' });
+    const canView = await DMService.canViewPod(req.user?.id, pod);
+    if (!canView) return res.status(403).json({ message: 'Not authorized to view pod announcements' });
     const announcements = await Announcement.find({ podId }).sort({ createdAt: -1 }).populate('createdBy', 'username profilePicture');
     return res.status(200).json(announcements);
   } catch (error) {
@@ -385,11 +388,10 @@ router.get('/:podId/announcements', auth, async (req: AuthReq, res: Res) => {
 router.get('/:podId/files', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
-    const pod = await Pod.findById(podId) as { members?: Array<{ toString: () => string }> } | null;
+    const pod = await Pod.findById(podId) as { type?: string; members?: Array<{ toString: () => string }> } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
-    const userId = req.user?.id;
-    const isMember = pod.members?.some((m) => m.toString() === userId);
-    if (!isMember) return res.status(403).json({ message: 'Not authorized to view pod files' });
+    const canView = await DMService.canViewPod(req.user?.id, pod);
+    if (!canView) return res.status(403).json({ message: 'Not authorized to view pod files' });
     // Most recent 100 — file lists in the inspector are bounded by what the
     // user can scan visually; pagination can come later if pods get heavy.
     const files = await File.find({ podId })

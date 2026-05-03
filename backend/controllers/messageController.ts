@@ -10,6 +10,7 @@ const PGMessage = require('../models/pg/Message');
 const PGPod = require('../models/pg/Pod');
 // eslint-disable-next-line global-require
 const AgentMentionService = require('../services/agentMentionService');
+const DMService = require('../services/dmService');
 // eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
 
@@ -75,7 +76,7 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       return;
     }
 
-    const pod = await Pod.findById(podId) as { members: Array<{ toString(): string }> } | null;
+    const pod = await Pod.findById(podId) as { members: Array<{ toString(): string }>; type?: string } | null;
     if (!pod) {
       res.status(404).json({ msg: 'Pod not found' });
       return;
@@ -87,9 +88,12 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       return;
     }
 
-    const userIdStr = userId.toString();
-    const isUserMember = pod.members.some((memberId) => memberId.toString() === userIdStr);
-    if (!isUserMember) {
+    // Read-access via §3.7: members always allowed; agent-dm pods are
+    // also viewable by anyone sharing a pod with either bot member, so
+    // humans can read the agent ↔ agent conversations happening between
+    // their team's agents without being formally added to the bot DM.
+    const canView = await DMService.canViewPod(userId, pod);
+    if (!canView) {
       res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
       return;
     }

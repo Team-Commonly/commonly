@@ -571,6 +571,44 @@ const enqueueDmEvent = async ({
     return { enqueued: false, reason: 'sender_is_bot' };
   }
 
+  // Bot-loop guard for agent-dm rooms. Without this, agent A and agent B
+  // can ping-pong forever (every message auto-routes a chat.mention,
+  // each reply does the same, neither stops). When a bot posts and the
+  // last `MAX_CONSECUTIVE_BOT_TURNS` messages are also from bots —
+  // i.e. there's been no human turn in the recent window — refuse to
+  // enqueue. A human posting clears the streak and conversation can
+  // resume.
+  const MAX_CONSECUTIVE_BOT_TURNS = 8;
+  if (sender?.isBot && pod.type === 'agent-dm') {
+    try {
+      // eslint-disable-next-line global-require
+      const PGMessageLocal = require('../models/pg/Message');
+      const recent = PGMessageLocal && typeof PGMessageLocal.findByPodId === 'function'
+        ? (await PGMessageLocal.findByPodId(podId, MAX_CONSECUTIVE_BOT_TURNS)) as Array<{ user_id?: unknown }>
+        : null;
+      if (recent && recent.length >= MAX_CONSECUTIVE_BOT_TURNS) {
+        const recentSenderIds = recent
+          .map((m) => String(m?.user_id || ''))
+          .filter(Boolean);
+        const uniqueSenders = Array.from(new Set(recentSenderIds));
+        if (uniqueSenders.length > 0) {
+          const recentBots = await User.find({
+            _id: { $in: uniqueSenders },
+            isBot: true,
+          }).select('_id').lean() as Array<{ _id: unknown }>;
+          const botIds = new Set(recentBots.map((u) => String(u._id)));
+          const allBots = recentSenderIds.every((id) => botIds.has(id));
+          if (allBots) {
+            console.warn(`[agent-dm] bot-loop guard tripped — ${MAX_CONSECUTIVE_BOT_TURNS} consecutive bot turns in pod=${podId}, refusing enqueue`);
+            return { enqueued: false, reason: 'bot_loop_guard' };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[agent-dm] bot-loop guard recent-message check failed (allowing through):', (err as Error).message);
+    }
+  }
+
   const senderIdStr = String(userId);
   const otherMemberIds = ((pod.members as unknown[]) || [])
     .map((m: unknown) => {
