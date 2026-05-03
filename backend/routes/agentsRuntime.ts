@@ -349,6 +349,20 @@ router.get('/events', agentRuntimeAuth, async (req: any, res: any) => {
       limit,
     });
 
+    // Fire the typing indicator now — at gateway-fetch time, not
+    // backend-enqueue time. The chat header shows "X is thinking…"
+    // only while the gateway is actually processing the event in real
+    // time, so it tracks real LLM work instead of a queued promise
+    // that may never run.
+    if (Array.isArray(events) && events.length > 0) {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { signalAgentTyping } = require('../services/agentEventService');
+      for (const ev of events) {
+        // Best-effort, fire-and-forget — typing is cosmetic.
+        Promise.resolve(signalAgentTyping(ev)).catch(() => null);
+      }
+    }
+
     return res.json({ events });
   } catch (error: any) {
     console.error('Error listing agent events:', error);

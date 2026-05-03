@@ -26,7 +26,10 @@ export interface TypingAgent {
 }
 
 const activeTimers = new Map<string, NodeJS.Timeout>();
-const TIMEOUT_MS = 60_000;
+// 30s safety window — if a typing-stop event is dropped (LLM crash, gateway
+// disconnect mid-call), the indicator clears in 30s instead of dragging on
+// for a full minute looking fake.
+const TIMEOUT_MS = 30_000;
 
 function podKey(t: { podId: unknown; agentName: string; instanceId?: string }): string {
   const podId = t?.podId == null ? '' : String(t.podId);

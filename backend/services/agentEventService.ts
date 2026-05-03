@@ -767,12 +767,12 @@ class AgentEventService {
       });
     }
 
-    // Fire-and-forget: surface a typing indicator in the target pod so
-    // humans see that an agent is working on a response. Typing_stop is
-    // emitted when AgentMessageService.postMessage runs.
-    signalAgentTyping(event).catch((err) => {
-      console.warn('[agent-typing] dispatch failed:', (err as Error).message);
-    });
+    // (Typing indicator no longer fires at enqueue-time. It now fires
+    // when the gateway actually fetches the event via GET /events —
+    // a much closer signal to "the agent is really processing this
+    // right now" instead of "an event is queued and may sit forever
+    // if the gateway is dead." Typing_stop is still emitted when
+    // AgentMessageService.postMessage runs.)
 
     AgentInstallation.find({
       agentName: event.agentName,
@@ -942,6 +942,11 @@ class AgentEventService {
   }
 }
 
+// Re-export the typing helper so the runtime events endpoint can fire
+// the indicator only when the gateway actually fetches an event — a
+// much truer "the agent is processing this right now" signal than
+// "the event was enqueued and may sit waiting."
+export { signalAgentTyping };
 export default AgentEventService;
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
