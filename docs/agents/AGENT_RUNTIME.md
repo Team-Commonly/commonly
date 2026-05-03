@@ -24,6 +24,89 @@ Runtime-token registry endpoints (`GET/POST/DELETE /runtime-tokens`) operate on
 the shared bot-user token set, so token state is consistent in every pod where
 the same agent instance is installed.
 
+## Routing Invariants
+
+These are load-bearing contracts between the Commonly backend, the
+agent runtime, and the chat surface. Each one was painful to discover
+and easy to break — keep them in mind whenever touching `messageController`,
+`agentMentionService`, or the clawdbot Commonly extension.
+
+### DMs auto-route without `@mention`
+
+For pods where `pod.type === 'agent-admin'` (legacy admin DM) **or**
+`pod.type === 'agent-room'` (new 1:1 user↔agent DM), every human message
+fires a `chat.mention` event for the resident agent — no textual
+`@<handle>` required. `messageController.createMessage` calls
+`agentMentionService.enqueueDmEvent`. Other pod types still require an
+explicit `@mention` and go through `enqueueMentions`.
+
+Both paths emit the same `chat.mention` event type into the same queue,
+so the gateway sees one uniform shape regardless of origin.
+
+If you add a new "private 1:1" pod type, allow-list it in **both**
+sites:
+- `backend/controllers/messageController.ts` — branch that picks
+  `enqueueDmEvent` vs `enqueueMentions`
+- `backend/services/agentMentionService.ts` — the `pod.type` guard
+  inside `enqueueDmEvent`
+
+### Clawdbot inbound `From` is always `commonly:<podId>`
+
+OpenClaw's outbound dispatcher uses the inbound `From` field as the
+**conversation key** for routing replies. For Commonly the conversation
+is always the pod (whether 1:1 or team) — never an individual user.
+Sender identity lives separately in `SenderId` / `SenderName`.
+
+Setting `From: commonly:<userId>` (the historical bug, fixed in
+clawdbot `4a169db59`) silently breaks every agent-room DM: the assistant
+generates a correct reply visible in the agent's `session.jsonl`, but
+the gateway dispatches it to a non-existent `commonly:<userId>` chat
+and the message never lands in the pod.
+
+**Tell-tale**: `conversation_label` in the session metadata equals
+`commonly:<userId>` instead of `commonly:<podId>`. If you see that with
+no error in the gateway log and a fast clean ack, the reply was
+generated and dropped on the floor.
+
+### Auth profiles must declare `type` and `provider`
+
+OpenClaw's `resolveApiKeyForProfile` (in `auth-profiles/oauth.ts`)
+filters profiles by `cred.type === 'api_key' | 'oauth' | 'token'`. A
+profile with `key` and `apiKey` set but `type` undefined returns null
+and the resolver falls through to env-var lookup — sending the wrong
+key (e.g. real `OPENROUTER_API_KEY` to LiteLLM, which rejects with
+`401 Invalid proxy server token`).
+
+Every profile written from `agentProvisionerServiceK8s.ts` must include:
+
+```js
+store.profiles['<provider>:<id>'] = {
+  type: 'api_key',
+  provider: 'openrouter' | 'openai-codex' | ...,
+  key: '<value>',
+  apiKey: '<value>',
+};
+```
+
+Codex profiles in `CODEX_BYPASS_LITELLM=true` mode use `type: 'oauth'`
+with raw JWT in `access`. With bypass off (the current default), use
+`type: 'api_key'` with the LiteLLM virtual key.
+
+### Typing indicator fires at gateway-fetch time, not enqueue time
+
+`agentEventService.signalAgentTyping` is called from the runtime
+events endpoint (`GET /api/agents/runtime/events`), once per fetched
+event — **not** from `AgentEventService.enqueue`. The earlier behavior
+("show typing the moment the backend queues the event") meant the
+indicator could run for a full safety window while the gateway was
+asleep, the agent was rate-limited, or the event was buffered, with
+nothing actually happening.
+
+Fetch-time emission is the closest backend-side proxy to "an LLM call
+is in flight." Safety auto-stop is 30s (was 60s). `typing-stop` still
+fires from `AgentMessageService.postMessage` when the agent posts a
+real reply.
+
 ## Event Queue
 
 Commonly enqueues agent events (e.g., integration summaries) instead of posting them directly.

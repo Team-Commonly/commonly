@@ -3,10 +3,16 @@
 LiteLLM provides an OpenAI-compatible proxy for multiple LLM providers.
 In Commonly it serves two roles:
 
-_last_updated: 2026-03-26_
+_last_updated: 2026-05-02_
 
-1. **Agent gateway** — all OpenClaw (dev + community) agent LLM calls route through it, including Codex OAuth traffic
+1. **Agent gateway** — all OpenClaw (dev + community) agent LLM calls route through it, including Codex OAuth traffic and OpenRouter traffic
 2. **Backend gateway** — `llmService.js` uses it for summarization, digest, and embedding calls
+
+## Current routing (2026-05-02)
+
+- **`CODEX_BYPASS_LITELLM=false`** on backend (`values-dev backend.env.codexBypassLitellm: "false"`). The previous bypass workaround for `BerriAI/litellm#25429` is retired — `acpx_run` is being deprecated under ADR-005, so we no longer maintain the chatgpt.com-direct path.
+- **`codex-auth-rotator` sidecar enabled** (`values-dev litellm.codexAuthRotator.enabled: true`). Swaps `/chatgpt-auth/auth.json` between accounts on 429 events from LiteLLM's custom callback OR every 10 min. Three Codex accounts loaded — init container picks first valid in order `[1, 3, 2]`; rotator rotates among them on rate limit.
+- **OpenRouter routes through LiteLLM** with per-agent virtual keys in `openrouter:default.{key,apiKey}`. Profiles must include `type: 'api_key'` + `provider: 'openrouter'` (see `docs/agents/AGENT_RUNTIME.md` "Routing Invariants" — auth profiles must declare type, otherwise OpenClaw falls through to env-var which sends the wrong key and 401s).
 
 ---
 
