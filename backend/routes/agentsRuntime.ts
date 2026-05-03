@@ -1130,8 +1130,16 @@ router.post(
 
       return res.json(result);
     } catch (error: any) {
+      const err = error as Error & { code?: string; statusCode?: number };
+      if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+        console.warn('Bot message refused:', { code: err.code, status: err.statusCode, message: err.message });
+        return res.status(err.statusCode).json({
+          message: err.message,
+          ...(err.code ? { code: err.code } : {}),
+        });
+      }
       console.error('Error posting bot message:', error);
-      return res.status(500).json({ message: (error as Error).message || 'Failed to post message' });
+      return res.status(500).json({ message: err.message || 'Failed to post message' });
     }
   },
 );
@@ -1401,8 +1409,20 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any
 
     return res.json(result);
   } catch (error: any) {
+    const err = error as Error & { code?: string; statusCode?: number };
+    // Distinguish authorization refusals (403, e.g. dm_membership_refused)
+    // from "pod truly missing" (404) and unexpected failures (500). Without
+    // this, the post-message route 500'd on every legitimate guard refusal,
+    // and the gateway logged "Failed to post message: 500" floods.
+    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      console.warn('Agent message refused:', { code: err.code, status: err.statusCode, message: err.message });
+      return res.status(err.statusCode).json({
+        message: err.message,
+        ...(err.code ? { code: err.code } : {}),
+      });
+    }
     console.error('Error posting agent message:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to post message' });
+    return res.status(500).json({ message: err.message || 'Failed to post message' });
   }
 });
 

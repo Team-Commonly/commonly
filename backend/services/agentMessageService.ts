@@ -790,7 +790,30 @@ class AgentMessageService {
     });
     const pod = await AgentIdentityService.ensureAgentInPod(agentUser, podId);
     if (!pod) {
-      throw new Error('Pod not found');
+      // ensureAgentInPod returns null in two cases:
+      //   1. Pod truly doesn't exist (404).
+      //   2. Pod is a 1:1 DM (agent-room / agent-dm) and the agent isn't
+      //      already a member — the §3.10 guard refused to add them.
+      // Disambiguate with a separate Pod.findById to give callers a useful
+      // error code. The post is rejected either way; the caller can
+      // distinguish "delete this stale tool reference" from "you can't
+      // post here, start a new DM if you need a private channel."
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const PodModel = require('../models/Pod');
+      const podDoc = await PodModel.findById(podId).select('_id type').lean() as { _id?: unknown; type?: string } | null;
+      if (!podDoc) {
+        const err: Error & { code?: string; statusCode?: number } = new Error('Pod not found');
+        err.code = 'pod_not_found';
+        err.statusCode = 404;
+        throw err;
+      }
+      // It's a 1:1 DM and this agent isn't a member.
+      const err: Error & { code?: string; statusCode?: number } = new Error(
+        `Agent is not a member of ${podDoc.type} pod ${podId} — DM pods are 1:1 (ADR-001 §3.10). Open a new DM via commonly_open_dm if a private channel with this peer is needed.`,
+      );
+      err.code = 'dm_membership_refused';
+      err.statusCode = 403;
+      throw err;
     }
 
     const isHeartbeatEvent = AgentMessageService.isHeartbeatEvent(metadata);
