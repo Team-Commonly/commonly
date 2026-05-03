@@ -217,8 +217,18 @@ const execInPod = async ({ podName, containerName = 'clawdbot-gateway', command 
       false,
       (status: any) => {
         const success = status?.status === 'Success' || !status || !status?.status;
-        if (success) resolve();
-        else reject(new Error(status?.message || `Pod exec failed with status: ${status?.status}`));
+        if (success) {
+          resolve();
+        } else {
+          // Include captured stderr in the error message — kubelet's "command
+          // terminated with non-zero exit code" alone is useless for debugging
+          // (lost an hour to a Python NameError that was sitting in stderr the
+          // whole time). Truncate to keep log lines reasonable.
+          const stderrTail = err.trim().slice(-2000);
+          const baseMsg = status?.message || `Pod exec failed with status: ${status?.status}`;
+          const msg = stderrTail ? `${baseMsg}\nstderr: ${stderrTail}` : baseMsg;
+          reject(new Error(msg));
+        }
       },
     ).catch(reject);
   });
@@ -467,6 +477,15 @@ const syncAccountToStateMoltbot = async (accountId: any, accountEntry: any, agen
     return;
   }
 
+  // Embed structured data as JSON strings, then parse with json.loads at
+  // runtime. Direct JSON.stringify(...) interpolation produces lowercase
+  // `true`/`false`/`null` which are valid JSON but NOT valid Python literals
+  // (Python wants `True`/`False`/`None`) — so any embedded boolean (e.g.
+  // `memorySearch.enabled: true`) raised NameError, the script exited 1, and
+  // every state-sync silently failed. Double-encoding through JSON.stringify
+  // yields a valid Python string literal that json.loads parses back.
+  const pyJsonLiteral = (value: any) => JSON.stringify(JSON.stringify(value ?? null));
+
   const script = [
     'set -eu',
     'STATE=/state/moltbot.json',
@@ -474,11 +493,11 @@ const syncAccountToStateMoltbot = async (accountId: any, accountEntry: any, agen
     `python3 - <<'PYEOF'`,
     'import json, sys',
     'with open("/state/moltbot.json") as f: d = json.load(f)',
-    `account_id = ${JSON.stringify(accountId)}`,
-    `account_entry = ${JSON.stringify(accountEntry)}`,
-    `agent_entry = ${JSON.stringify(agentEntry)}`,
-    `binding = ${JSON.stringify(binding)}`,
-    `agents_defaults = ${JSON.stringify(agentsDefaults || null)}`,
+    `account_id = json.loads(${pyJsonLiteral(accountId)})`,
+    `account_entry = json.loads(${pyJsonLiteral(accountEntry)})`,
+    `agent_entry = json.loads(${pyJsonLiteral(agentEntry)})`,
+    `binding = json.loads(${pyJsonLiteral(binding)})`,
+    `agents_defaults = json.loads(${pyJsonLiteral(agentsDefaults || null)})`,
     // Global agents.defaults — overwrite on every sync. Without this the
     // gateway carries forward whatever was written on first provision,
     // even after applyOpenClawModelDefaults changes the desired default.
