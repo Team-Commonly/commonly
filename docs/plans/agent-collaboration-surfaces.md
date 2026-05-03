@@ -1,11 +1,21 @@
 # Plan: Agent collaboration surfaces
 
-Status: **draft** (2026-05-03). Bundles three threads that have been
-emerging as we ship more agents:
+Status: **draft v2** (2026-05-03). Revised after a code-reviewer
+pass; the v1 had two correctness gaps in Phase 1 (silent-drop on
+the new pod type, no auth on mention-driven autoJoin) plus a named
+hard-code (`sam-local-codex`) we don't actually need given our
+existing provisioning + LiteLLM stack. v2 fixes both, drops the
+hard-code, and pins the read-access / autoJoin rule to the
+"co-pod member" invariant.
+
+Bundles three threads that have been emerging as we ship more
+agents:
 
 - Pixel/Theo/Ops still call `acpx_run` directly — we want them
-  delegating to a real codex agent (sam-local-codex today, anything
-  designated tomorrow), in a way humans can observe.
+  delegating to a real codex agent provisioned on the clawdbot
+  gateway (LiteLLM-backed, multi-account rotator already live).
+  Today's `sam-local-codex` is a stop-gap that broke when we
+  refreshed account-2/3 tokens; we're not bringing it back.
 - Agent ↔ agent conversations have nowhere to live. They either
   pollute team pods or vanish into nowhere. We need a DM-shaped
   surface for them, parallel to the existing user ↔ agent
@@ -33,17 +43,25 @@ three half-shaped primitives.
 - @mention of "my codex" / "my claude" inside any team pod resumes
   the conversation **in that pod**, with all humans + agents present
   able to intervene. Not in a side channel.
-- A first-class **contact list** primitive on both `User` and
-  `AgentProfile` so an agent can resolve aliases like `@codex` or
-  `@my-planner` without us hard-coding `sam-local-codex`.
-- Identity-file integration: each agent's `IDENTITY.md` /
-  `CLAUDE.md` / `AGENTS.md` includes a generated **Contacts**
-  section so the agent can see who it knows.
+- A first-class **contact list** primitive on `User` (covers human
+  AND bot users — every agent has a User row already) so callers
+  can resolve aliases like `@codex` or `@my-planner` against a
+  real binding, never a named hard-code.
+- Identity-file integration: each agent's identity file (today
+  `IDENTITY.md`; routing per runtime is its own task — see §8)
+  picks up a generated **Contacts** section so the agent can see
+  who it knows without an extra tool call.
 - Auto-create the agent ↔ agent DM on first contact, **but** drop a
   visible event in any team pod the conversation was triggered from
-  ("Pixel and sam-local-codex opened a DM — view conversation").
+  ("Pixel and codex opened a DM — view conversation").
 - `Pixel`/`Theo`/`Ops` heartbeats stop calling `acpx_run` and instead
-  delegate via `@<contact-alias>` resolution.
+  delegate via `@<contact-alias>` resolution to a clawdbot-
+  provisioned codex agent (or whichever agent has been assigned
+  the codex role for that pod).
+- **Hard "co-pod member" rule** for both read-access AND autoJoin
+  authorization: you can DM, mention, or pull-into-pod any User —
+  human or bot — that shares at least one pod with you. No special
+  admin gating; no instance-default fallback to a named agent.
 
 ### Non-goals (this PR)
 
@@ -91,19 +109,34 @@ A DM pod that allows any 2-member combination drawn from
 `agent-room`, `agent-admin`, and a hypothetical `agent-agent-room`.
 
 **v1 scope**: add `agent-dm` to the enum **alongside** the existing
-types; flag-flip a few callsites so new agent ↔ agent rooms use it.
-Don't migrate `agent-room` rows or change their lifecycle. We can
-deprecate `agent-room` later once the new type has soaked.
+types; new agent ↔ agent rooms use it. Don't migrate `agent-room`
+rows or change their lifecycle. We can deprecate `agent-room`
+later once the new type has soaked.
 
 ```
 type:    'agent-dm'
 members: [User, User]   // any composition
-metadata.dmKind: 'user-agent' | 'agent-agent' | 'admin'
 ```
 
-The `dmKind` is a denormalized hint for the sidebar / API — we
-already infer this from member shape, but the explicit field saves
-repeated lookups and makes filtering trivial.
+No `dmKind` field — the v1 plan had one, but `(pod.type,
+member.botMetadata)` is already enough to derive every variant
+and a denormalized field would drift the moment a human admin
+joins an agent ↔ agent room for observation. Frontend computes it
+on the fly; backend never persists it.
+
+**Allow-list invariant** (must land in same diff as the enum
+value):
+
+- `backend/controllers/messageController.ts:221` — the DM
+  enqueue branch currently allow-lists `agent-admin` and
+  `agent-room`. Add `agent-dm`.
+- `backend/services/agentMentionService.ts:389`
+  (`enqueueDmEvent`) — same allow-list, same fix.
+
+Skipping either makes every message in the new room silently drop
+on the way to the agent runtime. This is the same bug class as
+`e78b5df241` (agent-room without `AgentInstallation`); it has its
+own callout in `docs/agents/AGENT_RUNTIME.md` Routing Invariants.
 
 ### 3.2 Contact list (on User AND AgentProfile)
 
@@ -129,15 +162,32 @@ contact list without an extra tool call.
 **Resolution order** when an agent says `@codex` in a pod:
 
 1. **Pod-level binding** — `pod.contacts.codex` if set (admin
-   pinned a specific codex agent for this pod).
-2. **Agent's own contact list** — `agentUser.contacts` lookup by
-   `alias === 'codex'` first, else by `role === 'codex'`.
-3. **Pod members** — if anyone in pod.members has `role: 'codex'`.
-4. **Instance default** — `sam-local-codex` (current hard-coded
-   behavior, kept as last-resort fallback).
+   pinned a specific agent as the codex role for this pod).
+2. **Agent's own contact list** — `agentUser.contacts` entry where
+   `alias === 'codex'` OR `role === 'codex'`.
+3. **Pod members with role match** — any `AgentInstallation` in
+   the pod whose `config.role === 'codex'`. (`AgentInstallation`
+   already has a free-form `config` map; we promote `role` to a
+   declared key on it. `pod.members` itself stays a flat ObjectId
+   array — no schema change there.)
+4. **Fail loud** — return a structured error to the caller
+   ("no agent assigned the `codex` role in this pod or in your
+   contacts"). The agent should re-prompt the user / surface a
+   pod-event.
+
+No instance-level fallback. The v1 plan ended with
+"sam-local-codex" as the terminal default; that's a named
+operator-specific hard-code in a code path that runs for every
+tenant and breaks the moment we ship OSS or federate. Drop it.
+
+The way you make Phase 2 work without a contact list is by
+provisioning a real codex agent on the clawdbot gateway (LiteLLM
++ rotator already live) and having pod admins assign it the
+`codex` role per pod that needs it. See §3.6.
 
 If the resolution lands on an agent NOT in `pod.members`, we use
-the existing autoJoin-on-mention path (see §3.4) to install + join.
+the autoJoin-on-mention path (see §3.4) — gated on the §3.7
+co-pod-member rule.
 
 ### 3.3 Pod-level designated agents
 
@@ -157,12 +207,25 @@ flows — extend it to fire on mention resolution that lands outside
 `pod.members`:
 
 1. Resolve `@codex` → `(agentName, instanceId)` per §3.2.
-2. If not in `pod.members`, install:
-   - `AgentInstallation.install(name, podId, { heartbeat: { enabled: false }, autoJoinSource: 'mention-resolution', ... })`
+2. **Authorize the autoJoin** per §3.7: the resolved target must
+   share at least one pod with the *sender* (human or agent). If
+   the only resolution path was a pod-level binding (§3.2 level
+   1), the binding itself counts as authorization — admins
+   pinning a codex agent to a pod intentionally widens reach.
+3. If authorization fails, refuse silently — do NOT install,
+   do NOT route the event. Optionally surface a pod-event
+   ("[unresolved mention: @codex — no shared pod]") so the
+   sender can debug.
+4. If authorization passes and the agent is not yet in
+   `pod.members`, install:
+   - `AgentInstallation.upsert(name, podId, { heartbeat: { enabled: false }, autoJoinSource: 'mention-resolution', ... })`.
+     Use upsert (not raw `install`) so re-firing the path or a
+     later admin install doesn't create duplicate rows for the
+     same `(agentName, instanceId, podId)` triple.
    - Add to `pod.members`.
-3. Drop a system event into the pod ("Pixel pulled in
-   sam-local-codex via @codex").
-4. Fire the normal `chat.mention` event so the agent responds in
+5. Drop a system event into the pod ("Pixel pulled in codex via
+   @codex").
+6. Fire the normal `chat.mention` event so the agent responds in
    the pod.
 
 This is the path that makes "mention in team pod resumes in team
@@ -170,19 +233,87 @@ pod" work — the agent joins the pod for the duration of the
 conversation; humans + other agents can intervene; transcript
 stays in the team pod.
 
-### 3.5 DM-creation event in source pod
+**No bot-storm path.** Bot ↔ bot mentions still pass the §3.7
+check: agent A can only autoJoin agent B into pod P if A and B
+already share a pod. We don't grant fan-out reach via mention
+chains.
+
+### 3.6 First-party codex agent on clawdbot
+
+We don't need a special-case fallback. We need a regular agent
+with `role: 'codex'` provisioned on the existing infra:
+
+- Runtime: clawdbot gateway, same as nova/aria/pixel.
+- Model wiring: LiteLLM (`gpt-5.4-mini` heartbeats, `gpt-5.4` for
+  longer turns); the `codex-auth-rotator` sidecar already cycles
+  account-1/2/3 every 10 min so quota burn stays balanced.
+  No local CLI on the operator laptop, no `sam-local-codex`
+  registry row, no special HEARTBEAT.md tied to a polling daemon.
+- Heartbeat: standard agent preset; responds to `chat.mention`
+  events, posts replies through the normal dispatcher (same
+  `From: commonly:<podId>` invariant as everyone else).
+- Identity: persona scoped to "code-quality-focused collaborator"
+  (don't pretend to be a CLI; the agent IS the agent).
+- Install path: identical to any other preset agent. `pod.contacts.codex`
+  is just a per-pod pin to that installation; nothing in the
+  resolver knows the codex agent is "special."
+
+This is what "we are backend-rich" actually means. The hard-coded
+fallback existed because we didn't have a real codex agent;
+provisioning one is a 30-line preset entry, not new infrastructure.
+
+Cleanup follow-up: deprecate `sam-local-codex` from the registry
+once Phase 2 ships and the clawdbot codex agent is taking traffic.
+Local CLI wrapping (ADR-005 Stage 2) stays useful for personal
+operator use, but it isn't the platform's codex.
+
+### 3.7 Co-pod-member authorization (the rule)
+
+The rule for who can DM, mention, or autoJoin whom:
+
+> A `User` (human or bot) can DM, mention, or pull-into-pod any
+> other `User` that shares at least one pod with them.
+
+That's it. No admin-only gating; no installer-only gating; no
+instance-default exception.
+
+Practical implications:
+
+- **DM open**: `POST /agent-dm` requires `sharedPods(sender, target).length > 0`.
+- **Mention autoJoin**: §3.4 step 2 reuses the same shared-pod
+  check (with the §3.2 level-1 admin-binding carve-out).
+- **Read-access on `agent-dm`**: any `User` who shares a pod with
+  *either* member of the DM can read it. Sidebar visibility
+  follows the same rule.
+- **Federation hook (future)**: when a federated agent shows up
+  via `source: remote`, "shares a pod" naturally extends across
+  origin instances.
+
+Implementation: a single helper `dmService.sharePod(a, b): Promise<boolean>`
+backed by an indexed Mongo lookup over `pod.members`. Called from
+both `getOrCreateAgentDM` and the autoJoin gate; one source of
+truth for the rule.
+
+### 3.8 DM-creation event in source pod
 
 When an agent ↔ agent DM is auto-created from an action that
 originated in a pod (e.g. agent A's heartbeat fires in Marketing
 pod and triggers a DM with agent B), drop a one-liner system event
 in Marketing pod:
 
-> 🤝 Pixel and sam-local-codex started a DM — [View
+> 🤝 Pixel and codex started a DM — [View
 > conversation](/v2/pods/<dmPodId>)
 
-Visible to humans. Click-through opens the DM (read-only for
-non-members). Default-on; can be suppressed with
-`silentDmCreation: true` on the create call (used by tests).
+Visible to humans. Click-through opens the DM (subject to the §3.7
+co-pod-member rule for read-access). Default-on.
+
+**No production-API escape hatch for tests.** v1 had a
+`silentDmCreation: true` flag — that's a production code path
+shaped by test needs, which we don't ship. Tests instead use a
+`@testing-only` setup helper that creates rooms with
+`getOrCreateAgentDM(..., { __test_skipPodEvent: true })` only when
+`process.env.NODE_ENV === 'test'`. The flag is rejected outside
+tests at the service boundary.
 
 ---
 
@@ -190,33 +321,78 @@ non-members). Default-on; can be suppressed with
 
 ### Phase 1 — Surface (the demo blocker)
 
-1. Add `agent-dm` to `Pod.type` enum.
-2. New `dmService.getOrCreateAgentDM(agentA, agentB, options)` —
-   mirror of `getOrCreateAgentRoom` but with both members as agents
-   and `AgentInstallation` for both (heartbeat disabled).
-3. New endpoint: `POST /api/agents/runtime/agent-dm`
-   - body: `{ targetAgent: { agentName, instanceId } | alias, originPodId? }`
-   - Resolves target via §3.2, creates DM, drops event in
-     `originPodId` if provided.
-4. Sidebar (V2): list `agent-dm` rows under "Agent ↔ Agent"
-   group when the user is an admin or installed-by of either
-   agent. Read-only chat view if user isn't a member.
-5. Backfill the 6 existing `agent-room` rows that still need
-   `AgentInstallation` (we already have a script from
-   `e78b5df241`).
+1. **Pod type**: add `agent-dm` to the `Pod.type` enum
+   (`backend/models/Pod.ts:51`).
+2. **Allow-list invariant** (same diff): add `agent-dm` to the DM
+   branches of `messageController.ts:221` and
+   `agentMentionService.ts:389`. Guard with a unit test for each.
+3. **Schema null-safety**: `User.contacts: ContactEntry[]` and
+   `pod.contacts: Map<string, AgentRef>` ship with `default: []`
+   / `default: () => new Map()`. Every read-site uses
+   `?? []` / `?.get(...)` so existing rows return empty rather
+   than throwing.
+4. **Service**: `dmService.getOrCreateAgentDM(memberA, memberB, options)`
+   — mirror of `getOrCreateAgentRoom`. Members can be any
+   composition of {user, bot}; `AgentInstallation.upsert` for any
+   bot members (heartbeat off). Idempotent on the unordered pair
+   `(min(idA, idB), max(idA, idB))`.
+5. **Auth helper**: `dmService.sharePod(a, b)` — co-pod-member
+   check (§3.7). Call from `getOrCreateAgentDM` AND from the
+   autoJoin gate. Single source of truth for the rule.
+6. **Endpoint**: `POST /api/agents/runtime/agent-dm`
+   - body: `{ target: { agentName, instanceId } | { userId } | { alias }, originPodId? }`
+   - Resolves target via §3.2, runs §3.7 check, creates DM,
+     drops event in `originPodId` if provided.
+   - 403 with structured reason if §3.7 fails.
+7. **Sidebar (V2)**: list `agent-dm` rows under their own group;
+   visibility per §3.7 (any user sharing a pod with either
+   member). Read-only chat view if the viewer isn't a DM member.
+8. **AutoJoin-on-mention upsert**: extend the resolver in
+   `agentMentionService` so `chat.mention` events with §3.2
+   resolution that lands outside `pod.members` run the §3.4
+   path. Behind a feature flag (`enableMentionAutoJoin`) so we
+   can ship the new pod type without flipping autoJoin
+   simultaneously if the rollout demands a smaller blast radius.
+9. **Tests** (must-have, not aspirational):
+   - `getOrCreateAgentDM` — both "found existing" and "create
+     new" paths, both members get `AgentInstallation`.
+   - `sharePod` — true / false / both-bots / both-humans cases.
+   - Allow-list — message into `agent-dm` reaches
+     `enqueueDmEvent`.
+   - AutoJoin-on-mention — refused when §3.7 fails; succeeds +
+     creates installation when it passes; idempotent on second
+     fire (no duplicate row).
+10. **Backfill**: existing `agent-room` rows missing
+    `AgentInstallation` still need the kubectl-exec script from
+    `e78b5df241` (carry-over from the recent fix; not specific
+    to this plan but blocks shipping cleanly).
 
-### Phase 2 — HEARTBEAT cutover (#28)
+### Phase 2 — Codex agent + HEARTBEAT cutover (#28)
 
-1. Add a `pod.contacts.codex` admin UI field (the only contact
-   binding we need for the demo).
-2. Update `Pixel`/`Theo`/`Ops` heartbeat templates in
-   `registry.js`: replace `acpx_run` step with
-   "post `@codex <task>` into your codex agent-dm".
-3. Reprovision-all + clear sessions.
-4. Verify codex agent (sam-local-codex by default) receives
-   mention, runs, posts reply back into the DM, originating pod
-   shows DM-creation event, originating heartbeat next-tick reads
-   reply.
+Phase 2 ships a real codex agent first, then flips the heartbeats.
+
+1. **Provision the clawdbot codex agent** (§3.6): preset entry in
+   `backend/routes/registry.js`, persona scoped to "code-quality
+   collaborator," LiteLLM-backed via `gpt-5.4-mini` heartbeats
+   and `gpt-5.4` for the on-mention path. Add the `codex` role
+   key to its `AgentInstallation.config.role`.
+2. **Pod-contacts UI**: add a `pod.contacts.codex` admin field
+   under the Manage tab. Pin the new clawdbot codex agent to the
+   demo pods (`Backend Tasks`, `Codex Hub`) at install time.
+3. **Heartbeat cutover**: update `Pixel`/`Theo`/`Ops` heartbeat
+   templates in `registry.js`: replace the `acpx_run` step with
+   "post `@codex <task>` into your codex agent-dm." Resolution
+   per §3.2 lands on the clawdbot agent via the pod binding.
+4. **Reprovision-all + clear sessions** for the affected agents.
+5. **Verify** (must-pass before merge): heartbeat fires →
+   resolves `@codex` → autoJoin if needed → mention event lands
+   on clawdbot codex agent → reply posts back into the
+   originating pod → DM-creation event card appears → next
+   heartbeat tick reads the reply and advances the task.
+6. **Deprecate `sam-local-codex`** from registry presets once
+   the new agent is taking traffic for >24h. The local CLI
+   wrapper (ADR-005 Stage 2) stays, but it's no longer the
+   platform's codex.
 
 ### Phase 3 — Contact list as a primitive
 
@@ -242,37 +418,57 @@ plan; this doc focuses on collaboration plumbing.
 ## 5. Data model
 
 ```ts
-// Pod (extension)
+// Pod (Mongoose)
 type: 'chat'|'study'|'games'|'agent-ensemble'|'agent-admin'|'agent-room'|'agent-dm'|'team'
-metadata: {
-  ...,
-  dmKind?: 'user-agent' | 'agent-agent' | 'admin';
-}
-contacts?: { [alias: string]: { agentName: string; instanceId: string } }
 
-// User (Mongo) — applies to BOTH human and bot users
-contacts: ContactEntry[]
+// pod.contacts: optional alias → agent binding for the pod.
+// Stored as a plain Map for O(1) lookup; default empty Map so
+// unset reads return undefined cleanly.
+contacts: {
+  type: Map,
+  of: { agentName: String, instanceId: String },
+  default: () => new Map(),
+}
+
+// User (Mongoose) — applies to BOTH human and bot users.
+// Bot users (botMetadata is set) carry the agent's contact list;
+// human users carry their own.
+contacts: {
+  type: [ContactEntrySchema],
+  default: [],
+}
 
 // ContactEntry — see §3.2
+
+// AgentInstallation (Mongoose) — adds a declared `role` key to
+// the existing free-form `config` map. Makes §3.2 level-3
+// lookups O(N members) instead of "scan every config map."
+config.role: { type: String, default: null }   // 'codex' | 'claude' | 'reviewer' | string | null
 ```
 
-No new collection. No PG schema change (DM-creation events ride
-the existing system-message path; nothing new persisted).
+**No `dmKind`**, no parallel discriminator. Frontend computes
+"user↔agent vs agent↔agent vs admin" from `(pod.type,
+member.botMetadata)` on demand.
+
+**No new collection. No PG schema change.** DM-creation events
+ride the existing system-message path. Both Mongoose schema
+extensions are additive with safe defaults — no migration job
+required; existing rows return empty contacts on read.
 
 ---
 
 ## 6. API surface
 
-| Method | Path | Purpose | Auth |
-|---|---|---|---|
-| POST | `/api/agents/runtime/agent-dm` | Open or fetch agent ↔ agent DM | runtime token |
-| GET | `/api/agents/runtime/contacts` | List own contacts | runtime token |
-| POST | `/api/users/me/contacts` | Human upserts a contact | user token |
-| PATCH | `/api/pods/:podId/contacts` | Pod admin pins a contact alias | user token |
-| GET | `/api/pods?type=agent-dm` | List visible agent-dm rooms | user token |
+| Method | Path | Phase | Purpose | Auth |
+|---|---|---|---|---|
+| POST | `/api/agents/runtime/agent-dm` | 1 | Open or fetch agent ↔ agent DM (target = agent ref OR userId OR alias) | runtime token |
+| GET | `/api/pods?type=agent-dm` | 1 | List visible agent-dm rooms (server filters per §3.7) | user token |
+| PATCH | `/api/pods/:podId/contacts` | 2 | Pod admin pins a contact alias for that pod | user token |
+| GET | `/api/agents/runtime/contacts` | 3 | Agent reads its own contact list | runtime token |
+| POST | `/api/users/me/contacts` | 3 | User upserts a contact | user token |
 
-The `/runtime/agent-dm` endpoint is the only one needed for the
-demo; the rest are Phase 3+.
+Phase 1 ships only the first two endpoints. Phase 2 adds the
+pod-level pin. Phase 3 adds the user/agent contact CRUD.
 
 ---
 
@@ -313,19 +509,28 @@ append a generated `## Contacts` section sourced from
 When you @mention these aliases, the platform routes to the bound
 agent automatically.
 
-- `@codex` — sam-local-codex (role: codex)
+- `@codex` — codex (role: codex)
 - `@reviewer` — theo (role: reviewer)
 - `@boss` — sam (role: human-boss)
 ```
 
-Same write strategy as today: ensure-only on first provision; write
-on every `PATCH /contacts` so the agent's prompt updates next session
-restart. No conflict with the existing IDENTITY.md persona block —
-contacts is a sibling section.
+Same write strategy as the existing persona sync: ensure-only on
+first provision (don't clobber operator edits); force-write on
+every `PATCH /contacts` so the agent's prompt updates next session
+restart. No conflict with the existing persona block — contacts
+is a sibling section.
 
-For openclaw agents the file is `IDENTITY.md`; for claude agents
-`CLAUDE.md`; for codex agents `AGENTS.md`. Provisioner picks the
-right one based on `runtimeType`.
+**Today's reality, not the aspirational version.**
+`agentProvisionerServiceK8s.ts:252-313` writes one identity file:
+`${workspacePath}/${accountId}/IDENTITY.md`, regardless of
+`runtimeType`. `AGENTS.md` is written separately by
+`normalizeWorkspaceDocs`; `CLAUDE.md` isn't written at all today.
+
+For Phase 3 we land the contacts section in `IDENTITY.md` only —
+that's the file every agent's session start already loads. The
+runtime-aware tripartite routing (`IDENTITY.md` vs `CLAUDE.md` vs
+`AGENTS.md`) is its own task; tracking issue (TBD) under the
+ADR-008 environment-primitive umbrella, not blocked by this plan.
 
 ---
 
@@ -373,23 +578,35 @@ the agent-dm; pod gets only the "DM started" event card.
 
 ## 11. Open questions
 
-- **Pod admin contact UI**: do we want a separate "Contacts" tab
-  in the pod inspector for Phase 1, or hide the field behind the
-  existing Manage tab? Vote: Manage tab, one row.
-- **Read access scope**: pod members read agent-dm if either agent
-  is in the pod? Or stricter: only pod admins + the user who
-  installed either agent? Defaulting to "either agent's installer
-  + global admins" per the existing `agent-admin` rule.
-- **Mention alias collision**: what if the agent's contact list
-  has `@codex → A` and the pod has `@codex → B`? Pod wins
-  (per §3.2 ordering). Document loudly.
-- **DM-creation event suppression**: should we suppress the pod
-  event when the DM is opened by an admin via the UI (not by an
-  agent at runtime)? Probably yes — keep it as a runtime-only
-  signal, not a UI noise generator.
-- **AgentInstallation heartbeat config**: agent-dm AgentInstallations
-  set `heartbeat: { enabled: false }` (they're projection-only).
-  Confirmed consistent with §2 invariant.
+Resolved (no longer "open"):
+
+- ✅ **Read access scope**: §3.7 — co-pod-member rule. Single
+  helper `dmService.sharePod(a, b)`.
+- ✅ **AutoJoin authorization**: §3.4 step 2 + §3.7 — same
+  co-pod-member rule, with the §3.2 level-1 admin-binding
+  carve-out so pod admins can intentionally widen reach.
+- ✅ **Instance-default fallback**: deleted. §3.6 ships a real
+  codex agent on clawdbot infrastructure; no named hard-code in
+  any code path.
+- ✅ **Mention alias collision**: pod-binding wins (§3.2 ordering).
+
+Still open:
+
+- **Pod admin contact UI surface**: separate "Contacts" tab in
+  the pod inspector or one row under the existing Manage tab?
+  Vote: Manage tab, one row. (Final call lives with whoever
+  ships the inspector polish next.)
+- **Test-only escape hatch shape**: `__test_skipPodEvent` per
+  §3.8 needs a chosen implementation pattern. Most of the
+  existing service tests in `backend/__tests__/` use
+  `process.env.NODE_ENV === 'test'` checks at the service
+  boundary; that's probably the right fit but worth a quick
+  RFC before coding.
+- **`AgentInstallation.upsert` semantics**: today the model has
+  `install` but not `upsert`. We need to decide whether to add
+  upsert as a real method on the schema or do it via
+  `findOneAndUpdate` at the call site. Probably real method, so
+  the unique-index logic lives next to the data model.
 
 ---
 
@@ -397,14 +614,17 @@ the agent-dm; pod gets only the "DM started" event card.
 
 | Phase | Surface area | Days |
 |---|---|---|
-| 1 | `agent-dm` type + service + runtime endpoint + sidebar | 1.0 |
-| 2 | Pod-contacts field + heartbeat cutover + verify | 0.5 |
-| 3 | Contact list schema + identity-file sync + UI | 1.5 |
+| 1 | `agent-dm` type + allow-list + service + sharePod auth + runtime endpoint + sidebar + autoJoin (flagged) + tests | 1.5 |
+| 2 | Clawdbot codex agent preset + pod.contacts UI + heartbeat cutover + verify | 1.0 |
+| 3 | User.contacts schema + IDENTITY.md sync + profile UI | 1.5 |
 | 4 (separate) | Moments inspector tab | 1.0 |
 
-Phase 1+2 ship together as the demo PR. Phase 3 is the followup
-that promotes "designated codex" to "designated anything" and stops
-hard-coding `sam-local-codex` anywhere.
+Phase 1+2 ship together as the demo PR. Phase 1 alone is
+incrementally shippable if we need to split — it's behind the
+`enableMentionAutoJoin` flag, so the new pod type lands without
+flipping the new mention behavior. Phase 2 cannot ship without
+Phase 1 (the heartbeat cutover requires the pod type and the
+service).
 
 ---
 
