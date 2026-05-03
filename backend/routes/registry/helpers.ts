@@ -174,18 +174,45 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
   return channels;
 };
 
+// Mirror of agentIdentityService.resolveAgentDisplayLabel — duplicated here
+// to avoid pulling that ESM/CJS-mixed module into a CJS helper. Stays in
+// sync via the same fallback chain: botMetadata.displayName → instanceId
+// (when not 'default') → username → fallback. Never falls back to
+// botMetadata.agentName (runtime-leaning).
+const resolveDisplayLabelFromUser = (user: any, fallback: string): string => {
+  if (!user) return fallback;
+  const meta = user.botMetadata || {};
+  const display = typeof meta.displayName === 'string' ? meta.displayName.trim() : '';
+  if (display) return display;
+  const instanceId = typeof meta.instanceId === 'string' ? meta.instanceId.trim() : '';
+  if (instanceId && instanceId !== 'default') return instanceId;
+  if (typeof user.username === 'string' && user.username) return user.username;
+  return fallback;
+};
+
 const buildAgentInstallationPayload = (installation: any, {
   profile = null,
   iconUrl = '',
   lastHeartbeatAt = null,
-}: { profile?: any; iconUrl?: string; lastHeartbeatAt?: any } = {}) => {
+  user = null,
+}: { profile?: any; iconUrl?: string; lastHeartbeatAt?: any; user?: any } = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
   const runtimeConfig = sanitizeRuntimeConfig(normalizedConfig?.runtime || installation.config?.runtime || null);
+  // Display label — prefer the User's `botMetadata.displayName` (curated,
+  // identity-bearing) over `installation.displayName` (which can hold the
+  // stale runtime label "openclaw" from pre-fix pod creation paths).
+  // Falls back to the stored installation displayName, then a generic.
+  // The stale-data backfill in scripts/rename-agent-dm-pods.ts repairs
+  // existing rows; this resolver is defense-in-depth.
+  const fallback = installation.displayName || installation.agentName || '';
+  const displayName = user
+    ? resolveDisplayLabelFromUser(user, fallback)
+    : fallback;
   return {
     name: installation.agentName,
     instanceId: installation.instanceId || 'default',
-    displayName: installation.displayName,
+    displayName,
     iconUrl,
     version: installation.version,
     status: installation.status,

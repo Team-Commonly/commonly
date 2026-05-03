@@ -193,6 +193,26 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       agentName: { $in: installations.map((i: any) => i.agentName) },
     }).lean();
 
+    // Batch-fetch the bot User rows so the payload builder can resolve
+    // displayName via the curated `botMetadata.displayName` rather than
+    // the (possibly stale) `installation.displayName`. ADR-001 §3.10:
+    // identity is separate from package — the User row is the source of
+    // truth for identity labels. Map by (agentName, instanceId).
+    const User = require('../../models/User');
+    const usernameSet = new Set<string>();
+    for (const i of installations as any[]) {
+      const username = AgentIdentityService.buildAgentUsername(i.agentName, i.instanceId || 'default');
+      if (username) usernameSet.add(username);
+    }
+    const userRows = usernameSet.size > 0
+      ? await User.find({ username: { $in: Array.from(usernameSet) } })
+        .select('username botMetadata')
+        .lean()
+      : [];
+    const userByUsername = new Map<string, any>(
+      (userRows as any[]).map((u: any) => [u.username, u]),
+    );
+
     res.json({
       agents: installations.map((i: any) => {
         const profile = profiles.find(
@@ -200,10 +220,13 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         );
         const templateIcon = getTemplateIcon(i);
         const instanceKey = `${i.agentName}:${i.instanceId || 'default'}`;
+        const username = AgentIdentityService.buildAgentUsername(i.agentName, i.instanceId || 'default');
+        const user = userByUsername.get(username) || null;
         return buildAgentInstallationPayload(i, {
           profile,
           iconUrl: templateIcon || iconMap.get(i.agentName) || '',
           lastHeartbeatAt: heartbeatMap.get(instanceKey) || null,
+          user,
         });
       }),
     });

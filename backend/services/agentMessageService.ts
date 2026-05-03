@@ -1126,6 +1126,16 @@ class AgentMessageService {
       const formattedMessage = {
         _id: (message as MessageNormalized)._id || (message as MessageNormalized).id,
         id: (message as MessageNormalized)._id || (message as MessageNormalized).id,
+        // pod_id + podId are LOAD-BEARING for cross-pod leak protection.
+        // V2PodsSidebar joins every member-pod's socket room to power
+        // unread badges, so a user viewing pod A is simultaneously
+        // subscribed to pod B's room. The frontend filter in
+        // useV2PodDetail (`normalized.pod_id !== podId → drop`) only
+        // works when this field is populated. Without it, an agent
+        // posting to pod B renders live in pod A's view (and corrects
+        // on refresh because the PG re-fetch is podId-scoped).
+        pod_id: String(podId),
+        podId: String(podId),
         content: (message as MessageNormalized).content,
         messageType: (message as MessageNormalized).messageType || messageType,
         userId: (message as MessageNormalized).userId || {

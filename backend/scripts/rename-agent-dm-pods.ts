@@ -28,6 +28,7 @@
 import mongoose from 'mongoose';
 import Pod from '../models/Pod';
 import User from '../models/User';
+import { AgentInstallation } from '../models/AgentRegistry';
 
 let dbPg: { pool: { query: (sql: string, params?: unknown[]) => Promise<unknown> } } | null = null;
 try {
@@ -49,6 +50,7 @@ interface RenameResult {
   applied: number;
   skipped: number;
   pgSynced: number;
+  installationsBackfilled: number;
   plans: Plan[];
 }
 
@@ -72,7 +74,14 @@ export async function renameAgentDmPods(
   options: { dryRun?: boolean } = {},
 ): Promise<RenameResult> {
   const dryRun = options.dryRun === true;
-  const result: RenameResult = { total: 0, applied: 0, skipped: 0, pgSynced: 0, plans: [] };
+  const result: RenameResult = {
+    total: 0,
+    applied: 0,
+    skipped: 0,
+    pgSynced: 0,
+    installationsBackfilled: 0,
+    plans: [],
+  };
 
   const cursor = Pod.find({ type: 'agent-dm' }).cursor();
 
@@ -142,6 +151,41 @@ export async function renameAgentDmPods(
     }
   }
 
+  // Second pass: backfill AgentInstallation.displayName when it matches the
+  // runtime-leak signature (displayName === agentName) AND the User has a
+  // better label in botMetadata.displayName. The display-fix in the route
+  // layer (helpers.ts buildAgentInstallationPayload) prefers User over the
+  // installation, but old data still surfaces in any caller that reads
+  // `installation.displayName` directly. Idempotent — re-runs find nothing
+  // because the signature no longer matches after the first pass.
+  const stale = await AgentInstallation.find({
+    $expr: { $eq: ['$displayName', '$agentName'] },
+  })
+    .select('_id agentName instanceId displayName')
+    .lean<Array<{ _id: unknown; agentName: string; instanceId?: string; displayName?: string }>>();
+  for (const inst of stale) {
+    const username = inst.instanceId && inst.instanceId !== 'default' && inst.instanceId !== inst.agentName
+      ? `${inst.agentName}-${inst.instanceId}`.toLowerCase()
+      : inst.agentName.toLowerCase();
+    const u = await User.findOne({ username })
+      .select('botMetadata.displayName')
+      .lean<{ botMetadata?: { displayName?: string } } | null>();
+    const userDisplay = u?.botMetadata?.displayName?.trim();
+    if (!userDisplay) continue;
+    if (userDisplay === inst.displayName) continue; // already aligned
+    if (dryRun) {
+      result.installationsBackfilled += 1;
+      console.log(
+        `[rename-agent-dm] would backfill installation _id=${inst._id} `
+        + `(${inst.agentName}/${inst.instanceId || 'default'}): `
+        + `${JSON.stringify(inst.displayName)} → ${JSON.stringify(userDisplay)}`,
+      );
+      continue;
+    }
+    await AgentInstallation.updateOne({ _id: inst._id }, { $set: { displayName: userDisplay } });
+    result.installationsBackfilled += 1;
+  }
+
   return result;
 }
 
@@ -157,10 +201,11 @@ async function main(): Promise<void> {
   try {
     const r = await renameAgentDmPods({ dryRun });
     console.log(`[rename-agent-dm] ${dryRun ? 'DRY-RUN' : 'APPLIED'}`);
-    console.log(`  pods scanned          : ${r.total}`);
-    console.log(`  renamed               : ${r.applied}`);
-    console.log(`  skipped (already ok)  : ${r.skipped}`);
-    console.log(`  pg names synced       : ${r.pgSynced}`);
+    console.log(`  pods scanned             : ${r.total}`);
+    console.log(`  renamed                  : ${r.applied}`);
+    console.log(`  skipped (already ok)     : ${r.skipped}`);
+    console.log(`  pg names synced          : ${r.pgSynced}`);
+    console.log(`  installations backfilled : ${r.installationsBackfilled}`);
     if (r.plans.length > 0) {
       console.log('  changes:');
       for (const p of r.plans) {
