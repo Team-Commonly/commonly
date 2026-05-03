@@ -4,7 +4,18 @@ export interface GroupableItem {
   _id: string;
   updatedAt?: string | Date;
   createdAt?: string | Date;
+  // Optional. When present, beats updatedAt/createdAt for both bucketing and
+  // intra-bucket sort — pods must reorder when a chat message arrives even if
+  // the backend hasn't touched updatedAt for that write.
+  lastMessage?: { createdAt?: string | Date | null } | null;
 }
+
+const effectiveTs = (item: GroupableItem): number => {
+  const raw = item.lastMessage?.createdAt || item.updatedAt || item.createdAt;
+  if (!raw) return 0;
+  const ts = new Date(raw).getTime();
+  return Number.isNaN(ts) ? 0 : ts;
+};
 
 const GROUP_ORDER: PodGroup[] = ['Pinned', 'Today', 'Yesterday', 'This week', 'Earlier'];
 
@@ -46,8 +57,12 @@ export const groupPods = <T extends GroupableItem>(
       buckets.Pinned.push(item);
       return;
     }
-    const ts = item.updatedAt || item.createdAt;
+    const ts = item.lastMessage?.createdAt || item.updatedAt || item.createdAt;
     buckets[groupForTimestamp(ts)].push(item);
+  });
+
+  GROUP_ORDER.forEach((label) => {
+    buckets[label].sort((a, b) => effectiveTs(b) - effectiveTs(a));
   });
 
   return GROUP_ORDER

@@ -34,6 +34,7 @@ export interface UseV2PodsResult {
   refresh: () => Promise<void>;
   createPod: (name: string, description?: string, type?: 'team' | 'chat') => Promise<V2Pod | null>;
   deletePod: (podId: string) => Promise<boolean>;
+  patchLastMessage: (podId: string, last: V2PodLastMessage) => void;
 }
 
 export const useV2Pods = (): UseV2PodsResult => {
@@ -77,6 +78,29 @@ export const useV2Pods = (): UseV2PodsResult => {
     }
   }, [api]);
 
+  const patchLastMessage = useCallback((podId: string, last: V2PodLastMessage) => {
+    if (!podId || !last) return;
+    setPods((prev) => {
+      const idx = prev.findIndex((p) => p._id === podId);
+      if (idx < 0) return prev;
+      const existing = prev[idx];
+      const existingTs = existing.lastMessage?.createdAt
+        ? new Date(existing.lastMessage.createdAt).getTime()
+        : 0;
+      const incomingTs = last.createdAt ? new Date(last.createdAt).getTime() : 0;
+      // Only patch when strictly newer — avoids overwriting an in-place
+      // optimistic message with an older socket event of the same row.
+      if (incomingTs && existingTs && incomingTs <= existingTs) return prev;
+      const next = prev.slice();
+      next[idx] = {
+        ...existing,
+        lastMessage: last,
+        updatedAt: last.createdAt || existing.updatedAt,
+      };
+      return next;
+    });
+  }, []);
+
   const deletePod = useCallback(async (podId: string): Promise<boolean> => {
     if (!podId) return false;
     try {
@@ -94,5 +118,5 @@ export const useV2Pods = (): UseV2PodsResult => {
     refresh();
   }, [refresh]);
 
-  return { pods, loading, error, refresh, createPod, deletePod };
+  return { pods, loading, error, refresh, createPod, deletePod, patchLastMessage };
 };

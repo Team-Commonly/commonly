@@ -839,6 +839,30 @@
   color: var(--v2-accent-text);
 }
 
+/* Unread state: title becomes bolder + body picks up an accent dot. Active
+   pods are never marked unread, so the active treatment above wins. */
+.v2-pods__item--unread .v2-pods__item-title {
+  font-weight: 700;
+  color: var(--v2-text-primary);
+}
+
+.v2-pods__item--unread .v2-pods__item-snippet {
+  color: var(--v2-text-secondary);
+}
+
+.v2-pods__item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--v2-accent);
+  flex-shrink: 0;
+}
+
+.v2-pods__item-snippet--typing {
+  color: var(--v2-accent-text);
+  font-style: italic;
+}
+
 .v2-pods__item-meta {
   font-size: 12px;
   color: var(--v2-text-tertiary);
@@ -1449,6 +1473,7 @@
 .v2-msg {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
+  align-items: start;
   gap: 12px;
   padding: 10px 0;
 }
@@ -1497,13 +1522,16 @@
   padding: 0;
   cursor: pointer;
   border-radius: 50%;
-  display: grid;
+  display: inline-grid;
   place-items: center;
+  width: fit-content;
+  height: fit-content;
+  line-height: 0;
+  transition: box-shadow 100ms ease;
 }
 
 .v2-msg__avatar-btn:hover {
-  outline: 2px solid var(--v2-accent-soft);
-  outline-offset: 1px;
+  box-shadow: 0 0 0 2px var(--v2-accent-soft);
 }
 
 .v2-msg__lead-badge {

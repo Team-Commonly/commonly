@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UseV2PodsResult, V2Pod, useV2Pods } from '../hooks/useV2Pods';
 import { groupPods, formatRelativeTime } from '../utils/grouping';
 import { initialsFor } from '../utils/avatars';
 import { useV2Pinned } from '../hooks/useV2Pinned';
+import { useV2Unread } from '../hooks/useV2Unread';
+import { useSocket } from '../../context/SocketContext';
 
 type Filter = 'all' | 'team' | 'private';
 
@@ -62,8 +64,10 @@ interface V2PodsSidebarProps {
 const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState }) => {
   const navigate = useNavigate();
   const ownPodsState = useV2Pods();
-  const { pods, loading, error, createPod } = podsState || ownPodsState;
+  const { pods, loading, error, createPod, patchLastMessage } = podsState || ownPodsState;
   const { pinned, toggle: togglePin, isPinned } = useV2Pinned();
+  const { socket, connected, joinPod } = useSocket();
+  const { isUnread, bumpLatest } = useV2Unread(selectedPodId);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
@@ -71,6 +75,104 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
   const [newPodName, setNewPodName] = useState('');
   const [newPodGoal, setNewPodGoal] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
+  // Pod IDs an agent is currently typing into. Set, not bool, because
+  // multiple agents could type at once. Cleared after 30s safety in case the
+  // stop event is missed.
+  const [typingPods, setTypingPods] = useState<Set<string>>(() => new Set());
+  const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Join every pod's socket room so we hear newMessage / typing events even
+  // while another pod is selected. The chat room hook (`useV2PodDetail`)
+  // calls leavePod when its podId changes — without re-joining here, sidebar
+  // would silently miss updates for the just-left pod. We re-fire on
+  // selectedPodId change to recover those joins (joinPod is idempotent on
+  // the server). No leavePod in cleanup: the server-side
+  // `socket.on('disconnect')` handler clears all pod memberships when the
+  // tab closes, so we don't leak rooms.
+  useEffect(() => {
+    if (!socket || !connected || !pods || pods.length === 0) return;
+    pods.forEach((p) => { if (p._id) joinPod(p._id); });
+  }, [socket, connected, pods, selectedPodId, joinPod]);
+
+  // Cross-pod newMessage subscription: bump lastMessage and unread badge.
+  useEffect(() => {
+    if (!socket || !connected) return undefined;
+    interface IncomingMessage {
+      pod_id?: string;
+      podId?: string;
+      content?: string;
+      created_at?: string;
+      createdAt?: string;
+      user?: { username?: string; profile_picture?: string | null };
+      username?: string;
+    }
+    const handleNewMessage = (msg: IncomingMessage) => {
+      const podId = msg?.pod_id || msg?.podId;
+      if (!podId) return;
+      const createdAt = msg.created_at || msg.createdAt || new Date().toISOString();
+      patchLastMessage(podId, {
+        content: msg.content || '',
+        createdAt,
+        username: msg.user?.username || msg.username || null,
+      });
+      if (podId !== selectedPodId) bumpLatest(podId, createdAt);
+    };
+    socket.on('newMessage', handleNewMessage);
+    return () => {
+      socket.off('newMessage', handleNewMessage);
+    };
+  }, [socket, connected, selectedPodId, patchLastMessage, bumpLatest]);
+
+  // Cross-pod typing indicator. A row in the sidebar shows "typing…" if any
+  // agent is mid-flight in that pod, regardless of which pod is open.
+  useEffect(() => {
+    if (!socket || !connected) return undefined;
+    interface TypingPayload { podId?: string }
+    const scheduleClear = (podId: string) => {
+      if (typingTimersRef.current[podId]) clearTimeout(typingTimersRef.current[podId]);
+      typingTimersRef.current[podId] = setTimeout(() => {
+        setTypingPods((prev) => {
+          if (!prev.has(podId)) return prev;
+          const next = new Set(prev);
+          next.delete(podId);
+          return next;
+        });
+        delete typingTimersRef.current[podId];
+      }, 30000);
+    };
+    const handleStart = (payload: TypingPayload) => {
+      if (!payload?.podId) return;
+      setTypingPods((prev) => {
+        if (prev.has(payload.podId!)) return prev;
+        const next = new Set(prev);
+        next.add(payload.podId!);
+        return next;
+      });
+      scheduleClear(payload.podId);
+    };
+    const handleStop = (payload: TypingPayload) => {
+      if (!payload?.podId) return;
+      const podId = payload.podId;
+      if (typingTimersRef.current[podId]) {
+        clearTimeout(typingTimersRef.current[podId]);
+        delete typingTimersRef.current[podId];
+      }
+      setTypingPods((prev) => {
+        if (!prev.has(podId)) return prev;
+        const next = new Set(prev);
+        next.delete(podId);
+        return next;
+      });
+    };
+    socket.on('agent_typing_start', handleStart);
+    socket.on('agent_typing_stop', handleStop);
+    return () => {
+      socket.off('agent_typing_start', handleStart);
+      socket.off('agent_typing_stop', handleStop);
+      Object.values(typingTimersRef.current).forEach(clearTimeout);
+      typingTimersRef.current = {};
+    };
+  }, [socket, connected]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -237,6 +339,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
                     : `${memberCount} member${memberCount === 1 ? '' : 's'}`);
                 const snippet = podSnippetFor(pod, meta);
                 const pinnedNow = isPinned(pod._id);
+                const typing = typingPods.has(pod._id);
+                const unread = isUnread(pod._id, pod.lastMessage?.createdAt);
                 return (
                   <div
                     key={pod._id}
@@ -244,7 +348,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
                   >
                     <button
                       type="button"
-                      className={`v2-pods__item${active ? ' v2-pods__item--active' : ''}`}
+                      className={`v2-pods__item${active ? ' v2-pods__item--active' : ''}${unread ? ' v2-pods__item--unread' : ''}`}
                       onClick={() => navigate(`/v2/pods/${pod._id}`)}
                     >
                       <span className={podMarkClass(pod)}>
@@ -253,10 +357,11 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
                       <span className="v2-pods__item-body">
                         <span className="v2-pods__item-title-row">
                           <span className="v2-pods__item-title">{pod.name}</span>
+                          {unread && <span className="v2-pods__item-dot" aria-label="Unread messages" />}
                           <span className="v2-pods__item-time">{time}</span>
                         </span>
-                        <span className="v2-pods__item-snippet">
-                          {snippet}
+                        <span className={`v2-pods__item-snippet${typing ? ' v2-pods__item-snippet--typing' : ''}`}>
+                          {typing ? 'typing…' : snippet}
                         </span>
                       </span>
                     </button>
