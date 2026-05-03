@@ -15,6 +15,27 @@ interface DMOptions {
   instanceId?: string;
 }
 
+// Mirror of agentIdentityService.resolveAgentDisplayLabel — duplicated here
+// to avoid a service-to-service import cycle (dmService is required by
+// agentMessageService, which is required by agentIdentityService callers).
+// Stays in sync with the same fallback chain: botMetadata.displayName →
+// instanceId (when not 'default') → username → fallback. Never falls back
+// to botMetadata.agentName (runtime-leaning, "openclaw" for OpenClaw-driven
+// agents). Producing pod names like "openclaw (aria)" is the bug this
+// avoids — the agent's heartbeat surfaces those names back into chat.
+const resolveAgentDisplayLabel = (
+  user: { username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null | undefined,
+  fallback: string,
+): string => {
+  if (!user) return fallback;
+  const meta = user.botMetadata || {};
+  const display = meta.displayName?.trim();
+  if (display) return display;
+  const instanceId = meta.instanceId?.trim();
+  if (instanceId && instanceId !== 'default') return instanceId;
+  return user.username || fallback;
+};
+
 class DMService {
   static escapeRegex(value = ''): string {
     return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -120,12 +141,18 @@ class DMService {
       return DMService.ensureDmMembers(stale, ownerId, agentId);
     }
 
-    // Create a new DM pod
-    const label = agentName || 'agent';
-    const instanceSuffix = instanceId && instanceId !== 'default' ? ` (${instanceId})` : '';
+    // Create a new DM pod. Use the agent's curated displayName (from
+    // botMetadata) instead of the runtime-leaning agentName, so the pod
+    // name reads "DM: Aria" not "DM: openclaw (aria)" — the latter
+    // surfaces back into agent chat via heartbeat pod-list rendering.
+    const agentUser = await User.findById(agentId)
+      .select('username botMetadata')
+      .lean<{ username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null>();
+    const fallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
+    const label = resolveAgentDisplayLabel(agentUser, fallback);
     const dmPod = new Pod({
-      name: `DM: ${label}${instanceSuffix}`,
-      description: `Debug channel for ${label}${instanceSuffix}`,
+      name: `DM: ${label}`,
+      description: `Debug channel for ${label}`,
       type: 'agent-admin',
       joinPolicy: 'invite-only',
       createdBy: ownerId,
@@ -267,8 +294,6 @@ class DMService {
   static async getOrCreateAgentRoom(agentUserId: unknown, requestingUserId: unknown, { agentName, instanceId }: DMOptions = {}): Promise<InstanceType<typeof Pod>> {
     const agentId = String(agentUserId);
     const userId = String(requestingUserId);
-    const label = agentName || 'agent';
-    const instanceSuffix = instanceId && instanceId !== 'default' ? ` (${instanceId})` : '';
 
     // Look for an existing agent-room pod where both the agent and the user
     // are members. This finds rooms this user already opened with the agent.
@@ -278,11 +303,21 @@ class DMService {
     });
     if (existing) return existing;
 
+    // Resolve the agent's curated display label (botMetadata.displayName,
+    // then instanceId if identity-bearing, then username). Avoids the
+    // historical "openclaw (aria)" runtime-leak format which surfaces back
+    // into chat when an agent's heartbeat renders its pod list.
+    const agentUser = await User.findById(agentId)
+      .select('username botMetadata')
+      .lean<{ username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null>();
+    const fallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
+    const label = resolveAgentDisplayLabel(agentUser, fallback);
+
     // Create a new agent-room pod. The agent is the conceptual "host" — listed
     // first in members and set as createdBy so the UI can display the agent's
     // avatar in the pod header.
     const roomPod = new Pod({
-      name: `${label}${instanceSuffix}`,
+      name: label,
       description: `Agent room — talk with ${label}`,
       type: 'agent-room',
       joinPolicy: 'invite-only',
@@ -327,7 +362,9 @@ class DMService {
           scopes: ['context:read', 'summaries:read', 'messages:write'],
           installedBy: requestingUserId as unknown as import('mongoose').Types.ObjectId,
           instanceId: instanceId || 'default',
-          displayName: `${label}${instanceSuffix}`,
+          // Curated label for the inspector / chat surfaces — same source as
+          // the pod name above. NOT `${agentName} (${instanceId})`.
+          displayName: label,
         });
       } catch (installErr) {
         console.error(

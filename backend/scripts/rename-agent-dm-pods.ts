@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /*
- * Rename existing `agent-dm` pods whose name was generated from the
- * runtime-leaning `botMetadata.agentName` ('openclaw' for every OpenClaw-
- * driven agent) instead of the curated `botMetadata.displayName`.
+ * Rename existing `agent-dm` AND `agent-room` pods whose name was generated
+ * from the runtime-leaning `botMetadata.agentName` ('openclaw' for every
+ * OpenClaw-driven agent) instead of the curated `botMetadata.displayName`.
  *
  * Symptom on dev: pod named "openclaw ↔ openclaw" with members aria + pixel
  * (both stored as `agentName: 'openclaw', instanceId: 'aria' | 'pixel'`).
@@ -83,7 +83,11 @@ export async function renameAgentDmPods(
     plans: [],
   };
 
-  const cursor = Pod.find({ type: 'agent-dm' }).cursor();
+  // Both agent-dm and agent-room are subject to renaming — same root cause
+  // (runtime-leak via agentName/instanceId formatting), different format:
+  //   agent-dm  → "<labelA> ↔ <labelB>"   (2 bots, both labels)
+  //   agent-room → "<botLabel>"           (1 bot + 1 human, only bot's label)
+  const cursor = Pod.find({ type: { $in: ['agent-dm', 'agent-room'] } }).cursor();
 
   for await (const pod of cursor) {
     result.total += 1;
@@ -104,7 +108,19 @@ export async function renameAgentDmPods(
       userById.set(String(u._id), { username: u.username, botMetadata: u.botMetadata });
     }
     const labels = memberIds.map((id) => labelFor(userById.get(id) || null));
-    const desiredName = `${labels[0]} ↔ ${labels[1]}`;
+    // Format depends on pod.type. agent-dm = both labels with arrow.
+    // agent-room = bot label only (the human's username isn't the conceptual
+    // pod identity — the agent is). For agent-room with 0 bots (data
+    // corruption) fall back to the original 2-label format.
+    let desiredName: string;
+    if (pod.type === 'agent-room') {
+      const botMember = users.find((u) => u.botMetadata?.displayName || u.botMetadata?.instanceId);
+      desiredName = botMember
+        ? labelFor({ username: botMember.username, botMetadata: botMember.botMetadata })
+        : `${labels[0]} ↔ ${labels[1]}`;
+    } else {
+      desiredName = `${labels[0]} ↔ ${labels[1]}`;
+    }
     const currentName = String(pod.name || '');
 
     if (currentName === desiredName) {
@@ -124,10 +140,14 @@ export async function renameAgentDmPods(
 
     pod.name = desiredName;
     // Description tracks the same identities; cheap to refresh.
-    const isBotPair = users.every((u) => u.botMetadata?.agentName);
-    pod.description = isBotPair
-      ? `Agent-to-agent DM — ${labels[0]} and ${labels[1]}`
-      : `Direct message — ${labels[0]} and ${labels[1]}`;
+    if (pod.type === 'agent-room') {
+      pod.description = `Agent room — talk with ${desiredName}`;
+    } else {
+      const isBotPair = users.every((u) => u.botMetadata?.agentName);
+      pod.description = isBotPair
+        ? `Agent-to-agent DM — ${labels[0]} and ${labels[1]}`
+        : `Direct message — ${labels[0]} and ${labels[1]}`;
+    }
     await pod.save();
     result.applied += 1;
 
