@@ -48,6 +48,46 @@ describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', (
     expect(pod.members).toContain('agent-1');
   });
 
+  it('refuses to add a third agent to an existing agent-dm (same 1:1 invariant)', async () => {
+    // ADR-001 §3.10 — agent-dm is the type for any 1:1 DM (agent↔agent or
+    // human↔agent). Same rule as agent-room: a third party always spawns
+    // a NEW DM pod, never widens the existing one.
+    const pod = {
+      _id: 'p-dm',
+      type: 'agent-dm',
+      members: ['agent-pixel-id', 'agent-codex-id'],
+      save: jest.fn(),
+    };
+    Pod.findById.mockResolvedValue(pod);
+
+    const newAgent = { _id: 'agent-rogue-id' };
+    const result = await AgentIdentityService.ensureAgentInPod(newAgent, 'p-dm');
+
+    expect(result).toBeNull();
+    expect(pod.save).not.toHaveBeenCalled();
+    expect(pod.members).toEqual(['agent-pixel-id', 'agent-codex-id']);
+  });
+
+  it('does NOT block adds to agent-admin (admin pods can have multiple admins)', async () => {
+    // agent-admin is N:1 (multiple admins ↔ one agent), not strictly 1:1.
+    // The DM_POD_TYPES_GUARD intentionally excludes it. Adding admins on
+    // top of an existing agent-admin pod is legitimate.
+    const pod = {
+      _id: 'p-admin',
+      type: 'agent-admin',
+      members: ['admin-a', 'agent-host'],
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    Pod.findById.mockResolvedValue(pod);
+
+    const secondAdmin = { _id: 'admin-b' };
+    const result = await AgentIdentityService.ensureAgentInPod(secondAdmin, 'p-admin');
+
+    expect(result).toBe(pod);
+    expect(pod.save).toHaveBeenCalled();
+    expect(pod.members).toContain('admin-b');
+  });
+
   it('is a no-op when the agent is already a member of an agent-room (Mongoose ObjectId equality)', async () => {
     // Regression for the .includes()-vs-ObjectId bug: production stores
     // pod.members as ObjectId instances whose `===` always differs even

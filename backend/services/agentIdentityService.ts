@@ -25,6 +25,20 @@ try {
   PGPod = null;
 }
 
+// Pod types that are strictly 1:1 — exactly two members, no joinable widen.
+// Adding a third party to one of these is a bug; a new conversation always
+// spawns a fresh DM pod (see dmService.getOrCreateAgentDmRoom). Single source
+// of truth for ALL membership-add paths (ensureAgentInPod, joinPod controller,
+// claude-code attach in registry/admin, any future code).
+//
+// `agent-admin` is intentionally NOT in this set — multiple admins can share
+// an admin↔agent pod (it's an N:1 admin-team DM, not a strict 1:1).
+//
+// Why it lives here: agentIdentityService.ensureAgentInPod is the most-called
+// add-path and the original site of the agent-room guard, so co-locating the
+// invariant keeps the rule visible to anyone reading that function.
+export const DM_POD_TYPES_GUARD = new Set<string>(['agent-room', 'agent-dm']);
+
 const normalizeSegment = (value: unknown): string => (
   (String(value || '')).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40)
 );
@@ -287,15 +301,17 @@ class AgentIdentityService {
     ));
 
     if (!isAlreadyMember) {
-      // Agent DMs are 1:1 (ADR-001 §3.10). Auto-install paths must not
-      // sneak a third member into someone else's agent-room — the room
-      // already has exactly its host agent + one human. If the requested
-      // agent isn't already in this room, refuse to add. Caller should
-      // create a NEW agent-room for this agent + user pair instead.
-      if (pod.type === 'agent-room') {
+      // DM pods are strictly 1:1 (ADR-001 §3.10): exactly two members,
+      // human or agent. Auto-install paths MUST NOT sneak a third member
+      // into an existing DM. A new conversation between a third party and
+      // either of the two existing members spawns a NEW DM pod via
+      // dmService.getOrCreateAgentDmRoom — never widens the existing one.
+      // The same rule applies symmetrically to agent-room (1:1 user↔agent)
+      // and agent-admin (1:1 admin↔agent).
+      if (DM_POD_TYPES_GUARD.has(String(pod.type))) {
         console.warn(
-          `[ensureAgentInPod] refused: pod ${pod._id} is an agent-room (1:1) `
-          + `and agent ${agentId} is not already a member. ADR-001 §3.10.`,
+          `[ensureAgentInPod] refused: pod ${pod._id} is type=${pod.type} (1:1 DM) `
+          + `and ${agentId} is not already a member. ADR-001 §3.10.`,
         );
         return null;
       }
