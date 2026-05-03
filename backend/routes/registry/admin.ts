@@ -335,9 +335,20 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
       displayName: finalDisplayName,
     });
 
-    // Ensure pod membership — plain ObjectId array per Pod.members invariant
+    // Ensure pod membership — plain ObjectId array per Pod.members invariant.
+    // ADR-001 §3.10: DM pods are strictly 1:1, so an admin attaching a
+    // claude-code session into an existing DM is rejected. The admin should
+    // either pick a non-DM pod or spawn a fresh agent-dm/agent-room with the
+    // claude-code agent as one of the two members.
     const isMember = pod.members?.some((m: any) => m.toString() === agentUser._id.toString());
     if (!isMember) {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { DM_POD_TYPES_GUARD } = require('../../services/agentIdentityService');
+      if (DM_POD_TYPES_GUARD.has(String(pod.type))) {
+        return res.status(403).json({
+          error: 'DM pods are 1:1 — cannot attach a third agent. Use a chat pod or create a new DM.',
+        });
+      }
       pod.members.push(agentUser._id);
       await pod.save();
     }

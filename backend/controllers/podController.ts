@@ -401,9 +401,15 @@ exports.joinPod = async (req: any, res: any) => {
     // effectively dead for agent-rooms because `pod.createdBy` is the
     // host *agent*, not a human user. For multi-party human↔agent
     // surfaces, use `type: 'chat'` instead.
-    if (pod.type === 'agent-room') {
+    // DM pods (agent-room / agent-dm / agent-admin) are strictly 1:1.
+    // ADR-001 §3.10. Third-party joins must spawn a NEW DM pod with the
+    // requesting party + the relevant agent — see dmService
+    // .getOrCreateAgentDmRoom. Same invariant lives in
+    // agentIdentityService.DM_POD_TYPES_GUARD.
+    const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
+    if (DM_POD_TYPES_GUARD.has(String(pod.type))) {
       return res.status(403).json({
-        msg: 'Agent DMs are 1:1 — third-person joins are not allowed. Use a chat pod for multi-party conversations.',
+        msg: 'DM pods are 1:1 — third-person joins are not allowed. Start a new DM with the agent for a private conversation, or use a chat pod for multi-party.',
       });
     }
 
