@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import { V2Message } from '../hooks/useV2PodDetail';
@@ -224,8 +225,24 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
   );
 };
 
+// Match the §3.8 agent-dm-created announcement posted by commonly-bot:
+//   "🤝 Pixel and codex started a DM — [view](/v2/pods/<id>)"
+// The full message body is the line above; capture the headline text and the
+// target pod id so we can render a card with a router-aware navigation
+// button instead of the raw markdown link (which would `target="_blank"` and
+// pop a new tab — wrong for in-app navigation).
+const AGENT_DM_EVENT_RE = /^🤝\s+(.+?)\s+—\s+\[view\]\(\/v2\/pods\/([a-f0-9]{24})\)\s*$/i;
+
+const parseAgentDmEvent = (content: string | undefined): { headline: string; targetPodId: string } | null => {
+  if (!content) return null;
+  const match = content.trim().match(AGENT_DM_EVENT_RE);
+  if (!match) return null;
+  return { headline: match[1], targetPodId: match[2] };
+};
+
 const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick }) => {
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
   const rawUsername = message.user?.username || 'Unknown';
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
   const author = overriddenDisplay || rawUsername;
@@ -234,6 +251,40 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   const isClickable = !!onAuthorClick && !!agentAuthorKeys?.has(rawUsername.toLowerCase());
   const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
   const time = formatRelativeTime(message.created_at);
+
+  // §3.8 system event card. Detected by content shape (commonly-bot only
+  // posts this exact form), so we don't depend on a metadata column the PG
+  // messages table doesn't have. Render a chrome-light card with a
+  // router-aware "Open conversation" button — never a new tab.
+  const dmEvent = parseAgentDmEvent(message.content);
+  if (dmEvent) {
+    return (
+      <div className="v2-msg v2-msg--system">
+        <div className="v2-syscard">
+          <div className="v2-syscard__icon" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 00-3-3.87" />
+              <path d="M16 3.13a4 4 0 010 7.75" />
+            </svg>
+          </div>
+          <div className="v2-syscard__body">
+            <div className="v2-syscard__headline">{dmEvent.headline}</div>
+            {time && <div className="v2-syscard__time">{time}</div>}
+          </div>
+          <button
+            type="button"
+            className="v2-syscard__cta"
+            onClick={() => navigate(`/v2/pods/${dmEvent.targetPodId}`)}
+          >
+            Open conversation
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Two-pass parse: reactions first (they live anywhere in the body), then
   // files. Order matters — files leave a trimmed body that we then read for
   // image rendering.

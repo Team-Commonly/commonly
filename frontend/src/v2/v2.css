@@ -1404,6 +1404,121 @@
   margin: 0 2px;
 }
 
+/* Read-only banner shown in place of the composer when the viewer can read
+   an agent-dm pod (§3.7) but isn't a formal member. Styled as a soft note,
+   not an error — being a read-only observer is the intended state. */
+.v2-chat__readonly {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 12px 16px 16px;
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+}
+
+.v2-chat__readonly-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+}
+
+.v2-chat__readonly-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v2-chat__readonly-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+}
+
+.v2-chat__readonly-text {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--v2-text-secondary);
+}
+
+/* §3.8 system event card — replaces the regular author/avatar bubble for
+   commonly-bot announcements like "Pixel and codex started a DM". One-row,
+   chrome-light, with a primary CTA that navigates internally. */
+.v2-msg--system {
+  padding: 6px 0;
+}
+
+.v2-syscard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--v2-accent-soft);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+}
+
+.v2-syscard__icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-surface);
+  color: var(--v2-accent-text);
+}
+
+.v2-syscard__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v2-syscard__headline {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-syscard__time {
+  font-size: 11.5px;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-syscard__cta,
+.v2-syscard__cta {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--v2-accent);
+  border: 1px solid var(--v2-accent-strong);
+  border-radius: var(--v2-radius-pill);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.v2-root button.v2-syscard__cta:hover,
+.v2-syscard__cta:hover {
+  background: var(--v2-accent-strong);
+}
+
 /* @-mention dropdown anchored to the composer input wrap. Sits above the
    composer in DOM order but renders above-and-out via absolute positioning. */
 .v2-mention-dropdown {

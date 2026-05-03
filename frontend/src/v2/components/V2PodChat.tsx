@@ -9,6 +9,7 @@ import {
 import { useV2Api } from '../hooks/useV2Api';
 import { UseV2PodsResult, V2PodMember } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
+import { useAuth } from '../../context/AuthContext';
 import { initialsFor } from '../utils/avatars';
 
 const PLAN_MODE_KEY = 'v2.podMode';
@@ -135,6 +136,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
   const navigate = useNavigate();
   const api = useV2Api();
   const { socket, connected } = useSocket();
+  const { currentUser } = useAuth();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -443,6 +445,26 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     );
   }
 
+  // §3.7 read-access: humans can VIEW agent-dm rooms when they share a pod
+  // with one of the bots, but they cannot post unless they're a formal member
+  // (which they never are for bot↔bot rooms). Detect that case so we can
+  // swap the composer for an explanatory banner instead of letting the user
+  // type and silently 401.
+  const currentUserId = currentUser?._id || null;
+  const isPodMember = !!currentUserId && (members || []).some(
+    (m) => m && m._id === currentUserId,
+  );
+  const isAgentDm = pod.type === 'agent-dm';
+  const isReadOnly = isAgentDm && !isPodMember;
+
+  // Bot-bot agent-dm — used to choose the "X and Y haven't talked yet" empty
+  // state and to phrase the read-only banner appropriately.
+  const botMembers = (members || []).filter((m) => m?.isBot);
+  const isBotToBot = isAgentDm && botMembers.length >= 2 && botMembers.length === (members || []).length;
+  const botPair = isBotToBot
+    ? botMembers.slice(0, 2).map((m) => m.username || 'Agent')
+    : null;
+
   const handleSend = async () => {
     if (!draft.trim() || sending) return;
     setSending(true);
@@ -600,8 +622,22 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
               )}
               {!loading && messages.length === 0 && (
                 <div className="v2-empty">
-                  <div className="v2-empty__title">Talk to your team</div>
-                  <div className="v2-empty__text">Type a message, or @-mention an agent to direct your first task.</div>
+                  {isBotToBot && botPair ? (
+                    <>
+                      <div className="v2-empty__title">{botPair[0]} and {botPair[1]} haven&apos;t talked yet</div>
+                      <div className="v2-empty__text">They&apos;ll DM each other when one of them needs the other&apos;s help.</div>
+                    </>
+                  ) : isAgentDm ? (
+                    <>
+                      <div className="v2-empty__title">No messages yet</div>
+                      <div className="v2-empty__text">This is a private 1:1 conversation. Say hello to get started.</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="v2-empty__title">Talk to your team</div>
+                      <div className="v2-empty__text">Type a message, or @-mention an agent to direct your first task.</div>
+                    </>
+                  )}
                 </div>
               )}
               {messages.map((m) => (
@@ -618,6 +654,24 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
 
             <TypingIndicator agents={typingAgents} />
 
+            {isReadOnly ? (
+              <div className="v2-chat__readonly" role="note" aria-label="Read-only conversation">
+                <div className="v2-chat__readonly-icon" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0110 0v4" />
+                  </svg>
+                </div>
+                <div className="v2-chat__readonly-body">
+                  <div className="v2-chat__readonly-title">Read-only — you&apos;re observing this conversation</div>
+                  <div className="v2-chat__readonly-text">
+                    {isBotToBot && botPair
+                      ? `${botPair[0]} and ${botPair[1]} are talking directly. To engage them, @-mention either in a shared team pod.`
+                      : 'You can read this 1:1 but not post. To engage, @-mention the agent in a shared team pod.'}
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="v2-chat__composer">
               <div className="v2-chat__composer-input-wrap">
                 <textarea
@@ -732,6 +786,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                 <span><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
               </div>
             </div>
+            )}
       </div>
     </main>
   );
