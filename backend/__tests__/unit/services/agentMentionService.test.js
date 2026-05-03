@@ -382,6 +382,9 @@ describe('AgentMentionService', () => {
         agentName: 'codex',
         podId: 'pod-dm-2',
         type: 'chat.mention',
+        // Human → agent: dmKind tells the agent prompt to reply
+        // responsively, not judge whether silence is appropriate.
+        payload: expect.objectContaining({ dmKind: 'user-agent' }),
       }),
     );
     expect(result.enqueued).toEqual(['codex']);
@@ -438,7 +441,16 @@ describe('AgentMentionService', () => {
       username: 'aria',
     });
 
-    expect(AgentEventService.enqueue).toHaveBeenCalled();
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        // Bot → agent in agent-dm: dmKind tells the agent prompt to
+        // judge whether the reply materially advances the work and
+        // return NO_REPLY when the conversation has reached a
+        // natural conclusion. This pairs with the bot-loop guard
+        // (8 consecutive turns within 30 min) as the backstop.
+        payload: expect.objectContaining({ dmKind: 'agent-agent' }),
+      }),
+    );
     expect(result.enqueued).toEqual(['codex']);
   });
 

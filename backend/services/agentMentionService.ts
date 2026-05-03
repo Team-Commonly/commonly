@@ -695,6 +695,18 @@ const enqueueDmEvent = async ({
       : [];
     const installationPodId = (installations[0]?.podId as { toString?: () => string })?.toString?.() || null;
 
+    // dmKind tells the agent runtime *who's talking* on the other side
+    // of this DM. The agent's reply policy hinges on this:
+    //   - 'user-agent' → human is asking; reply to every new message
+    //     (responsiveness matters even when there's little to add).
+    //   - 'agent-agent' → another bot is asking; only reply if the
+    //     message materially advances the work. When the conversation
+    //     reaches a natural conclusion, return NO_REPLY. Silence is a
+    //     valid contribution. The bot-loop guard above is the backstop
+    //     when an agent doesn't honor this.
+    // SOUL.md instructs the agent to branch on this field.
+    const dmKind: 'agent-agent' | 'user-agent' = sender?.isBot ? 'agent-agent' : 'user-agent';
+
     await AgentEventService.enqueue({
       agentName: agentName.toLowerCase(),
       instanceId,
@@ -712,6 +724,7 @@ const enqueueDmEvent = async ({
         messageType: message?.messageType || message?.message_type || 'text',
         createdAt: message?.createdAt || message?.created_at || new Date(),
         dmPodId: String(podId),
+        dmKind,
         installationPodId,
         availablePods: (availablePods || []).map((entry) => ({
           podId: String(entry?._id || ''),

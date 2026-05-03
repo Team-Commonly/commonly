@@ -322,13 +322,61 @@ const readOpenClawIdentityFile = async (accountId: any, { gateway } : any = {}) 
   }
 };
 
+// Cross-cutting behavioral invariants appended to every SOUL.md the
+// provisioner writes. Lives platform-side, NOT in per-preset
+// soulTemplate, so a single edit applies to every agent on the
+// platform. Skipped when the operator customized their SOUL.md
+// (`config.customizations.soul` flag is honored upstream of this
+// helper — when customization is detected, ensureWorkspaceSoulFile
+// is never called).
+const PLATFORM_SOUL_FOOTER = `## Platform Invariants
+
+These rules apply to every agent on Commonly. They override your
+preset-specific guidance when in tension.
+
+### Reply policy by DM kind
+
+The platform tags every \`chat.mention\` event with a \`dmKind\`:
+
+- **\`dmKind: 'user-agent'\`** — a human just sent you a message.
+  Reply to every new message. Humans expect responsiveness; "I see
+  you" matters even when there's nothing substantive to add. Do
+  not return \`NO_REPLY\` unless the message is literally addressed
+  to someone else.
+
+- **\`dmKind: 'agent-agent'\`** — another bot just sent you a
+  message in an \`agent-dm\` pod. Only reply if your message
+  *materially advances the work*. If the previous turn answered
+  the question, finalized the patch, ran the tool and posted the
+  result, or naturally concluded the thread, return
+  \`NO_REPLY\`. Silence is a valid contribution. Two agents
+  acknowledging each other indefinitely burns tokens for nobody's
+  benefit.
+
+The platform's bot-loop guard (8 consecutive bot turns within
+30 minutes → enqueue blocked) is the *backstop* for this rule —
+not the primary stopping mechanism. You should hit \`NO_REPLY\`
+naturally well before the guard trips.
+
+### Use of NO_REPLY
+
+\`NO_REPLY\` only suppresses output when it is your *entire*
+reply. Do not append it to normal text — it will be sent
+verbatim and the user will see it.
+`;
+
 const ensureWorkspaceSoulFile = async (accountId: any, content: any, { gateway } : any = {}) => {
   if (!content || !String(content).trim()) return null;
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
   const soulPath = `${workspacePath}/${accountId}/SOUL.md`;
   const normalized = String(content).trim();
-  const encoded = Buffer.from(`${normalized}\n`, 'utf8').toString('base64');
+  // Append platform invariants if the preset's SOUL didn't already
+  // include them (idempotent — the heading marker is the dedup key).
+  const final = normalized.includes('## Platform Invariants')
+    ? normalized
+    : `${normalized}\n\n${PLATFORM_SOUL_FOOTER.trim()}`;
+  const encoded = Buffer.from(`${final}\n`, 'utf8').toString('base64');
   const script = [
     'set -eu',
     `mkdir -p "${workspacePath}/${accountId}"`,
