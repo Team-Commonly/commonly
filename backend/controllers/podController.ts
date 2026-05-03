@@ -158,7 +158,7 @@ exports.getAllPods = async (req: any, res: any) => {
 
     let pods = await Pod.find(query)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture')
+      .populate('members', 'username profilePicture isBot')
       .populate('parentPod', 'name _id')
       .sort({ updatedAt: -1 });
 
@@ -226,7 +226,7 @@ exports.getPodsByType = async (req: any, res: any) => {
 
     const pods = await Pod.find({ type })
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture')
+      .populate('members', 'username profilePicture isBot')
       .sort({ updatedAt: -1 });
 
     // Same admin-bypass rule as getAllPods — see comment there.
@@ -258,7 +258,7 @@ exports.getPodById = async (req: any, res: any) => {
     // Get the pod with populated data
     const pod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture')
+      .populate('members', 'username profilePicture isBot')
       .populate('parentPod', 'name _id');
 
     if (!pod) {
@@ -311,7 +311,7 @@ exports.createPod = async (req: any, res: any) => {
 
     // Populate the user data
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture');
+    await pod.populate('members', 'username profilePicture isBot');
 
     // Also create in PostgreSQL if available
     try {
@@ -428,7 +428,7 @@ exports.joinPod = async (req: any, res: any) => {
     console.log('Retrieving updated pod with populated data');
     const updatedPod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture');
+      .populate('members', 'username profilePicture isBot');
 
     console.log('Join pod successful, returning updated pod');
     res.json(updatedPod);
@@ -473,7 +473,7 @@ exports.leavePod = async (req: any, res: any) => {
 
     // Populate the user data
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture');
+    await pod.populate('members', 'username profilePicture isBot');
 
     res.json(pod);
   } catch (err: any) {
@@ -541,7 +541,7 @@ exports.removeMember = async (req: any, res: any) => {
     }
 
     await pod.populate('createdBy', 'username profilePicture');
-    await pod.populate('members', 'username profilePicture');
+    await pod.populate('members', 'username profilePicture isBot');
 
     return res.json(pod);
   } catch (err: any) {
