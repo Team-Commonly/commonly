@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -285,6 +286,16 @@ router.post('/:id/join', auth, joinPod);
 router.post('/:id/leave', auth, leavePod);
 router.delete('/:id/members/:memberId', auth, removeMember);
 
+// Pod admin actions hit Mongo on every call but don't need much volume.
+// Capping per-IP keeps a stuck client from re-pinging contacts at full
+// loop speed without adding code complexity.
+const podAdminRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+});
+
 /**
  * PATCH /api/pods/:id/contacts
  *
@@ -302,7 +313,7 @@ router.delete('/:id/members/:memberId', auth, removeMember);
  * contact list — a member-scoped pin trivially defeats the
  * co-pod-member rule. Reviewer 2baa52d266 flagged this; fix here.
  */
-router.patch('/:id/contacts', auth, async (req: AuthReq, res: Res) => {
+router.patch('/:id/contacts', podAdminRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id: podId } = req.params || {};
     const userId = req.user?.id;

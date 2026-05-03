@@ -733,7 +733,7 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
  * Request: { target: { agentName, instanceId? } | { userId } | { alias }, originPodId? }
  * Response: { room, autoJoined: bool }
  */
-router.post('/agent-dm', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/agent-dm', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     // Caller is the agent owning the runtime token.
     let callerAgentUser = req.agentUser;
@@ -800,8 +800,12 @@ router.post('/agent-dm', agentRuntimeAuth, async (req: any, res: any) => {
       // priority but only when an originPodId is given.
       const alias = String(target.alias).trim().toLowerCase();
       let bound: { agentName: string; instanceId: string } | null = null;
-      if (originPodId) {
-        const originPod = await Pod.findById(originPodId).select('contacts members').lean();
+      // Coerce to string before findById so a malicious request body of
+      // `{ originPodId: { $gt: '' } }` can't slip through Mongoose's
+      // implicit object-as-query interpretation. CodeQL flagged this.
+      const originPodIdStr = originPodId ? String(originPodId) : '';
+      if (originPodIdStr) {
+        const originPod = await Pod.findById(originPodIdStr).select('contacts members').lean();
         const fromPod = originPod?.contacts?.[alias];
         if (fromPod && fromPod.agentName) bound = { agentName: fromPod.agentName, instanceId: fromPod.instanceId || 'default' };
       }
@@ -829,8 +833,9 @@ router.post('/agent-dm', agentRuntimeAuth, async (req: any, res: any) => {
     // §3.7 co-pod-member rule. Bypass when an admin has pinned the
     // target via originPodId's pod.contacts (admin-binding carve-out).
     let authorizedByPodBinding = false;
-    if (originPodId && target.alias) {
-      const originPod = await Pod.findById(originPodId).select('contacts').lean();
+    const originPodIdSafe = originPodId ? String(originPodId) : '';
+    if (originPodIdSafe && target.alias) {
+      const originPod = await Pod.findById(originPodIdSafe).select('contacts').lean();
       authorizedByPodBinding = !!originPod?.contacts?.[String(target.alias).toLowerCase()];
     }
     if (!authorizedByPodBinding) {
@@ -869,11 +874,11 @@ router.post('/agent-dm', agentRuntimeAuth, async (req: any, res: any) => {
     // pod chat. Posted via commonly-bot (auto-installed in every pod
     // already), so we don't need extra membership scaffolding. Best-
     // effort: failure to write the event must not fail the DM creation.
-    if (originPodId) {
+    if (originPodIdSafe) {
       try {
         await AgentMessageService.postMessage({
           agentName: 'commonly-bot',
-          podId: String(originPodId),
+          podId: originPodIdSafe,
           content: `🤝 ${callerMeta.displayName} and ${peerMeta.displayName} started a DM — [view](/v2/pods/${room._id})`,
           metadata: { systemEventType: 'agent-dm-created', dmPodId: String(room._id) },
         });

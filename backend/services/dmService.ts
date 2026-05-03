@@ -452,9 +452,12 @@ class DMService {
           displayName: member.displayName || member.agentName,
         });
       } catch (installErr) {
+        // Pass values as separate console args (not interpolated into the
+        // format string) so user-controlled `member.agentName` can't be
+        // used as a format spec — CodeQL flagged the previous shape.
         console.error(
-          `[dm-service] AgentInstallation.upsert failed for agent-dm pod=${dmPod._id} agent=${member.agentName}:`,
-          (installErr as Error).message,
+          '[dm-service] AgentInstallation.upsert failed for agent-dm',
+          { podId: String(dmPod._id), agentName: member.agentName, error: (installErr as Error).message },
         );
       }
     }
