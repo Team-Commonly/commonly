@@ -1,5 +1,18 @@
 # OpenAI Codex OAuth Setup
 
+> ⚠️ **Outdated for the current dev cluster.** The flow below describes a
+> manual `kubectl cp` of `docs/scripts/codex-oauth.js` into the gateway pod —
+> it predates the LiteLLM-mediated routing and the `codex-auth-rotator`
+> sidecar. For the dev cluster (`commonly-493005`), use the modern flow in
+> [`docs/development/LITELLM.md`](development/LITELLM.md) "Refreshing a
+> Codex account's tokens": `npx -y @openai/codex login` locally, push tokens
+> to GCP Secret Manager, force ESO sync, restart LiteLLM. The init container
+> handles seeding; the rotator handles multi-account 429 failover.
+>
+> Keep this doc only for **bootstrapping a brand-new cluster from scratch**
+> where GCP SM doesn't have any Codex tokens yet and a self-hoster has only
+> a kubectl context. For day-to-day token refresh, follow LITELLM.md.
+
 One-time setup to authenticate the gateway with OpenAI Codex via OAuth.
 Tokens are persisted in the K8s Secret and auto-refresh — after completing these steps
 once, all existing and future agents get Codex automatically.
