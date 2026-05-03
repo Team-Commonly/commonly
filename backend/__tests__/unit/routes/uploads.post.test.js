@@ -18,7 +18,13 @@ jest.mock('../../../services/objectStore', () => ({
 
 jest.mock('../../../models/File', () => {
   const saveMock = jest.fn().mockResolvedValue(undefined);
-  const File = jest.fn().mockImplementation((data) => ({ ...data, save: saveMock }));
+  // Mirror the post-save mongoose shape: `_id` populates synchronously
+  // when constructing a new model. Tests use the static fixture below.
+  const File = jest.fn().mockImplementation((data) => ({
+    ...data,
+    _id: { toString: () => 'fake-file-id-67abcdef0123456789abcdef' },
+    save: saveMock,
+  }));
   File.findByFileName = jest.fn();
   File.__saveMock = saveMock;
   return File;
@@ -45,10 +51,13 @@ describe('uploads POST / (ADR-002 Phase 1)', () => {
   });
 
   it('writes bytes through the driver and saves metadata-only File', async () => {
-    await request(app)
+    const res = await request(app)
       .post('/api/uploads')
       .attach('image', Buffer.from('data'), 'photo.png')
       .expect(200);
+    // _id surfaced in response so the composer can bake it into the
+    // [[upload:…|fileId]] directive for click-to-open-inspector.
+    expect(res.body._id).toBe('fake-file-id-67abcdef0123456789abcdef');
 
     // Driver received the bytes + mime
     expect(mockStore.put).toHaveBeenCalledWith(

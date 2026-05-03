@@ -1672,46 +1672,82 @@
 }
 
 .v2-msg__file {
-  width: 300px;
-  height: 40px;
+  /* Two-line pill: filename (bold) above kind + size (muted). Matches
+     Slack / Google Chat / Linear file affordances. The icon tile widens
+     to 40px so two-character glyphs (PR, PDF, DOC) sit comfortably. */
+  width: 320px;
   display: inline-grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr);
   align-items: center;
-  gap: 9px;
-  padding: 0 12px;
+  gap: 12px;
+  padding: 10px 12px;
   background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
   margin-top: 7px;
   max-width: 100%;
+  text-align: left;
+  transition: border-color 80ms ease, background 80ms ease;
+}
+
+/* When the pill renders on a <button> the global v2 button reset
+   `.v2-root button:not(.MuiButtonBase-root)` zeros out border/background/
+   padding at specificity (0,0,2,1). Bump our selector to match (and
+   come later in source order) so the pill keeps its border + bg. See
+   memory `feedback-v2-button-reset-specificity` — second hit on this
+   exact pattern, hence the explicit form. */
+.v2-root button.v2-msg__file {
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.v2-root button.v2-msg__file:hover {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
 }
 
 .v2-msg__file-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: #fff;
+  letter-spacing: 0.04em;
 }
 
 .v2-msg__file-meta {
   display: flex;
   flex-direction: column;
-  font-size: 12px;
+  gap: 2px;
   min-width: 0;
 }
 
 .v2-msg__file-name {
-  color: #374151;
+  color: var(--v2-text-primary);
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* Subline carries the friendly kind ("PDF", "Word document") plus the
+   size in a muted, smaller register so the filename owns the hierarchy. */
+.v2-msg__file-sub {
+  color: var(--v2-text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Legacy class retained for back-compat with any cached HTML referencing
+   the older single-row pill. New code uses .v2-msg__file-sub. */
 .v2-msg__file-size {
   color: var(--v2-text-tertiary);
   font-size: 11px;
