@@ -196,9 +196,13 @@ data:
         # OpenRouter models fall back to Gemini, then each other — prevents crash when one 429s
         - {"openrouter/nvidia/nemotron-3-super-120b-a12b:free": ["google/gemini-2.5-flash", "openrouter/arcee-ai/trinity-large-preview:free"]}
         - {"nvidia/nemotron-3-super-120b-a12b:free": ["google/gemini-2.5-flash", "openrouter/arcee-ai/trinity-large-preview:free"]}
-      # Retry once before triggering fallback to catch transient errors
-      num_retries: 1
-      retry_after: 5
+      # No retries on the active deployment — rate limits don't recover in
+      # seconds, and the rotator's 429-signal path can swap auth.json mid-
+      # retry, which doubles the burn (one hit on account-N, then a retry
+      # that lands on the freshly-rotated account-N+1 from the SAME failed
+      # request). Skip the retry entirely; the fallback chain below
+      # (gemini → openrouter) is the actual recovery path.
+      num_retries: 0
 
     litellm_settings:
       # Drop unsupported params instead of erroring (important for OpenRouter quirks)
