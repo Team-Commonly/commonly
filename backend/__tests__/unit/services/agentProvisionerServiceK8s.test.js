@@ -279,9 +279,12 @@ describe('agentProvisionerServiceK8s', () => {
     // gateway-level default — nemotron, no openai-codex. Codex is gated to
     // dev agents via the per-agent override in provisionOpenClawAccount.
     expect(config.agents.defaults.model.primary).toBe('openrouter/nvidia/nemotron-3-super-120b-a12b:free');
+    // Trinity removed 2026-05-03 (deregistered at OpenRouter, 404). Gemini
+    // entries remain as inert placeholders until GEMINI_API_KEY is reinstated.
     expect(config.agents.defaults.model.fallbacks).toEqual(
-      expect.arrayContaining(['openrouter/arcee-ai/trinity-large-preview:free', 'google/gemini-2.5-flash']),
+      expect.arrayContaining(['google/gemini-2.5-flash']),
     );
+    expect(config.agents.defaults.model.fallbacks).not.toContain('openrouter/arcee-ai/trinity-large-preview:free');
     expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4-mini');
     expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4');
   });
