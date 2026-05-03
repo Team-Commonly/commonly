@@ -50,7 +50,11 @@ export interface NativeRunResult {
 const MAX_TURNS = 10;
 const MAX_TOKENS = 50_000;
 const MAX_WALL_CLOCK_MS = 60_000;
-const DEFAULT_MODEL = 'openai-codex/gpt-5.4-mini';
+// Free-tier default for the native runtime. Per-installation config can
+// override (`installation.config.model`) for dev agents that legitimately
+// need paid Codex — but the platform-wide default never burns Codex quota
+// just because someone forgot to set the field.
+const DEFAULT_MODEL = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
 const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_000;
 
 // --- helpers ---------------------------------------------------------------

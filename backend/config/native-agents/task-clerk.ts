@@ -54,7 +54,9 @@ export const taskClerkApp = {
     + '- DO NOT call commonly_read_memory or commonly_write_memory. You do not have '
     + 'access to those tools.\n'
     + '- Keep all replies under 2 lines. You are a clerk, not a conversationalist.',
-  model: 'openai-codex/gpt-5.4-mini',
+  // See pod-welcomer.ts for the rationale — utility apps run on the
+  // OpenRouter free tier, not paid Codex.
+  model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
   triggers: ['mention'],
   tools: [
     'commonly_read_context',
