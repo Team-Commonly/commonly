@@ -49,15 +49,10 @@ data:
           model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
           api_key: os.environ/OPENROUTER_API_KEY
 
-      - model_name: openrouter/arcee-ai/trinity-large-preview:free
-        litellm_params:
-          model: openrouter/arcee-ai/trinity-large-preview:free
-          api_key: os.environ/OPENROUTER_API_KEY
-
-      - model_name: arcee-ai/trinity-large-preview:free
-        litellm_params:
-          model: openrouter/arcee-ai/trinity-large-preview:free
-          api_key: os.environ/OPENROUTER_API_KEY
+      # NOTE: arcee-ai/trinity-large-preview:free was deregistered at OpenRouter
+      # (404 No endpoints found) on 2026-05-03. Removed from model_list and from
+      # all fallback chains below. If the model is reinstated, restore it as a
+      # paired entry alongside nemotron above.
 
       # --- Codex (chatgpt/ provider) ---
       # NOTE: LiteLLM's chatgpt/ provider reads tokens from auth.json (written by the
@@ -175,34 +170,48 @@ data:
           api_key: os.environ/OPENAI_API_KEY
 
     router_settings:
-      # The codex-auth-rotator sidecar rotates Codex accounts every 10 min by swapping
-      # auth.json. Fallbacks below kick in when the active account is rate-limited.
+      # The codex-auth-rotator sidecar rotates Codex accounts every 10 min on
+      # schedule, AND fast-rotates on 429 via the rate_limit_signal callback
+      # (writes /chatgpt-auth/rotate-now → sidecar polls and swaps auth.json).
       routing_strategy: least-busy
       enable_pre_call_checks: true
-      # When the active Codex account is rate-limited, fall back to OpenRouter.
-      # This applies to acpx_run calls that route gpt-5.4 through LiteLLM.
-      # Fallback order: try Gemini FIRST (high quality, real free tier),
-      # then OpenRouter free models. The chatgpt/ provider currently hits
-      # "Unknown items in responses API response: []" parser errors that
-      # cascade into fallbacks, so the fallback model needs to be one that
-      # produces actually-useful output, not just any responding model.
+      # Fallback chain — nemotron only.
+      #   - Gemini removed 2026-05-03: GEMINI_API_KEY belongs to a project that
+      #     doesn't have generativelanguage.googleapis.com enabled (403). Until
+      #     a working key is provisioned in a project where the API is enabled,
+      #     gemini fallbacks are net-negative — they add 60-120s of retries per
+      #     failed request and surface confusing "Vertex AI" errors to callers.
+      #   - Trinity removed 2026-05-03: 404 No endpoints found at OpenRouter.
+      # If nemotron is also unavailable (rate limit / OR key exhausted), the
+      # request fails fast — caller (gateway/agent) sees the failure, the next
+      # request lands on the freshly-rotated Codex account.
       fallbacks:
-        - {"gpt-5.4": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"openai-codex/gpt-5.4": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"gpt-5.4-mini": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"openai-codex/gpt-5.4-mini": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"gpt-5.4-nano": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"openai-codex/gpt-5.4-nano": ["google/gemini-2.5-flash", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        # OpenRouter models fall back to Gemini, then each other — prevents crash when one 429s
-        - {"openrouter/nvidia/nemotron-3-super-120b-a12b:free": ["google/gemini-2.5-flash", "openrouter/arcee-ai/trinity-large-preview:free"]}
-        - {"nvidia/nemotron-3-super-120b-a12b:free": ["google/gemini-2.5-flash", "openrouter/arcee-ai/trinity-large-preview:free"]}
-      # No retries on the active deployment — rate limits don't recover in
-      # seconds, and the rotator's 429-signal path can swap auth.json mid-
-      # retry, which doubles the burn (one hit on account-N, then a retry
-      # that lands on the freshly-rotated account-N+1 from the SAME failed
-      # request). Skip the retry entirely; the fallback chain below
-      # (gemini → openrouter) is the actual recovery path.
-      num_retries: 0
+        - {"gpt-5.4":                 ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
+        - {"openai-codex/gpt-5.4":    ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
+        - {"gpt-5.4-mini":            ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
+        - {"openai-codex/gpt-5.4-mini": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
+        - {"gpt-5.4-nano":            ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
+        - {"openai-codex/gpt-5.4-nano": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
+        # No fallback for nemotron itself — fail fast rather than chain through
+        # dead endpoints. The rotator + next-request path will pick a fresh
+        # Codex account on the subsequent call.
+      # One retry on rate-limit, with a deliberate 1s delay so the 429 callback
+      # has time to rotate auth.json before the retry reads it. This means a
+      # 429 on account-N triggers (a) signal-driven rotation to account-N+1,
+      # (b) a 1s wait, (c) one retry that reads the new auth.json. If the
+      # retry also 429s, falls to nemotron fallback.
+      #
+      # Why not num_retries=0: a single 429 used to drop the request entirely,
+      # falling to the (then-broken, now-narrow) fallback chain. Same-prompt
+      # retries don't bill against the 429'd account (4XX = no charge), so
+      # spending one retry across the rotator is genuinely free until success.
+      #
+      # Why not num_retries>1: chaining retries beyond 1 risks cascading
+      # rotations under sustained burst load — multiple retries would each
+      # signal the rotator and burn through fresh accounts in milliseconds.
+      # See feedback-litellm-retry-doubles-rotation-burn (2026-05-03 incident).
+      num_retries: 1
+      retry_after: 1
 
     litellm_settings:
       # Drop unsupported params instead of erroring (important for OpenRouter quirks)

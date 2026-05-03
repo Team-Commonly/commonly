@@ -38,10 +38,9 @@ model_list:
       model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
       api_key: os.environ/OPENROUTER_API_KEY
 
-  - model_name: openrouter/arcee-ai/trinity-large-preview:free
-    litellm_params:
-      model: openrouter/arcee-ai/trinity-large-preview:free
-      api_key: os.environ/OPENROUTER_API_KEY
+  # arcee-ai/trinity-large-preview:free was removed 2026-05-03 (deregistered at
+  # OpenRouter, 404). Mirrored in the production helm chart at
+  # k8s/helm/commonly/templates/configmaps/litellm-config.yaml.
 
   # --- ChatGPT / Codex (native chatgpt/ provider) ---
   # auth.json is seeded by the codex-auth-seed init container from k8s secrets.
