@@ -221,6 +221,7 @@ export interface IAgentInstallationRegistryModel extends Model<IAgentInstallatio
   getInstalledAgents(podId: Types.ObjectId): mongoose.Query<IAgentInstallationRegistry[], IAgentInstallationRegistry>;
   isInstalled(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<boolean>;
   install(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
+  upsert(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
   uninstall(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<mongoose.UpdateWriteOpResult>;
 }
 
@@ -285,6 +286,39 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
     return existing.save();
   }
   return this.create({ agentName: agentName.toLowerCase(), podId, instanceId, displayName, version, config, scopes, installedBy });
+};
+
+/**
+ * Idempotent variant of `install`. Re-fires (e.g. mention-driven autoJoin
+ * on a row that already exists) MUST NOT throw or create duplicates. The
+ * existing `install` throws when an active row exists; that's the right
+ * behavior for an admin-driven first install but wrong for a runtime path
+ * that may fire many times. Use this whenever the call site doesn't want
+ * to care if it's the first attempt.
+ *
+ * Atomically created via findOneAndUpdate with upsert+setOnInsert so
+ * concurrent autoJoin attempts can't race a duplicate row past the
+ * unique index on (agentName, podId, instanceId).
+ */
+AgentInstallationSchema.statics.upsert = async function (agentName: string, podId: Types.ObjectId, options: {
+  version: string;
+  config?: Map<string, unknown>;
+  scopes?: string[];
+  installedBy: Types.ObjectId;
+  instanceId?: string;
+  displayName?: string;
+}) {
+  const { version, config, scopes, installedBy, instanceId = 'default', displayName } = options;
+  const filter = { agentName: agentName.toLowerCase(), podId, instanceId };
+  const update = {
+    $setOnInsert: { agentName: agentName.toLowerCase(), podId, instanceId, installedBy, version, displayName },
+    $set: {
+      ...(config ? { config } : {}),
+      ...(scopes ? { scopes } : {}),
+      status: 'active',
+    },
+  };
+  return this.findOneAndUpdate(filter, update, { new: true, upsert: true, setDefaultsOnInsert: true });
 };
 
 AgentInstallationSchema.statics.uninstall = async function (agentName: string, podId: Types.ObjectId, instanceId = 'default') {

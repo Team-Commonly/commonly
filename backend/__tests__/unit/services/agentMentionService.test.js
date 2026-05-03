@@ -328,4 +328,145 @@ describe('AgentMentionService', () => {
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(result).toEqual({ enqueued: false, reason: 'not_dm_pod' });
   });
+
+  // Agent-dm allow-list — without this, every message into the new pod
+  // type is silent-dropped on the way to the agent runtime. Same bug
+  // class as e78b5df241; documented in AGENT_RUNTIME.md Routing Invariants.
+  test('enqueueDmEvent enqueues for agent-dm pods (allow-list)', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-dm-2',
+        type: 'agent-dm',
+        members: ['user-1', 'agent-user-1'],
+      }),
+    });
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: 'agent-user-1',
+          username: 'codex-default',
+          botMetadata: { agentName: 'codex', instanceId: 'default' },
+        },
+      ]),
+    });
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{
+        _id: 'inst-2',
+        podId: 'pod-dm-2',
+        installedBy: 'user-1',
+        agentName: 'codex',
+        instanceId: 'default',
+        status: 'active',
+      }]),
+    });
+    Pod.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{ _id: 'pod-dm-2' }]),
+    });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ _id: 'user-1', isBot: false }),
+    });
+
+    const result = await AgentMentionService.enqueueDmEvent({
+      podId: 'pod-dm-2',
+      message: { id: 99, content: 'cut a hot-fix' },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentName: 'codex',
+        podId: 'pod-dm-2',
+        type: 'chat.mention',
+      }),
+    );
+    expect(result.enqueued).toEqual(['codex']);
+  });
+
+  // Bot senders are allowed in agent-dm rooms (the whole point — agent ↔
+  // agent collaboration). They're still blocked in agent-admin/agent-room.
+  test('enqueueDmEvent allows bot sender in agent-dm', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-dm-3',
+        type: 'agent-dm',
+        members: ['aria-user', 'codex-user'],
+      }),
+    });
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: 'codex-user',
+          username: 'codex-default',
+          botMetadata: { agentName: 'codex', instanceId: 'default' },
+        },
+      ]),
+    });
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{
+        _id: 'inst-3',
+        podId: 'pod-dm-3',
+        installedBy: 'aria-user',
+        agentName: 'codex',
+        instanceId: 'default',
+        status: 'active',
+      }]),
+    });
+    Pod.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{ _id: 'pod-dm-3' }]),
+    });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({
+        _id: 'aria-user',
+        isBot: true,
+        botMetadata: { agentName: 'aria', instanceId: 'default' },
+      }),
+    });
+
+    const result = await AgentMentionService.enqueueDmEvent({
+      podId: 'pod-dm-3',
+      message: { id: 100, content: 'can you review this PR?' },
+      userId: 'aria-user',
+      username: 'aria',
+    });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalled();
+    expect(result.enqueued).toEqual(['codex']);
+  });
+
+  test('enqueueDmEvent still blocks bot sender in legacy agent-admin', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-admin-1',
+        type: 'agent-admin',
+        members: ['aria-user', 'human-1'],
+      }),
+    });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({
+        _id: 'aria-user',
+        isBot: true,
+        botMetadata: { agentName: 'aria', instanceId: 'default' },
+      }),
+    });
+
+    const result = await AgentMentionService.enqueueDmEvent({
+      podId: 'pod-admin-1',
+      message: { content: 'hi' },
+      userId: 'aria-user',
+      username: 'aria',
+    });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(result).toEqual({ enqueued: false, reason: 'sender_is_bot' });
+  });
 });

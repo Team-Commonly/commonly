@@ -16,12 +16,24 @@ const FILTERS: Array<{ key: Filter; label: string }> = [
   { key: 'private', label: 'Private' },
 ];
 
-const isDmPod = (pod: V2Pod): boolean => pod.type === 'agent-room';
+// Both agent-room (user↔agent) and agent-dm (any 2-member combo) show
+// up under the Private filter. agent-dm with two bot members gets a
+// distinct icon ("AA" — agent ↔ agent) so users can tell at a glance
+// that no human is in the conversation.
+const isDmPod = (pod: V2Pod): boolean => pod.type === 'agent-room' || pod.type === 'agent-dm';
 const podKind = (pod: V2Pod): 'team' | 'private' => (isDmPod(pod) ? 'private' : 'team');
 
-const podMarkFor = (pod: V2Pod): string => (
-  podKind(pod) === 'private' ? 'DM' : initialsFor(pod.name).slice(0, 2)
-);
+const isAgentToAgent = (pod: V2Pod): boolean => {
+  if (pod.type !== 'agent-dm') return false;
+  const members = pod.members || [];
+  if (members.length < 2) return false;
+  return members.every((m) => typeof m === 'object' && !!m?.isBot);
+};
+
+const podMarkFor = (pod: V2Pod): string => {
+  if (isAgentToAgent(pod)) return 'AA';
+  return podKind(pod) === 'private' ? 'DM' : initialsFor(pod.name).slice(0, 2);
+};
 
 const podMarkClass = (pod: V2Pod): string => (
   `v2-pods__item-icon v2-pods__item-icon--${podKind(pod)}`

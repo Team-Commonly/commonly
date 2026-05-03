@@ -344,6 +344,128 @@ class DMService {
 
     return roomPod;
   }
+
+  /**
+   * Returns true iff users `a` and `b` share at least one pod. Single
+   * source of truth for the §3.7 "co-pod-member" rule used by both
+   * `getOrCreateAgentDmRoom` and the mention-driven autoJoin gate.
+   *
+   * Both args may be Mongoose ObjectIds or strings; works on any
+   * combination of human + bot users.
+   */
+  static async sharePod(a: unknown, b: unknown): Promise<boolean> {
+    const aId = String(a);
+    const bId = String(b);
+    if (!aId || !bId || aId === bId) return false;
+    const count = await Pod.countDocuments({
+      members: { $all: [aId, bId] },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Find or create a 2-member `agent-dm` pod. Generalization of
+   * `getOrCreateAgentRoom` — both members can be agents (the bot ↔ bot
+   * case), agent ↔ human (parallel to legacy agent-room), or even
+   * human ↔ human in the future. Idempotent on the unordered pair
+   * (aId, bId).
+   *
+   * For each bot member, AgentInstallation is upserted with
+   * heartbeat:false so the agent can post outbound (the
+   * pod.members-vs-AgentInstallation invariant — see e78b5df241).
+   *
+   * Caller is responsible for the §3.7 co-pod-member auth check
+   * before calling this; we don't enforce it here so service-level
+   * tests + admin tooling can bypass cleanly.
+   */
+  static async getOrCreateAgentDmRoom(
+    memberA: { userId: unknown; agentName?: string; instanceId?: string; isBot: boolean; displayName?: string },
+    memberB: { userId: unknown; agentName?: string; instanceId?: string; isBot: boolean; displayName?: string },
+    options: { creatorUserId?: unknown } = {},
+  ): Promise<InstanceType<typeof Pod>> {
+    const aId = String(memberA.userId);
+    const bId = String(memberB.userId);
+    if (!aId || !bId || aId === bId) {
+      throw new Error('getOrCreateAgentDmRoom requires two distinct user ids');
+    }
+
+    // Idempotent on the unordered pair: $all matches regardless of order
+    // and the index path `members` already exists for any pod query.
+    const existing = await Pod.findOne({
+      type: 'agent-dm',
+      members: { $all: [aId, bId] },
+    });
+    if (existing) return existing;
+
+    const aLabel = memberA.displayName || memberA.agentName || 'a';
+    const bLabel = memberB.displayName || memberB.agentName || 'b';
+    const name = `${aLabel} ↔ ${bLabel}`;
+    const description = memberA.isBot && memberB.isBot
+      ? `Agent-to-agent DM — ${aLabel} and ${bLabel}`
+      : `Direct message — ${aLabel} and ${bLabel}`;
+
+    const creatorId = String(options.creatorUserId || aId);
+
+    const dmPod = new Pod({
+      name,
+      description,
+      type: 'agent-dm',
+      joinPolicy: 'invite-only',
+      createdBy: creatorId,
+      members: [aId, bId],
+    });
+    await dmPod.save();
+
+    // Sync to PG so chat queries don't 404 on the new room.
+    try {
+      if (process.env.PG_HOST && PGPod) {
+        await PGPod.create(
+          dmPod.name,
+          dmPod.description || '',
+          'agent-dm',
+          creatorId,
+          dmPod._id.toString(),
+        );
+        await PGPod.addMember(dmPod._id.toString(), aId);
+        await PGPod.addMember(dmPod._id.toString(), bId);
+      }
+    } catch (pgError) {
+      console.error('Failed to sync agent-dm pod to PostgreSQL:', (pgError as Error).message);
+    }
+
+    // Install both bot members so outbound posts succeed. Heartbeat off:
+    // agent-dm pods are reactive (fire on incoming messages), never
+    // scheduled. We use the new `upsert` static so re-fires (and the
+    // §3.4 mention-driven autoJoin path) don't throw on existing rows.
+    for (const member of [memberA, memberB]) {
+      if (!member.isBot || !member.agentName) continue;
+      try {
+        await AgentInstallation.upsert(member.agentName.toLowerCase(), dmPod._id, {
+          version: '1.0.0',
+          config: {
+            heartbeat: { enabled: false },
+            autoJoinSource: 'agent-dm-create',
+          } as unknown as Map<string, unknown>,
+          scopes: ['context:read', 'summaries:read', 'messages:write'],
+          installedBy: creatorId as unknown as import('mongoose').Types.ObjectId,
+          instanceId: member.instanceId || 'default',
+          displayName: member.displayName || member.agentName,
+        });
+      } catch (installErr) {
+        console.error(
+          `[dm-service] AgentInstallation.upsert failed for agent-dm pod=${dmPod._id} agent=${member.agentName}:`,
+          (installErr as Error).message,
+        );
+      }
+    }
+
+    console.log(
+      `[dm-service] Created agent-dm pod=${dmPod._id}`
+      + ` a=${aLabel} b=${bLabel}`,
+    );
+
+    return dmPod;
+  }
 }
 
 export default DMService;

@@ -723,6 +723,153 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
 });
 
 /**
+ * POST /agent-dm
+ *
+ * Open or fetch a 2-member `agent-dm` pod between the caller (an agent
+ * runtime token) and a target agent. Generalization of `/room` for the
+ * bot ↔ bot case; the §3.7 co-pod-member rule gates creation so we
+ * don't grant arbitrary fan-out reach.
+ *
+ * Request: { target: { agentName, instanceId? } | { userId } | { alias }, originPodId? }
+ * Response: { room, autoJoined: bool }
+ */
+router.post('/agent-dm', agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    // Caller is the agent owning the runtime token.
+    let callerAgentUser = req.agentUser;
+    if (!callerAgentUser && req.agentInstallation) {
+      callerAgentUser = await AgentIdentityService.getOrCreateAgentUser(
+        req.agentInstallation.agentName,
+        { instanceId: req.agentInstallation.instanceId || 'default' },
+      );
+    }
+    if (!callerAgentUser) {
+      return res.status(401).json({ message: 'Agent runtime token required' });
+    }
+
+    const { target, originPodId } = req.body || {};
+    if (!target || typeof target !== 'object') {
+      return res.status(400).json({ message: 'target is required' });
+    }
+
+    // Resolve the target User row. Accept three shapes:
+    //   { agentName, instanceId? } → look up the bot User row directly.
+    //   { userId }                 → human or already-resolved bot.
+    //   { alias }                  → resolve via caller's contact list.
+    let targetUser: { _id: unknown; isBot?: boolean; username?: string; botMetadata?: { agentName?: string; instanceId?: string } } | null = null;
+    let targetMeta: { agentName?: string; instanceId?: string; displayName?: string; isBot: boolean } = { isBot: false };
+
+    if (target.agentName) {
+      const agentName = String(target.agentName).trim().toLowerCase();
+      const instanceId = String(target.instanceId || 'default').trim();
+      if (!agentName) return res.status(400).json({ message: 'target.agentName is empty' });
+      targetUser = await AgentIdentityService.getOrCreateAgentUser(agentName, { instanceId });
+      targetMeta = { agentName, instanceId, displayName: agentName, isBot: true };
+    } else if (target.userId) {
+      const lookup = await User.findById(String(target.userId)).select('_id isBot username botMetadata').lean();
+      if (!lookup) return res.status(404).json({ message: 'target user not found' });
+      targetUser = lookup as { _id: unknown; isBot?: boolean; username?: string; botMetadata?: { agentName?: string; instanceId?: string } };
+      targetMeta = {
+        isBot: !!lookup.isBot,
+        agentName: lookup.botMetadata?.agentName || undefined,
+        instanceId: lookup.botMetadata?.instanceId || 'default',
+        displayName: lookup.botMetadata?.agentName || lookup.username,
+      };
+    } else if (target.alias) {
+      // §3.2: resolve via caller's own contacts. Pod-level binding takes
+      // priority but only when an originPodId is given.
+      const alias = String(target.alias).trim().toLowerCase();
+      let bound: { agentName: string; instanceId: string } | null = null;
+      if (originPodId) {
+        const originPod = await Pod.findById(originPodId).select('contacts members').lean();
+        const fromPod = originPod?.contacts?.[alias];
+        if (fromPod && fromPod.agentName) bound = { agentName: fromPod.agentName, instanceId: fromPod.instanceId || 'default' };
+      }
+      if (!bound) {
+        const callerContacts = (callerAgentUser as { contacts?: Array<{ alias: string; agentName?: string; instanceId?: string }> }).contacts || [];
+        const match = callerContacts.find((c) => (c.alias || '').toLowerCase() === alias && c.agentName);
+        if (match?.agentName) bound = { agentName: match.agentName, instanceId: match.instanceId || 'default' };
+      }
+      if (!bound) {
+        return res.status(404).json({ message: `No contact bound to alias "${alias}"`, alias });
+      }
+      targetUser = await AgentIdentityService.getOrCreateAgentUser(bound.agentName, { instanceId: bound.instanceId });
+      targetMeta = { agentName: bound.agentName, instanceId: bound.instanceId, displayName: bound.agentName, isBot: true };
+    } else {
+      return res.status(400).json({ message: 'target must specify agentName, userId, or alias' });
+    }
+
+    if (!targetUser?._id) {
+      return res.status(404).json({ message: 'target user could not be resolved' });
+    }
+    if (String(targetUser._id) === String(callerAgentUser._id)) {
+      return res.status(400).json({ message: 'Cannot DM yourself' });
+    }
+
+    // §3.7 co-pod-member rule. Bypass when an admin has pinned the
+    // target via originPodId's pod.contacts (admin-binding carve-out).
+    let authorizedByPodBinding = false;
+    if (originPodId && target.alias) {
+      const originPod = await Pod.findById(originPodId).select('contacts').lean();
+      authorizedByPodBinding = !!originPod?.contacts?.[String(target.alias).toLowerCase()];
+    }
+    if (!authorizedByPodBinding) {
+      const shared = await DMService.sharePod(callerAgentUser._id, targetUser._id);
+      if (!shared) {
+        return res.status(403).json({
+          message: 'No shared pod with target — refused per co-pod-member rule',
+          rule: 'sharePod',
+        });
+      }
+    }
+
+    // Build member metadata for both sides so AgentInstallation upserts
+    // know which ones need bot-side scaffolding.
+    const callerMeta = {
+      userId: callerAgentUser._id,
+      agentName: callerAgentUser.botMetadata?.agentName || (req.agentInstallation?.agentName as string),
+      instanceId: callerAgentUser.botMetadata?.instanceId || (req.agentInstallation?.instanceId as string) || 'default',
+      isBot: true,
+      displayName: callerAgentUser.botMetadata?.agentName || callerAgentUser.username,
+    };
+    const peerMeta = {
+      userId: targetUser._id,
+      agentName: targetMeta.agentName,
+      instanceId: targetMeta.instanceId || 'default',
+      isBot: targetMeta.isBot,
+      displayName: targetMeta.displayName,
+    };
+
+    const room = await DMService.getOrCreateAgentDmRoom(callerMeta, peerMeta, {
+      creatorUserId: callerAgentUser._id,
+    });
+
+    // §3.8 — drop a "DM started" system event in the originating pod
+    // so humans see the link without the conversation polluting the
+    // pod chat. Posted via commonly-bot (auto-installed in every pod
+    // already), so we don't need extra membership scaffolding. Best-
+    // effort: failure to write the event must not fail the DM creation.
+    if (originPodId) {
+      try {
+        await AgentMessageService.postMessage({
+          agentName: 'commonly-bot',
+          podId: String(originPodId),
+          content: `🤝 ${callerMeta.displayName} and ${peerMeta.displayName} started a DM — [view](/v2/pods/${room._id})`,
+          metadata: { systemEventType: 'agent-dm-created', dmPodId: String(room._id) },
+        });
+      } catch (sysErr) {
+        console.warn('[agent-dm] system-message post failed:', (sysErr as Error).message);
+      }
+    }
+
+    return res.json({ room, autoJoined: false });
+  } catch (error: any) {
+    console.error('Error creating/fetching agent-dm:', error);
+    return res.status(500).json({ message: 'Failed to create/fetch agent-dm' });
+  }
+});
+
+/**
  * POST /bot/events/:id/ack (user API token auth)
  * For bot users to acknowledge events
  */

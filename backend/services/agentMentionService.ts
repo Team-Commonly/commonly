@@ -209,6 +209,115 @@ const enqueueSummarizerEvent = async ({
   });
 };
 
+// Feature gate for the §3.4 mention-driven autoJoin path. When OFF, this
+// service behaves exactly as it did before: unresolved mentions are
+// pushed to `skipped`. When ON, an unresolved alias falls through to
+// pod.contacts → sender.contacts and may install an agent into the pod.
+// Default OFF so the new pod type can ship without flipping autoJoin
+// behavior in the same release if rollout demands a smaller blast
+// radius.
+const isMentionAutoJoinEnabled = (): boolean => (
+  String(process.env.ENABLE_MENTION_AUTOJOIN || '').toLowerCase() === 'true'
+);
+
+// Try the alias against pod-level binding first, then sender's contact
+// list. Returns the resolved (agentName, instanceId) or null. The
+// pod-binding takes priority per the §3.2 resolution order.
+const resolveContactAlias = async (
+  alias: string,
+  podId: string,
+  senderUserId: string,
+): Promise<{ agentName: string; instanceId: string } | null> => {
+  const lower = alias.toLowerCase();
+  try {
+    const pod = await Pod.findById(podId).select('contacts').lean() as { contacts?: Record<string, { agentName?: string; instanceId?: string }> } | null;
+    const fromPod = pod?.contacts?.[lower];
+    if (fromPod?.agentName) {
+      return { agentName: fromPod.agentName.toLowerCase(), instanceId: fromPod.instanceId || 'default' };
+    }
+  } catch (err) {
+    console.warn('[mention-autojoin] pod.contacts lookup failed:', (err as Error).message);
+  }
+  try {
+    const sender = await User.findById(senderUserId).select('contacts').lean() as { contacts?: Array<{ alias?: string; agentName?: string; instanceId?: string }> } | null;
+    const fromSender = (sender?.contacts || []).find((c) => (c.alias || '').toLowerCase() === lower && c.agentName);
+    if (fromSender?.agentName) {
+      return { agentName: fromSender.agentName.toLowerCase(), instanceId: fromSender.instanceId || 'default' };
+    }
+  } catch (err) {
+    console.warn('[mention-autojoin] sender contacts lookup failed:', (err as Error).message);
+  }
+  return null;
+};
+
+// Pull a non-member agent into the pod via mention-driven autoJoin.
+// Runs the §3.7 co-pod-member rule (with the §3.2 admin-binding carve-
+// out — i.e. if the resolution came from pod.contacts, that's the
+// authorization signal). Idempotent on (agentName, instanceId, podId).
+// Returns true on success, false on auth-refused.
+const autoJoinAgentToPod = async (
+  agentName: string,
+  instanceId: string,
+  podId: string,
+  senderUserId: string,
+  resolvedFromPodBinding: boolean,
+): Promise<boolean> => {
+  // eslint-disable-next-line global-require
+  const AgentIdentityService = require('./agentIdentityService');
+  // eslint-disable-next-line global-require
+  const DMService = require('./dmService');
+  // eslint-disable-next-line global-require
+  const AgentMessageService = require('./agentMessageService');
+
+  const targetUser = await AgentIdentityService.getOrCreateAgentUser(agentName, { instanceId });
+  if (!targetUser?._id) return false;
+
+  // Authorization: pod-binding is itself the admin signal; otherwise
+  // require sharePod between sender and target.
+  if (!resolvedFromPodBinding) {
+    const shared = await DMService.sharePod(senderUserId, targetUser._id);
+    if (!shared) {
+      console.warn(`[mention-autojoin] refused — no shared pod between sender=${senderUserId} target=${agentName}:${instanceId}`);
+      return false;
+    }
+  }
+
+  // Upsert the AgentInstallation (heartbeat off — agent-dm and pulled-
+  // in agents are reactive, not scheduled). Idempotent.
+  await AgentInstallation.upsert(agentName, podId, {
+    version: '1.0.0',
+    config: {
+      heartbeat: { enabled: false },
+      autoJoinSource: 'mention-resolution',
+    } as unknown as Map<string, unknown>,
+    scopes: ['context:read', 'summaries:read', 'messages:write'],
+    installedBy: senderUserId,
+    instanceId,
+    displayName: agentName,
+  });
+
+  // Add to pod.members if not already.
+  try {
+    await Pod.updateOne({ _id: podId }, { $addToSet: { members: targetUser._id } });
+  } catch (err) {
+    console.warn('[mention-autojoin] pod.members $addToSet failed:', (err as Error).message);
+  }
+
+  // Drop a system event so humans see what happened.
+  try {
+    await AgentMessageService.postMessage({
+      agentName: 'commonly-bot',
+      podId,
+      content: `↗︎ pulled in @${agentName} via @-mention resolution`,
+      metadata: { systemEventType: 'mention-autojoin', agentName, instanceId },
+    });
+  } catch (err) {
+    console.warn('[mention-autojoin] system event post failed:', (err as Error).message);
+  }
+
+  return true;
+};
+
 const enqueueMentions = async ({
   podId,
   message,
@@ -313,6 +422,57 @@ const enqueueMentions = async ({
         return;
       }
 
+      // §3.4 mention-driven autoJoin — resolve unresolved aliases via
+      // pod.contacts then sender.contacts, then upsert + add to pod and
+      // proceed to enqueue. Behind ENABLE_MENTION_AUTOJOIN so the new
+      // pod type can ship without flipping this in the same release.
+      if (isMentionAutoJoinEnabled()) {
+        try {
+          // Detect whether the resolution came from a pod binding so the
+          // autoJoin auth check can fall back to the admin-binding carve-out.
+          const podRow = await Pod.findById(podId).select('contacts').lean() as { contacts?: Record<string, { agentName?: string; instanceId?: string }> } | null;
+          const fromPodBinding = !!podRow?.contacts?.[normalized]?.agentName;
+          const resolved = await resolveContactAlias(normalized, podId, userId);
+          if (resolved) {
+            const joined = await autoJoinAgentToPod(
+              resolved.agentName,
+              resolved.instanceId,
+              podId,
+              userId,
+              fromPodBinding,
+            );
+            if (joined) {
+              await AgentEventService.enqueue({
+                agentName: resolved.agentName,
+                instanceId: resolved.instanceId,
+                podId,
+                type: eventType,
+                payload: {
+                  messageId: message?._id || message?.id
+                    ? String(message?._id || message?.id)
+                    : undefined,
+                  content,
+                  userId,
+                  username,
+                  mentions: rawMentions,
+                  source,
+                  messageType: message?.messageType || message?.message_type || 'text',
+                  createdAt: message?.createdAt || message?.created_at || new Date(),
+                  thread: message?.thread || null,
+                  autoJoined: true,
+                },
+              });
+              enqueued.push(`${resolved.agentName}:autoJoined`);
+              return;
+            }
+            skipped.push(`${normalized}:auth-refused`);
+            return;
+          }
+        } catch (err) {
+          console.warn('[mention-autojoin] resolution path failed:', (err as Error).message);
+        }
+      }
+
       const agentType = aliasMap.get(normalized);
       if (agentType) {
         const matches = byAgent.get(agentType) || [];
@@ -377,21 +537,33 @@ const enqueueMentions = async ({
   return { enqueued, skipped };
 };
 
+// Pod types that auto-route every message to non-sender members as a
+// chat.mention event. Adding a new private 1:1 type without listing it
+// here silently drops every message; mirrored in
+// `messageController.createMessage` and called out in
+// docs/agents/AGENT_RUNTIME.md "Routing Invariants".
+const DM_POD_TYPES = new Set(['agent-admin', 'agent-room', 'agent-dm']);
+
 /**
- * Auto-enqueue a DM-origin chat.mention event for every user message in an
- * agent-admin pod. Unlike regular mentions, no explicit @mention is required
- * because this is already a 1:1 human <-> agent channel.
+ * Auto-enqueue a DM-origin chat.mention event for every user message in a
+ * DM-shaped pod (agent-admin / agent-room / agent-dm). Unlike regular
+ * mentions, no explicit @mention is required — the pod itself is the
+ * routing primitive. For agent-dm with two bot members, the sender check
+ * below allows bot-to-bot DMs to enqueue against the non-sender.
  */
 const enqueueDmEvent = async ({
   podId, message, userId, username,
 }: EnqueueDmOptions): Promise<EnqueueDmResult> => {
   const pod = await Pod.findById(podId).lean() as Record<string, unknown> | null;
-  if (!pod || (pod.type !== 'agent-admin' && pod.type !== 'agent-room')) {
+  if (!pod || !DM_POD_TYPES.has(pod.type as string)) {
     return { enqueued: false, reason: 'not_dm_pod' };
   }
 
   const sender = await User.findById(userId).select('_id isBot').lean() as { _id: unknown; isBot?: boolean } | null;
-  if (sender?.isBot) {
+  // Bot senders are allowed in agent-dm (the whole point) but still blocked
+  // in agent-admin/agent-room — those are operator-driven 1:1 with one
+  // agent; a bot posting there shouldn't auto-route to itself.
+  if (sender?.isBot && pod.type !== 'agent-dm') {
     return { enqueued: false, reason: 'sender_is_bot' };
   }
 
