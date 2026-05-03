@@ -122,6 +122,10 @@ interface V2PodChatProps {
   inspectorCollapsed?: boolean;
   onToggleInspector?: () => void;
   onOpenMember?: (agentKey: string) => void;
+  // Clicking a file pill in a message opens the inspector to the artifact
+  // detail (preview + download). When omitted the pill falls back to a
+  // signed-URL new-tab so behavior degrades gracefully.
+  onOpenArtifact?: (artifactId: string) => void;
 }
 
 const Icon = ({ d }: { d: string }) => (
@@ -130,7 +134,7 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
-const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember }) => {
+const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenArtifact }) => {
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
   const navigate = useNavigate();
   const api = useV2Api();
@@ -470,6 +474,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
       formData.append('image', file); // legacy multer field name
       formData.append('podId', pod._id);
       const uploaded = await api.post<{
+        _id?: string;
         url?: string;
         fileName?: string;
         originalName?: string;
@@ -483,7 +488,18 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
         return;
       }
       if (uploaded.fileName) {
-        const directive = `[[upload:${uploaded.fileName}|${uploaded.originalName || file.name}|${uploaded.size || file.size}|${uploaded.kind || 'file'}]]`;
+        // Directive shape: fileName | originalName | size | kind | fileId
+        // The 5th field (fileId) lets the bubble click handler open the
+        // inspector to the artifact detail. Older messages have only 4
+        // fields; the parser accepts both shapes.
+        const parts = [
+          uploaded.fileName,
+          uploaded.originalName || file.name,
+          String(uploaded.size || file.size),
+          uploaded.kind || 'file',
+        ];
+        if (uploaded._id) parts.push(uploaded._id);
+        const directive = `[[upload:${parts.join('|')}]]`;
         setDraft((prev) => (prev ? `${prev.replace(/\s+$/, '')} ${directive}` : directive));
       }
     } catch (err) {
@@ -611,6 +627,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   agentDisplayNames={agentDisplayNames}
                   agentAuthorKeys={agentAuthorKeys}
                   onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
+                  onArtifactClick={onOpenArtifact}
                 />
               ))}
               <div ref={messagesEndRef} />

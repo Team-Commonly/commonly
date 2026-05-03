@@ -202,6 +202,12 @@ const handleUpload = async (
 
     res.json({
       url,
+      // _id surfaced so the v2 composer can include it in the
+      // [[upload:fn|on|sz|kind|fileId]] directive — clicking the file pill
+      // then opens the inspector to the artifact detail (instead of just
+      // `window.open`-ing the bytes), which is where preview + download
+      // live now.
+      _id: newFile._id?.toString(),
       fileName,
       originalName: req.file.originalname,
       contentType: req.file.mimetype,

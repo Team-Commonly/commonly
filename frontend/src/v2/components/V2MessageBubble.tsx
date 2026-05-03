@@ -79,16 +79,25 @@ interface V2MessageBubbleProps {
   // Clicking the author avatar / name opens the inspector to that member's
   // detail sub-page. Passed in by V2PodChat; only fires for agent authors.
   onAuthorClick?: (author: string) => void;
+  // Clicking a file pill opens the inspector to the artifact detail (where
+  // preview + download live). When omitted, the pill falls back to opening
+  // the bytes in a new tab via signed URL — works for users who haven't yet
+  // upgraded to the inspector-aware flow but loses the preview-first UX.
+  onArtifactClick?: (artifactId: string) => void;
 }
 
 interface ParsedFile {
   name: string;
   ext: string;
   size?: string;
+  kind?: string;
   // Set when the pill came from an [[upload:...]] directive backed by a real
-  // ObjectStore record. Click → mint signed URL → open. Plain [[file:...]]
-  // pills (used by demo fixtures) leave this undefined and render as static.
+  // ObjectStore record. Click → open inspector artifact detail (or fall back
+  // to a signed-URL new-tab if no inspector handle is wired). Plain
+  // [[file:...]] pills (used by demo fixtures) leave both `fileName` and
+  // `fileId` undefined and render as static.
   fileName?: string;
+  fileId?: string;
 }
 
 interface ParsedReaction {
@@ -122,11 +131,13 @@ const FILE_EXT_COLORS: Record<string, string> = {
 // Message model gains a real `attachments[]` field.
 const FILE_TOKEN_RE = /\[\[file:([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 // Match a real upload directive emitted by the composer / agent SDK after a
-// successful POST /api/uploads:
-//   [[upload:<fileName>|<originalName>|<size>|<kind>]]
-// fileName is the ObjectStore key (e.g. `1714678910-712345678.pdf`); the pill
-// click handler exchanges it for a short-TTL signed URL via getSignedAttachmentUrl.
-const UPLOAD_TOKEN_RE = /\[\[upload:([^\]|]+)\|([^\]|]+)\|([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+// successful POST /api/uploads. Permissive bracket capture; the inner is
+// split on `|` to support both the original 4-field shape and the new
+// 5-field shape that adds the File _id (so click can open the inspector).
+//   [[upload:<fileName>|<originalName>|<size>|<kind>]]                (legacy)
+//   [[upload:<fileName>|<originalName>|<size>|<kind>|<fileId>]]      (current)
+// fileName is the ObjectStore key (e.g. `1714678910-712345678.pdf`).
+const UPLOAD_TOKEN_RE = /\[\[upload:([^\]]+)\]\]/g;
 const formatBytes = (raw: string | number): string => {
   const n = typeof raw === 'number' ? raw : parseInt(raw, 10);
   if (!Number.isFinite(n) || n <= 0) return '';
@@ -145,14 +156,28 @@ const IMAGE_URL_RE = /^https?:\/\/.+\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 
 const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } => {
   const files: ParsedFile[] = [];
-  // Real uploads first — they carry a fileName and resolve to a signed URL on
-  // click. Then static file tokens (demo fixtures, no backend reference).
-  let working = content.replace(UPLOAD_TOKEN_RE, (_match, rawFileName, rawOriginal, rawSize) => {
-    const fileName = String(rawFileName).trim();
-    const name = String(rawOriginal).trim();
+  // Real uploads first — they carry a fileName and (since 2026-05-03) a
+  // fileId that lets click route through the inspector. Permissive split:
+  // any extra fields beyond `fileId` are ignored, so future schema growth
+  // doesn't break old-message render.
+  let working = content.replace(UPLOAD_TOKEN_RE, (_match, rawInner) => {
+    const parts = String(rawInner).split('|').map((p) => p.trim());
+    const fileName = parts[0] || '';
+    const name = parts[1] || fileName;
+    const size = parts[2] || '';
+    const kind = parts[3] || 'file';
+    const fileId = parts[4] || undefined;
+    if (!fileName) return '';
     const dot = name.lastIndexOf('.');
-    const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : 'file';
-    files.push({ fileName, name, ext, size: formatBytes(String(rawSize).trim()) || undefined });
+    const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : (kind || 'file');
+    files.push({
+      fileName,
+      fileId,
+      name,
+      ext,
+      kind,
+      size: formatBytes(size) || undefined,
+    });
     return '';
   });
   working = working.replace(FILE_TOKEN_RE, (_match, rawName, rawSize) => {
@@ -164,6 +189,37 @@ const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } 
   });
   return { stripped: working.trim(), files };
 };
+
+// Human-readable file kind for the pill subline. Examples: PDF, Word doc,
+// Excel sheet, JSON, Image. Falls through to the bare extension upper-cased
+// when nothing matches — beats showing the raw `office` / `archive` / `data`
+// classifier from the backend.
+const KIND_LABELS: Record<string, string> = {
+  pdf: 'PDF',
+  doc: 'Word document',
+  docx: 'Word document',
+  xls: 'Excel spreadsheet',
+  xlsx: 'Excel spreadsheet',
+  ppt: 'PowerPoint',
+  pptx: 'PowerPoint',
+  odt: 'OpenDocument',
+  ods: 'OpenDocument sheet',
+  odp: 'OpenDocument slides',
+  md: 'Markdown',
+  txt: 'Text',
+  csv: 'CSV',
+  json: 'JSON',
+  zip: 'Zip archive',
+  png: 'PNG image',
+  jpg: 'JPEG image',
+  jpeg: 'JPEG image',
+  gif: 'GIF',
+  webp: 'WebP image',
+  svg: 'SVG image',
+};
+const friendlyKindFor = (file: ParsedFile): string => (
+  KIND_LABELS[file.ext] || file.ext.toUpperCase() || 'File'
+);
 
 const parseReactions = (content: string): { stripped: string; reactions: ParsedReaction[] } => {
   const reactions: ParsedReaction[] = [];
@@ -185,8 +241,14 @@ const parseReactions = (content: string): { stripped: string; reactions: ParsedR
   return { stripped, reactions };
 };
 
-const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
+const FilePill: React.FC<{
+  file: ParsedFile;
+  onArtifactClick?: (artifactId: string) => void;
+}> = ({ file, onArtifactClick }) => {
   const color = FILE_EXT_COLORS[file.ext] || '#94a3b8';
+  // Two-line layout matches Slack / Google Chat / Linear: filename owns the
+  // visual weight, the kind + size sit below as muted metadata.
+  const subline = [friendlyKindFor(file), file.size].filter(Boolean).join(' · ');
   const inner = (
     <>
       <span className="v2-msg__file-icon" style={{ background: color }}>
@@ -194,7 +256,7 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
       </span>
       <span className="v2-msg__file-meta">
         <span className="v2-msg__file-name">{file.name}</span>
-        {file.size && <span className="v2-msg__file-size">{file.size}</span>}
+        {subline && <span className="v2-msg__file-sub">{subline}</span>}
       </span>
     </>
   );
@@ -202,11 +264,17 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
   if (!file.fileName) {
     return <span className="v2-msg__file">{inner}</span>;
   }
-  // Real upload — mint signed URL on click. Don't fetch eagerly: a chat with
-  // 50 file messages would mint 50 tokens on render. Mint on demand keeps the
-  // 30/min/user rate limit comfortable.
+  // Real upload — preferred path is to open the inspector to the artifact
+  // detail (where preview + download live). When the host hasn't wired
+  // `onArtifactClick` (or this is an old-format directive without a fileId),
+  // fall back to minting a signed URL and opening in a new tab. Don't fetch
+  // eagerly on render — a chat with 50 file messages would mint 50 tokens.
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
+    if (onArtifactClick && file.fileId) {
+      onArtifactClick(`file-${file.fileId}`);
+      return;
+    }
     const signed = await getSignedAttachmentUrl(`/api/uploads/${file.fileName}`);
     if (signed) {
       window.open(signed, '_blank', 'noopener,noreferrer');
@@ -217,14 +285,14 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
       type="button"
       className="v2-msg__file v2-msg__file--clickable"
       onClick={handleClick}
-      aria-label={`Open ${file.name}`}
+      aria-label={`Preview ${file.name}`}
     >
       {inner}
     </button>
   );
 };
 
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick }) => {
+const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onArtifactClick }) => {
   const { currentUser } = useAuth();
   const rawUsername = message.user?.username || 'Unknown';
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
@@ -299,7 +367,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           )
         )}
         {files.map((file, idx) => (
-          <FilePill key={`${file.name}-${idx}`} file={file} />
+          <FilePill key={`${file.name}-${idx}`} file={file} onArtifactClick={onArtifactClick} />
         ))}
         {reactions.length > 0 && (
           <div className="v2-msg__reactions" aria-label="Reactions">

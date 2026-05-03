@@ -994,14 +994,28 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   // File artifacts open via a signed-URL mint (no plain href to embed). URL
   // artifacts use safeHref. Click handler always preventDefault so we can
   // route both kinds through one button.
-  const handleOpenArtifact = async (item: typeof artifactItems[0]) => {
-    if (item.fileName) {
-      const signed = await getSignedAttachmentUrl(`/api/uploads/${item.fileName}`);
-      if (signed) window.open(signed, '_blank', 'noopener,noreferrer');
-      return;
-    }
+  // URL artifacts: open the external page in a new tab. Files use the
+  // signed-URL flow + `<a download>` so the browser saves the bytes
+  // instead of trying to render them again (the user already has the
+  // inline preview above the actions).
+  const handleOpenUrl = (item: typeof artifactItems[0]) => {
     const href = safeHref(item.url);
     if (href) window.open(href, '_blank', 'noopener,noreferrer');
+  };
+  const handleDownloadFile = async (item: typeof artifactItems[0]) => {
+    if (!item.fileName) return;
+    const signed = await getSignedAttachmentUrl(`/api/uploads/${item.fileName}`);
+    if (!signed) return;
+    // Programmatic <a download> click — works cross-origin because the
+    // signed URL same-origin proxies through cloudflared. The downloaded
+    // filename uses the original upload name (item.title) when known.
+    const a = document.createElement('a');
+    a.href = signed;
+    a.download = item.title || '';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const renderArtifactDetail = (artifactId: string) => {
@@ -1030,13 +1044,23 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         />
         {openable && (
           <div className="v2-inspector__detail-actions">
-            <button
-              type="button"
-              className="v2-inspector__btn v2-inspector__btn--primary"
-              onClick={() => { void handleOpenArtifact(found); }}
-            >
-              Open
-            </button>
+            {found.fileName ? (
+              <button
+                type="button"
+                className="v2-inspector__btn v2-inspector__btn--primary"
+                onClick={() => { void handleDownloadFile(found); }}
+              >
+                Download
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="v2-inspector__btn v2-inspector__btn--primary"
+                onClick={() => handleOpenUrl(found)}
+              >
+                Open in new tab
+              </button>
+            )}
           </div>
         )}
         {found.subtitle && (

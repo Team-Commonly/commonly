@@ -101,6 +101,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         inspectorCollapsed={inspectorCollapsed}
         onToggleInspector={selectedPodId ? toggleInspector : undefined}
         onOpenMember={openInspectorMember}
+        onOpenArtifact={openInspectorArtifact}
       />
       {selectedPodId && !inspectorCollapsed && (
         <V2PodInspector
