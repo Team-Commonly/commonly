@@ -164,7 +164,32 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
     const userIdStr = userId.toString();
     const isUserMember = pod.members.some((memberId) => memberId.toString() === userIdStr);
-    if (!isUserMember) {
+
+    // Posting into an agent-dm without being a formal member: allow
+    // when the §3.7 co-pod-member rule passes, and silently promote
+    // the user into pod.members so they become a first-class
+    // participant (chat history, future inbound mentions, etc. all
+    // work the same as for the original two bots). This is the
+    // "humans can intervene in agent ↔ agent DMs" path — without it,
+    // the agent-dm is read-only for outsiders, which made the
+    // observe-only banner the only way to engage. We instead want
+    // any human who can see it to be able to chime in.
+    if (!isUserMember && pod.type === 'agent-dm') {
+      const canView = await DMService.canViewPod(userId, pod);
+      if (canView) {
+        try {
+          await Pod.updateOne({ _id: podId }, { $addToSet: { members: userId } });
+          // Push to the in-memory pod object so the rest of this handler
+          // (notably the DM-routing branch below) sees the updated set.
+          pod.members.push(userId as unknown as { toString(): string });
+        } catch (joinErr) {
+          console.warn('[messageController] failed to auto-join human into agent-dm:', (joinErr as Error).message);
+        }
+      } else {
+        res.status(401).json({ msg: 'Not authorized to post in this pod' });
+        return;
+      }
+    } else if (!isUserMember) {
       res.status(401).json({ msg: 'Not authorized to post in this pod' });
       return;
     }
