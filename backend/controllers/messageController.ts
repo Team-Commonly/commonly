@@ -164,32 +164,15 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
     const userIdStr = userId.toString();
     const isUserMember = pod.members.some((memberId) => memberId.toString() === userIdStr);
-
-    // Posting into an agent-dm without being a formal member: allow
-    // when the §3.7 co-pod-member rule passes, and silently promote
-    // the user into pod.members so they become a first-class
-    // participant (chat history, future inbound mentions, etc. all
-    // work the same as for the original two bots). This is the
-    // "humans can intervene in agent ↔ agent DMs" path — without it,
-    // the agent-dm is read-only for outsiders, which made the
-    // observe-only banner the only way to engage. We instead want
-    // any human who can see it to be able to chime in.
-    if (!isUserMember && pod.type === 'agent-dm') {
-      const canView = await DMService.canViewPod(userId, pod);
-      if (canView) {
-        try {
-          await Pod.updateOne({ _id: podId }, { $addToSet: { members: userId } });
-          // Push to the in-memory pod object so the rest of this handler
-          // (notably the DM-routing branch below) sees the updated set.
-          pod.members.push(userId as unknown as { toString(): string });
-        } catch (joinErr) {
-          console.warn('[messageController] failed to auto-join human into agent-dm:', (joinErr as Error).message);
-        }
-      } else {
-        res.status(401).json({ msg: 'Not authorized to post in this pod' });
-        return;
-      }
-    } else if (!isUserMember) {
+    if (!isUserMember) {
+      // agent-dm pods are intentionally write-restricted to formal
+      // members. Read access fans out per §3.7 (canViewPod), but
+      // posting does NOT — the agent ↔ agent space stays clean and
+      // humans intervene via the team pod they share with the agents.
+      // This pairs with the bot-loop guard in agentMentionService:
+      // once N consecutive bot turns trip, the conversation stops
+      // until a human pulls one of the agents back via @mention in
+      // a co-pod, where the autoJoin path resumes flow.
       res.status(401).json({ msg: 'Not authorized to post in this pod' });
       return;
     }

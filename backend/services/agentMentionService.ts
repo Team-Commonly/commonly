@@ -571,36 +571,51 @@ const enqueueDmEvent = async ({
     return { enqueued: false, reason: 'sender_is_bot' };
   }
 
-  // Bot-loop guard for agent-dm rooms. Without this, agent A and agent B
-  // can ping-pong forever (every message auto-routes a chat.mention,
-  // each reply does the same, neither stops). When a bot posts and the
-  // last `MAX_CONSECUTIVE_BOT_TURNS` messages are also from bots —
-  // i.e. there's been no human turn in the recent window — refuse to
-  // enqueue. A human posting clears the streak and conversation can
-  // resume.
+  // Bot-loop guard for agent-dm rooms. Without this, agent A and agent
+  // B can ping-pong forever (every message auto-routes a chat.mention,
+  // each reply does the same, neither stops — and humans aren't members
+  // so they can't post a turn to break the streak themselves). The
+  // guard refuses to enqueue when:
+  //   - the sender is a bot, AND
+  //   - the last MAX_CONSECUTIVE_BOT_TURNS messages in this pod are ALL
+  //     from bots, AND
+  //   - those messages are within the recent activity window (so a
+  //     dormant DM picking back up tomorrow doesn't trip on yesterday's
+  //     final exchange).
+  // To resume after a trip, a human can @mention either bot in a pod
+  // they share — that fires a chat.mention OUTSIDE agent-dm, and the
+  // agent can choose to re-engage in the dm at its own discretion.
   const MAX_CONSECUTIVE_BOT_TURNS = 8;
+  const ACTIVITY_WINDOW_MS = 30 * 60 * 1000; // 30 min
   if (sender?.isBot && pod.type === 'agent-dm') {
     try {
       // eslint-disable-next-line global-require
       const PGMessageLocal = require('../models/pg/Message');
       const recent = PGMessageLocal && typeof PGMessageLocal.findByPodId === 'function'
-        ? (await PGMessageLocal.findByPodId(podId, MAX_CONSECUTIVE_BOT_TURNS)) as Array<{ user_id?: unknown }>
+        ? (await PGMessageLocal.findByPodId(podId, MAX_CONSECUTIVE_BOT_TURNS)) as Array<{ user_id?: unknown; created_at?: unknown }>
         : null;
       if (recent && recent.length >= MAX_CONSECUTIVE_BOT_TURNS) {
-        const recentSenderIds = recent
-          .map((m) => String(m?.user_id || ''))
-          .filter(Boolean);
-        const uniqueSenders = Array.from(new Set(recentSenderIds));
-        if (uniqueSenders.length > 0) {
-          const recentBots = await User.find({
-            _id: { $in: uniqueSenders },
-            isBot: true,
-          }).select('_id').lean() as Array<{ _id: unknown }>;
-          const botIds = new Set(recentBots.map((u) => String(u._id)));
-          const allBots = recentSenderIds.every((id) => botIds.has(id));
-          if (allBots) {
-            console.warn(`[agent-dm] bot-loop guard tripped — ${MAX_CONSECUTIVE_BOT_TURNS} consecutive bot turns in pod=${podId}, refusing enqueue`);
-            return { enqueued: false, reason: 'bot_loop_guard' };
+        const cutoff = Date.now() - ACTIVITY_WINDOW_MS;
+        const inWindow = recent.every((m) => {
+          const t = new Date(String(m?.created_at || '')).getTime();
+          return Number.isFinite(t) && t >= cutoff;
+        });
+        if (inWindow) {
+          const recentSenderIds = recent
+            .map((m) => String(m?.user_id || ''))
+            .filter(Boolean);
+          const uniqueSenders = Array.from(new Set(recentSenderIds));
+          if (uniqueSenders.length > 0) {
+            const recentBots = await User.find({
+              _id: { $in: uniqueSenders },
+              isBot: true,
+            }).select('_id').lean() as Array<{ _id: unknown }>;
+            const botIds = new Set(recentBots.map((u) => String(u._id)));
+            const allBots = recentSenderIds.every((id) => botIds.has(id));
+            if (allBots) {
+              console.warn(`[agent-dm] bot-loop guard tripped — ${MAX_CONSECUTIVE_BOT_TURNS} consecutive bot turns in pod=${podId} within ${ACTIVITY_WINDOW_MS / 60000}min, refusing enqueue`);
+              return { enqueued: false, reason: 'bot_loop_guard' };
+            }
           }
         }
       }
