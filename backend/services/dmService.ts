@@ -148,8 +148,8 @@ class DMService {
     const agentUser = await User.findById(agentId)
       .select('username botMetadata')
       .lean<{ username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null>();
-    const fallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
-    const label = resolveAgentDisplayLabel(agentUser, fallback);
+    const labelFallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
+    const label = resolveAgentDisplayLabel(agentUser, labelFallback);
     const dmPod = new Pod({
       name: `DM: ${label}`,
       description: `Debug channel for ${label}`,
