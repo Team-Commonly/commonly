@@ -76,6 +76,22 @@ describe('canReadAttachment', () => {
     await expect(svc.canReadAttachment('pic.png', 'user-1')).resolves.toBe(true);
   });
 
+  it('allows a member of the file\'s pod (File.podId scope)', async () => {
+    const svc = load({
+      File: { findByFileName: jest.fn().mockResolvedValue({ uploadedBy: 'someone-else', podId: 'pod-1' }) },
+      Pod: { findOne: jest.fn().mockReturnValue(stubFindOne({ _id: 'pod-1' })) },
+    });
+    await expect(svc.canReadAttachment('brief.pdf', 'user-1')).resolves.toBe(true);
+  });
+
+  it('denies a non-member when the file is pod-scoped and no other reference grants access', async () => {
+    const svc = load({
+      File: { findByFileName: jest.fn().mockResolvedValue({ uploadedBy: 'someone-else', podId: 'pod-1' }) },
+      Pod: { findOne: jest.fn().mockReturnValue(stubFindOne(null)) },
+    });
+    await expect(svc.canReadAttachment('brief.pdf', 'user-1')).resolves.toBe(false);
+  });
+
   it("allows any authed viewer when the file is someone's profile picture (relative URL)", async () => {
     const svc = load({
       User: { findOne: jest.fn().mockReturnValue(stubFindOne({ _id: 'any' })) },

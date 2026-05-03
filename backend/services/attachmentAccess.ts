@@ -107,6 +107,18 @@ export async function canReadAttachment(
   const fileDoc = await File.findByFileName(fileName);
   if (fileDoc?.uploadedBy && String(fileDoc.uploadedBy) === String(userId)) return true;
 
+  // Pod-scoped read grant: a file uploaded into a pod (File.podId set) is
+  // visible to that pod's members. This is the cheap path for chat / inspector
+  // file artifacts — `canReadAttachment` doesn't have to grep the v2 upload
+  // directive `[[upload:<fileName>|…]]` out of message bodies because the
+  // pod scope is already declared at upload time.
+  if (fileDoc?.podId) {
+    const member = await Pod.findOne({ _id: fileDoc.podId, members: userId })
+      .select('_id')
+      .lean();
+    if (member) return true;
+  }
+
   const urlFragment = `/api/uploads/${fileName}`;
   const urlRegex = escapeRegex(urlFragment);
 
