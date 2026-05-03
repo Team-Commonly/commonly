@@ -784,16 +784,33 @@ router.post('/agent-dm', agentRuntimeAuth, phase4RateLimit, async (req: any, res
       // Resolve via the identity service so the User row is in canonical
       // shape (handles legacy bot rows that pre-date botMetadata).
       targetUser = await AgentIdentityService.getOrCreateAgentUser(agentName, { instanceId });
-      targetMeta = { agentName, instanceId, displayName: agentName, isBot: true };
+      // displayName resolution prefers the curated `botMetadata.displayName`
+      // ("Pixel", "Strategist (Aria)") over the runtime-leaning agentName.
+      // See `resolveAgentDisplayLabel` — same fallback every agent-display
+      // surface should use to avoid "openclaw ↔ openclaw" pod names.
+      targetMeta = {
+        agentName,
+        instanceId,
+        displayName: AgentIdentityService.resolveAgentDisplayLabel(
+          targetUser as { username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null,
+          agentName,
+        ),
+        isBot: true,
+      };
     } else if (target.userId) {
       const lookup = await User.findById(String(target.userId)).select('_id isBot username botMetadata').lean();
       if (!lookup) return res.status(404).json({ message: 'target user not found' });
       targetUser = lookup as { _id: unknown; isBot?: boolean; username?: string; botMetadata?: { agentName?: string; instanceId?: string } };
+      // For human targets `botMetadata` is empty — resolveAgentDisplayLabel
+      // falls through to `username`, the right answer.
       targetMeta = {
         isBot: !!lookup.isBot,
         agentName: lookup.botMetadata?.agentName || undefined,
         instanceId: lookup.botMetadata?.instanceId || 'default',
-        displayName: lookup.botMetadata?.agentName || lookup.username,
+        displayName: AgentIdentityService.resolveAgentDisplayLabel(
+          lookup,
+          lookup.username,
+        ),
       };
     } else if (target.alias) {
       // §3.2: resolve via caller's own contacts. Pod-level binding takes
@@ -818,7 +835,15 @@ router.post('/agent-dm', agentRuntimeAuth, phase4RateLimit, async (req: any, res
         return res.status(404).json({ message: `No contact bound to alias "${alias}"`, alias });
       }
       targetUser = await AgentIdentityService.getOrCreateAgentUser(bound.agentName, { instanceId: bound.instanceId });
-      targetMeta = { agentName: bound.agentName, instanceId: bound.instanceId, displayName: bound.agentName, isBot: true };
+      targetMeta = {
+        agentName: bound.agentName,
+        instanceId: bound.instanceId,
+        displayName: AgentIdentityService.resolveAgentDisplayLabel(
+          targetUser as { username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null,
+          bound.agentName,
+        ),
+        isBot: true,
+      };
     } else {
       return res.status(400).json({ message: 'target must specify agentName, userId, or alias' });
     }
@@ -855,7 +880,13 @@ router.post('/agent-dm', agentRuntimeAuth, phase4RateLimit, async (req: any, res
       agentName: callerAgentUser.botMetadata?.agentName || (req.agentInstallation?.agentName as string),
       instanceId: callerAgentUser.botMetadata?.instanceId || (req.agentInstallation?.instanceId as string) || 'default',
       isBot: true,
-      displayName: callerAgentUser.botMetadata?.agentName || callerAgentUser.username,
+      // resolveAgentDisplayLabel prefers `botMetadata.displayName`, then the
+      // identity-bearing instanceId, then username — never the runtime-leaning
+      // `botMetadata.agentName` ('openclaw' for OpenClaw-driven agents).
+      displayName: AgentIdentityService.resolveAgentDisplayLabel(
+        callerAgentUser as { username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null,
+        callerAgentUser.username,
+      ),
     };
     const peerMeta = {
       userId: targetUser._id,
