@@ -1317,6 +1317,33 @@ const applyOpenClawContextDefaults = (config: any) => {
   }
 };
 
+// Global concurrency for agent sessions in the gateway. Each session task
+// (heartbeat, chat.mention, etc.) acquires a slot in `lane=main` before
+// the LLM call runs. With clawdbot's default of 4, one degraded LLM hour
+// (slow Vertex / OpenRouter retries) produces queueAhead=20+ and cascading
+// 200s+ lane waits — the bottleneck observed during the agent-dm smoke
+// test at 23:39Z. We're not LLM-rate-limit-bound (LiteLLM has its own
+// rotator + per-key throttles), so a higher session-level concurrency is
+// fine. 16 lets all ~20 active dev agents process their heartbeats in
+// parallel; on healthy LLM each session is short, so 16 in flight is well
+// under what the proxy can absorb.
+const applyOpenClawConcurrencyDefaults = (config: any) => {
+  config.agents = config.agents || {};
+  config.agents.defaults = config.agents.defaults || {};
+  if (typeof config.agents.defaults.maxConcurrent !== 'number'
+    || config.agents.defaults.maxConcurrent < 16) {
+    config.agents.defaults.maxConcurrent = 16;
+  }
+  config.agents.defaults.subagents = config.agents.defaults.subagents || {};
+  if (typeof config.agents.defaults.subagents.maxConcurrent !== 'number'
+    || config.agents.defaults.subagents.maxConcurrent < 4) {
+    // Subagents are nested calls inside a parent agent's task — keeping
+    // these tighter (default is 4) avoids fan-out blowups when a long
+    // task spawns many sub-tasks.
+    config.agents.defaults.subagents.maxConcurrent = 4;
+  }
+};
+
 // Direct Gemini provider fallbacks (google/ prefix, not via OpenRouter).
 // Requires a valid GEMINI_API_KEY in the gateway's api-keys secret.
 const GEMINI_FALLBACKS = [
@@ -2129,6 +2156,7 @@ const provisionOpenClawAccount = async ({
   applyOpenClawWebToolDefaults(config);
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
+  applyOpenClawConcurrencyDefaults(config);
   applyOpenClawAcpxPluginDefaults(config);
   const { codexCredentials, devAgentIds, devAgentModel } = await applyOpenClawModelDefaults(config);
 

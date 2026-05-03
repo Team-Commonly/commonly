@@ -911,6 +911,22 @@ const applyOpenClawContextDefaults = (config: any) => {
   }
 };
 
+// See agentProvisionerServiceK8s.applyOpenClawConcurrencyDefaults for
+// rationale. Mirrored here for the legacy non-K8s provisioner path.
+const applyOpenClawConcurrencyDefaults = (config: any) => {
+  config.agents = config.agents || {};
+  config.agents.defaults = config.agents.defaults || {};
+  if (typeof config.agents.defaults.maxConcurrent !== 'number'
+    || config.agents.defaults.maxConcurrent < 16) {
+    config.agents.defaults.maxConcurrent = 16;
+  }
+  config.agents.defaults.subagents = config.agents.defaults.subagents || {};
+  if (typeof config.agents.defaults.subagents.maxConcurrent !== 'number'
+    || config.agents.defaults.subagents.maxConcurrent < 4) {
+    config.agents.defaults.subagents.maxConcurrent = 4;
+  }
+};
+
 const applyOpenClawModelDefaults = async (config: any) => {
   config.agents = config.agents || {};
   config.agents.defaults = config.agents.defaults || {};
@@ -1006,6 +1022,7 @@ const provisionOpenClawAccount = async ({
   applyOpenClawWebToolDefaults(config);
   applyOpenClawMemoryDefaults(config);
   applyOpenClawContextDefaults(config);
+  applyOpenClawConcurrencyDefaults(config);
   await applyOpenClawModelDefaults(config);
 
   config.agents = config.agents || {};
