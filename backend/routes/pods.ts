@@ -198,11 +198,16 @@ router.post('/external-link', auth, upload.single('qrCode'), async (req: AuthReq
 router.delete('/external-link/:id', auth, async (req: AuthReq, res: Res) => {
   try {
     const linkId = req.params?.id;
-    const externalLink = await ExternalLink.findById(linkId) as { podId?: unknown; qrCodePath?: string } | null;
+    const externalLink = await ExternalLink.findById(linkId) as { podId?: unknown; qrCodePath?: string; createdBy?: { toString: () => string } } | null;
     if (!externalLink) return res.status(404).json({ message: 'External link not found' });
     const pod = await Pod.findById(externalLink.podId) as { createdBy?: { toString: () => string }; externalLinks?: Array<{ toString: () => string }>; save: () => Promise<void> } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
-    if (pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Only pod owner can delete external links' });
+    // Pod owner OR the user who added the link can delete it. Members at
+    // large can't — keeps a malicious pod-mate from nuking shared artifacts.
+    const userId = req.user?.id;
+    const isOwner = pod.createdBy?.toString() === userId;
+    const isCreator = externalLink.createdBy?.toString() === userId;
+    if (!isOwner && !isCreator) return res.status(403).json({ message: 'Only pod owner or link creator can delete' });
     pod.externalLinks = pod.externalLinks?.filter((id) => id.toString() !== linkId);
     await pod.save();
     if (externalLink.qrCodePath && fs.existsSync(externalLink.qrCodePath)) fs.unlinkSync(externalLink.qrCodePath);
@@ -316,6 +321,42 @@ router.get('/:podId/files', auth, async (req: AuthReq, res: Res) => {
     return res.status(200).json(files);
   } catch (error) {
     console.error('Error fetching pod files:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Delete a pod-scoped file. Permitted: the pod owner OR the original
+// uploader. The route also deletes the bytes from the configured ObjectStore
+// driver, mirroring the lifecycle the legacy /external-link/:id delete uses
+// for QR-code blobs. Failures to delete from the driver are logged but don't
+// block the metadata delete — orphaned bytes can be GC'd later (ADR-002
+// Phase 4 nightly sweep).
+router.delete('/:podId/files/:fileId', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { podId, fileId } = req.params || {};
+    if (!fileId || !/^[A-Fa-f0-9]{24}$/.test(fileId)) return res.status(400).json({ message: 'Invalid fileId' });
+    const fileDoc = await File.findById(fileId) as { _id: unknown; fileName?: string; podId?: { toString: () => string }; uploadedBy?: { toString: () => string }; deleteOne?: () => Promise<void> } | null;
+    if (!fileDoc) return res.status(404).json({ message: 'File not found' });
+    if (fileDoc.podId?.toString() !== podId) return res.status(404).json({ message: 'File not in this pod' });
+    const pod = await Pod.findById(podId) as { createdBy?: { toString: () => string } } | null;
+    if (!pod) return res.status(404).json({ message: 'Pod not found' });
+    const userId = req.user?.id;
+    const isOwner = pod.createdBy?.toString() === userId;
+    const isUploader = fileDoc.uploadedBy?.toString() === userId;
+    if (!isOwner && !isUploader) return res.status(403).json({ message: 'Only pod owner or file uploader can delete' });
+    if (fileDoc.fileName) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { getObjectStore } = require('../services/objectStore') as { getObjectStore: () => { delete: (key: string) => Promise<void> } };
+        await getObjectStore().delete(fileDoc.fileName);
+      } catch (driverErr) {
+        console.warn('ObjectStore delete failed (will be GC\'d):', (driverErr as Error).message);
+      }
+    }
+    await File.deleteOne({ _id: fileDoc._id });
+    return res.status(200).json({ message: 'File deleted' });
+  } catch (error) {
+    console.error('Error deleting pod file:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });

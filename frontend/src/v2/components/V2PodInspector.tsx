@@ -51,6 +51,7 @@ interface ExternalLinkItem {
   name?: string;
   type?: string;
   url?: string;
+  createdBy?: { _id?: string; username?: string } | string;
 }
 
 interface PodFileItem {
@@ -60,7 +61,14 @@ interface PodFileItem {
   contentType?: string;
   size?: number;
   createdAt?: string;
+  uploadedBy?: { _id?: string; username?: string } | string;
 }
+
+const itemOwnerId = (raw: ExternalLinkItem['createdBy'] | PodFileItem['uploadedBy']): string | undefined => {
+  if (!raw) return undefined;
+  if (typeof raw === 'string') return raw;
+  return raw._id;
+};
 
 // Per-type label for the Artifacts row icon (1-2 char glyph) and the
 // human-readable kind shown under the title. Keep aligned with the enum in
@@ -670,11 +678,28 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   // sits at the top — matches the user's expectation that the row they just
   // pasted is visible without scrolling. Within each source, server returns
   // newest-first.
-  const artifactItems: Array<{ id: string; kind: string; title: string; subtitle?: string; url?: string; fileName?: string }> = [
+  const artifactItems: Array<{
+    id: string;
+    kind: string;
+    title: string;
+    subtitle?: string;
+    url?: string;
+    fileName?: string;
+    // Identifiers for the underlying record (link _id or file _id) and the
+    // user who created it. Lets renderArtifactDetail decide whether the
+    // current viewer can delete (pod owner OR creator) and which DELETE
+    // endpoint to hit. Announcements aren't deletable from this surface yet
+    // — they live under a separate admin flow.
+    sourceKind?: 'announcement' | 'link' | 'file';
+    sourceId?: string;
+    createdById?: string;
+  }> = [
     ...announcements.map((a) => ({
       id: `ann-${a._id}`,
       kind: 'Announcement',
       title: a.title || a.content || 'Untitled announcement',
+      sourceKind: 'announcement' as const,
+      sourceId: a._id,
     })),
     ...externalLinks.map((l) => ({
       id: `link-${l._id}`,
@@ -682,6 +707,9 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
       title: l.name || l.url || 'External link',
       subtitle: l.url,
       url: l.url,
+      sourceKind: 'link' as const,
+      sourceId: l._id,
+      createdById: itemOwnerId(l.createdBy),
     })),
     ...podFiles.map((f) => ({
       id: `file-${f._id}`,
@@ -691,6 +719,9 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
       // No `url` here — files require a signed-URL mint. The detail view's
       // Open button calls getSignedAttachmentUrl(`/api/uploads/${fileName}`).
       fileName: f.fileName,
+      sourceKind: 'file' as const,
+      sourceId: f._id,
+      createdById: itemOwnerId(f.uploadedBy),
     })),
   ];
 
@@ -1004,6 +1035,43 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     if (href) window.open(href, '_blank', 'noopener,noreferrer');
   };
 
+  // Pod owner OR original creator/uploader can delete an artifact. Backend
+  // enforces this independently — frontend gating is just to avoid showing
+  // a button that would 403. Announcements not yet deletable from here.
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const canDeleteItem = (item: typeof artifactItems[0]): boolean => {
+    if (!item.sourceKind || item.sourceKind === 'announcement') return false;
+    const me = currentUser?._id;
+    if (!me) return false;
+    if (ownerId && String(ownerId) === String(me)) return true;
+    if (item.createdById && String(item.createdById) === String(me)) return true;
+    return false;
+  };
+  const handleDeleteArtifact = async (item: typeof artifactItems[0]) => {
+    if (!item.sourceId || !item.sourceKind || !pod) return;
+    const label = item.title || 'this item';
+    if (!window.confirm(`Delete ${label}? This can't be undone.`)) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      if (item.sourceKind === 'link') {
+        await api.del(`/api/pods/external-link/${item.sourceId}`);
+        setExternalLinks((prev) => prev.filter((l) => l._id !== item.sourceId));
+      } else if (item.sourceKind === 'file') {
+        await api.del(`/api/pods/${pod._id}/files/${item.sourceId}`);
+        setPodFiles((prev) => prev.filter((f) => f._id !== item.sourceId));
+      }
+      // Pop back to overview now that this artifact no longer exists.
+      onBack();
+    } catch (err) {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      setDeleteError(e.response?.data?.message || e.message || 'Could not delete.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const renderArtifactDetail = (artifactId: string) => {
     const found = artifactItems.find((a) => a.id === artifactId);
     if (!found) {
@@ -1028,16 +1096,31 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             title: found.title,
           }}
         />
-        {openable && (
-          <div className="v2-inspector__detail-actions">
-            <button
-              type="button"
-              className="v2-inspector__btn v2-inspector__btn--primary"
-              onClick={() => { void handleOpenArtifact(found); }}
-            >
-              Open
-            </button>
+        {(openable || canDeleteItem(found)) && (
+          <div className="v2-inspector__detail-actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {openable && (
+              <button
+                type="button"
+                className="v2-inspector__btn v2-inspector__btn--primary"
+                onClick={() => { void handleOpenArtifact(found); }}
+              >
+                Open
+              </button>
+            )}
+            {canDeleteItem(found) && (
+              <button
+                type="button"
+                className="v2-inspector__link v2-inspector__link--danger"
+                onClick={() => { void handleDeleteArtifact(found); }}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
           </div>
+        )}
+        {deleteError && (
+          <div style={{ fontSize: 11, color: 'var(--v2-danger)', padding: '4px 0' }}>{deleteError}</div>
         )}
         {found.subtitle && (
           <div className="v2-inspector__detail-card">
