@@ -443,8 +443,19 @@ class DMService {
     });
     if (existing) return existing;
 
-    const aLabel = memberA.displayName || memberA.agentName || 'a';
-    const bLabel = memberB.displayName || memberB.agentName || 'b';
+    // Defense-in-depth: if a caller forgot to populate `displayName` we
+    // fall through to the instanceId (identity-bearing) before agentName
+    // (runtime-leaning). Avoids "openclaw ↔ openclaw" when callerMeta /
+    // peerMeta are partially built.
+    const labelOf = (m: { displayName?: string; instanceId?: string; agentName?: string }, fallback: string): string => {
+      const d = m.displayName?.trim();
+      if (d) return d;
+      const i = m.instanceId?.trim();
+      if (i && i !== 'default') return i;
+      return m.agentName?.trim() || fallback;
+    };
+    const aLabel = labelOf(memberA, 'a');
+    const bLabel = labelOf(memberB, 'b');
     const name = `${aLabel} ↔ ${bLabel}`;
     const description = memberA.isBot && memberB.isBot
       ? `Agent-to-agent DM — ${aLabel} and ${bLabel}`
