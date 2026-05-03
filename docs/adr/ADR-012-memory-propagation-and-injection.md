@@ -82,13 +82,13 @@ Storing structured entries (not a markdown blob inside `content`) gives us:
 - **Typed reads** for the digest builder — no string slicing.
 - **Future LLM condensation** can rewrite `takeaway` per-entry without touching the rest of the envelope.
 
-ADR-003 §"Tool surface" gets one row added (Phase 4 of this ADR; see §Phasing):
+ADR-003 §"Tool surface" gets one row added in **Phase 1** (the lazy-read fallback in §3 below depends on this — drivers that don't surface `memoryDigest` rely on agents reading `system_exchanges` via tool, so the section enum has to accept it from day one):
 
 | Tool | Purpose |
 |---|---|
 | `commonly_read_my_memory(section: 'system_exchanges')` | Returns the structured entries. Read-only; agent cannot write. |
 
-The existing `commonly_save_my_memory(section, content, ...)` tool **rejects** writes to `system_exchanges` at the API layer — section name is not in the writable enum.
+The existing `commonly_save_my_memory(section, content, ...)` tool **rejects** writes to `system_exchanges` at the API layer. Today's `agentMemoryService` does not yet enforce a writable-section allow-list — Phase 1 adds it. The allow-list will explicitly include the agent-writable sections (`long_term`, `dedup_state`, `shared`, `daily`, `relationships`, `soul`, `runtime_meta`) and exclude `system_exchanges`. Writes addressing `system_exchanges` return 403 with reason `'system_exchanges_is_read_only'`.
 
 ### 2. Push-based injection in CAP event payloads
 
@@ -107,8 +107,10 @@ The runtime sees memory changes in the payload it was already going to read. No 
 Backend tracks `AgentMemory.lastSeenRevision: number`. Bumping is **idempotent by construction** (see §Acknowledgement semantics below). `memoryDigest` returns entries with `revision > lastSeenRevision`, capped at 1.5KB total serialized JSON.
 
 Sizing notes:
-- Default cap: **1.5KB serialized digest, OR 5 entries, whichever hits first**. Byte cap dominates for noisy bursts; entry cap dominates for steady state.
-- Steady-state cost: ~600 tokens of payload per event. Acceptable on heartbeats; gated on `memoryRevision > lastSeenRevision` to avoid re-emitting unchanged digests on `chat.mention` traffic.
+- Per-entry footprint: `ts` (~24B) + `kind` (~25B) + `surfacePodId` (24B) + `surfaceLabel` (~30B) + `peers[]` (~40B) + `takeaway` (≤280B) + JSON overhead ≈ **420–450B per entry** with a worst-case `takeaway`.
+- Default cap: **2.5KB serialized digest, hard cap on bytes** (entry count is *not* a cap — at the per-entry footprint above, the byte cap admits up to 5 worst-case entries or 7-8 typical-case entries). Earlier drafts also cited "5 entries" — that was inconsistent with the byte cap; dropped.
+- Cost on a fresh delivery: up to ~750 tokens at the cap. Most events carry far less (the digest is delta-only — empty when `memoryRevision === lastSeenRevision`, which is the steady state once the agent has caught up).
+- Emission is gated on `memoryRevision > lastSeenRevision` so chat.mention traffic in a busy pod doesn't re-emit unchanged digests.
 
 ### 3. Acknowledgement semantics — the real spec
 
@@ -121,9 +123,29 @@ The reviewer caught that today's `agentEventService.acknowledge` has no idempote
 {
   ...,
   status: 'pending' | 'delivered' | 'acked',     // existing field; new terminal state
-  memoryRevisionAtDelivery: number | null,       // captured at fetch-time
+  memoryRevisionAtDelivery: number | null,       // captured + persisted on the doc at fetch-time (see below)
 }
 ```
+
+**Fetch-time capture is a doc mutation, not a derived response field.** Today's polling path (`agentEventService.list()` at `agentEventService.ts:796`) is a non-mutating `find` over `status: 'pending'`. To make `memoryRevisionAtDelivery` survive across the fetch→ack window without trusting the client to echo it, Phase 2 converts the polling path to atomic mutate-on-claim:
+
+```ts
+// Pseudocode — the actual list endpoint loops this for the batch
+const claimed = await AgentEvent.findOneAndUpdate(
+  { agentName, instanceId, status: 'pending' },
+  {
+    $set: {
+      status: 'delivered',
+      memoryRevisionAtDelivery: currentRevision,  // read from AgentMemory in the same tick
+    },
+  },
+  { new: true, sort: { createdAt: 1 } },
+);
+```
+
+Two concurrent pollers race the same event: only one wins the `pending → delivered` transition, and the winner is the one whose `memoryRevisionAtDelivery` lands on the doc. The loser sees `null` from `findOneAndUpdate` and moves to the next event. This matches the existing at-most-once delivery contract (ADR-004 §event-model).
+
+Alternative considered + rejected: keep `list` non-mutating, return `memoryRevisionAtDelivery` only in the response payload, require the agent to echo it on ack. Rejected because the ack body becomes a tampering surface (agent could echo a fake-high revision to suppress future digest entries) and validating against current memory at ack time defeats the purpose. Doc-mutation closes the loop.
 
 `agentEventService.acknowledge(eventId, ...)` is **status-gated**:
 ```ts
@@ -156,15 +178,34 @@ This replaces the v1 ADR's claim that ack idempotency was already implemented.
 
 ### 4. Triggers — what gets written when
 
-| Trigger | Source | Recipients | Entry shape |
+| Trigger | Source | Recipients | `takeaway` derivation |
 |---|---|---|---|
-| `agent-dm-conclusion` | `agentMessageService.postMessage` when `content === 'NO_REPLY'` in an `agent-dm` pod | both peers | `kind: 'agent-dm-conclusion'`, takeaway = last non-NO_REPLY content from sender (truncated 280) |
-| `agent-dm-loop-trip` | `agentMentionService.enqueueDmEvent` when `bot_loop_guard` returns | both peers | `kind: 'agent-dm-loop-trip'`, takeaway = `'8 consecutive bot turns within 30 min'` |
-| `task-completed` | `tasksApi` complete handler | task assignee | `kind: 'task-completed'`, takeaway = `<taskTitle> → <prUrl|status>` |
+| `agent-dm-conclusion` | `agentMessageService.postMessage` when `content === 'NO_REPLY'` in an `agent-dm` pod | both peers | The **immediately-preceding** non-NO_REPLY message from the same sender, head-truncated to 280 chars (with `…` suffix on truncation). No multi-turn condensation in v1 — that's a v2 LLM-condense step. |
+| `agent-dm-loop-trip` | `agentMentionService.enqueueDmEvent` when `bot_loop_guard` returns | both peers | Literal: `'8 consecutive bot turns within 30 min — guard tripped'` |
+| `task-completed` | `tasksApi` complete handler | task assignee | Literal format: `<taskTitle> → <prUrl-or-status>`, head-truncated to 280 chars on the title side. |
 
 **Cross-pod-mention is dropped as a v1 trigger** (per reviewer §Important). Recording every mention in a multi-agent team pod fills the entry cap with structural noise faster than real DM exchanges. v1.x will reconsider it with a strict filter (only when the *target* agent is NOT in the source pod, i.e. genuinely new context). v1 ships without it.
 
-Writes are append-only via `AgentMemoryService.appendSystemExchange(agent, instance, entry)`. Cap enforcement is on write — when adding entry N+1 past the cap, drop the oldest.
+Writes are append-only via `AgentMemoryService.appendSystemExchange(agent, instance, entry)`. Cap enforcement is on write, expressed as a single atomic Mongo update so two concurrent triggers (e.g. a DM-conclusion landing while a `task-completed` fires for the same agent) don't lost-update each other under naïve read-modify-write:
+
+```ts
+await AgentMemory.updateOne(
+  { agentName, instanceId },
+  {
+    $push: {
+      'sections.system_exchanges.entries': {
+        $each: [entry],
+        $position: 0,         // most-recent-first invariant
+        $slice: 50,           // hard cap, oldest evicted
+      },
+    },
+    $inc: { revision: 1 },    // monotone bump consumed by memoryDigest
+    $currentDate: { 'sections.system_exchanges.updatedAt': true },
+  },
+);
+```
+
+Single-document atomicity guarantees the `$push` + `$slice` + `$inc` triple lands as one operation; concurrent `appendSystemExchange` calls serialize at the doc level rather than racing through application code.
 
 ### 5. Eviction policy
 
