@@ -308,6 +308,35 @@ class DMService {
       console.error('Failed to sync agent-room pod to PostgreSQL:', (pgError as Error).message);
     }
 
+    // Create the AgentInstallation so the agent can post back into the pod.
+    // pod.members membership routes incoming events TO the agent, but
+    // outbound POST /messages is gated by `agentRuntimeAuth` against
+    // AgentInstallation — agents in pod.members without an install get
+    // 403, the gateway swallows it, and replies vanish silently. Memory
+    // `agent-runtime` documents this: "AgentInstallation required for
+    // posting." Heartbeat:enabled=false because agent-rooms are reactive
+    // (they fire on user message, not on a schedule).
+    if (agentName) {
+      try {
+        await AgentInstallation.install(agentName.toLowerCase(), roomPod._id, {
+          version: '1.0.0',
+          config: {
+            heartbeat: { enabled: false },
+            autoJoinSource: 'agent-room-create',
+          } as unknown as Map<string, unknown>,
+          scopes: ['context:read', 'summaries:read', 'messages:write'],
+          installedBy: requestingUserId as unknown as import('mongoose').Types.ObjectId,
+          instanceId: instanceId || 'default',
+          displayName: `${label}${instanceSuffix}`,
+        });
+      } catch (installErr) {
+        console.error(
+          `[dm-service] AgentInstallation.install failed for agent-room pod=${roomPod._id}:`,
+          (installErr as Error).message,
+        );
+      }
+    }
+
     console.log(
       `[dm-service] Created agent-room pod=${roomPod._id}`
       + ` agent=${label} user=${userId}`,
