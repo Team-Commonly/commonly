@@ -6,6 +6,7 @@ import { initialsFor } from '../utils/avatars';
 import { useV2Pinned } from '../hooks/useV2Pinned';
 import { useV2Unread } from '../hooks/useV2Unread';
 import { useSocket } from '../../context/SocketContext';
+import { useAuth } from '../../context/AuthContext';
 
 type Filter = 'all' | 'team' | 'private';
 
@@ -67,7 +68,24 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
   const { pods, loading, error, createPod, patchLastMessage } = podsState || ownPodsState;
   const { pinned, toggle: togglePin, isPinned } = useV2Pinned();
   const { socket, connected, joinPod } = useSocket();
+  const { currentUser } = useAuth();
   const { isUnread, bumpLatest } = useV2Unread(selectedPodId);
+
+  // Server-side socket auth (`authorizeSocketPodAccess`) requires the user to
+  // be in `pod.members` — `/api/pods` returns discoverable pods including
+  // ones the user can browse but isn't a member of, so we have to gate the
+  // joinPod calls. Otherwise we eat a flood of `Not authorized to join` errors.
+  const memberPodIds = useMemo(() => {
+    const me = currentUser?._id;
+    if (!me) return [] as string[];
+    return pods
+      .filter((pod) => Array.isArray(pod.members) && pod.members.some((m) => {
+        if (!m) return false;
+        if (typeof m === 'string') return m === me;
+        return m._id === me;
+      }))
+      .map((pod) => pod._id);
+  }, [pods, currentUser?._id]);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
@@ -81,8 +99,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
   const [typingPods, setTypingPods] = useState<Set<string>>(() => new Set());
   const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // Join every pod's socket room so we hear newMessage / typing events even
-  // while another pod is selected. The chat room hook (`useV2PodDetail`)
+  // Join every member-pod's socket room so we hear newMessage / typing events
+  // even while another pod is selected. The chat room hook (`useV2PodDetail`)
   // calls leavePod when its podId changes — without re-joining here, sidebar
   // would silently miss updates for the just-left pod. We re-fire on
   // selectedPodId change to recover those joins (joinPod is idempotent on
@@ -90,9 +108,9 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
   // `socket.on('disconnect')` handler clears all pod memberships when the
   // tab closes, so we don't leak rooms.
   useEffect(() => {
-    if (!socket || !connected || !pods || pods.length === 0) return;
-    pods.forEach((p) => { if (p._id) joinPod(p._id); });
-  }, [socket, connected, pods, selectedPodId, joinPod]);
+    if (!socket || !connected || memberPodIds.length === 0) return;
+    memberPodIds.forEach((id) => joinPod(id));
+  }, [socket, connected, memberPodIds, selectedPodId, joinPod]);
 
   // Cross-pod newMessage subscription: bump lastMessage and unread badge.
   useEffect(() => {
