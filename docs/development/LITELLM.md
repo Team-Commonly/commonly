@@ -75,6 +75,65 @@ The daily refresh job (`refreshCodexOAuthTokenIfNeeded`, runs at 3AM UTC) patche
 secret with fresh tokens **and** triggers `kubectl rollout restart deployment/litellm`, so the init
 container always re-runs with current credentials.
 
+### Multi-account rotation (`codex-auth-rotator`)
+
+Codex per-account quota is finite, so the LiteLLM pod runs three accounts in rotation. The
+hard rule: **LiteLLM's `chatgpt/` provider only reads tokens from `auth.json` and ignores
+`api_key` in `litellm_params`.** Earlier attempts to register three deployments with three
+different keys were aspirational — all three went through the same `auth.json` and burned
+the same account. The real solution rotates `auth.json` itself at runtime.
+
+Three components, all defined in `k8s/helm/commonly/templates/agents/litellm-deployment.yaml`:
+
+1. **`codex-auth-seed` init container** — runs once at pod start. Picks first valid account
+   in priority order (1 → 3 → 2), attempts the OAuth refresh-token flow if the access_token
+   is expired, writes initial `/chatgpt-auth/auth.json`.
+2. **`codex-auth-rotator` sidecar container** — shares the `/chatgpt-auth/` emptyDir volume
+   with `litellm`. Every `CODEX_ROTATION_INTERVAL_SEC` (default 600s = 10 min), rotates to
+   the next account round-robin. State persists in `/chatgpt-auth/rotator_state.json`.
+   Atomic swap via `rename`.
+3. **Rate-limit callback** (`/app/rate_limit_signal.py`) — registered in
+   `litellm_settings.callbacks`. Extends `litellm.integrations.custom_logger.CustomLogger`
+   and writes `/chatgpt-auth/rotate-now` whenever `log_failure_event` fires with a 429.
+   The rotator polls that signal file every 10s during its 10-min sleep and, if a
+   <120s-old signal is present, rotates immediately without waiting for the next tick.
+
+**Why this works:** LiteLLM's `Authenticator.get_access_token()` calls `_read_auth_file()`
+on every request — there's no in-memory token caching. So a `rename` of `auth.json` is
+picked up within ~1 request, no pod restart needed.
+
+**LiteLLM quirks discovered while wiring this up:**
+
+- Custom callbacks **must extend `CustomLogger`**. LiteLLM silently ignores duck-typed
+  classes with `log_failure_event` methods that don't inherit from it.
+- Callback file path: LiteLLM's `get_instance_fn` does **not** use
+  `importlib.import_module` — it uses `importlib.util.spec_from_file_location` with a
+  path relative to the config file's directory. The module must live at `/app/<name>.py`
+  next to `config.yaml`, not in `PYTHONPATH` or site-packages.
+
+The toggle: `litellm.codexAuthRotator.enabled` in `values-dev.yaml`. As of 2026-05-02 it
+is `true`. With bypass mode on (the previous workaround), the rotator was disabled because
+LiteLLM's `chatgpt/` provider wasn't being used at all.
+
+### Refreshing a Codex account's tokens
+
+OpenAI rotates `refresh_token` on every refresh — old refresh tokens go stale within
+hours. Periodically the GCP-SM-stored tokens need to be re-seeded:
+
+1. `unset OPENAI_API_KEY && npx -y @openai/codex login` locally, sign in with the target
+   account in the browser
+2. `jq '.tokens | {access_token, refresh_token, id_token}' ~/.codex/auth.json` — confirm
+   which account by decoding the access_token JWT (`exp` claim + email)
+3. Push each field to its `commonly-dev-openai-codex-{access,refresh,id}-token[-N]` secret
+   via `gcloud secrets versions add`
+4. Force ESO sync: `kubectl annotate externalsecret api-keys force-sync=$(date +%s) -n commonly-dev --overwrite`
+5. Restart LiteLLM: `kubectl rollout restart deployment/litellm -n commonly-dev` — the
+   init container picks up the fresh tokens
+
+**Don't capture from a running litellm pod's `auth.json`** — LiteLLM is also rotating
+those tokens on its own refresh schedule, and a snapshot taken mid-rotation invalidates
+within seconds.
+
 ### Virtual keys (per-agent auth)
 
 Each provisioned agent gets a LiteLLM virtual key (`sk-xxx`) injected into its
