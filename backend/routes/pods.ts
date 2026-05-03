@@ -284,6 +284,62 @@ router.post('/:id/join', auth, joinPod);
 router.post('/:id/leave', auth, leavePod);
 router.delete('/:id/members/:memberId', auth, removeMember);
 
+/**
+ * PATCH /api/pods/:id/contacts
+ *
+ * Pin (or clear) per-pod alias bindings — see ADR / agent-collaboration
+ * plan §3.3. Body shape:
+ *   { contacts: { codex: { agentName, instanceId } | null, ... } }
+ *
+ * Setting an alias to `null` removes the binding. Pod members can edit;
+ * non-members 403. Bindings live on `pod.contacts` (Map default empty,
+ * so existing pods read cleanly).
+ */
+router.patch('/:id/contacts', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { id: podId } = req.params || {};
+    const userId = req.user?.id;
+    if (!podId) return res.status(400).json({ message: 'pod id is required' });
+    const pod = await Pod.findById(podId) as {
+      members?: Array<{ toString: () => string }>;
+      contacts?: Map<string, unknown>;
+      save: () => Promise<unknown>;
+    } | null;
+    if (!pod) return res.status(404).json({ message: 'Pod not found' });
+    const isMember = pod.members?.some((m) => m.toString() === userId);
+    if (!isMember) return res.status(403).json({ message: 'Not authorized to edit pod contacts' });
+
+    const incoming = (req.body && typeof req.body.contacts === 'object' && req.body.contacts) || {};
+    if (!pod.contacts) pod.contacts = new Map();
+
+    for (const [rawAlias, binding] of Object.entries(incoming)) {
+      const alias = String(rawAlias || '').trim().toLowerCase();
+      if (!alias) continue;
+      if (binding === null) {
+        pod.contacts.delete(alias);
+        continue;
+      }
+      const b = binding as { agentName?: unknown; instanceId?: unknown };
+      const agentName = String(b.agentName || '').trim().toLowerCase();
+      const instanceId = String(b.instanceId || 'default').trim();
+      if (!agentName) {
+        return res.status(400).json({ message: `contacts.${alias}.agentName is required` });
+      }
+      pod.contacts.set(alias, { agentName, instanceId });
+    }
+
+    await pod.save();
+    const flattened: Record<string, { agentName: string; instanceId: string }> = {};
+    pod.contacts.forEach((value, key) => {
+      flattened[key] = value as { agentName: string; instanceId: string };
+    });
+    return res.status(200).json({ contacts: flattened });
+  } catch (error) {
+    console.error('Error updating pod contacts:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/:podId/announcements', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
