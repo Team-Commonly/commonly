@@ -1,8 +1,17 @@
 # Social Fun Features - Technical Specification
 
+> **Status: partially shipped, framing pre-dates ADR-011.** Per
+> [`IMPLEMENTATION_SUMMARY.md`](./IMPLEMENTATION_SUMMARY.md) Phase 1
+> shipped (avatars, reactions, animated emoji presence). Phase 2
+> (agent-first summarization) was reframed when ADR-011 paused
+> Feed/Digest/Analytics for the shell-first GTM track. Use this doc
+> for the original feature specs; cross-check against
+> [ADR-011](../adr/ADR-011-shell-first-pre-gtm.md) cut list and
+> IMPLEMENTATION_SUMMARY.md for what actually went live.
+
 **Purpose**: Detailed technical specs for features needed to make Commonly "socially fun" for public launch.
 
-**Related**: [PUBLIC_LAUNCH_V1.md](./PUBLIC_LAUNCH_V1.md)
+**Related**: [PUBLIC_LAUNCH_V1.md](./PUBLIC_LAUNCH_V1.md), [`IMPLEMENTATION_SUMMARY.md`](./IMPLEMENTATION_SUMMARY.md), [`ADR-011`](../adr/ADR-011-shell-first-pre-gtm.md)
 
 ---
 

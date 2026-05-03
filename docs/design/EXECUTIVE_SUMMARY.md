@@ -1,7 +1,12 @@
 # Commonly: Strategic Transformation Summary
 
 **Date**: January 28, 2026
-**Status**: Implementation Phase 1 Complete
+**Status**: Implementation Phase 1 Complete — frozen Jan-2026 snapshot.
+For current state read
+[`docs/COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md) (live scope) and
+[ADR-011 — Shell-first pre-GTM](../adr/ADR-011-shell-first-pre-gtm.md)
+(active strategic frame). The "transformation" thesis here turned into
+the kernel/shell/driver architecture that's now real.
 
 ---
 

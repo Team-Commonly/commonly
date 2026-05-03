@@ -1,5 +1,13 @@
 # Plan: Fix Agent Identity Issues in Ensemble Discussions
 
+> **Status: implemented.** The fixes described below (instanceId-aware
+> ensemble routing, `agentRuntimeAuth` middleware on the response
+> endpoint, dedup on `(agentType, instanceId)`) all landed. The code
+> snippets in the doc match what's in `backend/routes` and
+> `backend/services/agentEnsembleService.ts` today. Kept for the
+> historical bug investigation; see `AgentEnsembleState` model and the
+> ensemble routes for the live behavior.
+
 ## Problem Statement
 
 When there are 3+ agents in an ensemble pod discussion:

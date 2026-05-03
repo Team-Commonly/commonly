@@ -1,5 +1,13 @@
 # Agent Orchestrator (Local Now, K8s-Ready Later)
 
+> **Status: K8s shipped.** The "K8s-ready later" promise landed via
+> [ADR-009 — Test Tiers + CI/CD to GKE](../adr/ADR-009-test-tiers-and-ci-cd-to-gke.md)
+> and the K8s provisioner (`backend/services/agentProvisionerServiceK8s.ts`).
+> The runtime contract evolved into [ADR-004 — Commonly Agent Protocol](../adr/ADR-004-commonly-agent-protocol.md)
+> and [ADR-005 — Local CLI Wrapper Driver](../adr/ADR-005-local-cli-wrapper-driver.md).
+> Read those + [`docs/agents/AGENT_RUNTIME.md`](../agents/AGENT_RUNTIME.md)
+> for the live contract; this doc is the original local-first sketch.
+
 This document defines the agent runtime contract and the local orchestrator
 strategy that works for:
 

@@ -2,7 +2,11 @@
 
 **Version**: 1.0
 **Date**: January 28, 2026
-**Status**: Strategic Planning Document
+**Status**: Strategic Planning Document — superseded for active GTM by
+[ADR-011 — Shell-first pre-GTM](../adr/ADR-011-shell-first-pre-gtm.md)
+(2026-04-27). Use this doc for the original Jan-2026 competitive
+positioning; use ADR-011 for what's actively being built and the cut
+list (Feed/Digest/Analytics hidden, Skills folded, Apps→Hire merge).
 
 ---
 

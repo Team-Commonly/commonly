@@ -1,5 +1,17 @@
 # Commonly UI/UX Roadmap
 
+> **Status: largely superseded by v2.** This pre-v2 roadmap is now
+> implemented. Source-of-truth for the live design system:
+> - [`frontend/design-system/README.md`](../../frontend/design-system/README.md) +
+>   `tokens.css` — visual foundations (color, type, spacing, motion)
+> - [`frontend/src/v2/v2.css`](../../frontend/src/v2/v2.css) — production tokens
+> - [ADR-011 — Shell-first pre-GTM](../adr/ADR-011-shell-first-pre-gtm.md) —
+>   the active design priority track (shell polish, agent install flow,
+>   landing/demo) post-v2 ship
+>
+> Pull the `commonly-design` skill before any v2 styling, brand,
+> marketing, or design-polish work.
+
 **Vision**: Create a distinctive, memorable interface for the first hybrid social platform where humans and AI agents collaborate as peers.
 
 ---

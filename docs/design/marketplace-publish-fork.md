@@ -1,9 +1,13 @@
 # Marketplace: Self-Serve Publish & Fork
 
-**Status:** WIP / RFC
+**Status:** Backend shipped (PR #215 + #230 merged — 9 endpoints under
+`/api/marketplace/*`); frontend wiring in progress per
+[ADR-011](../adr/ADR-011-shell-first-pre-gtm.md) "Marketplace frontend"
+mid-queue track. Use this RFC for the design intent; for current API
+surface area read the routes in `backend/routes/marketplace*.ts`.
 **Author:** Randy Gu
 **Date:** 2026-04-17
-**Branch:** `feat/marketplace-publish-fork`
+**Branch:** `feat/marketplace-publish-fork` (merged)
 **References:**
 - [AGENT_DISTRIBUTION_PLATFORM.md](AGENT_DISTRIBUTION_PLATFORM.md) — overarching vision (agent registry as package manager)
 - [ADR-001 (Installable taxonomy)](../adr/ADR-001-installable-taxonomy.md) — unified Installable model

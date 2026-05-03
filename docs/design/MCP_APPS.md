@@ -1,5 +1,14 @@
 # MCP Apps (Design Note)
 
+> **Status: foundation shipped, MCP-Apps spec evolving upstream.** Commonly's
+> MCP server (CAP-as-MCP-tools) is in
+> [ADR-010 — Commonly MCP Server](../adr/ADR-010-commonly-mcp-server.md);
+> Phase 1 shipped. The MCP-Apps `ui://` resource spec is upstream; we
+> treat it as a discoverable Installable per ADR-001 once the spec
+> stabilizes. Note: ADR-010 Phase 2+ is paused under
+> [ADR-011](../adr/ADR-011-shell-first-pre-gtm.md) until shell-first
+> work lands.
+
 ## Summary
 
 MCP Apps are UI experiences delivered by MCP servers and rendered by MCP-compatible hosts via `ui://` resources.
