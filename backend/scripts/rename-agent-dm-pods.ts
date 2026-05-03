@@ -124,10 +124,12 @@ export async function renameAgentDmPods(
 
     // PG cosmetic sync — `pods.name` is a display copy, not load-bearing
     // for routing. Best-effort; failures don't roll back Mongo.
+    // PG `pods.id` stores the Mongo `_id.toString()` (single source of
+    // truth for cross-DB routing); there is no `_id` column.
     if (dbPg && process.env.PG_HOST) {
       try {
         await dbPg.pool.query(
-          'UPDATE pods SET name = $1 WHERE _id = $2',
+          'UPDATE pods SET name = $1 WHERE id = $2',
           [desiredName, String(pod._id)],
         );
         result.pgSynced += 1;
