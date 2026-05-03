@@ -38,6 +38,10 @@ jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn(),
   getOrCreateAgentUser: jest.fn(),
   ensureAgentInPod: jest.fn(),
+  // joinPod does `require('../services/agentIdentityService').DM_POD_TYPES_GUARD`
+  // at runtime to enforce ADR-001 §3.10 (no third-party joins on DM pods).
+  // Mirror the production set so the test exercises the real guard.
+  DM_POD_TYPES_GUARD: new Set(['agent-room', 'agent-dm']),
 }));
 
 describe('podController', () => {
@@ -100,7 +104,7 @@ describe('podController', () => {
 
     expect(save).toHaveBeenCalled();
     expect(savedPod.populate).toHaveBeenCalledWith('createdBy', 'username profilePicture');
-    expect(savedPod.populate).toHaveBeenCalledWith('members', 'username profilePicture');
+    expect(savedPod.populate).toHaveBeenCalledWith('members', 'username profilePicture isBot');
     expect(AgentInstallation.install).toHaveBeenCalledWith('commonly-bot', 'p1', expect.objectContaining({
       installedBy: 'creator',
       instanceId: 'default',
@@ -187,7 +191,7 @@ describe('podController', () => {
     expect(pod.members).toEqual(['creator']);
     expect(pod.save).toHaveBeenCalled();
     expect(pod.populate).toHaveBeenCalledWith('createdBy', 'username profilePicture');
-    expect(pod.populate).toHaveBeenCalledWith('members', 'username profilePicture');
+    expect(pod.populate).toHaveBeenCalledWith('members', 'username profilePicture isBot');
     expect(res.json).toHaveBeenCalledWith(pod);
   });
 

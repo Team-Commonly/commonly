@@ -32,6 +32,32 @@ jest.mock('../../../models/AgentEvent', () => ({
   aggregate: jest.fn().mockResolvedValue([]),
 }));
 
+// User.find is called inside the GET /pods/:podId/agents handler to resolve
+// botMetadata.displayName for each install. Without a mock the handler waits
+// on the real Mongoose model (no DB connection in this unit test) and times
+// out at 10s.
+jest.mock('../../../models/User', () => ({
+  find: jest.fn().mockReturnValue({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue([]),
+    }),
+  }),
+}));
+
+// dmService.canViewPod is required at runtime via require(); the handler's
+// first call is `await DMService.canViewPod(userId, pod)`. The real
+// implementation reads `Pod.countDocuments` which isn't on our jest mock —
+// stub the whole service so the test exercises the route, not auth fan-out.
+jest.mock('../../../services/dmService', () => ({
+  canViewPod: jest.fn().mockResolvedValue(true),
+}));
+
+// AgentIdentityService.buildAgentUsername is called to compose the user lookup
+// keys; stub it so the un-mocked module's deps don't load.
+jest.mock('../../../services/agentIdentityService', () => ({
+  buildAgentUsername: jest.fn((agentName, instanceId) => `${agentName}-${instanceId}`),
+}));
+
 const Pod = require('../../../models/Pod');
 const AgentProfile = require('../../../models/AgentProfile');
 const AgentTemplate = require('../../../models/AgentTemplate');

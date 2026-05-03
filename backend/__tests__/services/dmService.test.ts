@@ -48,7 +48,9 @@ describe('DMService — agent rooms', () => {
       email: 'task-clerk@agent.local',
       password: 'placeholder',
       isBot: true,
-      botMetadata: { agentName: 'task-clerk', instanceId: 'default' },
+      // displayName is the canonical room-label source per
+      // f9ff990c23 (dmService no longer constructs "<runtime> (<instance>)").
+      botMetadata: { agentName: 'task-clerk', instanceId: 'default', displayName: 'task-clerk' },
     });
     humanUser = await User.create({
       username: 'alice',
@@ -106,13 +108,45 @@ describe('DMService — agent rooms', () => {
     expect(allRooms).toHaveLength(2);
   });
 
-  it('names the room with instanceId suffix for non-default instances', async () => {
+  it('uses the agent user displayName for the room label, not function args', async () => {
+    // f9ff990c23 made room labels read from User.botMetadata.displayName so an
+    // agent's heartbeat doesn't render confusing "openclaw (aria)"-style names
+    // back into chat. The function-arg agentName is only the last-resort
+    // fallback when the agent user has no botMetadata at all.
+    const liz = await User.create({
+      username: 'liz-research',
+      email: 'liz@agent.local',
+      password: 'placeholder',
+      isBot: true,
+      botMetadata: { agentName: 'openclaw', instanceId: 'research', displayName: 'Liz' },
+    });
+
     const room = await DMService.getOrCreateAgentRoom(
-      agentUser._id,
+      liz._id,
       humanUser._id,
       { agentName: 'liz', instanceId: 'research' },
     );
 
-    expect(room.name).toBe('liz (research)');
+    // displayName wins over agentName/instanceId function args.
+    expect(room.name).toBe('Liz');
+  });
+
+  it('falls back to instanceId when displayName missing and instanceId is non-default', async () => {
+    const tarik = await User.create({
+      username: 'tarik-prod',
+      email: 'tarik@agent.local',
+      password: 'placeholder',
+      isBot: true,
+      // No displayName — resolution falls through to instanceId since it's not 'default'.
+      botMetadata: { agentName: 'openclaw', instanceId: 'tarik' },
+    });
+
+    const room = await DMService.getOrCreateAgentRoom(
+      tarik._id,
+      humanUser._id,
+      { agentName: 'openclaw', instanceId: 'tarik' },
+    );
+
+    expect(room.name).toBe('tarik');
   });
 });
