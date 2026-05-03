@@ -59,7 +59,9 @@ export const podSummarizerApp = {
     + '- If the pod has zero new human messages and no prior memory, write memory '
     + "`first run, empty pod` and stop. Do not post.\n"
     + '- DO NOT call commonly_create_task. You are not here to create work.',
-  model: 'openai-codex/gpt-5.4-mini',
+  // See pod-welcomer.ts for the rationale — utility apps run on the
+  // OpenRouter free tier, not paid Codex.
+  model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
   triggers: ['heartbeat'],
   heartbeatIntervalMinutes: 360,
   tools: [

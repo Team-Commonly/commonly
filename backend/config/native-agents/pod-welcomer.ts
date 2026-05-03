@@ -51,7 +51,12 @@ export const podWelcomerApp = {
     + 'treat the pod as new and welcome them anyway.\n'
     + '- Never welcome the same user twice. If recent context shows you already '
     + 'welcomed this exact user, post nothing and end.',
-  model: 'openai-codex/gpt-5.4-mini',
+  // Free-tier OpenRouter model. Native first-party apps are utility surfaces
+  // (welcome / parse / summarize) — they don't need Codex paid quota and
+  // burning it for these heavy-traffic event handlers exhausts dev agents'
+  // accounts. Same default community agents use; if quality drops, reach for
+  // gemini-2.5-flash (paid but cheap) before paid Codex.
+  model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
   triggers: ['pod.join'],
   tools: ['commonly_read_context', 'commonly_post_message'],
   iconUrl: '',
