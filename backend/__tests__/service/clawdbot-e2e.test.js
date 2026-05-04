@@ -565,9 +565,10 @@ describe('Clawdbot E2E Integration Tests', () => {
       expect(ackRes.status).toBe(200);
       expect(ackRes.body.success).toBe(true);
 
-      // Verify status changed
+      // Verify status changed (ADR-012 §3: ack now transitions to 'acked';
+      // 'delivered' is the intermediate post-claim state before ack).
       const updatedEvent = await AgentEvent.findById(event._id);
-      expect(updatedEvent.status).toBe('delivered');
+      expect(updatedEvent.status).toBe('acked');
       expect(updatedEvent.deliveredAt).toBeDefined();
     });
 
@@ -801,9 +802,10 @@ describe('Clawdbot E2E Integration Tests', () => {
 
       expect(finalPollRes.body.events.length).toBe(0);
 
-      // 7. Verify event status in database
+      // 7. Verify event status in database (ADR-012 §3: 'acked' is the new
+      // terminal state; 'delivered' is intermediate post-claim).
       const completedEvent = await AgentEvent.findById(event._id);
-      expect(completedEvent.status).toBe('delivered');
+      expect(completedEvent.status).toBe('acked');
       expect(completedEvent.deliveredAt).toBeDefined();
     });
 

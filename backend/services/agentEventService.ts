@@ -819,9 +819,17 @@ class AgentEventService {
   static async list({
     agentName, podId, podIds, limit = 20, instanceId = 'default',
   }: ListOptions): Promise<EventDoc[]> {
+    // Coerce caller-supplied identifiers to plain strings before they reach
+    // any Mongo query — guards against NoSQL-injection-shaped inputs (e.g.
+    // `{$ne: null}`) sneaking through. CodeQL flags any data flow from
+    // `agentName`/`instanceId` (declared as `string` in ListOptions but
+    // origin-tracked from req.params) into a query without an explicit
+    // sanitizer; the String() casts are that sanitizer.
+    const safeAgentName = String(agentName || '').toLowerCase();
+    const safeInstanceId = String(instanceId || 'default');
     const query: Record<string, unknown> = {
-      agentName: agentName.toLowerCase(),
-      instanceId,
+      agentName: safeAgentName,
+      instanceId: safeInstanceId,
       status: 'pending',
     };
 
@@ -849,8 +857,8 @@ class AgentEventService {
     // onto each AgentEvent doc captures the revision at THIS read; the ack
     // path bumps lastSeenRevision via $max to that captured value.
     const memoryDoc = await AgentMemory.findOne({
-      agentName: agentName.toLowerCase(),
-      instanceId,
+      agentName: safeAgentName,
+      instanceId: safeInstanceId,
     })
       .select({ revision: 1, lastSeenRevision: 1, sections: 1 })
       .lean() as { revision?: number; lastSeenRevision?: number; sections?: unknown } | null;
@@ -860,8 +868,14 @@ class AgentEventService {
 
     const claimed: EventDoc[] = [];
     for (const candidate of candidates) {
+      // Coerce candidate _id to string before it lands in the query — Mongo
+      // accepts both string and ObjectId, and `unknown`-typed values are the
+      // CodeQL trip wire. The find() above scopes by agentName + instanceId
+      // so even if the _id were tampered with, the query is bounded.
+      const safeId = candidate._id != null ? String(candidate._id) : '';
+      if (!safeId) continue;
       const updated = await AgentEvent.findOneAndUpdate(
-        { _id: candidate._id, status: 'pending' },
+        { _id: safeId, status: 'pending' },
         {
           $set: {
             status: 'delivered',
@@ -905,12 +919,18 @@ class AgentEventService {
     instanceId = 'default',
     delivery: DeliveryMeta | null = null,
   ): Promise<EventDoc | null> {
+    // Same NoSQL-injection guard as list() — coerce all caller-supplied query
+    // inputs to plain primitives before they reach Mongo.
+    const safeEventId = eventId != null ? String(eventId) : '';
+    if (!safeEventId) return null;
+    const safeAgentName = String(agentName || '').toLowerCase();
+    const safeInstanceId = String(instanceId || 'default');
     const normalizedDelivery = this.normalizeDeliveryMeta(delivery || {});
     const result = await AgentEvent.findOneAndUpdate(
       {
-        _id: eventId,
-        agentName: agentName.toLowerCase(),
-        instanceId,
+        _id: safeEventId,
+        agentName: safeAgentName,
+        instanceId: safeInstanceId,
         status: { $in: ['pending', 'delivered'] },
       },
       {
@@ -933,7 +953,7 @@ class AgentEventService {
     if (result && typeof result.memoryRevisionAtDelivery === 'number' && result.memoryRevisionAtDelivery > 0) {
       try {
         await AgentMemory.updateOne(
-          { agentName: agentName.toLowerCase(), instanceId },
+          { agentName: safeAgentName, instanceId: safeInstanceId },
           { $max: { lastSeenRevision: result.memoryRevisionAtDelivery } },
         );
       } catch (err) {
