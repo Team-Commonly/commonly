@@ -24,7 +24,7 @@ So the question "how do agents make files" surfaces a deeper question: **what is
 
 | Surface | Status | Reference |
 |---|---|---|
-| Skill catalog (1,659 community-authored skills) | Synced from `VoltAgent/awesome-agent-skills` | `external/awesome-openclaw-skills/`, `docs/skills/awesome-agent-skills-index.json` |
+| Skill catalog (~1,659 community-authored skills as of 2026-02-05 sync) | Synced from `VoltAgent/awesome-agent-skills` | `external/awesome-openclaw-skills/`, `docs/skills/awesome-agent-skills-index.json` |
 | Skill install API | Shipped | `backend/routes/skills.ts` — `GET /catalog`, `POST /import`, `GET /requirements`, `GET/DELETE /pods/:podId/imported`, ratings |
 | Skill sync to gateway PVC | Shipped | `syncOpenClawSkills` in `agentProvisionerServiceK8s.ts`; called from provision + reprovision + `/api/skills/import` |
 | `defaultSkills` in preset definitions | Shipped, mostly unused | `backend/routes/registry/presets.ts` |
@@ -35,7 +35,7 @@ So the question "how do agents make files" surfaces a deeper question: **what is
 
 ### Office-relevant skills already in the catalog
 
-Filtering the 1,659-skill catalog for Linux-runnable file generation:
+Filtering the catalog (~1,659 skills as of the 2026-02-05 sync — see caveat at end of this section) for Linux-runnable file generation:
 
 | Skill | What it does | Tools it shells out to |
 |---|---|---|
@@ -49,6 +49,8 @@ Filtering the 1,659-skill catalog for Linux-runnable file generation:
 Excluded: `tiangong-wps-*` (Windows COM only — won't run in our Linux gateway); `gamma` (third-party SaaS API).
 
 **Observation:** the catalog has solid PDF coverage and decent parse-direction tooling, but **no Linux-runnable PPTX or XLSX generation skills**. That's a gap we may fill upstream later (§Phase 4); for now we ship without it.
+
+> **Caveat on catalog-derived numbers throughout this ADR.** The skill count (~1,659), star counts (e.g. `github` skill 603 stars, used below), category counts, and license fields are all read from `docs/skills/awesome-agent-skills-index.json`, which is a **frozen snapshot from `scripts/sync-awesome-agent-skills.sh` last run on 2026-02-05** (nearly 3 months ago at draft time). Upstream `VoltAgent/awesome-agent-skills` is actively maintained — every figure cited from the index drifts daily. Numbers are point-in-time evidence that the skill / count / popularity *exists*, not live counts. Re-sync before publishing or making sales-pitchy claims; treat all sync-derived figures as ≥ that value, never == it. Numbers fetched live via GitHub API in this ADR (notably OfficeCLI's 2,768 stars and v1.0.70 release date) are timestamped explicitly and are real-time as of 2026-05-03.
 
 ### Why this ADR now
 
@@ -164,7 +166,7 @@ Update `backend/routes/registry/presets.ts`. Add `defaultSkills` for each of the
 
 Plus implicit-everywhere: `commonly_attach_file` is the extension tool from Part 1 and is always available — no skill import required.
 
-**Note on `github` (resolved 2026-05-03).** Verified to be a real catalog entry: `github` skill by `steipete`, MIT license, 603 stars, lives at `openclaw/skills/skills/steipete/github/SKILL.md`. Description: "Interact with GitHub using the `gh`." Runtime requirement: `gh` CLI in the agent's runtime — already present in the gateway image via the existing `OPENCLAW_INSTALL_GH_CLI=1` build arg. Make that arg default-on for production builds (currently passed at build time in the workflow; pin in `Dockerfile` instead so OSS contributors get parity locally).
+**Note on `github` (resolved 2026-05-03).** Verified to be a real catalog entry: `github` skill by `steipete`, MIT license, 603 stars *(per the 2026-02-05 catalog snapshot — actual number drifts; see snapshot caveat above)*, lives at `openclaw/skills/skills/steipete/github/SKILL.md`. Description: "Interact with GitHub using the `gh`." Runtime requirement: `gh` CLI in the agent's runtime — already present in the gateway image via the existing `OPENCLAW_INSTALL_GH_CLI=1` build arg. Make that arg default-on for production builds (currently passed at build time in the workflow; pin in `Dockerfile` instead so OSS contributors get parity locally).
 
 **Note on `officecli` skill packaging.** The skill SKILL.md is the upstream file at `iOfficeAI/OfficeCLI/SKILL.md` (Apache-2.0, redistributable). It's not in our `awesome-agent-skills-index.json` yet (catalog sync predates OfficeCLI's 2026-03-15 creation). Two paths, parallel:
 - **Short term:** carry it locally as a `commonly-bundled-skills/officecli/SKILL.md` and reference by id in `defaultSkills`. Ships with this ADR.
@@ -431,7 +433,7 @@ We keep `pandoc` from this stack (md → PDF is its sweet spot) and `markitdown`
 
 1. **Does `POST /api/skills/import` push the SKILL.md to the gateway PVC, or only register metadata?** The plumbing exists in `syncOpenClawSkills`, but verify on dev cluster that an import call actually drops the markdown into `/workspace/<accountId>/skills/<id>/`. If it's metadata-only, we need a separate sync trigger as part of Phase 1.
 
-2. ~~What does the existing `github` skill ID resolve to?~~ **Resolved 2026-05-03.** Real catalog skill at `openclaw/skills/skills/steipete/github/SKILL.md`, MIT, 603 stars, requires `gh` CLI (already in image). No shim layer — `defaultSkills: [{id: 'github'}]` in presets resolves directly against the catalog.
+2. ~~What does the existing `github` skill ID resolve to?~~ **Resolved 2026-05-03.** Real catalog skill at `openclaw/skills/skills/steipete/github/SKILL.md`, MIT, 603 stars *(2026-02-05 snapshot — see caveat in §Context)*, requires `gh` CLI (already in image). No shim layer — `defaultSkills: [{id: 'github'}]` in presets resolves directly against the catalog.
 
 3. **Should the v2 Skills tab be admin-only, or visible to all members?** Members can already see installed skills via the existing imported endpoint. Letting any member install/uninstall on a shared pod has a permissions implication — and reuses an existing trust model that hasn't been adversarially tested in v2. Default to **owner + admin only** for install/uninstall in v2; all members can read the installed list. Revisit after first abuse signal.
 
@@ -532,3 +534,4 @@ Either outcome is correct. ADR-013 doesn't need to pre-decide. The frontend wiri
 - 2026-05-03 — v3: closed open question #2 (`github` skill is real — `steipete/github`, MIT, 603 stars, requires `gh` already in image). Added §"Relationship to Installable taxonomy (ADR-001)" mapping each piece to the Installable model + the migration story when Phase 3 unpauses. Added new open questions on OfficeCLI version-pin cadence and Phase-3 acceleration vs. deferral.
 - 2026-05-03 — v4: expanded Part 4 from "inspector Skills tab only" to a four-section design covering (4a) top-level V2 Marketplace page at `/v2/marketplace`, (4b) inspector Skills tab, (4c) inspector Agents tab, (4d) shared `<V2MarketplaceList>` component pattern. Title broadened. Phasing expanded from 4 phases to 8 active + 2 deferred. This ADR now also lands the active "Marketplace frontend" track from ADR-011 alongside the file-production work.
 - 2026-05-03 — v5: **major correction after verifying actual backend/frontend state.** (a) `/v2/marketplace` already exists (renders v1 `AppsMarketplacePage`, 771 lines, with `Discover | Installed` sub-tabs). `/v2/agents/browse` and `/v2/skills` also exist. v4's "design new top-level page" was wrong; right move is to extend `AppsMarketplacePage` in place with Apps · Agents · Skills · Integrations kind tabs. (b) `/api/marketplace/*` (Randy, PR #215+#230) is **already Installable-canonical** via dual-write — not legacy AR as v3/v4 framed. ADR-013's Phase 3 wires the agents tab against the Installable side from day one and *is* the marketplace-frontend track from ADR-011 by definition. Phasing collapsed from 8 active to 5 active (extend page, build inspector tabs, deprecate v1 pages). §"Relationship to Installable taxonomy" rewritten to reflect the per-kind split (agents already on Installable; skills still on AR). Open questions #7 + #8 closed; #9 narrowed (Randy's `/api/marketplace/mine` likely covers fork ownership, just verify response shape).
+- 2026-05-03 — v5.1: added §Caveat on catalog-derived numbers in the §Context section. Catalog index `docs/skills/awesome-agent-skills-index.json` was last synced **2026-02-05** (nearly 3 months ago); all derived numbers (`~1,659` skills, `github` skill `603 stars`, etc.) are point-in-time snapshots, not live counts. Annotated each citation in-place. Numbers fetched live via GitHub API today (notably OfficeCLI's 2,768 stars + v1.0.70 release date) are explicitly timestamped 2026-05-03 and treated separately. Reviewers should re-sync before any sales-pitchy or external use of the figures.
