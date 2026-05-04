@@ -254,14 +254,22 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       const socketConfig = require('../config/socket');
       const io = socketConfig.getIO();
       if (io) {
-        const m = message as NormalizedMessage & { _id?: string; id?: string; userId?: any; profile_picture?: string; createdAt?: string };
+        const m = message as NormalizedMessage & {
+          _id?: string;
+          id?: string;
+          userId?: unknown;
+          username?: string;
+          profile_picture?: string;
+          createdAt?: string;
+          messageType?: string;
+        };
         const formattedMessage = {
           _id: m._id || m.id,
           id: m._id || m.id,
           pod_id: String(podId),
           podId: String(podId),
           content: m.content,
-          messageType: (m as any).messageType || 'text',
+          messageType: m.messageType || 'text',
           userId: m.userId,
           username: m.username,
           profile_picture: m.profile_picture,
