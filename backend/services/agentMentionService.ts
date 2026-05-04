@@ -10,6 +10,13 @@ const Pod = require('../models/Pod');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { resolveAgentDisplayLabel } = require('./agentIdentityService') as {
+  resolveAgentDisplayLabel: (
+    user: { username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null | undefined,
+    fallback?: string,
+  ) => string;
+};
 
 const ChatSummarizerService = chatSummarizerService.constructor as {
   getLatestPodSummary: (podId: string) => Promise<unknown>;
@@ -747,15 +754,17 @@ const enqueueDmEvent = async ({
     // which §9 of ADR-012 demonstrated is not sufficient. Either re-apply the
     // frame in that surface or move framing into AgentEventService.enqueue
     // when it becomes a meaningful chokepoint.
+    // resolveAgentDisplayLabel is the canonical chain (botMetadata.displayName
+    // → instanceId → username → fallback) plus leak-pattern detection that
+    // skips displayName values shaped like `<agentName> (<instanceId>)` (the
+    // historical runtime-label leak that produced labels like
+    // "openclaw (nova)"). Using it here keeps the §9 frame consistent with
+    // every other display surface (pod inspector, chat author chips, etc).
     const senderMeta = sender?.botMetadata || {};
     const senderInstanceLabel = (senderMeta.instanceId && senderMeta.instanceId !== 'default')
       ? senderMeta.instanceId
       : '';
-    const senderDisplay = (senderMeta.displayName?.trim()
-      || senderInstanceLabel
-      || sender?.username
-      || username
-      || 'peer').trim();
+    const senderDisplay = resolveAgentDisplayLabel(sender, sender?.username || username || 'peer').trim();
     // senderHandle filters 'default' the same way as senderDisplay above —
     // otherwise an agent on the literal 'default' instanceId would render as
     // "@default (DisplayName)", which is meaningless.

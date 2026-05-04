@@ -57,4 +57,54 @@ describe('resolveAgentDisplayLabel', () => {
     };
     expect(resolveAgentDisplayLabel(user)).toBe('pixel');
   });
+
+  // Leak-pattern detection — defensive guard for historical contamination.
+  // Some path (likely a DM-creation pre-2026-05-04) wrote
+  // `botMetadata.displayName = "openclaw (nova)"` (i.e. literally
+  // `${agentName} (${instanceId})`), and that string then surfaced in pod
+  // names + the §9 inline DM frame. The resolver now detects + rejects this
+  // shape and falls through to instanceId.
+  describe('leak-pattern detection', () => {
+    it('rejects displayName === "<agentName> (<instanceId>)" and falls through to instanceId', () => {
+      const user = {
+        username: 'openclaw-nova',
+        botMetadata: { displayName: 'openclaw (nova)', agentName: 'openclaw', instanceId: 'nova' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('nova');
+    });
+
+    it('rejects bare displayName === agentName (e.g. just "openclaw")', () => {
+      const user = {
+        username: 'openclaw-aria',
+        botMetadata: { displayName: 'openclaw', agentName: 'openclaw', instanceId: 'aria' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('aria');
+    });
+
+    it('is case-insensitive — "OpenClaw (Pixel)" still rejected', () => {
+      const user = {
+        username: 'openclaw-pixel',
+        botMetadata: { displayName: 'OpenClaw (Pixel)', agentName: 'openclaw', instanceId: 'pixel' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('pixel');
+    });
+
+    it('keeps a curated displayName that happens to share the agentName prefix', () => {
+      // "Strategist (Aria)" is curated — agentName prefix is incidental, not
+      // the literal pattern. Keep it.
+      const user = {
+        username: 'openclaw-aria',
+        botMetadata: { displayName: 'Strategist (Aria)', agentName: 'openclaw', instanceId: 'aria' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('Strategist (Aria)');
+    });
+
+    it('keeps a normal curated label unchanged', () => {
+      const user = {
+        username: 'openclaw-nova',
+        botMetadata: { displayName: 'Nova', agentName: 'openclaw', instanceId: 'nova' },
+      };
+      expect(resolveAgentDisplayLabel(user)).toBe('Nova');
+    });
+  });
 });
