@@ -65,24 +65,97 @@ const loadCatalog = async (): Promise<Map<string, CatalogEntry>> => {
 };
 
 /**
- * Read a locally-bundled skill's SKILL.md if it exists.
- * Returns null if the directory or file is missing.
+ * Files we never include as extraFiles — binary or auto-generated assets that
+ * either can't round-trip through the PodAsset string schema, or are too large
+ * to ship inline. Agents can re-fetch from upstream if they need the binary
+ * templates (e.g. .pptx style references).
+ */
+const SKIP_EXT = new Set(['.pptx', '.docx', '.xlsx', '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.zip']);
+const MAX_EXTRA_FILE_BYTES = 200 * 1024;       // 200KB per file
+const MAX_TOTAL_EXTRA_BYTES = 2 * 1024 * 1024; // 2MB per skill total
+
+interface ExtraFile {
+  path: string;
+  content: string;
+}
+
+/**
+ * Walk a directory recursively, collecting text files (excluding SKILL.md
+ * itself + LICENSE/README) as extraFiles for syncOpenClawSkills to write
+ * alongside SKILL.md. Skips binary extensions and files that exceed size
+ * budgets so a single bundled skill can't blow up the PodAsset payload.
+ */
+const collectExtraFiles = async (rootDir: string): Promise<ExtraFile[]> => {
+  const out: ExtraFile[] = [];
+  let totalBytes = 0;
+
+  const walk = async (dir: string, relPrefix: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const absPath = path.join(dir, entry.name);
+      const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(absPath, relPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      // Top-level SKILL.md is the primary content — handled separately.
+      if (!relPrefix && entry.name === 'SKILL.md') continue;
+      // LICENSE/README sit alongside the bundle for humans, not agents.
+      if (!relPrefix && (entry.name === 'LICENSE' || entry.name === 'README.md')) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (SKIP_EXT.has(ext)) continue;
+      let stat;
+      try {
+        stat = await fs.stat(absPath);
+      } catch {
+        continue;
+      }
+      if (stat.size > MAX_EXTRA_FILE_BYTES) continue;
+      if (totalBytes + stat.size > MAX_TOTAL_EXTRA_BYTES) continue;
+      try {
+        const content = await fs.readFile(absPath, 'utf8');
+        out.push({ path: relPath, content });
+        totalBytes += stat.size;
+      } catch {
+        // unreadable / non-utf8; skip
+      }
+    }
+  };
+
+  await walk(rootDir, '');
+  return out;
+};
+
+/**
+ * Read a locally-bundled skill's SKILL.md if it exists, plus any sub-files
+ * (specialized sub-skills, reference docs, helper scripts) the agent should
+ * have access to via load_skill or relative file references.
  */
 const readBundledSkill = async (
   skillId: string,
-): Promise<{ content: string; sourceUrl: string } | null> => {
+): Promise<{ content: string; sourceUrl: string; extraFiles: ExtraFile[] } | null> => {
   const safeId = skillId.replace(/[^a-zA-Z0-9_.-]/g, '');
   if (safeId !== skillId || !safeId) return null;
-  const skillPath = path.join(BUNDLED_SKILLS_DIR, safeId, 'SKILL.md');
+  const skillDir = path.join(BUNDLED_SKILLS_DIR, safeId);
+  const skillPath = path.join(skillDir, 'SKILL.md');
+  let content: string;
   try {
-    const content = await fs.readFile(skillPath, 'utf8');
-    return {
-      content,
-      sourceUrl: `commonly-bundled-skills/${safeId}/SKILL.md`,
-    };
+    content = await fs.readFile(skillPath, 'utf8');
   } catch {
     return null;
   }
+  const extraFiles = await collectExtraFiles(skillDir);
+  return {
+    content,
+    sourceUrl: `commonly-bundled-skills/${safeId}/SKILL.md`,
+    extraFiles,
+  };
 };
 
 interface ResolvedSkill {
@@ -92,6 +165,7 @@ interface ResolvedSkill {
   license?: string;
   description?: string;
   tags?: string[];
+  extraFiles?: ExtraFile[];
 }
 
 const resolveSkillContent = async (
@@ -104,6 +178,7 @@ const resolveSkillContent = async (
       content: bundled.content,
       sourceUrl: bundled.sourceUrl,
       license: 'See commonly-bundled-skills/<id>/LICENSE',
+      extraFiles: bundled.extraFiles,
     };
   }
 
@@ -222,6 +297,14 @@ export const applyPresetDefaultSkills = async ({
           importedAt: new Date().toISOString(),
           autoImportedBy: 'preset.defaultSkills',
           presetReason: entry.reason || null,
+          // syncOpenClawSkills writes each extraFile alongside SKILL.md inside
+          // /workspace/<accountId>/skills/<skillId>/. Used here to ship
+          // OfficeCLI's specialized sub-skills (officecli/skills/<sub>/SKILL.md
+          // for fundraising decks, financial models, etc.) so `load_skill`
+          // calls inside the agent's session can resolve them locally.
+          extraFiles: resolved.extraFiles && resolved.extraFiles.length > 0
+            ? resolved.extraFiles
+            : undefined,
         },
         createdBy: userId || null,
       });
