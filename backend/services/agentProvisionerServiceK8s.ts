@@ -920,11 +920,20 @@ const syncOpenClawSkills = async ({
   const workspacePath = '/workspace';
   const skillsDir = `${workspacePath}/${accountId}/skills`;
   const manifestPath = `/tmp/commonly-skills-${accountId}.json`;
-  // The reader script: written as a heredoc so it doesn't compete with stdin
-  // for the manifest content. The node script reads the manifest from the
-  // temp-file path (passed via argv), which was populated from kubectl stdin
-  // by the `cat > <path>` step before this.
-  const readerScript = [
+  const script = [
+    'set -eu',
+    `rm -rf "${skillsDir}"`,
+    `mkdir -p "${skillsDir}"`,
+    // First, capture kubectl-supplied stdin to a temp file. `cat > path`
+    // reads from the script's stdin (= kubectl exec's stdin) until EOF.
+    // Manifests of any size pass through this without hitting the ARG_MAX
+    // limit on the command argv. Once cat completes (stdin EOF), stdin is
+    // free to be re-redirected for the heredoc that follows.
+    `cat > "${manifestPath}"`,
+    // Now run the node reader. The heredoc redirects node's stdin to the
+    // inline JS source; the manifest path comes via argv. Heredoc keeps
+    // shell quoting trivial (no escaping JSON content as shell strings).
+    `node - "${manifestPath}" <<'NODE'`,
     'const fs = require("fs");',
     'const path = require("path");',
     `const rootDir = ${JSON.stringify(skillsDir)};`,
@@ -942,16 +951,7 @@ const syncOpenClawSkills = async ({
     '    fs.chmodSync(target, parseInt(String(entry.mode), 8));',
     '  }',
     '}',
-  ].join('\n');
-  const script = [
-    'set -eu',
-    `rm -rf "${skillsDir}"`,
-    `mkdir -p "${skillsDir}"`,
-    // Capture kubectl-supplied stdin to a temp file. `cat > path` reads from
-    // the script's stdin (= kubectl exec's stdin). Manifests of any size pass
-    // through this without hitting the ARG_MAX limit on the command argv.
-    `cat > "${manifestPath}"`,
-    `node -e ${JSON.stringify(readerScript)} "${manifestPath}"`,
+    'NODE',
     `rm -f "${manifestPath}"`,
     // Copy skills from enabled extension skill dirs (e.g. /app/extensions/acpx/skills/acp-router)
     // Only copies if the extension dir exists AND the skill is not already written by the manifest.
