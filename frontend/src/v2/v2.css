@@ -1519,6 +1519,139 @@
   background: var(--v2-accent-strong);
 }
 
+/* GitHub PR preview card. Rendered below a message body when the content
+   contains a `https://github.com/<owner>/<repo>/pull/<n>` URL. Card fetches
+   from GitHub REST API on mount; failure mode is silent (parent's clickable
+   URL stays). Visual: borders not shadows, one accent color, no gradients —
+   matches the v2 design system. */
+.v2-prcard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  text-decoration: none;
+  color: var(--v2-text-primary);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.v2-prcard:hover {
+  border-color: var(--v2-border);
+  background: var(--v2-surface-hover);
+}
+.v2-prcard--loading {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--v2-text-secondary);
+  font-size: 12.5px;
+}
+.v2-prcard__chip {
+  font-family: var(--v2-font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+}
+.v2-prcard__loading-text {
+  font-style: italic;
+}
+.v2-prcard__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+}
+.v2-prcard__repo {
+  font-family: var(--v2-font-mono, ui-monospace, SFMono-Regular, monospace);
+  letter-spacing: 0.01em;
+}
+.v2-prcard__state {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: var(--v2-radius-pill);
+  border: 1px solid transparent;
+}
+.v2-prcard__state--open {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.10);
+  border-color: rgba(22, 163, 74, 0.20);
+}
+.v2-prcard__state--merged {
+  color: #6f42c1;
+  background: rgba(111, 66, 193, 0.10);
+  border-color: rgba(111, 66, 193, 0.20);
+}
+.v2-prcard__state--closed {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.10);
+  border-color: rgba(239, 68, 68, 0.20);
+}
+.v2-prcard__title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--v2-text-primary);
+}
+.v2-prcard__num {
+  font-family: var(--v2-font-mono, ui-monospace, SFMono-Regular, monospace);
+  color: var(--v2-text-secondary);
+  font-weight: 500;
+  margin-right: 4px;
+}
+.v2-prcard__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+}
+.v2-prcard__metric {
+  font-family: var(--v2-font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 11.5px;
+}
+.v2-prcard__metric--add { color: #16a34a; }
+.v2-prcard__metric--del { color: #ef4444; }
+.v2-prcard__contributors {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+.v2-prcard__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--v2-accent-soft);
+  border: 2px solid var(--v2-surface);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--v2-accent-text);
+}
+.v2-prcard__avatar:first-child { margin-left: 0; }
+.v2-prcard__avatar--overflow {
+  background-color: var(--v2-border-soft);
+  color: var(--v2-text-secondary);
+  font-size: 10px;
+}
+
 /* @-mention dropdown anchored to the composer input wrap. Sits above the
    composer in DOM order but renders above-and-out via absolute positioning. */
 .v2-mention-dropdown {
