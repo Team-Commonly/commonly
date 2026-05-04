@@ -4,6 +4,7 @@ import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import V2PodChat from './V2PodChat';
 import V2PodInspector from './V2PodInspector';
+import V2InviteModal from './V2InviteModal';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
 
@@ -46,6 +47,12 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(readInspectorCollapsed());
   const [inspectorView, setInspectorView] = useState<InspectorView>({ kind: 'overview' });
+  // Invite modal lives here (not in V2PodInspector) so the chat header
+  // invite icon and the inspector "+ Invite" button can both open it. The
+  // modal itself is V2InviteModal — this component just owns open/close.
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const openInvite = useCallback(() => setInviteOpen(true), []);
+  const closeInvite = useCallback(() => setInviteOpen(false), []);
   const toggleInspector = useCallback(() => {
     setInspectorCollapsed((prev) => {
       const next = !prev;
@@ -101,6 +108,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         inspectorCollapsed={inspectorCollapsed}
         onToggleInspector={selectedPodId ? toggleInspector : undefined}
         onOpenMember={openInspectorMember}
+        onOpenInvite={selectedPodId ? openInvite : undefined}
       />
       {selectedPodId && !inspectorCollapsed && (
         <V2PodInspector
@@ -111,6 +119,15 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           onOpenMember={openInspectorMember}
           onOpenArtifact={openInspectorArtifact}
           onBack={resetInspectorView}
+          onOpenInvite={openInvite}
+        />
+      )}
+      {selectedPodId && detail.pod && (
+        <V2InviteModal
+          open={inviteOpen}
+          podId={detail.pod._id}
+          podName={detail.pod.name || 'pod'}
+          onClose={closeInvite}
         />
       )}
     </div>

@@ -123,6 +123,10 @@ interface V2PodChatProps {
   inspectorCollapsed?: boolean;
   onToggleInspector?: () => void;
   onOpenMember?: (agentKey: string) => void;
+  // Opens the shared invite modal (rendered by V2Layout). The header
+  // invite icon delegates to this so the chat path matches the inspector
+  // path and a single modal instance handles both surfaces.
+  onOpenInvite?: () => void;
 }
 
 const Icon = ({ d }: { d: string }) => (
@@ -131,7 +135,7 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
-const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember }) => {
+const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite }) => {
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
   const navigate = useNavigate();
   const api = useV2Api();
@@ -591,15 +595,17 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
               </button>
             </div>
 
-            <button
-              type="button"
-              className="v2-chat__icon-btn"
-              onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
-              title="Invite people"
-              aria-label="Invite people"
-            >
-              <Icon d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM20 8v6M17 11h6" />
-            </button>
+            {onOpenInvite && (
+              <button
+                type="button"
+                className="v2-chat__icon-btn"
+                onClick={onOpenInvite}
+                title="Invite to this pod"
+                aria-label="Invite to this pod"
+              >
+                <Icon d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM20 8v6M17 11h6" />
+              </button>
+            )}
 
           </div>
 

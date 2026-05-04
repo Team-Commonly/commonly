@@ -2242,6 +2242,58 @@
   color: var(--v2-danger);
 }
 
+/* ---------- Members section action row (Invite / Manage) ----------
+ * Replaces the bare text-link buttons that previously sat right-aligned
+ * above the member list. Now reads as a proper action toolbar with a
+ * primary "Invite" CTA (filled accent) and a secondary "Manage" affordance
+ * (outline). Matches the "+ Add" / Cancel pattern used in Artifacts. */
+.v2-inspector__members-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.v2-root button.v2-inspector__action,
+.v2-inspector__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--v2-border-soft);
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.v2-root button.v2-inspector__action:hover,
+.v2-inspector__action:hover {
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-primary);
+  border-color: var(--v2-border);
+}
+
+.v2-root button.v2-inspector__action--primary,
+.v2-inspector__action--primary {
+  background: var(--v2-accent);
+  border-color: var(--v2-accent);
+  color: #fff;
+  flex: 1;
+  justify-content: center;
+}
+
+.v2-root button.v2-inspector__action--primary:hover,
+.v2-inspector__action--primary:hover {
+  background: var(--v2-accent-strong, var(--v2-accent));
+  border-color: var(--v2-accent-strong, var(--v2-accent));
+  color: #fff;
+  filter: brightness(1.04);
+}
+
 /* ---------- Inspector: Artifacts ---------- */
 
 .v2-inspector__artifacts {
