@@ -210,16 +210,23 @@ The page exists at 771 lines with `Discover | Installed` sub-tabs already implem
 ├────────────────────────────────────────────────────────────────────┤
 │ Sub-tabs (per kind):  Discover · Installed                          │
 ├────────────────────────────────────────────────────────────────────┤
-│  ┌─ Liz ────────────────┐  ┌─ Theo ───────────────┐                 │
-│  │ Community storyteller│  │ Dev PM               │                 │
-│  │ ★ —  · — installs    │  │ ★ —  · — installs    │                 │
-│  │ [Install]  [Fork]    │  │ [Install]  [Fork]    │                 │
-│  └──────────────────────┘  └──────────────────────┘                 │
-│  ┌─ Nova ───────────────┐  ┌─ Pixel ──────────────┐  ...            │
+│  ┌─ github ──────────────┐  ┌─ officecli ───────────┐               │
+│  │ steipete · MIT        │  │ iOfficeAI · Apache-2.0│               │
+│  │ ★ 603 · 12 installs   │  │ ★ 2.8k · 4 installs   │               │
+│  │ [Install]             │  │ [Install]             │               │
+│  └───────────────────────┘  └───────────────────────┘               │
+│  ┌─ pandic-office ───────┐  ┌─ markdown-converter ──┐  ...          │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-> *Mockup note: dashes (`—`) where ratings/install counts would render. Live values come from the marketplace API at runtime. Per-kind tab counts can be live-fetched (`/api/marketplace/browse?type=&count=true`) but are omitted from this mockup so reviewers don't read them as projections.*
+**What renders on each card:**
+- **★ N** — upstream GitHub stars from the source repo. For catalog skills (`github`, `pandic-office`, etc.) read from `awesome-agent-skills-index.json`'s `stars` field (catalog-snapshot value; freshness governed by the sync cron, see §Caveat). For locally-bundled skills like `officecli`, fetch live from the source repo's GitHub API once per page load and cache for the session.
+- **N installs** — count of `AgentInstallation` rows referencing this skill across the user's accessible pods (or instance-wide for admins). Cheap query. Skip rendering if the count would require a cross-instance aggregate or hits a privacy boundary; default to omitting rather than computing.
+- **Author + license** — small muted line above the metrics. Author from manifest, license from the catalog row.
+
+**What does NOT render:**
+- ~~`★ 4.8` review-style ratings~~ — Commonly does not have a per-Installable rating system today, and ADR-013 is not introducing one. Earlier mockup drafts invented these (e.g. `★ 4.8 · 240 installs`). Don't bring them back without a separate ADR for the ratings/reviews system itself.
+- Per-kind tab counts (`Apps (12)`, `Agents (78)`) — only render if the marketplace API exposes a cheap count endpoint per kind. Skip unless verified during Phase 3 implementation.
 
 The existing `Discover | Installed` sub-tabs become per-kind sub-tabs. Each kind tab is a thin data-source swap on the same underlying card list.
 
@@ -300,10 +307,12 @@ Add **`agents`** as a sixth tab. Lists agents currently in this pod, plus instal
 ├────────────────────────────────────────────┤
 │ Search agents…    [_______________]    🔍 │
 │ ┌─ Liz   Community Storyteller ────────┐  │
-│ │ ★ — · — installs · [Install][Fork]   │  │
+│ │ author · MIT · ★ <gh-stars> · N inst │  │
+│ │ [Install]  [Fork]                    │  │
 │ └──────────────────────────────────────┘  │
 │ ┌─ Tarik Community Questioner ─────────┐  │
-│ │ ★ — · — installs · [Install][Fork]   │  │
+│ │ author · MIT · ★ <gh-stars> · N inst │  │
+│ │ [Install]  [Fork]                    │  │
 │ └──────────────────────────────────────┘  │
 ├────────────────────────────────────────────┤
 │ Browse all agents          → /v2/marketplace│
@@ -322,7 +331,61 @@ Add **`agents`** as a sixth tab. Lists agents currently in this pod, plus instal
 
 **Lift target: <350 lines** for `V2InspectorAgentsTab.tsx` (more than skills because of per-agent action density).
 
-#### 4d. Shared card-list subcomponent (extracted from Phase 3, reused by Phase 4)
+#### 4d. Per-agent skill management drawer (the friendly UX)
+
+The inspector Skills tab (4b) is *pod-centric* — it lists every skill any agent in this pod has, with rows like `github · @nova,@theo,@pixel`. That view is correct but cognitively heavy when the user just wants to think about *one* agent.
+
+Per-agent skill management lives in the **Configure drawer** that opens from clicking an agent in the Members tab or Agents tab. One agent, one column, no mental aggregation:
+
+```
+┌─ Configure @theo  Dev PM ──────────────────┐
+│ ● Active · last heartbeat 4m ago           │
+│ Persona  ·  Heartbeat  ·  Skills  ·  Memory │
+├─────────────────────────────────────────────┤
+│ Skills (5)                       [+ Add]    │
+│ ─────────                                   │
+│ ✓ github          steipete · ★ <gh-stars>  │
+│   Interact with GitHub via gh CLI    [×]   │
+│ ─────────                                   │
+│ ✓ officecli       iOfficeAI · ★ <gh-stars> │
+│   DOCX / XLSX / PPTX read+edit       [×]   │
+│ ─────────                                   │
+│ ✓ pandic-office   piyushduggal · ★ <stars> │
+│   Markdown → PDF via pandoc          [×]   │
+│ ─────────                                   │
+│ ✓ markdown-conv.  microsoft · ★ <stars>    │
+│   Read attached PDFs/DOCX            [×]   │
+│ ─────────                                   │
+│ ✓ pdf             awspace · ★ <stars>      │
+│   PDF extract / merge / split        [×]   │
+│ ─────────                                   │
+│ Recommended for Dev PM                      │
+│   ai-pdf-builder · pandoc + LaTeX  [+]      │
+│   research-company · branded reports [+]    │
+└─────────────────────────────────────────────┘
+```
+
+**Friendly UX moves:**
+
+- **One agent at a time** — no multi-row "@nova, @theo, @pixel" cognitive overhead. The drawer shows exactly the skills installed for *this* agent in *this* pod.
+- **Inline `[×]` removal** — single click + confirm toast (no modal). The skill markdown gets pulled from the agent's PVC via `syncOpenClawSkills` on the next reprovision; in the meantime the row goes greyed-out with "removing on next sync."
+- **`[+ Add]` opens a search-first picker** — typeahead over the catalog filtered by what's *not* yet installed for this agent. Picking a skill installs it for THIS agent only, not pod-wide. (Backend: scoped `POST /api/skills/import` with the `agentInstallationId` instead of `podId` — small extension, see open question #11 below.)
+- **"Recommended for Dev PM"** — preset-aware. Each preset declares its `defaultSkills` already (Part 3); when an agent is missing one of its preset's defaults, surface it under Recommended with a one-click install. This makes "fix the agent's missing capabilities" a glanceable affordance rather than a hunt.
+- **GitHub stars rendered, not Commonly ratings** — same rule as the marketplace cards. Stars come from the catalog snapshot for catalog skills, live API for locally-bundled (`officecli`).
+- **No bulk operations in v1** — no "uninstall all" or "match preset." If a user wants to wipe and reset, they uninstall the agent and reinstall (Part 3 syncs `defaultSkills` automatically). Bulk ops invite footguns; defer until a real user asks.
+- **Tabs inside the drawer** — `Persona · Heartbeat · Skills · Memory`. Skills is one tab among four; skill management doesn't dominate the agent's surface, it lives where the agent lives. Persona = IDENTITY.md fields; Heartbeat = schedule + global flag; Memory (read-only viewer) = recent entries from `AgentMemory`.
+
+**Where this view appears:**
+- From the Members tab → click an agent member → Configure drawer
+- From the Agents tab (4c) → click an installed agent → same Configure drawer
+- From the Marketplace page → click an installed agent's `[Configure]` action → same drawer
+- All three entry points open the **same component**, no per-surface forks.
+
+**Lift target: <300 lines** for `V2AgentConfigureDrawer.tsx`. Reuses the catalog row component from 4d for the inline skill list. Memory tab is initially read-only; editing memory comes later via ADR-003 work.
+
+**Permissions** (per open question #3): all members can see the drawer. Only owner + admin can install/uninstall skills or modify persona. Non-admin viewers see grey-out states with explanatory tooltip, not hidden controls — discoverability matters more than chrome.
+
+#### 4e. Shared card-list subcomponent (extracted from Phase 3, reused by Phase 4)
 
 When Phase 3 extends `AppsMarketplacePage`, factor the per-card list rendering into a small subcomponent (`<MarketplaceCardList>`, ~250 lines) inside the page file. Phase 4's inspector tabs import the same subcomponent rather than reinventing it:
 
@@ -358,7 +421,7 @@ The subcomponent owns: card layout, action buttons, install/fork modals, detail 
 | **1** | Update `defaultSkills` for the four dev personas; reprovision-all | Theo/Nova/Pixel/Ops each have `github`, `officecli`, `pandic-office`, `markdown-converter`, `pdf` synced to PVC. Hand-test each with a file-producing task. | One backend PR |
 | **2** | SOUL.md two-line addition + `officecli` SKILL.md packaged locally | Visible in IDENTITY.md sync log; first heartbeat after deploy uses the rule | One backend PR |
 | **3** | Extend `/v2/marketplace` (`AppsMarketplacePage`) — promote to kind tabs (Apps · Agents · Skills · Integrations); wire Agents tab to `/api/marketplace/*` (Installable, Randy); wire Skills tab to `/api/skills/*` (legacy AR); soft-redirect `/v2/agents/browse` and `/v2/skills` with banners | Frontend PR; agents install/fork round-trip works against Installable backend; skills install/uninstall round-trip works against AR; deep-links `?type=agent` and `?type=skill` pre-select correct tab. | One frontend PR |
-| **4** | V2 inspector Skills tab + Agents tab — extracted card-list subcomponent shared with the marketplace page from Phase 3 | Frontend PR; per-pod install/uninstall round-trip works; "Talk to" + "Configure" + "Fork" actions on the Agents tab. | One frontend PR |
+| **4** | V2 inspector Skills tab + Agents tab + per-agent Configure drawer (4d) — reuses the card-list subcomponent shared with the marketplace page from Phase 3 | Frontend PR; per-pod install/uninstall round-trip works; "Talk to" + "Configure" + "Fork" actions on the Agents tab; Configure drawer's per-agent skill list installs/removes scoped to one agent (verify open question #11 first); preset-aware "Recommended for" surfaces gaps. | One frontend PR |
 | **5** | Delete v1 `AgentsHub.tsx` (4,954 lines) + `SkillsCatalogPage.tsx` (2,061 lines) — only after Phase 3's redirects have been live ≥2 weeks with no fallback complaints | Lint clean; no broken imports; v2 routes resolve. | One frontend cleanup PR |
 | **6** *(deferred)* | Author + upstream-contribute `commonly-pptx`, `commonly-xlsx` skills | When real demand surfaces (marketing or chief-of-staff agent asks for slides) | Out of scope here |
 | **7** *(deferred)* | Publish flow (admin-only) on top of `/api/marketplace/publish` | When a user-authored agent or skill needs to ship publicly | Out of scope here |
@@ -451,7 +514,9 @@ We keep `pandoc` from this stack (md → PDF is its sweet spot) and `markitdown`
 
 9. **Fork ownership and storage.** Mostly resolved by Randy's work: `/api/marketplace/fork` is Installable-canonical and `/api/marketplace/mine` returns the calling user's published + forked items. **Verify before Phase 3 ships:** does `/api/marketplace/mine` return enough metadata to render the "My Agents" view (name, version, fork-source link, install count)? If yes, no backend addition needed. If no, small backend extension to widen the response shape — not a new route.
 
-10. **What happens to v1's `AgentsHub.tsx` PersonalityBuilder UX?** v1 has a rich persona-customization UI (sliders, traits, etc.) that isn't reflected in the v2 marketplace design. Two paths: (a) port PersonalityBuilder to a v2 detail-drawer subview, (b) treat persona as plain `IDENTITY.md` editing in the Configure drawer (4c) and let v1 fade out. Recommendation — (b), simpler and matches how IDENTITY.md is actually loaded by the agent. Revisit if user feedback says the trait-slider UX is load-bearing for non-technical users.
+10. **What happens to v1's `AgentsHub.tsx` PersonalityBuilder UX?** v1 has a rich persona-customization UI (sliders, traits, etc.) that isn't reflected in the v2 marketplace design. Two paths: (a) port PersonalityBuilder to a v2 detail-drawer subview, (b) treat persona as plain `IDENTITY.md` editing in the Configure drawer (4d) and let v1 fade out. Recommendation — (b), simpler and matches how IDENTITY.md is actually loaded by the agent. Revisit if user feedback says the trait-slider UX is load-bearing for non-technical users.
+
+11. **Does `POST /api/skills/import` accept per-agent scoping today, or only per-pod?** The 4d Configure drawer wants "install this skill for *this* agent only, not the whole pod." Existing route signature accepts `podId` but it's unclear whether passing `agentInstallationId` (or `(agentName, instanceId, podId)` tuple) narrows the scope correctly given the underlying `syncOpenClawSkills` is keyed on `accountId`. **Verify before Phase 4 ships:** a per-agent install should drop the SKILL.md into `/workspace/<that-agent's-accountId>/skills/` and not into other agents' workspaces. If the route is pod-scoped only, small backend extension to add a `targetAgentId` parameter — not a new route.
 
 ---
 
@@ -538,3 +603,4 @@ Either outcome is correct. ADR-013 doesn't need to pre-decide. The frontend wiri
 - 2026-05-03 — v5: **major correction after verifying actual backend/frontend state.** (a) `/v2/marketplace` already exists (renders v1 `AppsMarketplacePage`, 771 lines, with `Discover | Installed` sub-tabs). `/v2/agents/browse` and `/v2/skills` also exist. v4's "design new top-level page" was wrong; right move is to extend `AppsMarketplacePage` in place with Apps · Agents · Skills · Integrations kind tabs. (b) `/api/marketplace/*` (Randy, PR #215+#230) is **already Installable-canonical** via dual-write — not legacy AR as v3/v4 framed. ADR-013's Phase 3 wires the agents tab against the Installable side from day one and *is* the marketplace-frontend track from ADR-011 by definition. Phasing collapsed from 8 active to 5 active (extend page, build inspector tabs, deprecate v1 pages). §"Relationship to Installable taxonomy" rewritten to reflect the per-kind split (agents already on Installable; skills still on AR). Open questions #7 + #8 closed; #9 narrowed (Randy's `/api/marketplace/mine` likely covers fork ownership, just verify response shape).
 - 2026-05-03 — v5.1: added §Caveat on catalog-derived numbers in the §Context section. Catalog index `docs/skills/awesome-agent-skills-index.json` was last synced **2026-02-05** (nearly 3 months ago); all derived numbers (`~1,659` skills, `github` skill `603 stars`, etc.) are point-in-time snapshots, not live counts. Annotated each citation in-place. Numbers fetched live via GitHub API today (notably OfficeCLI's 2,768 stars + v1.0.70 release date) are explicitly timestamped 2026-05-03 and treated separately. Reviewers should re-sync before any sales-pitchy or external use of the figures.
 - 2026-05-03 — v5.2: ASCII mockups had **invented numbers that looked authoritative** (`Apps (12)`, `Agents (78)`, `★ 4.8 · 240 installs`, `★ 4.6 · 88 installs`, `★ 4.5 · 175 installs`). All replaced with `—` placeholders so reviewers don't read them as projections or commitments. Added a mockup-note clarifying live values come from the marketplace API at runtime.
+- 2026-05-03 — v5.3: corrected the v5.2 over-redaction. **GitHub stars should render** (real upstream signal from catalog/live API) — restored on cards as `★ <gh-stars>` with explicit data source. **Commonly review-style ratings (`★ 4.8`) should NOT render** — they don't exist as a system; would need their own ADR. **Install counts** (real Commonly metric) render where the query is cheap, omitted otherwise. Added §4d **per-agent skill management drawer** — the "friendly UX" surface the user flagged was missing. Configure drawer opens from any agent click (Members, Agents tab, Marketplace) and shows that agent's skills as a single-column list with inline `[×]` remove + preset-aware "Recommended for ___" gaps. Added open question #11 for verifying per-agent install scoping in `POST /api/skills/import`. Existing 4d (shared card-list subcomponent) renumbered to 4e. Phase 4 verification expanded to cover the new drawer.
