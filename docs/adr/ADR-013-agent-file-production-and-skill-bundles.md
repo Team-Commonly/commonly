@@ -533,9 +533,60 @@ We keep `pandoc` from this stack (md → PDF is its sweet spot) and `markitdown`
 
 ---
 
+## Phase 0a findings (resolved 2026-05-04)
+
+The three load-bearing prereqs ran as a research spike; verdicts below close out open questions #1, #11, #12, #13. The (ii) finding is the most consequential — it confirms Phase 4 splits into frontend + backend.
+
+### (i) SHA256SUMS publication — ✅ Available
+
+`iOfficeAI/OfficeCLI` v1.0.70 publishes a `SHA256SUMS` asset (710 bytes) directly on the GitHub release at `https://github.com/iOfficeAI/OfficeCLI/releases/download/v1.0.70/SHA256SUMS`. Phase 0b's Dockerfile fetches and verifies against this artifact; no committed-constant fallback path needed. Linux x64 binary confirmed at 32,156,584 bytes (~30.6 MB), matching the Part 2 size estimate.
+
+**Closes:** Open question #13.
+
+### (ii) Per-agent skill install scoping — ❌ Deeper backend change required
+
+Three surfaces, all need work; this is **not** a parameter add to `POST /api/skills/import`:
+
+| # | Surface | Current state | Required change |
+|---|---|---|---|
+| 1 | Import route — `backend/routes/skills.ts:279-307` | Stores agent-scoped metadata (`scope:'agent'`, `agentName`, `instanceId`) but the sync hook on line 300 calls `syncOpenClawInstallationsForPodSkillChange({ podId })`, dropping the `agentName` | Thread `agentName` through to the sync hook |
+| 2 | Sync function — `backend/services/agentProvisionerService.ts:424-549` | `syncOpenClawSkillsLocal` queries ALL pod-active skills, ignores per-agent `scope` metadata. The helper `buildScopedSkillKey` exists in `podAssetService.ts:202-214` but is never used in the sync path | Filter `PodAsset` query by `metadata.agentName`; consume `buildScopedSkillKey` |
+| 3 | Workspace layout — `${WORKSPACE_ROOT}/${accountId}/skills/` | `accountId` derivation: `instanceId` only for openclaw (collision-prone), `${agentName}-${instanceId}` for others. The import path bypasses `resolveOpenClawAccountId` and just uses `instanceId` | Make per-agent skill subdirectories addressable under workspace root, OR fully consume `resolveOpenClawAccountId`'s tuple |
+
+**Implication for phasing:** Phase 4 splits into **4a (frontend Configure drawer + inspector tabs) + 4b (backend per-agent install scoping)** as the v5.4 contingency anticipated. PR estimate moves to the upper end (**~7 PRs**).
+
+**Closes:** Open question #11. Also closes the metadata-vs-PVC half of #1 — yes, import does push SKILL.md to the PVC via `syncOpenClawInstallationsForPodSkillChange` → `syncOpenClawSkills`. The path exists; it's the per-agent scoping inside that path that's missing.
+
+### (iii) Workspace-boundary helper — ⚠️ Helper exists but not exported, plus a surprise
+
+The validation helper `toRelativeWorkspacePath` exists at `_external/clawdbot/src/agents/path-policy.ts:105-116`. High quality:
+- Rejects `..` and absolute paths
+- Resolves symlinks via `resolveSandboxInputPath`
+- Cross-platform (Windows + Unix)
+- Compares the resolved path against a workspace-root parameter using `path.relative()`
+
+**Two issues:**
+
+1. **Not exported from `plugin-sdk`.** The Commonly extension can't import it directly. ~10-line refactor: add the export to `_external/clawdbot/src/plugin-sdk/index.ts`. Phase 0b prereq.
+
+2. **`acpx_run` itself has zero path validation today.** The tool at `_external/clawdbot/extensions/commonly/src/tools.ts:927-954` accepts `agentId` and `task` strings and execs them with `/workspace` as cwd. No `..` check, no sandbox enforcement. This is a bigger gap than the ADR assumed in Invariant 4 (which read as "reuse the existing helper" — but `acpx_run` doesn't use it).
+
+**Recommendation: accept the `acpx_run` gap for its remaining lifetime.** ADR-005 Stage 3 is retiring `acpx_run` in favor of A2A-via-DM (now first-class via the `commonly_open_dm` tool, see updated CLAUDE.md). Hardening a surface that's being deprecated is misallocated effort. `commonly_attach_file` will use the helper from day one; that's the new pattern.
+
+**Closes:** Open question #12. Phase 0b absorbs the plugin-sdk export refactor as a prereq; the `commonly_attach_file` tool uses the imported helper. New open question #14 added on whether to harden `acpx_run` (recommendation: no, defer to ADR-005 Stage 3 deprecation).
+
+### Phasing implications recap
+
+- **Phase 0b** scope: unchanged in shape; absorbs plugin-sdk export as a small prereq.
+- **Phase 4 splits firmly into 4a (frontend) + 4b (backend).** 4b touches three surfaces (import route, sync function, workspace layout). Backend work is real but bounded — none of the three changes are migrations or schema rewrites.
+- **PR estimate finalized at ~7 PRs** (was the broad-end of the 5–7 range).
+- **§4d Configure drawer copy commits to "Queued — applies on next reprovision"** as the v1 affordance until the per-agent reprovision endpoint lands. Per-agent reprovision endpoint can land in Phase 4b alongside the scoping work, or be deferred to Phase 4c if scope grows further.
+
+---
+
 ## Open questions
 
-1. **Does `POST /api/skills/import` push the SKILL.md to the gateway PVC, or only register metadata?** The plumbing exists in `syncOpenClawSkills`, but verify on dev cluster that an import call actually drops the markdown into `/workspace/<accountId>/skills/<id>/`. If it's metadata-only, we need a separate sync trigger as part of Phase 1.
+1. ~~Does `POST /api/skills/import` push the SKILL.md to the gateway PVC, or only register metadata?~~ **Resolved 2026-05-04 (Phase 0a).** Yes, import does push SKILL.md to the PVC via `syncOpenClawInstallationsForPodSkillChange` → `syncOpenClawSkills` → writes to `${WORKSPACE_ROOT}/${accountId}/skills/`. The path exists; it's the per-agent scoping inside that path that's missing — see Phase 0a (ii) finding.
 
 2. ~~What does the existing `github` skill ID resolve to?~~ **Resolved 2026-05-03.** Real catalog skill at `openclaw/skills/skills/steipete/github/SKILL.md`, MIT, 603 stars *(2026-02-05 snapshot — see caveat in §Context)*, requires `gh` CLI (already in image). No shim layer — `defaultSkills: [{id: 'github'}]` in presets resolves directly against the catalog.
 
@@ -555,11 +606,13 @@ We keep `pandoc` from this stack (md → PDF is its sweet spot) and `markitdown`
 
 10. **What happens to v1's `AgentsHub.tsx` PersonalityBuilder UX?** v1 has a rich persona-customization UI (sliders, traits, etc.) that isn't reflected in the v2 marketplace design. Two paths: (a) port PersonalityBuilder to a v2 detail-drawer subview, (b) treat persona as plain `IDENTITY.md` editing in the Configure drawer (4d) and let v1 fade out. Recommendation — (b), simpler and matches how IDENTITY.md is actually loaded by the agent. Revisit if user feedback says the trait-slider UX is load-bearing for non-technical users.
 
-11. **Does `POST /api/skills/import` accept per-agent scoping today, or only per-pod?** [**Escalated to Phase 0a (ii) prereq in v5.4 — load-bearing for Phase 4.**] The 4d Configure drawer wants "install this skill for *this* agent only, not the whole pod." Existing route signature accepts `podId` but it's unclear whether passing `agentInstallationId` (or `(agentName, instanceId, podId)` tuple) narrows the scope correctly given the underlying `syncOpenClawSkills` is keyed on `accountId`. If multiple agents share an `accountId` (which the install pipeline strongly suggests, since "scopes skills to (agentName, instanceId, podId)" is a *projection* of `accountId`), per-agent scoping might require a deeper change than a parameter add — e.g. separate skill subdirectories per `(agentName, instanceId)` inside the workspace, plus updates to how the gateway resolves which skills the agent sees. **Resolve in Phase 0a before Phase 4 scope is finalized.** Outcome determines whether Phase 4 stays as one frontend PR or splits into frontend + backend pair.
+11. ~~Does `POST /api/skills/import` accept per-agent scoping today, or only per-pod?~~ **Resolved 2026-05-04 (Phase 0a).** Pod-only today. Per-agent scoping requires a deeper backend change across three surfaces (import route, sync function, workspace layout) — see §"Phase 0a findings" above. Phase 4 splits into 4a (frontend) + 4b (backend) accordingly.
 
-12. **Is the workspace-boundary helper from `acpx_run` cleanly extractable for `commonly_attach_file`?** Invariant 4 says the tool reuses the existing helper "to reject paths that escape `/workspace/<accountId>/` (no `..`, no symlinks pointing outside)." That's correct in spirit, but assumes the helper exists as a clean exportable function. If it's currently inlined into `acpx_run`'s argument-validation logic, extracting it cleanly is a small refactor that needs to land *before* `commonly_attach_file` ships. **Resolve in Phase 0a (iii)** as a 30-minute spike; outcome is either "import and use" or "extract first, then use."
+12. ~~Is the workspace-boundary helper from `acpx_run` cleanly extractable for `commonly_attach_file`?~~ **Resolved 2026-05-04 (Phase 0a).** Helper exists at `_external/clawdbot/src/agents/path-policy.ts:105-116` (`toRelativeWorkspacePath`). Not exported from plugin-sdk — Phase 0b adds the ~10-line export. Surprise: `acpx_run` itself has zero path validation today (see new question #14).
 
-13. **Does `iOfficeAI/OfficeCLI` actually publish `SHA256SUMS` for its releases?** [**Escalated to Phase 0a (i) prereq in v5.4.**] If yes, the Dockerfile fetches and verifies at build time; if no, we compute the checksum once locally and commit it as a constant. Either path is acceptable; the placeholder `<lookup-from-SHA256SUMS-at-pin-time>` is not. Phase 0a resolves which.
+13. ~~Does `iOfficeAI/OfficeCLI` actually publish `SHA256SUMS` for its releases?~~ **Resolved 2026-05-04 (Phase 0a).** Yes, v1.0.70 publishes the artifact at `https://github.com/iOfficeAI/OfficeCLI/releases/download/v1.0.70/SHA256SUMS`. Use upstream artifact verification path; no committed-constant fallback needed.
+
+14. **Should `acpx_run` be hardened with `toRelativeWorkspacePath` for its remaining lifetime?** Phase 0a (iii) surfaced that `acpx_run` performs zero path validation today — it accepts arbitrary `task` strings and execs them with `/workspace` as cwd, no `..` check or sandbox enforcement. The tool is being retired per ADR-005 Stage 3 in favor of A2A-via-DM (`commonly_open_dm` + `agent-dm` pod type, both shipped). **Recommendation: defer / accept the gap.** Auditable hardening of a surface being deprecated is misallocated effort. Track the deprecation timeline; if it slips past 90 days from this ADR's ship date, revisit. `commonly_attach_file` uses the helper from day one regardless.
 
 ---
 
@@ -658,7 +711,7 @@ ADR-013 makes the `acpx_run` deprecation easier in two ways:
 
 **Summary.** `acpx_run` is being deprecated because Commonly's own primitives (CAP + agent-rooms + ADR-005's wrapper-agent pattern) already cover the use case. ADR-013 contributes to that deprecation by adding `commonly_attach_file` as the kernel-level file-delivery verb — making "file produced by an agent appears in chat" runtime-agnostic. The Phase 0b smoke test uses `acpx_run` only as a bootstrap; the design does not depend on `acpx_run`'s continued existence.
 
-> *Naming note.* "A2A-via-DM" (agent-to-agent delegation through 1:1 agent-rooms / DMs) is the term Commonly uses for the wrapper-agent pattern from ADR-005. It's not a separate primitive — just `Pod.type: 'agent-room'` (shipped) plus `@mention` (shipped) plus a polling driver on the agent side (ADR-005 §Stage 1–3). See ADR-005 for the full semantics.
+> *Naming note (updated 2026-05-04).* "A2A-via-DM" (agent-to-agent delegation through 1:1 DMs) is now first-class via two shipped primitives: **`Pod.type: 'agent-dm'`** (1:1 any-pair, autonomous-spawnable) alongside the original `Pod.type: 'agent-room'` (1:1 user↔agent), and the **`commonly_open_dm`** extension tool that lets an agent autonomously open an agent-dm pod with a peer (live in clawdbot since `11878b43c`). Both pod types are strictly 1:1 (ADR-001 §3.10, enforced by `agentIdentityService.DM_POD_TYPES_GUARD`). The wrapper-agent polling driver from ADR-005 (`sam-local-codex` etc.) sits on top of these primitives. ADR-013's `commonly_attach_file` works identically across both pod types — file delivery is decoupled from which pair is talking.
 
 ---
 
@@ -676,6 +729,7 @@ ADR-013 makes the `acpx_run` deprecation easier in two ways:
 
 ## Revision history
 
+- 2026-05-04 — v5.6 (Phase 0a findings): all three load-bearing prereqs ran as a research spike, verdicts captured in new §"Phase 0a findings" section. Closed open questions #1, #11, #12, #13. (i) SHA256SUMS — confirmed available upstream. (ii) Per-agent skill scoping — deeper backend change required across three surfaces; Phase 4 splits firmly into 4a frontend + 4b backend; PR estimate finalized at ~7. (iii) Workspace-boundary helper exists at `path-policy.ts` but isn't exported from plugin-sdk (small refactor for Phase 0b). Surprise from (iii): `acpx_run` has zero path validation today — added open question #14, recommendation to defer hardening since ADR-005 Stage 3 is retiring `acpx_run` anyway. Updated §"Relationship to ADR-005" naming note to reflect that `commonly_open_dm` + `agent-dm` pod type both shipped.
 - 2026-05-03 — Initial draft (v1).
 - 2026-05-03 — v2: replaced the pandoc + python-office + libreoffice + docx-js stack with `OfficeCLI` (Apache-2.0, single 30 MB static binary) after upstream discovery; image growth ~600 MB → ~170 MB. Added §F to rejected alternatives capturing the prior toolchain.
 - 2026-05-03 — v3: closed open question #2 (`github` skill is real — `steipete/github`, MIT, 603 stars, requires `gh` already in image). Added §"Relationship to Installable taxonomy (ADR-001)" mapping each piece to the Installable model + the migration story when Phase 3 unpauses. Added new open questions on OfficeCLI version-pin cadence and Phase-3 acceleration vs. deferral.
