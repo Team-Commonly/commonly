@@ -33,6 +33,7 @@ const {
   issueUserTokenForInstallation,
 } = require('./tokens');
 const { PRESET_DEFINITIONS } = require('./presets');
+const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
 
 const provisionRouter = express.Router();
 
@@ -283,6 +284,33 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: an
       }
     }
 
+    // ADR-013 Phase 1: auto-import the preset's defaultSkills as PodAssets so
+    // syncOpenClawSkills (called below) picks them up and writes their
+    // SKILL.md files to the agent's workspace on the gateway PVC. Resolution
+    // order: local bundle (commonly-bundled-skills/<id>/SKILL.md) → upstream
+    // catalog. Reuses the same upsertImportedSkillAsset path the manual
+    // /api/skills/import route uses; idempotent across reprovisions.
+    const explicitPresetIdForSkills = (configPayload as any)?.presetId || null;
+    const matchedPresetForSkills: any = PRESET_DEFINITIONS.find(
+      (p: any) => p.id === (explicitPresetIdForSkills || normalizedInstanceId),
+    );
+    let presetSkillsApplied = null;
+    if (matchedPresetForSkills?.defaultSkills?.length && podId) {
+      try {
+        presetSkillsApplied = await applyPresetDefaultSkills({
+          podId: String(podId),
+          preset: matchedPresetForSkills,
+          userId,
+        });
+      } catch (skillErr: unknown) {
+        console.warn(
+          '[provision] applyPresetDefaultSkills failed:',
+          (skillErr as Error).message,
+        );
+        presetSkillsApplied = { error: (skillErr as Error).message };
+      }
+    }
+
     let runtimeStart = null;
     try {
       runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
@@ -387,6 +415,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: an
       runtimeRestarted: runtimeRestart?.restarted || false,
       runtimeRestartError: runtimeRestart?.reason || null,
       skillsSynced,
+      presetSkillsApplied,
       sharedIdentity: true,
       agentUsername: agentUser.username,
     });

@@ -1282,6 +1282,13 @@ If nothing changed → no post.
 - Auto-source from GitHub when idle — don't wait for humans to assign work.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 `,
+    defaultSkills: [
+      { id: 'github', reason: 'PR/repo operations and source control context.' },
+      { id: 'officecli', reason: 'Generate DOCX/XLSX/PPTX deliverables for stakeholders (PRDs, briefs, reports).' },
+      { id: 'pandic-office', reason: 'Markdown → PDF for weekly digests and audit summaries.' },
+      { id: 'markdown-converter', reason: 'Read user-attached PDFs/DOCX as markdown for input.' },
+      { id: 'pdf', reason: 'PDF extract / merge / split when working with stakeholder docs.' },
+    ],
   },
   {
     id: 'backend-engineer',
@@ -1467,6 +1474,14 @@ If Branch A just completed a task with a PR: also post the API contract (endpoin
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 - HEARTBEAT_OK is a return value, NOT a chat message. Never post it.
 `,
+    defaultSkills: [
+      { id: 'github', reason: 'PR/repo operations, issue context, source control.' },
+      { id: 'tmux', reason: 'Session management for long-running coding tasks.' },
+      { id: 'officecli', reason: 'Generate DOCX/XLSX deliverables (API specs, schemas as docs) when needed.' },
+      { id: 'pandic-office', reason: 'Markdown → PDF for stack-trace analysis or design notes shared in chat.' },
+      { id: 'markdown-converter', reason: 'Read user-attached PDFs/DOCX/XLSX/specs as markdown for input.' },
+      { id: 'pdf', reason: 'PDF extract / read when working with attached vendor docs or specs.' },
+    ],
   },
   {
     id: 'frontend-engineer',
@@ -1699,6 +1714,14 @@ For any message asking about frontend components, UI status, implementation deci
 - Skip sender "pixel" — that's you.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 `,
+    defaultSkills: [
+      { id: 'github', reason: 'PR/repo operations, issue context, source control.' },
+      { id: 'tmux', reason: 'Session management for long-running coding tasks.' },
+      { id: 'officecli', reason: 'Generate UI spec / mockup-doc deliverables (DOCX/PPTX) when needed.' },
+      { id: 'pandic-office', reason: 'Markdown → PDF for design notes / accessibility audits shared in chat.' },
+      { id: 'markdown-converter', reason: 'Read user-attached PDFs/DOCX/specs as markdown for input.' },
+      { id: 'pdf', reason: 'PDF extract / read when working with attached design assets or specs.' },
+    ],
   },
   {
     id: 'devops-engineer',
@@ -1924,6 +1947,14 @@ For any message asking about infrastructure status, deployment decisions, CI/CD 
 - Skip sender "ops" — that's you.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
 `,
+    defaultSkills: [
+      { id: 'github', reason: 'PR/repo operations, issue context, source control.' },
+      { id: 'tmux', reason: 'Session management for long-running coding tasks.' },
+      { id: 'officecli', reason: 'Generate runbook / incident-report deliverables (DOCX/PDF) when needed.' },
+      { id: 'pandic-office', reason: 'Markdown → PDF for incident timelines and post-mortem reports shared in chat.' },
+      { id: 'markdown-converter', reason: 'Read user-attached PDFs (vendor docs, runbooks, k8s configs) as markdown for input.' },
+      { id: 'pdf', reason: 'PDF extract / read when working with vendor docs or k8s reference material.' },
+    ],
   },
   {
     id: 'claude-code-agent',
