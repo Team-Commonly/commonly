@@ -162,11 +162,27 @@ exports.getAllPods = async (req: any, res: any) => {
       .populate('parentPod', 'name _id')
       .sort({ updatedAt: -1 });
 
-    // Personal pod types: only return pods the requester belongs to.
-    // Global admins bypass the membership filter so they can audit every
-    // agent-room / agent-admin / agent-dm in the instance — the moderation
-    // surface for the 1:1 invariant on agent-rooms (ADR-001 §3.10).
-    if ((type === 'agent-admin' || type === 'agent-room' || type === 'agent-dm') && req.userId) {
+    // Membership filter — return only pods the requester belongs to.
+    //
+    // Personal pod types (agent-admin / agent-room / agent-dm) have always
+    // been membership-gated. As of this commit, the SAME rule extends to
+    // chat/team/study/games pods on the default listing (no `type` query
+    // param). The previous behavior leaked every chat pod on the instance
+    // to every authenticated user, which made the V2 sidebar unusable on
+    // a multi-tenant or shared dev instance and broke isolation for
+    // demos / test accounts.
+    //
+    // To opt back into the legacy "list everything I have access to read"
+    // behavior — useful for admin tooling, marketplace browsing, and
+    // the pod-discovery surface — pass `?scope=all`. That path still
+    // requires admin or explicit join-policy.
+    //
+    // Global admins bypass membership filtering so they can audit every
+    // pod in the instance — same moderation surface as before for the
+    // 1:1 invariant on agent-rooms (ADR-001 §3.10).
+    const scope = String(req.query?.scope || 'mine').toLowerCase();
+    const isPersonal = type === 'agent-admin' || type === 'agent-room' || type === 'agent-dm';
+    if (req.userId && (isPersonal || scope === 'mine')) {
       const isAdmin = await isGlobalAdminRequest(req);
       if (!isAdmin) {
         const uid = String(req.userId);
