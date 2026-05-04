@@ -4,6 +4,7 @@ import V2Layout from './components/V2Layout';
 import V2Login from './components/V2Login';
 import V2FeaturePage from './components/V2FeaturePage';
 import V2YourTeamPage from './components/V2YourTeamPage';
+import V2InviteRedeem from './components/V2InviteRedeem';
 import { useAuth } from '../context/AuthContext';
 import Register from '../components/Register';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
@@ -127,6 +128,11 @@ const V2App: React.FC = () => {
           <Route path="discord/callback" element={<DiscordCallback />} />
           <Route path="discord/success" element={<DiscordCallback type="success" />} />
           <Route path="discord/error" element={<DiscordCallback type="error" />} />
+          {/* Pod invite redeem — handles its own auth gate (redirects to
+              /v2/login?next=... when anonymous). Must sit OUTSIDE the
+              V2RequireAuth wrapper so an anonymous click on the share link
+              hits the gate cleanly instead of bouncing to / first. */}
+          <Route path="invite/:token" element={<V2InviteRedeem />} />
           <Route
             path="*"
             element={(

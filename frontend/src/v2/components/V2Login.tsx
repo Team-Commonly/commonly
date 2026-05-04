@@ -21,8 +21,16 @@ const V2Login: React.FC = () => {
     setSubmitting(true);
     try {
       await login(email.trim(), password);
-      const from = (location.state as LocationState | null)?.from?.pathname || '/v2';
-      navigate(from, { replace: true });
+      // Resolve post-login destination. Priority: `?next=<url>` query
+      // param (used by /v2/invite/:token redirect when anonymous) →
+      // location.state.from (set by ProtectedRoute) → /v2 home. The
+      // query-string path is required so deep links survive a full page
+      // reload — location.state is lost on hard navigation.
+      const params = new URLSearchParams(location.search);
+      const next = params.get('next');
+      const fallback = (location.state as LocationState | null)?.from?.pathname || '/v2';
+      const dest = next && next.startsWith('/') ? next : fallback;
+      navigate(dest, { replace: true });
     } catch (err) {
       const e1 = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
       setLocalError(e1.response?.data?.error || e1.response?.data?.msg || e1.message || 'Login failed');

@@ -13,6 +13,7 @@ const authRoutes = require('./routes/auth');
 const postRoutes = require('./routes/posts');
 const userRoutes = require('./routes/users');
 const podRoutes = require('./routes/pods');
+const podInvitesRoutes = require('./routes/podInvites');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
 const docsRoutes = require('./routes/docs');
@@ -158,6 +159,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/pods', podRoutes);
+// Pod invite tokens — both `/api/pods/:podId/invites` (create) and
+// `/api/invites/:token` (resolve / redeem) live in the same router.
+app.use('/api', podInvitesRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);

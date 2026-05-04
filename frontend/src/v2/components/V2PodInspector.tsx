@@ -480,6 +480,14 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const [addLinkUrl, setAddLinkUrl] = useState('');
   const [addLinkBusy, setAddLinkBusy] = useState(false);
   const [addLinkError, setAddLinkError] = useState<string | null>(null);
+  // Invite modal — opens from "+ Invite" in the members section. Two
+  // tabs: shareable invite link (people) and agent install flow (agent).
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteTab, setInviteTab] = useState<'people' | 'agent'>('people');
+  const [inviteUrl, setInviteUrl] = useState<string>('');
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
 
   // Map agent username (`openclaw-nova`) → agent record so we can look up by
   // either instance id or full username when chat clicks come in.
@@ -864,9 +872,56 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     </section>
   );
 
+  const handleGenerateInvite = async () => {
+    if (!pod) return;
+    setInviteBusy(true);
+    setInviteError(null);
+    setInviteCopied(false);
+    try {
+      const data = await api.post<{ token: string }>(`/api/pods/${pod._id}/invites`, {
+        // 7-day default — the server treats null as never-expires; keep
+        // a finite expiry by default for safety. UI doesn't expose the
+        // knob today (could later via a "Link expires in…" dropdown).
+        expiresInHours: 24 * 7,
+      });
+      const url = `${window.location.origin}/v2/invite/${data.token}`;
+      setInviteUrl(url);
+    } catch (err) {
+      const e = err as { response?: { data?: { msg?: string } }; message?: string };
+      setInviteError(e.response?.data?.msg || e.message || 'Could not generate invite.');
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const handleCopyInvite = async () => {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 1500);
+    } catch {
+      // Clipboard API can fail in non-secure contexts — leave the URL on-
+      // screen so the user can manually select + copy.
+    }
+  };
+
   const membersSection = !isPrivatePod && (
     <section className="v2-inspector__section v2-inspector__section--quiet">
-      <div className="v2-inspector__section-head" style={{ justifyContent: 'flex-end', marginBottom: 4 }}>
+      <div className="v2-inspector__section-head" style={{ justifyContent: 'flex-end', marginBottom: 4, gap: 8 }}>
+        <button
+          type="button"
+          className="v2-inspector__link"
+          onClick={() => {
+            setInviteOpen(true);
+            setInviteTab('people');
+            setInviteUrl('');
+            setInviteError(null);
+            setInviteCopied(false);
+          }}
+        >
+          + Invite
+        </button>
         <button
           type="button"
           className="v2-inspector__link"
@@ -1260,6 +1315,111 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           {view.kind === 'artifact' && renderArtifactDetail(view.artifactId)}
         </div>
       </div>
+      {inviteOpen && (
+        <div
+          className="v2-modal__overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Invite to pod"
+          onClick={() => setInviteOpen(false)}
+        >
+          <div className="v2-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="v2-modal__head">
+              <div className="v2-modal__title">Invite to {pod.name}</div>
+              <button type="button" className="v2-modal__close" aria-label="Close" onClick={() => setInviteOpen(false)}>×</button>
+            </div>
+            <div className="v2-modal__tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                className={`v2-modal__tab${inviteTab === 'people' ? ' v2-modal__tab--active' : ''}`}
+                aria-selected={inviteTab === 'people'}
+                onClick={() => setInviteTab('people')}
+              >
+                Invite people
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`v2-modal__tab${inviteTab === 'agent' ? ' v2-modal__tab--active' : ''}`}
+                aria-selected={inviteTab === 'agent'}
+                onClick={() => setInviteTab('agent')}
+              >
+                Add agent
+              </button>
+            </div>
+            <div className="v2-modal__body">
+              {inviteTab === 'people' && (
+                <>
+                  <p className="v2-modal__hint">
+                    Generate a shareable link. Anyone with a Commonly account can use
+                    it to join this pod.
+                  </p>
+                  {inviteUrl ? (
+                    <>
+                      <div className="v2-invite-link-row">
+                        <input
+                          type="text"
+                          className="v2-invite-link"
+                          readOnly
+                          value={inviteUrl}
+                          onFocus={(e) => e.currentTarget.select()}
+                        />
+                        <button
+                          type="button"
+                          className="v2-invite-card__cta v2-invite-card__cta--secondary"
+                          onClick={handleCopyInvite}
+                        >
+                          {inviteCopied ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                      <p className="v2-modal__hint v2-modal__hint--muted">
+                        Link expires in 7 days. Generate a fresh link any time.
+                      </p>
+                      <button
+                        type="button"
+                        className="v2-invite-card__cta v2-invite-card__cta--secondary"
+                        onClick={handleGenerateInvite}
+                        disabled={inviteBusy}
+                        style={{ marginTop: 8 }}
+                      >
+                        {inviteBusy ? 'Generating…' : 'Generate new link'}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="v2-invite-card__cta"
+                      onClick={handleGenerateInvite}
+                      disabled={inviteBusy}
+                    >
+                      {inviteBusy ? 'Generating…' : 'Generate invite link'}
+                    </button>
+                  )}
+                  {inviteError && <div className="v2-modal__error">{inviteError}</div>}
+                </>
+              )}
+              {inviteTab === 'agent' && (
+                <>
+                  <p className="v2-modal__hint">
+                    Pick an agent from the catalog to install into this pod.
+                  </p>
+                  <button
+                    type="button"
+                    className="v2-invite-card__cta"
+                    onClick={() => {
+                      setInviteOpen(false);
+                      navigate(`/v2/agents/browse?podId=${pod._id}`);
+                    }}
+                  >
+                    Browse agents →
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };
