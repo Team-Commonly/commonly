@@ -1,12 +1,30 @@
 import crypto from 'crypto';
 
+import AgentMemory, {
+  AGENT_WRITABLE_SECTIONS,
+  SYSTEM_EXCHANGE_ENTRY_CAP,
+  SYSTEM_EXCHANGE_TAKEAWAY_MAX,
+  SYSTEM_EXCHANGE_KINDS,
+} from '../models/AgentMemory';
 import type {
+  AgentWritableSection,
   IAgentMemorySections,
   IDailySection,
   IMemorySection,
   IRelationshipNote,
+  ISystemExchangeEntry,
   MemoryVisibility,
+  SystemExchangeKind,
 } from '../models/AgentMemory';
+
+// ADR-012 §1: allow-list test for the agent-facing write tool. Returns true
+// only for sections agents are permitted to address via `commonly_save_my_memory`
+// (PUT /memory and POST /memory/sync). `system_exchanges` is excluded by
+// construction.
+const AGENT_WRITABLE_SET = new Set<string>(AGENT_WRITABLE_SECTIONS);
+export function isAgentWritableSection(key: string): key is AgentWritableSection {
+  return AGENT_WRITABLE_SET.has(key);
+}
 
 // Valid YYYY-MM-DD — ADR-003 daily[].date shape. Strict: must be a calendar-
 // valid date (Date.parse rejects e.g. 2026-02-30).
@@ -163,6 +181,12 @@ export function stampSectionsForWrite(
     const v = sections[key];
     if (v === undefined) continue;
 
+    // ADR-012 §1: system_exchanges is read-only via the agent surface.
+    // validateSectionsPayload rejects it before it reaches here; this is
+    // defense-in-depth and also keeps the union-typed `out[key]` assignment
+    // below provably safe (the IMemorySection branch can't widen to system_exchanges).
+    if (key === 'system_exchanges') continue;
+
     if (key === 'daily') {
       out.daily = ((v as IDailySection[]) || []).map((d): IDailySection => ({
         date: d.date,
@@ -183,7 +207,11 @@ export function stampSectionsForWrite(
     }
 
     const s = v as IMemorySection;
-    out[key] = makeSection(s.content ?? '', s.visibility ?? 'private', now);
+    (out as Record<string, IMemorySection>)[key] = makeSection(
+      s.content ?? '',
+      s.visibility ?? 'private',
+      now,
+    );
   }
   return out;
 }
@@ -209,6 +237,11 @@ export function mergePatchSections(
     const inc = incoming[key];
     if (inc === undefined) continue;
 
+    // ADR-012 §1: agents cannot patch `system_exchanges`. validateSectionsPayload
+    // rejects it upstream — this guard keeps mergePatchSections safe even if
+    // someone calls it from outside the route.
+    if (key === 'system_exchanges') continue;
+
     if (key === 'daily') {
       const byDate = new Map<string, IDailySection>();
       for (const d of existing?.daily || []) byDate.set(d.date, d);
@@ -225,7 +258,7 @@ export function mergePatchSections(
       continue;
     }
 
-    out[key] = inc as IMemorySection;
+    (out as Record<string, IMemorySection>)[key] = inc as IMemorySection;
   }
 
   return out;
@@ -329,5 +362,122 @@ export function filterSectionsByVisibility(
     if (filteredRel.length > 0) out.relationships = filteredRel;
   }
 
+  // ADR-012 §6 + ADR-003 §Visibility: system_exchanges is intentionally
+  // omitted from this filter's output. It is hard-coded `private` and
+  // never legible to non-owners, so cross-agent readers must never see it
+  // even when (theoretically) some entry's visibility flag matched. We
+  // leave the section out of the function entirely — a code reader who
+  // adds it later will be forced to revisit the privacy rule.
+
   return out;
+}
+
+// ADR-012 §1: takeaway truncation. Keeps the first N chars; on overflow,
+// reserves 1 char for the `…` suffix so the final length never exceeds the
+// schema cap. Defensive against non-string input — callers building takeaway
+// from message content can hand us anything.
+export function truncateTakeaway(
+  raw: unknown,
+  max: number = SYSTEM_EXCHANGE_TAKEAWAY_MAX,
+): string {
+  const s = typeof raw === 'string' ? raw : (raw == null ? '' : String(raw));
+  if (s.length <= max) return s;
+  // Reserve 1 char for `…`. max >= 1 by contract (schema cap is 280).
+  return s.slice(0, Math.max(0, max - 1)) + '…';
+}
+
+// ADR-012 §4: append a system-driven exchange entry. Single atomic Mongo
+// update — `$push + $position:0 + $slice:N` enforces most-recent-first +
+// count cap, `$inc:revision` bumps the monotone revision consumed by
+// memoryDigest, `$currentDate` stamps `system_exchanges.updatedAt`.
+//
+// Concurrency: two concurrent appendSystemExchange calls on the same
+// (agentName, instanceId) serialize at the document level — single-document
+// atomicity guarantees neither lost-updates the other (ADR-012 §4).
+//
+// Carve-out from ADR-003 invariant 8: this writer does NOT clear
+// `lastSyncKey`/`lastSyncAt`. Drivers don't promote `system_exchanges`, so
+// a system write to it is invisible to the sync dedup contract — see
+// ADR-012 §8 (invariant 8a).
+export interface AppendSystemExchangeArgs {
+  agentName: string;
+  instanceId: string;
+  kind: SystemExchangeKind;
+  surfacePodId: string;
+  surfaceLabel?: string;
+  peers?: string[];
+  takeaway?: string;
+  ts?: Date;
+}
+
+export async function appendSystemExchange(
+  args: AppendSystemExchangeArgs,
+): Promise<{ revision: number } | null> {
+  const {
+    agentName,
+    instanceId,
+    kind,
+    surfacePodId,
+    surfaceLabel = '',
+    peers = [],
+    takeaway = '',
+    ts = new Date(),
+  } = args;
+
+  if (!agentName || !instanceId) {
+    return null;
+  }
+  if (!SYSTEM_EXCHANGE_KINDS.includes(kind)) {
+    return null;
+  }
+  if (!surfacePodId || typeof surfacePodId !== 'string') {
+    return null;
+  }
+
+  const entry: ISystemExchangeEntry = {
+    ts,
+    kind,
+    surfacePodId: String(surfacePodId),
+    surfaceLabel: typeof surfaceLabel === 'string' ? surfaceLabel : String(surfaceLabel ?? ''),
+    peers: Array.isArray(peers) ? peers.filter((p) => typeof p === 'string') : [],
+    takeaway: truncateTakeaway(takeaway),
+  };
+
+  // Single atomic op — works whether the doc exists, the `sections` envelope
+  // exists, or `sections.system_exchanges` exists. Mongo auto-creates
+  // intermediate path nodes for `$push`. `$setOnInsert` handles the upsert
+  // of the doc-level keys; `$set` on sibling section fields runs on every
+  // call (idempotent — visibility is hard-coded 'private', and updatedAt is
+  // bumped via $currentDate). Two concurrent appends serialize at the doc
+  // level (single-document atomicity, ADR-012 §4).
+  //
+  // No byteSize here: ISystemExchangesSection deliberately omits the field
+  // in Phase 1 — see the model. Phase 2's digest builder recomputes from
+  // `entries` directly; no benefit to caching it here.
+  const updated = await AgentMemory.findOneAndUpdate(
+    { agentName, instanceId },
+    {
+      $push: {
+        'sections.system_exchanges.entries': {
+          $each: [entry],
+          $position: 0,
+          $slice: SYSTEM_EXCHANGE_ENTRY_CAP,
+        },
+      },
+      $inc: { revision: 1 },
+      $set: {
+        // Hard-coded private — never widened. Re-setting on every call is
+        // idempotent and survives any prior corrupted state.
+        'sections.system_exchanges.visibility': 'private',
+      },
+      $currentDate: { 'sections.system_exchanges.updatedAt': true },
+      $setOnInsert: {
+        agentName,
+        instanceId,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
+  ).select({ revision: 1 }).lean<{ revision?: number } | null>();
+
+  return { revision: updated?.revision ?? 1 };
 }

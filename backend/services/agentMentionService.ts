@@ -563,7 +563,12 @@ const enqueueDmEvent = async ({
     return { enqueued: false, reason: 'not_dm_pod' };
   }
 
-  const sender = await User.findById(userId).select('_id isBot').lean() as { _id: unknown; isBot?: boolean } | null;
+  // Pull botMetadata.displayName + username so we can build the inline DM
+  // conversational frame (ADR-012 §9). For human senders, botMetadata is
+  // empty and the cue falls back to username + "(human)".
+  const sender = await User.findById(userId)
+    .select('_id isBot username botMetadata')
+    .lean() as { _id: unknown; isBot?: boolean; username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null;
   // Bot senders are allowed in agent-dm (the whole point) but still blocked
   // in agent-admin/agent-room — those are operator-driven 1:1 with one
   // agent; a bot posting there shouldn't auto-route to itself.
@@ -614,6 +619,18 @@ const enqueueDmEvent = async ({
             const allBots = recentSenderIds.every((id) => botIds.has(id));
             if (allBots) {
               console.warn(`[agent-dm] bot-loop guard tripped — ${MAX_CONSECUTIVE_BOT_TURNS} consecutive bot turns in pod=${podId} within ${ACTIVITY_WINDOW_MS / 60000}min, refusing enqueue`);
+              // ADR-012 §4: agent-dm-loop-trip — both peers' memory
+              // envelopes record the trip. Fire-and-forget; never blocks the
+              // guard return.
+              try {
+                // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+                const triggers = require('./systemExchangeTriggers') as {
+                  recordAgentDmLoopTrip: (a: { podId: string }) => Promise<void>;
+                };
+                void triggers.recordAgentDmLoopTrip({ podId: String(podId) });
+              } catch (triggerErr) {
+                console.warn('[system-exchange] agent-dm-loop-trip dispatch failed:', (triggerErr as Error).message);
+              }
               return { enqueued: false, reason: 'bot_loop_guard' };
             }
           }
@@ -707,6 +724,47 @@ const enqueueDmEvent = async ({
     // SOUL.md instructs the agent to branch on this field.
     const dmKind: 'agent-agent' | 'user-agent' = sender?.isBot ? 'agent-agent' : 'user-agent';
 
+    // ADR-012 §9: inline DM conversational frame. dmKind on its own is a
+    // structured metadata field — the LLM can deprioritize it when
+    // composing replies. Putting the same intent at the START of the
+    // message body, in narrative form, makes it impossible to ignore.
+    // First-deploy production data (FakeSam ↔ Tarik smoke) showed Tarik
+    // broadcasting "has anyone seen…" team-pod-style replies inside a
+    // 1:1 DM despite dmKind being correct. The inline cue closes that gap.
+    //
+    // Cue resolves the peer's display label via the same fallback chain
+    // as agentIdentityService.resolveAgentDisplayLabel (botMetadata
+    // .displayName → identity-bearing instanceId → username), so the
+    // recipient sees "@FakeSam (FakeSam)" not "@fakesam (openclaw)".
+    //
+    // NOTE: this cue is delivered ONLY through the chat.mention enqueue path
+    // here. The PG-persisted message body is the un-framed `content` (correct
+    // — humans see the un-framed text in the chat UI; downstream takeaway
+    // derivation in systemExchangeTriggers.findPreviousNonSilentMessage reads
+    // the un-framed copy too). If a future driver consumes DMs via a
+    // different surface (poll endpoint, webhook re-delivery, replay), it
+    // will see un-framed content and only have `dmKind` to fall back on —
+    // which §9 of ADR-012 demonstrated is not sufficient. Either re-apply the
+    // frame in that surface or move framing into AgentEventService.enqueue
+    // when it becomes a meaningful chokepoint.
+    const senderMeta = sender?.botMetadata || {};
+    const senderInstanceLabel = (senderMeta.instanceId && senderMeta.instanceId !== 'default')
+      ? senderMeta.instanceId
+      : '';
+    const senderDisplay = (senderMeta.displayName?.trim()
+      || senderInstanceLabel
+      || sender?.username
+      || username
+      || 'peer').trim();
+    // senderHandle filters 'default' the same way as senderDisplay above —
+    // otherwise an agent on the literal 'default' instanceId would render as
+    // "@default (DisplayName)", which is meaningless.
+    const senderHandle = (senderInstanceLabel || sender?.username || username || 'peer').trim();
+    const dmFrame = dmKind === 'agent-agent'
+      ? `[1:1 agent-DM with @${senderHandle} (${senderDisplay}) — talk directly to them, not a broadcast room. Reply only when your message materially advances the work; return NO_REPLY when the exchange reaches a natural conclusion. Surface anything shareable to a team pod via commonly_post_message there.]`
+      : `[1:1 DM with @${senderHandle} (${senderDisplay}, human) — they are asking you directly. Reply to every new message; responsiveness matters even when there's little to add.]`;
+    const framedContent = `${dmFrame}\n\n${content}`;
+
     await AgentEventService.enqueue({
       agentName: agentName.toLowerCase(),
       instanceId,
@@ -716,7 +774,7 @@ const enqueueDmEvent = async ({
         messageId: message?._id || message?.id
           ? String(message?._id || message?.id)
           : undefined,
-        content,
+        content: framedContent,
         userId,
         username,
         mentions: [mentionHandle],

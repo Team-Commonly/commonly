@@ -225,6 +225,28 @@ router.post('/:podId/:taskId/complete', auth, async (req: AuthReq, res: Res) => 
         }
       })();
     }
+    // ADR-012 §4: task-completed trigger. Fire-and-forget; only writes when
+    // the assignee is a recognized agent member of the pod.
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const triggers = require('../services/systemExchangeTriggers') as {
+        recordTaskCompleted: (a: {
+          podId: string;
+          assignee?: string | null;
+          taskTitle: string;
+          prUrlOrStatus?: string | null;
+        }) => Promise<void>;
+      };
+      const taskWithFields = task as { title?: string; assignee?: string | null; prUrl?: string | null };
+      void triggers.recordTaskCompleted({
+        podId: String(podId),
+        assignee: taskWithFields.assignee ?? null,
+        taskTitle: taskWithFields.title || '',
+        prUrlOrStatus: prUrl || taskWithFields.prUrl || null,
+      });
+    } catch (triggerErr) {
+      console.warn('[system-exchange] task-completed dispatch failed:', (triggerErr as Error).message);
+    }
     emitTaskUpdated(podId, task, 'updated');
     return res.json({ task });
   } catch (err) {

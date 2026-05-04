@@ -858,4 +858,96 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
       expect(get.body.sections.long_term.content).toBe('dedup-me');
     });
   });
+
+  // ------------------------------------------------------------------- //
+  // ADR-012 §1 — system_exchanges is read-only over the agent tool surface
+  // ------------------------------------------------------------------- //
+  describe('system_exchanges (ADR-012 read-only enforcement)', () => {
+    it('PUT /memory rejects writes to system_exchanges with 403 + tagged reason', async () => {
+      const res = await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            system_exchanges: {
+              entries: [{
+                ts: new Date().toISOString(),
+                kind: 'agent-dm-conclusion',
+                surfacePodId: testPod._id.toString(),
+                surfaceLabel: 'agent-dm:test',
+                peers: [],
+                takeaway: 'forged from agent',
+              }],
+            },
+          },
+        });
+      expect(res.status).toBe(403);
+      expect(res.body.reason).toBe('system_exchanges_is_read_only');
+    });
+
+    it('POST /memory/sync also rejects system_exchanges with the same 403', async () => {
+      const res = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          mode: 'patch',
+          sections: { system_exchanges: { entries: [] } },
+        });
+      expect(res.status).toBe(403);
+      expect(res.body.reason).toBe('system_exchanges_is_read_only');
+    });
+
+    it('GET /memory surfaces system_exchanges entries written via appendSystemExchange', async () => {
+      const install = await AgentInstallation.findOne({ agentName: 'mem-agent' });
+      const { appendSystemExchange } = require('../../services/agentMemoryService');
+      await appendSystemExchange({
+        agentName: install.agentName,
+        instanceId: install.instanceId || 'default',
+        kind: 'task-completed',
+        surfacePodId: testPod._id.toString(),
+        surfaceLabel: 'team:Memory Pod',
+        peers: [],
+        takeaway: 'shipped ADR-012 phase 1',
+      });
+
+      const res = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.sections.system_exchanges.entries).toHaveLength(1);
+      expect(res.body.sections.system_exchanges.entries[0].kind).toBe('task-completed');
+      expect(res.body.sections.system_exchanges.entries[0].takeaway).toBe('shipped ADR-012 phase 1');
+      expect(res.body.sections.system_exchanges.visibility).toBe('private');
+    });
+
+    it('PUT /memory to a writable section does NOT clobber an existing system_exchanges entry', async () => {
+      const install = await AgentInstallation.findOne({ agentName: 'mem-agent' });
+      const { appendSystemExchange } = require('../../services/agentMemoryService');
+      await appendSystemExchange({
+        agentName: install.agentName,
+        instanceId: install.instanceId || 'default',
+        kind: 'agent-dm-loop-trip',
+        surfacePodId: testPod._id.toString(),
+        surfaceLabel: 'agent-dm:test',
+        peers: ['peer-1'],
+        takeaway: '8 consecutive bot turns within 30 min — guard tripped',
+      });
+
+      // Agent writes long_term — this used to clear lastSyncKey/lastSyncAt and
+      // shouldn't touch system_exchanges. Section-merge via dotted $set
+      // preserves siblings.
+      await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ sections: { long_term: { content: 'agent notes' } } })
+        .expect(200);
+
+      const res = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(res.body.sections.long_term.content).toBe('agent notes');
+      expect(res.body.sections.system_exchanges.entries).toHaveLength(1);
+      expect(res.body.sections.system_exchanges.entries[0].kind).toBe('agent-dm-loop-trip');
+    });
+  });
 });
