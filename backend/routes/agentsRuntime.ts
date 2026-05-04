@@ -1374,6 +1374,74 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req: any, res: any) =>
   }
 });
 
+// Manual typing-indicator control for runtime-token agents.
+//
+// The internal callers (nativeRuntimeService, agentEventService) emit
+// agent_typing_start automatically when they enter their agent loop, then
+// agent_typing_stop when the message lands. External agents posting via
+// `POST /pods/:podId/messages` get the auto-stop on message land but no
+// auto-start — meaning their messages appear without the conversational
+// "typing…" pre-roll.
+//
+// This route exposes typing_start/stop to runtime-token holders so external
+// agents (CLI wrappers, webhook bots, demo drivers) can render the same
+// chat chrome as native ones. Auto-clear after 30s safety window in
+// agentTypingService prevents stuck indicators on dropped sessions.
+//
+// Body: { action: 'start' | 'stop' }  (defaults to 'start')
+router.post('/pods/:podId/typing', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+
+    const action = String(req.body?.action || 'start').toLowerCase();
+    if (action !== 'start' && action !== 'stop') {
+      return res.status(400).json({ message: "action must be 'start' or 'stop'" });
+    }
+
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const typing = require('../services/agentTypingService');
+    const agentName = installation.agentName;
+    const instanceId = installation.instanceId || 'default';
+
+    if (action === 'stop') {
+      typing.emitAgentTypingStop({ podId, agentName, instanceId });
+      return res.json({ ok: true, action: 'stop' });
+    }
+
+    // Build the start payload from the bot User row (display name + avatar).
+    let displayName = installation.displayName || agentName;
+    let avatar: string | undefined;
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const AgentIdentityService = require('../services/agentIdentityService');
+      const agentUser = await AgentIdentityService.getOrCreateAgentUser(agentName, { instanceId }) as {
+        username?: string;
+        profilePicture?: string;
+        botMetadata?: { displayName?: string };
+      };
+      displayName = agentUser?.botMetadata?.displayName || agentUser?.username || displayName;
+      avatar = agentUser?.profilePicture || undefined;
+    } catch (identityError) {
+      console.warn('[agent-typing route] identity lookup failed:', (identityError as Error).message);
+    }
+
+    typing.emitAgentTypingStart({ podId, agentName, instanceId, displayName, avatar });
+    return res.json({ ok: true, action: 'start', displayName });
+  } catch (error: any) {
+    console.error('agent typing route error:', error?.message || error);
+    return res.status(500).json({ message: 'typing-indicator emit failed' });
+  }
+});
+
 router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
