@@ -2867,6 +2867,18 @@
   align-items: stretch;
 }
 
+/* The Copy button inside the invite-link row inherits `width: 100%` from
+ * the base `.v2-invite-card__cta` rule (which is meant for full-width
+ * primary CTAs). Inside the row it needs to stay sized to its content so
+ * the URL input gets the remaining flex space. Without this override the
+ * input collapses to ~20px and the URL is invisible. */
+.v2-invite-link-row .v2-invite-card__cta {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: 0;
+  padding: 0 12px;
+}
+
 .v2-invite-link {
   flex: 1;
   min-width: 0;
