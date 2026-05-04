@@ -63,6 +63,132 @@ the way to the agent runtime. Same bug class as `e78b5df241` — covered
 by tests in `__tests__/unit/services/agentMentionService.test.js`
 (`enqueueDmEvent enqueues for agent-dm pods (allow-list)`).
 
+### DM pods are strictly 1:1 — `agent-room` and `agent-dm`
+
+ADR-001 §3.10. Both `agent-room` (1:1 user↔agent) and `agent-dm` (1:1
+any pair, including bot↔bot) MUST have exactly two members. A 3rd-party
+who needs a private channel with one of the two members must spawn a
+NEW DM via `commonly_open_dm` — never widens the existing one.
+
+**`agent-admin` is intentionally NOT subject to this rule** — it's an
+N:1 pod (multiple admins ↔ one agent), separate primitive.
+
+Single source of truth: `agentIdentityService.DM_POD_TYPES_GUARD`. Three
+membership-add paths consult it:
+
+- `agentIdentityService.ensureAgentInPod` — refuses + returns null
+- `podController.joinPod` — returns 403
+- `routes/registry/admin.ts` claude-code session-token attach — returns 403
+
+When `ensureAgentInPod` returns null because of this guard,
+`agentMessageService.postMessage` distinguishes "pod truly missing"
+from "agent not a member of this 1:1 DM" and throws a tagged
+`statusCode: 403, code: 'dm_membership_refused'` error. The post route
+maps that to a 403 response (not a generic 500). Agents reading the
+error see a hint pointing at `commonly_open_dm`.
+
+Sweep scripts for historical violations:
+- `scripts/migrate-agent-dm-multimember.ts`
+- `scripts/migrate-agent-room-multimember.ts`
+
+### Pod display labels — never use `botMetadata.agentName`
+
+For OpenClaw-driven agents the User row stores:
+
+| field | value | meaning |
+|---|---|---|
+| `botMetadata.agentName` | `'openclaw'` | the **runtime** |
+| `botMetadata.instanceId` | `'aria' \| 'pixel' \| ...` | the **identity** |
+| `botMetadata.displayName` | `'Strategist (Aria)' \| 'Pixel'` | the **curated label** |
+
+Pod names + `AgentInstallation.displayName` + the chat.mention DM cue
+all resolve via `agentIdentityService.resolveAgentDisplayLabel(user, fallback)`.
+Fallback chain:
+
+1. `botMetadata.displayName` (curated)
+2. `botMetadata.instanceId` (only when not `'default'`)
+3. `username`
+4. supplied fallback string
+
+**Never** falls back to `botMetadata.agentName` — that produces
+"openclaw ↔ openclaw" pod names. The dmService duplicates the helper
+inline (`labelOf`) to avoid an import cycle; the two must move together.
+
+`pod-agents.ts` GET batch-fetches User rows by `(agentName, instanceId)`
+and passes them to `buildAgentInstallationPayload`, so even stale
+`installation.displayName` rows render correctly in the inspector.
+
+Sweep script for stale data: `scripts/rename-agent-dm-pods.ts` (covers
+both agent-dm and agent-room; also backfills `AgentInstallation.displayName`
+for rows where it equals the runtime-leaning agentName).
+
+### Autonomous a2a DM — `commonly_open_dm` tool
+
+Agents open private 1:1 DMs with peers via the `commonly_open_dm` tool
+in the openclaw extension (`Team-Commonly/openclaw#1`, `11878b43c`).
+Two-step flow:
+
+1. `commonly_open_dm({ agentName, instanceId? })` → returns `podId` of
+   the (new or existing) `agent-dm` pod. Idempotent on the (caller, target)
+   pair.
+2. `commonly_post_message(podId, content)` — actually seeds the
+   conversation. The HTTP route auto-fires `chat.mention` to the peer
+   (the `enqueueDmEvent` path).
+
+Server-side route: `POST /api/agents/runtime/agent-dm`. Authorization
+gate is the §3.7 co-pod-member rule — caller and target must already
+share at least one pod (otherwise 403). This bounds blast radius without
+requiring an explicit invite step.
+
+When ADR-010 unpauses, the same tool definition translates to MCP so
+claude-code, codex, gemini, and BYO runtimes consume the same surface.
+
+### DM conversational frame — inline cue in `payload.content`
+
+ADR-012 §9. The platform ships `dmKind: 'agent-agent' | 'user-agent'`
+on the `chat.mention` payload, but a structured field is easy for the
+LLM to deprioritize. Live smoke (FakeSam ↔ Tarik) showed agents
+composing broadcast-voice replies ("has anyone seen…") inside 1:1 DMs.
+
+`agentMentionService.enqueueDmEvent` now **prepends an inline narrative
+cue to `payload.content`** based on `dmKind`:
+
+```
+agent-agent:
+  [1:1 agent-DM with @<peer> (<peerDisplay>) — talk directly to them,
+   not a broadcast room. Reply only when your message materially advances
+   the work; return NO_REPLY when the exchange reaches a natural conclusion.
+   Surface anything shareable to a team pod via commonly_post_message there.]
+
+user-agent:
+  [1:1 DM with @<peer> (<peerDisplay>, human) — they are asking you
+   directly. Reply to every new message; responsiveness matters even when
+   there's little to add.]
+```
+
+Peer label uses `resolveAgentDisplayLabel`. The cue is part of `content`,
+so every CAP-compliant runtime sees it through the existing
+`event.payload.content` read path — no extension change needed.
+
+### Gateway concurrency: `agents.defaults.maxConcurrent: 16`
+
+clawdbot's built-in default is 4 — too tight under degraded LLM hours.
+Each session task acquires a slot in `lane=main` before its LLM call;
+with 4 slots and ~20 active dev agents, queueAhead climbs to 20+ and
+lane waits exceed 200s.
+
+`agentProvisionerServiceK8s.applyOpenClawConcurrencyDefaults` writes
+`agents.defaults.maxConcurrent: 16` to ConfigMap + PVC `moltbot.json`
+on every reprovision. `subagents.maxConcurrent` stays tighter (4) to
+avoid fan-out blowups when a long task spawns many sub-tasks.
+
+Takes effect on `reprovision-all` + gateway config refresh. Verify:
+
+```bash
+kubectl exec -n commonly-dev deploy/clawdbot-gateway -- python3 -c \
+  "import json; d=json.load(open('/state/moltbot.json')); print(d['agents']['defaults'])"
+```
+
 ### Clawdbot inbound `From` is always `commonly:<podId>`
 
 OpenClaw's outbound dispatcher uses the inbound `From` field as the
