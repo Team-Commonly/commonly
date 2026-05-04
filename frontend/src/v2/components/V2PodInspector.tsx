@@ -29,12 +29,25 @@ interface V2PodInspectorProps {
   onOpenInvite?: () => void;
 }
 
-// Only openclaw-runtime agents can hold a real DM session — they have a chat
-// runtime that responds. commonly-bot is the internal Tier 1 summarizer (no
-// chat runtime); pod-summarizer is Tier 1 native (also no DM).
-const isAgentDmable = (agent: { name?: string; agentName?: string }): boolean => {
-  const n = agent.name || agent.agentName;
-  return n === 'openclaw';
+// Any agent with a real chat runtime can hold a DM session. The Tier 1
+// internal services (commonly-bot summarizer, pod-summarizer) don't have a
+// runtime that responds to chat — they're cron / event-driven only.
+//
+// Previously this was hardcoded to `agent.name === 'openclaw'`, which
+// silently excluded every other runtime — Claude Code wrappers, Codex
+// wrappers, stub adapters, webhook bots, native runtime agents. Anyone
+// installing an agent via `commonly agent attach <claude|codex|...>`
+// got an agent that worked end-to-end EXCEPT that the inspector's
+// "Talk to" button never appeared.
+//
+// Gate now reads from the resolved runtime: any non-internal runtime
+// is dmable. Falls back to `false` for unknown payload shapes.
+const isAgentDmable = (agent: { runtime?: { runtimeType?: string } | null }): boolean => {
+  const t = agent?.runtime?.runtimeType;
+  if (!t) return false;
+  // Tier 1 native services — no chat runtime, no DM target.
+  if (t === 'internal') return false;
+  return true;
 };
 
 interface AgentTaskMap {
