@@ -207,6 +207,13 @@ const prepareArgv = async (innerArgv, ctx) => {
 
 export default {
   name: 'claude',
+  // Identity-bearing runtime tag written into AgentInstallation.config.runtime
+  // by `commonly agent attach`. The CLI command stays `commonly agent attach
+  // claude` (ergonomic) but the persisted runtimeType matches AGENT_TYPES so
+  // the inspector + API can classify it as the same thing as cloud Claude
+  // Code. Pair with `host: 'byo'` (set in agent.js) to disambiguate from the
+  // hosted variant.
+  runtimeType: 'claude-code',
 
   async detect() {
     try {

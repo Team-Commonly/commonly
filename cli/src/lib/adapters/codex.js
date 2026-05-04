@@ -143,6 +143,11 @@ const runCodex = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new 
 
 export default {
   name: 'codex',
+  // See claude.js for the rationale — identity-bearing runtime tag persisted
+  // to AgentInstallation.config.runtime (paired with host:'byo') so a CLI-
+  // attached Codex agent and a cloud-hosted Codex agent share the same
+  // `runtimeType` and differ only on `host`.
+  runtimeType: 'codex',
 
   async detect() {
     try {

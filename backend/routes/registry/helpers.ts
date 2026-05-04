@@ -3,6 +3,7 @@ const User = require('../../models/User');
 const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { isK8sMode } = require('../../services/agentProvisionerService');
+const AgentIdentityService = require('../../services/agentIdentityService').default;
 
 const buildIdentityContent = (name: any, persona: any) => {
   const toneMap = {
@@ -93,9 +94,60 @@ const normalizeSkillEnvEntries = (entries: any) => {
   return Object.keys(normalized).length ? normalized : null;
 };
 
-const sanitizeRuntimeConfig = (runtimeConfig: any) => {
-  if (!runtimeConfig || typeof runtimeConfig !== 'object') return runtimeConfig;
-  const { authProfiles, skillEnv, ...rest } = runtimeConfig;
+// Resolve `runtimeType` + `host` for the API/UI from whatever the install
+// row carries. Three input shapes are normalized:
+//   1. New shape (post-2026-05-04): `{ runtimeType: '<identity>', host: 'cloud' | 'byo' }`
+//      — passed through. CLI attach writes this.
+//   2. Legacy CLI shape: `{ runtimeType: 'local-cli', wrappedCli: '<cli>' }`
+//      — rewritten to `{ runtimeType: <wrappedCli>, host: 'byo' }`. No data
+//      migration; this resolver fixes it on read.
+//   3. Empty/null `config.runtime` (most pre-CLI installs of built-in
+//      agents) — `runtimeType` is filled from `AGENT_TYPES[agentName]`,
+//      `host` defaults to `'cloud'` (the only host that exists for
+//      first-party / cloud-deployed built-ins today).
+//
+// The `openai` legacy value (cloud Codex via LiteLLM, set in older
+// AGENT_TYPES rows) is rewritten to `codex` for consistency with the CLI
+// adapter — same identity, same UI badge.
+const LEGACY_RUNTIME_RENAME: Record<string, string> = {
+  openai: 'codex',
+};
+
+const normalizeRuntimeIdentity = (rest: any, agentName?: string) => {
+  let runtimeType: string | undefined = rest.runtimeType ? String(rest.runtimeType) : undefined;
+  let host: 'cloud' | 'byo' | undefined = rest.host === 'byo' || rest.host === 'cloud' ? rest.host : undefined;
+
+  // Legacy CLI shape — `local-cli` + `wrappedCli` predates the two-field
+  // model. Treat `wrappedCli` as the identity and stamp host=byo.
+  if (runtimeType === 'local-cli') {
+    const cli = String(rest.wrappedCli || '').trim();
+    if (cli) runtimeType = cli;
+    if (!host) host = 'byo';
+  }
+
+  // No runtime info at all → fall back to AGENT_TYPES. Built-ins are
+  // assumed cloud/first-party. CLI agents always set both fields, so
+  // they never hit this branch.
+  if (!runtimeType && agentName) {
+    const typeConfig = AgentIdentityService.getAgentTypeConfig(agentName);
+    if (typeConfig?.runtime) runtimeType = typeConfig.runtime;
+    if (!host) host = 'cloud';
+  }
+
+  // Identity rename (provider-leaning legacy → identity-leaning canonical).
+  if (runtimeType && LEGACY_RUNTIME_RENAME[runtimeType]) {
+    runtimeType = LEGACY_RUNTIME_RENAME[runtimeType];
+  }
+
+  return { runtimeType, host };
+};
+
+const sanitizeRuntimeConfig = (runtimeConfig: any, agentName?: string) => {
+  const cfg = runtimeConfig && typeof runtimeConfig === 'object' ? runtimeConfig : {};
+  // Drop `wrappedCli` from passthrough — it's collapsed into runtimeType
+  // by normalizeRuntimeIdentity. Keeping it would double-encode the
+  // identity and confuse downstream consumers.
+  const { authProfiles, skillEnv, wrappedCli: _legacyWrappedCli, ...rest } = cfg;
   const providers = authProfiles && typeof authProfiles === 'object'
     ? Array.from(new Set(
       Object.values(authProfiles)
@@ -106,8 +158,11 @@ const sanitizeRuntimeConfig = (runtimeConfig: any) => {
   const skillKeys = skillEnv && typeof skillEnv === 'object'
     ? Object.keys(skillEnv).map((key) => String(key || '').trim()).filter(Boolean)
     : [];
+  const { runtimeType, host } = normalizeRuntimeIdentity(rest, agentName);
   return {
     ...rest,
+    ...(runtimeType ? { runtimeType } : {}),
+    ...(host ? { host } : {}),
     authProviders: providers,
     hasCustomAuthProfiles: providers.length > 0,
     hasCustomSkillEnv: skillKeys.length > 0,
@@ -198,7 +253,10 @@ const buildAgentInstallationPayload = (installation: any, {
 }: { profile?: any; iconUrl?: string; lastHeartbeatAt?: any; user?: any } = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
-  const runtimeConfig = sanitizeRuntimeConfig(normalizedConfig?.runtime || installation.config?.runtime || null);
+  const runtimeConfig = sanitizeRuntimeConfig(
+    normalizedConfig?.runtime || installation.config?.runtime || null,
+    installation.agentName,
+  );
   // Display label — prefer the User's `botMetadata.displayName` (curated,
   // identity-bearing) over `installation.displayName` (which can hold the
   // stale runtime label "openclaw" from pre-fix pod creation paths).

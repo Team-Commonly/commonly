@@ -419,23 +419,37 @@ const Icon = ({ d, size = 14 }: { d: string; size?: number }) => (
 const agentKeyOf = (agent: V2Agent): string => agent.instanceId || agent.agentName;
 
 // Driver badge for the agent runtime — letterform monogram + label, no emoji.
-// `local-cli` agents (ADR-005) carry `wrappedCli` so we can distinguish a
-// codex-CLI wrapper from a claude-CLI wrapper. Returns null when the runtime
-// is unknown so the UI can omit the chip rather than show "?".
+// `runtimeType` carries identity (codex / claude-code / openclaw / etc.);
+// `host` carries location ('cloud' = Commonly-managed, 'byo' = user runs it
+// themselves, ADR-005-style — laptop or their own server). The two are
+// orthogonal: a codex agent can be cloud-hosted or BYO and the badge shows
+// the same identity, with a small "BYO" tag rendered alongside when host=byo.
+// Cloud is the implicit default and gets no decoration to keep chrome quiet.
+//
+// Backwards compat: legacy `local-cli` + `wrappedCli` (pre-2026-05-04 CLI
+// attach) is normalized server-side by sanitizeRuntimeConfig — but we still
+// branch on it here as defense-in-depth in case the frontend sees an
+// unmigrated payload from an older backend.
 const resolveRuntimeBadge = (
   agent: V2Agent,
-): { mono: string; label: string } | null => {
+): { mono: string; label: string; isByo: boolean } | null => {
   const type = agent.runtime?.runtimeType;
-  const cli = agent.runtime?.wrappedCli;
-  if (type === 'moltbot') return { mono: 'OC', label: 'OpenClaw' };
-  if (type === 'local-cli') {
-    if (cli === 'codex') return { mono: 'CX', label: 'Codex' };
-    if (cli === 'claude') return { mono: 'CC', label: 'Claude Code' };
-    return { mono: 'LC', label: 'Local CLI' };
-  }
-  if (type === 'webhook') return { mono: 'WH', label: 'Webhook' };
-  if (type === 'internal') return { mono: 'NA', label: 'Native' };
-  return null;
+  const wrappedCli = agent.runtime?.wrappedCli;
+  const host = agent.runtime?.host;
+  const isByo = host === 'byo';
+
+  // Identity → mono + label.
+  let identity: { mono: string; label: string } | null = null;
+  if (type === 'moltbot') identity = { mono: 'OC', label: 'OpenClaw' };
+  else if (type === 'codex' || (type === 'local-cli' && wrappedCli === 'codex')) identity = { mono: 'CX', label: 'Codex' };
+  else if (type === 'claude-code' || (type === 'local-cli' && wrappedCli === 'claude')) identity = { mono: 'CC', label: 'Claude Code' };
+  else if (type === 'gemini' || (type === 'local-cli' && wrappedCli === 'gemini')) identity = { mono: 'GE', label: 'Gemini' };
+  else if (type === 'webhook') identity = { mono: 'WH', label: 'Webhook' };
+  else if (type === 'internal') identity = { mono: 'NA', label: 'Native' };
+  else if (type === 'local-cli') identity = { mono: 'LC', label: 'Local CLI' };
+
+  if (!identity) return null;
+  return { ...identity, isByo: isByo || type === 'local-cli' };
 };
 
 const memberRoleLabel = (
@@ -887,11 +901,12 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             </span>
             {badge && (
               <span
-                className="v2-runtime-mono"
-                title={`${badge.label} runtime`}
-                aria-label={`${badge.label} runtime`}
+                className={`v2-runtime-mono${badge.isByo ? ' v2-runtime-mono--byo' : ''}`}
+                title={`${badge.label}${badge.isByo ? ' · BYO (you run it)' : ''}`}
+                aria-label={`${badge.label} runtime${badge.isByo ? ', BYO' : ''}`}
               >
                 {badge.mono}
+                {badge.isByo && <span className="v2-runtime-mono__byo" aria-hidden>·BYO</span>}
               </span>
             )}
             {isOnline && <span className="v2-online-dot" style={{ background: 'var(--v2-success)' }} />}
@@ -977,10 +992,15 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           </div>
           {badge && (
             <div className="v2-inspector__detail-runtime">
-              <span className="v2-runtime-pill" aria-label={`${badge.label} runtime`}>
+              <span className="v2-runtime-pill" aria-label={`${badge.label} runtime${badge.isByo ? ', BYO' : ''}`}>
                 <span className="v2-runtime-pill__mono">{badge.mono}</span>
                 <span className="v2-runtime-pill__label">{badge.label}</span>
               </span>
+              {badge.isByo && (
+                <span className="v2-runtime-host" title="BYO — you run this agent (laptop, server, anywhere)">
+                  BYO
+                </span>
+              )}
             </div>
           )}
         </div>

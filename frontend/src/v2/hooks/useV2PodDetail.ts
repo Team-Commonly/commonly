@@ -31,7 +31,17 @@ export interface V2Agent {
   status?: string;
   lastHeartbeatAt?: string | null;
   runtime?: {
+    // Identity-bearing runtime tag — codex / claude-code / openclaw /
+    // moltbot / webhook / internal / local-cli (legacy).
     runtimeType?: string;
+    // 'cloud' (Commonly-managed) or 'byo' (user runs the agent themselves
+    // — ADR-005 local CLI, future user-server, etc.). Cloud is the default
+    // for built-ins. Server-side normalization fills this from
+    // sanitizeRuntimeConfig — frontend can trust either field's presence.
+    host?: 'cloud' | 'byo';
+    // Legacy CLI shape (pre-2026-05-04). Backend normalizes to runtimeType
+    // + host:'byo' on read; kept here for defense-in-depth in case an
+    // older backend serves an unmigrated payload.
     wrappedCli?: string;
   } | null;
   profile?: {

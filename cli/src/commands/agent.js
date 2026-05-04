@@ -160,6 +160,15 @@ export const performAttach = async ({
     }
   }
 
+  // Identity-bearing runtime tag from the adapter (e.g. 'codex', 'claude-
+  // code'). Falls back to adapter.name for adapters that haven't been
+  // updated to the two-field scheme. Paired with `host: 'byo'` below so a
+  // CLI-attached agent and a cloud-hosted agent of the same identity share
+  // the runtimeType and differ only on host. Replaces the old
+  // `runtimeType: 'local-cli'` + `wrappedCli` pair (kept readable on the
+  // server via legacy normalization).
+  const runtimeType = adapter.runtimeType || adapter.name;
+
   // Idempotent publish — already-published is expected and fine. Install will
   // surface the real error if the manifest is truly unusable.
   try {
@@ -167,8 +176,8 @@ export const performAttach = async ({
       manifest: {
         name: agentName,
         version: '1.0.0',
-        description: `Local ${adapter.name} CLI wrapped as a Commonly agent (ADR-005).`,
-        runtimeType: 'local-cli',
+        description: `${adapter.name} CLI wrapped as a Commonly agent (ADR-005).`,
+        runtimeType,
       },
       displayName: displayName || agentName,
     });
@@ -189,8 +198,8 @@ export const performAttach = async ({
     version: '1.0.0',
     config: {
       runtime: {
-        runtimeType: 'local-cli',
-        wrappedCli: adapter.name,
+        runtimeType,
+        host: 'byo',
       },
       ...(environment ? { environment } : {}),
     },
@@ -455,7 +464,7 @@ export const performInit = async ({
     podId,
     displayName: displayName || agentName,
     version: '1.0.0',
-    config: { runtime: { runtimeType: 'webhook' } },
+    config: { runtime: { runtimeType: 'webhook', host: 'byo' } },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
   });
   const installation = installResult.installation || installResult;
@@ -615,6 +624,7 @@ Docs:
           config: {
             runtime: {
               runtimeType: 'webhook',
+              host: 'byo',
               webhookUrl: opts.webhook,
               ...(opts.secret ? { webhookSecret: opts.secret } : {}),
             },
@@ -965,14 +975,15 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
         }
 
         const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
-        console.log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 10)} ${col('STATUS', 10)} LAST SEEN`);
-        console.log('─'.repeat(70));
+        console.log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
+        console.log('─'.repeat(80));
         installations.forEach((inst) => {
           const runtimeType = inst.config?.runtime?.runtimeType || inst.runtimeType || '?';
+          const host = inst.config?.runtime?.host || '';
           const lastSeen = inst.usage?.lastUsedAt
             ? new Date(inst.usage.lastUsedAt).toLocaleString()
             : 'never';
-          console.log(`${col(inst.agentName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 10)} ${col(inst.status, 10)} ${lastSeen}`);
+          console.log(`${col(inst.agentName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
         });
       } catch (err) {
         console.error(`Failed: ${err.message}`);

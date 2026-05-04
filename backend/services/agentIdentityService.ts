@@ -123,18 +123,29 @@ interface AgentTypeConfig {
   botType: string;
   capabilities: string[];
   /**
-   * Runtime driver selector. Must be one of the runtimeType values handled
-   * by `provisionAgentRuntime` in `agentProvisionerServiceK8s.ts` /
-   * `agentProvisionerService.ts`:
-   *   - 'moltbot'         — OpenClaw gateway (shared k8s deployment)
-   *   - 'internal'        — Commonly-bot (in-process)
-   *   - 'webhook'         — external HTTP endpoint (no deploy)
-   *   - 'claude-code'     — external Claude Code session (no deploy)
-   *   - 'openai'          — OpenAI Codex (LiteLLM-proxied, no deploy)
-   *   - 'managed-agents'  — Anthropic Claude Managed Agents API (beta,
-   *                         see `managedAgentsAdapter.ts`; scaffolding only
-   *                         as of 2026-04-11 — requires a real
-   *                         ANTHROPIC_API_KEY to activate)
+   * Identity-bearing runtime tag. Pairs with `host` (`'cloud' | 'byo'`) on
+   * the install record (`config.runtime.host`) to fully classify a driver:
+   * the same `runtimeType` can run cloud-hosted (Commonly-managed) or BYO
+   * (user laptop / their server, polling CAP). AGENT_TYPES entries describe
+   * the cloud / first-party variant; `host: 'cloud'` is implicit for
+   * built-ins. CLI-attached agents (`commonly agent attach`) write the same
+   * `runtimeType` with `host: 'byo'` — see `cli/src/lib/adapters/<name>.js`.
+   *
+   *   - 'moltbot'        — OpenClaw gateway (shared k8s deployment)
+   *   - 'internal'       — Commonly-bot (in-process)
+   *   - 'webhook'        — external HTTP endpoint (no deploy)
+   *   - 'claude-code'    — Claude Code (cloud variant has no deploy yet;
+   *                        CLI variant is sam-local-claude et al.)
+   *   - 'codex'          — OpenAI Codex (cloud = LiteLLM-proxied; CLI =
+   *                        sam-local-codex et al.). Legacy `openai` value
+   *                        still resolves via the normalizer in
+   *                        `routes/registry/helpers.ts`.
+   *   - 'managed-agents' — Anthropic Claude Managed Agents API (beta,
+   *                        scaffolding only).
+   *
+   * Legacy `runtimeType: 'local-cli'` + `wrappedCli` (pre-2026-05-04 CLI
+   * attach) is normalized to `runtimeType: <wrappedCli>` + `host: 'byo'`
+   * at read time — installations on disk are not migrated.
    */
   runtime: string;
 }
@@ -185,7 +196,11 @@ const AGENT_TYPES: Record<string, AgentTypeConfig> = {
     icon: '🤖',
     botType: 'agent',
     capabilities: ['code', 'chat'],
-    runtime: 'openai',
+    // Identity tag matches the CLI adapter's runtimeType so a CLI-attached
+    // Codex agent and a hosted Codex agent share runtimeType, differing
+    // only on `host` (BYO vs cloud). Legacy value `openai` (provider-
+    // leaning) still resolves via the normalizer in registry/helpers.ts.
+    runtime: 'codex',
   },
   newshound: {
     officialDisplayName: 'NewsHound 🐕',
