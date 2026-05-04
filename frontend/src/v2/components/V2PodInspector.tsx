@@ -958,12 +958,12 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             </span>
             {badge && (
               <span
-                className={`v2-runtime-mono${badge.isByo ? ' v2-runtime-mono--byo' : ''}`}
+                className="v2-runtime-row"
                 title={`${badge.label}${badge.isByo ? ' · BYO (you run it)' : ''}`}
                 aria-label={`${badge.label} runtime${badge.isByo ? ', BYO' : ''}`}
               >
-                {badge.mono}
-                {badge.isByo && <span className="v2-runtime-mono__byo" aria-hidden>·BYO</span>}
+                <span className="v2-runtime-row__label">{badge.label}</span>
+                {badge.isByo && <span className="v2-runtime-row__byo" aria-hidden>BYO</span>}
               </span>
             )}
             {isOnline && <span className="v2-online-dot" style={{ background: 'var(--v2-success)' }} />}

@@ -119,11 +119,19 @@ const normalizeSkillEnvEntries = (entries: any) => {
 //      `host` defaults to `'cloud'` (the only host that exists for
 //      first-party / cloud-deployed built-ins today).
 //
-// The `openai` legacy value (cloud Codex via LiteLLM, set in older
-// AGENT_TYPES rows) is rewritten to `codex` for consistency with the CLI
-// adapter — same identity, same UI badge.
+// Identity-rename map — collapses CLI adapter names + provider-leaning
+// legacy values onto the canonical runtimeType set used by AGENT_TYPES
+// and the V2 inspector badge resolver. Examples:
+//   - `claude` (CLI adapter `name`, written by pre-2026-05-04 attach)
+//      → `claude-code` (AGENT_TYPES + frontend badge match)
+//   - `openai` (older AGENT_TYPES `runtime`)
+//      → `codex` (matches the CLI adapter and the frontend badge)
+// Adding a new adapter that uses a different CLI name than its canonical
+// runtimeType? Add a row here to keep the read path consistent for
+// installs that landed before the adapter exposed `runtimeType`.
 const LEGACY_RUNTIME_RENAME: Record<string, string> = {
   openai: 'codex',
+  claude: 'claude-code',
 };
 
 const normalizeRuntimeIdentity = (rest: any, agentName?: string) => {
@@ -132,6 +140,9 @@ const normalizeRuntimeIdentity = (rest: any, agentName?: string) => {
 
   // Legacy CLI shape — `local-cli` + `wrappedCli` predates the two-field
   // model. Treat `wrappedCli` as the identity and stamp host=byo.
+  // The wrappedCli value is the CLI adapter `name` (`claude`, `codex`),
+  // which the rename map below collapses onto the canonical runtimeType
+  // (`claude-code`, `codex`) so the frontend badge resolver matches.
   if (runtimeType === 'local-cli') {
     const cli = String(rest.wrappedCli || '').trim();
     if (cli) runtimeType = cli;
@@ -147,7 +158,7 @@ const normalizeRuntimeIdentity = (rest: any, agentName?: string) => {
     if (!host) host = 'cloud';
   }
 
-  // Identity rename (provider-leaning legacy → identity-leaning canonical).
+  // Apply the identity rename (claude → claude-code, openai → codex).
   if (runtimeType && LEGACY_RUNTIME_RENAME[runtimeType]) {
     runtimeType = LEGACY_RUNTIME_RENAME[runtimeType];
   }

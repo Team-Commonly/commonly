@@ -2642,6 +2642,48 @@
   letter-spacing: 0.06em;
 }
 
+/* Member-list row runtime chip — shows the FULL runtime label (Claude Code,
+ * Codex, OpenClaw …) so identity reads at a glance, with BYO as a small
+ * trailing tag when the user is hosting the runtime themselves. The mono
+ * codes (CC / CX / OC) live on the detail-card pill where there's room
+ * for both. */
+.v2-runtime-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.v2-runtime-row__label {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--v2-border-soft);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.v2-runtime-row__byo {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-tertiary);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
 /* ---------- Role chip (preset category — Development / Design / etc.) ----------
  * Shown on the Your Team card and used as the role tag on agent profiles.
  * Neutral by design — categories don't get color codes; the text label is
