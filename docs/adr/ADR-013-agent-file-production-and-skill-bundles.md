@@ -451,9 +451,9 @@ The subcomponent owns: card layout, action buttons, install/fork modals, detail 
 
 | Phase | Scope | Verification | Owner |
 |---|---|---|---|
-| **0a** *(prereqs — verify before any code lands)* | Three load-bearing assumption checks: **(i)** Does `iOfficeAI/OfficeCLI` publish `SHA256SUMS` artifacts? Resolve binary verification path (upstream artifact vs. committed-constant). **(ii)** Does `POST /api/skills/import` support per-agent scoping (open question #11), or is `syncOpenClawSkills` keyed only on `accountId` such that per-agent install requires deeper backend work? **(iii)** Is the workspace-boundary helper from `acpx_run` cleanly extractable for `commonly_attach_file` (Invariant 4 assumption), or does it need refactoring? | Each of (i)/(ii)/(iii) resolves to a one-line answer that confirms or invalidates the corresponding Phase scope. If (ii) lands as "needs deeper backend change," Phase 4 splits into 4a (frontend) + 4b (backend). | One spike PR or three issue investigations — design only, no code |
-| **0b** | `commonly_attach_file` extension tool + Dockerfile toolchain (OfficeCLI + pandoc + markitdown + pypdf) + binary mirror to AR/GCS | Skill-free smoke test: agent uses `acpx_run` to invoke `pandoc input.md -o output.pdf` directly, then calls `commonly_attach_file`, file appears in chat with preview. **The smoke test deliberately does NOT depend on `pandic-office` skill being installed** — that ships in Phase 1. The end-to-end skill loop ("agent uses pandic-office which calls pandoc") is verified at the end of Phase 1. **Note: `acpx_run` is the bootstrap path being deprecated per ADR-005 Stage 3 — see §"Relationship to ADR-005" below for why this ADR composes cleanly with that deprecation rather than blocking on it.** | One backend + clawdbot PR pair |
-| **1** | Update `defaultSkills` for the four dev personas; reprovision-all. Verifies the full loop against the Phase-0b toolchain. | Theo/Nova/Pixel/Ops each have `github`, `officecli`, `pandic-office`, `markdown-converter`, `pdf` synced to PVC. Hand-test: each agent given a file-producing task using its newly-installed skills (NOT raw `acpx_run`). This is when the file-attach loop is verified end-to-end through the skill layer. | One backend PR |
+| **0a** *(prereqs — verify before any code lands)* | Three load-bearing assumption checks: **(i)** Does `iOfficeAI/OfficeCLI` publish `SHA256SUMS` artifacts? Resolve binary verification path (upstream artifact vs. committed-constant). **(ii)** Does `POST /api/skills/import` support per-agent scoping (open question #11), or is `syncOpenClawSkills` keyed only on `accountId` such that per-agent install requires deeper backend work? **(iii)** Is the existing workspace-boundary helper (`path-policy.ts:toRelativeWorkspacePath`) cleanly importable from the Commonly extension, or does it need a plugin-sdk export refactor? | Each of (i)/(ii)/(iii) resolves to a one-line answer that confirms or invalidates the corresponding Phase scope. If (ii) lands as "needs deeper backend change," Phase 4 splits into 4a (frontend) + 4b (backend). | One spike PR or three issue investigations — design only, no code |
+| **0b** | `commonly_attach_file` extension tool + Dockerfile toolchain (OfficeCLI + pandoc + markitdown + pypdf) + binary mirror to AR/GCS + `toRelativeWorkspacePath` exported from plugin-sdk | Two-part smoke test, runtime-agnostic. **(a)** Unit-level: place a known PDF in an agent's workspace via test harness, invoke `commonly_attach_file({podId, filePath: 'fixture.pdf'})`, assert: signed URL returned, `[[upload:...]]` directive lands in chat, inspector renders preview, path-traversal attempts (`../etc/passwd`) are rejected. **(b)** Integration-level: hand-test on dev cluster with one dev agent producing a real file (whatever shell mechanism it has — that's the runtime's business, not ADR-013's), then attaching. Skill-free: does NOT depend on `pandic-office` being installed (that ships in Phase 1). | One backend + clawdbot PR pair |
+| **1** | Update `defaultSkills` for the four dev personas; reprovision-all. Verifies the full loop against the Phase-0b toolchain. | Theo/Nova/Pixel/Ops each have `github`, `officecli`, `pandic-office`, `markdown-converter`, `pdf` synced to PVC. Hand-test: each agent given a file-producing task using its newly-installed skills — the model invokes the binary via the skill layer (not by hand-rolling raw shell), then attaches the result via `commonly_attach_file`. This is when the file-attach loop is verified end-to-end through the skill layer. | One backend PR |
 | **2** | SOUL.md two-line addition + `officecli` SKILL.md packaged locally | Visible in IDENTITY.md sync log; first heartbeat after deploy uses the rule | One backend PR |
 | **3** | Extend `/v2/marketplace` (`AppsMarketplacePage`) — promote to kind tabs (Apps · Agents · Skills · Integrations); wire Agents tab to `/api/marketplace/*` (Installable, Randy); wire Skills tab to `/api/skills/*` (legacy AR); soft-redirect `/v2/agents/browse` and `/v2/skills` with banners + **redirect-hit telemetry** for Phase 5 gating; add `GET /api/marketplace/stars/:source/:owner/:repo` server-side proxy for live GitHub star counts (TTL cache, refreshed by cron) | Frontend PR; agents install/fork round-trip works against Installable backend; skills install/uninstall round-trip works against AR; deep-links `?type=agent` and `?type=skill` pre-select correct tab; redirect-hit counter logs to `/api/telemetry/redirects` (or equivalent) so Phase 5 has a numeric signal. | One frontend + one backend (small) PR |
 | **4** | V2 inspector Skills tab + Agents tab + per-agent Configure drawer (4d) — reuses the card-list subcomponent shared with the marketplace page from Phase 3. **If Phase 0a (ii) lands as "needs backend change," Phase 4 splits into 4a (frontend) + 4b (backend per-agent install scoping).** | Frontend PR; per-pod install/uninstall round-trip works; "Talk to" + "Configure" + "Fork" actions on the Agents tab; Configure drawer's per-agent skill list installs/removes scoped to one agent; preset-aware "Recommended for" surfaces gaps; admin-only default permissions (per refined §4d) holds. | One frontend PR — or one frontend + one backend PR pair if Phase 0a (ii) demands it |
@@ -521,7 +521,7 @@ We keep `pandoc` from this stack (md → PDF is its sweet spot) and `markitdown`
 
 3. **The toolchain in the gateway image is shared substrate.** All agents on the gateway see the same binaries. We do not ship per-agent toolchain customization in the image; that's what skills + the future ADR-008 environment primitive are for.
 
-4. **`commonly_attach_file` validates the workspace boundary.** The tool must reject paths that escape `/workspace/<accountId>/` (no `..`, no symlinks pointing outside). This is the same boundary the gateway enforces for `acpx_run`; reuse the helper, don't reinvent.
+4. **`commonly_attach_file` validates the workspace boundary.** The tool must reject paths that escape `/workspace/<accountId>/` (no `..`, no symlinks pointing outside). Use `toRelativeWorkspacePath` from `_external/clawdbot/src/plugin-sdk` (exported as a Phase 0b prereq; helper lives at `src/agents/path-policy.ts`). Don't reinvent the validation logic.
 
 5. **Reprovision is the deployment unit for skill changes.** Updating `defaultSkills` in `presets.ts` does nothing until `reprovision-all` runs. PRs that change `defaultSkills` without flagging the reprovision step in the description are incomplete.
 
@@ -557,7 +557,7 @@ Three surfaces, all need work; this is **not** a parameter add to `POST /api/ski
 
 **Closes:** Open question #11. Also closes the metadata-vs-PVC half of #1 — yes, import does push SKILL.md to the PVC via `syncOpenClawInstallationsForPodSkillChange` → `syncOpenClawSkills`. The path exists; it's the per-agent scoping inside that path that's missing.
 
-### (iii) Workspace-boundary helper — ⚠️ Helper exists but not exported, plus a surprise
+### (iii) Workspace-boundary helper — ⚠️ Helper exists but not exported
 
 The validation helper `toRelativeWorkspacePath` exists at `_external/clawdbot/src/agents/path-policy.ts:105-116`. High quality:
 - Rejects `..` and absolute paths
@@ -565,15 +565,9 @@ The validation helper `toRelativeWorkspacePath` exists at `_external/clawdbot/sr
 - Cross-platform (Windows + Unix)
 - Compares the resolved path against a workspace-root parameter using `path.relative()`
 
-**Two issues:**
+**One issue:** not exported from `plugin-sdk`. The Commonly extension can't import it directly. ~10-line refactor: add the export to `_external/clawdbot/src/plugin-sdk/index.ts`. Phase 0b prereq.
 
-1. **Not exported from `plugin-sdk`.** The Commonly extension can't import it directly. ~10-line refactor: add the export to `_external/clawdbot/src/plugin-sdk/index.ts`. Phase 0b prereq.
-
-2. **`acpx_run` itself has zero path validation today.** The tool at `_external/clawdbot/extensions/commonly/src/tools.ts:927-954` accepts `agentId` and `task` strings and execs them with `/workspace` as cwd. No `..` check, no sandbox enforcement. This is a bigger gap than the ADR assumed in Invariant 4 (which read as "reuse the existing helper" — but `acpx_run` doesn't use it).
-
-**Recommendation: accept the `acpx_run` gap for its remaining lifetime.** ADR-005 Stage 3 is retiring `acpx_run` in favor of A2A-via-DM (now first-class via the `commonly_open_dm` tool, see updated CLAUDE.md). Hardening a surface that's being deprecated is misallocated effort. `commonly_attach_file` will use the helper from day one; that's the new pattern.
-
-**Closes:** Open question #12. Phase 0b absorbs the plugin-sdk export refactor as a prereq; the `commonly_attach_file` tool uses the imported helper. New open question #14 added on whether to harden `acpx_run` (recommendation: no, defer to ADR-005 Stage 3 deprecation).
+**Closes:** Open question #12. Phase 0b absorbs the plugin-sdk export refactor as a small prereq; `commonly_attach_file` imports `toRelativeWorkspacePath` and uses it for path validation. Invariant 4 in this ADR is updated (v5.7) to reference the helper by its actual home rather than by which other tools use it.
 
 ### Phasing implications recap
 
@@ -612,7 +606,7 @@ The validation helper `toRelativeWorkspacePath` exists at `_external/clawdbot/sr
 
 13. ~~Does `iOfficeAI/OfficeCLI` actually publish `SHA256SUMS` for its releases?~~ **Resolved 2026-05-04 (Phase 0a).** Yes, v1.0.70 publishes the artifact at `https://github.com/iOfficeAI/OfficeCLI/releases/download/v1.0.70/SHA256SUMS`. Use upstream artifact verification path; no committed-constant fallback needed.
 
-14. **Should `acpx_run` be hardened with `toRelativeWorkspacePath` for its remaining lifetime?** Phase 0a (iii) surfaced that `acpx_run` performs zero path validation today — it accepts arbitrary `task` strings and execs them with `/workspace` as cwd, no `..` check or sandbox enforcement. The tool is being retired per ADR-005 Stage 3 in favor of A2A-via-DM (`commonly_open_dm` + `agent-dm` pod type, both shipped). **Recommendation: defer / accept the gap.** Auditable hardening of a surface being deprecated is misallocated effort. Track the deprecation timeline; if it slips past 90 days from this ADR's ship date, revisit. `commonly_attach_file` uses the helper from day one regardless.
+14. ~~Should `acpx_run` be hardened with `toRelativeWorkspacePath` for its remaining lifetime?~~ **Withdrawn in v5.7.** Out of scope for ADR-013. `acpx_run` is a deprecated runtime detail; ADR-013 is a kernel-verb + skill-bundle ADR. Whether to harden `acpx_run` belongs in ADR-005's Stage 3 deprecation track, not here. Per the project's "no OpenClaw coupling" feedback rule: stop framing this ADR's concerns relative to which other tools share the helper.
 
 ---
 
@@ -679,39 +673,21 @@ Either outcome is correct. ADR-013 doesn't need to pre-decide. The frontend wiri
 
 ---
 
-## Relationship to ADR-005 (Local CLI wrapper driver — `acpx_run` deprecation)
+## Relationship to ADR-005 (kernel-first, runtime-agnostic)
 
-`acpx_run` (the OpenClaw extension tool that synchronously execs a CLI subprocess inside the gateway, returns stdout in the same turn) is the bootstrap mechanism dev agents use today to invoke pandoc, codex, gh, etc. Per CLAUDE.md "Agent Runtime — Quick Rules" and ADR-005 Stage 3, **`acpx_run` is being phased out**: dev-agent HEARTBEAT delegation is migrating from `acpx_run` to `@mention <wrapper-agent>` in a 1:1 agent-room — the wrapper polls CAP, spawns the actual CLI on the operator's laptop or wherever it runs, and posts the reply back. `sam-local-codex` (live 2026-04-27) is the first production wrapper agent on this pattern.
+ADR-013 ships **kernel-layer primitives** (the `commonly_attach_file` extension tool + the gateway toolchain + the dev skill bundles). It does not commit to any specific runtime mechanism for *how* an agent produces a file in its workspace. That stays inside the driver.
 
-**ADR-013 composes cleanly with that deprecation rather than blocking on it.** The relationship has three pieces:
+This matters because the runtime story is changing. The wrapper-agent pattern from ADR-005 — A2A-via-DM via the shipped `commonly_open_dm` tool and `Pod.type: 'agent-dm'` pods — is replacing earlier OpenClaw-internal mechanisms for dev-agent task delegation. ADR-013 is **runtime-agnostic by construction**, so that transition does not block, slow, or compromise this work:
 
-### 1. `commonly_attach_file` is correctly placed at the kernel layer
+- **`commonly_attach_file` is a CAP verb**, same family as `commonly_post_message`. Whichever runtime produced the file calls the tool with the same shape and the file lands in chat. Gateway-resident OpenClaw agents, ADR-005 wrapper agents (`sam-local-codex` etc.), future webhook agents, future Managed-Agents-driver agents — all delivered identically.
 
-The tool is a CAP verb — same family as `commonly_post_message`, `commonly_create_pod`, `commonly_get_context`. It does not care which runtime produced the file: a gateway-resident OpenClaw agent that ran pandoc via `acpx_run`, a `sam-local-codex` wrapper that ran pandoc on the operator's laptop, a future webhook agent that ran pandoc in a Vercel function — all of them call `commonly_attach_file` with the same shape and the file lands in chat. The "how the file got produced" stays inside the driver; "how the file is delivered to the social surface" is kernel.
+- **The Dockerfile toolchain (Part 2) is shared substrate** in the OpenClaw gateway image. Other drivers bring their own toolchain when they need one (per ADR-008's environment primitive). No driver-specific assumptions in this ADR.
 
-This means the deprecation of `acpx_run` does NOT touch ADR-013's Part 1 design at all. Wrapper-agents speaking CAP get file-attach for free.
+- **The dev skill bundles (Part 3) are runtime-agnostic by construction.** A SKILL.md instructs the model to invoke a binary; the model uses whatever shell access its runtime gives it. The skill doesn't name the mechanism.
 
-### 2. Phase 0b's `acpx_run` smoke test is a pragmatic bootstrap, not a commitment
+- **The v2 install surfaces (Part 4) and per-agent skill management (§4d) read and write through `/api/marketplace/*` and `/api/skills/*`** — both of which are runtime-neutral HTTP surfaces. The Configure drawer doesn't know or care how the agent runs.
 
-The skill-free smoke test in Phase 0b uses `acpx_run` because it's the path that exists today on the gateway-resident dev agents (Theo/Nova/Pixel/Ops). When ADR-005 Stage 3 completes the migration, the same smoke test re-runs unchanged in shape: a file gets produced (somewhere), `commonly_attach_file` delivers it. The substrate underneath the file-production step is what changes.
-
-We do not gate ADR-013 on the `acpx_run` deprecation, and we do not extend `acpx_run`'s lifetime to support ADR-013. Both ADRs proceed independently and meet at the kernel boundary.
-
-### 3. The dev skill bundles in Part 3 work on either substrate
-
-`pandic-office`, `pdf`, `markdown-converter` are SKILL.md files that instruct the model to invoke binaries (`pandoc`, `pdf` toolkit, `markitdown`). The model executes those instructions through whatever shell access it has — `acpx_run` today, the wrapper-agent's local subprocess tomorrow. A skill instruction says "run `pandoc -o report.pdf`" — the agent decides how to actually run it. The bundles are runtime-agnostic by construction.
-
-### Implication for the deprecation track
-
-ADR-013 makes the `acpx_run` deprecation easier in two ways:
-
-- **Removes a load-bearing dependency.** Today, a dev agent that wants to produce a file *as a chat artifact* has no kernel-level way to do it — the file lives on the gateway PVC and the chat layer can't see it. `commonly_attach_file` solves that. After ADR-013 ships, the file-as-chat-artifact path is kernel-mediated and works across any runtime; before it ships, the same path required `acpx_run` (or a creative workaround). One less reason to keep `acpx_run` around.
-
-- **Validates the wrapper-agent pattern at file scale.** Once `sam-local-codex` (or the next ADR-005 wrapper) starts producing files via `commonly_attach_file`, we have evidence that A2A-via-DM delegation works for non-trivial deliverables, not just shell output. That's the test ADR-005 Stage 3 needs.
-
-**Summary.** `acpx_run` is being deprecated because Commonly's own primitives (CAP + agent-rooms + ADR-005's wrapper-agent pattern) already cover the use case. ADR-013 contributes to that deprecation by adding `commonly_attach_file` as the kernel-level file-delivery verb — making "file produced by an agent appears in chat" runtime-agnostic. The Phase 0b smoke test uses `acpx_run` only as a bootstrap; the design does not depend on `acpx_run`'s continued existence.
-
-> *Naming note (updated 2026-05-04).* "A2A-via-DM" (agent-to-agent delegation through 1:1 DMs) is now first-class via two shipped primitives: **`Pod.type: 'agent-dm'`** (1:1 any-pair, autonomous-spawnable) alongside the original `Pod.type: 'agent-room'` (1:1 user↔agent), and the **`commonly_open_dm`** extension tool that lets an agent autonomously open an agent-dm pod with a peer (live in clawdbot since `11878b43c`). Both pod types are strictly 1:1 (ADR-001 §3.10, enforced by `agentIdentityService.DM_POD_TYPES_GUARD`). The wrapper-agent polling driver from ADR-005 (`sam-local-codex` etc.) sits on top of these primitives. ADR-013's `commonly_attach_file` works identically across both pod types — file delivery is decoupled from which pair is talking.
+> *Naming note (updated 2026-05-04).* "A2A-via-DM" (agent-to-agent delegation through 1:1 DMs) is first-class on Commonly today via two shipped primitives: **`Pod.type: 'agent-dm'`** (1:1 any-pair, autonomous-spawnable) alongside the original `Pod.type: 'agent-room'` (1:1 user↔agent), and the **`commonly_open_dm`** extension tool that lets an agent autonomously open an agent-dm pod with a peer (live in clawdbot since `11878b43c`). Both pod types are strictly 1:1 (ADR-001 §3.10, enforced by `agentIdentityService.DM_POD_TYPES_GUARD`). The wrapper-agent polling driver from ADR-005 sits on top of these primitives. `commonly_attach_file` works identically across both pod types — file delivery is decoupled from which pair is talking.
 
 ---
 
@@ -721,15 +697,14 @@ ADR-013 makes the `acpx_run` deprecation easier in two ways:
 - **Stakeholder-shareable artifacts** — humans can download what an agent produced, attach it to email/Slack/wherever. Closes the loop from "agents talk in chat" to "agents make things humans use."
 - **Document parsing in agent input.** With `markdown-converter` (markitdown) installed, an agent can read a user-attached PDF/DOCX/XLSX and respond to its contents — not just acknowledge that a file was uploaded.
 - **A real demo loop for YC / external traffic.** "Watch this — I asked the agent for a one-pager on X, it produced this PDF and dropped it in the pod." Concrete, screenshot-able, no narration.
-- **`acpx_run` deprecation gets easier.** Once `commonly_attach_file` is the kernel-level file-delivery verb, the file-as-chat-artifact path no longer depends on the gateway-resident `acpx_run` mechanism. Wrapper agents from ADR-005 (`sam-local-codex` and the next ones) get file-attach for free; one fewer reason to keep `acpx_run` around. ADR-013 and ADR-005 Stage 3 reinforce each other rather than competing for the same surface.
+- **Runtime-neutral file delivery.** "File produced by an agent appears in chat" becomes a kernel verb — works identically for OpenClaw-resident agents, ADR-005 wrapper agents, future webhook agents. Drivers can come and go without re-implementing file-as-chat-artifact each time.
 - **Dev agents stop running on bare Codex CLI.** They become real Commonly-shaped agents with a curated skill bundle they actually use, which is what the architecture promised but hadn't delivered.
 - **A pattern for the marketplace frontend track** — the v2 Skills tab is the first place users see the catalog. Marketplace work (per ADR-011's active list) can borrow the search + install pattern.
 
 ---
 
-## Revision history
-
-- 2026-05-04 — v5.6 (Phase 0a findings): all three load-bearing prereqs ran as a research spike, verdicts captured in new §"Phase 0a findings" section. Closed open questions #1, #11, #12, #13. (i) SHA256SUMS — confirmed available upstream. (ii) Per-agent skill scoping — deeper backend change required across three surfaces; Phase 4 splits firmly into 4a frontend + 4b backend; PR estimate finalized at ~7. (iii) Workspace-boundary helper exists at `path-policy.ts` but isn't exported from plugin-sdk (small refactor for Phase 0b). Surprise from (iii): `acpx_run` has zero path validation today — added open question #14, recommendation to defer hardening since ADR-005 Stage 3 is retiring `acpx_run` anyway. Updated §"Relationship to ADR-005" naming note to reflect that `commonly_open_dm` + `agent-dm` pod type both shipped.
+- 2026-05-04 — v5.7 (de-couple from `acpx_run`): per the project's "no OpenClaw coupling" feedback rule, stripped lingering `acpx_run` framing throughout. **Phase 0b smoke test** rewritten to be runtime-agnostic — unit-level test against `commonly_attach_file` directly with a fixture file in the workspace, plus integration-level hand-test where the agent produces the file by whatever mechanism its runtime offers (out of ADR scope). **Invariant 4** rephrased to point at the helper's actual home (`_external/clawdbot/src/plugin-sdk/path-policy`) instead of "the helper `acpx_run` uses." **Phase 0a (iii) finding** simplified — the `acpx_run`-has-zero-validation surprise is no longer foregrounded; it's a deprecated runtime detail, not ADR-013's concern. **Open question #14** withdrawn (whether to harden `acpx_run` belongs in ADR-005's deprecation track). **§Relationship to ADR-005** rewritten as "kernel-first, runtime-agnostic" — drops the three-section discussion of how this ADR composes with `acpx_run`'s deprecation, replaces with a tighter framing: ADR-013 ships kernel verbs that don't care which runtime ran the binary. **§What this unlocks** bullet on "`acpx_run` deprecation gets easier" reframed as "Runtime-neutral file delivery" — same point, no coupling.
+- 2026-05-04 — v5.6 (Phase 0a findings): all three load-bearing prereqs ran as a research spike, verdicts captured in new §"Phase 0a findings" section. Closed open questions #1, #11, #12, #13. (i) SHA256SUMS — confirmed available upstream. (ii) Per-agent skill scoping — deeper backend change required across three surfaces; Phase 4 splits firmly into 4a frontend + 4b backend; PR estimate finalized at ~7. (iii) Workspace-boundary helper exists at `path-policy.ts` but isn't exported from plugin-sdk (small refactor for Phase 0b). Updated §"Relationship to ADR-005" naming note to reflect that `commonly_open_dm` + `agent-dm` pod type both shipped.
 - 2026-05-03 — Initial draft (v1).
 - 2026-05-03 — v2: replaced the pandoc + python-office + libreoffice + docx-js stack with `OfficeCLI` (Apache-2.0, single 30 MB static binary) after upstream discovery; image growth ~600 MB → ~170 MB. Added §F to rejected alternatives capturing the prior toolchain.
 - 2026-05-03 — v3: closed open question #2 (`github` skill is real — `steipete/github`, MIT, 603 stars, requires `gh` already in image). Added §"Relationship to Installable taxonomy (ADR-001)" mapping each piece to the Installable model + the migration story when Phase 3 unpauses. Added new open questions on OfficeCLI version-pin cadence and Phase-3 acceleration vs. deferral.
