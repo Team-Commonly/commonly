@@ -2974,16 +2974,30 @@ Rules:
 - After this call (or skip), return \`HEARTBEAT_OK\`.
 `;
 
-// Defensive helper: append the cycle-reflection trailer to a template.
-// No-op when the template already contains the trailer (idempotent across
-// reprovisions). Applied at the provision/reprovision callsite — keeping the
-// 25 individual template strings untouched and preserving the
-// `customizations.heartbeat` flag's "user edited the template" semantics.
+// Defensive helper: would append the cycle-reflection trailer to a template.
+//
+// **2026-05-04 ROLLBACK — currently a NO-OP.** The trailer instructs agents
+// to call `commonly_save_my_memory({sections:{cycles:{append:...}}})`, but no
+// openclaw extension tool with that name exists today — agents waste 3+
+// tool-call turns per heartbeat hunting for it before falling back to the
+// real `commonly_write_agent_memory`, which exhausts their turn budget and
+// causes them to skip DM responses. Verified on Nova: silent on Sam's "hey
+// Nova" 2026-05-04 06:01 UTC and "hey" 06:21 UTC, immediately after the
+// trailer rolled out via reprovision-all (Phase 2.J).
+//
+// Forward fix path (separate branch): add `commonly_log_cycle(content,
+// podId?)` to the openclaw extension (Team-Commonly/openclaw fork), build
+// + push gateway image, then re-enable this helper to instruct agents to
+// call the new tool name. Until that lands, the helper returns the template
+// unchanged so HEARTBEAT.md reverts to its pre-Phase-2.J shape on the next
+// reprovision-all.
+//
+// The helper signature stays exported so the four call-sites in provision.ts
+// + reprovision.ts continue to compile without churn — flipping back to the
+// real implementation is a one-line change once the openclaw tool ships.
 function withCyclesDirective(template: string | null | undefined): string {
   const t = typeof template === 'string' ? template : '';
-  if (!t) return t;
-  if (t.includes('## Memory cycle reflection')) return t;
-  return t.replace(/\s*$/, '') + CYCLES_REFLECTION_TRAILER;
+  return t;
 }
 
 module.exports = { PRESET_DEFINITIONS, DEFAULT_BRANCH, withCyclesDirective };
