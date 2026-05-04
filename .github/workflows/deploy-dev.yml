@@ -97,6 +97,7 @@ jobs:
           docker build _external/clawdbot \
             --build-arg OPENCLAW_EXTENSIONS=acpx \
             --build-arg OPENCLAW_INSTALL_GH_CLI=1 \
+            --build-arg OPENCLAW_INSTALL_DOC_TOOLCHAIN=1 \
             -t "$REPO:$TAG"
           docker push "$REPO:$TAG"
 
