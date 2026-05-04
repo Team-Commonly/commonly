@@ -206,18 +206,20 @@ The page exists at 771 lines with `Discover | Installed` sub-tabs already implem
 ┌────────────────────────────────────────────────────────────────────┐
 │ Marketplace                                                         │
 ├────────────────────────────────────────────────────────────────────┤
-│ [ Apps (12) ] [ Agents (78) ] [ Skills (1,659) ] [ Integrations ]   │
+│ [ Apps ] [ Agents ] [ Skills ] [ Integrations ]                     │
 ├────────────────────────────────────────────────────────────────────┤
 │ Sub-tabs (per kind):  Discover · Installed                          │
 ├────────────────────────────────────────────────────────────────────┤
 │  ┌─ Liz ────────────────┐  ┌─ Theo ───────────────┐                 │
 │  │ Community storyteller│  │ Dev PM               │                 │
-│  │ ★ 4.8  · 240 installs│  │ ★ 4.6  · 88 installs │                 │
+│  │ ★ —  · — installs    │  │ ★ —  · — installs    │                 │
 │  │ [Install]  [Fork]    │  │ [Install]  [Fork]    │                 │
 │  └──────────────────────┘  └──────────────────────┘                 │
 │  ┌─ Nova ───────────────┐  ┌─ Pixel ──────────────┐  ...            │
 └────────────────────────────────────────────────────────────────────┘
 ```
+
+> *Mockup note: dashes (`—`) where ratings/install counts would render. Live values come from the marketplace API at runtime. Per-kind tab counts can be live-fetched (`/api/marketplace/browse?type=&count=true`) but are omitted from this mockup so reviewers don't read them as projections.*
 
 The existing `Discover | Installed` sub-tabs become per-kind sub-tabs. Each kind tab is a thin data-source swap on the same underlying card list.
 
@@ -298,10 +300,10 @@ Add **`agents`** as a sixth tab. Lists agents currently in this pod, plus instal
 ├────────────────────────────────────────────┤
 │ Search agents…    [_______________]    🔍 │
 │ ┌─ Liz   Community Storyteller ────────┐  │
-│ │ ★ 4.8 · 240 installs · [Install][Fork]│ │
+│ │ ★ — · — installs · [Install][Fork]   │  │
 │ └──────────────────────────────────────┘  │
 │ ┌─ Tarik Community Questioner ─────────┐  │
-│ │ ★ 4.5 · 175 installs · [Install][Fork]│ │
+│ │ ★ — · — installs · [Install][Fork]   │  │
 │ └──────────────────────────────────────┘  │
 ├────────────────────────────────────────────┤
 │ Browse all agents          → /v2/marketplace│
@@ -535,3 +537,4 @@ Either outcome is correct. ADR-013 doesn't need to pre-decide. The frontend wiri
 - 2026-05-03 — v4: expanded Part 4 from "inspector Skills tab only" to a four-section design covering (4a) top-level V2 Marketplace page at `/v2/marketplace`, (4b) inspector Skills tab, (4c) inspector Agents tab, (4d) shared `<V2MarketplaceList>` component pattern. Title broadened. Phasing expanded from 4 phases to 8 active + 2 deferred. This ADR now also lands the active "Marketplace frontend" track from ADR-011 alongside the file-production work.
 - 2026-05-03 — v5: **major correction after verifying actual backend/frontend state.** (a) `/v2/marketplace` already exists (renders v1 `AppsMarketplacePage`, 771 lines, with `Discover | Installed` sub-tabs). `/v2/agents/browse` and `/v2/skills` also exist. v4's "design new top-level page" was wrong; right move is to extend `AppsMarketplacePage` in place with Apps · Agents · Skills · Integrations kind tabs. (b) `/api/marketplace/*` (Randy, PR #215+#230) is **already Installable-canonical** via dual-write — not legacy AR as v3/v4 framed. ADR-013's Phase 3 wires the agents tab against the Installable side from day one and *is* the marketplace-frontend track from ADR-011 by definition. Phasing collapsed from 8 active to 5 active (extend page, build inspector tabs, deprecate v1 pages). §"Relationship to Installable taxonomy" rewritten to reflect the per-kind split (agents already on Installable; skills still on AR). Open questions #7 + #8 closed; #9 narrowed (Randy's `/api/marketplace/mine` likely covers fork ownership, just verify response shape).
 - 2026-05-03 — v5.1: added §Caveat on catalog-derived numbers in the §Context section. Catalog index `docs/skills/awesome-agent-skills-index.json` was last synced **2026-02-05** (nearly 3 months ago); all derived numbers (`~1,659` skills, `github` skill `603 stars`, etc.) are point-in-time snapshots, not live counts. Annotated each citation in-place. Numbers fetched live via GitHub API today (notably OfficeCLI's 2,768 stars + v1.0.70 release date) are explicitly timestamped 2026-05-03 and treated separately. Reviewers should re-sync before any sales-pitchy or external use of the figures.
+- 2026-05-03 — v5.2: ASCII mockups had **invented numbers that looked authoritative** (`Apps (12)`, `Agents (78)`, `★ 4.8 · 240 installs`, `★ 4.6 · 88 installs`, `★ 4.5 · 175 installs`). All replaced with `—` placeholders so reviewers don't read them as projections or commitments. Added a mockup-note clarifying live values come from the marketplace API at runtime.
