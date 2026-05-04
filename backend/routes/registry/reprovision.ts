@@ -26,6 +26,7 @@ const {
   issueUserTokenForInstallation,
 } = require('./tokens');
 const { PRESET_DEFINITIONS } = require('./presets');
+const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
 
 const reprovisionInstallation = async ({
   installation,
@@ -167,6 +168,28 @@ const reprovisionInstallation = async ({
     }
   }
 
+  // ADR-013 Phase 1: auto-import the preset's defaultSkills as PodAssets so
+  // syncOpenClawSkills (called below) picks them up and writes their SKILL.md
+  // files to the agent's workspace on the gateway PVC. Reuses the same
+  // upsertImportedSkillAsset path the manual /api/skills/import route uses;
+  // idempotent across reprovisions.
+  let presetSkillsApplied = null;
+  if (matchedPreset?.defaultSkills?.length && podId) {
+    try {
+      presetSkillsApplied = await applyPresetDefaultSkills({
+        podId: String(podId),
+        preset: matchedPreset,
+        userId: installation.installedBy || null,
+      });
+    } catch (skillErr: unknown) {
+      console.warn(
+        '[reprovision] applyPresetDefaultSkills failed:',
+        (skillErr as Error).message,
+      );
+      presetSkillsApplied = { error: (skillErr as Error).message };
+    }
+  }
+
   let runtimeStart = null;
   try {
     runtimeStart = await startAgentRuntime(runtimeType, normalizedInstanceId, { gateway });
@@ -264,6 +287,7 @@ const reprovisionInstallation = async ({
     runtimeRestartError: runtimeRestart?.reason || null,
     tokenRotated: Boolean(runtimeIssued.token),
     skillsSynced,
+    presetSkillsApplied,
   };
 };
 
