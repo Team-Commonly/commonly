@@ -30,6 +30,11 @@ export interface V2Agent {
   iconUrl?: string;
   status?: string;
   lastHeartbeatAt?: string | null;
+  // Role family — resolved server-side from the agent's preset
+  // (Development, Design, Strategy, Marketing, Research, etc.). Renders
+  // as a small chip in the inspector and powers the Your Team filters.
+  // Null for agents installed without a known preset.
+  category?: string | null;
   runtime?: {
     // Identity-bearing runtime tag — codex / claude-code / openclaw /
     // moltbot / webhook / internal / local-cli (legacy).

@@ -18,6 +18,7 @@ interface AgentInstallationSummary {
   installedAt?: string;
   lastHeartbeatAt?: string | null;
   runtime?: { runtimeType?: string; provider?: string } | null;
+  category?: string | null;
   podId?: string;
   podName?: string;
 }
@@ -71,6 +72,10 @@ const V2YourTeamPage: React.FC = () => {
   const [pods, setPods] = useState<PodSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Active category filter — 'all' means no filter. Tabs build dynamically
+  // from the union of categories present on loaded agents so a sparse team
+  // doesn't render empty filters.
+  const [filter, setFilter] = useState<string>('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -125,6 +130,20 @@ const V2YourTeamPage: React.FC = () => {
     });
   }, [agents]);
 
+  // Available categories — derived from loaded agents. Order: deterministic
+  // alpha so the tab bar doesn't reflow as activity timestamps change.
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    sortedAgents.forEach((a) => { if (a.category) set.add(a.category); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [sortedAgents]);
+
+  const filteredAgents = useMemo(() => (
+    filter === 'all'
+      ? sortedAgents
+      : sortedAgents.filter((a) => (a.category || 'Uncategorized') === filter)
+  ), [sortedAgents, filter]);
+
   return (
     <div className="v2-team">
       <header className="v2-team__header">
@@ -167,8 +186,37 @@ const V2YourTeamPage: React.FC = () => {
         </div>
       )}
 
+      {categories.length > 1 && (
+        <div className="v2-team__tabs" role="tablist" aria-label="Filter by role">
+          <button
+            type="button"
+            role="tab"
+            className={`v2-team__tab${filter === 'all' ? ' v2-team__tab--active' : ''}`}
+            aria-selected={filter === 'all'}
+            onClick={() => setFilter('all')}
+          >
+            All ({sortedAgents.length})
+          </button>
+          {categories.map((cat) => {
+            const count = sortedAgents.filter((a) => a.category === cat).length;
+            return (
+              <button
+                key={cat}
+                type="button"
+                role="tab"
+                className={`v2-team__tab${filter === cat ? ' v2-team__tab--active' : ''}`}
+                aria-selected={filter === cat}
+                onClick={() => setFilter(cat)}
+              >
+                {cat} ({count})
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="v2-team__grid">
-        {sortedAgents.map((a) => {
+        {filteredAgents.map((a) => {
           const display = a.displayName || a.name;
           const podLabel = a.podName || 'Untitled project';
           const runtimeLabel = formatRuntime(a);
@@ -194,6 +242,9 @@ const V2YourTeamPage: React.FC = () => {
               <div className="v2-team-card__body">
                 <div className="v2-team-card__name-row">
                   <span className="v2-team-card__name">{display}</span>
+                  {a.category && (
+                    <span className="v2-role-chip" title={`Role: ${a.category}`}>{a.category}</span>
+                  )}
                   <span className="v2-team-card__runtime">{runtimeLabel}</span>
                 </div>
                 <div className="v2-team-card__pod">in <em>{podLabel}</em></div>

@@ -4,6 +4,19 @@ const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { isK8sMode } = require('../../services/agentProvisionerService');
 const AgentIdentityService = require('../../services/agentIdentityService').default;
+const { PRESET_DEFINITIONS } = require('./presets');
+
+// Build an in-memory map of presetId → category once at module load.
+// Powers the `category` field on the agent payload — the V2 inspector
+// renders this as a small role chip in the member list, and the Your Team
+// page uses it to filter agents by function (Development / Design /
+// Strategy / etc.). PRESET_DEFINITIONS is the only authoritative source;
+// individual installations carry just `presetId`, not the category.
+const PRESET_CATEGORY_BY_ID: Record<string, string> = (PRESET_DEFINITIONS as any[])
+  .reduce((acc: Record<string, string>, p: any) => {
+    if (p?.id && p?.category) acc[String(p.id)] = String(p.category);
+    return acc;
+  }, {});
 
 const buildIdentityContent = (name: any, persona: any) => {
   const toneMap = {
@@ -280,6 +293,15 @@ const buildAgentInstallationPayload = (installation: any, {
     usage: installation.usage,
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     runtime: runtimeConfig,
+    // Resolved at the boundary so the frontend doesn't need to know
+    // about presets — `category` is the human-readable role family
+    // (Development, Design, Strategy, …) used by the V2 inspector role
+    // chip and the Your Team filter tabs. Falls back to an explicit
+    // `config.role` override (rare; user-configured) before defaulting
+    // to `null` for installs without a known preset.
+    category: (normalizedConfig?.role && String(normalizedConfig.role))
+      || PRESET_CATEGORY_BY_ID[String(normalizedConfig?.presetId || '')]
+      || null,
     config: normalizedConfig ? {
       presetId: normalizedConfig.presetId || null,
       customizations: normalizedConfig.customizations || null,

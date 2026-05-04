@@ -2642,6 +2642,69 @@
   letter-spacing: 0.06em;
 }
 
+/* ---------- Role chip (preset category — Development / Design / etc.) ----------
+ * Shown on the Your Team card and used as the role tag on agent profiles.
+ * Neutral by design — categories don't get color codes; the text label is
+ * enough. Kept compact to fit in the team-card name row without wrapping. */
+.v2-role-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--v2-border-soft);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ---------- Your Team category tab bar ---------- */
+.v2-team__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--v2-border-soft);
+}
+
+.v2-root button.v2-team__tab,
+.v2-team__tab {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--v2-border-soft);
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.v2-root button.v2-team__tab:hover,
+.v2-team__tab:hover {
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-primary);
+}
+
+.v2-root button.v2-team__tab--active,
+.v2-team__tab--active {
+  background: var(--v2-accent);
+  color: #fff;
+  border-color: var(--v2-accent);
+}
+
+.v2-root button.v2-team__tab--active:hover,
+.v2-team__tab--active:hover {
+  background: var(--v2-accent);
+  color: #fff;
+}
+
 /* ---------- Avatar ---------- */
 
 .v2-avatar {

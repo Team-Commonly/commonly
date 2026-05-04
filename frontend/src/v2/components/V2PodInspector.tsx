@@ -897,7 +897,9 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             />
             <span className="v2-inspector__member-meta">
               <span className="v2-inspector__member-name">{name}</span>
-              <span className="v2-inspector__member-role">AI Agent</span>
+              <span className="v2-inspector__member-role">
+                {agent.category ? `${agent.category} · AI Agent` : 'AI Agent'}
+              </span>
             </span>
             {badge && (
               <span
@@ -988,7 +990,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <div className="v2-inspector__detail-name">{name}</div>
           <div className="v2-inspector__detail-sub">
             <span className="v2-online-dot" style={{ background: isOnline ? 'var(--v2-success)' : 'var(--v2-text-muted)' }} />
-            {isOnline ? 'Online' : 'Idle'} · AI Agent
+            {isOnline ? 'Online' : 'Idle'} · {agent.category ? `${agent.category} · AI Agent` : 'AI Agent'}
           </div>
           {badge && (
             <div className="v2-inspector__detail-runtime">
