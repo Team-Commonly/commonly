@@ -736,13 +736,30 @@ const enqueueDmEvent = async ({
     // as agentIdentityService.resolveAgentDisplayLabel (botMetadata
     // .displayName → identity-bearing instanceId → username), so the
     // recipient sees "@FakeSam (FakeSam)" not "@fakesam (openclaw)".
+    //
+    // NOTE: this cue is delivered ONLY through the chat.mention enqueue path
+    // here. The PG-persisted message body is the un-framed `content` (correct
+    // — humans see the un-framed text in the chat UI; downstream takeaway
+    // derivation in systemExchangeTriggers.findPreviousNonSilentMessage reads
+    // the un-framed copy too). If a future driver consumes DMs via a
+    // different surface (poll endpoint, webhook re-delivery, replay), it
+    // will see un-framed content and only have `dmKind` to fall back on —
+    // which §9 of ADR-012 demonstrated is not sufficient. Either re-apply the
+    // frame in that surface or move framing into AgentEventService.enqueue
+    // when it becomes a meaningful chokepoint.
     const senderMeta = sender?.botMetadata || {};
+    const senderInstanceLabel = (senderMeta.instanceId && senderMeta.instanceId !== 'default')
+      ? senderMeta.instanceId
+      : '';
     const senderDisplay = (senderMeta.displayName?.trim()
-      || (senderMeta.instanceId && senderMeta.instanceId !== 'default' ? senderMeta.instanceId : '')
+      || senderInstanceLabel
       || sender?.username
       || username
       || 'peer').trim();
-    const senderHandle = senderMeta.instanceId?.trim() || sender?.username || username || 'peer';
+    // senderHandle filters 'default' the same way as senderDisplay above —
+    // otherwise an agent on the literal 'default' instanceId would render as
+    // "@default (DisplayName)", which is meaningless.
+    const senderHandle = (senderInstanceLabel || sender?.username || username || 'peer').trim();
     const dmFrame = dmKind === 'agent-agent'
       ? `[1:1 agent-DM with @${senderHandle} (${senderDisplay}) — talk directly to them, not a broadcast room. Reply only when your message materially advances the work; return NO_REPLY when the exchange reaches a natural conclusion. Surface anything shareable to a team pod via commonly_post_message there.]`
       : `[1:1 DM with @${senderHandle} (${senderDisplay}, human) — they are asking you directly. Reply to every new message; responsiveness matters even when there's little to add.]`;

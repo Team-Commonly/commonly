@@ -47,7 +47,10 @@ export interface ISystemExchangesSection {
   entries: ISystemExchangeEntry[];   // most recent first; cap at 50 (ADR-012 §5)
   visibility: 'private';             // hard-coded; widening is closed
   updatedAt: Date;
-  byteSize: number;
+  // ADR-012 Phase 1 deliberately omits `byteSize` — appendSystemExchange does
+  // not maintain it under concurrent $push, and no Phase 1 reader consumes
+  // it. Phase 2's digest builder recomputes from `entries` directly. Re-add
+  // here when there's a reader that benefits from the cached value.
 }
 
 export interface IAgentMemorySections {
@@ -176,7 +179,7 @@ const systemExchangesSectionSchema = new Schema<ISystemExchangesSection>(
     // attempt to widen at the document level fails Mongoose validation.
     visibility: { type: String, enum: ['private'], default: 'private' },
     updatedAt: { type: Date, default: Date.now },
-    byteSize: { type: Number, default: 0 },
+    // byteSize intentionally omitted in Phase 1 — see ISystemExchangesSection.
   },
   { _id: false },
 );

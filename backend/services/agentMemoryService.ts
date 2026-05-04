@@ -181,6 +181,12 @@ export function stampSectionsForWrite(
     const v = sections[key];
     if (v === undefined) continue;
 
+    // ADR-012 §1: system_exchanges is read-only via the agent surface.
+    // validateSectionsPayload rejects it before it reaches here; this is
+    // defense-in-depth and also keeps the union-typed `out[key]` assignment
+    // below provably safe (the IMemorySection branch can't widen to system_exchanges).
+    if (key === 'system_exchanges') continue;
+
     if (key === 'daily') {
       out.daily = ((v as IDailySection[]) || []).map((d): IDailySection => ({
         date: d.date,
@@ -201,7 +207,11 @@ export function stampSectionsForWrite(
     }
 
     const s = v as IMemorySection;
-    out[key] = makeSection(s.content ?? '', s.visibility ?? 'private', now);
+    (out as Record<string, IMemorySection>)[key] = makeSection(
+      s.content ?? '',
+      s.visibility ?? 'private',
+      now,
+    );
   }
   return out;
 }
@@ -227,6 +237,11 @@ export function mergePatchSections(
     const inc = incoming[key];
     if (inc === undefined) continue;
 
+    // ADR-012 §1: agents cannot patch `system_exchanges`. validateSectionsPayload
+    // rejects it upstream — this guard keeps mergePatchSections safe even if
+    // someone calls it from outside the route.
+    if (key === 'system_exchanges') continue;
+
     if (key === 'daily') {
       const byDate = new Map<string, IDailySection>();
       for (const d of existing?.daily || []) byDate.set(d.date, d);
@@ -243,7 +258,7 @@ export function mergePatchSections(
       continue;
     }
 
-    out[key] = inc as IMemorySection;
+    (out as Record<string, IMemorySection>)[key] = inc as IMemorySection;
   }
 
   return out;
@@ -436,11 +451,9 @@ export async function appendSystemExchange(
   // bumped via $currentDate). Two concurrent appends serialize at the doc
   // level (single-document atomicity, ADR-012 §4).
   //
-  // Note on byteSize: we don't maintain a running byte counter here. v1
-  // writes leave it at 0 (or whatever the initial schema default produces)
-  // and recompute lazily when the digest builder serializes. Maintaining it
-  // accurately under concurrent $push without a read-modify-write is
-  // expensive and adds nothing the digest can't derive.
+  // No byteSize here: ISystemExchangesSection deliberately omits the field
+  // in Phase 1 — see the model. Phase 2's digest builder recomputes from
+  // `entries` directly; no benefit to caching it here.
   const updated = await AgentMemory.findOneAndUpdate(
     { agentName, instanceId },
     {

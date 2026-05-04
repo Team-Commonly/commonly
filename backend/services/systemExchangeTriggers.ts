@@ -21,9 +21,35 @@ interface AgentMember {
   instanceId: string;
 }
 
+// Cheap pre-flight gate. The hot path on `postMessage` is heartbeat-NO_REPLY
+// posts in non-DM pods (community agents posting an empty heartbeat reply
+// every cycle), so we want to bail out without paying the User.find round-trip.
+// One projected Pod.findById on `type` is the minimum cost we can pay before
+// deciding to proceed; if not an agent-dm, we return false and the caller
+// returns immediately. This is also belt-and-suspenders for the type guard
+// in resolveAgentMembers below.
+async function podIsAgentDm(podId: string): Promise<boolean> {
+  try {
+    const pod = await Pod.findById(podId)
+      .select('type')
+      .lean<{ type?: string } | null>();
+    return pod?.type === 'agent-dm';
+  } catch {
+    return false;
+  }
+}
+
 // Resolve the bot members of a pod into (agentName, instanceId) tuples.
 // Skips humans + bots without `botMetadata`. Used to identify the two peers
 // of an agent-dm pod (or the assignee of a task).
+//
+// IDENTITY NOTE: for OpenClaw-driven peers, `botMetadata.agentName` is the
+// RUNTIME label ('openclaw'), not the per-instance identity. The
+// (agentName, instanceId) **tuple** is what gives a unique identity — two
+// openclaw agents in a pod share `agentName='openclaw'` but have different
+// `instanceId`s ('aria' vs 'pixel'). The senderKey check below relies on the
+// tuple, not on agentName alone, for that reason. See CLAUDE.md DM display-
+// label rule for the broader shape.
 async function resolveAgentMembers(podId: string): Promise<{
   podType?: string;
   podName?: string;
@@ -82,33 +108,47 @@ interface RecordAgentDmConclusionArgs {
 // silently if PG is unavailable, with the takeaway degrading to the kind-only
 // literal. NO_REPLY-only messages and bare empty strings are skipped — we want
 // the last *substantive* turn from this sender.
+//
+// Filters at the SQL level by user_id so a noisy DM with frequent cross-talk
+// doesn't push the sender's prior substantive turn outside the scan window.
 async function findPreviousNonSilentMessage(podId: string, senderUserId: string): Promise<string | null> {
   try {
+    // Lazy require to avoid pulling pg config at module-load time in unit tests.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const PGMessage = require('../models/pg/Message') as {
-      findByPodId?: (id: string, limit: number) => Promise<Array<{ user_id?: unknown; content?: unknown }>>;
+    const { pool } = require('../config/db-pg') as {
+      pool?: {
+        query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
+      };
     };
-    if (!PGMessage || typeof PGMessage.findByPodId !== 'function') return null;
-    // Limit: 30 — the NO_REPLY post itself is typically the last row, and we
-    // want the last substantive turn from the sender. 30 covers ~10 back-and-
-    // forths without scanning the whole pod.
-    const recent = await PGMessage.findByPodId(podId, 30);
-    if (!Array.isArray(recent) || recent.length === 0) return null;
-    // findByPodId returns most-recent first (PG ORDER BY created_at DESC).
-    // Skip the first row if it is the NO_REPLY post we just received — its
-    // content reduces to empty under sanitizeAgentContent.
-    for (const m of recent) {
-      const uid = String(m?.user_id ?? '');
-      if (uid !== senderUserId) continue;
-      const raw = typeof m?.content === 'string' ? m.content : String(m?.content ?? '');
-      const trimmed = raw.trim();
-      if (!trimmed) continue;
-      // Skip pure NO_REPLY rows (matches sanitizeAgentContent's logic without
-      // round-tripping the regex). A row that's NO_REPLY-only collapses to
-      // empty after stripping the token.
-      const stripped = trimmed.replace(/\bNO_REPLY\b/g, '').trim();
-      if (!stripped) continue;
-      return stripped;
+    if (!pool || typeof pool.query !== 'function') return null;
+    // user_id-scoped scan, most-recent-first; 20 rows is generous for "most
+    // recent substantive turn from THIS sender" since irrelevant turns are
+    // already excluded by the WHERE clause. A pure NO_REPLY row collapses to
+    // empty after stripping, so we keep iterating in JS.
+    const result = await pool.query(
+      `SELECT content FROM messages
+       WHERE pod_id = $1 AND user_id = $2
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [podId, senderUserId],
+    );
+    if (!result?.rows || result.rows.length === 0) return null;
+    // Lazy require AgentMessageService for sanitizeAgentContent — single source
+    // of truth for "is this a substantive reply?" Keeps NO_REPLY semantics in
+    // sync with the swallow logic in postMessage.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AMS = require('./agentMessageService') as {
+      AgentMessageService?: { sanitizeAgentContent?: (s: unknown) => string };
+      default?: { sanitizeAgentContent?: (s: unknown) => string };
+    };
+    const sanitize = (
+      AMS.AgentMessageService?.sanitizeAgentContent
+      ?? AMS.default?.sanitizeAgentContent
+    );
+    for (const m of result.rows) {
+      const raw = typeof m?.content === 'string' ? (m.content as string) : String(m?.content ?? '');
+      const cleaned = typeof sanitize === 'function' ? sanitize(raw) : raw.trim().replace(/\bNO_REPLY\b/g, '').trim();
+      if (cleaned) return cleaned;
     }
     return null;
   } catch (err) {
@@ -121,15 +161,28 @@ async function findPreviousNonSilentMessage(podId: string, senderUserId: string)
 // (the entire reply) in an agent-dm pod. Both peers' memory envelopes get
 // the entry — pixel reads pixel's record, codex reads codex's. Same event,
 // two private records (ADR-012 §6).
+//
+// Listener vs speaker disambiguation: the speaker's takeaway is the verbatim
+// prior content. The listener's takeaway is prefixed with `@<peer>:` so that
+// reading the entry later doesn't suggest the listener spoke those words.
+// Splitting into two kinds was an alternative; keeping one kind + role-shaped
+// takeaway lets the digest builder render uniformly without a kind-table.
 export async function recordAgentDmConclusion(args: RecordAgentDmConclusionArgs): Promise<void> {
   const { podId, senderAgentName, senderInstanceId, ts = new Date() } = args;
   try {
-    if (!podId || !mongoose.isValidObjectId(podId)) return;
+    if (!podId || typeof podId !== 'string' || !mongoose.isValidObjectId(podId)) return;
+    // Hot-path gate: bail before User.find for non-DM pods. Heartbeats in team
+    // pods regularly emit NO_REPLY-only posts; this short-circuit keeps that
+    // path cheap (one $type-projected findById vs full member resolution).
+    if (!(await podIsAgentDm(podId))) return;
+
     const { podType, podName, agents } = await resolveAgentMembers(String(podId));
-    if (podType !== 'agent-dm') return; // belt-and-suspenders; caller already checked
+    if (podType !== 'agent-dm') return; // belt-and-suspenders; podIsAgentDm already filtered
     if (agents.length < 2) return; // not a 1:1 yet — skip
 
-    const senderKey = `${String(senderAgentName).toLowerCase()}|${senderInstanceId}`;
+    const senderName = String(senderAgentName || '').toLowerCase();
+    const senderInst = String(senderInstanceId || 'default');
+    const senderKey = `${senderName}|${senderInst}`;
     if (!agents.some((a) => `${a.agentName}|${a.instanceId}` === senderKey)) {
       // Sender isn't a recognized agent member of this pod — skip rather
       // than fabricate an entry (e.g. an external integration posting NO_REPLY).
@@ -139,16 +192,14 @@ export async function recordAgentDmConclusion(args: RecordAgentDmConclusionArgs)
     const surfaceLabel = surfaceLabelFor(podType, podName, podId);
 
     // Find the sender's User._id so we can locate their previous message.
-    // We deliberately don't accept senderUserId from the caller — postMessage
-    // resolves agentUser AFTER the silent_or_empty early-return, so that
-    // value isn't available at the trigger fire-point.
+    // Use the top-level User import (Mongoose model is properly typed) rather
+    // than re-requiring it lazily — avoids the TS2347 "untyped function calls
+    // may not accept type arguments" warning on .lean<...>().
     let previousContent: string | null = null;
     try {
-      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-      const User = require('../models/User');
       const senderUser = await User.findOne({
-        'botMetadata.agentName': String(senderAgentName).toLowerCase(),
-        'botMetadata.instanceId': senderInstanceId,
+        'botMetadata.agentName': senderName,
+        'botMetadata.instanceId': senderInst,
         isBot: true,
       })
         .select('_id')
@@ -163,19 +214,23 @@ export async function recordAgentDmConclusion(args: RecordAgentDmConclusionArgs)
     // Takeaway derivation — verbatim previous content, head-truncated. v1
     // skips multi-turn condensation (see ADR-012 §4). When no prior content
     // exists (fresh DM, PG unavailable), fall back to a kind-only literal.
-    const takeaway = previousContent && previousContent.trim()
+    const speakerTakeaway = previousContent && previousContent.trim()
       ? truncateTakeaway(previousContent.trim())
       : 'agent-dm concluded (no prior content captured)';
 
     // Write to BOTH peers. Each peer's `peers` field lists the OTHER agents.
+    // Speaker gets the verbatim takeaway; listener(s) get a `@peer:`-prefixed
+    // version so the entry reads as "what the other side said" — eliminates
+    // the "why does my memory say I shipped X when I didn't?" failure mode.
     const writes = agents.map((a) => {
+      const isSpeaker = a.agentName === senderName && a.instanceId === senderInst;
       const peers = agents
         .filter((p) => !(p.agentName === a.agentName && p.instanceId === a.instanceId))
         .map((p) => p.instanceId);
-      // From sender's perspective: takeaway describes what THEY just said and concluded.
-      // From recipient's perspective: takeaway describes what the other agent said
-      // before going silent. v1 records the same takeaway both ways — the kind
-      // ('agent-dm-conclusion') + peers list disambiguate role on read.
+      const speakerLabel = senderInst && senderInst !== 'default' ? senderInst : senderName;
+      const takeaway = isSpeaker
+        ? speakerTakeaway
+        : truncateTakeaway(`@${speakerLabel}: ${speakerTakeaway}`);
       return appendSystemExchange({
         agentName: a.agentName,
         instanceId: a.instanceId,
@@ -205,7 +260,8 @@ interface RecordAgentDmLoopTripArgs {
 export async function recordAgentDmLoopTrip(args: RecordAgentDmLoopTripArgs): Promise<void> {
   const { podId, ts = new Date() } = args;
   try {
-    if (!podId || !mongoose.isValidObjectId(podId)) return;
+    if (!podId || typeof podId !== 'string' || !mongoose.isValidObjectId(podId)) return;
+    if (!(await podIsAgentDm(podId))) return;
     const { podType, podName, agents } = await resolveAgentMembers(String(podId));
     if (podType !== 'agent-dm') return;
     if (agents.length < 2) return;
@@ -288,11 +344,15 @@ export async function recordTaskCompleted(args: RecordTaskCompletedArgs): Promis
   } = args;
   try {
     if (!assignee || typeof assignee !== 'string') return;
-    if (!podId || !mongoose.isValidObjectId(podId)) return;
+    if (!podId || typeof podId !== 'string' || !mongoose.isValidObjectId(podId)) return;
 
     const { podType, podName, agents } = await resolveAgentMembers(String(podId));
     // Skip if the assignee isn't a recognized agent member of this pod —
-    // human assignees don't have a memory envelope.
+    // human assignees don't have a memory envelope. NOTE: matching on
+    // agentName alone is correct here because Task.assignee stores the agent
+    // identifier the runtime owns (one assignee → one agent). For OpenClaw
+    // agents the matching peer in `agents[]` has agentName='openclaw' and a
+    // distinguishing instanceId; we resolve the right instanceId below.
     const assigneeLower = assignee.toLowerCase();
     const isAgentInPod = agents.some((a) => a.agentName === assigneeLower);
     if (!isAgentInPod) return;
