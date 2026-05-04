@@ -828,16 +828,19 @@ describe('Clawdbot E2E Integration Tests', () => {
         })),
       );
 
-      // Process each event sequentially (intentional: each poll depends on prior ack)
+      // ADR-012 §3 mutate-on-claim: a single poll claims ALL pending events
+      // (flips status pending → delivered atomically). Subsequent polls
+      // return [] because no events remain in 'pending'. Old test polled
+      // before each ack expecting decreasing length — that was the
+      // non-mutating fetch semantic. New shape: poll once, then ack each
+      // event individually.
+      const pollRes = await request(app)
+        .get('/api/agents/runtime/events')
+        .set('Authorization', `Bearer ${agentToken}`);
+      expect(pollRes.body.events.length).toBe(events.length);
+
       /* eslint-disable no-await-in-loop */
       for (let i = 0; i < events.length; i += 1) {
-        // Poll (should get remaining events)
-        const pollRes = await request(app)
-          .get('/api/agents/runtime/events')
-          .set('Authorization', `Bearer ${agentToken}`);
-
-        expect(pollRes.body.events.length).toBe(events.length - i);
-
         // Post response
         await request(app)
           .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
@@ -847,7 +850,7 @@ describe('Clawdbot E2E Integration Tests', () => {
             messageType: 'text',
           });
 
-        // Acknowledge oldest pending event
+        // Acknowledge each event
         await request(app)
           .post(`/api/agents/runtime/events/${events[i]._id}/ack`)
           .set('Authorization', `Bearer ${agentToken}`);
