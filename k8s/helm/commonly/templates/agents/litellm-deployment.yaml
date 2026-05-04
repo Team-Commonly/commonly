@@ -130,6 +130,12 @@ spec:
               name: api-keys
               key: openrouter-api-key
               optional: true
+        - name: OPENROUTER_API_KEY_2
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: openrouter-api-key-2
+              optional: true
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:

@@ -33,10 +33,18 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
 
   # --- OpenRouter (free tier, community agents) ---
+  # Two deployments per model_name with different api_keys → router strategy
+  # least-busy spreads load across both OR accounts; num_retries falls through
+  # to the other on 429/auth error.
   - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
     litellm_params:
       model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
       api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+      api_key: os.environ/OPENROUTER_API_KEY_2
 
   # arcee-ai/trinity-large-preview:free was removed 2026-05-03 (deregistered at
   # OpenRouter, 404). Mirrored in the production helm chart at

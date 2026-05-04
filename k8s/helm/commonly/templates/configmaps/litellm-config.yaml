@@ -39,7 +39,21 @@ data:
       # - openrouter/* used when gateway calls via openai-codex/gpt-5.4 fallback path
       # - nvidia/* / arcee-ai/* used when gateway uses openrouter:default profile
       #   (OpenClaw strips the "openrouter/" prefix before sending to the provider)
+      # Two deployments per model_name with different api_keys so router_settings
+      # routing_strategy: least-busy spreads load across both OR accounts and
+      # num_retries: 1 falls through to the other on 429/auth error. OPENROUTER_API_KEY_2
+      # is a secondary OpenRouter account for free-tier capacity doubling.
       - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+        litellm_params:
+          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+          api_key: os.environ/OPENROUTER_API_KEY
+
+      - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+        litellm_params:
+          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+          api_key: os.environ/OPENROUTER_API_KEY_2
+
+      - model_name: nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
           model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
           api_key: os.environ/OPENROUTER_API_KEY
@@ -47,7 +61,7 @@ data:
       - model_name: nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
           model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY
+          api_key: os.environ/OPENROUTER_API_KEY_2
 
       # NOTE: arcee-ai/trinity-large-preview:free was deregistered at OpenRouter
       # (404 No endpoints found) on 2026-05-03. Removed from model_list and from
