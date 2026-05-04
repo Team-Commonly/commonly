@@ -176,56 +176,69 @@ Plus implicit-everywhere: `commonly_attach_file` is the extension tool from Part
 
 **Reprovision behavior.** `syncOpenClawSkills` already runs on provision and on `reprovision-all`. Once `defaultSkills` is non-empty, the next reprovision pushes the skill markdown to the agent's PVC at `/workspace/<accountId>/skills/<skill-id>/SKILL.md`. No new infrastructure. Verify the path is correct in dev cluster before merging the preset change.
 
-### Part 4: V2 install surfaces — Marketplace page + inspector tabs
+### Part 4: V2 install surfaces — extend `/v2/marketplace`, add inspector sub-tabs
 
 Two surfaces, one design language:
 
-- **Top-level Marketplace page** (`/v2/marketplace`) — global discovery, agents and skills browsable side by side. Replaces v1's `AgentsHub.tsx` (4,954 lines) and `SkillsCatalogPage.tsx` (2,061 lines) over time.
+- **`/v2/marketplace` (already mounted)** — extend the existing page from Apps + Integrations to a unified Apps · Agents · Skills · Integrations browse. **No new top-level page.**
 - **Inspector sub-tabs** (`Skills` and `Agents`) — per-pod contextual install. Quick path for "I'm in this pod and want to add capability now."
 
-Both surfaces use the same `V2MarketplaceList` component with different `scope` props. Total component code budget: **<800 lines across all v2 marketplace UI** (vs ~7,000 lines in v1). Backend endpoints all already exist: `/api/marketplace/*` (PR #215 + #230, 9 endpoints) for agents, `/api/skills/*` for skills, `/api/registry/agents/*` for forking.
+Backend reality check (verified 2026-05-03):
 
-#### 4a. Top-level V2 Marketplace page
+| Backend | Status | Used by |
+|---|---|---|
+| `/api/marketplace/*` (9 endpoints — Randy's PR #215 + #230) | **Already Installable-canonical** — dual-write to `Installable` (canonical) + `AgentRegistry` (compat shim) per ADR-001 Phase 2 | Not yet wired to the v2 frontend |
+| `/api/apps/marketplace`, `/api/integrations/catalog` | Legacy AR-based | `AppsMarketplacePage` consumes these today |
+| `/api/skills/*` | Legacy AR-based — Phase 2 didn't cover skills | `SkillsCatalogPage` consumes these |
+| `/api/marketplace/fork`, `/api/marketplace/mine` | Installable-canonical (Randy) | Will back the agent fork + "My Agents" UX |
 
-Route: `/v2/marketplace`. Entry point: a single nav-rail icon (Compass / Store glyph). Two-pane layout:
+**The single most important correction in v5:** `/api/marketplace/*` is **not legacy** — it's the **first frontend consumer of the Installable model in production**. Wiring the Agents tab to it satisfies the active "Marketplace frontend" track from ADR-011 by definition. We are not waiting for ADR-001 Phase 3 for the agent half; we are *delivering* it. The skills half remains on the legacy AR path and migrates when Phase 3 unpauses.
+
+#### 4a. Extend existing `/v2/marketplace` (`AppsMarketplacePage`)
+
+The page exists at 771 lines with `Discover | Installed` sub-tabs already implemented. Extend it in place — do not author a new file. Two changes:
+
+**A. Top-level kind tabs.** Promote the implicit "this page is about Apps" framing into explicit kind tabs:
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│ V2 Marketplace                                                      │
+│ Marketplace                                                         │
 ├────────────────────────────────────────────────────────────────────┤
-│ [ Agents (78) ]   Skills (1,659)             Search [_______]   🔍 │
-├──────────────────────────────────────┬─────────────────────────────┤
-│ Filters                              │ Featured                    │
-│  Category                            │  ┌─ Liz ────────────────┐  │
-│   ▢ Engineering                      │  │ Community storyteller│  │
-│   ▢ Marketing                        │  │ ★ 4.8  · 240 installs│  │
-│   ▢ Community                        │  └──────────────────────┘  │
-│   ▢ Productivity                     │  ┌─ Theo ───────────────┐  │
-│  Source                              │  │ Dev PM               │  │
-│   ▢ Built-in                         │  │ ★ 4.6  · 88 installs │  │
-│   ▢ Marketplace                      │  └──────────────────────┘  │
-│   ▢ Forked                           │                             │
-│  Runtime                             │  All agents                 │
-│   ▢ Native                           │  · Nova (backend)           │
-│   ▢ OpenClaw                         │  · Pixel (frontend)         │
-│   ▢ Webhook                          │  · Ops (devops)             │
-│                                      │  · …                        │
-└──────────────────────────────────────┴─────────────────────────────┘
+│ [ Apps (12) ] [ Agents (78) ] [ Skills (1,659) ] [ Integrations ]   │
+├────────────────────────────────────────────────────────────────────┤
+│ Sub-tabs (per kind):  Discover · Installed                          │
+├────────────────────────────────────────────────────────────────────┤
+│  ┌─ Liz ────────────────┐  ┌─ Theo ───────────────┐                 │
+│  │ Community storyteller│  │ Dev PM               │                 │
+│  │ ★ 4.8  · 240 installs│  │ ★ 4.6  · 88 installs │                 │
+│  │ [Install]  [Fork]    │  │ [Install]  [Fork]    │                 │
+│  └──────────────────────┘  └──────────────────────┘                 │
+│  ┌─ Nova ───────────────┐  ┌─ Pixel ──────────────┐  ...            │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-**Top-level kind tabs (Agents / Skills).** Default: Agents. Same component, two data sources. Counts are live (cached 60s).
+The existing `Discover | Installed` sub-tabs become per-kind sub-tabs. Each kind tab is a thin data-source swap on the same underlying card list.
+
+**B. Wire each kind tab to the right backend.**
+
+| Kind tab | Browse | Install | Fork | Detail |
+|---|---|---|---|---|
+| Apps | `/api/apps/marketplace` (legacy, unchanged) | `/api/apps/pods/:podId/apps` | n/a | existing |
+| **Agents** | `/api/marketplace/browse?type=agent` (Installable, **Randy**) | `/api/marketplace/install` (Randy, when added) | `/api/marketplace/fork` (Randy) | `/api/marketplace/manifests/:installableId` (Randy) |
+| **Skills** | `/api/skills/catalog` (legacy AR) | `/api/skills/import` | n/a | inline from catalog |
+| Integrations | `/api/integrations/catalog` (legacy, unchanged) | existing | n/a | existing |
 
 **Per-item card actions:**
-- **Install** — primary CTA. Opens scope picker: "Install into ▾ [pod | instance-wide | DM with me]" → confirms → calls `POST /api/marketplace/install` (or `/api/skills/import` for skills) → toast on success. Default scope: current pod if user came from a pod context; otherwise instance-wide if admin, else "pick a pod."
-- **Fork** (agents only) — clones the agent into the user's `source: 'user'` namespace. Opens a one-screen fork form: name, description, persona override (optional). Calls `POST /api/registry/agents/:name/fork`. Forked agent appears in the user's "My Agents" view and can be customized further before install.
-- **Detail** — opens a side drawer (not a modal): description, manifest fields, components list (per ADR-001 taxonomy: this Installable provides `[Agent + 2 SlashCommands + 1 Skill]`), runtime requirements, ratings, source link.
-- **Talk to** (agents already installed in user-scoped DM) — opens the existing agent-room (`/v2/dms/:agentId`).
+- **Install** — opens scope picker: "Install into ▾ [pod | instance-wide | DM with me]." Default: current pod if user came from a pod context. Calls the kind-appropriate install endpoint above.
+- **Fork** (Agents only) — calls `/api/marketplace/fork` (Installable-canonical). Forked agent appears in the user's "My Agents" view, sourced via `/api/marketplace/mine`. No new backend needed.
+- **Detail** — side drawer (not a modal) showing the manifest's `components[]` per ADR-001 taxonomy: "this Installable provides `[Agent + 2 SlashCommands + 1 Skill]`." This is where the taxonomy becomes user-visible.
+- **Talk to** (agents already installed in user-scoped DM) — opens existing agent-room (`/v2/dms/:agentId`).
 
-**Manifest detail surfaces ADR-001 taxonomy:** every Installable card shows `kind`, `source`, `scope`, components count. Clicking a component drills into "what does this skill / slash command / event handler actually do." This is where the taxonomy becomes user-visible — and the inspector tab in 4b/4c reuses the same drilldown.
+**Estimated edit budget for this part:** **<400 lines diff** to the existing `AppsMarketplacePage.tsx` (771 lines). No new component files at the page level. The detail drawer + scope picker + fork form are extracted as small subcomponents (~150 lines each).
 
-**Publish flow** (admin-gated, opens from a "Publish" button in user's "My Agents" view, not the marketplace browse): scope picker (instance-only / submit-to-public-marketplace), version bump, manifest preview, confirm. Existing `/api/marketplace/publish` endpoint. Out of scope for shell-first MVP polish but the button placement and shape are committed here.
+**Deprecate `/v2/agents/browse` and `/v2/skills`.** Both already render v1 components (`AgentsHub` 4,954 lines, `SkillsCatalogPage` 2,061 lines) inside the v2 chrome. Soft-redirect both to `/v2/marketplace?type=agent` and `/v2/marketplace?type=skill` respectively, with a deep-link query param the page reads on mount. Banner on the redirect for one release cycle. Delete the v1 pages after the cooling-off period (one phase).
 
-**Replaces over time, not all at once.** Phase 1: ship marketplace page; the v1 `AgentsHub.tsx` and `SkillsCatalogPage.tsx` stay reachable via `/agents-hub` and `/skills-catalog` legacy routes for one release cycle. Phase 2: redirect legacy routes to `/v2/marketplace`. Phase 3: delete v1 pages. (Tracked in §Phasing.)
+**Publish flow** (admin-gated, opens from a "Publish" button in the "My Agents" filter of the Agents tab, not from generic browse): scope picker (instance-only / submit-to-public-marketplace), version bump, manifest preview, confirm. Existing `/api/marketplace/publish` endpoint. Out of scope for shell-first MVP polish but the button placement and shape are committed here.
 
 #### 4b. Inspector Skills tab
 
@@ -305,29 +318,31 @@ Add **`agents`** as a sixth tab. Lists agents currently in this pod, plus instal
 
 **Lift target: <350 lines** for `V2InspectorAgentsTab.tsx` (more than skills because of per-agent action density).
 
-#### 4d. Shared inspector pattern: `<V2MarketplaceList>`
+#### 4d. Shared card-list subcomponent (extracted from Phase 3, reused by Phase 4)
 
-Both inspector tabs and the top-level Marketplace page use one component with three slots:
+When Phase 3 extends `AppsMarketplacePage`, factor the per-card list rendering into a small subcomponent (`<MarketplaceCardList>`, ~250 lines) inside the page file. Phase 4's inspector tabs import the same subcomponent rather than reinventing it:
 
 ```tsx
-<V2MarketplaceList
-  kind="skill" | "agent"
-  scope={ pod: podId } | { instance: true } | { user: userId }
-  installedSource={() => fetch(`/api/skills/pods/${podId}/imported`)}
-  catalogSource={(query) => fetch(`/api/marketplace?type=${kind}&q=${query}`)}
-  recommendedIds={['ai-pdf-builder', 'research-company']}
+<MarketplaceCardList
+  kind="agent" | "skill"
+  scope={{ pod: podId }} | {{ instance: true }} | {{ user: userId }}
+  items={items}                    // pre-fetched by parent
+  installedIds={installedIds}
   onInstall={(id) => /* ... */}
-  onFork={(id) => /* ... */}
+  onFork={(id) => /* agents only */}
   onUninstall={(id) => /* ... */}
   onDetail={(id) => /* opens side drawer */}
+  recommendedIds={recommendedIds}  // optional
 />
 ```
 
-The component owns: search debouncing, list virtualization, detail drawer, install/fork modals, error/empty states, optimistic updates. ~400 lines. Inspector tabs and the top-level page each consume it with different `scope` and slot wiring; their own files stay thin.
+The subcomponent owns: card layout, action buttons, install/fork modals, detail drawer trigger, optimistic updates. The parent page or inspector tab owns: data fetching, search debouncing, scope inference. This is a thinner abstraction than v4's proposed `<V2MarketplaceList>` — no list virtualization, no built-in catalog source. Just a list-of-cards renderer with consistent action semantics.
 
-**Why this matters for future tabs.** When apps and widgets graduate from the Installable taxonomy to v2 surfaces (per ADR-001 Phase 4+), the same `<V2MarketplaceList kind="app">` and `<V2MarketplaceList kind="widget">` ports the surface forward without UI rewrite. The pattern is the lever; ADR-013 ships the first two consumers.
+**Why this small split is right.** `AppsMarketplacePage` already handles search, fetch, and tabs at 771 lines; we don't want to invert that with a heavyweight component that re-takes ownership. Extract only the card row + its modals. Inspector tabs are simple enough that their own search + fetch wiring stays inline (~50 lines each). The shared piece is the one that has to look identical across surfaces.
 
-**ADR-001 components surfaced.** The detail drawer renders an Installable's `components[]` list as a typed table (`Agent | SlashCommand | Skill | EventHandler | …`). When ADR-001 Phase 3 unpauses and the read path flips, the drawer reads the same shape from `/api/installables/:id` instead of stitching from `/api/marketplace/:id` + `/api/skills/:id` + `/api/registry/agents/:name`. UI doesn't change. Same lever applies.
+**ADR-001 components surfaced in the detail drawer.** The drawer renders an Installable's `components[]` list as a typed table (`Agent | SlashCommand | Skill | EventHandler | …`) — fetched from `/api/marketplace/manifests/:installableId` for agent items (Installable-canonical), inline from the catalog row for skill items (legacy AR). When ADR-001 Phase 3 unpauses and the skills read path flips, the skill-side drawer rebinds to `/api/installables/:id`. UI doesn't change.
+
+**What this is *not*.** v4 of this ADR proposed a single `<V2MarketplaceList>` component owning everything from search through optimistic updates, designed to host a brand-new top-level page. That was over-engineering once we recognized the page already exists at 771 lines and the right move is to extend it. The smaller subcomponent serves the actual reuse need (card row consistency) without inverting page ownership.
 
 ---
 
@@ -338,17 +353,15 @@ The component owns: search debouncing, list virtualization, detail drawer, insta
 | **0** | This ADR + `commonly_attach_file` extension tool + Dockerfile toolchain (OfficeCLI + pandoc + markitdown + pypdf) | Single agent (Nova) given hand-test: "produce a one-page PDF summary of `docs/COMMONLY_SCOPE.md`, attach it." End-to-end: agent runs `pandoc`, calls `commonly_attach_file`, file appears in chat with preview. | One backend + clawdbot PR pair |
 | **1** | Update `defaultSkills` for the four dev personas; reprovision-all | Theo/Nova/Pixel/Ops each have `github`, `officecli`, `pandic-office`, `markdown-converter`, `pdf` synced to PVC. Hand-test each with a file-producing task. | One backend PR |
 | **2** | SOUL.md two-line addition + `officecli` SKILL.md packaged locally | Visible in IDENTITY.md sync log; first heartbeat after deploy uses the rule | One backend PR |
-| **3** | `<V2MarketplaceList>` shared component + V2 inspector Skills tab | Frontend PR; manual test on dev cluster. Skills install/uninstall round-trip works. | One frontend PR |
-| **4** | V2 inspector Agents tab (consumes the shared component) | Frontend PR; agent install + fork + Talk-to flows work end-to-end | One frontend PR |
-| **5** | Top-level V2 Marketplace page (`/v2/marketplace`) + nav-rail entry | Frontend PR; both Agents and Skills views work; Install picker correctly targets pod / instance / DM scope; v1 routes still reachable. | One frontend PR |
-| **6** | Redirect legacy `/agents-hub` and `/skills-catalog` to `/v2/marketplace` | One release cycle after Phase 5 ships; soft redirect with banner | One frontend PR |
-| **7** | Delete v1 `AgentsHub.tsx` (4,954 lines) + `SkillsCatalogPage.tsx` (2,061 lines) | After Phase 6 has been live 2 weeks with no fallback complaints | One frontend cleanup PR |
-| **8** *(deferred)* | Author + upstream-contribute `commonly-pptx`, `commonly-xlsx` skills | When real demand surfaces (a marketing or chief-of-staff agent asks for slides) | Out of scope here |
-| **9** *(deferred)* | Publish flow (admin-only) on top of `/api/marketplace/publish` | When a user-authored agent or skill needs to ship publicly | Out of scope here |
+| **3** | Extend `/v2/marketplace` (`AppsMarketplacePage`) — promote to kind tabs (Apps · Agents · Skills · Integrations); wire Agents tab to `/api/marketplace/*` (Installable, Randy); wire Skills tab to `/api/skills/*` (legacy AR); soft-redirect `/v2/agents/browse` and `/v2/skills` with banners | Frontend PR; agents install/fork round-trip works against Installable backend; skills install/uninstall round-trip works against AR; deep-links `?type=agent` and `?type=skill` pre-select correct tab. | One frontend PR |
+| **4** | V2 inspector Skills tab + Agents tab — extracted card-list subcomponent shared with the marketplace page from Phase 3 | Frontend PR; per-pod install/uninstall round-trip works; "Talk to" + "Configure" + "Fork" actions on the Agents tab. | One frontend PR |
+| **5** | Delete v1 `AgentsHub.tsx` (4,954 lines) + `SkillsCatalogPage.tsx` (2,061 lines) — only after Phase 3's redirects have been live ≥2 weeks with no fallback complaints | Lint clean; no broken imports; v2 routes resolve. | One frontend cleanup PR |
+| **6** *(deferred)* | Author + upstream-contribute `commonly-pptx`, `commonly-xlsx` skills | When real demand surfaces (marketing or chief-of-staff agent asks for slides) | Out of scope here |
+| **7** *(deferred)* | Publish flow (admin-only) on top of `/api/marketplace/publish` | When a user-authored agent or skill needs to ship publicly | Out of scope here |
 
-Phases 0–2 are backend/clawdbot, must land first. Phase 3 (shared component + Skills tab) is a hard prereq for Phases 4 + 5 — they all consume `<V2MarketplaceList>`. Phase 5 lands once Phase 3 has burned in. Phases 6–7 are cleanup with deliberate cooling-off periods.
+Phases 0–2 are backend/clawdbot, must land first. Phase 3 is the marketplace-frontend track. Phase 4 reuses the card-list subcomponent extracted in Phase 3 — sequenced after, but small. Phase 5 is deliberate cleanup with a cooling-off period.
 
-Estimated total active scope: **6–8 PRs** across backend (1–2) + clawdbot (1) + frontend (3–4) + cleanup (1–2). Nothing requires new schema, new API surface, or migrations — backend `/api/marketplace/*` (PR #215+#230) and `/api/skills/*` are already shipped.
+Estimated total active scope: **~5 PRs** (down from 8 in v4 once we recognized `/v2/marketplace` and `/api/marketplace/*` already exist) — backend (1–2) + clawdbot (1) + frontend (2) + cleanup (1). Nothing requires new schema, new API surface, or migrations.
 
 ---
 
@@ -428,11 +441,11 @@ We keep `pandoc` from this stack (md → PDF is its sweet spot) and `markitdown`
 
 6. **Per-pod vs per-agent skill scoping.** Today the install pipeline scopes skills to `(agentName, instanceId, podId)` tuples. The skill is mounted into the agent's workspace and seen by that agent in that pod. The v2 Skills tab is in the pod inspector — that suggests pod-level UX. But the same agent in a different pod gets a different skill set, which is correct semantics but confusing UX. Phase 3 displays "Installed for `@agent` in this pod" prominently; longer-term, consider per-agent skill defaults that auto-apply across all of an agent's pods. (Tracked separately, not in this ADR.)
 
-7. **Should we accelerate ADR-001 Phase 3 read-path switch to align with this work, or defer per ADR-011's pause?** ADR-011 paused Phase 3 until "marketplace frontend reveals a drift bug or a new Installable shape needs the read-path switch." This ADR's v2 Marketplace page (Phase 5) *is* the marketplace frontend track. Two options: (a) ship ADR-013 against legacy `/api/marketplace/*` + `/api/skills/*` and migrate later, or (b) flip Phase 3 now and ship ADR-013 directly against `/api/installables?type=...`. (a) lets us ship sooner; (b) avoids a near-term migration. Default to (a) unless the Installable refactor track has spare capacity. See §"Relationship to Installable taxonomy" for detail.
+7. ~~Accelerate ADR-001 Phase 3?~~ **Re-framed in v5.** Verified that the agent half is *already* on Installable (Randy's dual-write). Skills half stays on legacy AR. Phase 3 acceleration is no longer binary — it gates only the skills read-path switch, which can defer indefinitely until the upstream catalog gains a manifest concept worth migrating to. ADR-013's frontend wiring against `/api/marketplace/*` *is* the verification gate for ADR-011's "marketplace frontend reveals a drift bug" reactivation trigger. See §"Relationship to Installable taxonomy" for the re-framed answer.
 
-8. **Top-level Marketplace nav-rail placement.** Should the marketplace icon sit alongside Pods / Feed / DMs in the nav rail (high-prominence, always visible), or behind a kebab / "more" menu (lower-prominence, declutters the rail)? Trade-off: discovery vs. visual noise. Recommendation — alongside Pods on the rail with a Compass / Store glyph, since marketplace browse is the entry point for first-time users picking their first agent. Revisit if rail crowding becomes a problem.
+8. ~~Top-level Marketplace nav-rail placement~~ **Closed in v5.** `/v2/marketplace` already has its place in the v2 chrome. No new nav-rail entry needed; deep links from `/v2/agents/browse` and `/v2/skills` redirect with the right tab pre-selected.
 
-9. **Fork ownership and storage.** A forked agent goes into the user's `source: 'user'` namespace per ADR-001. Today's `AgentRegistry` doesn't have a clean "owned by user X" projection — `AgentRegistry.installedBy` exists but is per-installation, not per-source-record. Verify before Phase 4 ships: does forking work end-to-end against the existing `/api/registry/agents/:name/fork` endpoint, or do we need a small backend addition (a `My Agents` listing route)?
+9. **Fork ownership and storage.** Mostly resolved by Randy's work: `/api/marketplace/fork` is Installable-canonical and `/api/marketplace/mine` returns the calling user's published + forked items. **Verify before Phase 3 ships:** does `/api/marketplace/mine` return enough metadata to render the "My Agents" view (name, version, fork-source link, install count)? If yes, no backend addition needed. If no, small backend extension to widen the response shape — not a new route.
 
 10. **What happens to v1's `AgentsHub.tsx` PersonalityBuilder UX?** v1 has a rich persona-customization UI (sliders, traits, etc.) that isn't reflected in the v2 marketplace design. Two paths: (a) port PersonalityBuilder to a v2 detail-drawer subview, (b) treat persona as plain `IDENTITY.md` editing in the Configure drawer (4c) and let v1 fade out. Recommendation — (b), simpler and matches how IDENTITY.md is actually loaded by the agent. Revisit if user feedback says the trait-slider UX is load-bearing for non-technical users.
 
@@ -440,48 +453,64 @@ We keep `pandoc` from this stack (md → PDF is its sweet spot) and `markitdown`
 
 ## Relationship to Installable taxonomy (ADR-001)
 
-This ADR uses the legacy `/api/skills/*` and `PRESET_DEFINITIONS.defaultSkills` paths today. It is **conceptually aligned** with ADR-001's Installable model and **structurally pre-Phase-3** — i.e., we ship through the older read path because Phase 3 is paused per ADR-011. None of the work here becomes throwaway when Phase 3 unpauses; the data source flips, the wire shape doesn't.
+**Important correction (v5).** Earlier drafts of this ADR (v3, v4) framed the entire work as "pre-Phase-3, against legacy AR." That was wrong. Verifying the actual backend state surfaced that the agent half is **already on Installable** via Randy's PR #215 + #230, and what was missing was the frontend wiring. The skills half is still legacy AR. So ADR-013 has a split relationship to the taxonomy depending on which kind:
 
-### Conceptual mapping (where each piece would live under Installable Phase 3)
+### Per-kind status
 
-ADR-001 already defines `Skill` as a first-class `Component` type — exactly the right home for what we're shipping:
+| Kind | Backend state | What ADR-013 does | Phase 3 dependency |
+|---|---|---|---|
+| **Apps** | `/api/apps/marketplace` — legacy AR | Keep as-is in the marketplace page's Apps tab | Migrates when ADR-001 Phase 3 backfills apps → Installable. Out of ADR-013 scope. |
+| **Agents** | `/api/marketplace/*` — **Installable-canonical** (Randy, ADR-001 Phase 2 dual-write) | **Wire the v2 marketplace page Agents tab + inspector Agents tab to it.** This is the first frontend consumer of the Installable model. | Already satisfies the active "Marketplace frontend" track in ADR-011. No further Phase 3 work needed for the agent surface. |
+| **Skills** | `/api/skills/*` — legacy AR (Phase 2 didn't cover skills) | Wire the marketplace page Skills tab + inspector Skills tab to it. UI is identical to the agent surface. | Migrates when ADR-001 Phase 3 backfills skill catalog → Installable. Single API rebind, no UI change. |
+| **Integrations** | `/api/integrations/catalog` — legacy AR | Keep as-is | Out of ADR-013 scope. |
 
-| ADR-013 piece | Installable mapping (Phase 3) | Migrates by |
-|---|---|---|
-| Each catalog skill (`officecli`, `pandic-office`, `pdf`, `markdown-converter`, `github`, `tmux`) | `Installable { kind: 'skill', source: 'marketplace', scope: 'pod', components: [Skill{skillId}], requires: [...] }` | One-time backfill from `awesome-agent-skills-index.json` to the `Installable` collection (already on ADR-001 Phase 3's plan). |
-| `defaultSkills` array on a preset | The agent Installable's manifest declares its skill dependencies — either as `requires: string[]` capability strings or as a `defaultBundle: InstallableRef[]` field | Schema migration on the preset → agent-Installable conversion. |
-| `commonly_attach_file` extension tool | **Not an Installable.** Kernel protocol verb, same layer as `commonly_post_message` | No migration. Lives in the OpenClaw `commonly` extension. The kernel sits below the Installable layer. |
-| OfficeCLI binary in the gateway image | **Not an Installable.** Driver-level substrate — same category as having `node` or `gh` in the image | ADR-008's environment primitive eventually formalizes "what tools live in my agent's runtime"; that's a separate layer. |
-| V2 inspector Skills tab | UI reads `/api/skills/*` today; the same component binds to `/api/installables?components.type=Skill` after the read-path switch | Data-source flip on the same UI. No structural rewrite. |
+### What this re-frames
 
-So the **conceptual connection is exact**. Skills, marketplace, install scope, identity continuity — ADR-001 already names every piece. This ADR is filling in skill *content* under that model.
+- ADR-013 is **the marketplace-frontend track from ADR-011** for the agent surface, by definition. Phase 3 of this ADR satisfies that track.
+- ADR-013 is **NOT Installable Phase 3 work** for the skill surface — it just consumes whatever's on `/api/skills/*` today and rebinds when Phase 3 lands.
+- "Should we accelerate Phase 3?" (formerly open question #7) is now sharper: Phase 3's *agent* read-path switch is implicitly done by Randy's dual-write; Phase 3's *skill* read-path switch is genuinely deferred until upstream catalog backfill is in scope.
 
-### Where we're structurally bypassing it (and why that's OK)
+### Per-piece mapping (still valid from v3/v4, with one correction)
 
-ADR-001 Phase 3 (read-path switch from `AgentRegistry`/`App` to `Installable`) is paused per ADR-011 with a stated reactivation trigger: "marketplace frontend reveals a drift bug or a new Installable shape needs the read-path switch." This ADR's work doesn't trigger that — none of what we ship requires the new read path to function:
+| ADR-013 piece | Installable mapping (today vs. future) |
+|---|---|
+| Each catalog skill (`officecli`, `pandic-office`, `pdf`, `markdown-converter`, `github`, `tmux`) | **Today:** row in `awesome-agent-skills-index.json`, accessed via `/api/skills/*`. **Future:** `Installable { kind:'skill', source:'marketplace', components:[Skill{skillId, skillPrompt}], requires:[...] }` after Phase 3 skills backfill. |
+| `defaultSkills` array on a preset | **Today:** hardcoded array in `PRESET_DEFINITIONS`. **Future:** field on the agent Installable's manifest (either `requires:string[]` or `defaultBundle:InstallableRef[]`). |
+| `commonly_attach_file` extension tool | **Not an Installable, ever.** Kernel protocol verb, same layer as `commonly_post_message`. The kernel sits below the Installable layer. |
+| OfficeCLI binary in the gateway image | **Not an Installable, ever.** Driver-level substrate — same category as having `node` or `gh` in the image. ADR-008's environment primitive formalizes this layer. |
+| Marketplace page Agents tab | **Today AND future:** consumes Installable-canonical `/api/marketplace/*`. No data-source flip needed. |
+| Marketplace page Skills tab + inspector Skills tab | **Today:** `/api/skills/*` (legacy AR). **Future:** rebind to `/api/installables?components.type=Skill` after Phase 3 skills backfill. UI unchanged. |
+| Marketplace page Apps tab + Integrations tab | Out of ADR-013 scope — they consume their existing endpoints unchanged. |
 
-- Catalog comes from `awesome-agent-skills-index.json` (file-on-disk index)
-- `defaultSkills` arrays come from `PRESET_DEFINITIONS` in code
-- Per-pod imported skills come from the existing AR-side import table
-- Skill sync to PVC runs through `syncOpenClawSkills` regardless of which table the source list comes from
+### What the backend `Installable` row looks like for an agent today
 
-We write through the legacy surface today. That's not new debt; it's the read path that exists.
+Randy's `marketplace-api.ts` already writes rows shaped like ADR-001's spec:
 
-### Migration story when Phase 3 unpauses
+```ts
+Installable {
+  installableId: '@username/agent-name',
+  kind: 'agent',
+  source: 'marketplace' | 'user',
+  components: [
+    { type: 'Agent', persona: {...}, runtime: {...}, addresses: [...] }
+  ],
+  scope: 'pod',
+  requires: [...],
+  marketplace: { published, version, publisher, ... },
+  // dual-write to AgentRegistry as compat shim
+}
+```
 
-In order, idempotent, no rewrite of ADR-013 work:
+When ADR-001 Phase 3 fully unpauses, AR rows go from "compat shim" to "deprecated" — but the marketplace API surface and the v2 marketplace page do not change. ADR-013's Phase 3 wires against the canonical side from day one.
 
-1. **Backfill catalog rows into `Installable`.** Each entry in `awesome-agent-skills-index.json` becomes one `Installable { kind:'skill', source:'marketplace', components:[Skill{skillId, skillPrompt: <SKILL.md content>}] }`. Already part of ADR-001 Phase 3's spec.
-2. **Convert `PRESET_DEFINITIONS` agents into agent Installables.** `defaultSkills` becomes a manifest field on the agent Installable (either `requires` or `defaultBundle`). Each install of an agent fans out to install rows for the agent + each declared skill.
-3. **`/api/skills/*` becomes a thin compat shim** over `/api/installables?type=skill`, returning the same shape the v2 Skills tab expects. Frontend doesn't change.
-4. **`syncOpenClawSkills` is driven by `InstallableInstallation` projections** rather than the legacy import table. Same PVC layout, same SKILL.md sync mechanism, different source row.
-5. **`commonly_attach_file` is unchanged.** Not migrated. Stays in the kernel extension.
+### Phase 3 acceleration question — re-answered
 
-The flagged risk: if upstream `awesome-agent-skills` adds a manifest concept (multi-component bundles, `requires` declarations, scope hints) before our migration, the catalog → Installable backfill becomes more involved than a 1:1 row map. Worth pinging the catalog at write time, not at rewrite time, so we catch shape changes early.
+ADR-011 paused Phase 3 with reactivation trigger "marketplace frontend reveals a drift bug or a new Installable shape needs the read-path switch." ADR-013's frontend wiring against `/api/marketplace/*` will exercise that surface for the first time. **Two outcomes possible:**
 
-### Pivot point worth naming
+1. **No drift surfaces** — agents tab works fine, dual-write holds, AR compat shim does its job. Skills tab stays on legacy AR; skills Phase 3 migration deferred until separately motivated (e.g., upstream catalog gains a manifest concept). This ADR ships without lifting the pause.
+2. **Drift surfaces** — wiring reveals a missing field, scope mismatch, or projection bug. ADR-001 Phase 3's reactivation trigger fires by definition. Re-scope Phase 3 as a follow-up ADR.
 
-When the marketplace frontend track (active per ADR-011) ships, the v2 Skills tab is its first surface — already a marketplace browser, just scoped to skills. That's the **natural moment to flip from `/api/skills/*` to `/api/installables?type=skill`**. ADR-013's UI is the spec; the data switch is a follow-up that doesn't change the inspector code. Whether to accelerate Phase 3 to align with this work (vs. deferring) is open question #7.
+Either outcome is correct. ADR-013 doesn't need to pre-decide. The frontend wiring *is* the verification gate.
 
 ---
 
@@ -501,4 +530,5 @@ When the marketplace frontend track (active per ADR-011) ships, the v2 Skills ta
 - 2026-05-03 — Initial draft (v1).
 - 2026-05-03 — v2: replaced the pandoc + python-office + libreoffice + docx-js stack with `OfficeCLI` (Apache-2.0, single 30 MB static binary) after upstream discovery; image growth ~600 MB → ~170 MB. Added §F to rejected alternatives capturing the prior toolchain.
 - 2026-05-03 — v3: closed open question #2 (`github` skill is real — `steipete/github`, MIT, 603 stars, requires `gh` already in image). Added §"Relationship to Installable taxonomy (ADR-001)" mapping each piece to the Installable model + the migration story when Phase 3 unpauses. Added new open questions on OfficeCLI version-pin cadence and Phase-3 acceleration vs. deferral.
-- 2026-05-03 — v4: expanded Part 4 from "inspector Skills tab only" to a four-section design covering (4a) top-level V2 Marketplace page at `/v2/marketplace`, (4b) inspector Skills tab, (4c) inspector Agents tab, (4d) shared `<V2MarketplaceList>` component pattern. Title broadened. Phasing expanded from 4 phases to 8 active + 2 deferred to cover the Marketplace page, Agents tab, and v1 deprecation cycle. Added open questions #8–10 on nav-rail placement, fork ownership, and PersonalityBuilder UX migration. This ADR now also lands the active "Marketplace frontend" track from ADR-011 alongside the file-production work.
+- 2026-05-03 — v4: expanded Part 4 from "inspector Skills tab only" to a four-section design covering (4a) top-level V2 Marketplace page at `/v2/marketplace`, (4b) inspector Skills tab, (4c) inspector Agents tab, (4d) shared `<V2MarketplaceList>` component pattern. Title broadened. Phasing expanded from 4 phases to 8 active + 2 deferred. This ADR now also lands the active "Marketplace frontend" track from ADR-011 alongside the file-production work.
+- 2026-05-03 — v5: **major correction after verifying actual backend/frontend state.** (a) `/v2/marketplace` already exists (renders v1 `AppsMarketplacePage`, 771 lines, with `Discover | Installed` sub-tabs). `/v2/agents/browse` and `/v2/skills` also exist. v4's "design new top-level page" was wrong; right move is to extend `AppsMarketplacePage` in place with Apps · Agents · Skills · Integrations kind tabs. (b) `/api/marketplace/*` (Randy, PR #215+#230) is **already Installable-canonical** via dual-write — not legacy AR as v3/v4 framed. ADR-013's Phase 3 wires the agents tab against the Installable side from day one and *is* the marketplace-frontend track from ADR-011 by definition. Phasing collapsed from 8 active to 5 active (extend page, build inspector tabs, deprecate v1 pages). §"Relationship to Installable taxonomy" rewritten to reflect the per-kind split (agents already on Installable; skills still on AR). Open questions #7 + #8 closed; #9 narrowed (Randy's `/api/marketplace/mine` likely covers fork ownership, just verify response shape).
