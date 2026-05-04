@@ -240,6 +240,39 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       await AgentMentionService.enqueueMentions({ podId, message, userId, username });
     }
 
+    // Live-broadcast the new message to every connected client in this pod's
+    // Socket.io room. Without this emit, V2 chat surfaces only see the new
+    // message on a manual refresh — the agent-runtime path (`AgentMessageService.
+    // postMessage`) emits `newMessage` already, but the human-user path
+    // never did, which made human messages "disappear" until refresh from
+    // the perspective of every other connected user.
+    //
+    // Same payload shape that `agentMessageService` uses (`pod_id` + `podId`
+    // both populated for V2's cross-pod-leak guard in useV2PodDetail).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const socketConfig = require('../config/socket');
+      const io = socketConfig.getIO();
+      if (io) {
+        const m = message as NormalizedMessage & { _id?: string; id?: string; userId?: any; profile_picture?: string; createdAt?: string };
+        const formattedMessage = {
+          _id: m._id || m.id,
+          id: m._id || m.id,
+          pod_id: String(podId),
+          podId: String(podId),
+          content: m.content,
+          messageType: (m as any).messageType || 'text',
+          userId: m.userId,
+          username: m.username,
+          profile_picture: m.profile_picture,
+          createdAt: m.createdAt,
+        };
+        io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
+      }
+    } catch (socketErr) {
+      console.warn('[messageController] socket emit failed:', (socketErr as Error).message);
+    }
+
     res.json(message);
   } catch (err) {
     const e = err as { message?: string; kind?: string };
