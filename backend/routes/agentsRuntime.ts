@@ -1399,12 +1399,28 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (r
       installationConfig: installation.config || null,
     });
 
-    // Fire mention detection so @mentions trigger chat.mention events for other agents
+    // DM auto-route from the agent side fires ONLY in agent-dm — the only
+    // DM-shaped pod with another bot to route to. agent-admin and agent-room
+    // are operator-driven 1:1 (human ↔ one agent); the human is the only
+    // peer in those pods and has no event queue. The mirror direction
+    // (human-side enqueueDmEvent for all three DM types) lives in
+    // backend/controllers/messageController.ts. Without this fix, an agent
+    // posting in an agent-dm with no `@peer` text left the peer's queue
+    // empty (this stranded the nova↔theo smoke). Non-DM pods continue to
+    // gate on explicit @mentions via enqueueMentions.
     if (result.success && !result.skipped && result.message) {
       const userId = req.agentUser?._id;
       const username = req.agentUser?.username;
-      AgentMentionService.enqueueMentions({ podId, message: result.message, userId, username })
-        .catch((err: any) => console.warn('enqueueMentions failed:', err.message));
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const PodModel = require('../models/Pod');
+      PodModel.findById(podId).select('type').lean()
+        .then((podDoc: { type?: string } | null) => {
+          if (podDoc?.type === 'agent-dm') {
+            return AgentMentionService.enqueueDmEvent({ podId, message: result.message, userId, username });
+          }
+          return AgentMentionService.enqueueMentions({ podId, message: result.message, userId, username });
+        })
+        .catch((err: any) => console.warn('agent post-message DM/mention enqueue failed:', err.message));
     }
 
     return res.json(result);
