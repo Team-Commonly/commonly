@@ -1373,7 +1373,7 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req: any, res: any) =>
   }
 });
 
-router.post('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
