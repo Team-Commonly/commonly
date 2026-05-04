@@ -52,10 +52,28 @@ jest.mock('../../../services/dmService', () => ({
   canViewPod: jest.fn().mockResolvedValue(true),
 }));
 
-// AgentIdentityService.buildAgentUsername is called to compose the user lookup
-// keys; stub it so the un-mocked module's deps don't load.
+// AgentIdentityService surface used by helpers.ts. Two import shapes are
+// consumed: (a) the named export `buildAgentUsername` (used by the route
+// handler to compose user lookup keys) and (b) `.default` (used by
+// `sanitizeRuntimeConfig` to call `getAgentTypeConfig` for the runtime
+// fallback). Mock both — without `.default`, the helper crashes the route
+// with "Cannot read properties of undefined (reading 'getAgentTypeConfig')"
+// and the test sees a 500 instead of 200.
 jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: jest.fn((agentName, instanceId) => `${agentName}-${instanceId}`),
+  default: {
+    getAgentTypeConfig: jest.fn().mockReturnValue(null),
+  },
+}));
+
+// `helpers.ts` reads PRESET_DEFINITIONS at module load to build a presetId
+// → category map. The real preset file is heavyweight (2900+ lines and
+// pulls in skill-bundle code). Stub it with an empty list — the test
+// fixture doesn't set `config.presetId` anyway, so category resolution
+// stays null either way.
+jest.mock('../../../routes/registry/presets', () => ({
+  PRESET_DEFINITIONS: [],
+  DEFAULT_BRANCH: 'main',
 }));
 
 const Pod = require('../../../models/Pod');
