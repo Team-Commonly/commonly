@@ -32,7 +32,7 @@ const {
   issueRuntimeTokenForAgent,
   issueUserTokenForInstallation,
 } = require('./tokens');
-const { PRESET_DEFINITIONS } = require('./presets');
+const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
 
 const provisionRouter = express.Router();
@@ -248,7 +248,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: an
         ...(matchedPreset?.defaultHeartbeat || {}),
         ...(configPayload.heartbeat || {}),
         ...(matchedPreset?.heartbeatTemplate ? {
-          customContent: matchedPreset.heartbeatTemplate,
+          customContent: withCyclesDirective(matchedPreset.heartbeatTemplate),
           forceOverwrite: Boolean(explicitPresetId),
         } : {}),
         ...(matchedPreset?.soulTemplate ? { soulContent: matchedPreset.soulTemplate } : {}),
@@ -277,7 +277,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: an
       try {
         await AgentProfile.updateMany(
           { agentName: name.toLowerCase(), instanceId: normalizedInstanceId, podId },
-          { $set: { heartbeatContent: matchedPresetForSave.heartbeatTemplate } },
+          { $set: { heartbeatContent: withCyclesDirective(matchedPresetForSave.heartbeatTemplate) } },
         );
       } catch (hbErr: unknown) {
         console.warn('[reprovision] Failed to persist heartbeatContent to AgentProfile:', (hbErr as Error).message);
