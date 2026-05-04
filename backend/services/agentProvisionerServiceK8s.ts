@@ -211,11 +211,13 @@ const execInPod = async ({
   // When the caller supplies stdin payload, pipe it through a Readable so we
   // can stream large payloads (e.g. skill manifests with bundled extraFiles)
   // without exceeding the kubectl exec ARG_MAX limit on the command argv.
+  // Use Readable.from so the stream auto-ends after emitting the buffer —
+  // this triggers the WebSocket close frame on the stdin channel, which the
+  // remote `cat > file` (or any reader) needs to see EOF and finish.
   let stdinStream: any = null;
   if (stdin != null) {
-    stdinStream = new stream.PassThrough();
     const buf = Buffer.isBuffer(stdin) ? stdin : Buffer.from(String(stdin), 'utf8');
-    stdinStream.end(buf);
+    stdinStream = stream.Readable.from([buf]);
   }
 
   await new Promise<void>((resolve, reject) => {
