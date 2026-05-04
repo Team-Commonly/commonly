@@ -71,8 +71,13 @@ const loadCatalog = async (): Promise<Map<string, CatalogEntry>> => {
  * templates (e.g. .pptx style references).
  */
 const SKIP_EXT = new Set(['.pptx', '.docx', '.xlsx', '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.zip']);
-const MAX_EXTRA_FILE_BYTES = 200 * 1024;       // 200KB per file
-const MAX_TOTAL_EXTRA_BYTES = 2 * 1024 * 1024; // 2MB per skill total
+const MAX_EXTRA_FILE_BYTES = 100 * 1024;       // 100KB per file
+// Total budget per skill. Sized so the JSON-encoded manifest stays well
+// under the K8s API request size limit when shipped via `kubectl exec`
+// (sync writes go through one exec call with the manifest base64-encoded
+// in argv). Empirically: 800KB raw → ~1.1MB base64, comfortably under
+// the typical 1MB exec command budget.
+const MAX_TOTAL_EXTRA_BYTES = 800 * 1024;
 
 interface ExtraFile {
   path: string;
