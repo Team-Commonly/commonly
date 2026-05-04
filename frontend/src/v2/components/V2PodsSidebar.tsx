@@ -232,7 +232,32 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
     }, { all: 0, team: 0, private: 0 })
   ), [pods]);
 
-  const grouped = useMemo(() => groupPods(filtered, pinned), [filtered, pinned]);
+  // Default grouping is chronological (Pinned / Today / Yesterday / This week
+  // / Earlier). When the user filters down to Private, recency buckets stop
+  // adding signal — DMs are already a tight list — and the meaningful split
+  // is human↔agent vs agent↔agent. Bot-bot rooms are observer-only (§3.7),
+  // so a section header makes the relationship explicit at a glance and
+  // doubles as a count of how many a2a conversations are happening.
+  const grouped = useMemo(() => {
+    if (filter !== 'private') return groupPods(filtered, pinned);
+    const sortByRecency = <T extends { lastMessage?: { createdAt?: string | Date | null } | null; updatedAt?: string | Date; createdAt?: string | Date }>(items: T[]): T[] => {
+      const ts = (it: T) => {
+        const raw = it.lastMessage?.createdAt || it.updatedAt || it.createdAt;
+        const n = raw ? new Date(raw).getTime() : 0;
+        return Number.isNaN(n) ? 0 : n;
+      };
+      return [...items].sort((a, b) => ts(b) - ts(a));
+    };
+    const pinnedItems = filtered.filter((p) => pinned.has(p._id));
+    const rest = filtered.filter((p) => !pinned.has(p._id));
+    const a2a = rest.filter((p) => isAgentToAgent(p));
+    const dms = rest.filter((p) => !isAgentToAgent(p));
+    const buckets: Array<{ label: string; items: typeof filtered }> = [];
+    if (pinnedItems.length) buckets.push({ label: 'Pinned', items: sortByRecency(pinnedItems) });
+    if (dms.length) buckets.push({ label: 'Direct messages', items: sortByRecency(dms) });
+    if (a2a.length) buckets.push({ label: `Between agents · ${a2a.length}`, items: sortByRecency(a2a) });
+    return buckets;
+  }, [filter, filtered, pinned]);
 
   const handleCreatePod = async (event: React.FormEvent) => {
     event.preventDefault();
