@@ -545,7 +545,10 @@ describe('Clawdbot E2E Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.events).toBeDefined();
       expect(res.body.events.length).toBe(2);
-      expect(res.body.events[0].status).toBe('pending');
+      // ADR-012 §3: GET /events is mutate-on-claim — events return as
+      // 'delivered' (claimed, awaiting ack), not 'pending'. The ack route
+      // transitions them to 'acked'.
+      expect(res.body.events[0].status).toBe('delivered');
     });
 
     test('should acknowledge events after processing', async () => {
@@ -565,9 +568,10 @@ describe('Clawdbot E2E Integration Tests', () => {
       expect(ackRes.status).toBe(200);
       expect(ackRes.body.success).toBe(true);
 
-      // Verify status changed
+      // Verify status changed (ADR-012 §3: ack now transitions to 'acked';
+      // 'delivered' is the intermediate post-claim state before ack).
       const updatedEvent = await AgentEvent.findById(event._id);
-      expect(updatedEvent.status).toBe('delivered');
+      expect(updatedEvent.status).toBe('acked');
       expect(updatedEvent.deliveredAt).toBeDefined();
     });
 
@@ -801,9 +805,10 @@ describe('Clawdbot E2E Integration Tests', () => {
 
       expect(finalPollRes.body.events.length).toBe(0);
 
-      // 7. Verify event status in database
+      // 7. Verify event status in database (ADR-012 §3: 'acked' is the new
+      // terminal state; 'delivered' is intermediate post-claim).
       const completedEvent = await AgentEvent.findById(event._id);
-      expect(completedEvent.status).toBe('delivered');
+      expect(completedEvent.status).toBe('acked');
       expect(completedEvent.deliveredAt).toBeDefined();
     });
 
@@ -823,16 +828,19 @@ describe('Clawdbot E2E Integration Tests', () => {
         })),
       );
 
-      // Process each event sequentially (intentional: each poll depends on prior ack)
+      // ADR-012 §3 mutate-on-claim: a single poll claims ALL pending events
+      // (flips status pending → delivered atomically). Subsequent polls
+      // return [] because no events remain in 'pending'. Old test polled
+      // before each ack expecting decreasing length — that was the
+      // non-mutating fetch semantic. New shape: poll once, then ack each
+      // event individually.
+      const pollRes = await request(app)
+        .get('/api/agents/runtime/events')
+        .set('Authorization', `Bearer ${agentToken}`);
+      expect(pollRes.body.events.length).toBe(events.length);
+
       /* eslint-disable no-await-in-loop */
       for (let i = 0; i < events.length; i += 1) {
-        // Poll (should get remaining events)
-        const pollRes = await request(app)
-          .get('/api/agents/runtime/events')
-          .set('Authorization', `Bearer ${agentToken}`);
-
-        expect(pollRes.body.events.length).toBe(events.length - i);
-
         // Post response
         await request(app)
           .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
@@ -842,7 +850,7 @@ describe('Clawdbot E2E Integration Tests', () => {
             messageType: 'text',
           });
 
-        // Acknowledge oldest pending event
+        // Acknowledge each event
         await request(app)
           .post(`/api/agents/runtime/events/${events[i]._id}/ack`)
           .set('Authorization', `Bearer ${agentToken}`);

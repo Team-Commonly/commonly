@@ -801,9 +801,10 @@ describe('Integrations E2E Tests', () => {
         .post(`/api/agents/runtime/events/${event._id}/ack`)
         .set('Authorization', `Bearer ${agentToken}`);
 
-      // 6. Verify event processed
+      // 6. Verify event processed (ADR-012 §3: ack now transitions to 'acked';
+      // 'delivered' is the intermediate post-claim state before ack).
       const processedEvent = await AgentEvent.findById(event._id);
-      expect(processedEvent.status).toBe('delivered');
+      expect(processedEvent.status).toBe('acked');
 
       // 7. Verify buffer cleared
       const updatedIntegration = await Integration.findById(integration._id);

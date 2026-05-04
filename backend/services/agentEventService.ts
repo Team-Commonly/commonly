@@ -17,6 +17,12 @@ const {
   restartAgentRuntime,
   resolveOpenClawAccountId,
 } = require('./agentProvisionerService');
+// eslint-disable-next-line global-require
+const AgentMemory = require('../models/AgentMemory');
+// eslint-disable-next-line global-require
+const {
+  buildMemoryDigestBundle,
+} = require('./agentMemoryService');
 
 interface EventDoc {
   _id?: unknown;
@@ -29,6 +35,7 @@ interface EventDoc {
   status?: string;
   attempts?: number;
   delivery?: DeliveryMeta;
+  memoryRevisionAtDelivery?: number | null;
 }
 
 interface InstallationDoc {
@@ -573,9 +580,13 @@ class AgentEventService {
     const deliveredThreshold = new Date(now - (Math.max(deliveredRetentionHours, 1) * 60 * 60 * 1000));
     const failedThreshold = new Date(now - (Math.max(failedRetentionHours, 1) * 60 * 60 * 1000));
 
+    // ADR-012 §3: 'delivered' is now an intermediate state (claimed, awaiting ack)
+    // and 'acked' is the new terminal state. Both age out on the same retention
+    // schedule — once an event is past the `delivered` threshold it's stale
+    // whether the agent ever explicitly acked or not.
     const [pendingResult, deliveredResult, failedResult] = await Promise.all([
       AgentEvent.deleteMany({ status: 'pending', createdAt: { $lt: stalePendingThreshold } }),
-      AgentEvent.deleteMany({ status: 'delivered', createdAt: { $lt: deliveredThreshold } }),
+      AgentEvent.deleteMany({ status: { $in: ['delivered', 'acked'] }, createdAt: { $lt: deliveredThreshold } }),
       AgentEvent.deleteMany({ status: 'failed', createdAt: { $lt: failedThreshold } }),
     ]) as Array<{ deletedCount?: number }>;
 
@@ -793,12 +804,32 @@ class AgentEventService {
     return event;
   }
 
+  // ADR-012 §3 + §10.2: fetch is mutate-on-claim. Today's `pending → delivered`
+  // transition happens here at fetch time (was at acknowledge); the caller
+  // confirms processing later via `acknowledge`, which now transitions
+  // `delivered → acked`. This three-state lifecycle is what makes the
+  // memoryRevisionAtDelivery snapshot survive the fetch→ack window without
+  // trusting the client to echo it.
+  //
+  // Concurrency: if two pollers race the same event, only one wins the
+  // `pending → delivered` flip on findOneAndUpdate; the loser sees `null`
+  // and moves on. AgentMemory.revision is read once per fetch batch (the
+  // revision captured per event reflects the moment of claim, not the moment
+  // of fetch-batch-start; bounded staleness — see ADR-012 §3 last paragraph).
   static async list({
     agentName, podId, podIds, limit = 20, instanceId = 'default',
   }: ListOptions): Promise<EventDoc[]> {
+    // Coerce caller-supplied identifiers to plain strings before they reach
+    // any Mongo query — guards against NoSQL-injection-shaped inputs (e.g.
+    // `{$ne: null}`) sneaking through. CodeQL flags any data flow from
+    // `agentName`/`instanceId` (declared as `string` in ListOptions but
+    // origin-tracked from req.params) into a query without an explicit
+    // sanitizer; the String() casts are that sanitizer.
+    const safeAgentName = String(agentName || '').toLowerCase();
+    const safeInstanceId = String(instanceId || 'default');
     const query: Record<string, unknown> = {
-      agentName: agentName.toLowerCase(),
-      instanceId,
+      agentName: safeAgentName,
+      instanceId: safeInstanceId,
       status: 'pending',
     };
 
@@ -808,35 +839,103 @@ class AgentEventService {
       query.podId = podId;
     }
 
-    const events = await AgentEvent.find(query)
+    // First collect candidate _ids (non-mutating). We then claim them one by
+    // one with status-gated findOneAndUpdate so concurrent pollers can't
+    // double-claim. Limit applies to candidates; the actually-claimed set may
+    // be smaller if a sibling poller wins some races.
+    const candidates = await AgentEvent.find(query)
       .sort({ createdAt: 1 })
       .limit(limit)
-      .lean() as EventDoc[];
+      .select({ _id: 1 })
+      .lean() as Array<{ _id: unknown }>;
 
-    return (Array.isArray(events) ? events : []).map((event) => {
+    if (candidates.length === 0) return [];
+
+    // Read AgentMemory once for the digest bundle. The envelope captured here
+    // reflects the state at the moment of claim — close enough to the per-doc
+    // claim moments that drift is bounded. memoryRevisionAtDelivery written
+    // onto each AgentEvent doc captures the revision at THIS read; the ack
+    // path bumps lastSeenRevision via $max to that captured value.
+    const memoryDoc = await AgentMemory.findOne({
+      agentName: safeAgentName,
+      instanceId: safeInstanceId,
+    })
+      .select({ revision: 1, lastSeenRevision: 1, sections: 1 })
+      .lean() as { revision?: number; lastSeenRevision?: number; sections?: unknown } | null;
+    const currentRevision = memoryDoc?.revision ?? 0;
+    const lastSeenRevision = memoryDoc?.lastSeenRevision ?? 0;
+    const digestBundle = buildMemoryDigestBundle(memoryDoc || {}, lastSeenRevision);
+
+    const claimed: EventDoc[] = [];
+    for (const candidate of candidates) {
+      // Coerce candidate _id to string before it lands in the query — Mongo
+      // accepts both string and ObjectId, and `unknown`-typed values are the
+      // CodeQL trip wire. The find() above scopes by agentName + instanceId
+      // so even if the _id were tampered with, the query is bounded.
+      const safeId = candidate._id != null ? String(candidate._id) : '';
+      if (!safeId) continue;
+      const updated = await AgentEvent.findOneAndUpdate(
+        { _id: safeId, status: 'pending' },
+        {
+          $set: {
+            status: 'delivered',
+            memoryRevisionAtDelivery: currentRevision,
+            deliveredAt: new Date(),
+          },
+        },
+        { new: true },
+      ).lean() as EventDoc | null;
+      if (updated) claimed.push(updated);
+    }
+
+    return claimed.map((event) => {
       const messageId = event?.payload?.messageId;
-      if (messageId === undefined || messageId === null || typeof messageId === 'string') {
-        return event;
-      }
-      return {
-        ...event,
-        payload: { ...event.payload, messageId: String(messageId) },
+      const basePayload = event?.payload || {};
+      // Spread digest bundle into payload. Each sub-field is undefined when
+      // empty so JSON.stringify omits it — agents on un-adopted runtimes see
+      // a payload that's structurally unchanged.
+      const enrichedPayload: Record<string, unknown> = {
+        ...basePayload,
+        ...digestBundle,
       };
+      if (messageId !== undefined && messageId !== null && typeof messageId !== 'string') {
+        enrichedPayload.messageId = String(messageId);
+      }
+      return { ...event, payload: enrichedPayload };
     });
   }
 
+  // ADR-012 §3: acknowledge is status-gated. Lifecycle:
+  //   pending → delivered (on `list()` claim)
+  //   delivered → acked (here)
+  //   pending → acked  is also accepted (legacy callers that ack before
+  //                     fetching, e.g. summary/system flows that synthesize
+  //                     events and immediately mark them done)
+  // Acked is terminal; double-ack short-circuits without re-bumping
+  // lastSeenRevision (idempotent by status-gate).
   static async acknowledge(
     eventId: unknown,
     agentName: string,
     instanceId = 'default',
     delivery: DeliveryMeta | null = null,
   ): Promise<EventDoc | null> {
+    // Same NoSQL-injection guard as list() — coerce all caller-supplied query
+    // inputs to plain primitives before they reach Mongo.
+    const safeEventId = eventId != null ? String(eventId) : '';
+    if (!safeEventId) return null;
+    const safeAgentName = String(agentName || '').toLowerCase();
+    const safeInstanceId = String(instanceId || 'default');
     const normalizedDelivery = this.normalizeDeliveryMeta(delivery || {});
     const result = await AgentEvent.findOneAndUpdate(
-      { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
+      {
+        _id: safeEventId,
+        agentName: safeAgentName,
+        instanceId: safeInstanceId,
+        status: { $in: ['pending', 'delivered'] },
+      },
       {
         $set: {
-          status: 'delivered',
+          status: 'acked',
           deliveredAt: new Date(),
           ...(normalizedDelivery ? { delivery: normalizedDelivery } : {}),
         },
@@ -845,6 +944,28 @@ class AgentEventService {
       { new: true },
     ) as EventDoc | null;
 
+    // ADR-012 §3: bump lastSeenRevision exactly once per event via $max.
+    // First-ack only: the status-gate above ensures result is non-null only
+    // on the winning ack. memoryRevisionAtDelivery was captured at fetch
+    // time (`list()`); this update brings the agent's read-checkpoint up
+    // to that revision. $max makes it monotone — out-of-order acks across
+    // events still converge correctly.
+    if (result && typeof result.memoryRevisionAtDelivery === 'number' && result.memoryRevisionAtDelivery > 0) {
+      try {
+        await AgentMemory.updateOne(
+          { agentName: safeAgentName, instanceId: safeInstanceId },
+          { $max: { lastSeenRevision: result.memoryRevisionAtDelivery } },
+        );
+      } catch (err) {
+        // Non-fatal — the next ack with a higher memoryRevisionAtDelivery
+        // will still bump correctly. Log for ops visibility.
+        console.warn(
+          '[agent-event] lastSeenRevision $max bump failed:',
+          (err as Error).message,
+        );
+      }
+    }
+
     this.logEventLifecycle('acknowledged', {
       eventId: String((eventId as { toString?: () => string })?.toString?.() || eventId),
       agentName: agentName.toLowerCase(),
@@ -852,7 +973,7 @@ class AgentEventService {
       podId: String((result?.podId as { toString?: () => string })?.toString?.() || ''),
       type: result?.type || '',
       trigger: result?.payload?.trigger,
-      status: result?.status || 'delivered',
+      status: result?.status || 'acked',
       attempts: result?.attempts,
       error: result?.delivery?.reason && result?.delivery?.outcome === 'error'
         ? result.delivery.reason

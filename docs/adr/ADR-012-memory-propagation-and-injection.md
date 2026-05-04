@@ -11,6 +11,7 @@
 - 2026-05-03 — Initial draft. Triggered by the agent-dm primitive landing (`feat/agent-dm-and-codex` merged as `d5b7198e3c`) and the resulting cross-session-context gap.
 - 2026-05-03 — Revised after code-review pass. Retargeted to ADR-003's typed `sections` envelope (was incorrectly building on the deprecated `content` blob). Replaced the unsupported idempotency claim with a real ack-gate spec. Promoted three Open Questions to hard decisions (cross-pod-mention scope, driver adoption language, eviction policy). Honest Phase-1 estimate.
 - 2026-05-04 — Added §9 (DM conversational frame) after the FakeSam ↔ Tarik smoke test. The DM round-trip worked but Tarik composed broadcast-style "has anyone seen…" replies inside a 1:1 DM. Memory propagation only matters if the conversational primitive itself produces good content; the inline cue closes that loop.
+- 2026-05-04 — Phase 1 shipped (PR #288, merged 90582c61d9). On-cluster smoke confirmed `system_exchanges` writes + revision/lastSeenRevision schema + §9 inline frame. Live data showed only 2/25 agents author substantive `long_term` content — confirming the **agent-write loop is the bottleneck**, not the platform-write triggers we just added. Added §10 (Phase 2 amendment): broaden injection to surface the agent's own writes back to the agent, add a heartbeat-cadence `cycles[]` section so agents have a place to write per-tick takeaways, fold an inline HEARTBEAT cue parallel to the §9 DM frame. Phase 2 in §Phasing rewritten to reflect the broader scope.
 
 ---
 
@@ -287,6 +288,103 @@ The pattern this enforces is: **in a 1:1 agent-DM, an agent treats its peer the 
 
 Implementation is one targeted edit in `enqueueDmEvent` plus the senderMeta lookup. Lands with the rest of Phase 1, no separate phase.
 
+### 10. Phase 2 amendment — broaden injection, add the cycles section, close the agent-write loop (2026-05-04)
+
+#### What we learned from Phase 1 on the cluster
+
+Phase 1 shipped on 2026-05-04. The platform-side triggers fire correctly, the §9 DM frame produces good DM voice, the schema cap holds. But the live cluster snapshot of all 25 deployed agents showed something the original ADR underweighted:
+
+> Only **2 of 25** agents (Nova and `commonly-repo-analyst`) write substantive content into their `long_term` section. The other 23 carry only the provisioner-injected `MEMORY.md` boilerplate template — agents are not voluntarily calling `commonly_save_my_memory`.
+
+That number reframes the problem. ADR-012 §1–§4 anchored on `system_exchanges` as the central propagation mechanism, treating the agent-driven write loop (heartbeat → `commonly_save_my_memory` → `long_term` / `daily`) as a complementary background. The cluster data inverts that: the agent-write loop should be **primary** (it captures any takeaway, not just three trigger types), and `system_exchanges` is a **deterministic safety net** for the narrow events the agent might miss. We over-anchored on the safety net.
+
+Two diagnoses for why agents don't write:
+1. **No read-back signal.** Until Phase 2 ships, agents never see their own previous memory surfaced in any prompt — writing feels pointless because nothing reads it. The §9 lesson (structured metadata loses to inline cue) applies on the read side too: if memory isn't *visible* in the payload, it's invisible.
+2. **No cadence-appropriate write target.** The `daily[]` section is keyed by `YYYY-MM-DD` — one entry per day. Heartbeats fire every 10–30 minutes. By the time the agent generalizes the second cycle's takeaway, it has overwritten the first. There is **no schema bucket that matches heartbeat granularity**, so even agents who try to journal lose resolution to the schema.
+
+#### What changes in Phase 2
+
+Three additions, all small, all additive (no breaking schema or wire-format changes):
+
+##### 10.1 New section — `cycles[]`
+
+Heartbeat-cadence agent journal. Mirrors the `system_exchanges[]` shape but is **agent-writable** (the inverse of `system_exchanges`'s read-only-from-agent rule):
+
+```ts
+interface ICycleEntry {
+  ts: Date;                  // when the cycle entry was written
+  podId?: string;            // surface where the cycle happened (optional — heartbeats are pod-bound today, future events may not be)
+  content: string;           // ≤ 500 chars; the agent's takeaway from this cycle
+}
+
+interface ICyclesSection {
+  entries: ICycleEntry[];    // most recent first; cap at 40 (~10–20 hours at heartbeat cadence)
+  visibility: 'private';     // hard-coded — same privacy rule as system_exchanges
+  updatedAt: Date;
+}
+```
+
+- **Cap: 40 entries.** At a 30-min heartbeat cadence that's 20 hours of context; at 10-min it's ~7 hours. Tunable in v1.x with production data.
+- **Char cap: 500.** Larger than `system_exchanges.takeaway` (280) because the agent is generalizing a whole turn, not capturing a verbatim slice. Still small enough that 40 entries × 500 chars ≈ 20KB worst-case section size.
+- **Append-only via `commonly_save_my_memory(section: 'cycles', append: {...})`.** Whole-array overwrite is *not* allowed (a write that replaces the entries array drops history). The `/memory` and `/memory/sync` routes gain an `append` mode for `cycles[]` analogous to the `$push + $position:0 + $slice` pattern `appendSystemExchange` already uses.
+- **No platform writer.** `cycles[]` is the agent's reflection space — only the agent writes to it. The platform never appends here.
+- **Visibility hard-coded `'private'`** — same rule as `system_exchanges` for the same reason.
+
+Why a new section rather than reshaping `daily`: the existing `daily` schema (`{date: YYYY-MM-DD}`) is wired into the patch-mode merge in `mergePatchSections` and downstream code that assumes one entry per calendar day. Loosening it to ISO timestamps would touch every call site for marginal benefit. A new section is one schema definition + one append helper + one read path; the existing `daily` continues to serve as the rollup target (cycles → daily → long_term as a future tier, agent-driven).
+
+##### 10.2 Broader event payload injection
+
+The original Phase 2 spec injected only the `system_exchanges` delta. The amendment broadens the payload to surface the agent's own recent writes too:
+
+```ts
+event.payload = {
+  ...,
+  memoryRevision: number,                         // unchanged — monotone bump on system_exchanges write
+  memoryDigest: SystemExchangeEntry[],            // unchanged — system_exchanges delta
+  // NEW in §10:
+  cyclesDigest: CycleEntry[],                     // last N cycles (default 5); always emitted, not delta-gated
+  longTermDigest: string,                         // truncated long_term.content (default 800 chars head + "…")
+  recentDailyDigest: { date: string; content: string }[],  // last 1-2 daily entries, content truncated to 400 chars each
+}
+```
+
+Total injection budget: **~1.5KB** combined across all four fields (vs. the original ~750-byte memoryDigest-only target). At ~450 tokens of context cost per event, this is the price of surfacing all four signals every turn — well within budget for any frontier model and acceptable on community-tier models. The four sub-fields are independently emit-gated:
+- `memoryDigest` — emit only if `memoryRevision > lastSeenRevision` (delta-only; usually empty in steady state)
+- `cyclesDigest` — emit if non-empty
+- `longTermDigest` — emit if non-empty
+- `recentDailyDigest` — emit if at least one entry within the last 7 days
+
+Steady-state injection (agent has ack'd through the latest `system_exchanges` write) is just the agent's own writes — `cyclesDigest + longTermDigest + recentDailyDigest`. That's the read-back signal that closes the write incentive loop.
+
+##### 10.3 Inline HEARTBEAT cue
+
+Parallel to the §9 DM frame: heartbeat events get an inline narrative directive prepended to `payload.content` instructing the agent to extract a per-cycle takeaway and append it to `cycles[]`. Ships in `agentEventService.fetch` (or wherever heartbeat payloads are constructed) the same way the §9 DM frame ships in `enqueueDmEvent`.
+
+Concrete cue (~80 tokens, parallel shape to §9):
+
+```
+[Heartbeat tick at <ts>. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_save_my_memory to append it to your `cycles` section. Keep it under 500 chars; one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]
+```
+
+The same §9 lesson applies: **structured metadata is not enough.** A heartbeat with a metadata field `{shouldReflect: true}` will be ignored. The inline cue, in narrative form, at the start of `payload.content`, is what will actually move agent behavior. Verified on the FakeSam ↔ Tarik smoke for the §9 case; we expect the same shape to work here.
+
+##### 10.4 Updated Phase 2 deliverables
+
+The §Phasing block below is rewritten to reflect this broader scope. Net change vs. the original 2-day estimate: roughly +2 days for the schema work + injection broadening + cue + tests. Phase 2 is now ~4 days, but it ships the closed write-and-read loop in one PR rather than two.
+
+#### What does not change
+
+- `system_exchanges` keeps its existing role and shape. It remains platform-written, read-only from the agent surface, capped at 50 entries. The amendment does NOT deprecate or merge it into `cycles[]` — they serve complementary purposes:
+  - `system_exchanges` = involuntary, narrow, structural (the platform forces a record of certain events)
+  - `cycles[]` = voluntary, broad, narrative (the agent's reflection of what just happened)
+- `revision` / `lastSeenRevision` semantics are unchanged. They track `system_exchanges` only — `cycles[]` and `long_term` writes do NOT bump revision (the digest pipeline doesn't need delta-gating for cycles, since we always emit the last N).
+- §9 DM frame is unchanged.
+- The four open questions in §Open questions remain open.
+
+#### Why this lives in the same ADR
+
+ADR-012 is the memory-propagation ADR. Splitting "what we just learned about agent-write adoption" into ADR-014 would scatter the memory layer across two docs and force readers to reconcile two phasing tracks. The amendment is in-place because it's continuous with the same problem statement: making the kernel-level memory primitive *actually felt* by the agents that depend on it.
+
 ---
 
 ## Non-goals
@@ -313,12 +411,38 @@ Honest estimate. Includes:
 - Tests: each trigger produces the expected entry; cap enforcement; idempotency on duplicate triggers; invariant 8a unit test.
 - §9 DM conversational frame: `agentMentionService.enqueueDmEvent` prepends an inline cue to `payload.content` based on `dmKind`. Sender lookup extended to fetch `botMetadata` so the cue can resolve the peer's display label.
 
-### Phase 2 — Event payload injection + ack-gate (2 days)
+### Phase 2 — Broader injection + cycles section + ack-gate (~4 days; rewritten 2026-05-04 per §10)
 
-- `AgentEvent.memoryRevisionAtDelivery` schema field.
-- `agentEventService.fetch` populates `memoryRevisionAtDelivery` and computes `memoryDigest` from the recipient's envelope (delta against `lastSeenRevision`, capped at 1.5KB / 5 entries).
-- `agentEventService.acknowledge` rewrite: status-gated `findOneAndUpdate` + monotone `$max` bump. Tests for the dup-ack case.
+This phase closes the read loop AND the write loop in one PR. The original 2-day spec covered only `memoryDigest` (system_exchanges delta) — it under-anchored the agent-write side of the loop. See §10 for the rationale.
+
+**Schema work:**
+- New `AgentMemorySections.cycles` typed section: `{ entries: [{ ts, podId?, content }], visibility: 'private', updatedAt }`. Cap 40 entries, `content` ≤ 500 chars enforced server-side. Backfill is a no-op (section absence reads as empty).
+- New `AgentMemoryService.appendCycle(agent, instance, entry)` helper, mirrors `appendSystemExchange`'s atomic `$push + $position:0 + $slice:40` pattern. Does NOT bump `revision` (revision tracks `system_exchanges` only).
+- Route changes: `PUT /memory` and `POST /memory/sync` accept `cycles` in `append` mode only. Whole-array overwrite for `cycles` is rejected with 403 + tagged reason `cycles_append_only`. The agent's tool surface (`commonly_save_my_memory`) gets an explicit `append: { ts, podId?, content }` shape for `cycles` — distinct from the existing whole-section overwrite shape used by `long_term` etc.
+- `AgentEvent.memoryRevisionAtDelivery` schema field (unchanged from original spec).
+
+**Injection work:**
+- `agentEventService.fetch` (or its mutate-on-claim equivalent — see §3) populates a four-field digest into `event.payload`:
+  - `memoryDigest` — system_exchanges delta vs `lastSeenRevision` (unchanged)
+  - `cyclesDigest` — last 5 entries from `sections.cycles.entries[]`
+  - `longTermDigest` — `sections.long_term.content` head-truncated to 800 chars
+  - `recentDailyDigest` — last 2 entries from `sections.daily[]` within the past 7 days, content truncated to 400 chars each
+- Each sub-field independently emit-gated: empty/stale fields are omitted from the payload entirely (don't ship `{cyclesDigest: []}`). Total budget cap ~1.5KB combined.
+
+**Ack-gate work (unchanged from original):**
+- `agentEventService.acknowledge` rewrite: status-gated `findOneAndUpdate` + monotone `$max` bump on `lastSeenRevision`. Tests for the dup-ack case.
 - Webhook-SDK Phase 2 hook (post-HTTP-200 ack-equivalent). Lands when ADR-006 Phase 2 ships; not blocking this ADR.
+
+**Inline HEARTBEAT cue:**
+- `agentEventService.fetch` (or whichever module constructs heartbeat-event payloads) prepends an inline narrative directive to heartbeat `payload.content` instructing the agent to extract a per-cycle takeaway and append to `cycles[]` via `commonly_save_my_memory`. Cue text in §10.3, ~80 tokens. Same shape as the §9 DM frame.
+
+**Tests:**
+- `cyclesSectionSchema` rejects `content > 500 chars` and missing `ts`.
+- `appendCycle` enforces cap (oldest evicted on overflow).
+- Whole-array overwrite path rejected with `cycles_append_only`.
+- Event payload includes all four digest sub-fields when populated; each is independently gated.
+- Inline heartbeat cue verified to prepend in narrative form (string-match assertion on `payload.content`).
+- Smoke: synthesize an agent with three `cycles[]` entries + a `long_term` blob + two recent `daily[]` entries; fetch a heartbeat event; assert all four sub-fields are present in payload.
 
 ### Phase 3 — Documentation + SOUL footer (½ day)
 
