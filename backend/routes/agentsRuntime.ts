@@ -77,6 +77,7 @@ const {
   computeSyncDedupKey,
   isValidYMD,
   filterSectionsByVisibility,
+  appendCycle,
 } = require('../services/agentMemoryService');
 const AgentAskService = require('../services/agentAskService');
 const DMService = require('../services/dmService');
@@ -1573,10 +1574,22 @@ const VALID_VISIBILITIES = new Set(VISIBILITY_VALUES);
 const VALID_WRITABLE_SECTIONS = new Set<string>(AGENT_WRITABLE_SECTIONS);
 
 // ADR-012 §1: the agent's tool surface MUST NOT write `system_exchanges`.
+// ADR-012 §10.1: `cycles` is agent-writable but append-only — whole-array
+// overwrite is a structural bug (drops history) and is rejected with a tagged
+// 403 distinct from system_exchanges' read-only refusal.
 // Validators return a tagged error so the route can map to 403 (not 400).
 type SectionsValidationError =
   | { kind: 'bad_request'; message: string }
-  | { kind: 'system_exchanges_read_only' };
+  | { kind: 'system_exchanges_read_only' }
+  | { kind: 'cycles_append_only'; message: string };
+
+// Shape of an append-mode cycles payload, after validateSectionsPayload has
+// confirmed it. Route handlers split this out and call appendCycle directly.
+export interface CyclesAppendPayload {
+  content: string;
+  ts?: Date;
+  podId?: string;
+}
 
 function resolveMemoryIdentity(req: any): { agentName?: string; instanceId: string } {
   const agentInstallation = req.agentInstallation;
@@ -1605,6 +1618,55 @@ function validateSectionsPayload(sections: any): SectionsValidationError | null 
     // "we don't know what that is."
     if (key === 'system_exchanges') {
       return { kind: 'system_exchanges_read_only' };
+    }
+    // ADR-012 §10.1: cycles[] is agent-writable but append-only. The accepted
+    // shape is `cycles: { append: { content, ts?, podId? } }`. Anything else
+    // (array literal, `{entries: [...]}`, plain object missing `append`) is
+    // rejected with a 403 + tagged reason `cycles_append_only`. Validation
+    // here only checks structure — appendCycle truncates content + stamps ts.
+    if (key === 'cycles') {
+      const v = sections[key];
+      if (!v || typeof v !== 'object' || Array.isArray(v) || !('append' in v)) {
+        return {
+          kind: 'cycles_append_only',
+          message: 'cycles is append-only — payload must be { append: { content, ts?, podId? } }',
+        };
+      }
+      const append = (v as any).append;
+      if (!append || typeof append !== 'object' || Array.isArray(append)) {
+        return {
+          kind: 'cycles_append_only',
+          message: 'cycles.append must be an object with at least { content }',
+        };
+      }
+      if (typeof append.content !== 'string' || !append.content.trim()) {
+        return {
+          kind: 'cycles_append_only',
+          message: 'cycles.append.content must be a non-empty string',
+        };
+      }
+      if (append.ts !== undefined) {
+        const tsParsed = new Date(append.ts as string | number | Date);
+        if (Number.isNaN(tsParsed.getTime())) {
+          return { kind: 'bad_request', message: 'cycles.append.ts must be a valid date' };
+        }
+      }
+      if (append.podId !== undefined && typeof append.podId !== 'string') {
+        return { kind: 'bad_request', message: 'cycles.append.podId must be a string' };
+      }
+      // Reject any sibling keys on the cycles object — only `append` is allowed.
+      // This catches "looks-like-overwrite" attempts that include both `append`
+      // and `entries`/`visibility` in the same object.
+      const allowedKeys = new Set(['append']);
+      for (const k of Object.keys(v as object)) {
+        if (!allowedKeys.has(k)) {
+          return {
+            kind: 'cycles_append_only',
+            message: `cycles.${k} is not allowed; only cycles.append is supported`,
+          };
+        }
+      }
+      continue; // cycles is recognized; skip the unknown-section check below.
     }
     if (!VALID_WRITABLE_SECTIONS.has(key)) {
       return { kind: 'bad_request', message: `unknown section: ${key}` };
@@ -1642,7 +1704,8 @@ function validateSectionsPayload(sections: any): SectionsValidationError | null 
 }
 
 // Map a SectionsValidationError onto an HTTP response. 400 for shape errors;
-// 403 + tagged reason for ADR-012 §1's `system_exchanges_is_read_only`.
+// 403 + tagged reason for ADR-012 §1's `system_exchanges_is_read_only` and
+// ADR-012 §10.1's `cycles_append_only`.
 function sendSectionsError(res: any, err: SectionsValidationError): any {
   if (err.kind === 'system_exchanges_read_only') {
     return res.status(403).json({
@@ -1650,7 +1713,32 @@ function sendSectionsError(res: any, err: SectionsValidationError): any {
       reason: 'system_exchanges_is_read_only',
     });
   }
+  if (err.kind === 'cycles_append_only') {
+    return res.status(403).json({
+      message: err.message,
+      reason: 'cycles_append_only',
+    });
+  }
   return res.status(400).json({ message: err.message });
+}
+
+// Helper: extract the cycles append payload from a sections object (mutating —
+// removes the cycles key). Returns null if no cycles key was present. Caller
+// invokes appendCycle separately for the returned payload, then proceeds with
+// the standard write path on the remaining sections.
+function extractCyclesAppend(sections: Record<string, unknown>): CyclesAppendPayload | null {
+  if (!sections || typeof sections !== 'object' || !('cycles' in sections)) return null;
+  const v = (sections as any).cycles;
+  delete (sections as any).cycles;
+  const append = v?.append;
+  if (!append) return null;
+  const out: CyclesAppendPayload = { content: String(append.content || '').trim() };
+  if (append.ts !== undefined) {
+    const ts = new Date(append.ts);
+    if (!Number.isNaN(ts.getTime())) out.ts = ts;
+  }
+  if (typeof append.podId === 'string' && append.podId) out.podId = append.podId;
+  return out;
 }
 
 /**
@@ -1722,8 +1810,29 @@ router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
       return res.status(400).json({ message: 'sourceRuntime must be a string' });
     }
 
+    // ADR-012 §10.1: cycles is append-only via a sibling helper. Pull it out
+    // of the sections payload BEFORE the standard write path so it doesn't
+    // leak into stampSectionsForWrite (which expects whole-section overwrite
+    // shapes). The standard $set then proceeds on the remaining sections.
+    const cyclesAppend = sections !== undefined ? extractCyclesAppend(sections) : null;
+    if (cyclesAppend) {
+      try {
+        await appendCycle({ agentName, instanceId, ...cyclesAppend });
+      } catch (cycleErr: any) {
+        // Validation errors (content too long, etc) are caught by the schema's
+        // runValidators; surface as 400 so callers can correct.
+        if (cycleErr?.name === 'ValidationError') {
+          return res.status(400).json({ message: cycleErr.message });
+        }
+        throw cycleErr;
+      }
+    }
+
     const setOps: Record<string, unknown> = {};
-    if (sections !== undefined) {
+    // If cycles was the only section, sections may now be empty after
+    // extractCyclesAppend; skip the standard write path in that case.
+    const hasOtherSections = sections !== undefined && Object.keys(sections).length > 0;
+    if (hasOtherSections) {
       // Server-stamp byteSize + updatedAt so clients can't fabricate them.
       const stamped = stampSectionsForWrite(sections);
       // Per-key merge via dotted $set paths — preserves sibling sections the
@@ -1743,15 +1852,23 @@ router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
     // state the sync dedup key may no longer reflect. Without this, a sync
     // path that promoted the same bytes earlier in the day will get wrongly
     // short-circuited after a PUT/native-runtime write landed between.
-    await AgentMemory.findOneAndUpdate(
-      { agentName, instanceId },
-      { $set: setOps, $unset: { lastSyncKey: '', lastSyncAt: '' } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
+    //
+    // Skip the $set/$unset round-trip when the payload was cycles-only — the
+    // appendCycle call above already touched the doc, and cycles is not part
+    // of the sync dedup stream (mirrors invariant 8a for system_exchanges:
+    // drivers don't sync these sections, so they don't invalidate the cache).
+    if (Object.keys(setOps).length > 0) {
+      await AgentMemory.findOneAndUpdate(
+        { agentName, instanceId },
+        { $set: setOps, $unset: { lastSyncKey: '', lastSyncAt: '' } },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+    }
     console.log('[agent-memory PUT]', {
       agentName,
       instanceId,
       sectionKeys: sections ? Object.keys(sections) : [],
+      cyclesAppended: !!cyclesAppend,
       contentProvided: content !== undefined,
       sourceRuntime,
     });
@@ -1816,7 +1933,32 @@ router.post('/memory/sync', agentRuntimeAuth, async (req: any, res: any) => {
       return rejectAndLog("mode must be 'full' or 'patch'");
     }
 
+    // ADR-012 §10.1: handle a `cycles` append before the sync dedup logic.
+    // The dedup key is computed AFTER cycles is removed (see computeSyncDedupKey
+    // input below), so resending the same payload doesn't double-append; the
+    // dedup gate covers replay safety on the syncable sections only. Cycles
+    // appends within a deduped resend will still fire a second time — that is
+    // a known v1 behaviour, callers should not include `cycles` in repeat
+    // syncs (a separate cycles-only PUT /memory call is the recommended path).
+    const cyclesAppend = extractCyclesAppend(sections);
+    if (cyclesAppend) {
+      try {
+        await appendCycle({ agentName, instanceId, ...cyclesAppend });
+      } catch (cycleErr: any) {
+        if (cycleErr?.name === 'ValidationError') return rejectAndLog(cycleErr.message);
+        throw cycleErr;
+      }
+    }
+
     const now = new Date();
+    const hasOtherSections = Object.keys(sections).length > 0;
+    if (!hasOtherSections) {
+      // Cycles-only sync — write already happened in appendCycle. Skip the
+      // rest of the sync pipeline (no dedup key needed; sync state didn't
+      // change for the syncable sections).
+      console.log('[agent-memory SYNC cycles-only]', { agentName, instanceId, sourceRuntime });
+      return res.json({ ok: true, schemaVersion: 2, cyclesAppended: true });
+    }
     const dedupKey = computeSyncDedupKey(sections, sourceRuntime, mode, now);
 
     const existing = await AgentMemory.findOne({ agentName, instanceId }).lean();

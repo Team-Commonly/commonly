@@ -5,10 +5,13 @@ import AgentMemory, {
   SYSTEM_EXCHANGE_ENTRY_CAP,
   SYSTEM_EXCHANGE_TAKEAWAY_MAX,
   SYSTEM_EXCHANGE_KINDS,
+  CYCLE_CONTENT_MAX,
+  CYCLE_ENTRY_CAP,
 } from '../models/AgentMemory';
 import type {
   AgentWritableSection,
   IAgentMemorySections,
+  ICycleEntry,
   IDailySection,
   IMemorySection,
   IRelationshipNote,
@@ -186,6 +189,10 @@ export function stampSectionsForWrite(
     // defense-in-depth and also keeps the union-typed `out[key]` assignment
     // below provably safe (the IMemorySection branch can't widen to system_exchanges).
     if (key === 'system_exchanges') continue;
+    // ADR-012 §10.1: cycles is append-only via appendCycle. Route handlers
+    // pop it out before calling stampSectionsForWrite — this guard is
+    // defense-in-depth for the case where a future caller forgets to.
+    if (key === 'cycles') continue;
 
     if (key === 'daily') {
       out.daily = ((v as IDailySection[]) || []).map((d): IDailySection => ({
@@ -241,6 +248,8 @@ export function mergePatchSections(
     // rejects it upstream — this guard keeps mergePatchSections safe even if
     // someone calls it from outside the route.
     if (key === 'system_exchanges') continue;
+    // ADR-012 §10.1: cycles is append-only — never patched via this path.
+    if (key === 'cycles') continue;
 
     if (key === 'daily') {
       const byDate = new Map<string, IDailySection>();
@@ -480,4 +489,197 @@ export async function appendSystemExchange(
   ).select({ revision: 1 }).lean<{ revision?: number } | null>();
 
   return { revision: updated?.revision ?? 1 };
+}
+
+// ADR-012 §10.1: append a single cycle entry, agent-driven via the route
+// surface (PUT /memory or POST /memory/sync `cycles.append`). Same atomic
+// $push pattern as appendSystemExchange, with two semantic carve-outs:
+//   - does NOT bump `revision` (revision tracks system_exchanges only — cycles
+//     is always emitted as the recent slice, no delta-gating).
+//   - does NOT clear `lastSyncKey`/`lastSyncAt`. Drivers do not sync `cycles`
+//     (it's not in the writable-sections allowlist; the only write path is the
+//     append helper here), so a cycle write does NOT make the sync dedup key
+//     stale. Same logic as invariant 8a for system_exchanges.
+export function truncateCycleContent(raw: unknown, max = CYCLE_CONTENT_MAX): string {
+  const s = typeof raw === 'string' ? raw : (raw == null ? '' : String(raw));
+  if (s.length <= max) return s;
+  return s.slice(0, Math.max(0, max - 1)) + '…';
+}
+
+export interface AppendCycleArgs {
+  agentName: string;
+  instanceId: string;
+  content: string;
+  podId?: string;
+  ts?: Date;
+}
+
+export async function appendCycle(
+  args: AppendCycleArgs,
+): Promise<{ ok: true } | null> {
+  const {
+    agentName,
+    instanceId,
+    content,
+    podId,
+    ts = new Date(),
+  } = args;
+
+  if (!agentName || !instanceId) return null;
+  const trimmedContent = typeof content === 'string' ? content.trim() : '';
+  if (!trimmedContent) return null;
+
+  const entry: ICycleEntry = {
+    ts,
+    content: truncateCycleContent(trimmedContent),
+    ...(podId && typeof podId === 'string' ? { podId } : {}),
+  };
+
+  await AgentMemory.findOneAndUpdate(
+    { agentName, instanceId },
+    {
+      $push: {
+        'sections.cycles.entries': {
+          $each: [entry],
+          $position: 0,
+          $slice: CYCLE_ENTRY_CAP,
+        },
+      },
+      $set: {
+        'sections.cycles.visibility': 'private',
+      },
+      $currentDate: { 'sections.cycles.updatedAt': true },
+      $setOnInsert: { agentName, instanceId },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
+  ).lean();
+
+  return { ok: true };
+}
+
+// ADR-012 §10.2: emit-gated digest builders. Each returns `null` (or `[]`)
+// when there's nothing to surface so the route handler can omit the field
+// entirely from the event payload. Combined budget across the four sub-fields
+// is ~1.5KB — see ADR-012 §10.2.
+
+interface EnvelopeSnapshot {
+  revision?: number;
+  sections?: IAgentMemorySections | null;
+}
+
+// memoryDigest: delta against `lastSeenRevision`. Returns up to N most recent
+// `system_exchanges` entries that landed *since* the last ack. Steady state
+// (caught up) is empty. v1 uses count-cap (10) as a proxy for byte cap; v1.x
+// can layer a precise serialized-size cap once we have production data.
+export function buildMemoryDigest(
+  envelope: EnvelopeSnapshot,
+  lastSeenRevision: number,
+  max = 10,
+): ISystemExchangeEntry[] {
+  const revision = envelope?.revision ?? 0;
+  if (revision <= (lastSeenRevision ?? 0)) return [];
+  const entries = envelope?.sections?.system_exchanges?.entries;
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+  // Most-recent-first invariant on storage (see appendSystemExchange).
+  // Number of entries since lastSeenRevision is bounded by (revision - lastSeenRevision).
+  const delta = Math.max(0, revision - (lastSeenRevision ?? 0));
+  return entries.slice(0, Math.min(delta, max));
+}
+
+// cyclesDigest: last N entries from cycles[]. Always emit the recent slice if
+// non-empty (no delta-gating — cycles is the agent's own writing, surfaced
+// every event so writing pays off).
+export function buildCyclesDigest(
+  envelope: EnvelopeSnapshot,
+  max = 5,
+): ICycleEntry[] {
+  const entries = envelope?.sections?.cycles?.entries;
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+  return entries.slice(0, max);
+}
+
+// longTermDigest: head-truncated `long_term.content`. Returns null when the
+// section is empty so the route can omit the field. v1 head-truncates; future
+// v1.x may layer a small-model summarize step.
+export function buildLongTermDigest(
+  envelope: EnvelopeSnapshot,
+  headChars = 800,
+): string | null {
+  const raw = envelope?.sections?.long_term?.content;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.length <= headChars) return trimmed;
+  return trimmed.slice(0, Math.max(0, headChars - 1)) + '…';
+}
+
+// recentDailyDigest: last `max` daily entries within the last `withinDays`.
+// Each entry's content head-truncated to `charsEach`. v1 sorts by `date`
+// descending (YYYY-MM-DD lex order matches calendar order). Returns [] when
+// the section is empty or all entries fall outside the window.
+export interface RecentDailyEntry {
+  date: string;
+  content: string;
+}
+
+export function buildRecentDailyDigest(
+  envelope: EnvelopeSnapshot,
+  opts: { withinDays?: number; max?: number; charsEach?: number; now?: Date } = {},
+): RecentDailyEntry[] {
+  const { withinDays = 7, max = 2, charsEach = 400, now = new Date() } = opts;
+  const entries = envelope?.sections?.daily;
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+  const cutoffMs = now.getTime() - (withinDays * 24 * 60 * 60 * 1000);
+  const sorted = entries
+    .filter((d) => typeof d?.date === 'string' && d.date.length === 10)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const out: RecentDailyEntry[] = [];
+  for (const d of sorted) {
+    if (out.length >= max) break;
+    const dt = new Date(`${d.date}T00:00:00Z`).getTime();
+    if (!Number.isFinite(dt) || dt < cutoffMs) continue;
+    const raw = typeof d.content === 'string' ? d.content : '';
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const truncated = trimmed.length <= charsEach
+      ? trimmed
+      : trimmed.slice(0, Math.max(0, charsEach - 1)) + '…';
+    out.push({ date: d.date, content: truncated });
+  }
+  return out;
+}
+
+// Aggregate builder used by the event-fetch path. Computes the four sub-fields
+// in a single pass and returns the shape ready to spread into payload. Each
+// sub-field is omitted (undefined) rather than empty so the consumer can use
+// presence as the emit gate.
+export interface MemoryDigestBundle {
+  memoryRevision?: number;
+  memoryDigest?: ISystemExchangeEntry[];
+  cyclesDigest?: ICycleEntry[];
+  longTermDigest?: string;
+  recentDailyDigest?: RecentDailyEntry[];
+}
+
+export function buildMemoryDigestBundle(
+  envelope: EnvelopeSnapshot,
+  lastSeenRevision: number,
+): MemoryDigestBundle {
+  const out: MemoryDigestBundle = {};
+  const revision = envelope?.revision ?? 0;
+  if (revision > 0) out.memoryRevision = revision;
+
+  const memDigest = buildMemoryDigest(envelope, lastSeenRevision);
+  if (memDigest.length > 0) out.memoryDigest = memDigest;
+
+  const cycDigest = buildCyclesDigest(envelope);
+  if (cycDigest.length > 0) out.cyclesDigest = cycDigest;
+
+  const ltDigest = buildLongTermDigest(envelope);
+  if (ltDigest) out.longTermDigest = ltDigest;
+
+  const dailyDigest = buildRecentDailyDigest(envelope);
+  if (dailyDigest.length > 0) out.recentDailyDigest = dailyDigest;
+
+  return out;
 }

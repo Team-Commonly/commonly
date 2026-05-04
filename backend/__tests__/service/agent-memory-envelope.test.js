@@ -950,4 +950,106 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
       expect(res.body.sections.system_exchanges.entries[0].kind).toBe('agent-dm-loop-trip');
     });
   });
+
+  // ------------------------------------------------------------------- //
+  // ADR-012 §10.1 — cycles[] is agent-writable, append-only via the route
+  // ------------------------------------------------------------------- //
+  describe('cycles (ADR-012 §10.1 append-only enforcement)', () => {
+    it('PUT /memory accepts the {append: {...}} shape and writes one entry', async () => {
+      const res = await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            cycles: { append: { content: 'first reflection', podId: testPod._id.toString() } },
+          },
+        });
+      expect(res.status).toBe(200);
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.cycles.entries).toHaveLength(1);
+      expect(get.body.sections.cycles.entries[0].content).toBe('first reflection');
+      expect(get.body.sections.cycles.entries[0].podId).toBe(testPod._id.toString());
+      expect(get.body.sections.cycles.visibility).toBe('private');
+    });
+
+    it('PUT /memory rejects whole-array overwrite via cycles.entries with 403 + cycles_append_only', async () => {
+      const res = await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            cycles: { entries: [{ ts: new Date().toISOString(), content: 'forged' }] },
+          },
+        });
+      expect(res.status).toBe(403);
+      expect(res.body.reason).toBe('cycles_append_only');
+    });
+
+    it('PUT /memory rejects bare-array cycles payload with 403 + cycles_append_only', async () => {
+      const res = await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { cycles: [{ ts: new Date().toISOString(), content: 'forged' }] },
+        });
+      expect(res.status).toBe(403);
+      expect(res.body.reason).toBe('cycles_append_only');
+    });
+
+    it('PUT /memory rejects sibling keys alongside append (e.g. {append, entries})', async () => {
+      const res = await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            cycles: {
+              append: { content: 'real' },
+              entries: [], // attempt to combine append + overwrite
+            },
+          },
+        });
+      expect(res.status).toBe(403);
+      expect(res.body.reason).toBe('cycles_append_only');
+    });
+
+    it('POST /memory/sync handles a cycles-only payload without dedup interaction', async () => {
+      const res = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          mode: 'patch',
+          sections: { cycles: { append: { content: 'sync cycle' } } },
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.cyclesAppended).toBe(true);
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.cycles.entries.map((e) => e.content)).toEqual(['sync cycle']);
+    });
+
+    it('PUT /memory: cycles append + long_term write in the same request — both land', async () => {
+      const res = await request(app)
+        .put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: {
+            cycles: { append: { content: 'mixed cycle' } },
+            long_term: { content: 'mixed long-term' },
+          },
+        });
+      expect(res.status).toBe(200);
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(get.body.sections.cycles.entries).toHaveLength(1);
+      expect(get.body.sections.cycles.entries[0].content).toBe('mixed cycle');
+      expect(get.body.sections.long_term.content).toBe('mixed long-term');
+    });
+  });
 });

@@ -53,6 +53,21 @@ export interface ISystemExchangesSection {
   // here when there's a reader that benefits from the cached value.
 }
 
+// ADR-012 §10.1: heartbeat-cadence agent journal. Inverse role of
+// system_exchanges — agent-writable, platform-read. Fills the cadence gap
+// between heartbeats (10–30 min) and `daily[]` (one-per-YYYY-MM-DD).
+export interface ICycleEntry {
+  ts: Date;                          // when the cycle entry was written
+  podId?: string;                    // surface where the cycle happened (heartbeats are pod-bound today)
+  content: string;                   // ≤ 500 chars; the agent's takeaway from this cycle
+}
+
+export interface ICyclesSection {
+  entries: ICycleEntry[];            // most recent first; cap at CYCLE_ENTRY_CAP
+  visibility: 'private';             // hard-coded; same privacy rule as system_exchanges
+  updatedAt: Date;
+}
+
 export interface IAgentMemorySections {
   soul?: IMemorySection;
   long_term?: IMemorySection;
@@ -64,6 +79,9 @@ export interface IAgentMemorySections {
   // ADR-012: system-driven exchange records. Read-only from the agent's
   // tool surface; written only by platform hooks (agentMemoryService.appendSystemExchange).
   system_exchanges?: ISystemExchangesSection;
+  // ADR-012 §10.1: agent-writable journal at heartbeat cadence. Append-only
+  // from the agent's tool surface (whole-array overwrite is rejected).
+  cycles?: ICyclesSection;
 }
 
 export interface IAgentMemory extends Document {
@@ -103,6 +121,12 @@ export const SYSTEM_EXCHANGE_KINDS: SystemExchangeKind[] = [
 export const SYSTEM_EXCHANGE_TAKEAWAY_MAX = 280;
 // ADR-012 §5: count-bounded eviction. Oldest entry evicted on overflow.
 export const SYSTEM_EXCHANGE_ENTRY_CAP = 50;
+
+// ADR-012 §10.1: cycles[] cap. 40 entries × 500 chars ≈ 20KB worst-case
+// section size. At a 30-min heartbeat that's 20 hours of context; at 10-min
+// it's ~7 hours. Tunable in v1.x with production data.
+export const CYCLE_CONTENT_MAX = 500;
+export const CYCLE_ENTRY_CAP = 40;
 // ADR-012 §1 — writable sections (the agent's tool can address these via
 // commonly_save_my_memory). `system_exchanges` is intentionally excluded.
 export const AGENT_WRITABLE_SECTIONS = [
@@ -184,6 +208,34 @@ const systemExchangesSectionSchema = new Schema<ISystemExchangesSection>(
   { _id: false },
 );
 
+// ADR-012 §10.1: cycle entry schema. Schema-level validators back the
+// caller-side truncation in appendCycle; bypass paths still get rejected.
+const cycleEntrySchema = new Schema<ICycleEntry>(
+  {
+    ts: { type: Date, required: true },
+    podId: { type: String, default: undefined },
+    content: {
+      type: String,
+      default: '',
+      validate: {
+        validator: (v: string) => typeof v === 'string' && v.length <= CYCLE_CONTENT_MAX,
+        message: `content must be ≤ ${CYCLE_CONTENT_MAX} chars`,
+      },
+    },
+  },
+  { _id: false },
+);
+
+const cyclesSectionSchema = new Schema<ICyclesSection>(
+  {
+    entries: { type: [cycleEntrySchema], default: [] },
+    // Single-valued enum mirrors system_exchanges — widen-via-payload is closed.
+    visibility: { type: String, enum: ['private'], default: 'private' },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
 const agentMemorySectionsSchema = new Schema<IAgentMemorySections>(
   {
     soul: { type: memorySectionSchema, default: undefined },
@@ -194,6 +246,7 @@ const agentMemorySectionsSchema = new Schema<IAgentMemorySections>(
     shared: { type: memorySectionSchema, default: undefined },
     runtime_meta: { type: memorySectionSchema, default: undefined },
     system_exchanges: { type: systemExchangesSectionSchema, default: undefined },
+    cycles: { type: cyclesSectionSchema, default: undefined },
   },
   { _id: false },
 );

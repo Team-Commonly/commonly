@@ -1,6 +1,12 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type AgentEventStatus = 'pending' | 'delivered' | 'failed';
+// ADR-012 §3: terminal `'acked'` state added in Phase 2. Lifecycle:
+//   pending → delivered (on fetch-claim) → acked (on explicit ack)
+//   pending → failed (on enqueue/persistence error; terminal)
+//   delivered → failed (on delivery-side terminal error; rare)
+// Existing rows without an `'acked'` value continue to read as `'delivered'`
+// indefinitely; the ack-gate below short-circuits if status is already `'acked'`.
+export type AgentEventStatus = 'pending' | 'delivered' | 'acked' | 'failed';
 export type DeliveryOutcome = 'acknowledged' | 'posted' | 'no_action' | 'skipped' | 'error';
 
 // ADR-003 Phase 4: cross-agent ask/respond payloads. The `type` field on
@@ -55,6 +61,11 @@ export interface IAgentEvent extends Document {
   deliveredAt?: Date;
   error?: string;
   delivery?: IAgentEventDelivery;
+  // ADR-012 §3: snapshot of AgentMemory.revision captured at the
+  // pending → delivered claim. Persisted on the doc so the ack handler
+  // can bump lastSeenRevision exactly once per event without trusting
+  // the client to echo it. `null` for events fetched before §3 shipped.
+  memoryRevisionAtDelivery?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -66,10 +77,11 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true, index: true },
     type: { type: String, required: true },
     payload: Schema.Types.Mixed,
-    status: { type: String, enum: ['pending', 'delivered', 'failed'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'delivered', 'acked', 'failed'], default: 'pending' },
     attempts: { type: Number, default: 0 },
     deliveredAt: Date,
     error: String,
+    memoryRevisionAtDelivery: { type: Number, default: null },
     delivery: {
       outcome: {
         type: String,
