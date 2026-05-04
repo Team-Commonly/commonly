@@ -70,8 +70,29 @@ export function resolveAgentDisplayLabel(
   if (!user) return safeFallback;
   const meta = user.botMetadata;
   const display = meta?.displayName?.trim();
-  if (display) return display;
-  const instanceId = meta?.instanceId?.trim();
+  const agentName = meta?.agentName?.trim() || '';
+  const instanceId = meta?.instanceId?.trim() || '';
+  // Leak-pattern detection. If displayName is literally `<agentName> (<instanceId>)`
+  // (e.g. "openclaw (nova)"), it's the runtime label leaking through — some
+  // historical writer formatted displayName as `${agentName} (${instanceId})`
+  // instead of using the curated label. Treat these as if displayName were
+  // missing and fall through to instanceId. Matches both the
+  // `<runtime> (<instance>)` form and the bare `<runtime>` form
+  // (e.g. displayName === 'openclaw'). Also catches the case where
+  // displayName equals just instanceId — the chain below would render the
+  // same thing, but we drop the redundant pass here.
+  const leakedPattern = (
+    !!display
+    && !!agentName
+    && (
+      display.toLowerCase() === agentName.toLowerCase()
+      || (
+        !!instanceId
+        && display.toLowerCase() === `${agentName.toLowerCase()} (${instanceId.toLowerCase()})`
+      )
+    )
+  );
+  if (display && !leakedPattern) return display;
   if (instanceId && instanceId !== 'default') return instanceId;
   if (user.username) return user.username;
   return safeFallback;
