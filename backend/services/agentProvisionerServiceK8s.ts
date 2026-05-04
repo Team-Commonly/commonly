@@ -195,13 +195,28 @@ const resolveGatewayPodNameWithRetry = async (
   throw new Error(`No ready gateway pod found within ${timeoutMs}ms`);
 };
 
-const execInPod = async ({ podName, containerName = 'clawdbot-gateway', command = [] }: any) => {
+const execInPod = async ({
+  podName,
+  containerName = 'clawdbot-gateway',
+  command = [],
+  stdin = null,
+}: any) => {
   const stdout = new stream.PassThrough();
   const stderr = new stream.PassThrough();
   let out = '';
   let err = '';
   stdout.on('data', (chunk: any) => { out += chunk.toString(); });
   stderr.on('data', (chunk: any) => { err += chunk.toString(); });
+
+  // When the caller supplies stdin payload, pipe it through a Readable so we
+  // can stream large payloads (e.g. skill manifests with bundled extraFiles)
+  // without exceeding the kubectl exec ARG_MAX limit on the command argv.
+  let stdinStream: any = null;
+  if (stdin != null) {
+    stdinStream = new stream.PassThrough();
+    const buf = Buffer.isBuffer(stdin) ? stdin : Buffer.from(String(stdin), 'utf8');
+    stdinStream.end(buf);
+  }
 
   await new Promise<void>((resolve, reject) => {
     stdout.on('error', reject);
@@ -213,7 +228,7 @@ const execInPod = async ({ podName, containerName = 'clawdbot-gateway', command 
       command,
       stdout,
       stderr,
-      null,
+      stdinStream,
       false,
       (status: any) => {
         const success = status?.status === 'Success' || !status || !status?.status;
@@ -895,21 +910,25 @@ const syncOpenClawSkills = async ({
   }
 
   const podName = await resolveGatewayPodNameWithRetry(gateway);
-  const manifest = Buffer.from(JSON.stringify(files), 'utf8').toString('base64');
+  // Stream the manifest via stdin instead of inlining base64 in the script —
+  // skill bundles with extraFiles (e.g. OfficeCLI sub-skills) easily exceed
+  // the kubectl exec ARG_MAX limit if embedded as argv. Stdin has no such
+  // limit; the script reads JSON directly from /dev/stdin.
+  const manifestJson = JSON.stringify(files);
   const workspacePath = '/workspace';
   const skillsDir = `${workspacePath}/${accountId}/skills`;
   const manifestPath = `/tmp/commonly-skills-${accountId}.json`;
-  const script = [
-    'set -eu',
-    `rm -rf "${skillsDir}"`,
-    `mkdir -p "${skillsDir}"`,
-    `printf '%s' '${manifest}' | base64 -d > "${manifestPath}"`,
-    `node - "${manifestPath}" <<'NODE'`,
+  // The reader script: written as a heredoc so it doesn't compete with stdin
+  // for the manifest content. The node script reads the manifest from the
+  // temp-file path (passed via argv), which was populated from kubectl stdin
+  // by the `cat > <path>` step before this.
+  const readerScript = [
     'const fs = require("fs");',
     'const path = require("path");',
     `const rootDir = ${JSON.stringify(skillsDir)};`,
-    'const manifestPath = process.argv[2];',
-    'const entries = JSON.parse(fs.readFileSync(manifestPath, "utf8"));',
+    'const manifestPath = process.argv[1];',
+    'const raw = fs.readFileSync(manifestPath, "utf8");',
+    'const entries = JSON.parse(raw);',
     'for (const entry of entries) {',
     '  const relPath = String(entry.path || "").replace(/^\\/+/, "");',
     '  if (!relPath) continue;',
@@ -921,7 +940,16 @@ const syncOpenClawSkills = async ({
     '    fs.chmodSync(target, parseInt(String(entry.mode), 8));',
     '  }',
     '}',
-    'NODE',
+  ].join('\n');
+  const script = [
+    'set -eu',
+    `rm -rf "${skillsDir}"`,
+    `mkdir -p "${skillsDir}"`,
+    // Capture kubectl-supplied stdin to a temp file. `cat > path` reads from
+    // the script's stdin (= kubectl exec's stdin). Manifests of any size pass
+    // through this without hitting the ARG_MAX limit on the command argv.
+    `cat > "${manifestPath}"`,
+    `node -e ${JSON.stringify(readerScript)} "${manifestPath}"`,
     `rm -f "${manifestPath}"`,
     // Copy skills from enabled extension skill dirs (e.g. /app/extensions/acpx/skills/acp-router)
     // Only copies if the extension dir exists AND the skill is not already written by the manifest.
@@ -939,6 +967,7 @@ const syncOpenClawSkills = async ({
   const result = await execInPod({
     podName,
     containerName: 'clawdbot-gateway',
+    stdin: manifestJson,
     command: ['sh', '-lc', script],
   });
   return result.stdout.trim() || skillsDir;
