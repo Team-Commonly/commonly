@@ -212,7 +212,15 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         { timeout: SEND_TIMEOUT_MS },
       );
       const normalized = normalizeMessage(created);
-      setMessages((prev) => chronologicalMessages([...prev, normalized]));
+      // Dedupe by id — the Socket.io `newMessage` broadcast and this
+      // optimistic add both come from the same DB row and race after
+      // backend PR #304 (which added the user-message broadcast). Whichever
+      // arrives first wins; the second is a no-op. Without this, sending
+      // a message renders it twice in the sender's tab.
+      setMessages((prev) => {
+        if (prev.some((m) => m.id && m.id === normalized.id)) return prev;
+        return chronologicalMessages([...prev, normalized]);
+      });
       return normalized;
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
