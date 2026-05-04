@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
+import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { formatRelativeTime } from '../utils/grouping';
 import { useAuth } from '../../context/AuthContext';
@@ -289,11 +290,31 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   // files. Order matters — files leave a trimmed body that we then read for
   // image rendering.
   const { stripped: noReactions, reactions } = parseReactions(message.content || '');
-  const { stripped, files } = parseFiles(noReactions);
-  const markdownImage = stripped.match(MARKDOWN_IMAGE_RE)?.[1];
-  const imageUrl = message.message_type === 'image' || message.messageType === 'image' || IMAGE_URL_RE.test(stripped)
-    ? stripped
+  const { stripped: afterFiles, files } = parseFiles(noReactions);
+  const markdownImage = afterFiles.match(MARKDOWN_IMAGE_RE)?.[1];
+  const imageUrl = message.message_type === 'image' || message.messageType === 'image' || IMAGE_URL_RE.test(afterFiles)
+    ? afterFiles
     : markdownImage;
+
+  // GitHub PR URL detection — if the message body contains a `pull/<n>` URL,
+  // we render an inline preview card below the text. Card fetch is lazy +
+  // memoized at module scope; one fetch per (owner, repo, number) per session.
+  // The bare URL is stripped from the rendered text so we don't double-show
+  // "URL as text + URL as card".
+  const prRefs = imageUrl ? [] : parseGithubPrUrls(afterFiles);
+  let stripped = afterFiles;
+  if (prRefs.length > 0) {
+    stripped = afterFiles.replace(/https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+(?=\b|$)/g, '').trim();
+  }
+  // Auto-linkify bare http(s) URLs that aren't already inside markdown link
+  // syntax. Without this, agents posting raw URLs render as plain text and
+  // the user can't click them.
+  if (stripped) {
+    stripped = stripped.replace(
+      /(?<![(<[])(https?:\/\/[^\s<>"]+?[^\s<>".,!?;:])(?=[\s.,!?;:]|$)/g,
+      '[$1]($1)',
+    );
+  }
 
   // Highlight messages that @-mention the current user. Word-boundary so
   // `@foo` doesn't match `@foobar`. Skip for self-authored messages — no
@@ -351,6 +372,14 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
         )}
         {files.map((file, idx) => (
           <FilePill key={`${file.name}-${idx}`} file={file} />
+        ))}
+        {prRefs.map((pr) => (
+          <V2GithubPrCard
+            key={`${pr.owner}/${pr.repo}#${pr.number}`}
+            owner={pr.owner}
+            repo={pr.repo}
+            number={pr.number}
+          />
         ))}
         {reactions.length > 0 && (
           <div className="v2-msg__reactions" aria-label="Reactions">
