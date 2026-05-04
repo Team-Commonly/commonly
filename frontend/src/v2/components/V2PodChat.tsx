@@ -572,28 +572,36 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
               </div>
             )}
 
-            <div className={`v2-chat__mode-toggle v2-chat__mode-toggle--header v2-chat__mode-toggle--${mode}`} role="group" aria-label="Pod mode preference">
-              <button
-                type="button"
-                className={`v2-chat__mode-option${mode === 'plan' ? ' v2-chat__mode-option--active' : ''}`}
-                onClick={() => handleSetMode('plan')}
-                aria-pressed={mode === 'plan'}
-                title={modeCopy('plan')}
-              >
-                <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-                Plan
-              </button>
-              <button
-                type="button"
-                className={`v2-chat__mode-option${mode === 'execute' ? ' v2-chat__mode-option--active' : ''}`}
-                onClick={() => handleSetMode('execute')}
-                aria-pressed={mode === 'execute'}
-                title={modeCopy('execute')}
-              >
-                <Icon d="M5 3l14 9-14 9V3z" />
-                Execute
-              </button>
-            </div>
+            {/* Plan / Execute mode toggle — hidden until the pod-mode workflow
+                ships end-to-end. Currently the toggle persists `mode` to the
+                pod but no downstream surface uses it for behavior, so the
+                control reads as broken — clicks land but nothing changes for
+                the user. Re-enable when the mode actually drives behavior
+                (agent autonomy gating, suggestion ranking, etc.). */}
+            {false && (
+              <div className={`v2-chat__mode-toggle v2-chat__mode-toggle--header v2-chat__mode-toggle--${mode}`} role="group" aria-label="Pod mode preference">
+                <button
+                  type="button"
+                  className={`v2-chat__mode-option${mode === 'plan' ? ' v2-chat__mode-option--active' : ''}`}
+                  onClick={() => handleSetMode('plan')}
+                  aria-pressed={mode === 'plan'}
+                  title={modeCopy('plan')}
+                >
+                  <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                  Plan
+                </button>
+                <button
+                  type="button"
+                  className={`v2-chat__mode-option${mode === 'execute' ? ' v2-chat__mode-option--active' : ''}`}
+                  onClick={() => handleSetMode('execute')}
+                  aria-pressed={mode === 'execute'}
+                  title={modeCopy('execute')}
+                >
+                  <Icon d="M5 3l14 9-14 9V3z" />
+                  Execute
+                </button>
+              </div>
+            )}
 
             {onOpenInvite && (
               <button
