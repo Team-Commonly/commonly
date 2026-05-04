@@ -168,10 +168,7 @@ const normalizeRuntimeIdentity = (rest: any, agentName?: string) => {
 
 const sanitizeRuntimeConfig = (runtimeConfig: any, agentName?: string) => {
   const cfg = runtimeConfig && typeof runtimeConfig === 'object' ? runtimeConfig : {};
-  // Drop `wrappedCli` from passthrough — it's collapsed into runtimeType
-  // by normalizeRuntimeIdentity. Keeping it would double-encode the
-  // identity and confuse downstream consumers.
-  const { authProfiles, skillEnv, wrappedCli: _legacyWrappedCli, ...rest } = cfg;
+  const { authProfiles, skillEnv, ...rest } = cfg;
   const providers = authProfiles && typeof authProfiles === 'object'
     ? Array.from(new Set(
       Object.values(authProfiles)
@@ -182,9 +179,20 @@ const sanitizeRuntimeConfig = (runtimeConfig: any, agentName?: string) => {
   const skillKeys = skillEnv && typeof skillEnv === 'object'
     ? Object.keys(skillEnv).map((key) => String(key || '').trim()).filter(Boolean)
     : [];
+  // `rest` must still carry `wrappedCli` so normalizeRuntimeIdentity can
+  // read it for the legacy `local-cli` rewrite. The pre-fix version
+  // destructured wrappedCli out before this call → legacy installs (sam-
+  // local-codex et al) stayed as runtimeType:'local-cli' on the wire and
+  // the inspector showed "Local CLI · BYO" instead of "Codex · BYO".
   const { runtimeType, host } = normalizeRuntimeIdentity(rest, agentName);
+  // Strip `wrappedCli` from the response only AFTER normalization so
+  // downstream consumers see the canonical two-field shape. The frontend
+  // resolver retains a defensive `wrappedCli` branch as belt-and-
+  // suspenders against future regressions, but the field shouldn't be
+  // present on the wire by design.
+  const { wrappedCli: _legacyWrappedCli, ...passthrough } = rest;
   return {
-    ...rest,
+    ...passthrough,
     ...(runtimeType ? { runtimeType } : {}),
     ...(host ? { host } : {}),
     authProviders: providers,
