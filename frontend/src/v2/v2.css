@@ -2552,6 +2552,63 @@
   align-items: center;
 }
 
+/* ---------- Runtime badge (driver tag — OC, CX, CC, WH, NA) ---------- */
+
+.v2-inspector__detail-runtime {
+  margin-top: 8px;
+  display: flex;
+  justify-content: center;
+}
+
+.v2-runtime-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--v2-border-soft);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.v2-runtime-pill__mono {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--v2-text-primary);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  padding: 1px 4px;
+  line-height: 1;
+}
+
+.v2-runtime-pill__label {
+  line-height: 1;
+}
+
+.v2-runtime-mono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  min-width: 22px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 4px;
+  border: 1px solid var(--v2-border-soft);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
 /* ---------- Avatar ---------- */
 
 .v2-avatar {

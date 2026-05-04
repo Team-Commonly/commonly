@@ -418,6 +418,26 @@ const Icon = ({ d, size = 14 }: { d: string; size?: number }) => (
 
 const agentKeyOf = (agent: V2Agent): string => agent.instanceId || agent.agentName;
 
+// Driver badge for the agent runtime — letterform monogram + label, no emoji.
+// `local-cli` agents (ADR-005) carry `wrappedCli` so we can distinguish a
+// codex-CLI wrapper from a claude-CLI wrapper. Returns null when the runtime
+// is unknown so the UI can omit the chip rather than show "?".
+const resolveRuntimeBadge = (
+  agent: V2Agent,
+): { mono: string; label: string } | null => {
+  const type = agent.runtime?.runtimeType;
+  const cli = agent.runtime?.wrappedCli;
+  if (type === 'moltbot') return { mono: 'OC', label: 'OpenClaw' };
+  if (type === 'local-cli') {
+    if (cli === 'codex') return { mono: 'CX', label: 'Codex' };
+    if (cli === 'claude') return { mono: 'CC', label: 'Claude Code' };
+    return { mono: 'LC', label: 'Local CLI' };
+  }
+  if (type === 'webhook') return { mono: 'WH', label: 'Webhook' };
+  if (type === 'internal') return { mono: 'NA', label: 'Native' };
+  return null;
+};
+
 const memberRoleLabel = (
   member: { _id?: string; isBot?: boolean },
   ownerId: string | undefined,
@@ -847,6 +867,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         const key = agentKeyOf(agent);
         const isOnline = !!agent.lastHeartbeatAt
           && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000;
+        const badge = resolveRuntimeBadge(agent);
         return (
           <button
             key={`agent-${key}`}
@@ -864,6 +885,15 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               <span className="v2-inspector__member-name">{name}</span>
               <span className="v2-inspector__member-role">AI Agent</span>
             </span>
+            {badge && (
+              <span
+                className="v2-runtime-mono"
+                title={`${badge.label} runtime`}
+                aria-label={`${badge.label} runtime`}
+              >
+                {badge.mono}
+              </span>
+            )}
             {isOnline && <span className="v2-online-dot" style={{ background: 'var(--v2-success)' }} />}
           </button>
         );
@@ -930,6 +960,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     const purpose = agent.profile?.purpose;
     const specialties = agent.profile?.persona?.specialties || [];
     const dmable = isAgentDmable(agent);
+    const badge = resolveRuntimeBadge(agent);
     return (
       <div className="v2-inspector__detail">
         <div className="v2-inspector__detail-head">
@@ -944,6 +975,14 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             <span className="v2-online-dot" style={{ background: isOnline ? 'var(--v2-success)' : 'var(--v2-text-muted)' }} />
             {isOnline ? 'Online' : 'Idle'} · AI Agent
           </div>
+          {badge && (
+            <div className="v2-inspector__detail-runtime">
+              <span className="v2-runtime-pill" aria-label={`${badge.label} runtime`}>
+                <span className="v2-runtime-pill__mono">{badge.mono}</span>
+                <span className="v2-runtime-pill__label">{badge.label}</span>
+              </span>
+            </div>
+          )}
         </div>
         <div className="v2-inspector__detail-actions">
           {dmable && (

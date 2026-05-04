@@ -30,6 +30,10 @@ export interface V2Agent {
   iconUrl?: string;
   status?: string;
   lastHeartbeatAt?: string | null;
+  runtime?: {
+    runtimeType?: string;
+    wrappedCli?: string;
+  } | null;
   profile?: {
     purpose?: string;
     persona?: { tone?: string; specialties?: string[] };
