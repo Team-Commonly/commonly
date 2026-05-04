@@ -1552,8 +1552,15 @@ router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req: any, re
 // explicit full/patch mode lands in Phase 2.
 
 // Single source of truth — shared with the model schema.
-const { VISIBILITY_VALUES } = require('../models/AgentMemory');
+const { VISIBILITY_VALUES, AGENT_WRITABLE_SECTIONS } = require('../models/AgentMemory');
 const VALID_VISIBILITIES = new Set(VISIBILITY_VALUES);
+const VALID_WRITABLE_SECTIONS = new Set<string>(AGENT_WRITABLE_SECTIONS);
+
+// ADR-012 §1: the agent's tool surface MUST NOT write `system_exchanges`.
+// Validators return a tagged error so the route can map to 403 (not 400).
+type SectionsValidationError =
+  | { kind: 'bad_request'; message: string }
+  | { kind: 'system_exchanges_read_only' };
 
 function resolveMemoryIdentity(req: any): { agentName?: string; instanceId: string } {
   const agentInstallation = req.agentInstallation;
@@ -1568,46 +1575,66 @@ function resolveMemoryIdentity(req: any): { agentName?: string; instanceId: stri
   return { agentName, instanceId };
 }
 
-function validateSectionsPayload(sections: any): string | null {
+function validateSectionsPayload(sections: any): SectionsValidationError | null {
   if (typeof sections !== 'object' || sections === null || Array.isArray(sections)) {
-    return 'sections must be an object';
+    return { kind: 'bad_request', message: 'sections must be an object' };
   }
   if (Object.keys(sections).length === 0) {
-    return 'sections must have at least one key';
+    return { kind: 'bad_request', message: 'sections must have at least one key' };
   }
-  const allowed = new Set(['soul', 'long_term', 'dedup_state', 'shared', 'runtime_meta', 'daily', 'relationships']);
   for (const key of Object.keys(sections)) {
-    if (!allowed.has(key)) return `unknown section: ${key}`;
+    // ADR-012 §1: explicit rejection for the read-only system section.
+    // Surfaced separately from the generic "unknown section" path so callers
+    // (and CAP test harnesses) can distinguish "you can't write here" from
+    // "we don't know what that is."
+    if (key === 'system_exchanges') {
+      return { kind: 'system_exchanges_read_only' };
+    }
+    if (!VALID_WRITABLE_SECTIONS.has(key)) {
+      return { kind: 'bad_request', message: `unknown section: ${key}` };
+    }
   }
   const singleSectionKeys = ['soul', 'long_term', 'dedup_state', 'shared', 'runtime_meta'];
   for (const key of singleSectionKeys) {
     const s = sections[key];
     if (s === undefined) continue;
-    if (typeof s !== 'object' || s === null) return `sections.${key} must be an object`;
-    if (s.content !== undefined && typeof s.content !== 'string') return `sections.${key}.content must be a string`;
+    if (typeof s !== 'object' || s === null) return { kind: 'bad_request', message: `sections.${key} must be an object` };
+    if (s.content !== undefined && typeof s.content !== 'string') return { kind: 'bad_request', message: `sections.${key}.content must be a string` };
     if (s.visibility !== undefined && !VALID_VISIBILITIES.has(s.visibility)) {
-      return `sections.${key}.visibility must be one of private|pod|public`;
+      return { kind: 'bad_request', message: `sections.${key}.visibility must be one of private|pod|public` };
     }
   }
   if (sections.daily !== undefined) {
-    if (!Array.isArray(sections.daily)) return 'sections.daily must be an array';
+    if (!Array.isArray(sections.daily)) return { kind: 'bad_request', message: 'sections.daily must be an array' };
     for (const d of sections.daily) {
-      if (!isValidYMD(d?.date)) return 'sections.daily[].date must be YYYY-MM-DD';
+      if (!isValidYMD(d?.date)) return { kind: 'bad_request', message: 'sections.daily[].date must be YYYY-MM-DD' };
       if (d.visibility !== undefined && !VALID_VISIBILITIES.has(d.visibility)) {
-        return 'sections.daily[].visibility must be one of private|pod|public';
+        return { kind: 'bad_request', message: 'sections.daily[].visibility must be one of private|pod|public' };
       }
     }
   }
   if (sections.relationships !== undefined) {
-    if (!Array.isArray(sections.relationships)) return 'sections.relationships must be an array';
+    if (!Array.isArray(sections.relationships)) return { kind: 'bad_request', message: 'sections.relationships must be an array' };
     for (const r of sections.relationships) {
-      if (typeof r?.otherInstanceId !== 'string') return 'sections.relationships[].otherInstanceId must be a string';
+      if (typeof r?.otherInstanceId !== 'string') return { kind: 'bad_request', message: 'sections.relationships[].otherInstanceId must be a string' };
       if (r.visibility !== undefined && !VALID_VISIBILITIES.has(r.visibility)) {
-        return 'sections.relationships[].visibility must be one of private|pod|public';
+        return { kind: 'bad_request', message: 'sections.relationships[].visibility must be one of private|pod|public' };
       }
     }
   }
   return null;
+}
+
+// Map a SectionsValidationError onto an HTTP response. 400 for shape errors;
+// 403 + tagged reason for ADR-012 §1's `system_exchanges_is_read_only`.
+function sendSectionsError(res: any, err: SectionsValidationError): any {
+  if (err.kind === 'system_exchanges_read_only') {
+    return res.status(403).json({
+      message: 'system_exchanges is read-only',
+      reason: 'system_exchanges_is_read_only',
+    });
+  }
+  return res.status(400).json({ message: err.message });
 }
 
 /**
@@ -1673,7 +1700,7 @@ router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
     }
     if (sections !== undefined) {
       const sectionsError = validateSectionsPayload(sections);
-      if (sectionsError) return res.status(400).json({ message: sectionsError });
+      if (sectionsError) return sendSectionsError(res, sectionsError);
     }
     if (sourceRuntime !== undefined && typeof sourceRuntime !== 'string') {
       return res.status(400).json({ message: 'sourceRuntime must be a string' });
@@ -1759,7 +1786,13 @@ router.post('/memory/sync', agentRuntimeAuth, async (req: any, res: any) => {
     };
     if (sections === undefined) return rejectAndLog('sections is required');
     const sectionsError = validateSectionsPayload(sections);
-    if (sectionsError) return rejectAndLog(sectionsError);
+    if (sectionsError) {
+      if (sectionsError.kind === 'system_exchanges_read_only') {
+        console.log('[agent-memory SYNC reject]', { agentName, instanceId, reason: 'system_exchanges_is_read_only' });
+        return sendSectionsError(res, sectionsError);
+      }
+      return rejectAndLog(sectionsError.message);
+    }
     if (sourceRuntime !== undefined && typeof sourceRuntime !== 'string') {
       return rejectAndLog('sourceRuntime must be a string');
     }

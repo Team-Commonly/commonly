@@ -781,6 +781,16 @@ class AgentMessageService {
     }
     const sanitizedContent = AgentMessageService.sanitizeAgentContent(content);
     if (!sanitizedContent) {
+      // ADR-012 §4: agent-dm-conclusion trigger. The reply is silent
+      // (NO_REPLY swallowed by sanitizeAgentContent). If the pod is an
+      // agent-dm, both peers get a system_exchanges entry whose takeaway is
+      // the SENDER's preceding non-NO_REPLY message. Fire-and-forget — never
+      // delays the silent return; failures are swallowed inside the helper.
+      void AgentMessageService.maybeRecordAgentDmConclusion({
+        podId: String(podId),
+        senderAgentName: agentName,
+        senderInstanceId: instanceId,
+      });
       return { success: true, skipped: true, reason: 'silent_or_empty' };
     }
 
@@ -1178,6 +1188,26 @@ class AgentMessageService {
     }
 
     return { message: message as MessageNormalized, summary: persistedSummary };
+  }
+
+  // ADR-012 §4: fire-and-forget hook for agent-dm-conclusion. Lives here so
+  // the postMessage early-return path remains a single line. The trigger
+  // module checks pod type internally — calling this from a non-agent-dm
+  // pod is a no-op after one Pod.findById.
+  static maybeRecordAgentDmConclusion(args: {
+    podId: string;
+    senderAgentName: string;
+    senderInstanceId: string;
+  }): Promise<void> {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const triggers = require('./systemExchangeTriggers') as {
+      recordAgentDmConclusion: (a: {
+        podId: string;
+        senderAgentName: string;
+        senderInstanceId: string;
+      }) => Promise<void>;
+    };
+    return triggers.recordAgentDmConclusion(args);
   }
 
   static sanitizeAgentContent(content: unknown): string {
