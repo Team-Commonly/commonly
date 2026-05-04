@@ -75,6 +75,19 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     setInspectorCollapsed(false);
     writeInspectorCollapsed(false);
   }, []);
+  // Open inspector by ObjectStore filename — used when a chat file pill is
+  // clicked. The inspector resolves the filename → artifactId via its own
+  // `podFiles` state and routes to the artifact sub-page. Goes through a
+  // pending-state pattern (vs. an imperative ref) so the resolution stays
+  // declarative and survives re-mounts.
+  const [pendingOpenFileName, setPendingOpenFileName] = useState<string | null>(null);
+  const openInspectorByFileName = useCallback((fileName: string) => {
+    if (!fileName) return;
+    setPendingOpenFileName(fileName);
+    setInspectorCollapsed(false);
+    writeInspectorCollapsed(false);
+  }, []);
+  const clearPendingOpenFileName = useCallback(() => setPendingOpenFileName(null), []);
   const resetInspectorView = useCallback(() => setInspectorView({ kind: 'overview' }), []);
 
   // When pod changes, drop any stale sub-page state.
@@ -109,6 +122,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         onToggleInspector={selectedPodId ? toggleInspector : undefined}
         onOpenMember={openInspectorMember}
         onOpenInvite={selectedPodId ? openInvite : undefined}
+        onOpenFile={openInspectorByFileName}
       />
       {selectedPodId && !inspectorCollapsed && (
         <V2PodInspector
@@ -120,6 +134,8 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           onOpenArtifact={openInspectorArtifact}
           onBack={resetInspectorView}
           onOpenInvite={openInvite}
+          pendingOpenFileName={pendingOpenFileName}
+          onPendingOpenFileNameConsumed={clearPendingOpenFileName}
         />
       )}
       {selectedPodId && detail.pod && (

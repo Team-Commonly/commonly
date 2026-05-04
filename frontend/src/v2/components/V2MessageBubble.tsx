@@ -81,6 +81,9 @@ interface V2MessageBubbleProps {
   // Clicking the author avatar / name opens the inspector to that member's
   // detail sub-page. Passed in by V2PodChat; only fires for agent authors.
   onAuthorClick?: (author: string) => void;
+  // Clicking a file pill routes to the inspector artifact preview by
+  // ObjectStore filename (or originalName for static demo tokens).
+  onOpenFile?: (fileName: string) => void;
 }
 
 interface ParsedFile {
@@ -187,7 +190,10 @@ const parseReactions = (content: string): { stripped: string; reactions: ParsedR
   return { stripped, reactions };
 };
 
-const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
+const FilePill: React.FC<{
+  file: ParsedFile;
+  onOpenFile?: (fileName: string) => void;
+}> = ({ file, onOpenFile }) => {
   const color = FILE_EXT_COLORS[file.ext] || '#94a3b8';
   const inner = (
     <>
@@ -200,15 +206,43 @@ const FilePill: React.FC<{ file: ParsedFile }> = ({ file }) => {
       </span>
     </>
   );
-  // Static demo file (no backend reference) — render as a div, no click.
+  // Static demo file with no backend reference — but we can still try to
+  // resolve it via the inspector's pod-files index by `originalName`. The
+  // inspector's `openByFileName` callback (threaded down from V2Layout) is
+  // tolerant of either the ObjectStore key or a originalName lookup, so a
+  // chat author can post a `[[file:foo.md]]` static token and clicking it
+  // opens the corresponding pod-file artifact preview if a file with that
+  // originalName exists. Falls back to a non-clickable pill if there's no
+  // handler in scope.
   if (!file.fileName) {
+    if (onOpenFile) {
+      const handleStaticClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        onOpenFile(file.name); // resolved by originalName
+      };
+      return (
+        <button
+          type="button"
+          className="v2-msg__file v2-msg__file--clickable"
+          onClick={handleStaticClick}
+          aria-label={`Open ${file.name}`}
+        >
+          {inner}
+        </button>
+      );
+    }
     return <span className="v2-msg__file">{inner}</span>;
   }
-  // Real upload — mint signed URL on click. Don't fetch eagerly: a chat with
-  // 50 file messages would mint 50 tokens on render. Mint on demand keeps the
-  // 30/min/user rate limit comfortable.
+  // Real upload — prefer the inspector route when a handler is in scope so
+  // the preview lands inline (markdown rendered, csv tabular, etc.) instead
+  // of dumping raw bytes into a new tab. Fall back to the legacy signed-URL
+  // open-in-tab when no handler is provided (older surfaces).
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
+    if (onOpenFile && file.fileName) {
+      onOpenFile(file.fileName);
+      return;
+    }
     const signed = await getSignedAttachmentUrl(`/api/uploads/${file.fileName}`);
     if (signed) {
       window.open(signed, '_blank', 'noopener,noreferrer');
@@ -241,7 +275,7 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
   return { headline: match[1], targetPodId: match[2] };
 };
 
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick }) => {
+const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile }) => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const rawUsername = message.user?.username || 'Unknown';
@@ -371,7 +405,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           )
         )}
         {files.map((file, idx) => (
-          <FilePill key={`${file.name}-${idx}`} file={file} />
+          <FilePill key={`${file.name}-${idx}`} file={file} onOpenFile={onOpenFile} />
         ))}
         {prRefs.map((pr) => (
           <V2GithubPrCard

@@ -127,6 +127,10 @@ interface V2PodChatProps {
   // invite icon delegates to this so the chat path matches the inspector
   // path and a single modal instance handles both surfaces.
   onOpenInvite?: () => void;
+  // Click on an in-message file pill routes here. Passed straight through
+  // to V2MessageBubble → FilePill so the click opens the inspector
+  // artifact preview instead of window.open()'ing a raw file in a new tab.
+  onOpenFile?: (fileName: string) => void;
 }
 
 const Icon = ({ d }: { d: string }) => (
@@ -135,7 +139,7 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
-const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite }) => {
+const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile }) => {
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
   const navigate = useNavigate();
   const api = useV2Api();
@@ -661,6 +665,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   agentDisplayNames={agentDisplayNames}
                   agentAuthorKeys={agentAuthorKeys}
                   onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
+                  onOpenFile={onOpenFile}
                 />
               ))}
               <div ref={messagesEndRef} />

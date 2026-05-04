@@ -27,6 +27,15 @@ interface V2PodInspectorProps {
   // header invite icon, so the invite link survives switching between
   // the two trigger surfaces.
   onOpenInvite?: () => void;
+  // Click-on-file-pill flow. V2Layout sets this when a chat file pill is
+  // clicked; the inspector watches for the value to change, resolves it
+  // against its loaded podFiles list (matching either ObjectStore key OR
+  // originalName), opens the matching artifact sub-page, and clears the
+  // pending value via onPendingOpenFileNameConsumed. Falls back to a no-op
+  // if the file isn't in the pod's files index (avoid silent re-routes if
+  // the file name resolves nowhere).
+  pendingOpenFileName?: string | null;
+  onPendingOpenFileNameConsumed?: () => void;
 }
 
 // Any agent with a real chat runtime can hold a DM session. The Tier 1
@@ -483,6 +492,7 @@ const memberRoleLabel = (
 
 const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   detail, podsState, view, onClose, onOpenMember, onOpenArtifact, onBack, onOpenInvite,
+  pendingOpenFileName, onPendingOpenFileNameConsumed,
 }) => {
   const { pod, members, agents } = detail;
   const api = useV2Api();
@@ -628,6 +638,23 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     })();
     return () => { cancelled = true; };
   }, [pod?._id, api]);
+
+  // Resolve pending file-name → artifactId once podFiles is loaded. The
+  // chat file pill sets pendingOpenFileName via V2Layout; we match on
+  // either the ObjectStore key (`fileName`) or the human-facing original
+  // filename so static `[[file:foo.md]]` tokens that share an originalName
+  // with a real upload still route correctly.
+  useEffect(() => {
+    if (!pendingOpenFileName) return;
+    if (podFiles.length === 0) return;
+    const match = podFiles.find((f: { fileName?: string; originalName?: string }) => (
+      f.fileName === pendingOpenFileName || f.originalName === pendingOpenFileName
+    )) as { _id?: string } | undefined;
+    if (match?._id) {
+      onOpenArtifact(`file-${match._id}`);
+    }
+    onPendingOpenFileNameConsumed?.();
+  }, [pendingOpenFileName, podFiles, onOpenArtifact, onPendingOpenFileNameConsumed]);
 
   if (!pod) return <aside className="v2-pane v2-pane--inspector" />;
 
