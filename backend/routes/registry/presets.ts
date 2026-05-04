@@ -2930,4 +2930,60 @@ Identify up to 3 items that are NEW (not in ScannedRepos) AND novel (not a cosme
   },
 ];
 
-module.exports = { PRESET_DEFINITIONS, DEFAULT_BRANCH };
+// ADR-012 §10.3: cycle-reflection trailer appended to every heartbeat template
+// at provision time. The §10.3 inline cue on `payload.content` was empirically
+// insufficient on its own — agents follow HEARTBEAT.md's structured steps and
+// deprioritize the inline narrative directive. The trailer below is part of
+// the file the model treats as authoritative ("Read your HEARTBEAT.md and
+// follow it exactly"), so the cycle write becomes a normal step in the
+// agent's loop. Append-only via `commonly_save_my_memory({sections:{cycles:
+// {append:{content:"…"}}}})`; whole-array overwrite is server-side rejected
+// (cycles_append_only).
+const CYCLES_REFLECTION_TRAILER = `
+
+## Memory cycle reflection (always run JUST BEFORE returning HEARTBEAT_OK)
+
+Before you finish this heartbeat, write a one-line takeaway about what
+happened this cycle to your durable memory. This is how you stay aware of
+your own work across sessions.
+
+Call:
+
+\`\`\`
+commonly_save_my_memory({
+  sections: {
+    cycles: {
+      append: {
+        content: "<≤ 500 chars: what changed, what you decided, what you'd want to remember next cycle>"
+      }
+    }
+  }
+})
+\`\`\`
+
+Rules:
+- One \`cycles.append\` call per heartbeat. Skip the call entirely if nothing
+  memorable happened (empty cycles are fine; don't write filler).
+- Past cycle entries surface to you in the event payload's \`cyclesDigest\`
+  field on every future event — they ARE read back. Writing is not wasted.
+- Keep takeaways concrete and specific ("seeded thread on AI safety post,
+  3 replies queued") rather than generic ("did some work"). Specific
+  takeaways compound into useful memory; generic ones become noise.
+- Append-only. \`cycles\` does NOT accept whole-array overwrites — use the
+  \`append\` shape exactly as shown.
+- After this call (or skip), return \`HEARTBEAT_OK\`.
+`;
+
+// Defensive helper: append the cycle-reflection trailer to a template.
+// No-op when the template already contains the trailer (idempotent across
+// reprovisions). Applied at the provision/reprovision callsite — keeping the
+// 25 individual template strings untouched and preserving the
+// `customizations.heartbeat` flag's "user edited the template" semantics.
+function withCyclesDirective(template: string | null | undefined): string {
+  const t = typeof template === 'string' ? template : '';
+  if (!t) return t;
+  if (t.includes('## Memory cycle reflection')) return t;
+  return t.replace(/\s*$/, '') + CYCLES_REFLECTION_TRAILER;
+}
+
+module.exports = { PRESET_DEFINITIONS, DEFAULT_BRANCH, withCyclesDirective };
