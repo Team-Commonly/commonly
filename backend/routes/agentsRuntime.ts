@@ -1789,7 +1789,7 @@ router.get('/memory', agentRuntimeAuth, async (req: any, res: any) => {
  * - `byteSize` and `updatedAt` are always server-stamped via
  *   `stampSectionsForWrite`; client-supplied values are discarded.
  */
-router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
+router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
@@ -1906,7 +1906,7 @@ router.put('/memory', agentRuntimeAuth, async (req: any, res: any) => {
  * `byteSize` and `updatedAt` are server-stamped. `schemaVersion` auto-set to 2.
  * v1 `content` is mirrored from `long_term.content` (same rule as PUT).
  */
-router.post('/memory/sync', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
