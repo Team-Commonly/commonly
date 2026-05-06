@@ -850,6 +850,11 @@ const syncOpenClawSkills = async ({
   }
 
   const files = [];
+  // IDs of skills whose full content (SKILL.md + any sub-files) lives on the
+  // gateway image at /opt/commonly-bundled-skills/<id>/. Populated below from
+  // PodAsset metadata.bundledFromImage; consumed at end-of-script to emit
+  // `cp -r` commands. Sidesteps the kubectl exec ARG_MAX limit.
+  const bundledFromImage: string[] = [];
   const seedCommonlySkill = String(defaultCommonlySkillContent || '').trim();
   if (seedCommonlySkill) {
     files.push({
@@ -894,6 +899,14 @@ const syncOpenClawSkills = async ({
       const skillName = asset?.metadata?.skillName || asset?.title?.replace(/^Skill:\s*/i, '') || '';
       if (!skillName) return;
       const slug = PodAssetService.normalizeSkillKey(skillName);
+      const bundleId = String(asset?.metadata?.bundledFromImage || '').trim();
+      if (bundleId) {
+        // Bundled skill — sync via local cp at the end of the script. No
+        // SKILL.md in the manifest because the gateway image already has it
+        // at /opt/commonly-bundled-skills/<bundleId>/.
+        bundledFromImage.push(bundleId);
+        return;
+      }
       const baseSkillPath = `${slug}/SKILL.md`;
       const content = String(asset?.content || '');
       files.push({
@@ -924,6 +937,7 @@ const syncOpenClawSkills = async ({
         });
       });
     });
+
   }
 
   const podName = await resolveGatewayPodNameWithRetry(gateway);
@@ -970,6 +984,23 @@ const syncOpenClawSkills = async ({
     'NODE',
     `node "${readerPath}" "${manifestPath}"`,
     `rm -f "${manifestPath}" "${readerPath}"`,
+    // Bundled skills: full content (SKILL.md + sub-files + LICENSE) was baked
+    // into the gateway image at /opt/commonly-bundled-skills/<id>/ at build
+    // time. Copy each into the agent's workspace skills dir. This sidesteps
+    // the kubectl exec ARG_MAX limit that would be hit if the manifest tried
+    // to inline these — bundles can be 100s of KB to multi-MB safely.
+    ...Array.from(new Set(bundledFromImage)).flatMap((id) => {
+      const safe = String(id).replace(/[^a-zA-Z0-9_.-]/g, '');
+      if (!safe) return [];
+      const src = `/opt/commonly-bundled-skills/${safe}`;
+      const dst = `${skillsDir}/${safe}`;
+      return [
+        `if [ -d "${src}" ]; then`,
+        `  rm -rf "${dst}"`,
+        `  cp -r "${src}" "${dst}"`,
+        'fi',
+      ];
+    }),
     // Copy skills from enabled extension skill dirs (e.g. /app/extensions/acpx/skills/acp-router)
     // Only copies if the extension dir exists AND the skill is not already written by the manifest.
     'for ext_skill_dir in /app/extensions/acpx/skills/*/; do',

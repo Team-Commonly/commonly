@@ -171,6 +171,12 @@ interface ResolvedSkill {
   description?: string;
   tags?: string[];
   extraFiles?: ExtraFile[];
+  // When set, the gateway image has the full bundle baked at
+  // /opt/commonly-bundled-skills/<bundledFromImage>/. The K8s sync uses a
+  // local `cp -r` from that path inside the gateway pod and skips the
+  // inline-content path entirely — sidesteps the kubectl exec ARG_MAX
+  // limit when bundles carry many/large sub-files.
+  bundledFromImage?: string;
 }
 
 const resolveSkillContent = async (
@@ -183,7 +189,10 @@ const resolveSkillContent = async (
       content: bundled.content,
       sourceUrl: bundled.sourceUrl,
       license: 'See commonly-bundled-skills/<id>/LICENSE',
-      extraFiles: bundled.extraFiles,
+      // Don't include extraFiles in the manifest — they're already on the
+      // gateway image at /opt/commonly-bundled-skills/<id>/. Setting the
+      // bundledFromImage flag tells syncOpenClawSkills to use local cp.
+      bundledFromImage: skillId,
     };
   }
 
@@ -303,13 +312,16 @@ export const applyPresetDefaultSkills = async ({
           autoImportedBy: 'preset.defaultSkills',
           presetReason: entry.reason || null,
           // syncOpenClawSkills writes each extraFile alongside SKILL.md inside
-          // /workspace/<accountId>/skills/<skillId>/. Used here to ship
-          // OfficeCLI's specialized sub-skills (officecli/skills/<sub>/SKILL.md
-          // for fundraising decks, financial models, etc.) so `load_skill`
-          // calls inside the agent's session can resolve them locally.
+          // /workspace/<accountId>/skills/<skillId>/. Used for non-bundled
+          // skills (catalog-fetched) that have sub-files. Locally-bundled
+          // skills set bundledFromImage instead and skip extraFiles — their
+          // sub-files come from /opt/commonly-bundled-skills/<id>/ via local
+          // cp inside the gateway pod, sidestepping the kubectl exec ARG_MAX
+          // limit on inline-manifest payloads.
           extraFiles: resolved.extraFiles && resolved.extraFiles.length > 0
             ? resolved.extraFiles
             : undefined,
+          bundledFromImage: resolved.bundledFromImage,
         },
         createdBy: userId || null,
       });

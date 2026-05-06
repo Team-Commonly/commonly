@@ -93,6 +93,14 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          # Stage commonly-bundled-skills/ into the gateway build context
+          # so the Dockerfile's COPY commonly-bundled-skills /opt/... layer
+          # picks up the latest skill content. Sidesteps the kubectl-exec
+          # ARG_MAX limit that the runtime sync would otherwise hit when
+          # bundles carry sub-files (officecli specialized sub-skills, etc.).
+          rm -rf _external/clawdbot/commonly-bundled-skills
+          cp -r backend/commonly-bundled-skills _external/clawdbot/commonly-bundled-skills
+
           REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/clawdbot-gateway
           docker build _external/clawdbot \
             --build-arg OPENCLAW_EXTENSIONS=acpx \
@@ -100,6 +108,9 @@ jobs:
             --build-arg OPENCLAW_INSTALL_DOC_TOOLCHAIN=1 \
             -t "$REPO:$TAG"
           docker push "$REPO:$TAG"
+
+          # Cleanup so a re-run sees a deterministic build context.
+          rm -rf _external/clawdbot/commonly-bundled-skills
 
       - name: Build + push commonly-bot image
         env:
