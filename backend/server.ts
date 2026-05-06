@@ -73,6 +73,14 @@ dotenv.config();
 
 // Initialize express app
 const app = express();
+// Trust the reverse proxy (Cloudflare → ingress → backend). Without this,
+// `req.protocol` returns 'http' even when the public URL is HTTPS, because
+// the cluster-internal hop is plain HTTP. The downstream effect: any URL
+// we build with `${req.protocol}://...` (avatar uploads, profile pictures,
+// pod attachments) gets emitted as `http://api-dev.commonly.me/...` and
+// triggers Mixed Content warnings in every page load. Trusting the proxy
+// makes Express honor X-Forwarded-Proto.
+app.set('trust proxy', true);
 const buildAllowedOrigins = () => {
   const raw = process.env.FRONTEND_URL;
   if (raw && raw.trim()) {
