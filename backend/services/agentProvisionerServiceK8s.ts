@@ -927,27 +927,24 @@ const syncOpenClawSkills = async ({
   }
 
   const podName = await resolveGatewayPodNameWithRetry(gateway);
-  // Stream the manifest via stdin instead of inlining base64 in the script —
-  // skill bundles with extraFiles (e.g. OfficeCLI sub-skills) easily exceed
-  // the kubectl exec ARG_MAX limit if embedded as argv. Stdin has no such
-  // limit; the script reads JSON directly from /dev/stdin.
-  const manifestJson = JSON.stringify(files);
   const workspacePath = '/workspace';
   const skillsDir = `${workspacePath}/${accountId}/skills`;
   const manifestPath = `/tmp/commonly-skills-${accountId}.json`;
+
+  // Inline the manifest as a base64-encoded argv. Works for bundles that fit
+  // under the kubectl exec ARG_MAX limit (~256KB encoded). For larger
+  // bundles (officecli sub-skills, morph-ppt), see follow-up: the gateway
+  // image bakes commonly-bundled-skills/ at /opt/commonly-bundled-skills/,
+  // and the sync `cp -r`s from there for any skill where
+  // metadata.bundledFromImage === <id>. That keeps the argv payload
+  // constant-size regardless of bundle content.
+  const manifest = Buffer.from(JSON.stringify(files), 'utf8').toString('base64');
+
   const script = [
     'set -eu',
     `rm -rf "${skillsDir}"`,
     `mkdir -p "${skillsDir}"`,
-    // First, capture kubectl-supplied stdin to a temp file. `cat > path`
-    // reads from the script's stdin (= kubectl exec's stdin) until EOF.
-    // Manifests of any size pass through this without hitting the ARG_MAX
-    // limit on the command argv. Once cat completes (stdin EOF), stdin is
-    // free to be re-redirected for the heredoc that follows.
-    `cat > "${manifestPath}"`,
-    // Now run the node reader. The heredoc redirects node's stdin to the
-    // inline JS source; the manifest path comes via argv. Heredoc keeps
-    // shell quoting trivial (no escaping JSON content as shell strings).
+    `printf '%s' '${manifest}' | base64 -d > "${manifestPath}"`,
     `node - "${manifestPath}" <<'NODE'`,
     'const fs = require("fs");',
     'const path = require("path");',
@@ -984,7 +981,6 @@ const syncOpenClawSkills = async ({
   const result = await execInPod({
     podName,
     containerName: 'clawdbot-gateway',
-    stdin: manifestJson,
     command: ['sh', '-lc', script],
   });
   return result.stdout.trim() || skillsDir;
