@@ -292,6 +292,125 @@ router.get('/:fileName', async (req: AuthReq, res: Res) => {
   }
 });
 
+// PPTX → HTML preview rendering via the bundled OfficeCLI binary in the
+// backend image. Used by the v2 inspector's PptxPreview component to render
+// uploaded .pptx files inline. The output HTML is self-contained (embedded
+// CSS, three.js loaded from a CDN inside the iframe sandbox) so we just pass
+// it through to the browser as text/html.
+//
+// Auth — preview is not strictly bound to the file-fetch ACL since:
+//   - the file fetch (`/api/uploads/:fileName`) is publicly readable today
+//     (ADR-002 Phase 1, public-read flip is a follow-up); and
+//   - rendering is read-only, no side effects.
+// Once Phase 1b lands and signed URLs become required, this route gains the
+// same token check as `/:fileName`.
+const officecliPreview = (() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { spawn } = require('child_process');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync } = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fsPath = require('path');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const osMod = require('os');
+
+  const runOfficeCli = (args: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number }> =>
+    new Promise((resolve) => {
+      const child = spawn('officecli', args, { cwd });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+      child.on('close', (code: number | null) => resolve({ stdout, stderr, code: code ?? -1 }));
+    });
+
+  return {
+    renderPptx: async (binary: Buffer): Promise<{ html: string } | { error: string; code?: number }> => {
+      const tmpDir = mkdtempSync(fsPath.join(osMod.tmpdir(), 'pptx-preview-'));
+      try {
+        const inputPath = fsPath.join(tmpDir, 'input.pptx');
+        writeFileSync(inputPath, binary);
+
+        // officecli writes the rendered HTML to a temp file and prints the
+        // path on stdout. Capture the path, then read the file content.
+        const result = await runOfficeCli(['view', inputPath, 'html'], tmpDir);
+        if (result.code !== 0) {
+          return { error: (result.stderr || result.stdout).trim() || 'render failed', code: result.code };
+        }
+        // Path may be on the last line; pick the line that looks like a path
+        const lines = result.stdout.trim().split('\n');
+        const pathLine = lines.reverse().find((l) => l.trim().endsWith('.html'));
+        if (!pathLine) {
+          // Fallback: scan tmpDir for any .html file
+          const found = readdirSync(tmpDir).find((f: string) => f.endsWith('.html'));
+          if (!found) return { error: 'no html output produced' };
+          const html = readFileSync(fsPath.join(tmpDir, found), 'utf8');
+          return { html };
+        }
+        const html = readFileSync(pathLine.trim(), 'utf8');
+        return { html };
+      } catch (e) {
+        const err = e as Error;
+        return { error: err.message || 'unknown error' };
+      } finally {
+        try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+      }
+    },
+  };
+})();
+
+// 30s ceiling per render — guards against a malformed pptx hanging the
+// officecli process. Plenty for normal decks (sub-second to a few seconds).
+const PPTX_RENDER_TIMEOUT_MS = 30_000;
+
+router.get('/:fileName/preview-pptx-html', async (req: AuthReq, res: Res) => {
+  try {
+    const fileName = req.params?.fileName;
+    if (!fileName) return res.status(400).json({ msg: 'fileName required' });
+    if (!/\.pptx$/i.test(String(fileName))) {
+      return res.status(400).json({ msg: 'fileName must end in .pptx' });
+    }
+
+    // Fetch the binary from object storage (or legacy MongoDB inline bytes).
+    const store = getObjectStore();
+    const obj = await store.get(String(fileName));
+    let buffer: Buffer | null = null;
+    if (obj) {
+      const chunks: Buffer[] = [];
+      const stream = obj.stream as unknown as NodeJS.ReadableStream;
+      await new Promise<void>((resolve, reject) => {
+        stream.on('data', (c: Buffer) => chunks.push(c));
+        stream.on('end', () => resolve());
+        stream.on('error', reject);
+      });
+      buffer = Buffer.concat(chunks);
+    } else {
+      const legacy = await File.findByFileName(fileName);
+      if (legacy?.data?.length > 0) buffer = Buffer.from(legacy.data);
+    }
+    if (!buffer) return res.status(404).json({ msg: 'File not found' });
+
+    // Render with timeout
+    const renderPromise = officecliPreview.renderPptx(buffer);
+    const timeoutPromise = new Promise<{ error: string }>((resolve) =>
+      setTimeout(() => resolve({ error: 'render timeout' }), PPTX_RENDER_TIMEOUT_MS),
+    );
+    const result = await Promise.race([renderPromise, timeoutPromise]);
+
+    if ('error' in result) {
+      console.warn('[uploads] PPTX preview render failed:', result.error);
+      return res.status(500).json({ msg: 'Could not render preview', detail: result.error });
+    }
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('Cache-Control', 'private, max-age=300');
+    return res.send(result.html);
+  } catch (err) {
+    const e = err as { message?: string };
+    console.error('PPTX preview error:', e.message);
+    return res.status(500).json({ msg: 'Server Error' });
+  }
+});
+
 // Exported so the agent-runtime upload route can reuse the shared helpers
 // without going through HTTP. The route file mounts `handleUpload` behind
 // agentRuntimeAuth and gates podId against the agent's authorized pods.

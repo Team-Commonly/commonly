@@ -549,6 +549,55 @@ const XlsxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
   );
 };
 
+// PowerPoint .pptx → HTML via the backend's officecli view html endpoint.
+// The HTML is officecli's own renderer output (slides as styled blocks);
+// we sandbox it inside an iframe via srcdoc so its scripts (three.js loader)
+// can't touch the host page.
+const PptxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const [html, setHtml] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!artifact.fileName) return;
+    let cancelled = false;
+    setBusy(true); setError(null); setHtml(null);
+    (async () => {
+      try {
+        const r = await fetch(`/api/uploads/${encodeURIComponent(artifact.fileName!)}/preview-pptx-html`);
+        if (cancelled) return;
+        if (!r.ok) {
+          // Surface a useful error from the JSON body if available
+          let detail = '';
+          try { detail = (await r.json())?.detail || ''; } catch { /* not JSON */ }
+          throw new Error(`HTTP ${r.status}${detail ? ` — ${detail.substring(0, 200)}` : ''}`);
+        }
+        const text = await r.text();
+        if (cancelled) return;
+        setHtml(text);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Could not render preview');
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [artifact.fileName]);
+  if (busy) return <PreviewBox><PreviewMute>Rendering PowerPoint deck…</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>Could not preview: {error}</PreviewMute></PreviewBox>;
+  if (!html) return null;
+  return (
+    <PreviewBox>
+      <iframe
+        title={artifact.title}
+        srcDoc={html}
+        sandbox="allow-scripts allow-same-origin"
+        style={{ width: '100%', height: 480, border: 'none', display: 'block', background: '#fff' }}
+      />
+    </PreviewBox>
+  );
+};
+
 const EmbedPreview: React.FC<{ src: string; title: string; allow?: string }> = ({ src, title, allow }) => (
   <PreviewBox>
     <iframe
