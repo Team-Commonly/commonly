@@ -49,18 +49,29 @@ interface CatalogEntry {
   content?: string;
 }
 
-let catalogCache: Map<string, CatalogEntry> | null = null;
+// Map<skillId, CatalogEntry[]> — id is NOT unique in the catalog (e.g. two
+// different authors both publish a "tavily" skill). We keep all candidates
+// and try each in resolveSkillContent so a stale clobber doesn't kill a
+// resolvable skill.
+let catalogCache: Map<string, CatalogEntry[]> | null = null;
 
 // Per-process dedup so we warn once per skillId, not per reprovisioned pod.
 const warnedClawhubFailFor = new Set<string>();
 
-const loadCatalog = async (): Promise<Map<string, CatalogEntry>> => {
+const loadCatalog = async (): Promise<Map<string, CatalogEntry[]>> => {
   if (catalogCache) return catalogCache;
   try {
     const raw = await fs.readFile(CATALOG_INDEX_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     const items: CatalogEntry[] = Array.isArray(parsed?.items) ? parsed.items : [];
-    catalogCache = new Map(items.map((entry) => [entry.id, entry]));
+    const grouped = new Map<string, CatalogEntry[]>();
+    for (const entry of items) {
+      if (!entry?.id) continue;
+      const list = grouped.get(entry.id);
+      if (list) list.push(entry);
+      else grouped.set(entry.id, [entry]);
+    }
+    catalogCache = grouped;
   } catch (err) {
     console.warn(
       '[presetSkillsAutoImport] could not load catalog index:',
@@ -204,80 +215,82 @@ const resolveSkillContent = async (
   }
 
   const catalog = await loadCatalog();
-  const entry = catalog.get(skillId);
-  if (!entry) {
+  const candidates = catalog.get(skillId);
+  if (!candidates || candidates.length === 0) {
     console.warn(
       `[presetSkillsAutoImport] skill '${skillId}' not in local bundle or catalog — skipping`,
     );
     return null;
   }
-  if (entry.content && entry.content.length > 0) {
-    return {
-      id: skillId,
-      content: entry.content,
-      sourceUrl: entry.sourceUrl || `catalog:${skillId}`,
-      license: typeof entry.license === 'string' ? entry.license : entry.license?.name,
-      description: entry.description,
-      tags: entry.tags,
-    };
-  }
-  if (!entry.sourceUrl) {
-    console.warn(
-      `[presetSkillsAutoImport] skill '${skillId}' has no inline content and no sourceUrl — skipping`,
-    );
-    return null;
-  }
-  // Rewrite dead `github.com/openclaw/skills/...` URLs to ClawHub fetches.
-  // The public openclaw/skills repo went 404 in early May 2026; the same
-  // skills are served at clawhub.ai (which the awesome-openclaw-skills
-  // README explicitly cites as the canonical registry). The legacy URL
-  // structure encodes owner+slug, which is exactly what ClawHub needs.
-  const clawhubCoords = parseLegacyOpenclawSkillsUrl(entry.sourceUrl);
-  if (clawhubCoords) {
-    try {
-      const bundle = await fetchSkillBundleFromClawHub(clawhubCoords.owner, clawhubCoords.slug);
+
+  // Try each candidate in order. The catalog often has multiple entries with
+  // the same id (different authors), and only some of them resolve via
+  // ClawHub. First successful candidate wins.
+  const failures: string[] = [];
+  for (const entry of candidates) {
+    if (entry.content && entry.content.length > 0) {
       return {
         id: skillId,
-        content: bundle.content,
-        sourceUrl: bundle.resolvedUrl,
+        content: entry.content,
+        sourceUrl: entry.sourceUrl || `catalog:${skillId}`,
         license: typeof entry.license === 'string' ? entry.license : entry.license?.name,
         description: entry.description,
         tags: entry.tags,
-        extraFiles: bundle.extraFiles.length > 0 ? bundle.extraFiles : undefined,
+      };
+    }
+    if (!entry.sourceUrl) {
+      failures.push('no sourceUrl');
+      continue;
+    }
+    // Rewrite dead `github.com/openclaw/skills/...` URLs to ClawHub fetches.
+    // The public openclaw/skills repo went 404 in early May 2026; the same
+    // skills are served at clawhub.ai (which the awesome-openclaw-skills
+    // README explicitly cites as the canonical registry).
+    const clawhubCoords = parseLegacyOpenclawSkillsUrl(entry.sourceUrl);
+    if (clawhubCoords) {
+      try {
+        const bundle = await fetchSkillBundleFromClawHub(clawhubCoords.owner, clawhubCoords.slug);
+        return {
+          id: skillId,
+          content: bundle.content,
+          sourceUrl: bundle.resolvedUrl,
+          license: typeof entry.license === 'string' ? entry.license : entry.license?.name,
+          description: entry.description,
+          tags: entry.tags,
+          extraFiles: bundle.extraFiles.length > 0 ? bundle.extraFiles : undefined,
+        };
+      } catch (err) {
+        failures.push(`clawhub:${clawhubCoords.owner}/${clawhubCoords.slug} ${(err as Error).message}`);
+        continue;
+      }
+    }
+    try {
+      const fetched = await fetchSkillContentFromSource(entry.sourceUrl);
+      if (!fetched?.content) {
+        failures.push(`http:${entry.sourceUrl} empty body`);
+        continue;
+      }
+      return {
+        id: skillId,
+        content: fetched.content,
+        sourceUrl: fetched.resolvedUrl || entry.sourceUrl,
+        license: typeof entry.license === 'string' ? entry.license : entry.license?.name,
+        description: entry.description,
+        tags: entry.tags,
       };
     } catch (err) {
-      if (!warnedClawhubFailFor.has(skillId)) {
-        console.warn(
-          `[presetSkillsAutoImport] ClawHub fetch failed for '${skillId}' (${clawhubCoords.owner}/${clawhubCoords.slug}): ${(err as Error).message}`,
-        );
-        warnedClawhubFailFor.add(skillId);
-      }
-      return null;
+      failures.push(`http:${entry.sourceUrl} ${(err as Error).message}`);
+      continue;
     }
   }
-  try {
-    const fetched = await fetchSkillContentFromSource(entry.sourceUrl);
-    if (!fetched?.content) {
-      console.warn(
-        `[presetSkillsAutoImport] failed to fetch SKILL.md for '${skillId}' from ${entry.sourceUrl}`,
-      );
-      return null;
-    }
-    return {
-      id: skillId,
-      content: fetched.content,
-      sourceUrl: fetched.resolvedUrl || entry.sourceUrl,
-      license: typeof entry.license === 'string' ? entry.license : entry.license?.name,
-      description: entry.description,
-      tags: entry.tags,
-    };
-  } catch (err) {
+
+  if (!warnedClawhubFailFor.has(skillId)) {
     console.warn(
-      `[presetSkillsAutoImport] error fetching SKILL.md for '${skillId}':`,
-      (err as Error).message,
+      `[presetSkillsAutoImport] no candidate resolved for '${skillId}' (tried ${candidates.length}): ${failures.join(' | ')}`,
     );
-    return null;
+    warnedClawhubFailFor.add(skillId);
   }
+  return null;
 };
 
 interface DefaultSkillsEntry {
