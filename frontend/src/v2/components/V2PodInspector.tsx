@@ -506,10 +506,41 @@ const XlsxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
         ]);
         if (cancelled) return;
         const wb = XLSX.read(ab, { type: 'array' });
-        const out = wb.SheetNames.map((name) => ({
-          name,
-          html: XLSX.utils.sheet_to_html(wb.Sheets[name], { header: '', footer: '' }),
-        }));
+        const out = wb.SheetNames.map((name) => {
+          const ws = wb.Sheets[name];
+          // Defend against empty sheets and sheets missing `!ref`. SheetJS's
+          // sheet_to_html throws "Cannot read properties of undefined
+          // (reading 'indexOf')" when the worksheet's range header isn't
+          // populated — common for sheets emitted by tools that produce
+          // <sheetData/> with no rows. We synthesize a range from the cell
+          // keys so non-empty sheets without an explicit range still render,
+          // and fall back to a placeholder for genuinely empty sheets.
+          const cellKeys = Object.keys(ws || {}).filter((k) => !k.startsWith('!'));
+          if (cellKeys.length === 0) {
+            return { name, html: '<p style="color:#888;font-style:italic">Empty sheet</p>' };
+          }
+          if (!ws['!ref']) {
+            try {
+              const range = cellKeys.reduce(
+                (acc, k) => {
+                  const c = XLSX.utils.decode_cell(k);
+                  if (c.r < acc.s.r) acc.s.r = c.r;
+                  if (c.c < acc.s.c) acc.s.c = c.c;
+                  if (c.r > acc.e.r) acc.e.r = c.r;
+                  if (c.c > acc.e.c) acc.e.c = c.c;
+                  return acc;
+                },
+                { s: { r: Infinity, c: Infinity }, e: { r: -1, c: -1 } },
+              );
+              ws['!ref'] = XLSX.utils.encode_range(range);
+            } catch { /* fall through; sheet_to_html will throw and we'll catch below */ }
+          }
+          try {
+            return { name, html: XLSX.utils.sheet_to_html(ws, { header: '', footer: '' }) };
+          } catch (cellErr) {
+            return { name, html: `<p style="color:#888;font-style:italic">Could not render sheet: ${(cellErr as Error).message}</p>` };
+          }
+        });
         if (cancelled) return;
         setSheets(out);
       } catch (e) {
