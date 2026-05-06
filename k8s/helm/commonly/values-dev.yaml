@@ -41,7 +41,13 @@ backend:
     pgCaCertPath: "/app/certs/ca.pem"
     marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
     logLevel: debug
-    agentSessionMaxSizeKb: "150"
+    # Session threshold tuned for multi-step agent tasks. 150KB was killing
+    # legitimate work mid-flight (e.g. Theo regenerating 3 office files +
+    # uploading them grew sessions to 320KB and got swept). Pre-2026-05-06
+    # the docs called for 400KB default; bumping to 600KB gives headroom
+    # for chat.mention follow-ups that span multiple tool calls without
+    # losing the safety net for genuinely-runaway sessions (>1MB).
+    agentSessionMaxSizeKb: "600"
     # Bypass off — provisioner now writes LiteLLM virtual keys (not raw
     # Codex JWTs) to per-agent auth-profiles, and LiteLLM proxies Codex
     # via /chatgpt-auth/auth.json (rotator-managed). Pairs with
