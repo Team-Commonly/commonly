@@ -250,6 +250,109 @@ export const fetchSkillDirectoryFiles = async (sourceUrl: string, options: Fetch
   return files;
 };
 
+// ClawHub — public skills registry (clawhub.ai). The OG `github.com/openclaw/skills`
+// repo went 404 in early May 2026, but the same skills are served by ClawHub
+// at canonical URLs:
+//   GET /api/skill?owner=<owner>&slug=<slug>          → metadata JSON (incl. latestVersion.version)
+//   GET /api/v1/download?slug=<slug>&version=<v>      → ZIP bundle (SKILL.md + sub-files)
+//
+// We use this both to recover dead catalog entries (presetSkillsAutoImport
+// rewrites openclaw/skills URLs to ClawHub fetches) and for any future
+// "import skill by clawhub:<owner>/<slug>" CLI flow.
+const CLAWHUB_BASE = 'https://clawhub.ai';
+const DEAD_GITHUB_OPENCLAW_RE = /^https?:\/\/github\.com\/openclaw\/skills\/(?:tree|blob)\/[^/]+\/skills\/([^/]+)\/([^/]+)\/SKILL\.md\b/;
+
+interface ClawHubBundle {
+  content: string;
+  extraFiles: SkillFile[];
+  resolvedUrl: string;
+  version: string;
+}
+
+const PER_FILE_BYTES = 100 * 1024;
+const TOTAL_BUNDLE_BYTES = 800 * 1024;
+
+/**
+ * Parse a legacy `github.com/openclaw/skills/tree/main/skills/<owner>/<slug>/SKILL.md`
+ * URL into ClawHub's owner+slug coordinates. Returns null if the URL doesn't
+ * match the dead pattern.
+ */
+export const parseLegacyOpenclawSkillsUrl = (sourceUrl: string): { owner: string; slug: string } | null => {
+  if (!sourceUrl) return null;
+  const m = DEAD_GITHUB_OPENCLAW_RE.exec(sourceUrl);
+  return m ? { owner: m[1], slug: m[2] } : null;
+};
+
+/**
+ * Resolve and download a skill from ClawHub. Returns the SKILL.md content +
+ * any sub-files (sub-skills, references/, scripts/) up to size budgets.
+ *
+ * Note: the metadata endpoint requires `owner` to be passed; the download
+ * endpoint only takes `slug` (slugs appear to be globally unique). If two
+ * authors publish the same slug ClawHub presumably disambiguates server-side.
+ */
+export const fetchSkillBundleFromClawHub = async (
+  owner: string,
+  slug: string,
+): Promise<ClawHubBundle> => {
+  const safeOwner = encodeURIComponent(owner);
+  const safeSlug = encodeURIComponent(slug);
+
+  // Step 1 — metadata (we need latestVersion.version for the download URL).
+  const metaResp = await fetch(`${CLAWHUB_BASE}/api/skill?owner=${safeOwner}&slug=${safeSlug}`);
+  if (!metaResp.ok) {
+    throw new Error(`ClawHub metadata fetch failed (${metaResp.status})`);
+  }
+  const meta = await metaResp.json();
+  const version = meta?.latestVersion?.version;
+  if (!version) {
+    throw new Error('ClawHub metadata has no latestVersion.version');
+  }
+
+  // Step 2 — download zip.
+  const dlResp = await fetch(`${CLAWHUB_BASE}/api/v1/download?slug=${safeSlug}&version=${encodeURIComponent(version)}`);
+  if (!dlResp.ok) {
+    throw new Error(`ClawHub download failed (${dlResp.status})`);
+  }
+  const ab = await dlResp.arrayBuffer();
+  const buf = Buffer.from(ab);
+
+  // Step 3 — unzip. adm-zip is sync but bundles are tiny (<<100KB typical).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip(buf);
+  const entries = zip.getEntries();
+
+  let content = '';
+  const extraFiles: SkillFile[] = [];
+  let totalBytes = 0;
+  for (const e of entries) {
+    if (e.isDirectory) continue;
+    const name: string = e.entryName;
+    // Skip dotfiles + LICENSE/README (parallel to bundled-skill collectExtraFiles).
+    if (name.startsWith('.') || name.split('/').some((seg: string) => seg.startsWith('.'))) continue;
+    if (name === 'LICENSE' || name === 'README.md') continue;
+    if (e.header.size > PER_FILE_BYTES) continue;
+
+    if (name === 'SKILL.md') {
+      content = zip.readAsText(e);
+      continue;
+    }
+    if (totalBytes + e.header.size > TOTAL_BUNDLE_BYTES) continue;
+    extraFiles.push({ path: name, content: zip.readAsText(e) });
+    totalBytes += e.header.size;
+  }
+  if (!content) {
+    throw new Error('ClawHub zip had no SKILL.md');
+  }
+  return {
+    content,
+    extraFiles,
+    resolvedUrl: `clawhub:${owner}/${slug}@${version}`,
+    version,
+  };
+};
+
 export const fetchSkillContentFromSource = async (sourceUrl: string): Promise<FetchSkillContentResult> => {
   if (!sourceUrl) return { content: '', resolvedUrl: sourceUrl };
   const resolvedUrl = toRawGitHubUrl(sourceUrl);
@@ -268,6 +371,8 @@ export default {
   loadCatalog,
   fetchSkillContentFromSource,
   fetchSkillDirectoryFiles,
+  fetchSkillBundleFromClawHub,
+  parseLegacyOpenclawSkillsUrl,
   getLastRefreshedAt,
   invalidateCache,
 };

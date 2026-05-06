@@ -24,7 +24,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import PodAssetService from './podAssetService';
-import { fetchSkillContentFromSource } from './skillsCatalogService';
+import {
+  fetchSkillContentFromSource,
+  fetchSkillBundleFromClawHub,
+  parseLegacyOpenclawSkillsUrl,
+} from './skillsCatalogService';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const BUNDLED_SKILLS_DIR = path.join(REPO_ROOT, 'commonly-bundled-skills');
@@ -47,15 +51,8 @@ interface CatalogEntry {
 
 let catalogCache: Map<string, CatalogEntry> | null = null;
 
-// Catalog sourceUrl prefixes that are known-dead (return 404 across the board).
-// See `resolveSkillContent` and the `project-skills-catalog-dead-source.md`
-// memory for context. Add to this list if other upstream skill repos die.
-const DEAD_SOURCE_PREFIXES = [
-  'https://github.com/openclaw/skills/',
-];
-
 // Per-process dedup so we warn once per skillId, not per reprovisioned pod.
-const warnedDeadSourceFor = new Set<string>();
+const warnedClawhubFailFor = new Set<string>();
 
 const loadCatalog = async (): Promise<Map<string, CatalogEntry>> => {
   if (catalogCache) return catalogCache;
@@ -230,19 +227,33 @@ const resolveSkillContent = async (
     );
     return null;
   }
-  // Short-circuit known-dead upstream sources. The public github.com/openclaw/skills
-  // repo returned 404 across the board on 2026-05-06 (renamed or made private),
-  // and every catalog entry pointing there is unfetchable. Without this guard
-  // each reprovision spends N HTTPS round-trips on guaranteed 404s and clutters
-  // logs. See `project-skills-catalog-dead-source.md` memory.
-  if (DEAD_SOURCE_PREFIXES.some((p) => entry.sourceUrl!.startsWith(p))) {
-    if (!warnedDeadSourceFor.has(skillId)) {
-      console.warn(
-        `[presetSkillsAutoImport] skill '${skillId}' references dead upstream (${entry.sourceUrl}); bundle locally to enable`,
-      );
-      warnedDeadSourceFor.add(skillId);
+  // Rewrite dead `github.com/openclaw/skills/...` URLs to ClawHub fetches.
+  // The public openclaw/skills repo went 404 in early May 2026; the same
+  // skills are served at clawhub.ai (which the awesome-openclaw-skills
+  // README explicitly cites as the canonical registry). The legacy URL
+  // structure encodes owner+slug, which is exactly what ClawHub needs.
+  const clawhubCoords = parseLegacyOpenclawSkillsUrl(entry.sourceUrl);
+  if (clawhubCoords) {
+    try {
+      const bundle = await fetchSkillBundleFromClawHub(clawhubCoords.owner, clawhubCoords.slug);
+      return {
+        id: skillId,
+        content: bundle.content,
+        sourceUrl: bundle.resolvedUrl,
+        license: typeof entry.license === 'string' ? entry.license : entry.license?.name,
+        description: entry.description,
+        tags: entry.tags,
+        extraFiles: bundle.extraFiles.length > 0 ? bundle.extraFiles : undefined,
+      };
+    } catch (err) {
+      if (!warnedClawhubFailFor.has(skillId)) {
+        console.warn(
+          `[presetSkillsAutoImport] ClawHub fetch failed for '${skillId}' (${clawhubCoords.owner}/${clawhubCoords.slug}): ${(err as Error).message}`,
+        );
+        warnedClawhubFailFor.add(skillId);
+      }
+      return null;
     }
-    return null;
   }
   try {
     const fetched = await fetchSkillContentFromSource(entry.sourceUrl);
