@@ -466,6 +466,10 @@ const DocxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
   }, [url]);
   if (urlLoading || busy) return <PreviewBox><PreviewMute>Rendering Word document…</PreviewMute></PreviewBox>;
   if (error) return <PreviewBox><PreviewMute>Could not preview: {error}</PreviewMute></PreviewBox>;
+  // mammoth returns "" (not null) when the docx body has no paragraphs/runs,
+  // so html=="" is the empty-document signal. Surface a placeholder rather
+  // than rendering nothing — matches the XlsxPreview empty-sheet UX.
+  if (html === '') return <PreviewBox><PreviewMute>Empty document</PreviewMute></PreviewBox>;
   if (!html) return null;
   return (
     <PreviewBox>
