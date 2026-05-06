@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import Papa from 'papaparse';
 import { useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
@@ -365,12 +366,16 @@ const CsvPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
   if (loading) return <PreviewBox><PreviewMute>Loading CSV…</PreviewMute></PreviewBox>;
   if (error) return <PreviewBox><PreviewMute>Could not load: {error}</PreviewMute></PreviewBox>;
   if (!text) return null;
-  // Naive CSV split — handles unquoted demo data. Real RFC4180 parsing is
-  // out of scope; truncate display to 20 rows to keep the inspector usable.
-  const lines = text.split(/\r?\n/).filter((l) => l.length > 0).slice(0, 21);
-  if (lines.length === 0) return <PreviewBox><PreviewMute>Empty file</PreviewMute></PreviewBox>;
-  const rows = lines.map((line) => line.split(',').map((c) => c.trim()));
-  const [headerRow, ...bodyRows] = rows;
+  // RFC 4180 parsing via papaparse — handles quoted commas, escaped quotes,
+  // and multi-line cells. The hand-roll we shipped previously broke on real
+  // spreadsheet exports.
+  const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
+  const rows = parsed.data;
+  if (rows.length === 0) return <PreviewBox><PreviewMute>Empty file</PreviewMute></PreviewBox>;
+  const PREVIEW_ROW_CAP = 20;
+  const [headerRow, ...allBodyRows] = rows;
+  const bodyRows = allBodyRows.slice(0, PREVIEW_ROW_CAP);
+  const moreRows = Math.max(0, allBodyRows.length - PREVIEW_ROW_CAP);
   return (
     <PreviewBox>
       <div style={{ maxHeight: 360, overflow: 'auto' }}>
@@ -393,7 +398,67 @@ const CsvPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
           </tbody>
         </table>
       </div>
-      {(truncated || lines.length > 20) && <PreviewMute>Preview limited to first 20 rows. Click Open for the full file.</PreviewMute>}
+      {(truncated || moreRows > 0) && (
+        <PreviewMute>
+          {truncated
+            ? 'Preview truncated at 200 KB. Click Open for the full file.'
+            : `${moreRows} more row${moreRows === 1 ? '' : 's'} not shown. Click Open for the full file.`}
+        </PreviewMute>
+      )}
+    </PreviewBox>
+  );
+};
+
+// Word .docx → HTML via mammoth (~200 KB, fully client-side). Lazy-load so
+// inspectors that never see a Word file don't pay the bundle cost. Format
+// loss is acceptable for preview — mammoth produces clean semantic HTML
+// (headings, lists, tables, bold/italic) and skips rare inline shapes. For
+// pixel-faithful render the user clicks Open and uses Word / Office Online.
+const DocxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { url, loading: urlLoading } = useSignedFileUrl(artifact.fileName);
+  const [html, setHtml] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!url) return;
+    let cancelled = false;
+    setBusy(true); setError(null); setHtml(null);
+    (async () => {
+      try {
+        const [{ default: mammoth }, ab] = await Promise.all([
+          import('mammoth/mammoth.browser'),
+          fetch(url).then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.arrayBuffer();
+          }),
+        ]);
+        if (cancelled) return;
+        const result = await mammoth.convertToHtml({ arrayBuffer: ab });
+        if (cancelled) return;
+        setHtml(result.value || '');
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Could not load document');
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [url]);
+  if (urlLoading || busy) return <PreviewBox><PreviewMute>Rendering Word document…</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>Could not preview: {error}</PreviewMute></PreviewBox>;
+  if (!html) return null;
+  return (
+    <PreviewBox>
+      <div
+        className="v2-msg__content"
+        style={{ padding: '14px 16px', maxHeight: 480, overflow: 'auto', fontSize: 13, lineHeight: 1.55 }}
+        // mammoth output is sanitized HTML produced from a binary docx —
+        // not user-controlled markup. Same trust model as the docx itself,
+        // which was uploaded by an authenticated pod member or agent.
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </PreviewBox>
   );
 };
@@ -420,7 +485,8 @@ const ArtifactPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) 
     if (kind === 'txt') return <TextPreview artifact={artifact} />;
     if (kind === 'json') return <TextPreview artifact={artifact} pretty />;
     if (kind === 'csv') return <CsvPreview artifact={artifact} />;
-    return null; // office, archive, unknown — Open button only
+    if (kind === 'docx') return <DocxPreview artifact={artifact} />;
+    return null; // doc / xls / xlsx / ppt / pptx / odt / ods / odp / zip — Open only
   }
   // URL artifacts — embed where the vendor allows iframe.
   const embed = embedUrlFor(kind, artifact.url);
