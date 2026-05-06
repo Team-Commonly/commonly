@@ -940,16 +940,20 @@ const syncOpenClawSkills = async ({
   // constant-size regardless of bundle content.
   const manifest = Buffer.from(JSON.stringify(files), 'utf8').toString('base64');
 
+  const readerPath = `/tmp/commonly-skills-reader-${accountId}.js`;
   const script = [
     'set -eu',
     `rm -rf "${skillsDir}"`,
     `mkdir -p "${skillsDir}"`,
     `printf '%s' '${manifest}' | base64 -d > "${manifestPath}"`,
-    `node - "${manifestPath}" <<'NODE'`,
+    // Write the reader to a temp file via heredoc, then run it. Node v22+
+    // doesn't accept `node - <args>` (treats `-` as a literal filename, opens
+    // ENOENT). Writing to a tmp .js file sidesteps that incompatibility.
+    `cat > "${readerPath}" <<'NODE'`,
     'const fs = require("fs");',
     'const path = require("path");',
     `const rootDir = ${JSON.stringify(skillsDir)};`,
-    'const manifestPath = process.argv[1];',
+    'const manifestPath = process.argv[2];',
     'const raw = fs.readFileSync(manifestPath, "utf8");',
     'const entries = JSON.parse(raw);',
     'for (const entry of entries) {',
@@ -964,7 +968,8 @@ const syncOpenClawSkills = async ({
     '  }',
     '}',
     'NODE',
-    `rm -f "${manifestPath}"`,
+    `node "${readerPath}" "${manifestPath}"`,
+    `rm -f "${manifestPath}" "${readerPath}"`,
     // Copy skills from enabled extension skill dirs (e.g. /app/extensions/acpx/skills/acp-router)
     // Only copies if the extension dir exists AND the skill is not already written by the manifest.
     'for ext_skill_dir in /app/extensions/acpx/skills/*/; do',
