@@ -463,6 +463,92 @@ const DocxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
   );
 };
 
+// Excel .xlsx → HTML via SheetJS (~600KB, lazy-loaded). Renders the first
+// sheet by default with a tab strip when the workbook has multiple sheets.
+// SheetJS produces a <table> for each sheet; we wrap it in our scroll
+// container and add light styling so it doesn't dump unstyled rows.
+const XlsxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { url, loading: urlLoading } = useSignedFileUrl(artifact.fileName);
+  const [sheets, setSheets] = useState<{ name: string; html: string }[] | null>(null);
+  const [activeSheet, setActiveSheet] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!url) return;
+    let cancelled = false;
+    setBusy(true); setError(null); setSheets(null); setActiveSheet(0);
+    (async () => {
+      try {
+        const [XLSX, ab] = await Promise.all([
+          import('xlsx'),
+          fetch(url).then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.arrayBuffer();
+          }),
+        ]);
+        if (cancelled) return;
+        const wb = XLSX.read(ab, { type: 'array' });
+        const out = wb.SheetNames.map((name) => ({
+          name,
+          html: XLSX.utils.sheet_to_html(wb.Sheets[name], { header: '', footer: '' }),
+        }));
+        if (cancelled) return;
+        setSheets(out);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Could not load workbook');
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [url]);
+  if (urlLoading || busy) return <PreviewBox><PreviewMute>Rendering Excel workbook…</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>Could not preview: {error}</PreviewMute></PreviewBox>;
+  if (!sheets || sheets.length === 0) return null;
+  const current = sheets[Math.min(activeSheet, sheets.length - 1)];
+  return (
+    <PreviewBox>
+      {sheets.length > 1 && (
+        <div style={{
+          display: 'flex', gap: 4, padding: '8px 10px',
+          borderBottom: '1px solid var(--v2-border)',
+          background: 'var(--v2-surface-subtle, #fafafa)',
+          overflowX: 'auto',
+        }}>
+          {sheets.map((s, i) => (
+            <button
+              key={s.name}
+              type="button"
+              onClick={() => setActiveSheet(i)}
+              style={{
+                padding: '4px 10px', fontSize: 12, border: 'none',
+                background: i === activeSheet ? 'var(--v2-surface)' : 'transparent',
+                borderRadius: 4, cursor: 'pointer',
+                fontWeight: i === activeSheet ? 600 : 400,
+              }}
+            >{s.name}</button>
+          ))}
+        </div>
+      )}
+      <div
+        style={{ maxHeight: 440, overflow: 'auto', padding: '10px 12px', fontSize: 12 }}
+        // SheetJS sheet_to_html produces a sanitized <table>...</table> from a
+        // binary xlsx. Same trust model as the docx — uploaded by an
+        // authenticated pod member or agent. We add minimal CSS via the
+        // wrapper to give cells some breathing room without bloating output.
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{
+          __html: current.html.replace(
+            '<table',
+            '<table style="border-collapse:collapse;width:100%" border="1" cellpadding="6"',
+          ),
+        }}
+      />
+    </PreviewBox>
+  );
+};
+
 const EmbedPreview: React.FC<{ src: string; title: string; allow?: string }> = ({ src, title, allow }) => (
   <PreviewBox>
     <iframe
@@ -486,7 +572,8 @@ const ArtifactPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) 
     if (kind === 'json') return <TextPreview artifact={artifact} pretty />;
     if (kind === 'csv') return <CsvPreview artifact={artifact} />;
     if (kind === 'docx') return <DocxPreview artifact={artifact} />;
-    return null; // doc / xls / xlsx / ppt / pptx / odt / ods / odp / zip — Open only
+    if (kind === 'xlsx') return <XlsxPreview artifact={artifact} />;
+    return null; // doc / xls / ppt / pptx / odt / ods / odp / zip — Open only
   }
   // URL artifacts — embed where the vendor allows iframe.
   const embed = embedUrlFor(kind, artifact.url);
