@@ -622,7 +622,8 @@ const ArtifactPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) 
     if (kind === 'csv') return <CsvPreview artifact={artifact} />;
     if (kind === 'docx') return <DocxPreview artifact={artifact} />;
     if (kind === 'xlsx') return <XlsxPreview artifact={artifact} />;
-    return null; // doc / xls / ppt / pptx / odt / ods / odp / zip — Open only
+    if (kind === 'pptx') return <PptxPreview artifact={artifact} />;
+    return null; // doc / xls / ppt / odt / ods / odp / zip — Open only
   }
   // URL artifacts — embed where the vendor allows iframe.
   const embed = embedUrlFor(kind, artifact.url);
