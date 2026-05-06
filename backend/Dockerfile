@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     curl -fsSL "${REL}/${ASSET}" -o /usr/local/bin/officecli && \
     curl -fsSL "${REL}/SHA256SUMS" -o /tmp/officecli-SHA256SUMS && \
     ( cd /usr/local/bin && \
-      EXPECTED="$(grep \" ${ASSET}\$\" /tmp/officecli-SHA256SUMS | awk '{print $1}')" && \
+      EXPECTED="$(awk -v a="${ASSET}" '$2==a {print $1}' /tmp/officecli-SHA256SUMS)" && \
       if [ -z "$EXPECTED" ]; then echo "OfficeCLI SHA256 not found for ${ASSET}" >&2; exit 1; fi && \
       echo "${EXPECTED}  officecli" | sha256sum -c - ) && \
     rm -f /tmp/officecli-SHA256SUMS && \
