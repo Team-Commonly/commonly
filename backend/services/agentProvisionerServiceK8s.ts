@@ -7,6 +7,9 @@ export {};
 
 const k8s = require('@kubernetes/client-node');
 const stream = require('stream');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('./podAssetService');
 const GlobalModelConfigService = require('./globalModelConfigService');
@@ -208,47 +211,59 @@ const execInPod = async ({
   stdout.on('data', (chunk: any) => { out += chunk.toString(); });
   stderr.on('data', (chunk: any) => { err += chunk.toString(); });
 
-  // When the caller supplies stdin payload, pipe it through a Readable so we
-  // can stream large payloads (e.g. skill manifests with bundled extraFiles)
-  // without exceeding the kubectl exec ARG_MAX limit on the command argv.
-  // Use Readable.from so the stream auto-ends after emitting the buffer —
-  // this triggers the WebSocket close frame on the stdin channel, which the
-  // remote `cat > file` (or any reader) needs to see EOF and finish.
+  // When the caller supplies stdin payload, write it to a tmp file and pass
+  // an fs.ReadStream as stdin. This pattern matches @kubernetes/client-node's
+  // own Cp.cpToPod implementation, which relies on the OS-level EOF semantics
+  // of file streams to trigger the WebSocket stdin-close frame.
+  //
+  // Earlier attempts using stream.Readable.from([buf]) or PassThrough.end(buf)
+  // hung the remote `cat > file` indefinitely — the stdin EOF never reached
+  // the websocket close frame in client-node v0.21.0. File streams work.
   let stdinStream: any = null;
+  let stdinTmpPath: string | null = null;
   if (stdin != null) {
     const buf = Buffer.isBuffer(stdin) ? stdin : Buffer.from(String(stdin), 'utf8');
-    stdinStream = stream.Readable.from([buf]);
+    stdinTmpPath = path.join(os.tmpdir(), `commonly-exec-stdin-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    fs.writeFileSync(stdinTmpPath, buf);
+    stdinStream = fs.createReadStream(stdinTmpPath);
   }
 
-  await new Promise<void>((resolve, reject) => {
-    stdout.on('error', reject);
-    stderr.on('error', reject);
-    k8sExec.exec(
-      NAMESPACE,
-      podName,
-      containerName,
-      command,
-      stdout,
-      stderr,
-      stdinStream,
-      false,
-      (status: any) => {
-        const success = status?.status === 'Success' || !status || !status?.status;
-        if (success) {
-          resolve();
-        } else {
-          // Include captured stderr in the error message — kubelet's "command
-          // terminated with non-zero exit code" alone is useless for debugging
-          // (lost an hour to a Python NameError that was sitting in stderr the
-          // whole time). Truncate to keep log lines reasonable.
-          const stderrTail = err.trim().slice(-2000);
-          const baseMsg = status?.message || `Pod exec failed with status: ${status?.status}`;
-          const msg = stderrTail ? `${baseMsg}\nstderr: ${stderrTail}` : baseMsg;
-          reject(new Error(msg));
-        }
-      },
-    ).catch(reject);
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      stdout.on('error', reject);
+      stderr.on('error', reject);
+      k8sExec.exec(
+        NAMESPACE,
+        podName,
+        containerName,
+        command,
+        stdout,
+        stderr,
+        stdinStream,
+        false,
+        (status: any) => {
+          const success = status?.status === 'Success' || !status || !status?.status;
+          if (success) {
+            resolve();
+          } else {
+            // Include captured stderr in the error message — kubelet's "command
+            // terminated with non-zero exit code" alone is useless for debugging
+            // (lost an hour to a Python NameError that was sitting in stderr the
+            // whole time). Truncate to keep log lines reasonable.
+            const stderrTail = err.trim().slice(-2000);
+            const baseMsg = status?.message || `Pod exec failed with status: ${status?.status}`;
+            const msg = stderrTail ? `${baseMsg}\nstderr: ${stderrTail}` : baseMsg;
+            reject(new Error(msg));
+          }
+        },
+      ).catch(reject);
+    });
+  } finally {
+    // Clean up the stdin tmp file regardless of success or failure.
+    if (stdinTmpPath) {
+      try { fs.unlinkSync(stdinTmpPath); } catch { /* best-effort */ }
+    }
+  }
 
   return { stdout: out, stderr: err };
 };
