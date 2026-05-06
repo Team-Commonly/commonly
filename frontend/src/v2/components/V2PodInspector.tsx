@@ -425,7 +425,7 @@ const DocxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
     setBusy(true); setError(null); setHtml(null);
     (async () => {
       try {
-        const [{ default: mammoth }, ab] = await Promise.all([
+        const [mod, ab] = await Promise.all([
           import('mammoth/mammoth.browser'),
           fetch(url).then((r) => {
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -433,7 +433,25 @@ const DocxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
           }),
         ]);
         if (cancelled) return;
-        const result = await mammoth.convertToHtml({ arrayBuffer: ab });
+        // mammoth.browser is a UMD module. Vite's CJS interop wraps it
+        // inconsistently — sometimes the API lives at `mod.default`,
+        // sometimes at a single-letter chunk-export like `mod.m`. Walk
+        // through known shapes until we find one with `convertToHtml`.
+        type MammothLib = { convertToHtml: (opts: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }> };
+        const lib = ((): MammothLib => {
+          const candidates: unknown[] = [
+            (mod as { default?: unknown }).default,
+            ...Object.values(mod as Record<string, unknown>),
+            mod,
+          ];
+          for (const c of candidates) {
+            if (c && typeof (c as Partial<MammothLib>).convertToHtml === 'function') {
+              return c as MammothLib;
+            }
+          }
+          throw new Error('mammoth module shape unrecognized');
+        })();
+        const result = await lib.convertToHtml({ arrayBuffer: ab });
         if (cancelled) return;
         setHtml(result.value || '');
       } catch (e) {
