@@ -47,6 +47,16 @@ interface CatalogEntry {
 
 let catalogCache: Map<string, CatalogEntry> | null = null;
 
+// Catalog sourceUrl prefixes that are known-dead (return 404 across the board).
+// See `resolveSkillContent` and the `project-skills-catalog-dead-source.md`
+// memory for context. Add to this list if other upstream skill repos die.
+const DEAD_SOURCE_PREFIXES = [
+  'https://github.com/openclaw/skills/',
+];
+
+// Per-process dedup so we warn once per skillId, not per reprovisioned pod.
+const warnedDeadSourceFor = new Set<string>();
+
 const loadCatalog = async (): Promise<Map<string, CatalogEntry>> => {
   if (catalogCache) return catalogCache;
   try {
@@ -218,6 +228,20 @@ const resolveSkillContent = async (
     console.warn(
       `[presetSkillsAutoImport] skill '${skillId}' has no inline content and no sourceUrl — skipping`,
     );
+    return null;
+  }
+  // Short-circuit known-dead upstream sources. The public github.com/openclaw/skills
+  // repo returned 404 across the board on 2026-05-06 (renamed or made private),
+  // and every catalog entry pointing there is unfetchable. Without this guard
+  // each reprovision spends N HTTPS round-trips on guaranteed 404s and clutters
+  // logs. See `project-skills-catalog-dead-source.md` memory.
+  if (DEAD_SOURCE_PREFIXES.some((p) => entry.sourceUrl!.startsWith(p))) {
+    if (!warnedDeadSourceFor.has(skillId)) {
+      console.warn(
+        `[presetSkillsAutoImport] skill '${skillId}' references dead upstream (${entry.sourceUrl}); bundle locally to enable`,
+      );
+      warnedDeadSourceFor.add(skillId);
+    }
     return null;
   }
   try {
