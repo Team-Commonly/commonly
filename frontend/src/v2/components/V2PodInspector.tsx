@@ -8,6 +8,7 @@ import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
+import getApiBaseUrl from '../../utils/apiBaseUrl';
 import type { InspectorView } from './V2Layout';
 
 interface V2PodInspectorProps {
@@ -612,7 +613,7 @@ const PptxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
     setBusy(true); setError(null); setHtml(null);
     (async () => {
       try {
-        const r = await fetch(`/api/uploads/${encodeURIComponent(artifact.fileName!)}/preview-pptx-html`);
+        const r = await fetch(`${getApiBaseUrl()}/api/uploads/${encodeURIComponent(artifact.fileName!)}/preview-pptx-html`);
         if (cancelled) return;
         if (!r.ok) {
           // Surface a useful error from the JSON body if available
