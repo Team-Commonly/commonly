@@ -196,9 +196,23 @@ const handleUpload = async (
     });
     await newFile.save();
 
-    const { protocol } = req;
+    // Cloudflare Tunnel doesn't forward a reliable X-Forwarded-Proto, so
+    // `app.set('trust proxy')` alone leaves req.protocol stuck at 'http'
+    // for the cluster-internal hop. Detect the public scheme from explicit
+    // headers Cloudflare DOES send (cf-visitor.scheme) before falling back
+    // to the connection protocol. The downstream effect of getting this
+    // wrong is the URL we emit landing as `http://` and the browser firing
+    // a Mixed Content warning on every avatar/upload load.
+    const cfVisitor = req.get?.('cf-visitor');
+    let scheme = req.get?.('x-forwarded-proto') || req.protocol || 'http';
+    if (cfVisitor) {
+      try {
+        const parsed = JSON.parse(cfVisitor);
+        if (parsed?.scheme) scheme = parsed.scheme;
+      } catch { /* ignore malformed cf-visitor */ }
+    }
     const host = req.get?.('host');
-    const url = `${protocol}://${host}/api/uploads/${fileName}`;
+    const url = `${scheme}://${host}/api/uploads/${fileName}`;
 
     res.json({
       url,
