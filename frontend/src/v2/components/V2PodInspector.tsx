@@ -627,7 +627,16 @@ const PptxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
         }
         const text = await r.text();
         if (cancelled) return;
-        setHtml(text);
+        // Detect zero-slide deck: officecli's renderer wraps the document in
+        // <div class="slide">N times. If there are no slide divs, the deck
+        // is empty (e.g. <p:sldIdLst/>) — show the parity placeholder rather
+        // than rendering the empty canvas with "1 / 0" pagination.
+        const slideCount = (text.match(/<div\s+class="slide"/g) || []).length;
+        if (slideCount === 0) {
+          setHtml('');
+        } else {
+          setHtml(text);
+        }
       } catch (e) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : 'Could not render preview');
@@ -639,6 +648,9 @@ const PptxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
   }, [artifact.fileName]);
   if (busy) return <PreviewBox><PreviewMute>Rendering PowerPoint deck…</PreviewMute></PreviewBox>;
   if (error) return <PreviewBox><PreviewMute>Could not preview: {error}</PreviewMute></PreviewBox>;
+  // Empty string == zero-slide deck (set above); render the same placeholder
+  // shape DocxPreview/XlsxPreview use for genuinely-empty deliverables.
+  if (html === '') return <PreviewBox><PreviewMute>Empty deck</PreviewMute></PreviewBox>;
   if (!html) return null;
   return (
     <PreviewBox>
