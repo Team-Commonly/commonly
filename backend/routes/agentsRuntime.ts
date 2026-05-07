@@ -2993,6 +2993,8 @@ router.post('/asks/:requestId/respond', agentRuntimeAuth, phase4RateLimit, async
 // (field name `file`) so SDKs can stream from local disk without buffering.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { handleUpload, uploadSingle } = require('./uploads');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { validateOfficeContent } = require('../services/officeContentValidator');
 router.post('/pods/:podId/uploads', agentRuntimeAuth, uploadSingle('file'), async (req: any, res: any) => {
   try {
     const { podId } = req.params;
@@ -3001,6 +3003,25 @@ router.post('/pods/:podId/uploads', agentRuntimeAuth, uploadSingle('file'), asyn
     }
     if (!req.agentUser?._id) {
       return res.status(401).json({ message: 'Agent identity required' });
+    }
+    // Empty-office-stub guard. Agents using the bundled `officecli` skill
+    // sometimes call `create` + `close` without any `add` calls in between,
+    // producing a structurally-valid OOXML file with zero content
+    // (`<w:body/>`, `<sheetData/>`, `<p:sldIdLst/>`). The skill's Delivery
+    // Gate is supposed to catch this but the model routinely skips it.
+    // Refusing the upload at the kernel makes the gate unskippable —
+    // the agent gets a 422 with a clear hint and must populate before retry.
+    if (req.file?.buffer && req.file?.originalname) {
+      const check = validateOfficeContent(req.file.buffer, req.file.originalname);
+      if (!check.ok) {
+        return res.status(422).json({
+          message: 'Empty office deliverable rejected',
+          code: 'office_empty_stub',
+          format: check.format,
+          reason: check.reason,
+          hint: 'Add real content with `officecli add` (paragraphs / rows / slides) before uploading. Verify with `officecli view <file> text` first.',
+        });
+      }
     }
     // Pin the upload to this pod regardless of what was in the form body.
     req.body = { ...(req.body || {}), podId };
