@@ -7,6 +7,7 @@ import V2PodInspector from './V2PodInspector';
 import V2InviteModal from './V2InviteModal';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
+import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 
 interface V2LayoutProps {
   selectionMode?: 'auto' | 'param';
@@ -83,6 +84,16 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const [pendingOpenFileName, setPendingOpenFileName] = useState<string | null>(null);
   const openInspectorByFileName = useCallback((fileName: string) => {
     if (!fileName) return;
+    // Mobile: the inspector pane is `display:none` below 760px (v2.css media
+    // query), so routing the click into the artifact view would render
+    // nothing. Bypass the inspector entirely and open the file via signed
+    // URL in a new tab — same behavior the inspector's "Open" button uses.
+    if (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches) {
+      void getSignedAttachmentUrl(`/api/uploads/${fileName}`).then((signed) => {
+        if (signed) window.open(signed, '_blank', 'noopener,noreferrer');
+      });
+      return;
+    }
     setPendingOpenFileName(fileName);
     setInspectorCollapsed(false);
     writeInspectorCollapsed(false);
