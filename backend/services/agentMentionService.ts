@@ -327,16 +327,44 @@ const autoJoinAgentToPod = async (
   return true;
 };
 
+// Pod-context cue prepended to every chat.mention payload.content.
+//
+// Why this exists: agents producing deliverables in response to an
+// @mention sometimes complete the work (officecli merge, file in
+// workspace) but stall on the upload step because they can't find the
+// `podId` to pass to `commonly_attach_file`. Nova on 2026-05-07 made
+// the three template-merged office files but ended her reply with "I
+// don't have the Commonly podId tool context available here" because
+// the structured `podId` envelope field on the chat.mention event isn't
+// surfaced inline to the model — the model only sees `payload.content`.
+//
+// Same pattern as ADR-012 §9 DM frame: structured metadata isn't enough,
+// the cue has to be inline in the message body or the model
+// deprioritizes it. The frame here surfaces the podId + the two most
+// likely tools the agent will need (`commonly_attach_file` to post
+// deliverables, `commonly_read_attachment` to consume attachments
+// referenced in the conversation).
+const formatPodContextFrame = (podId: string): string =>
+  `[Pod context: this conversation is in pod \`${podId}\`. ` +
+  `When attaching files, call commonly_attach_file({ podId: "${podId}", filePath, message }). ` +
+  `When reading files referenced via [[upload:fileName|...]] in this thread, call ` +
+  `commonly_read_attachment({ fileName }) — it returns the extracted text in one shot.]`;
+
 const enqueueMentions = async ({
   podId,
   message,
   userId,
   username,
 }: EnqueueMentionsOptions): Promise<EnqueueResult> => {
-  const content = message?.content || message?.text || '';
+  const rawContent = message?.content || message?.text || '';
+  // Prepend the pod-context cue so the model sees the podId inline
+  // (envelope `podId` field alone is insufficient — see frame doc above).
+  // Keep the un-framed `rawContent` for the autoJoin path below where we
+  // need to scan the original mentions; the frame is added at enqueue time.
+  const content = `${formatPodContextFrame(podId)}\n\n${rawContent}`;
   const source = message?.source || 'chat';
   const eventType = source === 'thread' ? 'thread.mention' : 'chat.mention';
-  const rawMentions = extractMentions(content);
+  const rawMentions = extractMentions(rawContent);
   if (!podId || rawMentions.length === 0) {
     return { enqueued: [], skipped: [] };
   }
