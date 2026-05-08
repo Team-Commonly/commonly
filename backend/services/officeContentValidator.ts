@@ -59,7 +59,7 @@ const validateXlsx = (entries: any[]): OfficeValidationResult => {
   // emits when called with no add steps.
   for (const s of sheets) {
     const text = s.getData().toString('utf8');
-    if (/<row[\s>]/.test(text) || /<c\s/.test(text)) {
+    if (/<(?:[a-zA-Z]+:)?row[\s>]/.test(text) || /<(?:[a-zA-Z]+:)?c\s/.test(text)) {
       return { ok: true, format: 'xlsx' };
     }
   }
