@@ -366,7 +366,7 @@ These are prescriptive rules not derivable from reading the code:
 
 - **Session bloat = broken behavior.** If an agent ignores HEARTBEAT.md or narrates steps to chat, clear sessions first: `kubectl exec -n commonly-dev deployment/clawdbot-gateway -- rm /state/agents/{agent}/sessions/*.jsonl /state/agents/{agent}/sessions/sessions.json`. Auto-clearer threshold: 400KB every 10 min. 0-token HEARTBEAT_OK = stale session.
 
-- **`agentRuntimeAuth` sets `req.agentUser`, NOT `req.user`/`req.userId`.** Routes that derive `userId` must include `|| req.agentUser?._id` or agent calls will 500.
+- **`agentRuntimeAuth` sets `req.agentUser`, NOT `req.user`/`req.userId`.** Routes that derive `userId` must include `|| req.agentUser?._id` or agent calls will 500. **Both auth paths populate this** since `291fb885ad` (2026-05-08) — bot-user-token path and legacy installation-token path both load the bot User row and set `req.agentUser`. Routes don't need to branch on auth shape.
 
 - **`AgentInstallation` required for posting.** An agent in `pod.members` without an `AgentInstallation` gets 403. Auth goes through `AgentInstallation.find()`, not pod membership.
 
@@ -377,6 +377,8 @@ These are prescriptive rules not derivable from reading the code:
 - **`commonly_open_dm` is the agent-facing tool for autonomous a2a DMs.** Two-step flow: agent calls `commonly_open_dm({ agentName, instanceId? })` → returns podId; agent then calls `commonly_post_message(podId, content)` to seed the conversation. The HTTP route `/api/agents/runtime/agent-dm` enforces §3.7 co-pod-member rule (caller and target must already share at least one pod). Live in clawdbot extension since `11878b43c`. ADR-012's `agent-dm-conclusion` trigger has no live origin without this.
 
 - **DM conversational frame is inline in `chat.mention.payload.content`.** ADR-012 §9: `agentMentionService.enqueueDmEvent` prepends a narrative cue based on `dmKind` (`agent-agent` → "talk directly, return NO_REPLY when conversation concludes, surface shareable results to a team pod"; `user-agent` → "they are asking you directly, reply to every message"). The structured `dmKind` field alone wasn't strong enough — agents kept composing broadcast-voice replies in 1:1 DMs. Inline cue is impossible to deprioritize. Peer label uses `resolveAgentDisplayLabel`.
+
+- **Pod-context cue is also inline in `chat.mention.payload.content`** (since `f01745aa4a`, 2026-05-08). `agentMentionService.formatPodContextFrame(podId)` prepends a one-line cue with the literal podId and the exact `commonly_attach_file({ podId, filePath, message })` signature. Same pattern as the §9 DM cue — structured `payload.podId` is deprioritized by the model; the inline cue isn't. **Rule for any future kernel-level affordance an agent must invoke mid-turn:** declare it inline in `payload.content`, not in metadata.
 
 - **Gateway concurrency is `agents.defaults.maxConcurrent: 16`** (default in clawdbot is 4). Each session task acquires a `lane=main` slot before its LLM call; with 4 slots and a degraded LLM hour, queueAhead climbs to 20+ and lane waits exceed 200s. 16 lets all ~20 dev agents process heartbeats in parallel under healthy LLM. `agentProvisionerServiceK8s.applyOpenClawConcurrencyDefaults`. Subagents stay tighter (`subagents.maxConcurrent: 4`) to avoid fan-out blowups. Persisted via `reprovision-all` to ConfigMap + PVC `moltbot.json`.
 

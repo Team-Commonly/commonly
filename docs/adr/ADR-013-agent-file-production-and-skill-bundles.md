@@ -584,6 +584,42 @@ The validation helper `toRelativeWorkspacePath` exists at `_external/clawdbot/sr
 
 ---
 
+## Phase 0b findings (resolved 2026-05-08)
+
+End-to-end shipped through six iterations against a real dev agent (Nova). Five orthogonal kernel bugs surfaced only when an agent ran the full path autonomously; each was hidden behind the previous fix. All five are one-line or one-paragraph fixes, but the surface area touched four files across two repos.
+
+### (i) `chat.mention` payload needed an inline pod-context cue
+
+The agent received a mention with `payload.podId` set but routinely replied "I don't have a podId in my tool context" and refused to call `commonly_attach_file`. Same failure mode as ADR-012 §9 DM cue: structured metadata is deprioritized vs. inline narration. Fix `f01745aa4a`: `agentMentionService.formatPodContextFrame(podId)` prepends a one-line cue to `payload.content` with the literal podId and the exact tool signature. Pattern is now the standard for any kernel-level affordance an agent must use mid-turn — declare it inline, don't hide it in metadata.
+
+### (ii) `commonly_attach_file` couldn't find files outside `/workspace/default/`
+
+Tool resolved paths against `OPENCLAW_ACCOUNT_ID || "default"`. `OPENCLAW_ACCOUNT_ID` is never set anywhere — verified via `rg -F` across both repos. Agents create files under `/workspace/<instanceId>/out/`, not `/workspace/default/out/`. Fix `359d2570ff` (clawdbot SHA `18c2967c`): three-strategy resolver — explicit `accountId` param → env var → scan `/workspace/*/<filePath>` for unique match. Workspace scan is the load-bearing path in practice.
+
+### (iii) `agentRuntimeAuth` legacy installation-token path didn't populate `req.agentUser`
+
+Bot-user-token path set `req.agentUser`; legacy installation-token path only set installation fields. The upload route checked `req.agentUser?._id` for uploaderId derivation → 401 "Agent identity required" for any agent on a pre-2026-04 token issue. Fix `291fb885ad`: legacy path now also loads the bot User row (`User.findOne({isBot, botMetadata.agentName, botMetadata.instanceId})`) and sets `req.agentUser`. Both auth paths now populate the same fields — routes don't have to branch on auth shape. CLAUDE.md "Agent Runtime — Quick Rules" was updated in this pass.
+
+### (iv) XLSX template `commonly-data.xlsx` failed `officecli validate`
+
+Template was openpyxl-built (5189 bytes). Officecli's strict schema validator rejects font-child elements (bold/color) that openpyxl emits in `xl/styles.xml`. Fix `7344c35443`: rebuild via officecli native (`officecli create` + `officecli set` for each cell), 2764 bytes, no styling, validates clean. `build_templates.py` now has a NOTE block documenting the regenerate recipe inside a gateway pod. **Generalizable rule:** any OOXML template that needs to round-trip through `officecli validate` must be built via officecli, not openpyxl/python-docx/python-pptx — the format-spec subset officecli enforces is narrower than what those libraries emit.
+
+### (v) Empty-stub upload guard rejected officecli-built XLSX with real content
+
+Guard regex `/<row[\s>]/` matched openpyxl's prefix-via-default-namespace shape (`<row>`) but not officecli's prefix-on-element shape (`<x:row>`). Result: XLSX with 2 rows of real data was 422'd as "all worksheets empty". Fix `d7a68926d9`: regex made namespace-prefix-optional — `/<(?:[a-zA-Z]+:)?row[\s>]/` and `/<(?:[a-zA-Z]+:)?c\s/`. **Generalizable rule:** any OOXML content check at the kernel must accept both XML namespace shapes; both are valid emissions for the same logical element. The §8 load-bearing invariant about kernel-layer enforcement was validated, but its regex foundation needed broadening. Note: `validateDocx` (`<w:t`) and `validatePptx` (`<p:sldId`) already use namespace-prefixed regexes that match their files; only `validateXlsx` was broken.
+
+### What stays open
+
+- **Cosmetic:** `commonly_attach_file` emits `[[upload:...|kind|undefined]]` because `handleUpload` returns `{url, fileName, originalName, size, kind, podId}` — no `_id`. Frontend pill regex captures only 4 fields and ignores the trailing slot, so pills render and clicks work. Not worth a deploy cycle in isolation; fix when the 5th slot gets a real consumer (e.g. postId-based routing).
+
+### Phasing implications recap (post-0b)
+
+- **Phase 0b is shipped.** Closes the agent-file-production e2e: a dev agent can autonomously produce DOCX/XLSX/PPTX from the bundled templates and surface them as inline preview pills via a single mention.
+- **Phase 1+ is unblocked.** No carry-over bugs; no protocol changes needed downstream.
+- **Phasing total holds at ~7 PRs** — Phase 0b shipped as 5 commits, all small, no scope creep.
+
+---
+
 ## Open questions
 
 1. ~~Does `POST /api/skills/import` push the SKILL.md to the gateway PVC, or only register metadata?~~ **Resolved 2026-05-04 (Phase 0a).** Yes, import does push SKILL.md to the PVC via `syncOpenClawInstallationsForPodSkillChange` → `syncOpenClawSkills` → writes to `${WORKSPACE_ROOT}/${accountId}/skills/`. The path exists; it's the per-agent scoping inside that path that's missing — see Phase 0a (ii) finding.
