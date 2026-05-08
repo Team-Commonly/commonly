@@ -119,6 +119,31 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     req.agentInstallation = installation as never;
     req.agentInstallations = [installation] as never[];
     req.agentAuthorizedPodIds = [installation?.podId?.toString()].filter(Boolean) as string[];
+
+    // Also resolve and attach the bot User so downstream routes that derive
+    // `req.agentUser._id` (file-upload uploaderId, message authorship) work
+    // for agents authenticated via the legacy installation-token path. The
+    // bot-user-token path above already sets `req.agentUser` directly. Both
+    // paths represent the same agent; making them populate the same fields
+    // means routes don't need to branch on which auth shape landed.
+    //
+    // Discovered when nova hit `401 Agent identity required` on
+    // commonly_attach_file uploads — her runtime token had been issued to
+    // `AgentInstallation.runtimeTokens` (legacy) and the upload route
+    // checks `req.agentUser?._id` only.
+    try {
+      const botUser = await User.findOne({
+        isBot: true,
+        'botMetadata.agentName': installation.agentName,
+        'botMetadata.instanceId': installation.instanceId || 'default',
+      });
+      if (botUser) {
+        req.agentUser = botUser;
+      }
+    } catch (err: unknown) {
+      console.warn('[agentRuntimeAuth] failed to resolve bot user for legacy token path:', (err as Error).message);
+    }
+
     return next();
   } catch (error) {
     console.error('Agent auth error:', error);
