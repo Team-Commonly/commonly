@@ -2936,9 +2936,8 @@ Identify up to 3 items that are NEW (not in ScannedRepos) AND novel (not a cosme
 // deprioritize the inline narrative directive. The trailer below is part of
 // the file the model treats as authoritative ("Read your HEARTBEAT.md and
 // follow it exactly"), so the cycle write becomes a normal step in the
-// agent's loop. Append-only via `commonly_save_my_memory({sections:{cycles:
-// {append:{content:"…"}}}})`; whole-array overwrite is server-side rejected
-// (cycles_append_only).
+// agent's loop. Append-only via the dedicated `commonly_log_cycle` tool;
+// whole-array overwrite is server-side rejected (cycles_append_only).
 const CYCLES_REFLECTION_TRAILER = `
 
 ## Memory cycle reflection (always run JUST BEFORE returning HEARTBEAT_OK)
@@ -2950,54 +2949,43 @@ your own work across sessions.
 Call:
 
 \`\`\`
-commonly_save_my_memory({
-  sections: {
-    cycles: {
-      append: {
-        content: "<≤ 500 chars: what changed, what you decided, what you'd want to remember next cycle>"
-      }
-    }
-  }
+commonly_log_cycle({
+  content: "<≤ 500 chars: what changed, what you decided, what you'd want to remember next cycle>"
 })
 \`\`\`
 
 Rules:
-- One \`cycles.append\` call per heartbeat. Skip the call entirely if nothing
-  memorable happened (empty cycles are fine; don't write filler).
+- One \`commonly_log_cycle\` call per heartbeat. Skip the call entirely if
+  nothing memorable happened (empty cycles are fine; don't write filler).
 - Past cycle entries surface to you in the event payload's \`cyclesDigest\`
   field on every future event — they ARE read back. Writing is not wasted.
 - Keep takeaways concrete and specific ("seeded thread on AI safety post,
   3 replies queued") rather than generic ("did some work"). Specific
   takeaways compound into useful memory; generic ones become noise.
-- Append-only. \`cycles\` does NOT accept whole-array overwrites — use the
-  \`append\` shape exactly as shown.
+- Append-only. The kernel rejects whole-array overwrites with
+  \`cycles_append_only\`; use \`commonly_log_cycle\` for every write.
 - After this call (or skip), return \`HEARTBEAT_OK\`.
 `;
 
-// Defensive helper: would append the cycle-reflection trailer to a template.
+// Append the cycle-reflection trailer to a heartbeat template.
 //
-// **2026-05-04 ROLLBACK — currently a NO-OP.** The trailer instructs agents
-// to call `commonly_save_my_memory({sections:{cycles:{append:...}}})`, but no
-// openclaw extension tool with that name exists today — agents waste 3+
-// tool-call turns per heartbeat hunting for it before falling back to the
-// real `commonly_write_agent_memory`, which exhausts their turn budget and
-// causes them to skip DM responses. Verified on Nova: silent on Sam's "hey
-// Nova" 2026-05-04 06:01 UTC and "hey" 06:21 UTC, immediately after the
-// trailer rolled out via reprovision-all (Phase 2.J).
+// 2026-05-04: first attempt (PR #295) instructed agents to call
+// `commonly_save_my_memory({sections:{cycles:{append:...}}})`, but that tool
+// neither accepts the `cycles` section nor the nested `{sections:{...}}`
+// shape — agents wasted 3+ tool-call turns per heartbeat hunting for the
+// missing surface before falling back to `commonly_write_agent_memory`,
+// exhausting their turn budget and causing missed DM responses (Nova on
+// 2026-05-04). Helper was rolled back to a no-op in commit e4b1dd91ba /
+// PR #296 while the forward fix shipped.
 //
-// Forward fix path (separate branch): add `commonly_log_cycle(content,
-// podId?)` to the openclaw extension (Team-Commonly/openclaw fork), build
-// + push gateway image, then re-enable this helper to instruct agents to
-// call the new tool name. Until that lands, the helper returns the template
-// unchanged so HEARTBEAT.md reverts to its pre-Phase-2.J shape on the next
-// reprovision-all.
-//
-// The helper signature stays exported so the four call-sites in provision.ts
-// + reprovision.ts continue to compile without churn — flipping back to the
-// real implementation is a one-line change once the openclaw tool ships.
+// 2026-05-08: re-enabled. The forward fix added a dedicated
+// `commonly_log_cycle({content, podId?})` tool to the openclaw extension
+// (Team-Commonly/openclaw, bumped via _external/clawdbot submodule). The
+// trailer above now calls that tool directly — no nested shape, no missing
+// surface, append-only by construction.
 function withCyclesDirective(template: string | null | undefined): string {
   const t = typeof template === 'string' ? template : '';
-  return t;
+  return t + CYCLES_REFLECTION_TRAILER;
 }
 
 module.exports = { PRESET_DEFINITIONS, DEFAULT_BRANCH, withCyclesDirective };
