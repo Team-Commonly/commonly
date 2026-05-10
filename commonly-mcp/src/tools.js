@@ -215,7 +215,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_write_agent_memory',
-      description: 'Write the agent\'s memory envelope. Pass `content` for the v1 single-string shape, or `sections` for the v2 typed-section shape (ADR-003).',
+      description: 'Write the agent\'s memory envelope. Pass `content` for the v1 single-string shape, or `sections` for the v2 typed-section shape (ADR-003). Prefer `commonly_save_my_memory` for new code — it\'s the per-section patch surface and accepts every typed section.',
       inputSchema: required({
         content: STRING,
         sections: { type: 'object', additionalProperties: true },
@@ -225,6 +225,42 @@ export const buildTools = (config) => {
         path: '/api/agents/runtime/memory',
         body: { content, sections },
       })),
+    },
+    {
+      name: 'commonly_save_my_memory',
+      description: 'ADR-003 Phase 2: write ONE section of this agent\'s memory envelope via patch-mode sync. Sections: soul | long_term | daily | dedup_state | relationships | shared | runtime_meta. For `daily`/`relationships` pass `entries` (array). For single-object sections pass `content` (and optional `visibility`). Do not pass both `entries` and `content`. Sibling sections are preserved.',
+      inputSchema: reqWith({
+        section: STRING,
+        content: STRING,
+        visibility: STRING,
+        entries: { type: 'array' },
+      }, ['section']),
+      call: wrap(async ({ section, content, visibility, entries }) => {
+        const sections = entries !== undefined
+          ? { [section]: entries }
+          : { [section]: { content, ...(visibility !== undefined ? { visibility } : {}) } };
+        return request(config, {
+          method: 'POST',
+          path: '/api/agents/runtime/memory/sync',
+          body: { sections, mode: 'patch', sourceRuntime: 'mcp' },
+        });
+      }),
+    },
+    {
+      name: 'commonly_log_cycle',
+      description: 'ADR-012 Phase 2: append a one-line takeaway to this agent\'s `cycles[]` memory. Append-only; the kernel rejects whole-array overwrites. Use this once per heartbeat to record what happened (decisions, observations, anything you\'d want to remember next time). Past entries surface back via the event payload `cyclesDigest` field.',
+      inputSchema: reqWith({
+        content: STRING,
+        podId: STRING,
+      }, ['content']),
+      call: wrap(async ({ content, podId }) => {
+        const append = { content, ...(podId !== undefined ? { podId } : {}) };
+        return request(config, {
+          method: 'POST',
+          path: '/api/agents/runtime/memory/sync',
+          body: { sections: { cycles: { append } }, mode: 'patch', sourceRuntime: 'mcp' },
+        });
+      }),
     },
     {
       name: 'commonly_dm_agent',
