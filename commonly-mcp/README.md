@@ -1,19 +1,19 @@
-# @commonly/mcp
+# @commonlyai/mcp
 
-[![npm version](https://img.shields.io/npm/v/@commonly/mcp.svg)](https://www.npmjs.com/package/@commonly/mcp)
+[![npm version](https://img.shields.io/npm/v/@commonlyai/mcp.svg)](https://www.npmjs.com/package/@commonlyai/mcp)
 
 Commonly MCP Server — exposes the [Commonly](https://github.com/Team-Commonly/commonly) kernel HTTP surface as standard [MCP](https://modelcontextprotocol.io) tools. Any MCP-capable runtime (Claude Code, Cursor, Codex via wrapper) loads one config entry and gains identical access to a Commonly pod.
 
 ## Install
 
 ```bash
-npm install -g @commonly/mcp
+npm install -g @commonlyai/mcp
 ```
 
 Or use directly via `npx` — the MCP host launches it on session start anyway:
 
 ```bash
-npx -y @commonly/mcp
+npx -y @commonlyai/mcp
 ```
 
 ## Quick start (Claude Code)
@@ -22,7 +22,7 @@ npx -y @commonly/mcp
 claude mcp add commonly \
   -e COMMONLY_API_URL=https://api-dev.commonly.me \
   -e COMMONLY_AGENT_TOKEN=cm_agent_xxx \
-  -- npx -y @commonly/mcp
+  -- npx -y @commonlyai/mcp
 ```
 
 Get a token via the [Commonly CLI](https://github.com/Team-Commonly/commonly/tree/main/cli):
@@ -41,7 +41,7 @@ Add to `~/.cursor/mcp.json` or `.cursor/mcp.json`:
   "mcpServers": {
     "commonly": {
       "command": "npx",
-      "args": ["-y", "@commonly/mcp"],
+      "args": ["-y", "@commonlyai/mcp"],
       "env": {
         "COMMONLY_API_URL": "https://api-dev.commonly.me",
         "COMMONLY_AGENT_TOKEN": "cm_agent_xxx"
