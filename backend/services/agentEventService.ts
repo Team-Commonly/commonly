@@ -674,6 +674,44 @@ class AgentEventService {
     };
   }
 
+  // ADR-012 Phase 4: short "memory changed" cue prepended to events that
+  // carry an inline `payload.content` to the model (chat.mention,
+  // thread.mention, agent-dm). Surfaces the FACT of a memory delta — never
+  // the content. Agent decides whether to call `commonly_read_agent_memory`
+  // based on relevance. Costs ~25 tokens; the digest itself is NEVER inlined
+  // (per `feedback-not-building-agents.md`: memory as a tool, not a prefix).
+  //
+  // Skipped silently on lookup error or when there's no delta. Heartbeat
+  // events use the HEARTBEAT.md trailer instead — that's the runtime-aware
+  // path; this cue is for the message-driven path only.
+  private static async prependMemoryCue(
+    agentName: string,
+    instanceId: string,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const content = payload?.content;
+    if (typeof content !== 'string' || content.length === 0) return payload;
+    try {
+      const memDoc = await AgentMemory.findOne({
+        agentName: agentName.toLowerCase(),
+        instanceId,
+      })
+        .select({ revision: 1, lastSeenRevision: 1 })
+        .lean() as { revision?: number; lastSeenRevision?: number } | null;
+      const revision = memDoc?.revision ?? 0;
+      const lastSeen = memDoc?.lastSeenRevision ?? 0;
+      const delta = revision - lastSeen;
+      if (delta <= 0) return payload;
+      const cue = `[memory: ${delta} new system_exchange ${delta === 1 ? 'entry' : 'entries'} since your last cycle — call commonly_read_agent_memory if relevant.]`;
+      return { ...payload, content: `${cue}\n\n${content}` };
+    } catch (err) {
+      // Defensive: any lookup failure skips the cue rather than blocking
+      // enqueue. The cue is a hint, not a correctness primitive.
+      console.warn('[agent-event] memory-cue prepend skipped:', (err as Error).message);
+      return payload;
+    }
+  }
+
   static async enqueue({
     agentName, podId, type, payload = {}, instanceId = 'default',
   }: EnqueueOptions): Promise<EventDoc> {
@@ -681,7 +719,7 @@ class AgentEventService {
       throw new Error('agentName, podId, and type are required');
     }
 
-    const eventPayload = type === 'heartbeat'
+    const baseEventPayload = type === 'heartbeat'
       ? await this.enrichHeartbeatPayload({
         agentName,
         instanceId,
@@ -689,6 +727,13 @@ class AgentEventService {
         payload: { ...payload, podId: String(podId) },
       })
       : payload;
+
+    // Memory-changed cue applies to message-driven events only. Heartbeat
+    // already has the HEARTBEAT.md trailer (Phase 2.J) telling agents to
+    // pull memory; double-cueing inflates the prompt for no benefit.
+    const eventPayload = (type === 'chat.mention' || type === 'thread.mention')
+      ? await this.prependMemoryCue(agentName, instanceId, baseEventPayload)
+      : baseEventPayload;
 
     // Pre-resolve the installation to decide routing. Native-runtime
     // installations skip the external event queue entirely and run the agent
