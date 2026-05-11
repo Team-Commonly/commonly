@@ -120,7 +120,7 @@ fi
 # Posts a unique-timestamped @nova message, polls for a reply within 90s.
 ts=$(date +%s)
 marker="smoke-test-$ts"
-post_body=$(printf '{"content":"@nova smoke %s — please ack briefly"}' "$marker")
+post_body=$(printf '{"content":"@nova-demo smoke %s — please ack briefly"}' "$marker")
 http POST "/api/messages/$DEMO_POD" "$post_body"
 if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
   red mention-response "post HTTP=$HTTP_CODE"
