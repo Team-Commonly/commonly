@@ -100,6 +100,27 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
 
     try {
       const messages = await PGMessage.findByPodId(podId, parseInt(String(limit), 10), before);
+      // Sprint B5: attach reactions per message in one batched query
+      // (MessageReaction.listForMessages aggregates by GROUP BY).
+      // Falls through to `messages` unchanged on any reaction lookup error.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        const MessageReaction = require('../models/pg/MessageReaction').default;
+        const ids = (messages as Array<{ id?: string; _id?: string }>)
+          .map((m) => m.id || m._id)
+          .filter(Boolean);
+        if (ids.length > 0) {
+          const reactionsMap = await MessageReaction.listForMessages(ids, String(userId));
+          for (const m of messages as Array<{ id?: string; _id?: string; reactions?: unknown }>) {
+            const key = String(m.id || m._id || '');
+            m.reactions = reactionsMap.get(key) || [];
+          }
+        }
+      } catch (rxnErr) {
+        // Non-fatal: reactions are a render enhancement.
+        // eslint-disable-next-line no-console
+        console.warn('[messages] reaction enrichment skipped:', (rxnErr as Error).message);
+      }
       res.json(messages);
       return;
     } catch (pgErr) {

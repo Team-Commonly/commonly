@@ -12,6 +12,11 @@ const {
   createMessage,
   deleteMessage,
 } = require('../controllers/messageController');
+// eslint-disable-next-line global-require
+const {
+  addReaction,
+  removeReaction,
+} = require('../controllers/reactionController');
 
 interface RateLimitReq {
   ip?: string;
@@ -51,6 +56,29 @@ const router: ReturnType<typeof express.Router> = express.Router();
 router.get('/:podId', auth, getMessages);
 router.post('/:podId', sendMessageRateLimit, auth, createMessage);
 router.delete('/:id', auth, deleteMessage);
+
+// Sprint B5 — reactions. Lives under /:messageId/reactions so the
+// `:podId` route above doesn't shadow it (Express routes by order +
+// specificity). reactionRateLimit shares the same shape as the
+// send-message limiter; CodeQL recognises it inline on each route.
+const reactionRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: RateLimitReq) => {
+    const authHeader = req.get?.('authorization');
+    if (authHeader) {
+      return `rxn:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+    }
+    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  },
+  handler: (_req: unknown, res: RateLimitRes) => {
+    res.status(429).json({ msg: 'rate limit exceeded: 120 reactions per 60s' });
+  },
+});
+router.post('/:messageId/reactions', reactionRateLimit, auth, addReaction);
+router.delete('/:messageId/reactions/:emoji', reactionRateLimit, auth, removeReaction);
 
 // Backdate a message's `created_at`. Pod-creator-only (or message author);
 // no general-purpose user authorization for editing other people's chronology.

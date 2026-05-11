@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
@@ -6,6 +6,7 @@ import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { formatRelativeTime } from '../utils/grouping';
 import { useAuth } from '../../context/AuthContext';
+import { useV2Api } from '../hooks/useV2Api';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 
 // Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
@@ -275,9 +276,19 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
   return { headline: match[1], targetPodId: match[2] };
 };
 
+// Sprint B5: shared picker palette. 6 emojis chosen to span the common
+// reaction intents: agree / love / fire / brain / eyes / launch. Keep
+// small so the popover stays compact and doesn't overflow narrow chat
+// columns in mobile shells.
+const REACTION_PALETTE = ['👍', '❤️', '🔥', '🤔', '👀', '🚀'];
+
 const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile }) => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const api = useV2Api();
+  // Picker state per message. Open via "+ react"; close on first click
+  // (no need for outside-click handling — the picker hides after action).
+  const [pickerOpen, setPickerOpen] = useState(false);
   const rawUsername = message.user?.username || 'Unknown';
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
   const author = overriddenDisplay || rawUsername;
@@ -415,16 +426,97 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
             number={pr.number}
           />
         ))}
-        {reactions.length > 0 && (
-          <div className="v2-msg__reactions" aria-label="Reactions">
-            {reactions.map((r, idx) => (
-              <span key={`${r.emoji}-${idx}`} className="v2-msg__reaction" title={`${r.count} ${r.emoji}`}>
-                <span className="v2-msg__reaction-emoji">{r.emoji}</span>
-                <span className="v2-msg__reaction-count">{r.count}</span>
-              </span>
-            ))}
-          </div>
-        )}
+        {(() => {
+          // Sprint B5: real reactions come from message.reactions (server-
+          // aggregated `[{emoji, count, mine}]`). Legacy fixtures use the
+          // token-parsed `reactions` from parseReactions above. Real wins
+          // when present; tokens are the demo-recording stand-in.
+          const liveReactions = message.reactions;
+          const hasLive = Array.isArray(liveReactions);
+          const messageId = String(message.id || message._id || '');
+          const canInteract = hasLive && messageId && /^\d+$/.test(messageId);
+
+          const toggle = async (emoji: string, mine: boolean) => {
+            if (!canInteract) return;
+            try {
+              if (mine) {
+                await api.del(`/api/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`);
+              } else {
+                await api.post(`/api/messages/${messageId}/reactions`, { emoji });
+              }
+              // Optimistic update is unnecessary — the socket `messageReaction`
+              // event from the backend updates the message list in place.
+            } catch (err) {
+              // Defensive: ignore (likely 429 or 403); next list refresh corrects.
+              // eslint-disable-next-line no-console
+              console.warn('[reactions] toggle failed:', (err as Error).message);
+            } finally {
+              setPickerOpen(false);
+            }
+          };
+
+          if (hasLive && liveReactions!.length === 0 && !canInteract) {
+            // Token-fixture path with no parsed entries: render nothing.
+            if (reactions.length === 0) return null;
+          }
+
+          // Decide which list to render. If the server gave us a real
+          // reactions array (even empty) use it; else fall back to tokens.
+          const renderList = hasLive
+            ? liveReactions!
+            : reactions.map((r) => ({ emoji: r.emoji, count: r.count, mine: false }));
+
+          if (renderList.length === 0 && !canInteract) return null;
+
+          return (
+            <div className="v2-msg__reactions" aria-label="Reactions">
+              {renderList.map((r, idx) => (
+                <button
+                  key={`${r.emoji}-${idx}`}
+                  type="button"
+                  className={`v2-msg__reaction${r.mine ? ' v2-msg__reaction--mine' : ''}`}
+                  title={`${r.count} ${r.emoji}${r.mine ? ' (you)' : ''}`}
+                  onClick={() => toggle(r.emoji, !!r.mine)}
+                  disabled={!canInteract}
+                >
+                  <span className="v2-msg__reaction-emoji">{r.emoji}</span>
+                  <span className="v2-msg__reaction-count">{r.count}</span>
+                </button>
+              ))}
+              {canInteract && (
+                <span className="v2-msg__reaction-add-wrap">
+                  <button
+                    type="button"
+                    className="v2-msg__reaction-add"
+                    aria-label="Add reaction"
+                    onClick={() => setPickerOpen((v) => !v)}
+                  >
+                    +
+                  </button>
+                  {pickerOpen && (
+                    <span className="v2-msg__reaction-picker" role="menu">
+                      {REACTION_PALETTE.map((e) => {
+                        const existing = renderList.find((x) => x.emoji === e);
+                        const mine = !!existing?.mine;
+                        return (
+                          <button
+                            key={e}
+                            type="button"
+                            role="menuitem"
+                            className={`v2-msg__reaction-picker-item${mine ? ' v2-msg__reaction-picker-item--mine' : ''}`}
+                            onClick={() => toggle(e, mine)}
+                          >
+                            {e}
+                          </button>
+                        );
+                      })}
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

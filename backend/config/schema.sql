@@ -43,6 +43,19 @@ CREATE TABLE IF NOT EXISTS users (
 -- Migration: add is_bot column to existing tables (safe to run repeatedly)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT false;
 
+-- Sprint B5: message reactions. One row per (message, user, emoji) — a user
+-- can stack different emojis on the same message but each emoji is binary
+-- (toggle on/off). PG-only; Mongo fallback path doesn't get reactions in v1.
+CREATE TABLE IF NOT EXISTS message_reactions (
+  id SERIAL PRIMARY KEY,
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id VARCHAR(24) NOT NULL,
+  emoji VARCHAR(32) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (message_id, user_id, emoji)
+);
+CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_messages_pod_id ON messages(pod_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
