@@ -21,6 +21,10 @@ export interface V2Message {
     username?: string;
     profilePicture?: string | null;
   };
+  // Sprint B5: per-message reactions, aggregated server-side. Each entry
+  // is {emoji, count, mine}. Absent in legacy fixtures + on Mongo fallback;
+  // bubbles fall back to the token-parsed `[[reactions:...]]` shape if so.
+  reactions?: Array<{ emoji: string; count: number; mine: boolean }>;
 }
 
 export interface V2Agent {
@@ -195,9 +199,24 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         return chronologicalMessages([...prev, normalized]);
       });
     };
+    // Sprint B5: socket-driven reaction updates. Backend emits
+    // `messageReaction` with the new aggregated list after every add/remove
+    // by any user. We patch only the matching message's `reactions` array
+    // — no other state churn.
+    const handleReactionChange = (payload: { messageId: string; podId?: string; reactions: Array<{ emoji: string; count: number; mine: boolean }> }) => {
+      if (!payload || !payload.messageId) return;
+      if (payload.podId && payload.podId !== podId) return;
+      setMessages((prev) => prev.map((m) => (
+        String(m.id) === String(payload.messageId)
+          ? { ...m, reactions: payload.reactions }
+          : m
+      )));
+    };
     socket.on('newMessage', handleNewMessage);
+    socket.on('messageReaction', handleReactionChange);
     return () => {
       socket.off('newMessage', handleNewMessage);
+      socket.off('messageReaction', handleReactionChange);
       leavePod(podId);
     };
   }, [podId, socket, connected, joinPod, leavePod]);

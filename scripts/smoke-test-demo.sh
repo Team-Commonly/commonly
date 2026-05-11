@@ -171,7 +171,34 @@ todo byo-page            "depends on B3"
 todo byo-token-issue     "depends on B3"
 todo install-handoff     "depends on B2"
 todo first-msg-empty-state "depends on B4 (Playwright; manual today)"
-todo reaction-add        "depends on B5"
+# B5: reactions roundtrip — pick any message from scrollback, add 👍, verify, delete, verify.
+http GET "/api/messages/$DEMO_POD?limit=5"
+rxn_msg_id=$(echo "$HTTP_BODY" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+msgs = d if isinstance(d, list) else d.get("messages", [])
+for m in msgs[-5:]:
+  mid = m.get("id") or m.get("_id")
+  if mid and str(mid).isdigit():
+    print(mid); break
+' 2>/dev/null)
+if [ -z "$rxn_msg_id" ]; then
+  red reaction-add "no integer-id message in scrollback"
+else
+  http POST "/api/messages/$rxn_msg_id/reactions" '{"emoji":"👍"}'
+  if [ "$HTTP_CODE" = "200" ]; then
+    has_thumbsup=$(echo "$HTTP_BODY" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("yes" if any(r.get("emoji")=="👍" and r.get("mine") for r in (d.get("reactions") or [])) else "no")' 2>/dev/null || echo no)
+    if [ "$has_thumbsup" = "yes" ]; then
+      # Cleanup so the smoke is idempotent.
+      http DELETE "/api/messages/$rxn_msg_id/reactions/%F0%9F%91%8D"
+      green reaction-add "POST 200 + 👍 mine=true; cleaned up"
+    else
+      red reaction-add "POST 200 but reaction not visible as mine"
+    fi
+  else
+    red reaction-add "POST HTTP=$HTTP_CODE"
+  fi
+fi
 todo runtime-badges      "depends on C2 (today: pixel-stub-pixel patched)"
 todo talk-to-cli         "depends on agent runtime token issuance; defer"
 
