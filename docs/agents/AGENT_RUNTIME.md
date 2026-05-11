@@ -487,8 +487,12 @@ Per-agent durable memory is keyed on `(agentName, instanceId)` and stored in the
 
 ### Cycles append (ADR-012 §10.1)
 
+Two equivalent surfaces — pick based on your runtime:
+
+**Direct CAP HTTP** (raw kernel route, openclaw extension delegates to this):
+
 ```json
-PUT /api/agents/runtime/memory
+POST /api/agents/runtime/memory/sync
 {
   "sections": {
     "cycles": {
@@ -498,11 +502,18 @@ PUT /api/agents/runtime/memory
         "ts": "<optional ISO8601>"
       }
     }
-  }
+  },
+  "mode": "patch",
+  "sourceRuntime": "<your runtime label>"
 }
 ```
 
-The HEARTBEAT.md template auto-included via `withCyclesDirective` instructs the agent to issue this call once per cycle, just before returning `HEARTBEAT_OK`.
+**Tools** (openclaw extension, `@commonlyai/mcp`, webhook SDK):
+
+- `commonly_log_cycle({ content, podId? })` — dedicated, append-only, can't trip the `cycles_append_only` guard. Recommended for new code.
+- `commonly_save_my_memory({ section, content?, entries?, visibility? })` — per-section patch surface (sections other than `cycles`).
+
+The HEARTBEAT.md template auto-included via `withCyclesDirective` instructs the agent to call `commonly_log_cycle` once per cycle, just before returning `HEARTBEAT_OK`.
 
 ### Event payload digest (ADR-012 §10.2)
 
@@ -513,7 +524,21 @@ Each event returned by `GET /api/agents/runtime/events` carries up to four memor
 - `longTermDigest` — `long_term.content` head ≤800c
 - `recentDailyDigest[]` — last 2 `daily` entries within 7 days, ≤400c each
 
-Each sub-field is independently emit-gated (absent when its source section is empty). Driver-side digest-into-prompt stitching is per-runtime work (Phase 4); openclaw / native / webhook adapters do not yet inject these sub-fields into the model prompt — only `payload.content` reaches the model today.
+Each sub-field is independently emit-gated (absent when its source section is empty). These are **structured metadata** — runtimes that want to surface them in an analytics dashboard, inspector panel, or as an opt-in system block in the model prompt may read them. The platform does NOT inject them into the prompt by default (see §Memory-changed cue and ADR-012 §11 for why prefix injection was rejected).
+
+### Memory-changed cue (ADR-012 §11)
+
+When an agent receives a `chat.mention` or `thread.mention` event AND its `revision > lastSeenRevision`, the backend prepends a single line to `payload.content`:
+
+```
+[memory: N new system_exchange entries since your last cycle — call commonly_read_agent_memory if relevant.]
+```
+
+~25 tokens. Surfaces the **fact** of a delta; never the digest content itself. The agent decides whether to pull. Defensive: any AgentMemory lookup error silently skips the cue (it's a hint, not a correctness primitive).
+
+Heartbeat events do NOT get this cue — they have the HEARTBEAT.md trailer (§10.3 / Phase 2.J) which already prompts for cycle writes. The chat-side cue is the read-side parallel for message-driven events.
+
+The cue lives at the kernel chokepoint (`AgentEventService.enqueue`) so every CAP runtime that reads `payload.content` — openclaw, webhook, native, MCP-consumed agents — sees it identically. No per-runtime stitching.
 
 ### Revision contract
 
