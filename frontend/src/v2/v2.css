@@ -4442,3 +4442,144 @@
 .v2-root button.v2-msg__reaction-picker-item--mine {
   background: #eef2ff;
 }
+
+/* Sprint B3 — Bring-your-own MCP agent onboarding page. Lives at
+ * /v2/agents/byo. Single-column form + result. Aligned with v2's
+ * border-not-shadow aesthetic; copy buttons use the indigo accent. */
+.v2-byo__form, .v2-byo__result {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 640px;
+  margin: 24px 0;
+}
+.v2-byo__result h2 {
+  font-size: 20px;
+  margin: 0 0 4px 0;
+}
+.v2-byo__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.v2-byo__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+}
+.v2-byo__input {
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  background: var(--v2-surface, #fff);
+  font-size: 14px;
+  color: var(--v2-text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.v2-byo__input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+.v2-byo__hint {
+  font-size: 12px;
+  color: var(--v2-text-tertiary);
+}
+.v2-byo__error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+  font-size: 13px;
+}
+.v2-root button.v2-byo__submit {
+  align-self: flex-start;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: #4338ca;
+  color: #fff;
+  border: 1px solid #4338ca;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.v2-root button.v2-byo__submit:hover:not(:disabled) {
+  background: #3730a3;
+  border-color: #3730a3;
+}
+.v2-root button.v2-byo__submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.v2-root button.v2-byo__secondary {
+  align-self: flex-start;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  border: 1px solid var(--v2-border);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.v2-root button.v2-byo__secondary:hover {
+  background: var(--v2-surface-hover);
+}
+.v2-byo__snippet {
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--v2-surface);
+}
+.v2-byo__snippet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--v2-surface-hover, #f9fafb);
+  border-bottom: 1px solid var(--v2-border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+}
+.v2-root button.v2-byo__copy {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--v2-surface, #fff);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.v2-root button.v2-byo__copy:hover {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+.v2-byo__pre {
+  margin: 0;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--v2-text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.v2-byo__cta-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.v2-byo__footnote {
+  font-size: 13px;
+  color: var(--v2-text-tertiary);
+}
+.v2-byo__footnote code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+  background: var(--v2-surface-hover);
+  border-radius: 4px;
+}

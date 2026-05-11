@@ -167,8 +167,29 @@ else
 fi
 
 todo a2a-dm-load         "depends on B1 frontend deploy + Playwright verification"
-todo byo-page            "depends on B3"
-todo byo-token-issue     "depends on B3"
+todo byo-page            "depends on B3 frontend deploy (route added, Playwright check)"
+
+# B3 — backend round-trip for BYO MCP install. Uses a unique name per
+# smoke run so re-runs don't trip the "already installed" path. Cleanup
+# happens via the next-cycle reset script (C1) — until then the smoke
+# leaves an ephemeral webhook AgentInstallation in the demo pod.
+b3_name="byo-smoke-$(date +%s)"
+http POST "/api/registry/install" "{\"agentName\":\"$b3_name\",\"podId\":\"$DEMO_POD\",\"scopes\":[\"context:read\",\"messages:write\"],\"config\":{\"runtime\":{\"runtimeType\":\"webhook\"}}}"
+if [ "$HTTP_CODE" = "200" ]; then
+  http POST "/api/registry/pods/$DEMO_POD/agents/$b3_name/runtime-tokens" '{"label":"smoke","force":true}'
+  if [ "$HTTP_CODE" = "200" ]; then
+    has_tok=$(echo "$HTTP_BODY" | python3 -c 'import sys,json; d=json.load(sys.stdin); t=d.get("token",""); print("yes" if t.startswith("cm_agent_") else "no")' 2>/dev/null || echo no)
+    if [ "$has_tok" = "yes" ]; then
+      green byo-token-issue "POST install + runtime-token returned cm_agent_*"
+    else
+      red byo-token-issue "token didn't start with cm_agent_"
+    fi
+  else
+    red byo-token-issue "runtime-tokens HTTP=$HTTP_CODE"
+  fi
+else
+  red byo-token-issue "install HTTP=$HTTP_CODE"
+fi
 todo install-handoff     "depends on B2"
 todo first-msg-empty-state "depends on B4 (Playwright; manual today)"
 # B5: reactions roundtrip — pick any message from scrollback, add 👍, verify, delete, verify.
