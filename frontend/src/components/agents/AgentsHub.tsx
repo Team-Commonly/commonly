@@ -1137,6 +1137,40 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       if (installPodIds.includes(selectedPodId)) {
         fetchInstalledAgents();
       }
+
+      // Sprint B2 — Post-install handoff. The 60-second wedge is
+      // "install your first agent → talk to it." On successful install
+      // (≥1 pod succeeded), open the agent-room (1:1 DM) for the first
+      // installed pod so the user lands in a conversation surface, not
+      // back on the catalog. Detect v2 context by URL prefix; v1 uses
+      // its own `/pods/agent-room/:id` route. Failures degrade gracefully
+      // — we close the dialog and let the user navigate manually.
+      const successPodIds = results
+        .map((r, i) => (r.status === 'fulfilled' ? installPodIds[i] : null))
+        .filter((id) => id);
+      const handoffPodId = successPodIds[0];
+      const isV2Context = typeof window !== 'undefined' && window.location.pathname.startsWith('/v2');
+      if (handoffPodId && !installAgent?.skipHandoff) {
+        try {
+          const roomRes = await axios.post('/api/agents/runtime/room', {
+            agentName,
+            instanceId: resolvedInstanceId || undefined,
+            podId: handoffPodId,
+          }, {
+            headers: getAuthHeaders(),
+          });
+          const roomPodId = roomRes.data?.room?._id;
+          if (roomPodId) {
+            closeInstallDialog();
+            navigate(isV2Context ? `/v2/pods/${roomPodId}` : `/pods/agent-room/${roomPodId}`);
+            return;
+          }
+        } catch (handoffErr) {
+          console.warn('[install] post-install agent-room handoff failed:', handoffErr);
+          // Fall through to closeInstallDialog without navigation.
+        }
+      }
+
       closeInstallDialog();
     } catch (err) {
       console.error('Error installing agent:', err);

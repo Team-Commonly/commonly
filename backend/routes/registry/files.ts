@@ -1,11 +1,19 @@
 // Agent file routes — extracted from registry.js (GH#112)
 // Handles: persona/generate, heartbeat-file (R/W), identity-file (R/W)
+// ESM import for express-rate-limit — CodeQL's `js/missing-rate-limiting`
+// query only recognises the middleware on the SAME file as the route
+// registration (per the note in agentsRuntime.ts). Inlined here, with a
+// userId-keyed generator so per-user limits stay isolated.
+import rateLimit from 'express-rate-limit';
+
 const express = require('express');
 const auth = require('../../middleware/auth');
 const Pod = require('../../models/Pod');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const DMService = require('../../services/dmService').default;
+const User = require('../../models/User');
 const { generateText } = require('../../services/llmService');
 const {
   writeOpenClawHeartbeatFile,
@@ -25,6 +33,21 @@ const {
 } = require('./helpers');
 
 const filesRouter = express.Router({ mergeParams: true });
+
+// Inline rate limiter for the inspector a2a-DM read surface. Per-user
+// (after auth middleware sets req.userId); IPv6-safe key generator using
+// `${req.userId || req.ip}`. 120/min mirrors the agentsRuntime phase4 cap.
+const inspectorRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => String(req.userId || req.user?._id || req.ip || 'anon'),
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 120 requests per 60s',
+    code: 'rate_limited',
+  }),
+});
 
 filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req: any, res: any) => {
   try {
@@ -324,6 +347,121 @@ filesRouter.post('/pods/:podId/agents/:name/identity-file', auth, async (req: an
   } catch (error) {
     console.error('Error updating identity file:', error);
     return res.status(500).json({ error: 'Failed to update identity file' });
+  }
+});
+
+/**
+ * GET /api/registry/pods/:podId/agents/:name/a2a-dms?instanceId=...
+ *
+ * List `agent-dm` pods involving the (name, instanceId) agent. Sprint B1
+ * surface — used by V2 pod inspector member-detail to render clickable
+ * "Direct messages" links so humans can observe agent ↔ agent
+ * conversations happening between agents in their team pods.
+ *
+ * Auth: caller must be a member of :podId (to scope the surface to "the
+ * agent that's in this pod"). Each returned DM is then filtered through
+ * `DMService.canViewPod` (the §3.7 co-pod-member rule) — humans see DMs
+ * where they share at least one pod with both members.
+ */
+filesRouter.get('/pods/:podId/agents/:name/a2a-dms', auth, inspectorRateLimit, async (req: any, res: any) => {
+  try {
+    const { podId, name } = req.params;
+    const { instanceId } = req.query;
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    if (!(await userHasPodAccess(pod, userId))) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Resolve the (agentName, instanceId) agent to its User row. READ-ONLY
+    // lookup — we never mint a User on this inspector surface (read-path
+    // upserts violate identity continuity per CLAUDE.md). If the User row
+    // doesn't exist yet, return empty.
+    const resolved = await resolveInstallation({ agentName: name, podId, instanceId });
+    if (!resolved.installation) return res.json({ a2aDms: [] });
+
+    const agentUsername = AgentIdentityService.buildAgentUsername(name, resolved.instanceId);
+    const agentUser = await User.findOne({ username: agentUsername }).select('_id username').lean();
+    if (!agentUser) return res.json({ a2aDms: [] });
+
+    // Find every agent-dm pod containing this User. Members are stored as
+    // ObjectId references in lean results; match against the User's _id
+    // directly. `canViewPod` accepts the same shape so the filter loop is
+    // consistent.
+    const dms = await Pod.find({
+      type: 'agent-dm',
+      members: agentUser._id,
+    })
+      .select('_id name members type updatedAt latestSummary')
+      .lean() as Array<{ _id: unknown; name?: string; members?: unknown[]; type?: string; updatedAt?: Date; latestSummary?: unknown }>;
+
+    // Batched lookup of every "other" member across all DMs — avoids the
+    // N+1 User.find pattern. agent-dm pods are strictly 1:1 per ADR-001
+    // §3.10 so we expect at most one other per DM, but we don't enforce
+    // that here; the loop below picks the first non-self member.
+    const allOtherIds = new Set<string>();
+    const selfId = String(agentUser._id);
+    for (const dm of dms) {
+      for (const m of dm.members || []) {
+        const id = String((m as { _id?: unknown })?._id || m || '');
+        if (id && id !== selfId) allOtherIds.add(id);
+      }
+    }
+    const otherUserMap = new Map<string, { _id: unknown; username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string }; isBot?: boolean }>();
+    if (allOtherIds.size > 0) {
+      const otherUsers = await User.find({ _id: { $in: Array.from(allOtherIds) } })
+        .select('username botMetadata isBot')
+        .lean() as Array<{ _id: unknown; username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string }; isBot?: boolean }>;
+      for (const u of otherUsers) otherUserMap.set(String(u._id), u);
+    }
+
+    const a2aDms: Array<Record<string, unknown>> = [];
+    for (const dm of dms) {
+      // §3.7 viewer-access gate. canViewPod's countDocuments is one round
+      // trip per DM; for the demo surface (bounded DM count per agent)
+      // this is fine. If this becomes a paginated surface, batch via a
+      // single aggregation against the viewer's shared-pods set.
+      // eslint-disable-next-line no-await-in-loop
+      const canView = await DMService.canViewPod(userId, dm);
+      if (!canView) continue;
+
+      const otherId = (dm.members || [])
+        .map((m: any) => String(m?._id || m || ''))
+        .find((id: string) => id && id !== selfId) || '';
+      const otherMember = otherUserMap.get(otherId) || null;
+      const otherDisplay = otherMember
+        ? AgentIdentityService.resolveAgentDisplayLabel(otherMember, otherMember.username || 'peer')
+        : 'peer';
+
+      a2aDms.push({
+        podId: String(dm._id),
+        name: dm.name || `${agentUser.username || name} ↔ ${otherDisplay}`,
+        // NOTE: `botMetadata.agentName` is the runtime tag (per
+        // `feedback-runtime-leak-in-display-paths`), not a display
+        // surface. We intentionally do NOT include `agentName` /
+        // `instanceId` in the response — frontend renders via
+        // `displayName` only. Future callers should add fields with
+        // care if they need them.
+        otherMember: otherMember
+          ? {
+            userId: String(otherMember._id),
+            displayName: otherDisplay,
+            isBot: Boolean(otherMember.isBot),
+          }
+          : null,
+        memberCount: Array.isArray(dm.members) ? dm.members.length : 0,
+        updatedAt: dm.updatedAt,
+        latestSummary: dm.latestSummary || null,
+      });
+    }
+
+    return res.json({ a2aDms });
+  } catch (error) {
+    console.error('Error listing a2a-dms:', error);
+    return res.status(500).json({ error: 'Failed to list agent-DM pods' });
   }
 });
 
