@@ -19,6 +19,7 @@ import Dashboard from '../components/Dashboard';
 import DailyDigest from '../components/DailyDigest';
 import AppsMarketplacePage from '../components/apps/AppsMarketplacePage';
 import AgentsHub from '../components/agents/AgentsHub';
+import V2AgentBYO from './components/V2AgentBYO';
 import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
 import ActivityFeedPage from '../components/activity/ActivityFeedPage';
 import AnalyticsDashboard from '../components/analytics/AnalyticsDashboard';
@@ -184,6 +185,10 @@ const V2App: React.FC = () => {
                 <Route
                   path="agents/browse"
                   element={feature('Hire an agent', 'Browse and install agents from the catalog.', <AgentsHub />)}
+                />
+                <Route
+                  path="agents/byo"
+                  element={<V2AgentBYO />}
                 />
                 <Route
                   path="marketplace"
