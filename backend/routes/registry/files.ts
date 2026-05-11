@@ -1,5 +1,11 @@
 // Agent file routes — extracted from registry.js (GH#112)
 // Handles: persona/generate, heartbeat-file (R/W), identity-file (R/W)
+// ESM import for express-rate-limit — CodeQL's `js/missing-rate-limiting`
+// query only recognises the middleware on the SAME file as the route
+// registration (per the note in agentsRuntime.ts). Inlined here, with a
+// userId-keyed generator so per-user limits stay isolated.
+import rateLimit from 'express-rate-limit';
+
 const express = require('express');
 const auth = require('../../middleware/auth');
 const Pod = require('../../models/Pod');
@@ -27,6 +33,21 @@ const {
 } = require('./helpers');
 
 const filesRouter = express.Router({ mergeParams: true });
+
+// Inline rate limiter for the inspector a2a-DM read surface. Per-user
+// (after auth middleware sets req.userId); IPv6-safe key generator using
+// `${req.userId || req.ip}`. 120/min mirrors the agentsRuntime phase4 cap.
+const inspectorRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => String(req.userId || req.user?._id || req.ip || 'anon'),
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 120 requests per 60s',
+    code: 'rate_limited',
+  }),
+});
 
 filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req: any, res: any) => {
   try {
@@ -342,7 +363,7 @@ filesRouter.post('/pods/:podId/agents/:name/identity-file', auth, async (req: an
  * `DMService.canViewPod` (the §3.7 co-pod-member rule) — humans see DMs
  * where they share at least one pod with both members.
  */
-filesRouter.get('/pods/:podId/agents/:name/a2a-dms', auth, async (req: any, res: any) => {
+filesRouter.get('/pods/:podId/agents/:name/a2a-dms', auth, inspectorRateLimit, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId } = req.query;
