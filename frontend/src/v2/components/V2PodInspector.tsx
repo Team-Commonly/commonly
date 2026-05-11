@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import Papa from 'papaparse';
 import { useNavigate } from 'react-router-dom';
@@ -770,6 +770,12 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const [agentTasks, setAgentTasks] = useState<AgentTaskMap>({});
   const [runState, setRunState] = useState<RunStateCounts>({ blocked: 0, inProgress: 0, complete: 0, pending: 0 });
   const [privateError, setPrivateError] = useState<string | null>(null);
+  // ADR-001 §3.10 + Sprint B1: agent-DM pods involving the currently-inspected
+  // agent. Surfaces clickable links so humans can observe agent↔agent
+  // conversations happening between agents in their team pods (the §3.7
+  // co-pod-member rule lets the viewer see those DMs even though they're
+  // not a member). Keyed by agentKey to avoid stale state across selections.
+  const [a2aDmsByAgent, setA2aDmsByAgent] = useState<Record<string, Array<{ podId: string; name: string; otherMember: { displayName: string; isBot: boolean } | null; updatedAt?: string }>>>({});
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [externalLinks, setExternalLinks] = useState<ExternalLinkItem[]>([]);
   const [podFiles, setPodFiles] = useState<PodFileItem[]>([]);
@@ -1299,6 +1305,43 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   // ------------------------------------------------------------------
   // MEMBER DETAIL sub-page
   // ------------------------------------------------------------------
+  // Fetch the agent's a2a-DM list when a member is selected. Cached by
+  // agentKey; the list is small (DMs are bounded per agent). We track
+  // already-fetched keys in a ref (not state) so the effect's dep array
+  // doesn't include the cache itself — setA2aDmsByAgent updates the
+  // state object every load, and including that ref in deps would
+  // re-run the effect on every change (harmless given the in-effect
+  // guard, but wasteful).
+  const a2aDmsFetchedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (view.kind !== 'member') return;
+    const agent = agentByKey.get(view.agentKey);
+    if (!agent) return;
+    const key = `${pod._id}:${agentKeyOf(agent)}`;
+    if (a2aDmsFetchedRef.current.has(key)) return;
+    a2aDmsFetchedRef.current.add(key);
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = `/api/registry/pods/${pod._id}/agents/${encodeURIComponent(agent.agentName)}/a2a-dms?instanceId=${encodeURIComponent(agent.instanceId || 'default')}`;
+        const data = await api.get<{ a2aDms?: Array<{ podId: string; name: string; otherMember: { displayName: string; isBot: boolean } | null; updatedAt?: string }> }>(url);
+        const list = data?.a2aDms || [];
+        if (!cancelled) {
+          setA2aDmsByAgent((prev) => ({ ...prev, [key]: list }));
+        }
+      } catch (err) {
+        // Defensive: any error renders the section empty rather than
+        // blocking the detail panel. Allow retry by clearing the ref
+        // entry so a subsequent re-select re-attempts the fetch.
+        if (!cancelled) {
+          a2aDmsFetchedRef.current.delete(key);
+          setA2aDmsByAgent((prev) => ({ ...prev, [key]: [] }));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [view, pod._id, agentByKey, api]);
+
   const renderMemberDetail = (agentKey: string) => {
     const agent = agentByKey.get(agentKey);
     if (!agent) {
@@ -1381,6 +1424,33 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             </div>
           </div>
         )}
+        {(() => {
+          const dmKey = `${pod._id}:${agentKeyOf(agent)}`;
+          const list = a2aDmsByAgent[dmKey] || [];
+          if (list.length === 0) return null;
+          return (
+            <div className="v2-inspector__detail-card">
+              <div className="v2-inspector__detail-kicker">Direct messages</div>
+              <div className="v2-inspector__dm-list">
+                {list.map((dm) => {
+                  const peer = dm.otherMember?.displayName || 'peer';
+                  return (
+                    <button
+                      key={dm.podId}
+                      type="button"
+                      className="v2-inspector__dm-row"
+                      onClick={() => navigate(`/v2/pods/${dm.podId}`)}
+                      title={`Open ${name} ↔ ${peer}`}
+                    >
+                      <span className="v2-inspector__dm-name">{name} ↔ {peer}</span>
+                      <span className="v2-inspector__dm-arrow" aria-hidden="true">→</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };

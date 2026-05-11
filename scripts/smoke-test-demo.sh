@@ -152,8 +152,21 @@ fi
 
 # --- sprint-item checks (TODOs first, fill in as items land) -------------
 
-todo a2a-dm-listable     "depends on B1"
-todo a2a-dm-load         "depends on B1"
+# B1: a2a-dm-listable — backend route GET /api/registry/pods/:podId/agents/:name/a2a-dms
+http GET "/api/registry/pods/$DEMO_POD/agents/openclaw/a2a-dms?instanceId=nova-demo"
+if [ "$HTTP_CODE" = "200" ]; then
+  has_array=$(echo "$HTTP_BODY" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("yes" if isinstance(d.get("a2aDms"), list) else "no")' 2>/dev/null || echo no)
+  if [ "$has_array" = "yes" ]; then
+    count=$(echo "$HTTP_BODY" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("a2aDms",[])))' 2>/dev/null || echo 0)
+    green a2a-dm-listable "a2aDms array returned, count=$count"
+  else
+    red a2a-dm-listable "response missing a2aDms array"
+  fi
+else
+  red a2a-dm-listable "HTTP=$HTTP_CODE"
+fi
+
+todo a2a-dm-load         "depends on B1 frontend deploy + Playwright verification"
 todo byo-page            "depends on B3"
 todo byo-token-issue     "depends on B3"
 todo install-handoff     "depends on B2"

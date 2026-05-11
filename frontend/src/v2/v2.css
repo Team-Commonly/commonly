@@ -2737,6 +2737,51 @@
   align-items: center;
 }
 
+/* Sprint B1: agent-DM list under member-detail. Clickable rows that
+ * navigate to the DM pod (read-only for the human via the §3.7
+ * co-pod-member rule). Same visual rhythm as detail-card content; the
+ * arrow glyph signals "this is interactive." */
+.v2-inspector__dm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.v2-root button.v2-inspector__dm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--v2-border-subtle);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.v2-root button.v2-inspector__dm-row:hover {
+  background: var(--v2-surface-hover);
+  border-color: var(--v2-border);
+}
+
+.v2-inspector__dm-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-inspector__dm-arrow {
+  color: var(--v2-text-tertiary);
+  font-weight: 500;
+  margin-left: 8px;
+}
+
 /* ---------- Runtime badge (driver tag — OC, CX, CC, WH, NA) ----------
  * Identity (runtimeType) renders as the main pill; host=byo adds a small
  * "BYO" tag alongside. Cloud is the implicit default and stays unmarked
