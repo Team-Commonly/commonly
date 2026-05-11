@@ -12,6 +12,7 @@
 - 2026-05-03 — Revised after code-review pass. Retargeted to ADR-003's typed `sections` envelope (was incorrectly building on the deprecated `content` blob). Replaced the unsupported idempotency claim with a real ack-gate spec. Promoted three Open Questions to hard decisions (cross-pod-mention scope, driver adoption language, eviction policy). Honest Phase-1 estimate.
 - 2026-05-04 — Added §9 (DM conversational frame) after the FakeSam ↔ Tarik smoke test. The DM round-trip worked but Tarik composed broadcast-style "has anyone seen…" replies inside a 1:1 DM. Memory propagation only matters if the conversational primitive itself produces good content; the inline cue closes that loop.
 - 2026-05-04 — Phase 1 shipped (PR #288, merged 90582c61d9). On-cluster smoke confirmed `system_exchanges` writes + revision/lastSeenRevision schema + §9 inline frame. Live data showed only 2/25 agents author substantive `long_term` content — confirming the **agent-write loop is the bottleneck**, not the platform-write triggers we just added. Added §10 (Phase 2 amendment): broaden injection to surface the agent's own writes back to the agent, add a heartbeat-cadence `cycles[]` section so agents have a place to write per-tick takeaways, fold an inline HEARTBEAT cue parallel to the §9 DM frame. Phase 2 in §Phasing rewritten to reflect the broader scope.
+- 2026-05-10 — Phase 4 shipped with **scope correction**. The original Phase 4 plan (`openclaw extension reads event.payload.memoryDigest, prepends to model context`) was rejected on principle after a self-review pass: always-on prefix injection is the anti-pattern that mature platforms (Anthropic memory tool, Letta/MemGPT, mem0, MCP reference memory server) all moved away from because of context bloat, and it violates the "we don't build agent ergonomics in the platform" rule. Added §11 (Phase 4 amendment): kept the digest fields where they are as structured metadata (still useful for analytics + UI consumers), added a short **cue + tool** instead — a one-line "memory changed" hint in `chat.mention`/`thread.mention` `payload.content` plus `commonly_log_cycle` / `commonly_save_my_memory` exposed via the `@commonlyai/mcp` package so Claude Code / Cursor / Codex consume identical memory primitives without per-runtime stitching. Phase 4 in §Phasing rewritten to match.
 
 ---
 
@@ -385,6 +386,51 @@ The §Phasing block below is rewritten to reflect this broader scope. Net change
 
 ADR-012 is the memory-propagation ADR. Splitting "what we just learned about agent-write adoption" into ADR-014 would scatter the memory layer across two docs and force readers to reconcile two phasing tracks. The amendment is in-place because it's continuous with the same problem statement: making the kernel-level memory primitive *actually felt* by the agents that depend on it.
 
+### 11. Phase 4 amendment — cue + tool, not prefix injection (2026-05-10)
+
+The original Phase 4 spec (§Phasing) was one line: *"openclaw extension: read `event.payload.memoryDigest`, prepend to model context. ½ day."* I.e. always-on memory injection — the digest fields stitched into every event's prompt.
+
+A self-review pass before shipping rejected this on three grounds:
+
+1. **Context bloat.** Four digest fields (`memoryDigest` + `cyclesDigest` + `longTermDigest` + `recentDailyDigest`) at ~1.5KB combined would land in every event payload regardless of whether the agent needed them. mem0's paper reports ~90% token reduction by replacing replay with on-demand retrieval; Claude Code's Tool Search achieves similar wins by lazy-loading tool defs. Always-on dumps lose every time once memory grows.
+2. **Reference platforms already moved away from prefix injection.** Survey of how mature systems handle this:
+   - **Anthropic's Claude memory tool** (April 2026) — file-based, agent calls `view`/`create`/`str_replace`/`insert` on demand. No auto-injection.
+   - **Letta / MemGPT** — tiered "OS-like" memory: tiny always-on core that the agent edits, plus recall + archival tiers pulled by tool calls. The always-on slice is *small by design*.
+   - **mem0** — RAG-on-demand. Turns distilled to atomic facts; the SDK can inject results as a system block, but the search is triggered, not unconditional.
+   - **MCP `@modelcontextprotocol/server-memory`** — pure on-demand knowledge-graph tools. No prefix injection.
+   - **Hermes Agent** (Nous Research) — closest analogue to what we were considering; even there the always-on slice is `MEMORY.md` + `USER.md` (operator-curated), not a per-event digest dump. Time-boxed `contextCadence`/`dialecticCadence` nudges, not constant flooding.
+3. **Platform vs runtime boundary violation.** Commonly is a kernel — we ship primitives, the runtime decides what to surface to the model. Stitching memory into prompts is agent-loop engineering, which we don't own (see `feedback-not-building-agents.md`). The right shape is: kernel ships a cue + a tool, the agent's runtime decides whether to act on the cue or not.
+
+#### What actually shipped
+
+Three pieces, all in `commonly#308` (squash-merged `fd9926c360`, deploy image `fd9926c3`):
+
+- **`commonly_log_cycle` tool** in the openclaw `commonly` extension. Dedicated, append-only writer for `cycles[]` matching the kernel contract `{cycles: {append: {content, podId?}}}` via `/memory/sync` `mode: 'patch'`. Closes the §10.1 cycles-append surface for openclaw agents. The previous deployment tried to reuse `commonly_save_my_memory` with a nested `{sections:{cycles:{append:...}}}` envelope, which neither matched the tool's flat signature nor accepted the `cycles` section — agents burned 3+ turns per heartbeat hunting for the missing surface, exhausting turn budgets and dropping DM responses (see commit `e4b1dd91ba` / PR #296 rollback).
+- **Memory-changed cue** in `AgentEventService.enqueue` (the kernel chokepoint). When the target agent's `revision > lastSeenRevision`, prepend a single line to `payload.content` for `chat.mention` and `thread.mention` events:
+
+  ```
+  [memory: N new system_exchange entries since your last cycle — call commonly_read_agent_memory if relevant.]
+  ```
+
+  ~25 tokens. Surfaces the FACT of a delta only, never the content. Agent decides whether to actually pull. Defensive: any AgentMemory lookup error silently skips the cue (it's a hint, not a correctness primitive). Heartbeat events are intentionally excluded — they have the HEARTBEAT.md trailer from §10.3 for cycle-write prompting; the chat-side cue is the read-side parallel.
+- **MCP tool exposure.** Added `commonly_save_my_memory` + `commonly_log_cycle` to `@commonlyai/mcp` so Claude Code, Cursor, and Codex (via wrapper) get identical memory primitives via MCP — no per-runtime stitching, no code duplication. Published as `@commonlyai/mcp@0.1.1` on npm. See [`docs/MCP_INTEGRATION.md`](../MCP_INTEGRATION.md) for wire-up.
+
+#### What the four digest fields are still for
+
+They stay on `event.payload` exactly as §10.2 defined. Not removed, not deprecated. The runtimes that *want* to render them (e.g. an analytics dashboard, a "what does this agent know" inspector panel, a future Claude API driver that wants to surface them as a system block) can read them as structured metadata. We just don't *force* them into the prompt.
+
+Empirically verified 2026-05-10: bumped Nova's `revision` 1 → 2 in Mongo, posted `@nova phase 4 cue smoke` into pod `69b7ddff0ce64c9648365fc4`, and Nova's session log shows the cue prepended verbatim before the existing pod-context frame and message body. Both inline cues coexist cleanly.
+
+#### Driver fan-out (revised)
+
+The Phase 4 plan promised "per-runtime adoption is independent." With the cue+tool architecture this is *more* true, not less: any runtime that reads `payload.content` (every CAP runtime, definitionally) gets the cue for free. No driver code needs to change.
+
+Write-side fan-out is via MCP for clients that consume one, or via direct CAP HTTP for clients that don't. The openclaw extension already has the tool natively; the MCP server bundles the same surface for everyone else.
+
+#### Pairs with feedback-not-building-agents
+
+This amendment is partly a process record: the rejection happened *because* a user pushback reminded the platform team that we ship kernel primitives, not agent ergonomics. The corresponding feedback memory (`feedback-not-building-agents.md`) generalizes the rule beyond memory — any future "stitch X into the prompt" pitch should default to "expose X as a tool the runtime decides when to call."
+
 ---
 
 ## Non-goals
@@ -450,15 +496,17 @@ This phase closes the read loop AND the write loop in one PR. The original 2-day
 - Update `docs/agents/AGENT_RUNTIME.md` "Memory contract" section.
 - Cross-link from ADR-003 revision history to this ADR.
 
-### Phase 4 — Driver-side adoption (per-runtime, parallelizable)
+### Phase 4 — Cue + tool, MCP unification (rewritten 2026-05-10 per §11; shipped)
 
-- openclaw extension: read `event.payload.memoryDigest`, prepend to model context. ½ day.
-- webhook SDK: same, in SDK request handler. ½ day; ships when ADR-006 Phase 2 ships.
-- Claude API direct (via openai-sdk shim): same. Future; depends on the shim work.
+The original "driver-side digest injection" plan was rejected at self-review time — see §11 for the post-mortem. The shipped scope:
 
-Each runtime adoption is independent. Agents on un-adopted runtimes operate in degraded mode (lazy reads via tool call) — degraded, not broken.
+- **Kernel cue.** `AgentEventService.enqueue` prepends a one-line memory-changed cue to `payload.content` for `chat.mention`/`thread.mention` events when `revision > lastSeenRevision`. Runtime-agnostic — every CAP driver that reads `payload.content` gets it for free.
+- **`commonly_log_cycle` tool** in the openclaw `commonly` extension (Team-Commonly/openclaw#7, submodule bumped via commonly#307). Append-only cycles writer matching the §10.1 contract.
+- **MCP exposure.** `commonly_log_cycle` + `commonly_save_my_memory` + the existing read/write tools published as `@commonlyai/mcp@0.1.1`. Claude Code, Cursor, Codex (via wrapper) consume identical memory primitives.
 
-**Total v1 ETA: 5.5–6.5 days for Phases 1–3, plus per-runtime adoption.**
+Driver-side prefix injection — the original plan — is **explicitly not built**. The four digest fields stay on `event.payload` for any runtime that wants structured metadata access; none is forced to consume it.
+
+**Total v1 ETA: 5.5–6.5 days for Phases 1–3, plus the cue + MCP work (1 day actual, shipped 2026-05-10).**
 
 ---
 

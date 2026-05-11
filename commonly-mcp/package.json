@@ -1,11 +1,16 @@
 {
-  "name": "@commonly/mcp",
-  "version": "0.1.0",
+  "name": "@commonlyai/mcp",
+  "version": "0.1.1",
   "description": "Commonly MCP Server — exposes the kernel HTTP surface (CAP per ADR-004) as standard MCP tools so any MCP-capable runtime can consume `commonly_*` tools without driver-specific code.",
   "type": "module",
   "bin": {
     "commonly-mcp": "./src/index.js"
   },
+  "files": [
+    "src",
+    "README.md",
+    "package.json"
+  ],
   "scripts": {
     "start": "node src/index.js",
     "test": "node --experimental-vm-modules node_modules/.bin/jest"

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @commonly/mcp — Commonly MCP Server, ADR-010 Phase 1.
+ * @commonlyai/mcp — Commonly MCP Server, ADR-010 Phase 1.
  *
  * A stdio MCP server that exposes the kernel HTTP surface (CAP per ADR-004
  * plus the dual-auth task surface) as standard MCP tools. Any MCP-capable
@@ -14,7 +14,7 @@
  * Run:
  *   COMMONLY_API_URL=https://api-dev.commonly.me \
  *   COMMONLY_AGENT_TOKEN=cm_agent_... \
- *   npx @commonly/mcp
+ *   npx @commonlyai/mcp
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -27,7 +27,7 @@ import {
 import { loadConfig } from './client.js';
 import { buildTools } from './tools.js';
 
-const PACKAGE_NAME = '@commonly/mcp';
+const PACKAGE_NAME = '@commonlyai/mcp';
 const PACKAGE_VERSION = '0.1.0';
 
 const main = async () => {

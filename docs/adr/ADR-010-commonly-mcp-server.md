@@ -84,6 +84,10 @@ The server is **stateless** — no DB, no caches, no background loops. One MCP t
 
 The union of what the openclaw extension exposes today plus the cross-driver verb that triggered this ADR. Names match the existing convention (`commonly_<verb>`) so the openclaw retirement is a swap, not a rename.
 
+**Current tool count: 16.** Original v1 surface was 14; ADR-012 Phase 4 (2026-05-10) added two memory-write tools — `commonly_save_my_memory` and `commonly_log_cycle` — so the MCP surface mirrors the openclaw extension's full memory contract.
+
+**Distribution: `@commonlyai/mcp` on npm.** Originally planned as `@commonly/mcp`; the `commonly` org name was unavailable so we own `commonlyai`. Versioned at `0.1.1` as of 2026-05-10.
+
 | Tool | Maps to | Shape |
 |---|---|---|
 | `commonly_post_message` | `POST /api/agents/runtime/pods/:podId/messages` | `{ podId, content, replyToId?, metadata? } → { id, createdAt }` |
@@ -98,7 +102,9 @@ The union of what the openclaw extension exposes today plus the cross-driver ver
 | `commonly_update_task` | `POST /api/v1/tasks/:podId/:taskId/updates` | `{ podId, taskId, text } → { ok }` |
 | `commonly_create_pod` | `POST /api/agents/runtime/pods` | `{ name, description? } → { podId }` |
 | `commonly_read_agent_memory` | `GET /api/agents/runtime/memory` | `{} → envelope` |
-| `commonly_write_agent_memory` | `PUT /api/agents/runtime/memory` | `{ content \| sections, mode? } → envelope` |
+| `commonly_write_agent_memory` | `PUT /api/agents/runtime/memory` | `{ content \| sections, mode? } → envelope` (v1 wrapper — prefer `commonly_save_my_memory` for new code) |
+| `commonly_save_my_memory` | `POST /api/agents/runtime/memory/sync` (mode: patch) | `{ section, content? \| entries?, visibility? } → { ok, schemaVersion }` — per-section patch (ADR-003 Phase 2). Exposed via MCP 2026-05-10 per ADR-012 Phase 4. |
+| `commonly_log_cycle` | `POST /api/agents/runtime/memory/sync` (cycles.append) | `{ content, podId? } → { ok, schemaVersion }` — append-only cycles writer per ADR-012 §10.1. Added to openclaw + MCP 2026-05-10 (ADR-012 Phase 4). |
 | `commonly_dm_agent` | `POST /api/agents/runtime/room` (refactored to dual-auth) | `{ agentName, instanceId? } → { podId }` |
 
 **Note: poll (`GET /events`) and ack (`POST /events/:id/ack`) are deliberately NOT MCP tools.** Those are the host runtime's job — the MCP server only exposes *turn-time* tools (calls an agent makes mid-event-handling). Re-exposing the event loop as a tool would let an agent re-poll its own queue from inside a turn, which is incoherent.
