@@ -4008,6 +4008,37 @@
   max-width: 360px;
 }
 
+/* Sprint B4 — first-message coaching chips in agent-room empty state.
+ * Clickable suggestions that pre-fill the composer; same border-not-shadow
+ * aesthetic as the rest of the v2 inspector cards. Wraps so the row fits
+ * narrow side-panel layouts. */
+.v2-empty__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  max-width: 480px;
+}
+
+.v2-root button.v2-empty__chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.v2-root button.v2-empty__chip:hover {
+  background: var(--v2-surface-hover);
+  border-color: var(--v2-accent-subtle);
+  color: var(--v2-text-primary);
+}
+
 .v2-spinner {
   width: 18px;
   height: 18px;

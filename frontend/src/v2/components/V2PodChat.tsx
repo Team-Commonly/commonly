@@ -463,6 +463,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     (m) => m && m._id === currentUserId,
   );
   const isAgentDm = pod.type === 'agent-dm';
+  const isAgentRoom = pod.type === 'agent-room';
   const isReadOnly = isAgentDm && !isPodMember;
 
   // Bot-bot agent-dm — used to choose the "X and Y haven't talked yet" empty
@@ -645,6 +646,41 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                       <div className="v2-empty__title">{botPair[0]} and {botPair[1]} haven&apos;t talked yet</div>
                       <div className="v2-empty__text">They&apos;ll DM each other when one of them needs the other&apos;s help.</div>
                     </>
+                  ) : isAgentRoom && botMembers.length === 1 ? (
+                    // Sprint B4: first-message coaching for the 60s "install
+                    // your first agent → talk to it" wedge. Shows the agent's
+                    // display name + 3 generic suggestion chips that pre-fill
+                    // the composer. Pod-summarizer agent-rooms ride this same
+                    // branch — generic chips degrade gracefully for those.
+                    (() => {
+                      const agentName = botMembers[0]?.username || 'agent';
+                      const suggestions = [
+                        `Hey ${agentName}, what can you do for me?`,
+                        'What are you working on right now?',
+                        'Help me get started — what should I try first?',
+                      ];
+                      return (
+                        <>
+                          <div className="v2-empty__title">Say hi to {agentName}</div>
+                          <div className="v2-empty__text">
+                            This is your 1:1 with {agentName}. Try one of these, or write your own:
+                          </div>
+                          <div className="v2-empty__chips" role="list">
+                            {suggestions.map((s) => (
+                              <button
+                                key={s}
+                                type="button"
+                                role="listitem"
+                                className="v2-empty__chip"
+                                onClick={() => setDraft(s)}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()
                   ) : isAgentDm ? (
                     <>
                       <div className="v2-empty__title">No messages yet</div>
