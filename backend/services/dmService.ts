@@ -430,6 +430,15 @@ class DMService {
       return String(m);
     });
     if (memberIds.includes(uid)) return true;
+    // Global admins get read access to any pod (ops/debug observability).
+    // They remain non-members — read-only. Write paths (post message,
+    // remove member, etc.) enforce their own admin/membership rules.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const User = require('../models/User');
+      const u = await User.findById(uid).select('role').lean();
+      if (u?.role === 'admin') return true;
+    } catch { /* role lookup failure is non-fatal — fall through */ }
     if (pod.type !== 'agent-dm') return false;
     // §3.7 fan-out: if viewer shares any pod with any DM member, allow.
     // Single Mongo query: find a pod whose members contain uid AND any
