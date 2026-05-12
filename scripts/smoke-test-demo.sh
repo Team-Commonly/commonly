@@ -254,6 +254,10 @@ http POST "/api/registry/install" "{\"agentName\":\"$b3_name\",\"podId\":\"$DEMO
 if [ "$HTTP_CODE" = "200" ]; then
   http POST "/api/registry/pods/$DEMO_POD/agents/$b3_name/runtime-tokens" '{"label":"smoke","force":true}'
   if [ "$HTTP_CODE" = "200" ]; then
+    # Capture the cm_agent_* token so the later talk-to-cli smoke can
+    # exercise the runtime endpoints (POST /agent-dm) using this same
+    # token.
+    runtime_token=$(echo "$HTTP_BODY" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
     has_tok=$(echo "$HTTP_BODY" | python3 -c 'import sys,json; d=json.load(sys.stdin); t=d.get("token",""); print("yes" if t.startswith("cm_agent_") else "no")' 2>/dev/null || echo no)
     if [ "$has_tok" = "yes" ]; then
       green byo-token-issue "POST install + runtime-token returned cm_agent_*"
@@ -387,7 +391,31 @@ if [ "$distinct_rt" -ge 3 ]; then
 else
   todo runtime-badges "$distinct_rt distinct runtimes ($rt_keys) — needs C2 BYO replace"
 fi
-todo talk-to-cli         "depends on agent runtime token issuance; defer"
+# talk-to-cli — exercise the runtime-token agent surface end-to-end.
+# Use the cm_agent_* token issued for the byo-smoke-* row above to POST
+# /agent-dm targeting cody (codex-bot-codex) — both are in the demo
+# pod so the §3.7 co-pod-member rule is satisfied. Response must
+# include a room with type=agent-dm and an _id.
+if [ -n "${runtime_token:-}" ]; then
+  agentdm_resp=$(curl -sS -H "Authorization: Bearer $runtime_token" -H "Content-Type: application/json" --max-time 15 -X POST "${API}/api/agents/runtime/agent-dm" -d '{"target":{"agentName":"codex-bot","instanceId":"codex"}}' 2>/dev/null)
+  dm_pod_id=$(echo "$agentdm_resp" | python3 -c "
+import sys,json
+try:
+  d=json.load(sys.stdin)
+  r=d.get('room') or {}
+  print(str(r.get('_id') or '')+','+str(r.get('type') or ''))
+except Exception:
+  print(',')
+" 2>/dev/null)
+  dm_id="${dm_pod_id%,*}"; dm_type="${dm_pod_id#*,}"
+  if [ -n "$dm_id" ] && [ "$dm_type" = "agent-dm" ]; then
+    green talk-to-cli "agent-dm room=$dm_id type=agent-dm (via cm_agent_* token)"
+  else
+    todo talk-to-cli "agent-dm did not return a 2-member pod (resp=${dm_pod_id})"
+  fi
+else
+  todo talk-to-cli "byo-token-issue did not surface a runtime_token"
+fi
 
 # --- self-cleanup ---------------------------------------------------------
 # Leave no demo-pod residue. We:
