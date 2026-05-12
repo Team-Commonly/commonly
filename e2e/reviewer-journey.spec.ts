@@ -119,4 +119,25 @@ test.describe('Reviewer journey', () => {
     const composer = page.locator('.v2-composer__input, textarea[placeholder*="Message"]').first();
     await expect(composer).not.toHaveValue('');
   });
+
+  test('beat 9: marketplace install → handoff → agent-room with chips', async ({ page }) => {
+    // The 60-second wedge: pick an agent from /v2/agents/browse, install it,
+    // land in its 1:1 agent-room with coaching chips. Picks the first
+    // catalog card with a visible Install button; the dialog's pre-selected
+    // "Install to Pod" defaults to the operator's last-touched pod which
+    // for the demo account is Sign-up flow. Leaves residue — the smoke +
+    // reset script cleans it up.
+    await page.goto(`${BASE}/v2/agents/browse`);
+    await expect(page.locator('button', { hasText: 'Install' }).first()).toBeVisible({ timeout: 8000 });
+    await page.locator('button', { hasText: 'Install' }).first().click();
+    // Dialog appears
+    await expect(page.locator('text=Select pods for install')).toBeVisible({ timeout: 5000 });
+    // Confirm install in dialog
+    await page.locator('[role="dialog"] button', { hasText: 'Install' }).click();
+    // Wait for navigation to the new agent-room
+    await page.waitForURL(/\/v2\/pods\/[a-f0-9]{24}/, { timeout: 20_000 });
+    // Empty-state chips render with the installed agent's displayName
+    await expect(page.locator('.v2-empty__title')).toContainText(/Say hi to /, { timeout: 8000 });
+    await expect(page.locator('.v2-empty__chip')).toHaveCount(3);
+  });
 });
