@@ -653,7 +653,10 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                     // the composer. Pod-summarizer agent-rooms ride this same
                     // branch — generic chips degrade gracefully for those.
                     (() => {
-                      const agentName = botMembers[0]?.username || 'agent';
+                      const rawUsername = botMembers[0]?.username || '';
+                      const agentName = agentDisplayNames.get(rawUsername.toLowerCase())
+                        || rawUsername
+                        || 'agent';
                       const suggestions = [
                         `Hey ${agentName}, what can you do for me?`,
                         'What are you working on right now?',
