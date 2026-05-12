@@ -24,6 +24,7 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
+const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 
@@ -662,7 +663,11 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
       return res.status(404).json({ message: 'No active installation found for that agent' });
     }
 
-    // Authorization: user must be installer or a member of an installed pod.
+    // Authorization: user must be installer or a member of an installed
+    // pod. Global admins bypass — they can DM any agent for ops/debug
+    // (the resulting agent-room is still strictly 1:1 between admin
+    // and agent per ADR-001 §3.10, just as for regular pod members).
+    const isAdmin = await isGlobalAdminUser(userId);
     const candidatePodIds = installations
       .map((i: any) => i.podId).filter(Boolean);
     const accessiblePods = await Pod.find({
@@ -671,10 +676,12 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
     }).select('_id').lean();
     const accessibleSet = new Set(accessiblePods.map((p: any) => p._id.toString()));
 
-    const authorized = installations.filter((i: any) => (
-      String(i.installedBy || '') === String(userId)
-      || accessibleSet.has(String(i.podId))
-    ));
+    const authorized = isAdmin
+      ? installations
+      : installations.filter((i: any) => (
+        String(i.installedBy || '') === String(userId)
+        || accessibleSet.has(String(i.podId))
+      ));
 
     if (!authorized.length) {
       return res.status(403).json({ message: 'Not authorized to talk to this agent' });
