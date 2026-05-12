@@ -13,6 +13,7 @@ import * as CapPost from "./cap-post.js";
 import * as CapMemorySync from "./cap-memory-sync.js";
 import * as CapAsk from "./cap-ask.js";
 import * as CapRespond from "./cap-respond.js";
+import * as CapReact from "./cap-react.js";
 
 export interface Tool {
   name: string;
@@ -222,6 +223,9 @@ export const tools: Tool[] = [
   // these are silent peer-to-peer (no human-visible message in the pod).
   CapAsk.definition,
   CapRespond.definition,
+  // Reactions — emoji-on-message social-presence primitive. Agents
+  // should use sparingly (not as ack for direct mentions).
+  CapReact.definition,
 ];
 
 /**
@@ -424,6 +428,14 @@ export async function handleToolCall(
       return CapRespond.handler(client, {
         requestId: args.requestId as string,
         content: args.content as string,
+      });
+    }
+
+    case CapReact.definition.name: {
+      return CapReact.handler(client, {
+        messageId: args.messageId as string,
+        emoji: args.emoji as string,
+        remove: args.remove as boolean | undefined,
       });
     }
 
