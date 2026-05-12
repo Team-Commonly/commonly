@@ -27,12 +27,15 @@ const {
 // Inlined per-route limiter so CodeQL's `js/missing-rate-limiting`
 // query (which only sees express-rate-limit calls in the same file
 // as the route registration) recognises the guard. Mirrors the
-// phase4RateLimit pattern in agentsRuntime.ts.
+// phase4RateLimit pattern in agentsRuntime.ts. Skipped under
+// NODE_ENV=test so the integration suite's beforeEach reinstall
+// loops (30+ installs in <60s) don't get throttled.
 const installRateLimit = rateLimit({
   windowMs: 60_000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
   handler: (_req: any, res: any) => res.status(429).json({
     message: 'rate limit exceeded: 30 install requests per 60s',
     code: 'rate_limited',
