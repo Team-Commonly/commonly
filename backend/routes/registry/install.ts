@@ -101,15 +101,18 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Validate agentName shape at the entry point so every downstream
-    // query (AgentInstallation.findOne, AgentProfile.findOneAndUpdate,
-    // etc) is keyed by a known-safe slug. Also unblocks CodeQL's
-    // js/sql-injection alarm on Mongoose filters built from
-    // user-provided values — the regex makes the safety property
-    // explicit.
-    if (typeof agentName !== 'string' || !/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/i.test(agentName)) {
+    // Validate agentName shape at the entry point. The .match() form
+    // (rather than .test() + reuse) is intentional — extracting the
+    // captured value into a fresh string lets CodeQL's taint analysis
+    // see a sanitization boundary, suppressing js/sql-injection on the
+    // Mongoose filters below that key off this slug.
+    const agentNameMatch = typeof agentName === 'string'
+      ? agentName.match(/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/i)
+      : null;
+    if (!agentNameMatch) {
       return res.status(400).json({ error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/i' });
     }
+    const safeAgentName: string = agentNameMatch[0].toLowerCase();
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
@@ -265,13 +268,13 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // §3) wants the AgentInstallation reactivated; the AgentProfile
     // should be refreshed in place, not re-created.
     await AgentProfile.findOneAndUpdate(
-      { podId, agentId: buildAgentProfileId(agentName, normalizedInstanceId) },
+      { podId, agentId: buildAgentProfileId(safeAgentName, normalizedInstanceId) },
       {
         // setDefaultsOnInsert fires on insert only, so stats /
         // integrations / modelPreferences keep their existing values
         // across re-installs — what we want for identity continuity.
         $set: {
-          agentName: agentName.toLowerCase(),
+          agentName: safeAgentName,
           instanceId: normalizedInstanceId,
           name: displayName || agent.displayName,
           purpose: agent.description,
