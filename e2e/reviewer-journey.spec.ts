@@ -30,6 +30,12 @@ test.describe('Reviewer journey', () => {
 
   test('beat 1: demo pod loads with storyboard scrollback', async ({ page }) => {
     await page.goto(`${BASE}/v2/pods/${POD}`);
+    // Regression gate: minified React error boundaries render
+    // "Something went wrong" with "Minified React error #N" detail.
+    // PR #317 shipped a hook-order violation that caused #310 here;
+    // assert the error boundary never fires before any positive check.
+    await expect(page.locator('text=Something went wrong')).toHaveCount(0);
+    await expect(page.locator('text=/Minified React error/')).toHaveCount(0);
     await expect(page.locator('.v2-chat__title-text')).toContainText('Sign-up flow');
     // Storyboard tail — Pixel's "OAuth-first is right" message must be
     // somewhere in the visible scrollback (rendered as part of a message
