@@ -35,21 +35,23 @@ DEMO_POD="${DEMO_POD:-69f841a9063269526de0437c}"
 NAMESPACE="${NAMESPACE:-commonly-dev}"
 
 # ──────────────────────────────────────────────────────────────────────────
-# 1. Clean ephemeral byo-smoke-* installs.
+# 1. Clean ephemeral byo-* installs (anything created by smoke runs or
+#    Playwright trial flows leaves a byo-<purpose>-<ts> AgentInstallation).
+#    Catches byo-smoke-*, byo-handoff-probe, byo-playwright-test-*, etc.
 # ──────────────────────────────────────────────────────────────────────────
-echo "[reset] (1/4) uninstalling byo-smoke-* AgentInstallations from $DEMO_POD…"
+echo "[reset] (1/4) uninstalling byo-* AgentInstallations from $DEMO_POD…"
 removed=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
 const m=require('mongoose');
 m.connect(process.env.MONGO_URI).then(async ()=>{
   const AI=m.connection.db.collection('agentinstallations');
   const r=await AI.updateMany(
-    {podId: m.Types.ObjectId.createFromHexString('$DEMO_POD'), agentName: {\$regex: '^byo-smoke-'}, status: 'active'},
+    {podId: m.Types.ObjectId.createFromHexString('$DEMO_POD'), agentName: {\$regex: '^byo-'}, status: 'active'},
     {\$set: {status: 'uninstalled', updatedAt: new Date()}}
   );
   console.log(r.modifiedCount);
   process.exit(0);
 })" 2>/dev/null | tail -1)
-echo "[reset]     uninstalled $removed byo-smoke-* row(s)"
+echo "[reset]     uninstalled $removed byo-* row(s)"
 
 # ──────────────────────────────────────────────────────────────────────────
 # 2. Demote any non-demo openclaw installations in the demo pod.
