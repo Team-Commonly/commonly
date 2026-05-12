@@ -98,22 +98,32 @@ else
   red scrollback "HTTP=$HTTP_CODE"
 fi
 
-# file-preview — sample asset must be reachable
-# TODO: parameterize asset path; for now grep an asset URL from the scrollback
-asset_path=$(echo "$HTTP_BODY" | python3 -c '
-import sys, re, json
-msgs = json.load(sys.stdin)
-msgs = msgs if isinstance(msgs, list) else msgs.get("messages", [])
-for m in msgs:
-  content = m.get("content","") or ""
-  m_re = re.search(r"\[\[file:([^|\]]+)", content)
-  if m_re:
-    print(m_re.group(1)); break
-' 2>/dev/null || true)
-if [ -n "$asset_path" ]; then
-  todo file-preview "found asset token '$asset_path' (route check not yet implemented)"
+# file-preview — confirm pod context surfaces ≥1 asset AND that
+# asset's excerpt route is reachable. The file token in scrollback
+# (e.g. [[file:signup-implementation.md|2.1 KB]]) is the user-facing
+# entry to this — clicking it eventually resolves to an asset id. The
+# smoke approximates that round-trip via the context API (which is
+# what the inspector calls).
+http GET "/api/pods/$DEMO_POD/context?assetLimit=5"
+if [ "$HTTP_CODE" = "200" ]; then
+  first_asset=$(echo "$HTTP_BODY" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+a=d.get('assets') or []
+print(str((a[0] or {}).get('id') or (a[0] or {}).get('_id') or '') if a else '')
+" 2>/dev/null)
+  if [ -n "$first_asset" ]; then
+    http GET "/api/pods/$DEMO_POD/context/assets/$first_asset?lines=4"
+    if [ "$HTTP_CODE" = "200" ]; then
+      green file-preview "asset $first_asset excerpt reachable"
+    else
+      red file-preview "asset excerpt HTTP=$HTTP_CODE"
+    fi
+  else
+    red file-preview "no assets in pod context"
+  fi
 else
-  todo file-preview "no file tokens in scrollback"
+  red file-preview "pod context HTTP=$HTTP_CODE"
 fi
 
 # --- mention-response — checks that the wired agents are actually alive --
@@ -209,9 +219,10 @@ fi
 rm -f /tmp/.byo-page.html
 
 # B3 — backend round-trip for BYO MCP install. Uses a unique name per
-# smoke run so re-runs don't trip the "already installed" path. Cleanup
-# happens via the next-cycle reset script (C1) — until then the smoke
-# leaves an ephemeral webhook AgentInstallation in the demo pod.
+# smoke run because the install path 500s when re-installing over an
+# `uninstalled` row (the AgentInstallation upsert key collision is
+# real). reset-demo-account.sh sweeps these on the next cycle along
+# with byo-handoff-probe.
 b3_name="byo-smoke-$(date +%s)"
 http POST "/api/registry/install" "{\"agentName\":\"$b3_name\",\"podId\":\"$DEMO_POD\",\"scopes\":[\"context:read\",\"messages:write\"],\"config\":{\"runtime\":{\"runtimeType\":\"webhook\"}}}"
 if [ "$HTTP_CODE" = "200" ]; then
@@ -351,6 +362,51 @@ else
   todo runtime-badges "$distinct_rt distinct runtimes ($rt_keys) — needs C2 BYO replace"
 fi
 todo talk-to-cli         "depends on agent runtime token issuance; defer"
+
+# --- self-cleanup ---------------------------------------------------------
+# Leave no demo-pod residue. We:
+#  - Mark the byo-handoff-probe + byo-smoke-* AgentInstallations
+#    inactive (status=uninstalled) via the DELETE registry route — keeps
+#    the User rows for identity continuity (ADR-001 §3).
+#  - Delete the install-intro messages + the smoke @nova prompt + the
+#    Nova ack reply that this smoke run wrote into the demo pod chat.
+# The cleanup is best-effort: if any DELETE 404s we ignore (a future
+# smoke harness change may rename or omit one of these artifacts; the
+# reset script's belt-and-braces sweep stays as the backstop).
+http DELETE "/api/registry/agents/$b3_name/pods/$DEMO_POD?instanceId=default" || true
+http DELETE "/api/registry/agents/byo-handoff-probe/pods/$DEMO_POD?instanceId=default" || true
+
+# Chat-residue cleanup runs through the same /api/messages route the UI
+# uses. Identify messages by author (the byo-* User IDs we just created)
+# and by content marker ("smoke smoke-test-${ts}" / "Ack —"/"smoke
+# received") and DELETE them one by one. The smoke runs before this loop
+# created at most ~4 messages so the cleanup is bounded and cheap.
+cleanup_deleted=0
+cleanup_failed=0
+http GET "/api/messages/$DEMO_POD?limit=30"
+echo "$HTTP_BODY" | python3 -c "
+import sys, json, re
+d = json.load(sys.stdin)
+msgs = d if isinstance(d, list) else d.get('messages', [])
+marker = '$marker'
+for m in msgs:
+  c = m.get('content','') or ''
+  u = (m.get('username') or (m.get('user') or {}).get('username') or '').lower()
+  mid = m.get('id') or m.get('_id')
+  if not mid: continue
+  if (u.startswith('byo-')
+      or marker in c
+      or (u.startswith('nova') and re.search(r'^(ack[\s—-]|smoke received|acknowledged|i.{0,3}m here)', c.strip(), re.I))):
+    print(mid)
+" 2>/dev/null | while IFS= read -r msg_id; do
+  [ -z "$msg_id" ] && continue
+  if http DELETE "/api/messages/$msg_id" >/dev/null 2>&1 && [ "$HTTP_CODE" = "200" ]; then
+    cleanup_deleted=$((cleanup_deleted+1))
+  else
+    cleanup_failed=$((cleanup_failed+1))
+    echo "[cleanup] DELETE /api/messages/$msg_id HTTP=$HTTP_CODE" >&2
+  fi
+done
 
 # --- summary --------------------------------------------------------------
 echo
