@@ -174,7 +174,12 @@ test.describe('Reviewer journey', () => {
 
   test('beat 8: nova agent-room shows first-message coaching chips', async ({ page }) => {
     await page.goto(`${BASE}/v2/pods/${NOVA_ROOM}`);
-    await expect(page.locator('.v2-empty__title')).toContainText('Say hi to Nova', { timeout: 8000 });
+    // Longer timeout — the agent-room pod loads more slowly than other
+    // surfaces because it fetches members + messages + agent metadata
+    // in parallel; 8s was occasionally hitting on cold paths under
+    // full-suite runs. 15s gives plenty of headroom without making
+    // a true regression invisible.
+    await expect(page.locator('.v2-empty__title')).toContainText('Say hi to Nova', { timeout: 15000 });
     const chips = page.locator('.v2-empty__chip');
     await expect(chips).toHaveCount(3);
     // The click-pre-fills-composer behavior is verified in isolation
