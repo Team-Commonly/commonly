@@ -85,3 +85,78 @@ Wait 30 min or restart the gateway to clear dedupe state.
 2026-05-05. Reset deletes anything newer. If you intentionally
 re-seeded the storyboard forward, set `CUTOFF_UTC=...` when running
 reset.
+
+## Nightly canary (operator setup)
+
+To run the 10-beat walkthrough nightly against deployed dev and
+auto-open a GitHub issue on failure, add `.github/workflows/demo-canary.yml`:
+
+```yaml
+name: Demo Canary
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # 09:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: demo-canary
+  cancel-in-progress: false
+
+jobs:
+  walkthrough:
+    name: Reviewer Journey (deployed dev)
+    runs-on: ubuntu-latest
+    if: ${{ vars.DEMO_CANARY_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Install + browsers
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Run reviewer-journey
+        env:
+          DEMO_TOKEN: ${{ secrets.DEMO_TOKEN }}
+          DEMO_BASE_URL: ${{ secrets.DEMO_BASE_URL }}
+          DEMO_POD: ${{ secrets.DEMO_POD }}
+        run: npx playwright test e2e/reviewer-journey.spec.ts --reporter=line
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-canary-traces
+          path: |
+            test-results/
+            playwright-report/
+      - name: Open issue on schedule failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Demo canary failed — ${new Date().toISOString().slice(0, 10)}`,
+              body: `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\nSee docs/demo-verification.md for triage.`,
+              labels: ['demo-canary', 'priority:high'],
+            });
+```
+
+**Opt-in**: requires repo variable `DEMO_CANARY_ENABLED='true'` and
+secrets `DEMO_TOKEN` (sam-demo JWT), `DEMO_BASE_URL`
+(`https://app-dev.commonly.me`), `DEMO_POD` (`69f841a9063269526de0437c`).
+Until those are set the workflow no-ops.
+
+Catches the regression class normal CI misses: shared demo pod
+state drift, real LLM degradation, runtime-token issuance breaks.
+
+(Not committed here because the `gh` push token in this sprint
+lacked `workflow` scope — operator with full repo access can paste
+the YAML above directly.)
