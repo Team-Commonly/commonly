@@ -98,7 +98,7 @@ kubectl exec -n "$NAMESPACE" deployment/clawdbot-gateway -- bash -c \
 #    gets re-seeded forward.
 # ──────────────────────────────────────────────────────────────────────────
 CUTOFF_UTC="${CUTOFF_UTC:-2026-05-05 00:00:00+00}"
-echo "[reset] (4/5) hard-deleting post-storyboard chat (>$CUTOFF_UTC)…"
+echo "[reset] (4a/5) hard-deleting post-storyboard chat (>$CUTOFF_UTC)…"
 deleted=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
 const { Client } = require('pg');
 (async () => {
@@ -113,6 +113,23 @@ const { Client } = require('pg');
 })().catch(e => { console.error(e.message); process.exit(1); });
 " 2>/dev/null | tail -1)
 echo "[reset]     deleted $deleted post-cutoff message(s)"
+
+# Marketplace-install Playwright walkthroughs create agent-room pods.
+# Sidebar pollution: each test install leaves a "Talk to <agent>" room
+# in the sam-demo Today/Yesterday list. Delete agent-rooms created
+# after the cutoff EXCEPT the canonical Nova/Pixel/Cody storyboard
+# rooms (those are pre-seeded baseline).
+echo "[reset] (4b/5) deleting test-residue agent-room pods…"
+deleted_rooms=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
+const m=require('mongoose');
+m.connect(process.env.MONGO_URI).then(async ()=>{
+  const Pod=m.connection.db.collection('pods');
+  const cutoff = new Date('$CUTOFF_UTC');
+  const r=await Pod.deleteMany({ type: 'agent-room', createdAt: { \$gt: cutoff }, name: { \$nin: ['Nova', 'Pixel', 'Cody'] } });
+  console.log(r.deletedCount);
+  process.exit(0);
+})" 2>/dev/null | tail -1)
+echo "[reset]     deleted $deleted_rooms test agent-room pod(s)"
 
 # ──────────────────────────────────────────────────────────────────────────
 # 5. Re-run smoke to verify the reset didn't break anything.
