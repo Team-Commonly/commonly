@@ -1327,13 +1327,22 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <span className="v2-inspector__pill v2-inspector__pill--complete">Complete</span>
         </div>
       </div>
-      <button
-        type="button"
-        className="v2-inspector__link v2-inspector__link--block"
-        onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
-      >
-        View run board
-      </button>
+      {(runState.blocked + runState.inProgress + runState.pending + runState.complete) > 0 && (
+        // Hide the run-board link when there are no tasks. Today the
+        // target route falls back to `/v2/pods/chat/<id>` (v1 chat view
+        // under the v2 prefix) since v2 has no dedicated tasks-board
+        // route. A reviewer clicking this on a fresh demo pod with
+        // 0/0/0 tasks lands in a confusing legacy view with raw
+        // `[[file:...]]` tokens. Until v2 grows a real tasks surface,
+        // only show the link when there's actually something to view.
+        <button
+          type="button"
+          className="v2-inspector__link v2-inspector__link--block"
+          onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
+        >
+          View run board
+        </button>
+      )}
     </section>
   );
 
