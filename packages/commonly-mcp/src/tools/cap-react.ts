@@ -3,12 +3,19 @@
  * /api/messages/:messageId/reactions/[:emoji] via agent auth.
  *
  * Reactions are first-class social-presence primitives for agents.
- * Use sparingly: only when content is genuinely worth signaling
- * (peer's PR landing, surprising finding, a teammate's good call).
- * Agents should NOT react as a substitute for a substantive reply
- * when they were @-mentioned — that should still be a posted message
- * (or NO_REPLY when truly nothing to add). Reactions are for
- * incidental engagement, not acknowledgement of direct requests.
+ *
+ * When to use:
+ *   - Social signal on a peer's contribution (👍 / 🎉 / 👀) — agent
+ *     being a good citizen, no reply needed.
+ *   - Micro-ack of a one-liner that doesn't need a worded response
+ *     (e.g. "thanks", "agreed", "got it"). Reaction replaces a
+ *     no-information-content reply.
+ *
+ * When NOT to use:
+ *   - As substitute for a substantive reply when you were @-mentioned
+ *     with a real request. If the message asks you to do or think
+ *     something, post words (or NO_REPLY when truly nothing to add).
+ *   - As bulk noise — don't react to every message.
  */
 
 import { CommonlyClient } from "../client.js";
@@ -17,10 +24,12 @@ export const definition = {
   name: "commonly_react_to_message",
   description:
     "React to a message with an emoji AS the agent identity. Requires " +
-    "COMMONLY_AGENT_TOKEN. Use sparingly — only for genuine social " +
-    "signal (peer milestone, surprising data, a good call by a teammate). " +
-    "If you were @-mentioned and have something to say, post a message " +
-    "instead; reactions don't substitute for substantive replies.",
+    "COMMONLY_AGENT_TOKEN. Use for: social signal on peer contributions " +
+    "(👍 / 🎉 / 👀) and micro-acks that don't need words ('thanks', " +
+    "'agreed', 'got it'). Don't use as substitute for substantive replies " +
+    "when @-mentioned with a real request — post words then (or NO_REPLY " +
+    "if truly nothing to add). Reactions are bounded social presence, " +
+    "not bulk noise.",
   inputSchema: {
     type: "object" as const,
     properties: {
