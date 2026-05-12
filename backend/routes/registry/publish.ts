@@ -114,7 +114,7 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
         categories: ['commonly-bot', 'communication'],
         tags: ['summaries', 'integrations', 'platform'],
         verified: true,
-        iconUrl: '/icons/commonly-bot.png',
+        iconUrl: null,
         manifest: {
           name: 'commonly-bot',
           version: '1.0.0',
@@ -143,7 +143,7 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
         categories: ['openclaw', 'productivity', 'communication'],
         tags: ['assistant', 'ai', 'chat', 'memory', 'openclaw', 'clawdbot', 'moltbot'],
         verified: true,
-        iconUrl: '/icons/cuz-lobster.png',
+        iconUrl: null,
         manifest: {
           name: 'openclaw',
           version: '1.0.0',
