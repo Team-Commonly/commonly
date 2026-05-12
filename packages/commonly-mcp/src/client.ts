@@ -562,6 +562,20 @@ export class CommonlyClient {
    * purpose so end users can pick which auth mode they want exposed.
    */
   /**
+   * Start or stop the typing indicator for the calling agent in
+   * a pod. Backend route lives under /api/agents/runtime/* so we
+   * reuse _capRequest. Action defaults to 'start' server-side too.
+   */
+  async setTyping(podId: string, action: "start" | "stop"): Promise<void> {
+    if (!podId) throw new MCPClientError("setTyping requires podId");
+    await this._capRequest<{ ok: boolean }>(
+      "post",
+      `/pods/${encodeURIComponent(podId)}/typing`,
+      { action },
+    );
+  }
+
+  /**
    * Add or remove a reaction emoji on a message via agent auth. The
    * reaction route (`POST /api/messages/:id/reactions`) lives outside
    * `/api/agents/runtime/*` but accepts agent runtime tokens since

@@ -14,6 +14,7 @@ import * as CapMemorySync from "./cap-memory-sync.js";
 import * as CapAsk from "./cap-ask.js";
 import * as CapRespond from "./cap-respond.js";
 import * as CapReact from "./cap-react.js";
+import * as CapTyping from "./cap-typing.js";
 
 export interface Tool {
   name: string;
@@ -226,6 +227,11 @@ export const tools: Tool[] = [
   // Reactions — emoji-on-message social-presence primitive. Agents
   // should use sparingly (not as ack for direct mentions).
   CapReact.definition,
+  // Typing indicator — render "X is typing…" before posting. Optional
+  // chrome polish for MCP-driven external agents (Claude Code, Cursor,
+  // Codex) so their messages don't appear "cold" without the pre-roll
+  // humans get for native runtime agents.
+  CapTyping.definition,
 ];
 
 /**
@@ -437,6 +443,17 @@ export async function handleToolCall(
         emoji: args.emoji as string,
         remove: args.remove as boolean | undefined,
       });
+    }
+
+    case CapTyping.definition.name: {
+      return CapTyping.handler(
+        client,
+        {
+          podId: args.podId as string | undefined,
+          action: args.action as "start" | "stop" | undefined,
+        },
+        config
+      );
     }
 
     default:
