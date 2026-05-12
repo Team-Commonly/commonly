@@ -119,17 +119,66 @@ echo "[reset]     deleted $deleted post-cutoff message(s)"
 # in the sam-demo Today/Yesterday list. Delete agent-rooms created
 # after the cutoff EXCEPT the canonical Nova/Pixel/Cody storyboard
 # rooms (those are pre-seeded baseline).
-echo "[reset] (4b/5) deleting test-residue agent-room pods…"
+echo "[reset] (4b/5) deleting test-residue agent-room + agent-dm pods…"
 deleted_rooms=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
 const m=require('mongoose');
 m.connect(process.env.MONGO_URI).then(async ()=>{
   const Pod=m.connection.db.collection('pods');
   const cutoff = new Date('$CUTOFF_UTC');
-  const r=await Pod.deleteMany({ type: 'agent-room', createdAt: { \$gt: cutoff }, name: { \$nin: ['Nova', 'Pixel', 'Cody'] } });
-  console.log(r.deletedCount);
+  // agent-room: \"Talk to <agent>\" pods from install-handoff or
+  // marketplace install flows. Preserve the canonical Nova/Pixel/Cody
+  // storyboard rooms.
+  // agent-dm: bot-to-bot 2-member pods created by talk-to-cli smoke
+  // (byo-smoke-XXX ↔ codex-bot-codex). Anything created after cutoff
+  // is test residue EXCEPT the canonical Nova-Demo↔Cody seed
+  // (6a01a1ffcf199a9aed01d9d1) — that's the B1 fixture so the
+  // inspector's Direct Messages card has live data to surface.
+  const KEEP_DM_IDS = ['6a01a1ffcf199a9aed01d9d1'];
+  const roomRes = await Pod.deleteMany({ type: 'agent-room', createdAt: { \$gt: cutoff }, name: { \$nin: ['Nova', 'Pixel', 'Cody'] } });
+  const dmRes = await Pod.deleteMany({ type: 'agent-dm', createdAt: { \$gt: cutoff }, _id: { \$nin: KEEP_DM_IDS.map(id => m.Types.ObjectId.createFromHexString(id)) } });
+  console.log(roomRes.deletedCount + dmRes.deletedCount);
   process.exit(0);
 })" 2>/dev/null | tail -1)
-echo "[reset]     deleted $deleted_rooms test agent-room pod(s)"
+echo "[reset]     deleted $deleted_rooms test pod(s)"
+
+# Re-seed the canonical Nova-Demo ↔ Cody a2a-dm if missing. The B1
+# fixture (inspector "Direct messages" card) needs at least one live
+# A2A DM involving nova-demo to render. Talk-to-cli smoke creates
+# byo-smoke-* ↔ codex DMs but those aren't surfaced under the
+# instanceId=nova-demo query the inspector uses.
+echo "[reset] (4c/5) reseeding Nova-Demo↔Cody A2A DM if absent…"
+seeded=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
+const m=require('mongoose');
+m.connect(process.env.MONGO_URI).then(async ()=>{
+  const Pod=m.connection.db.collection('pods');
+  const SEED_ID='6a01a1ffcf199a9aed01d9d1';
+  const NOVA_DEMO_ID='6a0197d1deeccd27ced8c175';
+  const CODY_ID='69f841c3063269526de047d4';
+  const existing=await Pod.findOne({_id:m.Types.ObjectId.createFromHexString(SEED_ID)});
+  if (existing) { console.log(0); process.exit(0); }
+  await Pod.insertOne({
+    _id: m.Types.ObjectId.createFromHexString(SEED_ID),
+    name: 'Nova-Demo ↔ Cody',
+    description: 'Seeded a2a DM — B1 inspector fixture',
+    type: 'agent-dm',
+    createdBy: m.Types.ObjectId.createFromHexString(NOVA_DEMO_ID),
+    members: [
+      m.Types.ObjectId.createFromHexString(NOVA_DEMO_ID),
+      m.Types.ObjectId.createFromHexString(CODY_ID),
+    ],
+    joinPolicy: 'invite-only',
+    messages: [],
+    announcements: [],
+    externalLinks: [],
+    contacts: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    __v: 0,
+  });
+  console.log(1);
+  process.exit(0);
+})" 2>/dev/null | tail -1)
+echo "[reset]     seeded $seeded Nova-Demo↔Cody pod(s)"
 
 # ──────────────────────────────────────────────────────────────────────────
 # 5. Re-run smoke to verify the reset didn't break anything.
