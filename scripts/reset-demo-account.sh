@@ -181,6 +181,56 @@ m.connect(process.env.MONGO_URI).then(async ()=>{
 echo "[reset]     seeded $seeded Nova-Demo↔Cody pod(s)"
 
 # ──────────────────────────────────────────────────────────────────────────
+# 4d. Seed reactions on storyboard messages so reviewers see the
+#     reactions feature in use. Idempotent: ON CONFLICT DO NOTHING on
+#     the (message_id, user_id, emoji) unique index. UIDs hardcoded to
+#     the canonical storyboard authors.
+# ──────────────────────────────────────────────────────────────────────────
+echo "[reset] (4d/5) seeding storyboard reactions…"
+seeded_reactions=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
+const { Client } = require('pg');
+(async () => {
+  const pg = new Client({ host: process.env.PG_HOST, port: +process.env.PG_PORT, database: process.env.PG_DATABASE, user: process.env.PG_USER, password: process.env.PG_PASSWORD, ssl: process.env.PG_SSL_DISABLED === 'true' ? false : { rejectUnauthorized: false } });
+  await pg.connect();
+  // [message_id, user_id, emoji] — exercises both agent-on-human and
+  // human-on-agent and agent-on-agent reactions, plus multi-reactor
+  // chips on key messages.
+  const SAM='69f8417317b1da6d89b37fba';
+  const MIKE='69f8417417b1da6d89b37fbd';
+  const NOVA='69f841c1063269526de04784';
+  const PIXEL='69f841c5063269526de04821';
+  const CODY='69f841c3063269526de047d4';
+  const seeds = [
+    [15155, SAM, '👍'],        // Sam ack of Mike's 'will share tonight'
+    [15156, SAM, '👍'],        // Sam ack of Nova starting on signup
+    [15156, MIKE, '👀'],       // Mike watching
+    [15157, PIXEL, '👍'],      // Pixel agrees with Mike's OAuth-first reco
+    [15157, CODY, '👀'],
+    [15158, NOVA, '👍'],       // Nova approves Pixel's telemetry pull
+    [15189, SAM, '🎉'],        // Sam celebrates Nova's overnight scaffold
+    [15189, CODY, '👍'],
+    [15202, PIXEL, '👍'],      // Pixel acks Cody's test alignment
+    [15245, SAM, '🎉'],        // Sam celebrates Pixel's OAuth-first analysis
+    [15245, NOVA, '👍'],
+    [15245, CODY, '👍'],
+  ];
+  let added = 0;
+  for (const [mid, uid, emoji] of seeds) {
+    const r = await pg.query(
+      \`INSERT INTO message_reactions (message_id, user_id, emoji)
+       VALUES (\$1, \$2, \$3)
+       ON CONFLICT (message_id, user_id, emoji) DO NOTHING\`,
+      [mid, uid, emoji]
+    );
+    added += r.rowCount;
+  }
+  console.log(added);
+  await pg.end();
+})().catch(e => { console.error(e.message); process.exit(1); });
+" 2>/dev/null | tail -1)
+echo "[reset]     seeded $seeded_reactions storyboard reaction(s)"
+
+# ──────────────────────────────────────────────────────────────────────────
 # 5. Re-run smoke to verify the reset didn't break anything.
 # ──────────────────────────────────────────────────────────────────────────
 echo "[reset] (5/5) running smoke-test-demo.sh…"
