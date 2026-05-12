@@ -227,4 +227,22 @@ test.describe('Reviewer journey', () => {
     await expect(page.locator('.v2-empty__title')).toContainText(/Say hi to /, { timeout: 8000 });
     await expect(page.locator('.v2-empty__chip')).toHaveCount(3);
   });
+
+  test('beat 10: nav rail surfaces render without React error', async ({ page }) => {
+    // Reviewer will click around the rail. Each surface should render
+    // without "Something went wrong" / Minified React error and with
+    // the expected title. Routes mirror v2 rail tooltips.
+    const surfaces = [
+      { href: '/v2/agents/browse', title: /Hire an agent/ },
+      { href: '/v2/marketplace', title: /Marketplace/ },
+      { href: '/v2/settings', title: /Settings/ },
+      { href: '/v2/agents/byo', title: /Bring your own/i },
+    ];
+    for (const s of surfaces) {
+      await page.goto(`${BASE}${s.href}`);
+      await expect(page.locator('text=Something went wrong')).toHaveCount(0);
+      await expect(page.locator('text=/Minified React error/')).toHaveCount(0);
+      await expect(page.locator('h1, .v2-feature__title').filter({ hasText: s.title })).toBeVisible({ timeout: 8000 });
+    }
+  });
 });
