@@ -101,18 +101,23 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Validate agentName shape at the entry point. The .match() form
-    // (rather than .test() + reuse) is intentional — extracting the
-    // captured value into a fresh string lets CodeQL's taint analysis
-    // see a sanitization boundary, suppressing js/sql-injection on the
-    // Mongoose filters below that key off this slug.
-    const agentNameMatch = typeof agentName === 'string'
-      ? agentName.match(/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/i)
-      : null;
-    if (!agentNameMatch) {
-      return res.status(400).json({ error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/i' });
+    // Validate + sanitize agentName at the entry point. The
+    // strip-via-replace pattern (rather than .test()/.match()) is the
+    // one CodeQL recognises as a SqlSanitizer for js/sql-injection on
+    // the Mongoose filters below. Validation is still strict — if the
+    // sanitized form doesn't round-trip the original (after lowercase),
+    // it had invalid chars and we 400. Mirrors normalizeInstanceId in
+    // helpers.ts which already uses this shape for the same reason.
+    if (typeof agentName !== 'string') {
+      return res.status(400).json({ error: 'agentName must be a string' });
     }
-    const safeAgentName: string = agentNameMatch[0].toLowerCase();
+    const safeAgentName: string = String(agentName)
+      .toLowerCase()
+      .replace(/[^a-z0-9@/-]/g, '');
+    if (!safeAgentName || safeAgentName !== agentName.toLowerCase()
+        || !/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(safeAgentName)) {
+      return res.status(400).json({ error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/' });
+    }
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
