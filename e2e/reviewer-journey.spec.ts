@@ -207,12 +207,20 @@ test.describe('Reviewer journey', () => {
     const installButton = page.locator('button').filter({ hasText: /^Install$/ }).first();
     await expect(installButton).toBeVisible({ timeout: 8000 });
     await installButton.click();
-    // Dialog appears — match by role rather than title text (the title
-    // varies across MUI versions and may be rendered as h2/h6/etc).
-    const dialog = page.locator('[role="dialog"]');
-    await expect(dialog).toBeVisible({ timeout: 5000 });
-    // Confirm install in dialog
-    await dialog.locator('button', { hasText: 'Install' }).click();
+    // Dialog appears — match by role; MUI sometimes uses
+    // role=presentation on the backdrop wrapper, with role=dialog
+    // on the inner Paper. Wait for the Install button specifically
+    // since that's what we'll click next.
+    // The dialog renders a FormGroup of pod checkboxes — at least one
+    // must be checked before the Install button enables. Pick the
+    // first checkbox (the demo account's accessible pods are
+    // pre-sorted; Sign-up flow lands first).
+    const dialogScope = page.locator('[role="dialog"], [role="presentation"]');
+    await dialogScope.locator('input[type="checkbox"]').first().check();
+    const dialogInstall = dialogScope
+      .locator('button').filter({ hasText: /^Install$/ }).first();
+    await expect(dialogInstall).toBeEnabled({ timeout: 5000 });
+    await dialogInstall.click();
     // Wait for navigation to the new agent-room
     await page.waitForURL(/\/v2\/pods\/[a-f0-9]{24}/, { timeout: 20_000 });
     // Empty-state chips render with the installed agent's displayName

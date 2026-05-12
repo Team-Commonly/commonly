@@ -39,20 +39,19 @@ the printed tag.
 8. Agent-room empty-state shows "Say hi to <DisplayName>" + 3 chips
 9. Marketplace Install → handoff to agent-room with chips
 
-## Known flakes
+## Inter-test residue
 
-The Playwright suite is order-sensitive: beats 2 / 8 / 9 sometimes
-fail when run as part of the full suite due to inter-test state
-shared across the live demo pod. Each beat passes individually
-(`npx playwright test e2e/reviewer-journey.spec.ts -g "beat N"`).
-Use isolation runs to debug regressions; the full-suite signal is
-"≥7 / 9 green" rather than 9/9.
+Beats run sequentially against the shared sam-demo pod. Beats 5 + 7 +
+9 each mutate live state (enqueue mention, install webhook agent,
+install marketplace agent). An `afterEach` hook deletes the installed
+`byo-*` / `newshound` rows after each test, but `pod.members[]` retains
+them until the next `reset-demo-account.sh` run. After ~5 full-suite
+runs, run reset to keep the demo pod tidy.
 
-Root cause: beats run sequentially against the shared sam-demo
-pod. Beat 5 enqueues a real `@nova` mention that lingers as
-nova-demo gateway state. Beats 7 + 9 install ephemeral webhook
-agents; the `afterEach` cleanup deletes them but pod.members[]
-retains them until the next `reset-demo-account.sh` run.
+Per-beat isolation is always available for debugging:
+```
+npx playwright test e2e/reviewer-journey.spec.ts -g "beat N"
+```
 
 ## How to run on a different instance
 
