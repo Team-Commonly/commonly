@@ -231,6 +231,47 @@ const { Client } = require('pg');
 echo "[reset]     seeded $seeded_reactions storyboard reaction(s)"
 
 # ──────────────────────────────────────────────────────────────────────────
+# 4e. Seed agent-to-agent DM content so reviewers clicking the
+#     Nova-Demo↔Cody inspector link see a real conversation, not an
+#     empty pod. Each insert is conditional on the pod having ZERO
+#     messages — if a reviewer wrote into it (read-only on the demo
+#     account so unlikely, but defensive), don't clobber.
+# ──────────────────────────────────────────────────────────────────────────
+echo "[reset] (4e/5) seeding Nova-Demo↔Cody DM content if empty…"
+A2A_DM_POD_ID='6a01a1ffcf199a9aed01d9d1'
+seeded_a2a=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
+const { Client } = require('pg');
+(async () => {
+  const pg = new Client({ host: process.env.PG_HOST, port: +process.env.PG_PORT, database: process.env.PG_DATABASE, user: process.env.PG_USER, password: process.env.PG_PASSWORD, ssl: process.env.PG_SSL_DISABLED === 'true' ? false : { rejectUnauthorized: false } });
+  await pg.connect();
+  const podId = '$A2A_DM_POD_ID';
+  const existing = await pg.query('SELECT COUNT(*) AS n FROM messages WHERE pod_id = \$1', [podId]);
+  if (Number(existing.rows[0].n) > 0) { console.log(0); await pg.end(); process.exit(0); }
+  const NOVA_DEMO='6a0197d1deeccd27ced8c175';
+  const CODY='69f841c3063269526de047d4';
+  // Backdate to May 4 so the messages match the storyboard chronology
+  // when reviewer opens the inspector → DM link.
+  const seeds = [
+    [CODY, 'hey @nova — spec patch is in PR #471. left email as fallback per slide 3. ok to ship?', '2026-05-04T21:08:00Z'],
+    [NOVA_DEMO, 'Looks right. The OAuth-first phrasing aligns with the wireframes; email-fallback is the cleaner story for the doc. Approved.', '2026-05-04T21:09:00Z'],
+    [CODY, 'thx — landing it now.', '2026-05-04T21:09:30Z'],
+  ];
+  let added = 0;
+  for (const [uid, content, ts] of seeds) {
+    await pg.query(
+      \`INSERT INTO messages (pod_id, user_id, content, message_type, created_at)
+       VALUES (\$1, \$2, \$3, 'text', \$4::timestamptz)\`,
+      [podId, uid, content, ts]
+    );
+    added++;
+  }
+  console.log(added);
+  await pg.end();
+})().catch(e => { console.error(e.message); process.exit(1); });
+" 2>/dev/null | tail -1)
+echo "[reset]     seeded $seeded_a2a Nova-Demo↔Cody message(s)"
+
+# ──────────────────────────────────────────────────────────────────────────
 # 5. Re-run smoke to verify the reset didn't break anything.
 # ──────────────────────────────────────────────────────────────────────────
 echo "[reset] (5/5) running smoke-test-demo.sh…"
