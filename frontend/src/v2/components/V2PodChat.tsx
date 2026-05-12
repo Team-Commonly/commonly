@@ -442,6 +442,38 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [mentionOpen]);
 
+  // Avatar row shows active members only — humans (member.isBot=false)
+  // plus currently-installed agents. pod.members[] retains stale bot
+  // User rows for identity continuity (ADR-001 §3), so reading it raw
+  // surfaces uninstalled agents in the avatar count. Mirrors the
+  // V2PodInspector filter so the chat-header "+N" agrees with the
+  // Members tab count. MUST live above the `if (!pod)` early return —
+  // hooks run on every render or React fires #310 on pod-state changes.
+  const activeMemberAgentUsernames = React.useMemo(() => {
+    const set = new Set<string>();
+    (agents || []).forEach((a) => {
+      const rawName = ((a as { name?: string; agentName?: string }).name || a.agentName || '').toLowerCase();
+      const inst = (a.instanceId || '').toLowerCase();
+      const username = !inst || inst === 'default' || inst === rawName ? rawName : `${rawName}-${inst}`;
+      if (username) set.add(username);
+    });
+    return set;
+  }, [agents]);
+  const effectiveMembers = React.useMemo(() => {
+    // `isBot` is documented as unreliable on the wire (V2PodInspector
+    // 804-807). A member whose `isBot` is falsy but whose username
+    // matches an active agent would be counted twice without this
+    // secondary guard.
+    const humans = (members || []).filter((m) => {
+      if (m.isBot) return false;
+      return !activeMemberAgentUsernames.has((m.username || '').toLowerCase());
+    });
+    const activeAgentMembers = (members || []).filter((m) => (
+      activeMemberAgentUsernames.has((m.username || '').toLowerCase())
+    ));
+    return [...humans, ...activeAgentMembers];
+  }, [members, activeMemberAgentUsernames]);
+
   if (!pod) {
     return (
       <main className="v2-pane v2-pane--main">
@@ -531,36 +563,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     writeMode(pod._id, next);
   };
 
-  // Avatar row shows active members only — humans (member.isBot=false)
-  // plus currently-installed agents. pod.members[] retains stale bot
-  // User rows for identity continuity (ADR-001 §3), so reading it raw
-  // surfaces uninstalled agents in the avatar count. Mirrors the
-  // V2PodInspector filter so the chat-header "+N" agrees with the
-  // Members tab count.
-  const activeMemberAgentUsernames = React.useMemo(() => {
-    const set = new Set<string>();
-    (agents || []).forEach((a) => {
-      const rawName = ((a as { name?: string; agentName?: string }).name || a.agentName || '').toLowerCase();
-      const inst = (a.instanceId || '').toLowerCase();
-      const username = !inst || inst === 'default' || inst === rawName ? rawName : `${rawName}-${inst}`;
-      if (username) set.add(username);
-    });
-    return set;
-  }, [agents]);
-  const effectiveMembers = React.useMemo(() => {
-    // `isBot` is documented as unreliable on the wire (V2PodInspector
-    // 804-807). A member whose `isBot` is falsy but whose username
-    // matches an active agent would be counted twice without this
-    // secondary guard.
-    const humans = (members || []).filter((m) => {
-      if (m.isBot) return false;
-      return !activeMemberAgentUsernames.has((m.username || '').toLowerCase());
-    });
-    const activeAgentMembers = (members || []).filter((m) => (
-      activeMemberAgentUsernames.has((m.username || '').toLowerCase())
-    ));
-    return [...humans, ...activeAgentMembers];
-  }, [members, activeMemberAgentUsernames]);
+  // visibleMembers / memberCountExtra are plain consts derived from the
+  // effectiveMembers useMemo that lives above the `if (!pod)` early
+  // return — hooks must run on every render to satisfy the rules of
+  // hooks (otherwise React #310 fires on pod-state transitions). Plain
+  // consts can live here.
   const visibleMembers = effectiveMembers.slice(0, 3);
   const memberCountExtra = Math.max(0, effectiveMembers.length - visibleMembers.length);
   const onlineAgentCount = agents.filter((agent) => (
