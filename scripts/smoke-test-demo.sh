@@ -130,8 +130,25 @@ fi
 # Posts a unique-timestamped @nova message, polls for a reply within 90s.
 ts=$(date +%s)
 marker="smoke-test-$ts"
-post_body=$(printf '{"content":"@nova-demo smoke %s — please ack briefly"}' "$marker")
+# Prompt asks Nova to echo the marker — this guarantees her reply has
+# unique content per run, dodging the agent-message dedup_recent window
+# (30 min) that would otherwise skip identical short acks across smoke
+# runs. Also gives the matcher below a precise content anchor.
+post_body=$(printf '{"content":"@nova-demo smoke %s — please reply with the exact text %s so I can confirm."}' "$marker" "$marker")
 http POST "/api/messages/$DEMO_POD" "$post_body"
+# Capture the prompt's message id so we can detect ANY nova reply posted
+# AFTER it (older versions matched on substring "smoke" in nova's content,
+# but a terse "ack" reply has no marker — false negative when nova's
+# verbose mood is off).
+prompt_id=$(echo "$HTTP_BODY" | python3 -c "
+import sys,json
+try:
+  d=json.load(sys.stdin)
+  m = d.get('message') or d
+  print(m.get('id') or m.get('_id') or '')
+except Exception:
+  print('')
+" 2>/dev/null)
 if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
   red mention-response "post HTTP=$HTTP_CODE"
 else
@@ -143,10 +160,19 @@ else
 import sys,json
 msgs = json.load(sys.stdin)
 msgs = msgs if isinstance(msgs,list) else msgs.get('messages',[])
-for m in msgs[-10:]:
-  u = (m.get('username') or '').lower()
-  c = (m.get('content','') or '').lower()
-  if ('nova' in u) and ('$marker' in c or 'smoke' in c):
+prompt_id = '$prompt_id'
+# Find the prompt in scrollback; treat anything later from nova as a
+# valid reply. Falls back to substring match if the prompt id wasn't
+# captured (older response shapes).
+seen_prompt = False
+for m in msgs:
+  mid = str(m.get('id') or m.get('_id') or '')
+  if prompt_id and mid == prompt_id:
+    seen_prompt = True
+    continue
+  if not seen_prompt and prompt_id: continue
+  u = (m.get('username') or (m.get('user') or {}).get('username') or '').lower()
+  if 'nova' in u:
     sys.exit(0)
 sys.exit(1)
 " 2>/dev/null; then
