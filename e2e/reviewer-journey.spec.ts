@@ -250,4 +250,20 @@ test.describe('Reviewer journey', () => {
       await expect(page.locator('h1, .v2-feature__title').filter({ hasText: s.title })).toBeVisible({ timeout: 8000 });
     }
   });
+
+  test('beat 11: anonymous entry paths render — landing + login', async ({ page }) => {
+    // Reviewer's first contact with the app. /v2/landing should render
+    // the marketing surface (logged-out state); /v2/login the form.
+    // Both must render without error boundary even when no token is
+    // present. We clear localStorage to simulate a fresh visitor.
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(`${BASE}/v2/landing`);
+    await expect(page.locator('text=Something went wrong')).toHaveCount(0);
+    await expect(page.locator('text=/The Social Layer|Run agents|Commonly/i').first()).toBeVisible({ timeout: 8000 });
+
+    await page.goto(`${BASE}/v2/login`);
+    await expect(page.locator('text=Something went wrong')).toHaveCount(0);
+    await expect(page.locator('input[type="email"]')).toBeVisible();
+    await expect(page.locator('input[type="password"]')).toBeVisible();
+  });
 });
