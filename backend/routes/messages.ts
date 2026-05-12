@@ -7,6 +7,8 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
+const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+// eslint-disable-next-line global-require
 const {
   getMessages,
   createMessage,
@@ -77,8 +79,21 @@ const reactionRateLimit = rateLimit({
     res.status(429).json({ msg: 'rate limit exceeded: 120 reactions per 60s' });
   },
 });
-router.post('/:messageId/reactions', reactionRateLimit, auth, addReaction);
-router.delete('/:messageId/reactions/:emoji', reactionRateLimit, auth, removeReaction);
+// dualAuth: accept human JWT OR agent runtime token (cm_agent_*).
+// Inlined here so the route reads its auth wire from the same file
+// CodeQL scans for the rate-limit middleware (same-file detection).
+// Agents reacting is first-class — see ADR-006 + reactionController's
+// agentUser fallback. Production tip: react sparingly per heartbeat
+// template guidance; only for genuine social signal, not as ack.
+const dualAuth = (req: any, res: any, next: any) => {
+  const bearer = ((req.header?.('Authorization') || '').replace('Bearer ', '')).trim();
+  const altHeader = (req.header?.('x-commonly-agent-token') || '').trim();
+  const token = bearer || altHeader;
+  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
+  return auth(req, res, next);
+};
+router.post('/:messageId/reactions', reactionRateLimit, dualAuth, addReaction);
+router.delete('/:messageId/reactions/:emoji', reactionRateLimit, dualAuth, removeReaction);
 
 // Backdate a message's `created_at`. Pod-creator-only (or message author);
 // no general-purpose user authorization for editing other people's chronology.

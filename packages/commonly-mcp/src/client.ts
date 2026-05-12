@@ -561,6 +561,39 @@ export class CommonlyClient {
    * which uses user-auth and a different backend route. Both exist on
    * purpose so end users can pick which auth mode they want exposed.
    */
+  /**
+   * Add or remove a reaction emoji on a message via agent auth. The
+   * reaction route (`POST /api/messages/:id/reactions`) lives outside
+   * `/api/agents/runtime/*` but accepts agent runtime tokens since
+   * the same-author react-as-yourself contract applies to bots too.
+   */
+  async reactToMessage(
+    messageId: string,
+    emoji: string
+  ): Promise<{ ok: true; reactions: unknown[] }> {
+    const http = this.requireAgentHttp();
+    if (!messageId) throw new MCPClientError("reactToMessage requires messageId");
+    if (!emoji) throw new MCPClientError("reactToMessage requires emoji");
+    const response = await http.post<{ ok: true; reactions: unknown[] }>(
+      `/api/messages/${encodeURIComponent(messageId)}/reactions`,
+      { emoji },
+    );
+    return response.data;
+  }
+
+  async unreactToMessage(
+    messageId: string,
+    emoji: string
+  ): Promise<{ ok: true; reactions: unknown[] }> {
+    const http = this.requireAgentHttp();
+    if (!messageId) throw new MCPClientError("unreactToMessage requires messageId");
+    if (!emoji) throw new MCPClientError("unreactToMessage requires emoji");
+    const response = await http.delete<{ ok: true; reactions: unknown[] }>(
+      `/api/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(emoji)}`,
+    );
+    return response.data;
+  }
+
   async postMessageCAP(
     podId: string,
     options: CAPPostMessageOptions

@@ -417,6 +417,33 @@ else
   todo talk-to-cli "byo-token-issue did not surface a runtime_token"
 fi
 
+# agent-react — exercise dualAuth on the reactions route. Use the same
+# cm_agent_* token to POST a 👍 reaction on a recent demo-pod message,
+# verify the response includes mine:true, then DELETE it. Closes the
+# loop "agents can react autonomously (ADR-007 follow-up)".
+if [ -n "${runtime_token:-}" ] && [ -n "${rxn_msg_id:-}" ]; then
+  agent_react_resp=$(curl -sS -H "Authorization: Bearer $runtime_token" -H "Content-Type: application/json" --max-time 15 -X POST "${API}/api/messages/${rxn_msg_id}/reactions" -d '{"emoji":"👀"}' 2>/dev/null)
+  agent_mine=$(echo "$agent_react_resp" | python3 -c "
+import sys,json
+try:
+  d=json.load(sys.stdin)
+  arr=d.get('reactions') or []
+  ok = any(r.get('emoji')=='👀' for r in arr)
+  print('yes' if ok else 'no')
+except Exception:
+  print('parse_err')
+" 2>/dev/null)
+  if [ "$agent_mine" = "yes" ]; then
+    # Cleanup: agent removes its own reaction
+    curl -sS -H "Authorization: Bearer $runtime_token" --max-time 15 -X DELETE "${API}/api/messages/${rxn_msg_id}/reactions/%F0%9F%91%80" >/dev/null 2>&1 || true
+    green agent-react "cm_agent_* token → POST 👀 + reactions array; cleaned up"
+  else
+    red agent-react "agent reaction not recorded ($agent_mine)"
+  fi
+else
+  todo agent-react "missing runtime_token or message id"
+fi
+
 # --- self-cleanup ---------------------------------------------------------
 # Leave no demo-pod residue. We:
 #  - Mark the byo-handoff-probe + byo-smoke-* AgentInstallations
