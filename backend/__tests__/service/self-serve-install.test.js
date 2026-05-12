@@ -18,6 +18,7 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
+const AgentProfile = require('../../models/AgentProfile').default || require('../../models/AgentProfile');
 
 const registryRoutes = require('../../routes/registry');
 const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
@@ -164,6 +165,50 @@ describe('ADR-006 self-serve webhook install', () => {
     // No ephemeral row should have been created.
     const reg = await AgentRegistry.findOne({ agentName: 'outsider-bot' });
     expect(reg).toBeNull();
+  });
+
+  it('reinstall over a stale uninstalled row succeeds (no 500 from duplicate AgentProfile)', async () => {
+    // First install creates both AgentInstallation and AgentProfile.
+    const first = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({
+        agentName: 'reinstall-target',
+        podId: pod._id.toString(),
+        config: { runtime: { runtimeType: 'webhook' } },
+        scopes: ['context:read'],
+      });
+    expect(first.status).toBe(200);
+
+    // Simulate reset-demo-account.sh's raw mongo updateMany: mark
+    // the AgentInstallation as uninstalled WITHOUT cascading to
+    // AgentProfile (which is what causes the 500 in production). Also
+    // archive the AgentProfile to ensure the upsert restores status.
+    await AgentInstallation.updateOne(
+      { agentName: 'reinstall-target', podId: pod._id },
+      { $set: { status: 'uninstalled' } },
+    );
+    await AgentProfile.updateOne(
+      { agentName: 'reinstall-target', podId: pod._id },
+      { $set: { status: 'archived' } },
+    );
+
+    // Re-install — must NOT 500.
+    const second = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({
+        agentName: 'reinstall-target',
+        podId: pod._id.toString(),
+        config: { runtime: { runtimeType: 'webhook' } },
+        scopes: ['context:read'],
+      });
+    expect(second.status).toBe(200);
+
+    // Confirm there's exactly ONE AgentProfile row and it's active.
+    const profiles = await AgentProfile.find({ agentName: 'reinstall-target', podId: pod._id });
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].status).toBe('active');
   });
 
   it('marketplace catalog excludes ephemeral self-serve agents', async () => {

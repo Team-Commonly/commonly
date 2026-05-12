@@ -1,6 +1,7 @@
 // Agent install route — extracted from registry.js (GH#112)
 // Handles: POST /install
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
@@ -22,6 +23,24 @@ const {
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
 } = require('./tokens');
+
+// Inlined per-route limiter so CodeQL's `js/missing-rate-limiting`
+// query (which only sees express-rate-limit calls in the same file
+// as the route registration) recognises the guard. Mirrors the
+// phase4RateLimit pattern in agentsRuntime.ts. Skipped under
+// NODE_ENV=test so the integration suite's beforeEach reinstall
+// loops (30+ installs in <60s) don't get throttled.
+const installRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 30 install requests per 60s',
+    code: 'rate_limited',
+  }),
+});
 
 const installRouter = express.Router();
 
@@ -72,7 +91,7 @@ const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
  * POST /api/registry/install
  * Install an agent to a pod
  */
-installRouter.post('/install', auth, async (req: any, res: any) => {
+installRouter.post('/install', installRateLimit, auth, async (req: any, res: any) => {
   try {
     const {
       agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId,
@@ -80,6 +99,24 @@ installRouter.post('/install', auth, async (req: any, res: any) => {
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Validate + sanitize agentName at the entry point. The
+    // strip-via-replace pattern (rather than .test()/.match()) is the
+    // one CodeQL recognises as a SqlSanitizer for js/sql-injection on
+    // the Mongoose filters below. Validation is still strict — if the
+    // sanitized form doesn't round-trip the original (after lowercase),
+    // it had invalid chars and we 400. Mirrors normalizeInstanceId in
+    // helpers.ts which already uses this shape for the same reason.
+    if (typeof agentName !== 'string') {
+      return res.status(400).json({ error: 'agentName must be a string' });
+    }
+    const safeAgentName: string = String(agentName)
+      .toLowerCase()
+      .replace(/[^a-z0-9@/-]/g, '');
+    if (!safeAgentName || safeAgentName !== agentName.toLowerCase()
+        || !/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(safeAgentName)) {
+      return res.status(400).json({ error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/' });
     }
 
     const pod = await Pod.findById(podId).lean();
@@ -230,23 +267,40 @@ installRouter.post('/install', auth, async (req: any, res: any) => {
       displayName: displayName || agent.displayName,
     });
 
-    await AgentProfile.create({
-      agentId: buildAgentProfileId(agentName, normalizedInstanceId),
-      agentName: agentName.toLowerCase(),
-      instanceId: normalizedInstanceId,
-      podId,
-      name: displayName || agent.displayName,
-      purpose: agent.description,
-      instructions: agent.manifest.configSchema?.defaultInstructions || '',
-      persona: {
-        tone: 'friendly',
-        specialties: agent.manifest.capabilities?.map((c: any) => c.name) || [],
+    // Use upsert by the natural key (podId + agentId) so reinstalling
+    // over a stale row left behind by raw status='uninstalled' updates
+    // doesn't duplicate-key-error out. Identity continuity (ADR-001
+    // §3) wants the AgentInstallation reactivated; the AgentProfile
+    // should be refreshed in place, not re-created.
+    await AgentProfile.findOneAndUpdate(
+      { podId, agentId: buildAgentProfileId(safeAgentName, normalizedInstanceId) },
+      {
+        // setDefaultsOnInsert fires on insert only, so stats /
+        // integrations / modelPreferences keep their existing values
+        // across re-installs — what we want for identity continuity.
+        $set: {
+          agentName: safeAgentName,
+          instanceId: normalizedInstanceId,
+          name: displayName || agent.displayName,
+          purpose: agent.description,
+          instructions: agent.manifest.configSchema?.defaultInstructions || '',
+          persona: {
+            tone: 'friendly',
+            specialties: agent.manifest.capabilities?.map((c: any) => c.name) || [],
+          },
+          toolPolicy: {
+            allowed: grantedScopes.filter((s: any) => s.includes(':')).map((s: any) => s.split(':')[0]),
+          },
+          // Force back to active — a previous admin action or partial
+          // uninstall may have left the profile paused/archived.
+          status: 'active',
+        },
+        $setOnInsert: {
+          createdBy: userId,
+        },
       },
-      toolPolicy: {
-        allowed: grantedScopes.filter((s: any) => s.includes(':')).map((s: any) => s.split(':')[0]),
-      },
-      createdBy: userId,
-    });
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
 
     try {
       const agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
