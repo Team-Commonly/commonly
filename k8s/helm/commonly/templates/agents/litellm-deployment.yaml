@@ -387,7 +387,14 @@ spec:
               interruptible_sleep(ROTATION_INTERVAL_SEC)
         env:
         - name: CODEX_ROTATION_INTERVAL_SEC
-          value: "600"
+          # 30 min (was 10 min). ChatGPT's anti-abuse detection invalidates
+          # sessions that swap in/out of the same account too frequently —
+          # observed in dev when 3 accounts rotating every 10 min would all
+          # be `token_invalidated` server-side within hours despite JWTs
+          # claiming a future exp. Longer interval = lower detection signal.
+          # Can be overridden per-deploy via Helm if you have one dedicated
+          # cluster-only account and don't need rotation at all.
+          value: "1800"
         - name: OPENAI_CODEX_ACCESS_TOKEN
           valueFrom:
             secretKeyRef: {name: api-keys, key: openai-codex-access-token, optional: true}
