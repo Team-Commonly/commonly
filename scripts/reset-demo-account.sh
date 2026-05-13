@@ -141,6 +141,29 @@ m.connect(process.env.MONGO_URI).then(async ()=>{
 })" 2>/dev/null | tail -1)
 echo "[reset]     deleted $deleted_rooms test pod(s)"
 
+# Pull sam-demo from any agent-admin pods. agent-admin is N:1
+# (multiple admins ↔ one agent) per ADR-001 — but sam-demo is
+# role:user and the demo narrative doesn't position them as
+# admin of anything. Every install they perform adds them to a
+# new agent-admin pod via dmService.getOrCreateAgentDM (the
+# "installer is admin" platform pattern). For the demo's
+# scrollback hygiene we don't want those pods cluttering the
+# sidebar — yank sam-demo out.
+echo "[reset] (4b.1) pulling sam-demo from agent-admin pods…"
+pulled=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
+const m=require('mongoose');
+m.connect(process.env.MONGO_URI).then(async ()=>{
+  const Pod=m.connection.db.collection('pods');
+  const SAM='69f8417317b1da6d89b37fba';
+  const r=await Pod.updateMany(
+    {type:'agent-admin', members: m.Types.ObjectId.createFromHexString(SAM)},
+    {\$pull:{members: m.Types.ObjectId.createFromHexString(SAM)}}
+  );
+  console.log(r.modifiedCount);
+  process.exit(0);
+})" 2>/dev/null | tail -1)
+echo "[reset]     pulled sam-demo from $pulled agent-admin pod(s)"
+
 # Re-seed the canonical Nova-Demo ↔ Cody a2a-dm if missing. The B1
 # fixture (inspector "Direct messages" card) needs at least one live
 # A2A DM involving nova-demo to render. Talk-to-cli smoke creates
