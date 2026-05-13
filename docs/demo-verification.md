@@ -180,3 +180,96 @@ If the demo breaks: check Codex auth chain first
 (`commonly-dev-openai-codex-*` secrets + rotator logs). OpenRouter
 recovery can be deferred indefinitely without affecting reviewer
 experience.
+
+## Codex auth recovery runbook
+
+When `codex-rotator-health` smoke check goes red (or
+`mention-response` red with "401 Missing Authentication header" in
+gateway logs), all 3 Codex accounts' refresh tokens have been
+revoked. Recovery is operator-driven device-auth × 3:
+
+### 1. Verify the failure
+
+```bash
+kubectl logs -n commonly-dev -l app=litellm -c codex-auth-rotator --tail=15 | head
+# Look for: "[rotator] no usable account this tick, keeping existing auth.json"
+```
+
+### 2. Refresh each account via device-auth
+
+```bash
+# Per account (repeat 3×):
+codex logout
+codex login --device-auth
+# Open the printed URL, enter the 8-char code with the account's
+# ChatGPT credentials, wait for "Successfully logged in"
+```
+
+### 3. Extract + push to GCP SM
+
+For each account's freshly written `~/.codex/auth.json`, extract
+the 5 fields and push to the corresponding GCP SM secret:
+
+```bash
+# Field mapping per account:
+# acct 1: commonly-dev-openai-codex-{access-token,refresh-token,id-token,account-id,expires-at}
+# acct 2: commonly-dev-openai-codex-{access-token-2,refresh-token-2,expires-at-2}
+# acct 3: commonly-dev-openai-codex-{access-token-3,refresh-token-3,id-token-3,account-id-3,expires-at-3}
+#
+# Note acct 2 has no -2 variant for id-token / account-id (current
+# pattern; rotator works without them).
+
+# Pull fields:
+python3 -c "
+import json, base64
+with open('/home/xcjam/.codex/auth.json') as f: d=json.load(f)
+t=d['tokens']
+exp=json.loads(base64.urlsafe_b64decode(t['access_token'].split('.')[1]+'=='))['exp']
+print(t['access_token'])
+print('---'); print(t['refresh_token'])
+print('---'); print(t['id_token'])
+print('---'); print(t['account_id'])
+print('---'); print(exp)
+" > /tmp/codex-fields.txt
+
+# Push (substitute suffix per account):
+SUFFIX=  # '' for acct-1, '-2' for acct-2, '-3' for acct-3
+gcloud secrets versions add commonly-dev-openai-codex-access-token$SUFFIX --data-file=<(awk 'NR==1' /tmp/codex-fields.txt)
+# ... refresh-token, id-token, account-id, expires-at the same way
+```
+
+### 4. Force ESO sync + restart LiteLLM
+
+```bash
+kubectl annotate externalsecret api-keys force-sync=$(date +%s) -n commonly-dev --overwrite
+kubectl rollout restart deploy/litellm -n commonly-dev
+kubectl wait --for=condition=available --timeout=120s deploy/litellm -n commonly-dev
+```
+
+### 5. Reissue per-agent virtual keys + restart gateway
+
+```bash
+# Mint a fresh admin JWT (xcjsam) inside the cluster:
+ADMIN=$(kubectl exec -n commonly-dev deployment/backend -- node -e "
+const jwt=require('jsonwebtoken');
+console.log(jwt.sign({id:'67a9ceb240f8f53015944a05'}, process.env.JWT_SECRET, {expiresIn:'1h'}));
+" | tail -1)
+
+# Fire-and-forget — ingress times out at ~60s but reprovision runs ~60-90s on the server side:
+curl -X POST -H "Authorization: Bearer $ADMIN" \
+  "https://api-dev.commonly.me/api/registry/admin/installations/reprovision-all" \
+  --max-time 3 || true
+
+# Poll for completion:
+until kubectl logs -n commonly-dev deployment/backend --since=3m | grep -q "k8s-provisioner.*synced.*x-content-creator"; do sleep 5; done
+
+# Pick up the fresh /state/moltbot.json:
+kubectl rollout restart deploy/clawdbot-gateway -n commonly-dev
+```
+
+### 6. Verify
+
+```bash
+bash scripts/smoke-test-demo.sh
+# Expect: codex-rotator-health green, mention-response green within ~15s
+```
