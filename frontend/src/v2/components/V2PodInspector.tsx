@@ -801,6 +801,28 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     return map;
   }, [agents]);
 
+  // Map agent username (`openclaw-nova-demo`) → per-installation displayName
+  // ("Nova"). Mirrors AgentIdentityService.buildAgentUsername. Surfaces
+  // through the "Created by …" inspector header so an auto-created
+  // agent-room reads "Created by Nova" instead of the raw bot username.
+  const agentDisplayByUsername = useMemo(() => {
+    const map = new Map<string, string>();
+    agents.forEach((a) => {
+      const rawName = ((a as { name?: string; agentName?: string }).name || a.agentName || '').toLowerCase();
+      const inst = (a.instanceId || '').toLowerCase();
+      const username = !inst || inst === 'default' || inst === rawName
+        ? rawName
+        : `${rawName}-${inst}`;
+      const display = a.displayName || a.profile?.displayName;
+      if (username && display) map.set(username, display);
+    });
+    return map;
+  }, [agents]);
+  const createdByDisplay = useMemo(() => {
+    const raw = pod.createdBy?.username || '';
+    return agentDisplayByUsername.get(raw.toLowerCase()) || raw || 'unknown';
+  }, [pod.createdBy?.username, agentDisplayByUsername]);
+
   // Set of usernames that map to an installed agent — used to filter the
   // members[] list down to actual humans. The backend's `User.isBot` flag
   // isn't reliably set on agent User rows in the wire payload, so we can't
@@ -1555,7 +1577,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               <div className="v2-inspector__pod-block">
                 <div className="v2-inspector__pod-name" title={pod.name}>{pod.name}</div>
                 <div className="v2-inspector__pod-meta">
-                  Created by {pod.createdBy?.username || 'unknown'} · {created}
+                  Created by {createdByDisplay} · {created}
                 </div>
                 <div className="v2-inspector__pod-meta">
                   {!isPrivatePod && <>{agentCount} agent{agentCount === 1 ? '' : 's'} · </>}{humanCount} human{humanCount === 1 ? '' : 's'}
