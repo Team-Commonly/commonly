@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import getApiBaseUrl from '../utils/apiBaseUrl';
 import {
     Card,
     CardContent,
@@ -666,7 +667,7 @@ const UserProfile = () => {
                                 >
 {`curl -H "Authorization: Bearer YOUR_API_TOKEN" \\
      -H "Content-Type: application/json" \\
-     ${window.location.origin}/api/auth/profile`}
+     ${getApiBaseUrl()}/api/auth/profile`}
                                 </Typography>
                             </Paper>
                         </Box>
