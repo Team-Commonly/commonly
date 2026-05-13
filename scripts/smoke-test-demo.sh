@@ -444,6 +444,29 @@ else
   todo agent-react "missing runtime_token or message id"
 fi
 
+# codex-rotator-health — proactive auth canary. The recent operator
+# incident (2026-05-13) had silent Codex token expiry — all 3
+# refresh tokens revoked, rotator started logging "no usable
+# account this tick" but the demo only showed the symptom 90s
+# later when mention-response went red. This check scans the
+# last 5min of rotator logs for that pattern and fires red if
+# present. Skipped when kubectl isn't available (e.g. running
+# smoke from a remote box).
+if command -v kubectl >/dev/null 2>&1 && [ -z "${SKIP_KUBECTL_CHECKS:-}" ]; then
+  rotator_log=$(kubectl logs -n "${KUBE_NAMESPACE:-commonly-dev}" -l app=litellm -c codex-auth-rotator --since=5m 2>/dev/null || echo "")
+  if [ -z "$rotator_log" ]; then
+    todo codex-rotator-health "no rotator logs in window (litellm not running?)"
+  elif echo "$rotator_log" | grep -q "no usable account this tick"; then
+    red codex-rotator-health "rotator can't refresh ANY of the 3 Codex accounts — re-login required (see docs/demo-verification.md)"
+  elif echo "$rotator_log" | grep -q "refresh failed"; then
+    todo codex-rotator-health "some Codex refresh failures in window — degraded but ≥1 account usable"
+  else
+    green codex-rotator-health "all 3 Codex accounts refreshing cleanly"
+  fi
+else
+  todo codex-rotator-health "kubectl unavailable; can't check rotator state"
+fi
+
 # --- self-cleanup ---------------------------------------------------------
 # Leave no demo-pod residue. We:
 #  - Mark the byo-handoff-probe + byo-smoke-* AgentInstallations
