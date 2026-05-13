@@ -59,29 +59,6 @@ spec:
                     'ratelimiterror',
                 ))
 
-            def _is_codex_auth_failure(exc_str: str) -> bool:
-                # ChatGPT/Codex returns 401 (ChatgptException) when the
-                # access_token's underlying session has been invalidated
-                # server-side (logout, password change, session timeout).
-                # The JWT itself can still claim a future exp — the API
-                # rejection is independent. Rotating to a different
-                # account lets us keep serving. We narrow to 401 + the
-                # ChatgptException marker so we don't rotate on a generic
-                # 401 from some other provider.
-                s = exc_str.lower()
-                return ('chatgptexception' in s or 'chatgpt exception' in s) and '401' in s
-
-            def _is_codex_model(model: str) -> bool:
-                # The rotator's job is to swap Codex auth on 429s. Rate-limit
-                # signals from other providers (OpenRouter free tier, Gemini)
-                # are not actionable here — rotating in response only burns
-                # in-flight Codex requests with 401s and doesn't help the
-                # rate-limited model. Filter so signals only fire for the
-                # provider the rotator can actually do something about.
-                if not model: return False
-                m = model.lower()
-                return m.startswith('openai-codex/') or m.startswith('chatgpt/')
-
             def _write_signal(model: str, exc_str: str):
                 try:
                     tmp = SIGNAL_FILE + '.tmp'
@@ -104,53 +81,21 @@ spec:
                     pass
 
                 def log_failure_event(self, kwargs, response_obj, start_time, end_time):
-                    # Pull the exception from any common slot. LiteLLM's
-                    # callback API shifted these across versions
-                    # (`exception` / `original_exception`; sometimes the
-                    # auth detail only lives on response_obj).
-                    exc = kwargs.get('exception') or kwargs.get('original_exception')
-                    parts = []
-                    if exc: parts.append(str(exc))
-                    if response_obj is not None:
-                        try: parts.append(str(response_obj))
-                        except Exception: pass
-                    sc = kwargs.get('status_code') or kwargs.get('response_status_code')
-                    if sc: parts.append(str(sc))
-                    exc_str = ' | '.join(parts)
-                    if not exc_str: return
-                    model = kwargs.get('model', 'unknown')
-                    # Diagnostic — one log line per failure so we can verify
-                    # the callback fires and what shape it sees.
-                    print(f'[rate-limit-signaler] failure model={model} exc_preview={exc_str[:200]}', flush=True)
-                    is_codex = _is_codex_model(model)
-                    if (_is_rate_limit(exc_str) and is_codex) or _is_codex_auth_failure(exc_str):
-                        _write_signal(model, exc_str)
+                    exc = kwargs.get('exception')
+                    if not exc: return
+                    exc_str = str(exc)
+                    if _is_rate_limit(exc_str):
+                        _write_signal(kwargs.get('model', 'unknown'), exc_str)
 
                 async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
                     pass
 
                 async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
-                    # Pull the exception from any common slot. LiteLLM's
-                    # callback API shifted these across versions
-                    # (`exception` / `original_exception`; sometimes the
-                    # auth detail only lives on response_obj).
-                    exc = kwargs.get('exception') or kwargs.get('original_exception')
-                    parts = []
-                    if exc: parts.append(str(exc))
-                    if response_obj is not None:
-                        try: parts.append(str(response_obj))
-                        except Exception: pass
-                    sc = kwargs.get('status_code') or kwargs.get('response_status_code')
-                    if sc: parts.append(str(sc))
-                    exc_str = ' | '.join(parts)
-                    if not exc_str: return
-                    model = kwargs.get('model', 'unknown')
-                    # Diagnostic — one log line per failure so we can verify
-                    # the callback fires and what shape it sees.
-                    print(f'[rate-limit-signaler] failure model={model} exc_preview={exc_str[:200]}', flush=True)
-                    is_codex = _is_codex_model(model)
-                    if (_is_rate_limit(exc_str) and is_codex) or _is_codex_auth_failure(exc_str):
-                        _write_signal(model, exc_str)
+                    exc = kwargs.get('exception')
+                    if not exc: return
+                    exc_str = str(exc)
+                    if _is_rate_limit(exc_str):
+                        _write_signal(kwargs.get('model', 'unknown'), exc_str)
 
             proxy_handler_instance = RateLimitSignaler()
             PYEOF
