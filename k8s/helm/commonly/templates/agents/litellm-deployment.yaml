@@ -104,13 +104,25 @@ spec:
                     pass
 
                 def log_failure_event(self, kwargs, response_obj, start_time, end_time):
-                    exc = kwargs.get('exception')
-                    if not exc: return
-                    exc_str = str(exc)
+                    # Pull the exception from any common slot. LiteLLM's
+                    # callback API shifted these across versions
+                    # (`exception` / `original_exception`; sometimes the
+                    # auth detail only lives on response_obj).
+                    exc = kwargs.get('exception') or kwargs.get('original_exception')
+                    parts = []
+                    if exc: parts.append(str(exc))
+                    if response_obj is not None:
+                        try: parts.append(str(response_obj))
+                        except Exception: pass
+                    sc = kwargs.get('status_code') or kwargs.get('response_status_code')
+                    if sc: parts.append(str(sc))
+                    exc_str = ' | '.join(parts)
+                    if not exc_str: return
                     model = kwargs.get('model', 'unknown')
+                    # Diagnostic — one log line per failure so we can verify
+                    # the callback fires and what shape it sees.
+                    print(f'[rate-limit-signaler] failure model={model} exc_preview={exc_str[:200]}', flush=True)
                     is_codex = _is_codex_model(model)
-                    # Rotate on either a 429 or a Codex 401 (session
-                    # invalidated server-side, see _is_codex_auth_failure).
                     if (_is_rate_limit(exc_str) and is_codex) or _is_codex_auth_failure(exc_str):
                         _write_signal(model, exc_str)
 
@@ -118,13 +130,25 @@ spec:
                     pass
 
                 async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
-                    exc = kwargs.get('exception')
-                    if not exc: return
-                    exc_str = str(exc)
+                    # Pull the exception from any common slot. LiteLLM's
+                    # callback API shifted these across versions
+                    # (`exception` / `original_exception`; sometimes the
+                    # auth detail only lives on response_obj).
+                    exc = kwargs.get('exception') or kwargs.get('original_exception')
+                    parts = []
+                    if exc: parts.append(str(exc))
+                    if response_obj is not None:
+                        try: parts.append(str(response_obj))
+                        except Exception: pass
+                    sc = kwargs.get('status_code') or kwargs.get('response_status_code')
+                    if sc: parts.append(str(sc))
+                    exc_str = ' | '.join(parts)
+                    if not exc_str: return
                     model = kwargs.get('model', 'unknown')
+                    # Diagnostic — one log line per failure so we can verify
+                    # the callback fires and what shape it sees.
+                    print(f'[rate-limit-signaler] failure model={model} exc_preview={exc_str[:200]}', flush=True)
                     is_codex = _is_codex_model(model)
-                    # Rotate on either a 429 or a Codex 401 (session
-                    # invalidated server-side, see _is_codex_auth_failure).
                     if (_is_rate_limit(exc_str) and is_codex) or _is_codex_auth_failure(exc_str):
                         _write_signal(model, exc_str)
 
