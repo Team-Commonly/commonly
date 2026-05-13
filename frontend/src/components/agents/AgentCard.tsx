@@ -476,20 +476,25 @@ const AgentCard: React.FC<AgentCardProps> = ({
           {description}
         </Typography>
 
-        {/* Mini stats */}
+        {/* Mini stats — hide when both are 0 to avoid every uninstalled
+            marketplace card reading "0 pods · 0 msgs" like a badge of shame. */}
         <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <MemoryIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-            <Typography variant="caption" color="text.secondary">
-              {stats.podsJoined || 0} pods
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <ChatIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-            <Typography variant="caption" color="text.secondary">
-              {(stats.messagesProcessed || 0).toLocaleString()} msgs
-            </Typography>
-          </Box>
+          {(stats.podsJoined || 0) > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <MemoryIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+              <Typography variant="caption" color="text.secondary">
+                {stats.podsJoined} pods
+              </Typography>
+            </Box>
+          )}
+          {(stats.messagesProcessed || 0) > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <ChatIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+              <Typography variant="caption" color="text.secondary">
+                {stats.messagesProcessed.toLocaleString()} msgs
+              </Typography>
+            </Box>
+          )}
           {installed && (
             <Tooltip title={lastHeartbeatAt ? `Last heartbeat: ${new Date(lastHeartbeatAt).toLocaleString()}` : 'No heartbeat recorded'}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
