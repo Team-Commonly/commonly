@@ -467,7 +467,18 @@ if command -v kubectl >/dev/null 2>&1 && [ -z "${SKIP_KUBECTL_CHECKS:-}" ]; then
   elif echo "$rotator_log" | grep -q "refresh failed"; then
     todo codex-rotator-health "some Codex refresh failures in window — degraded but ≥1 account usable"
   else
-    green codex-rotator-health "Codex accounts refreshing cleanly"
+    # Surface the earliest access-token expiry across the 3 accounts —
+    # gives operators a runway when these will need re-auth. Refresh
+    # tokens themselves don't have visible exp claims, but the access
+    # tokens are minted by refresh, so when they stop renewing the
+    # demo breaks. The rotator logs include "active account-N (expires
+    # YYYY-MM-DDTHH:MM:SS+00:00)" lines we can parse.
+    earliest_exp=$(echo "$rotator_log" | grep -oE 'expires [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:+]+' | awk '{print $2}' | sort -u | head -1)
+    if [ -n "$earliest_exp" ]; then
+      green codex-rotator-health "all accounts refreshing — earliest access-token exp $earliest_exp"
+    else
+      green codex-rotator-health "Codex accounts refreshing cleanly"
+    fi
   fi
 else
   todo codex-rotator-health "kubectl unavailable; can't check rotator state"
