@@ -59,6 +59,17 @@ spec:
                     'ratelimiterror',
                 ))
 
+            def _is_codex_model(model: str) -> bool:
+                # The rotator's job is to swap Codex auth on 429s. Rate-limit
+                # signals from other providers (OpenRouter free tier, Gemini)
+                # are not actionable here — rotating in response only burns
+                # in-flight Codex requests with 401s and doesn't help the
+                # rate-limited model. Filter so signals only fire for the
+                # provider the rotator can actually do something about.
+                if not model: return False
+                m = model.lower()
+                return m.startswith('openai-codex/') or m.startswith('chatgpt/')
+
             def _write_signal(model: str, exc_str: str):
                 try:
                     tmp = SIGNAL_FILE + '.tmp'
@@ -84,8 +95,9 @@ spec:
                     exc = kwargs.get('exception')
                     if not exc: return
                     exc_str = str(exc)
-                    if _is_rate_limit(exc_str):
-                        _write_signal(kwargs.get('model', 'unknown'), exc_str)
+                    model = kwargs.get('model', 'unknown')
+                    if _is_rate_limit(exc_str) and _is_codex_model(model):
+                        _write_signal(model, exc_str)
 
                 async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
                     pass
@@ -94,8 +106,9 @@ spec:
                     exc = kwargs.get('exception')
                     if not exc: return
                     exc_str = str(exc)
-                    if _is_rate_limit(exc_str):
-                        _write_signal(kwargs.get('model', 'unknown'), exc_str)
+                    model = kwargs.get('model', 'unknown')
+                    if _is_rate_limit(exc_str) and _is_codex_model(model):
+                        _write_signal(model, exc_str)
 
             proxy_handler_instance = RateLimitSignaler()
             PYEOF
