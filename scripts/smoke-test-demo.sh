@@ -444,24 +444,30 @@ else
   todo agent-react "missing runtime_token or message id"
 fi
 
-# codex-rotator-health — proactive auth canary. The recent operator
-# incident (2026-05-13) had silent Codex token expiry — all 3
-# refresh tokens revoked, rotator started logging "no usable
-# account this tick" but the demo only showed the symptom 90s
-# later when mention-response went red. This check scans the
-# last 5min of rotator logs for that pattern and fires red if
-# present. Skipped when kubectl isn't available (e.g. running
-# smoke from a remote box).
+# codex-rotator-health — proactive auth canary. The 2026-05-13
+# incident had silent Codex token expiry — all 3 refresh tokens
+# revoked, rotator logged "no usable account this tick" but the
+# demo only surfaced the symptom 90s later when mention-response
+# went red. This check scans 15min of rotator logs (rotator runs
+# every 10min, so 15min always captures ≥1 tick) and fires red on
+# the death pattern. Skipped when kubectl isn't available (e.g.
+# running smoke from a remote box).
 if command -v kubectl >/dev/null 2>&1 && [ -z "${SKIP_KUBECTL_CHECKS:-}" ]; then
-  rotator_log=$(kubectl logs -n "${KUBE_NAMESPACE:-commonly-dev}" -l app=litellm -c codex-auth-rotator --since=5m 2>/dev/null || echo "")
+  rotator_log=$(kubectl logs -n "${KUBE_NAMESPACE:-commonly-dev}" -l app=litellm -c codex-auth-rotator --since=15m 2>/dev/null || echo "")
   if [ -z "$rotator_log" ]; then
-    todo codex-rotator-health "no rotator logs in window (litellm not running?)"
+    # Verify litellm itself is running before reporting unknown.
+    litellm_ready=$(kubectl get pods -n "${KUBE_NAMESPACE:-commonly-dev}" -l app=litellm -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="codex-auth-rotator")].ready}' 2>/dev/null || echo false)
+    if [ "$litellm_ready" = "true" ]; then
+      green codex-rotator-health "rotator running, no log activity in last 15min (next tick pending)"
+    else
+      red codex-rotator-health "rotator container not ready (litellm pod down?)"
+    fi
   elif echo "$rotator_log" | grep -q "no usable account this tick"; then
     red codex-rotator-health "rotator can't refresh ANY of the 3 Codex accounts — re-login required (see docs/demo-verification.md)"
   elif echo "$rotator_log" | grep -q "refresh failed"; then
     todo codex-rotator-health "some Codex refresh failures in window — degraded but ≥1 account usable"
   else
-    green codex-rotator-health "all 3 Codex accounts refreshing cleanly"
+    green codex-rotator-health "Codex accounts refreshing cleanly"
   fi
 else
   todo codex-rotator-health "kubectl unavailable; can't check rotator state"
