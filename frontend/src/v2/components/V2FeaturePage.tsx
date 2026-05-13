@@ -287,7 +287,9 @@ const v2FeatureTheme = createTheme({
 });
 
 const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
-  eyebrow = 'v2',
+  // No default kicker — "v2" is internal terminology and renders on every
+  // feature-page header otherwise. Callers can opt in by passing eyebrow.
+  eyebrow,
   title,
   description,
   children,
@@ -328,7 +330,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
         {showHeader && (
           <header className="v2-feature__header">
             <div>
-              <div className="v2-feature__eyebrow">{eyebrow}</div>
+              {eyebrow && <div className="v2-feature__eyebrow">{eyebrow}</div>}
               <h1 className="v2-feature__title">{title}</h1>
               {description && <p className="v2-feature__description">{description}</p>}
             </div>
