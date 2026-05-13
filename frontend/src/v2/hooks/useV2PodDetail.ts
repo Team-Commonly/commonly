@@ -173,12 +173,26 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       ]);
       if (messagesResult.status === 'rejected') {
         setMessages([]);
-        const e = messagesResult.reason as { response?: { data?: { error?: string; msg?: string } }; message?: string };
-        setError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Messages are taking too long to load');
+        const e = messagesResult.reason as { response?: { status?: number; data?: { error?: string; msg?: string } }; message?: string };
+        const status = e.response?.status;
+        if (status === 401 || status === 403) {
+          // Friendlier soft state — backend's raw "Not authorized to view
+          // messages in this pod" reads like a security warning. For a
+          // non-member browsing a shared pod link, "You're not a member"
+          // is the truer framing.
+          setError("You're not a member of this pod, so messages aren't visible.");
+        } else {
+          setError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Messages are taking too long to load');
+        }
       }
     } catch (err) {
-      const e = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
-      setError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to load pod');
+      const e = err as { response?: { status?: number; data?: { error?: string; msg?: string } }; message?: string };
+      const status = e.response?.status;
+      if (status === 401 || status === 403) {
+        setError("You're not a member of this pod.");
+      } else {
+        setError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to load pod');
+      }
     } finally {
       setLoading(false);
     }
