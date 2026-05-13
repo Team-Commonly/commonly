@@ -3334,6 +3334,15 @@
   color: var(--v2-text-primary);
 }
 
+.v2-login__link {
+  color: var(--v2-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.v2-login__link:hover {
+  text-decoration: underline;
+}
+
 /* ---------- Empty / loading states ---------- */
 
 .v2-feature {
