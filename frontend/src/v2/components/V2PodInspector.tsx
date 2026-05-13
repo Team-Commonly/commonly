@@ -827,9 +827,12 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     return map;
   }, [agents]);
   const createdByDisplay = useMemo(() => {
-    const raw = pod.createdBy?.username || '';
+    // `pod` can be null during initial detail-fetch — guard so the
+    // memo doesn't throw before render. (The Inspector renders a loading
+    // shell when `pod` is null; we just need the memo to not crash.)
+    const raw = pod?.createdBy?.username || '';
     return agentDisplayByUsername.get(raw.toLowerCase()) || raw || 'unknown';
-  }, [pod.createdBy?.username, agentDisplayByUsername]);
+  }, [pod?.createdBy?.username, agentDisplayByUsername]);
 
   // Set of usernames that map to an installed agent — used to filter the
   // members[] list down to actual humans. The backend's `User.isBot` flag
