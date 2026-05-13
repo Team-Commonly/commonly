@@ -65,8 +65,15 @@ interface AgentTaskMap {
   [agentName: string]: { taskId: string; title: string; status: string } | null;
 }
 
+interface TaskItem {
+  taskId: string;
+  title: string;
+  status: string;
+  assignee?: string;
+  updatedAt?: string;
+}
 interface TaskApiResponse {
-  tasks: Array<{ taskId: string; title: string; status: string; assignee?: string; updatedAt?: string }>;
+  tasks: TaskItem[];
 }
 
 interface AnnouncementItem {
@@ -769,6 +776,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const { currentUser } = useAuth();
   const [agentTasks, setAgentTasks] = useState<AgentTaskMap>({});
   const [runState, setRunState] = useState<RunStateCounts>({ blocked: 0, inProgress: 0, complete: 0, pending: 0 });
+  const [recentTasks, setRecentTasks] = useState<TaskItem[]>([]);
   const [privateError, setPrivateError] = useState<string | null>(null);
   // ADR-001 §3.10 + Sprint B1: agent-DM pods involving the currently-inspected
   // agent. Surfaces clickable links so humans can observe agent↔agent
@@ -899,14 +907,30 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               break;
           }
         });
+        // Surface the 8 most recently updated tasks for the Tasks tab.
+        // Sorted so active work surfaces first (in-progress/claimed/pending
+        // before blocked, completed last), then by updatedAt desc within group.
+        const activeRank: Record<string, number> = {
+          in_progress: 0, claimed: 0, pending: 1, blocked: 2, done: 3, completed: 3,
+        };
+        const sorted = [...tasks].sort((a, b) => {
+          const ra = activeRank[a.status] ?? 4;
+          const rb = activeRank[b.status] ?? 4;
+          if (ra !== rb) return ra - rb;
+          const ua = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          const ub = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          return ub - ua;
+        }).slice(0, 8);
         if (!cancelled) {
           setAgentTasks(map);
           setRunState(counts);
+          setRecentTasks(sorted);
         }
       } catch {
         if (!cancelled) {
           setAgentTasks({});
           setRunState({ blocked: 0, inProgress: 0, complete: 0, pending: 0 });
+          setRecentTasks([]);
         }
       }
     })();
@@ -1349,21 +1373,50 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <span className="v2-inspector__pill v2-inspector__pill--complete">Complete</span>
         </div>
       </div>
-      {(runState.blocked + runState.inProgress + runState.pending + runState.complete) > 0 && (
-        // Hide the run-board link when there are no tasks. Today the
-        // target route falls back to `/v2/pods/chat/<id>` (v1 chat view
-        // under the v2 prefix) since v2 has no dedicated tasks-board
-        // route. A reviewer clicking this on a fresh demo pod with
-        // 0/0/0 tasks lands in a confusing legacy view with raw
-        // `[[file:...]]` tokens. Until v2 grows a real tasks surface,
-        // only show the link when there's actually something to view.
-        <button
-          type="button"
-          className="v2-inspector__link v2-inspector__link--block"
-          onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
-        >
-          View run board
-        </button>
+      {(runState.blocked + runState.inProgress + runState.pending + runState.complete) > 0 ? (
+        // Tasks exist — link to run-board AND surface the recent task list.
+        // (View run board target route still falls back to `/v2/pods/chat/<id>`
+        // v1 chat view since v2 has no dedicated tasks-board route — but
+        // when there's at least one task the link has somewhere meaningful
+        // to go.)
+        <>
+          <button
+            type="button"
+            className="v2-inspector__link v2-inspector__link--block"
+            onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
+          >
+            View run board
+          </button>
+          {recentTasks.length > 0 && (
+            <div className="v2-inspector__task-list">
+              <div className="v2-inspector__section-subtitle">Recent tasks</div>
+              {recentTasks.map((t) => {
+                const isDone = t.status === 'done' || t.status === 'completed';
+                const isBlocked = t.status === 'blocked';
+                const pillClass = isDone
+                  ? 'v2-inspector__pill v2-inspector__pill--complete'
+                  : isBlocked
+                    ? 'v2-inspector__pill v2-inspector__pill--blocked'
+                    : 'v2-inspector__pill v2-inspector__pill--progress';
+                const pillLabel = isDone ? 'Done' : isBlocked ? 'Blocked' : 'Active';
+                const assignee = t.assignee ? `@${t.assignee}` : null;
+                return (
+                  <div key={t.taskId} className="v2-inspector__task-row">
+                    <div className="v2-inspector__task-title" title={t.title}>{t.title}</div>
+                    <div className="v2-inspector__task-meta">
+                      {assignee && <span className="v2-inspector__task-assignee">{assignee}</span>}
+                      <span className={pillClass}>{pillLabel}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="v2-inspector__empty" style={{ marginTop: 12 }}>
+          No tasks yet. Agents will create tasks here as they work — or @-mention one with a request.
+        </div>
       )}
     </section>
   );
