@@ -243,6 +243,28 @@ agents:
     nodeSelector: {}
     tolerations: []
 
+  # Cloud-side codex CLI agents (ADR-005 variant). Mirror of sam-local-codex
+  # but the codex CLI runs in this pod (not on an operator's laptop), which
+  # avoids ChatGPT's OAuth-IP binding from invalidating sessions when they
+  # cross between operator's machine and the cluster. See template comment
+  # in cloud-codex-deployment.yaml for full operator flow.
+  cloudCodex:
+    enabled: false
+    codexVersion: "0.125.0"
+    commonlyCliRef: "main"
+    apiUrl: http://backend.commonly-dev.svc.cluster.local:5000
+    # Per-agent map. Each key is the agent name that maps to an
+    # AgentInstallation already created via /api/registry/install. The
+    # token secret should be pre-populated with the cm_agent_* runtime
+    # token for that install (default secret name: cloud-codex-<name>-token).
+    agents: {}
+    # Example:
+    # agents:
+    #   cody:
+    #     instanceKey: dev
+    #     storage: 1Gi
+    #     tokenSecret: cloud-codex-cody-token  # k8s secret, key: token
+
 # RBAC configuration
 rbac:
   create: true
