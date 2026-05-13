@@ -98,24 +98,10 @@ kubectl exec -n "$NAMESPACE" deployment/clawdbot-gateway -- bash -c \
 #    gets re-seeded forward.
 # ──────────────────────────────────────────────────────────────────────────
 CUTOFF_UTC="${CUTOFF_UTC:-2026-05-05 00:00:00+00}"
-# B4 beat 8 e2e asserts nova-demo agent-room is empty (coaching chips
-# only render with 0 messages). Reviewers / operators / Playwright
-# can click a chip and send it, polluting the room. Clear messages
-# from the demo's canonical agent-room pods so the empty-state
-# branch is guaranteed clean across runs.
-echo "[reset] (4a.0) clearing messages from canonical agent-room pods…"
-agent_room_cleared=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "
-const { Client } = require('pg');
-(async () => {
-  const pg = new Client({ host: process.env.PG_HOST, port: +process.env.PG_PORT, database: process.env.PG_DATABASE, user: process.env.PG_USER, password: process.env.PG_PASSWORD, ssl: process.env.PG_SSL_DISABLED === 'true' ? false : { rejectUnauthorized: false } });
-  await pg.connect();
-  const POD_IDS = ['6a02bff23dd5ef6a130b2aaf', '69f84fca15832b20bd8eb6c3', '69f84fcb15832b20bd8eb6d4', '69f84fcc15832b20bd8eb6e9'];
-  const r = await pg.query('DELETE FROM messages WHERE pod_id = ANY(\$1::text[])', [POD_IDS]);
-  console.log(r.rowCount);
-  await pg.end();
-})().catch(e => { console.error(e.message); process.exit(1); });
-" 2>/dev/null | tail -1)
-echo "[reset]     cleared $agent_room_cleared agent-room message(s)"
+# Phase 4a.0 (agent-room wipe) intentionally removed 2026-05-12 — it was
+# clobbering operators' real Nova DM history on every reset. Beat 8 has
+# been relaxed to tolerate non-empty rooms; beat 9 still asserts chips
+# on a freshly-installed agent-room (deterministic by construction).
 
 echo "[reset] (4a/5) hard-deleting post-storyboard chat (>$CUTOFF_UTC)…"
 deleted=$(kubectl exec -n "$NAMESPACE" deployment/backend -- node -e "

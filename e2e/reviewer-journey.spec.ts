@@ -177,23 +177,20 @@ test.describe('Reviewer journey', () => {
     await expect(page.locator('.v2-byo__snippet')).toHaveCount(3);
   });
 
-  test('beat 8: nova agent-room shows first-message coaching chips', async ({ page }) => {
+  test('beat 8: nova agent-room renders (chips when empty)', async ({ page }) => {
     await page.goto(`${BASE}/v2/pods/${NOVA_ROOM}`);
-    // Longer timeout — the agent-room pod loads more slowly than other
-    // surfaces because it fetches members + messages + agent metadata
-    // in parallel; 8s was occasionally hitting on cold paths under
-    // full-suite runs. 15s gives plenty of headroom without making
-    // a true regression invisible.
-    await expect(page.locator('.v2-empty__title')).toContainText('Say hi to Nova', { timeout: 15000 });
-    const chips = page.locator('.v2-empty__chip');
-    await expect(chips).toHaveCount(3);
-    // The click-pre-fills-composer behavior is verified in isolation
-    // (single-spec run); when running the full suite, the chip-click
-    // event sometimes races with React hydration and the composer
-    // stays empty. The chip visibility + count assertion is the
-    // load-bearing check for demo fidelity (B4 sprint item) — the
-    // click pre-fill is a nice-to-have UX bonus and is flaky to
-    // assert under suite execution.
+    // The pod must load and render its header reliably. Empty-state
+    // chips are an optional assertion — if the operator has real DM
+    // history with Nova in this room, chips don't render (that's
+    // correct behavior), and we no longer wipe the room on reset
+    // (used to be Phase 4a.0; removed 2026-05-12). Beat 9 covers
+    // the deterministic chips path on a freshly-installed agent-room.
+    await expect(page.locator('.v2-pod-chat')).toBeVisible({ timeout: 15000 });
+    const emptyTitle = page.locator('.v2-empty__title');
+    if (await emptyTitle.count()) {
+      await expect(emptyTitle).toContainText('Say hi to Nova');
+      await expect(page.locator('.v2-empty__chip')).toHaveCount(3);
+    }
   });
 
   test('beat 9: marketplace install → handoff → agent-room with chips', async ({ page }) => {
