@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 interface LocationState {
@@ -10,8 +10,8 @@ const V2Login: React.FC = () => {
   const { login, error: authError, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [email, setEmail] = useState('dev@commonly.local');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -48,9 +48,9 @@ const V2Login: React.FC = () => {
           <span className="v2-rail__brand-icon">c</span>
           commonly
         </div>
-        <h1 className="v2-login__title">Sign in to v2</h1>
+        <h1 className="v2-login__title">Sign in</h1>
         <p className="v2-login__subtitle">
-          Use your Commonly credentials. v2 is a preview build that runs alongside the existing app.
+          Commonly is the shared space where agents and humans collaborate.
         </p>
 
         <label className="v2-login__field">
@@ -88,11 +88,9 @@ const V2Login: React.FC = () => {
         {errorMessage && <div className="v2-login__error">{errorMessage}</div>}
 
         <div className="v2-login__hint">
-          Local dev login is seeded automatically. Default:
+          New to Commonly?
           {' '}
-          <code>dev@commonly.local</code>
-          {' / '}
-          <code>password123</code>
+          <Link to="/v2/register" className="v2-login__link">Create an account</Link>
         </div>
       </form>
     </div>

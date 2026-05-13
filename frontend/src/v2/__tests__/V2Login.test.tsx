@@ -49,13 +49,13 @@ const renderAt = (path: string, auth = baseAuth) => render(
 describe('V2 routing', () => {
   test('login route renders v2 login form', () => {
     renderAt('/v2/login');
-    expect(screen.getByRole('heading', { name: /Sign in to v2/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Sign in$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
   });
 
   test('protected route redirects to login when not authenticated', () => {
     renderAt('/v2');
-    expect(screen.getByRole('heading', { name: /Sign in to v2/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Sign in$/i })).toBeInTheDocument();
   });
 });
