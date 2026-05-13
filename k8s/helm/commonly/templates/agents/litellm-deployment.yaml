@@ -59,6 +59,18 @@ spec:
                     'ratelimiterror',
                 ))
 
+            def _is_codex_auth_failure(exc_str: str) -> bool:
+                # ChatGPT/Codex returns 401 (ChatgptException) when the
+                # access_token's underlying session has been invalidated
+                # server-side (logout, password change, session timeout).
+                # The JWT itself can still claim a future exp — the API
+                # rejection is independent. Rotating to a different
+                # account lets us keep serving. We narrow to 401 + the
+                # ChatgptException marker so we don't rotate on a generic
+                # 401 from some other provider.
+                s = exc_str.lower()
+                return ('chatgptexception' in s or 'chatgpt exception' in s) and '401' in s
+
             def _is_codex_model(model: str) -> bool:
                 # The rotator's job is to swap Codex auth on 429s. Rate-limit
                 # signals from other providers (OpenRouter free tier, Gemini)
@@ -96,7 +108,10 @@ spec:
                     if not exc: return
                     exc_str = str(exc)
                     model = kwargs.get('model', 'unknown')
-                    if _is_rate_limit(exc_str) and _is_codex_model(model):
+                    is_codex = _is_codex_model(model)
+                    # Rotate on either a 429 or a Codex 401 (session
+                    # invalidated server-side, see _is_codex_auth_failure).
+                    if (_is_rate_limit(exc_str) and is_codex) or _is_codex_auth_failure(exc_str):
                         _write_signal(model, exc_str)
 
                 async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
@@ -107,7 +122,10 @@ spec:
                     if not exc: return
                     exc_str = str(exc)
                     model = kwargs.get('model', 'unknown')
-                    if _is_rate_limit(exc_str) and _is_codex_model(model):
+                    is_codex = _is_codex_model(model)
+                    # Rotate on either a 429 or a Codex 401 (session
+                    # invalidated server-side, see _is_codex_auth_failure).
+                    if (_is_rate_limit(exc_str) and is_codex) or _is_codex_auth_failure(exc_str):
                         _write_signal(model, exc_str)
 
             proxy_handler_instance = RateLimitSignaler()
