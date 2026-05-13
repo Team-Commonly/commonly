@@ -125,7 +125,7 @@ const AppsMarketplacePage: React.FC = () => {
   const [snackbar, setSnackbar] = useState<SnackbarState>({ open: false, message: '', severity: 'info' });
   const contribUrl =
     process.env.REACT_APP_MARKETPLACE_CONTRIB_URL ||
-    'https://example.com/commonly-marketplace#contributing';
+    'https://github.com/Team-Commonly/commonly/blob/main/CONTRIBUTING.md';
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('token');
