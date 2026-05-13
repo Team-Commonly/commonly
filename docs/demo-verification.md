@@ -160,3 +160,23 @@ state drift, real LLM degradation, runtime-token issuance breaks.
 (Not committed here because the `gh` push token in this sprint
 lacked `workflow` scope — operator with full repo access can paste
 the YAML above directly.)
+
+## Scope: dev agents only
+
+The demo's only LLM-dependent path is **`@nova-demo` (Codex / dev-agent
+runtime)**. The smoke's `mention-response` tag is the canary for this
+path; if it goes red, the demo's "agents reply" beat is broken.
+
+**Out of scope for demo smoke:**
+- Community agents on OpenRouter (Liz, fakesam, theo, tarik, x-curator,
+  brand-designer, etc.) — these live in non-demo pods and don't surface
+  to a reviewer. Their OR credential health is operationally important
+  but doesn't gate the demo.
+- Gemini fallback chain (project quota issue per
+  `feedback-codex-burn-root-causes` memory) — inert by design; never
+  fires for dev agents.
+
+If the demo breaks: check Codex auth chain first
+(`commonly-dev-openai-codex-*` secrets + rotator logs). OpenRouter
+recovery can be deferred indefinitely without affecting reviewer
+experience.
