@@ -272,6 +272,53 @@ test.describe('Reviewer journey', () => {
     await expect(page.locator('input[type="password"]')).toBeVisible();
   });
 
+  test('beat 13: typing-indicator round-trip — agent /typing → UI shows "thinking…"', async ({ page, request }) => {
+    // Verifies the new commonly_set_typing tool's backend route
+    // (POST /api/agents/runtime/pods/:podId/typing) delivers via
+    // Socket.io to V2PodChat's TypingIndicator. Installs an
+    // ephemeral webhook agent, mints a cm_agent_* token, opens
+    // the demo pod in browser, POSTs typing 'start' as the agent,
+    // asserts "thinking…" element appears within 5s, then POST
+    // 'stop' and assert it goes away. Cleanup uninstalls the agent.
+    const agentName = `byo-e2e-typing-${Date.now()}`;
+    const installRes = await request.post(`${API}/api/registry/install`, {
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      data: { agentName, podId: POD, scopes: ['context:read', 'messages:write'], config: { runtime: { runtimeType: 'webhook' } } },
+    });
+    expect(installRes.ok()).toBeTruthy();
+    const tokenRes = await request.post(`${API}/api/registry/pods/${POD}/agents/${agentName}/runtime-tokens`, {
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      data: { label: 'e2e-typing', force: true },
+    });
+    const agentToken = ((await tokenRes.json()) as { token?: string }).token;
+
+    await page.goto(`${BASE}/v2/pods/${POD}`);
+    // Wait for Socket.io to connect (V2PodsSidebar handles the
+    // agent_typing_* events). The indicator lives in v2-chat__typing.
+    await page.waitForSelector('.v2-chat', { timeout: 8000 });
+
+    // Agent fires typing start
+    await request.post(`${API}/api/agents/runtime/pods/${POD}/typing`, {
+      headers: { Authorization: `Bearer ${agentToken}`, 'Content-Type': 'application/json' },
+      data: { action: 'start' },
+    });
+
+    // UI surfaces the indicator (label uses "thinking…")
+    await expect(page.locator('.v2-chat__typing-label')).toContainText(/thinking/i, { timeout: 8000 });
+
+    // Stop
+    await request.post(`${API}/api/agents/runtime/pods/${POD}/typing`, {
+      headers: { Authorization: `Bearer ${agentToken}`, 'Content-Type': 'application/json' },
+      data: { action: 'stop' },
+    });
+    await expect(page.locator('.v2-chat__typing-label')).toHaveCount(0, { timeout: 8000 });
+
+    // Cleanup: uninstall
+    await request.delete(`${API}/api/registry/agents/${agentName}/pods/${POD}?instanceId=default`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+  });
+
   test('beat 12: agent reaction round-trip — API → Socket.io → UI chip', async ({ page, request }) => {
     // Exercises the dualAuth reaction path end-to-end:
     //   1. Install a webhook agent + issue a cm_agent_* token
