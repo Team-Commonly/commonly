@@ -1645,10 +1645,6 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               {tab === 'tasks' && runStateSection}
               {tab === 'manage' && (
                 <>
-                  <section className="v2-inspector__section">
-                    <div className="v2-inspector__section-title">Pod settings</div>
-                    <div className="v2-inspector__empty">More pod settings will appear here. For now, manage members and integrations from the Agents page.</div>
-                  </section>
                   {podsState && (
                     <section className="v2-inspector__section v2-inspector__danger">
                       <div className="v2-inspector__danger-title">Danger zone</div>
