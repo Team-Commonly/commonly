@@ -155,6 +155,7 @@ agents:
         podId: 69f841a9063269526de0437c
         agentInstanceId: cody
         adapter: codex
+        instanceKey: dev
         storage: 1Gi
         tokenSecret: cloud-codex-cody-token
 
