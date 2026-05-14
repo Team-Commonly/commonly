@@ -114,27 +114,38 @@ spec:
           set -e
           export PATH="/tools/bin:$PATH"
           export HOME=/state
-          mkdir -p /state/.codex /state/.commonly
+          mkdir -p /state/.codex /state/.commonly/tokens
 
-          # Seed ~/.commonly/config.json from injected env so `commonly`
-          # CLI knows which instance + which agent token to use. Re-writing
-          # on every boot is intentional — keeps the source of truth as the
-          # mounted secret, not the PVC.
-          cat > /state/.commonly/config.json <<EOF
+          # ca-certificates aren't included in node:22-bookworm-slim base,
+          # but codex CLI needs them for TLS to api.openai.com /
+          # auth.openai.com. Install once at boot (idempotent — apt skips
+          # what's already there) so the run loop's outbound HTTPS works.
+          if [ ! -d /etc/ssl/certs ] || [ -z "$(ls -A /etc/ssl/certs 2>/dev/null)" ]; then
+            echo "[cloud-codex] installing ca-certificates for TLS"
+            apt-get update >/dev/null 2>&1 || true
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates >/dev/null 2>&1 || true
+            update-ca-certificates >/dev/null 2>&1 || true
+          fi
+
+          # Seed ~/.commonly/tokens/<name>.json — `commonly agent run`
+          # uses loadAgentToken() to find the runtime credentials for this
+          # agent name. The record shape mirrors what `commonly agent
+          # attach` would write on a laptop.
+          # Token-file name uses the local wrapper alias (COMMONLY_AGENT_NAME);
+          # `agentName` and `instanceId` INSIDE the file are the registry-side
+          # identifiers the poller passes to /api/agents/runtime/events.
+          cat > /state/.commonly/tokens/${COMMONLY_AGENT_NAME}.json <<EOF
           {
-            "instances": {
-              "${COMMONLY_INSTANCE_KEY:-dev}": {
-                "url": "${COMMONLY_API_URL}",
-                "token": "${COMMONLY_USER_TOKEN:-}",
-                "agentTokens": {
-                  "${COMMONLY_AGENT_NAME}": "${COMMONLY_AGENT_TOKEN}"
-                }
-              }
-            },
-            "active": "${COMMONLY_INSTANCE_KEY:-dev}"
+            "agentName": "${COMMONLY_REGISTRY_AGENT_NAME}",
+            "instanceId": "${COMMONLY_AGENT_INSTANCE_ID:-$COMMONLY_AGENT_NAME}",
+            "podId": "${COMMONLY_POD_ID}",
+            "instanceUrl": "${COMMONLY_API_URL}",
+            "runtimeToken": "${COMMONLY_AGENT_TOKEN}",
+            "adapter": "${COMMONLY_ADAPTER:-codex}",
+            "savedAt": "$(date -u +%FT%TZ)"
           }
           EOF
-          chmod 600 /state/.commonly/config.json
+          chmod 600 /state/.commonly/tokens/${COMMONLY_AGENT_NAME}.json
 
           # Wait for codex auth.json. ChatGPT binds OAuth to the IP that
           # ran device-auth; running `codex login --device-auth` INSIDE
@@ -155,12 +166,21 @@ spec:
           fi
 
           echo "[cloud-codex] auth.json found, starting commonly agent run ${COMMONLY_AGENT_NAME}"
-          exec /tools/bin/commonly agent run "${COMMONLY_AGENT_NAME}" --instance "${COMMONLY_INSTANCE_KEY:-dev}"
+          exec /tools/bin/commonly agent run "${COMMONLY_AGENT_NAME}"
         env:
         - name: COMMONLY_AGENT_NAME
           value: {{ $name | quote }}
-        - name: COMMONLY_INSTANCE_KEY
-          value: {{ $cfg.instanceKey | default "dev" | quote }}
+        - name: COMMONLY_REGISTRY_AGENT_NAME
+          # The registry-side agentName (matches AgentInstallation.agentName).
+          # Defaults to "cloud-codex" since that's what this Helm template is
+          # for; override if you ever install under a different name.
+          value: {{ $cfg.registryAgentName | default "cloud-codex" | quote }}
+        - name: COMMONLY_AGENT_INSTANCE_ID
+          value: {{ $cfg.agentInstanceId | default $name | quote }}
+        - name: COMMONLY_POD_ID
+          value: {{ $cfg.podId | quote }}
+        - name: COMMONLY_ADAPTER
+          value: {{ $cfg.adapter | default "codex" | quote }}
         - name: COMMONLY_API_URL
           value: {{ $cfg.apiUrl | default $.Values.agents.cloudCodex.apiUrl | quote }}
         - name: COMMONLY_AGENT_TOKEN

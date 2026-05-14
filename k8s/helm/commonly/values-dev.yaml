@@ -150,6 +150,11 @@ agents:
     apiUrl: http://backend.commonly-dev.svc.cluster.local:5000
     agents:
       cody:
+        # The AgentInstallation row this pod's runtime token is bound to.
+        # podId = Team Orchestration Demo pod (where Cody lives).
+        podId: 69f841a9063269526de0437c
+        agentInstanceId: cody
+        adapter: codex
         instanceKey: dev
         storage: 1Gi
         tokenSecret: cloud-codex-cody-token
