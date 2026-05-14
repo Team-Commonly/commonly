@@ -145,6 +145,15 @@ agents:
         value: "dev"
         effect: "NoSchedule"
 
+  cloudCodex:
+    enabled: true
+    apiUrl: http://backend.commonly-dev.svc.cluster.local:5000
+    agents:
+      cody:
+        instanceKey: dev
+        storage: 1Gi
+        tokenSecret: cloud-codex-cody-token
+
 rbac:
   create: true
 
