@@ -153,9 +153,15 @@ agents:
         # The AgentInstallation row this pod's runtime token is bound to.
         # podId = Team Orchestration Demo pod (where Cody lives).
         podId: 69f841a9063269526de0437c
+        # Registry agentName for Cody's install. `cloud-codex` was the
+        # original plan but isn't in AGENT_TYPES, so the periodic cleanup
+        # sweep marks any install with that agentName as `status: stale`
+        # and the mention service stops routing to it. `codex` IS in
+        # AGENT_TYPES (mapped to runtime: 'codex') so the install stays
+        # active across reprovisions.
+        registryAgentName: codex
         agentInstanceId: cody
         adapter: codex
-        instanceKey: dev
         storage: 1Gi
         tokenSecret: cloud-codex-cody-token
 
