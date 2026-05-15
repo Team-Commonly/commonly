@@ -253,6 +253,12 @@ agents:
     codexVersion: "0.125.0"
     commonlyCliRef: "main"
     apiUrl: http://backend.commonly-dev.svc.cluster.local:5000
+    # All cloud-codex agents proxy their model calls through LiteLLM
+    # instead of calling chatgpt.com directly. That keeps the auth surface
+    # singular (one rotator, one quota pool, one cluster-bound auth.json)
+    # while the codex runtime stays distinct (codex CLI still spawns,
+    # sandboxes, owns tool use). Override per-agent via agents.<name>.litellmBaseUrl.
+    litellmBaseUrl: http://litellm:4000/v1
     # Per-agent map. Each key is the agent name that maps to an
     # AgentInstallation already created via /api/registry/install. The
     # token secret should be pre-populated with the cm_agent_* runtime

@@ -147,25 +147,35 @@ spec:
           EOF
           chmod 600 /state/.commonly/tokens/${COMMONLY_AGENT_NAME}.json
 
-          # Wait for codex auth.json. ChatGPT binds OAuth to the IP that
-          # ran device-auth; running `codex login --device-auth` INSIDE
-          # this pod is the whole point. If auth.json is missing, sit
-          # idle and log clear instructions so the operator's first
-          # `kubectl exec` shows them exactly what to do.
-          if [ ! -s /state/.codex/auth.json ]; then
-            echo "[cloud-codex] no codex auth.json on PVC — waiting for device-auth"
-            echo "[cloud-codex] run this once to bind the cluster session:"
-            echo "[cloud-codex]   kubectl exec -n {{ include "commonly.namespace" $ }} -it deploy/cloud-codex-{{ $name }} -- codex login --device-auth"
-            echo "[cloud-codex] (after completing in browser, the pod will resume on next reboot)"
-            # Sleep loop so operator can exec in. Restart-on-success is the
-            # cleanest UX — when auth.json appears, we want to re-enter the
-            # main path, and the simplest way to do that is a fresh boot.
-            while [ ! -s /state/.codex/auth.json ]; do sleep 10; done
-            echo "[cloud-codex] auth.json present — restarting to enter run loop"
-            exit 0
+          # Seed ~/.codex/config.toml so codex CLI routes its model calls
+          # through LiteLLM instead of straight to chatgpt.com. The LiteLLM
+          # pod already holds cluster-IP-bound auth.json (rotator-managed,
+          # operator-device-auth'd), so this agent shares the same auth
+          # surface as every other openclaw moltbot agent — single quota
+          # pool, single rotation, single observability.
+          #
+          # Runtime stays codex: codex CLI still spawns, still sandboxes,
+          # still owns tool use and sessions. Only the HTTPS layer is proxied.
+          cat > /state/.codex/config.toml <<EOF
+          model = "gpt-5.4"
+          model_provider = "litellm"
+
+          [model_providers.litellm]
+          name = "LiteLLM"
+          base_url = "${COMMONLY_LITELLM_BASE_URL}"
+          wire_api = "responses"
+          env_key = "LITELLM_API_KEY"
+          EOF
+
+          # Codex CLI looks for LITELLM_API_KEY at call time. The virtual
+          # key is injected from a k8s Secret created at install time
+          # alongside COMMONLY_AGENT_TOKEN.
+          export LITELLM_API_KEY="${COMMONLY_LITELLM_KEY:-}"
+          if [ -z "$LITELLM_API_KEY" ]; then
+            echo "[cloud-codex] WARNING: COMMONLY_LITELLM_KEY is empty — model calls will 401 at LiteLLM"
           fi
 
-          echo "[cloud-codex] auth.json found, starting commonly agent run ${COMMONLY_AGENT_NAME}"
+          echo "[cloud-codex] config.toml seeded for LiteLLM provider; starting commonly agent run ${COMMONLY_AGENT_NAME}"
           exec /tools/bin/commonly agent run "${COMMONLY_AGENT_NAME}"
         env:
         - name: COMMONLY_AGENT_NAME
@@ -188,6 +198,21 @@ spec:
             secretKeyRef:
               name: {{ $cfg.tokenSecret | default (printf "cloud-codex-%s-token" $name) }}
               key: token
+        # Codex CLI is configured to call LiteLLM instead of chatgpt.com
+        # directly (see config.toml in the boot script). Two values needed:
+        # the base URL and a LiteLLM virtual key. ChatGPT auth itself lives
+        # on the LiteLLM pod's PVC, rotator-managed.
+        - name: COMMONLY_LITELLM_BASE_URL
+          value: {{ $cfg.litellmBaseUrl | default $.Values.agents.cloudCodex.litellmBaseUrl | default "http://litellm:4000/v1" | quote }}
+        - name: COMMONLY_LITELLM_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ $cfg.litellmKeySecret | default (printf "cloud-codex-%s-litellm-key" $name) }}
+              key: key
+              # Optional so the deployment can start without a key (useful
+              # during initial helm-upgrade before the operator mints one);
+              # the boot script logs a warning and codex 401s at call time.
+              optional: true
         volumeMounts:
         - name: tools
           mountPath: /tools
