@@ -259,9 +259,14 @@ describe('podController', () => {
     expect(res.json).toHaveBeenCalledWith([myPod]);
   });
 
-  it('getPodsByType returns ALL agent-rooms when caller is a global admin', async () => {
+  it('getPodsByType filters agent-room to caller membership even for global admins', async () => {
+    // Regression: admins used to bypass membership and see every private DM
+    // in the instance in their sidebar. That leaked other users' rooms and
+    // produced the "Talk to → can't post" UX bug. Admins now see only
+    // their own personal pods on this listing; moderation goes via a
+    // dedicated admin tool, not this generic endpoint.
     const otherPod = { _id: 'p1', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'someone-else' }] };
-    const myPod = { _id: 'p2', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'me' }] };
+    const myPod = { _id: 'p2', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'admin-id' }] };
     const sort = jest.fn().mockResolvedValue([otherPod, myPod]);
     const populateSecond = jest.fn(() => ({ sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
@@ -273,14 +278,12 @@ describe('podController', () => {
     const req = { params: { type: 'agent-room' }, userId: 'admin-id', user: {} };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getPodsByType(req, res);
-    // Admin sees both pods, not just their own.
-    expect(res.json).toHaveBeenCalledWith([otherPod, myPod]);
+    expect(res.json).toHaveBeenCalledWith([myPod]);
   });
 
-  it('getAllPods returns ALL agent-rooms when caller is a global admin (parity with getPodsByType)', async () => {
-    const otherPod = { _id: 'p1', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'someone-else' }] };
-    const myPod = { _id: 'p2', type: 'agent-room', members: [{ _id: 'agent-id' }, { _id: 'me' }] };
-    // getAllPods has an extra .populate() chain (parentPod) — match it.
+  it('getAllPods default scope=mine filters to caller membership even for admins', async () => {
+    const otherPod = { _id: 'p1', type: 'chat', members: [{ _id: 'someone-else' }] };
+    const myPod = { _id: 'p2', type: 'chat', members: [{ _id: 'admin-id' }] };
     const sort = jest.fn().mockResolvedValue([otherPod, myPod]);
     const populateThird = jest.fn(() => ({ sort }));
     const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
@@ -290,9 +293,85 @@ describe('podController', () => {
       select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'admin' }) }),
     });
 
-    const req = { query: { type: 'agent-room' }, userId: 'admin-id', user: {} };
+    const req = { query: {}, userId: 'admin-id', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+    // Default scope=mine: admin is filtered to their own pods, NOT every
+    // chat pod in the instance.
+    expect(res.json).toHaveBeenCalledWith([myPod]);
+  });
+
+  it('getAllPods scope=all returns everything for admins (explicit moderation view)', async () => {
+    const otherPod = { _id: 'p1', type: 'chat', members: [{ _id: 'someone-else' }] };
+    const myPod = { _id: 'p2', type: 'chat', members: [{ _id: 'admin-id' }] };
+    const sort = jest.fn().mockResolvedValue([otherPod, myPod]);
+    const populateThird = jest.fn(() => ({ sort }));
+    const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'admin' }) }),
+    });
+
+    const req = { query: { scope: 'all' }, userId: 'admin-id', user: {} };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
     expect(res.json).toHaveBeenCalledWith([otherPod, myPod]);
+  });
+
+  it('getAllPods scope=all is silently downgraded to scope=mine for non-admins', async () => {
+    const otherPod = { _id: 'p1', type: 'chat', members: [{ _id: 'someone-else' }] };
+    const myPod = { _id: 'p2', type: 'chat', members: [{ _id: 'me' }] };
+    const sort = jest.fn().mockResolvedValue([otherPod, myPod]);
+    const populateThird = jest.fn(() => ({ sort }));
+    const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'user' }) }),
+    });
+
+    const req = { query: { scope: 'all' }, userId: 'me', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+    expect(res.json).toHaveBeenCalledWith([myPod]);
+  });
+
+  it('getPodById returns 404 for personal pod types when caller is not a member', async () => {
+    const pod = {
+      _id: 'agent-room-1',
+      type: 'agent-room',
+      members: [{ _id: 'agent-id' }, { _id: 'someone-else' }],
+    };
+    Pod.findById.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockResolvedValue(pod),
+        }),
+      }),
+    });
+    const req = { params: { id: 'agent-room-1' }, userId: 'me', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getPodById(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('getPodById returns the pod for personal pod types when caller IS a member', async () => {
+    const pod = {
+      _id: 'agent-room-1',
+      type: 'agent-room',
+      members: [{ _id: 'agent-id' }, { _id: 'me' }],
+    };
+    Pod.findById.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockResolvedValue(pod),
+        }),
+      }),
+    });
+    const req = { params: { id: 'agent-room-1' }, userId: 'me', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getPodById(req, res);
+    expect(res.json).toHaveBeenCalledWith(pod);
   });
 });

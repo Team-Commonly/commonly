@@ -172,19 +172,21 @@ exports.getAllPods = async (req: any, res: any) => {
     // a multi-tenant or shared dev instance and broke isolation for
     // demos / test accounts.
     //
-    // To opt back into the legacy "list everything I have access to read"
-    // behavior — useful for admin tooling, marketplace browsing, and
-    // the pod-discovery surface — pass `?scope=all`. That path still
-    // requires admin or explicit join-policy.
+    // To opt into the cross-instance "everything I can audit" view —
+    // useful for admin tooling — pass `?scope=all`. That path is admin-
+    // only; non-admins are silently downgraded to `scope=mine`.
     //
-    // Global admins bypass membership filtering so they can audit every
-    // pod in the instance — same moderation surface as before for the
-    // 1:1 invariant on agent-rooms (ADR-001 §3.10).
+    // Admins do NOT bypass membership on the default sidebar listing:
+    // their own pod list must be their own pods, otherwise every
+    // private DM in the instance leaks into their sidebar (which made
+    // xcjsam see — and try to post into — sam-demo's agent-rooms).
     const scope = String(req.query?.scope || 'mine').toLowerCase();
     const isPersonal = type === 'agent-admin' || type === 'agent-room' || type === 'agent-dm';
-    if (req.userId && (isPersonal || scope === 'mine')) {
-      const isAdmin = await isGlobalAdminRequest(req);
-      if (!isAdmin) {
+    if (req.userId) {
+      const wantsAll = scope === 'all';
+      const isAdmin = wantsAll ? await isGlobalAdminRequest(req) : false;
+      const filterToMine = isPersonal || !wantsAll || !isAdmin;
+      if (filterToMine) {
         const uid = String(req.userId);
         pods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
       }
@@ -245,14 +247,13 @@ exports.getPodsByType = async (req: any, res: any) => {
       .populate('members', 'username profilePicture isBot')
       .sort({ updatedAt: -1 });
 
-    // Same admin-bypass rule as getAllPods — see comment there.
-    if ((type === 'agent-admin' || type === 'agent-room') && req.userId) {
-      const isAdmin = await isGlobalAdminRequest(req);
-      if (!isAdmin) {
-        const uid = String(req.userId);
-        const memberPods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
-        return res.json(memberPods);
-      }
+    // Personal pod types (agent-admin, agent-room, agent-dm) are always
+    // filtered to caller membership — admins included. The instance-wide
+    // moderation view is a separate admin tool, not this typed listing.
+    if ((type === 'agent-admin' || type === 'agent-room' || type === 'agent-dm') && req.userId) {
+      const uid = String(req.userId);
+      const memberPods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
+      return res.json(memberPods);
     }
 
     return res.json(pods);
@@ -286,6 +287,22 @@ exports.getPodById = async (req: any, res: any) => {
       return res
         .status(404)
         .json({ error: 'Pod not found or is not of specified type' });
+    }
+
+    // Personal pod types are private 1:1/N:1 surfaces. Only members can
+    // read them — direct ID lookups by non-members 404 to avoid leaking
+    // existence and to keep admins from accidentally landing in another
+    // user's DM (the sidebar bug that surfaced this fix). Admins can
+    // still moderate via dedicated admin tooling, not this generic GET.
+    const personalTypes = new Set(['agent-room', 'agent-dm', 'agent-admin']);
+    if (personalTypes.has(pod.type) && req.userId) {
+      const uid = String(req.userId);
+      const isMember = (pod.members || []).some(
+        (m: any) => String(m?._id || m) === uid,
+      );
+      if (!isMember) {
+        return res.status(404).json({ error: 'Pod not found' });
+      }
     }
 
     return res.json(pod);
