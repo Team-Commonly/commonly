@@ -174,29 +174,11 @@ spec:
               name: api-keys
               key: anthropic-api-key
               optional: true
-        # chatgpt/ provider reads auth.json from CHATGPT_TOKEN_DIR (written by init container).
-        # Account-1 token is written to auth.json; accounts 2 & 3 use api_key in litellm_params.
+        # chatgpt/ provider reads auth.json from CHATGPT_TOKEN_DIR (written by the
+        # codex-auth-rotator sidecar; source files seeded by operator via the codex-cli
+        # sidecar). See ADR-014.
         - name: CHATGPT_TOKEN_DIR
           value: /chatgpt-auth
-        # Codex account tokens — account-1 goes to auth.json; accounts 2 & 3 use api_key.
-        - name: OPENAI_CODEX_ACCESS_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-access-token
-              optional: true
-        - name: OPENAI_CODEX_ACCESS_TOKEN_2
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-access-token-2
-              optional: true
-        - name: OPENAI_CODEX_ACCESS_TOKEN_3
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-access-token-3
-              optional: true
         # Force prompt/response storage in spend logs regardless of runtime general_settings.
         # The config-file setting (store_prompts_in_spend_logs: true) is sometimes shadowed by
         # the in-memory general_settings dict at startup; the env var is the reliable fallback.
@@ -364,15 +346,10 @@ spec:
           def get_candidates():
               """Build the rotation candidate list.
 
-              PREFERRED: pod-side device-auth'd files at /chatgpt-auth/auth-{1,2,3}.json.
-                  Operator created these via `kubectl exec` into the codex-cli sidecar +
-                  `codex login --device-auth`. Tokens are cluster-IP-bound, so ChatGPT
-                  doesn't invalidate them on cluster usage (the inverse of the env-var
-                  path below where laptop-bound sessions die on first cluster call).
-
-              FALLBACK: env-var-fed tokens from GCP SM. Kept for backward compat with
-                  older operator flows; flagged stale by `--mode envvar` in logs so
-                  it's clear when we're on the dead path.
+              Pod-side device-auth'd files at /chatgpt-auth/auth-{1,2,3}.json.
+              Operator created these via `kubectl exec` into the codex-cli sidecar +
+              `codex login --device-auth`. Tokens are cluster-IP-bound, so ChatGPT
+              doesn't invalidate them on cluster usage. See ADR-014.
               """
               pod_files = [
                   ('1', '/chatgpt-auth/auth-1.json'),
@@ -384,20 +361,6 @@ spec:
                   rec = _read_pod_auth_file(path)
                   if rec:
                       access, refresh, id_tok = rec
-                      out.append((label, access, refresh, id_tok))
-              if out:
-                  return out
-              # Fallback: env-var path (legacy, pre-cluster-bound)
-              specs = [
-                  ('1', 'OPENAI_CODEX_ACCESS_TOKEN', 'OPENAI_CODEX_REFRESH_TOKEN', 'OPENAI_CODEX_ID_TOKEN'),
-                  ('2', 'OPENAI_CODEX_ACCESS_TOKEN_2', 'OPENAI_CODEX_REFRESH_TOKEN_2', ''),
-                  ('3', 'OPENAI_CODEX_ACCESS_TOKEN_3', 'OPENAI_CODEX_REFRESH_TOKEN_3', 'OPENAI_CODEX_ID_TOKEN_3'),
-              ]
-              for label, a_env, r_env, i_env in specs:
-                  access = os.environ.get(a_env, '')
-                  refresh = os.environ.get(r_env, '')
-                  id_tok = os.environ.get(i_env, '') if i_env else ''
-                  if access or refresh:
                       out.append((label, access, refresh, id_tok))
               return out
 
@@ -466,30 +429,6 @@ spec:
           # Can be overridden per-deploy via Helm if you have one dedicated
           # cluster-only account and don't need rotation at all.
           value: "1800"
-        - name: OPENAI_CODEX_ACCESS_TOKEN
-          valueFrom:
-            secretKeyRef: {name: api-keys, key: openai-codex-access-token, optional: true}
-        - name: OPENAI_CODEX_REFRESH_TOKEN
-          valueFrom:
-            secretKeyRef: {name: api-keys, key: openai-codex-refresh-token, optional: true}
-        - name: OPENAI_CODEX_ID_TOKEN
-          valueFrom:
-            secretKeyRef: {name: api-keys, key: openai-codex-id-token, optional: true}
-        - name: OPENAI_CODEX_ACCESS_TOKEN_2
-          valueFrom:
-            secretKeyRef: {name: api-keys, key: openai-codex-access-token-2, optional: true}
-        - name: OPENAI_CODEX_REFRESH_TOKEN_2
-          valueFrom:
-            secretKeyRef: {name: api-keys, key: openai-codex-refresh-token-2, optional: true}
-        - name: OPENAI_CODEX_ACCESS_TOKEN_3
-          valueFrom:
-            secretKeyRef: {name: api-keys, key: openai-codex-access-token-3, optional: true}
-        - name: OPENAI_CODEX_REFRESH_TOKEN_3
-          valueFrom:
-            secretKeyRef: {name: api-keys, key: openai-codex-refresh-token-3, optional: true}
-        - name: OPENAI_CODEX_ID_TOKEN_3
-          valueFrom:
-            secretKeyRef: {name: api-keys, key: openai-codex-id-token-3, optional: true}
         - name: OPENAI_CODEX_CLIENT_ID
           valueFrom:
             secretKeyRef: {name: api-keys, key: openai-codex-client-id, optional: true}
@@ -569,21 +508,22 @@ spec:
             cpu: 200m
             memory: 256Mi
       initContainers:
-      # Write the best available (non-expired) Codex token to auth.json for LiteLLM's chatgpt/ provider.
-      # Account-1 entries in litellm-config have no api_key — the chatgpt/ provider reads
-      # CHATGPT_TOKEN_DIR/auth.json at startup. Accounts 2 & 3 use api_key in litellm_params directly.
-      # Priority: account-3 first (quota available), then account-1 as fallback, else empty (disables chatgpt/ provider).
-      # NOTE: chatgpt/ provider ignores api_key in litellm_params — all accounts share this single auth.json.
-      # There is no per-deployment rotation; whichever account is written here is used for ALL chatgpt/ calls.
+      # Seed /chatgpt-auth/auth.json from a pod-side device-auth'd file before LiteLLM
+      # starts, so the chatgpt/ provider has a token to read on first boot. This avoids
+      # a startup race with codex-auth-rotator (which runs as a sidecar and only writes
+      # auth.json on its first scheduled tick). If no pod-side auth-N.json exists yet
+      # (fresh cluster — operator hasn't run auth-login.sh), writes empty auth.json
+      # and the chatgpt/ provider stays disabled until the operator seeds an account.
+      #
+      # All OAuth refresh + multi-account rotation logic lives in the rotator sidecar.
+      # See ADR-014.
       - name: codex-auth-seed
         image: python:3-alpine
         command:
         - python3
         - -c
         - |
-          import os, sys, base64, json, datetime, urllib.request, urllib.parse, urllib.error
-
-          OAUTH_URL = 'https://auth.openai.com/oauth/token'
+          import json, os, sys, base64
 
           def token_exp(tok):
               if not tok:
@@ -595,150 +535,44 @@ spec:
               except Exception:
                   return 0
 
-          def refresh_token(refresh_tok, client_id, label):
-              """Exchange refresh_token for fresh access_token. Returns (access, refresh, id_token, exp) or None."""
-              if not refresh_tok or not client_id:
-                  return None
-              body = urllib.parse.urlencode({
-                  'grant_type': 'refresh_token',
-                  'refresh_token': refresh_tok,
-                  'client_id': client_id,
-                  'scope': 'openid profile email',
-              }).encode('utf-8')
-              req = urllib.request.Request(
-                  OAUTH_URL,
-                  data=body,
-                  headers={'Content-Type': 'application/x-www-form-urlencoded'},
-              )
+          def read_pod_auth(path):
               try:
-                  with urllib.request.urlopen(req, timeout=15) as resp:
-                      payload = json.loads(resp.read().decode('utf-8'))
-              except urllib.error.HTTPError as e:
-                  err_body = e.read().decode('utf-8', errors='replace')[:200]
-                  print(f'  [{label}] refresh failed: HTTP {e.code} {err_body}')
+                  with open(path) as f:
+                      d = json.load(f)
+              except Exception:
                   return None
-              except Exception as e:
-                  print(f'  [{label}] refresh failed: {e}')
+              tokens = d.get('tokens') if isinstance(d.get('tokens'), dict) else d
+              access = tokens.get('access_token', '') or d.get('access_token', '')
+              refresh = tokens.get('refresh_token', '') or d.get('refresh_token', '')
+              id_tok = tokens.get('id_token', '') or d.get('id_token', '')
+              if not (access or refresh):
                   return None
-              new_access = payload.get('access_token', '')
-              new_id = payload.get('id_token', '')
-              new_refresh = payload.get('refresh_token', refresh_tok)
-              exp = token_exp(new_access) or (int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + int(payload.get('expires_in', 0) or 0))
-              if not new_access:
-                  print(f'  [{label}] refresh returned no access_token')
-                  return None
-              return (new_access, new_refresh, new_id, exp)
-
-          now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-          client_id = os.environ.get('OPENAI_CODEX_CLIENT_ID', '')
-
-          # All three accounts in preferred order. Account-1 is primary; 3 and 2 are
-          # fallbacks only used when account-1's tokens are expired AND unrefreshable.
-          candidates = [
-              ('', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN', '')),
-              ('3', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN_3', ''), os.environ.get('OPENAI_CODEX_ID_TOKEN_3', '')),
-              ('2', os.environ.get('OPENAI_CODEX_ACCESS_TOKEN_2', ''), os.environ.get('OPENAI_CODEX_REFRESH_TOKEN_2', ''), ''),
-          ]
+              return access, refresh, id_tok
 
           chosen = None
-          for (suffix, access, refresh, id_tok) in candidates:
-              label = f'account-{"1" if suffix == "" else suffix}'
-              if not access and not refresh:
-                  print(f'{label}: no tokens configured, skipping')
+          for label in ('1', '2', '3'):
+              rec = read_pod_auth(f'/chatgpt-auth/auth-{label}.json')
+              if not rec:
                   continue
-              exp = token_exp(access) if access else 0
-              # Prefer valid access token (with 60s buffer to avoid edge-race expiry)
-              if access and exp > now_ts + 60:
-                  chosen = (suffix, access, refresh, id_tok, exp)
-                  print(f'{label}: access_token valid (expires {exp}, +{exp - now_ts}s)')
-                  break
-              # Otherwise try refresh
-              if refresh and client_id:
-                  print(f'{label}: access_token expired/missing, refreshing…')
-                  refreshed = refresh_token(refresh, client_id, label)
-                  if refreshed:
-                      new_access, new_refresh, new_id, new_exp = refreshed
-                      print(f'{label}: refreshed successfully (expires {new_exp}, +{new_exp - now_ts}s)')
-                      chosen = (suffix, new_access, new_refresh, new_id or id_tok, new_exp)
-                      break
-              else:
-                  print(f'{label}: no refresh_token or client_id, skipping')
+              access, refresh, id_tok = rec
+              chosen = (label, access, refresh, id_tok, token_exp(access))
+              print(f'seed: using pod-side auth-{label}.json (exp={chosen[4]})')
+              break
 
-          if not chosen:
-              with open('/chatgpt-auth/auth.json', 'w') as f:
-                  json.dump({}, f)
-              print('No valid Codex token found after checking all accounts — wrote empty auth.json')
-              sys.exit(0)
-
-          suffix, access, refresh, id_tok, exp = chosen
-          out = {'access_token': access, 'expires_at': exp}
-          if refresh:
-              out['refresh_token'] = refresh
-          if id_tok:
-              out['id_token'] = id_tok
+          out = {}
+          if chosen:
+              label, access, refresh, id_tok, exp = chosen
+              out = {'access_token': access, 'expires_at': exp}
+              if refresh:
+                  out['refresh_token'] = refresh
+              if id_tok:
+                  out['id_token'] = id_tok
+          else:
+              print('seed: no pod-side auth-N.json found — writing empty auth.json. '
+                    'Run `/scripts/auth-login.sh <N>` from the codex-cli sidecar to seed.')
 
           with open('/chatgpt-auth/auth.json', 'w') as f:
               json.dump(out, f)
-
-          exp_str = datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat()
-          print(f'auth.json written — account-{"1" if suffix == "" else suffix} expires_at={exp} ({exp_str})')
-        env:
-        - name: OPENAI_CODEX_ACCESS_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-access-token
-              optional: true
-        - name: OPENAI_CODEX_REFRESH_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-refresh-token
-              optional: true
-        - name: OPENAI_CODEX_ID_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-id-token
-              optional: true
-        - name: OPENAI_CODEX_ACCESS_TOKEN_3
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-access-token-3
-              optional: true
-        - name: OPENAI_CODEX_REFRESH_TOKEN_3
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-refresh-token-3
-              optional: true
-        - name: OPENAI_CODEX_ID_TOKEN_3
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-id-token-3
-              optional: true
-        # Account-2: used when accounts 1 and 3 are exhausted/expired
-        - name: OPENAI_CODEX_ACCESS_TOKEN_2
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-access-token-2
-              optional: true
-        - name: OPENAI_CODEX_REFRESH_TOKEN_2
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-refresh-token-2
-              optional: true
-        # Client ID for OAuth refresh flow
-        - name: OPENAI_CODEX_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: openai-codex-client-id
-              optional: true
         volumeMounts:
         - name: chatgpt-auth
           mountPath: /chatgpt-auth
