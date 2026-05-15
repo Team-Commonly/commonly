@@ -342,14 +342,19 @@ spec:
                   print(f'[rotator] save_state failed: {e}', flush=True)
 
           def _read_pod_auth_file(path):
-              """Read a codex auth.json from disk. Returns (access, refresh, id_token) or None."""
+              """Read a codex auth.json from disk. Returns (access, refresh, id_token) or None.
+
+              Handles two shapes:
+                - codex CLI 0.125+ (nested): {"tokens": {"access_token": "...", ...}, ...}
+                - rotator-written (flat):    {"access_token": "...", "refresh_token": "...", ...}
+              """
               try:
                   with open(path) as f:
                       d = json.load(f)
-                  # codex CLI writes flat shape; legacy rotator-written file also flat
-                  access = d.get('access_token', '')
-                  refresh = d.get('refresh_token', '')
-                  id_tok = d.get('id_token', '')
+                  tokens = d.get('tokens') if isinstance(d.get('tokens'), dict) else d
+                  access = tokens.get('access_token', '') or d.get('access_token', '')
+                  refresh = tokens.get('refresh_token', '') or d.get('refresh_token', '')
+                  id_tok = tokens.get('id_token', '') or d.get('id_token', '')
                   if access or refresh:
                       return access, refresh, id_tok
               except Exception:
