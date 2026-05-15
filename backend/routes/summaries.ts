@@ -18,6 +18,10 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const dailyDigestService = require('../services/dailyDigestService');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
+// eslint-disable-next-line global-require
+const Pod = require('../models/Pod');
+// eslint-disable-next-line global-require
+const DMService = require('../services/dmService');
 
 interface AuthReq {
   user?: { id: string };
@@ -177,6 +181,15 @@ router.get('/all-posts', auth, async (_req: AuthReq, res: Res) => {
 router.get('/pod/:podId', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
+    // Pod-scoped summaries inherit pod visibility — non-members of personal
+    // pods (agent-room / agent-dm / agent-admin) must not learn pod
+    // existence or its summarized content. Parity with the /announcements
+    // + /files + /external-links gates on the pods router.
+    const pod = await Pod.findById(podId).select('_id members type').lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    const userId = req.userId || req.user?.id;
+    const canView = await DMService.canViewPod(userId, pod);
+    if (!canView) return res.status(403).json({ error: 'Not authorized to view this pod summary' });
     const podSummary = await ChatSummarizerService.getLatestPodSummary(podId);
     res.json(podSummary);
   } catch (error) {

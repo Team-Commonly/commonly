@@ -426,8 +426,27 @@ router.get('/:podId/external-links', auth, async (req: AuthReq, res: Res) => {
 
 router.get('/:id/children', auth, async (req: AuthReq, res: Res) => {
   try {
-    const children = await Pod.find({ parentPod: req.params?.id }).populate('createdBy', 'username profilePicture').populate('members', 'username profilePicture').sort({ name: 1 });
-    return res.json(children);
+    const parentId = req.params?.id || '';
+    // Children listing reveals pod existence + names + members under a
+    // parent. Gate by the parent's visibility so a non-member can't
+    // enumerate someone else's nested workspace structure. The full
+    // results array is then filtered to children the caller can also
+    // see — matches the principle from PR #375 (no leak via fan-out
+    // queries either).
+    const parent = await Pod.findById(parentId).select('_id members type').lean();
+    if (!parent) return res.status(404).json({ msg: 'Pod not found' });
+    const canViewParent = await DMService.canViewPod(req.user?.id, parent);
+    if (!canViewParent) return res.status(403).json({ msg: 'Not authorized to view child pods' });
+    const children = await Pod.find({ parentPod: parentId })
+      .populate('createdBy', 'username profilePicture')
+      .populate('members', 'username profilePicture')
+      .sort({ name: 1 });
+    const visibleChildren = [];
+    for (const child of children) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await DMService.canViewPod(req.user?.id, child)) visibleChildren.push(child);
+    }
+    return res.json(visibleChildren);
   } catch (err) {
     console.error('Error fetching child pods:', (err as Error).message);
     return res.status(500).json({ msg: 'Server error' });
