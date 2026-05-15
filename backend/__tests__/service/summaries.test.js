@@ -304,14 +304,17 @@ describe('Summaries Routes Integration Tests', () => {
       expect(response.body.podId).toBe(testPods.chat.toString());
     });
 
-    test('should return null for pod with no summaries', async () => {
+    test('should return 404 for a non-existent pod', async () => {
+      // Updated semantics (PR #378): an unknown pod ID now 404s instead of
+      // 200 + null. Returning null leaked pod-existence by distinguishing
+      // "pod exists but no summary" from "pod does not exist" — a tiny
+      // but real probe surface. Stop advertising.
       const nonExistentPodId = new mongoose.Types.ObjectId();
       const response = await request(app)
         .get(`/api/summaries/pod/${nonExistentPodId}`)
         .set('Authorization', `Bearer ${authToken}`);
 
-      expect(response.status).toBe(200);
-      expect(response.body).toBeNull();
+      expect(response.status).toBe(404);
     });
   });
 
