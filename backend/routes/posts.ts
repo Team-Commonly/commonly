@@ -21,10 +21,13 @@ const auth = require('../middleware/auth');
 const router: ReturnType<typeof express.Router> = express.Router();
 
 router.post('/', auth, createPost);
-router.get('/', getPosts);
-router.get('/search', searchPosts);
+// Posts read paths require auth so pod-scoped queries can resolve the
+// caller's identity for the canViewPod gate in getPosts / getPostById.
+// Landing / marketing pages don't fetch posts, so this is a safe upgrade.
+router.get('/', auth, getPosts);
+router.get('/search', auth, searchPosts);
 router.get('/following/threads', auth, getFollowedThreads);
-router.get('/:id', getPostById);
+router.get('/:id', auth, getPostById);
 router.post('/:id/comments', auth, addComment);
 router.post('/:id/follow', auth, followThread);
 router.delete('/:id/follow', auth, unfollowThread);

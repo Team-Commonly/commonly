@@ -3,6 +3,7 @@ const Pod = require('../models/Pod');
 const User = require('../models/User');
 const Activity = require('../models/Activity');
 const AgentMentionService = require('../services/agentMentionService');
+const DMService = require('../services/dmService');
 
 exports.createPost = async (req: any, res: any) => {
   const {
@@ -124,6 +125,20 @@ exports.getPosts = async (req: any, res: any) => {
       if (podId === 'global' || podId === 'none') {
         filter.podId = null;
       } else {
+        // Pod-scoped post listing must respect pod visibility. The
+        // global feed (`podId=global`/`none`) stays anonymous-readable;
+        // pod-scoped queries require auth and pass through
+        // `canViewPod` (members + admins + agent-dm §3.7 fan-out).
+        const userId = req.userId || req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ error: 'Authentication required to view pod posts' });
+        }
+        const pod = await Pod.findById(podId).select('_id members type').lean();
+        if (!pod) return res.status(404).json({ error: 'Pod not found' });
+        const canView = await DMService.canViewPod(userId, pod);
+        if (!canView) {
+          return res.status(403).json({ error: 'Not authorized to view posts in this pod' });
+        }
         filter.podId = podId;
       }
     }
@@ -188,9 +203,21 @@ exports.getPostById = async (req: any, res: any) => {
     const post = await Post.findById(req.params.id)
       .populate('userId', 'username profilePicture isBot botMetadata')
       .populate('comments.userId', 'username profilePicture isBot botMetadata')
-      .populate('podId', 'name type')
+      .populate('podId', 'name type members')
       .populate('likedBy', '_id');
     if (!post) return res.status(404).json({ error: 'Post not found' });
+    // If the post is pod-scoped, mirror the same visibility rule as
+    // `getPosts` — global posts (no pod) remain anonymous-readable.
+    if (post.podId) {
+      const userId = req.userId || req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required to view this post' });
+      }
+      const canView = await DMService.canViewPod(userId, post.podId);
+      if (!canView) {
+        return res.status(403).json({ error: 'Not authorized to view this post' });
+      }
+    }
     res.json(post);
   } catch (err: any) {
     res.status(400).json({ error: err.message });

@@ -409,8 +409,13 @@ router.get('/:podId/files', auth, async (req: AuthReq, res: Res) => {
 router.get('/:podId/external-links', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
-    const pod = await Pod.findById(podId) as Record<string, unknown> | null;
+    const pod = await Pod.findById(podId) as { type?: string; members?: Array<{ toString: () => string }> } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
+    // Parity with /announcements and /files above — external-links are
+    // pod-scoped artifacts and must respect the same visibility rule, not
+    // be openly readable by any authenticated user.
+    const canView = await DMService.canViewPod(req.user?.id, pod);
+    if (!canView) return res.status(403).json({ message: 'Not authorized to view pod external links' });
     const externalLinks = await ExternalLink.find({ podId }).sort({ createdAt: -1 }).populate('createdBy', 'username');
     return res.status(200).json(externalLinks);
   } catch (error) {
