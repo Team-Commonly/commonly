@@ -241,6 +241,15 @@ litellm:
   # rotation gives real multi-account benefit when one account exhausts.
   codexAuthRotator:
     enabled: true
+  # Persist chatgpt-auth across pod restarts so pod-side device-auth'd
+  # auth-N.json files survive litellm rollouts. Without this every
+  # helm-upgrade nukes the cluster-bound tokens and Nova/Pixel/Cody
+  # go silent until the operator re-device-auths.
+  chatgptAuth:
+    persistence:
+      enabled: true
+      size: 1Gi
+      storageClass: standard-rwo
   nodeSelector:
     pool: dev
   tolerations:

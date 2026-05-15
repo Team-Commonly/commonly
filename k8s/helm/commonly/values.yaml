@@ -369,6 +369,22 @@ litellm:
   # tokens). Re-enable once the upstream LiteLLM bug is fixed.
   codexAuthRotator:
     enabled: true
+  # Codex CLI sidecar: provides the `codex` binary inside the LiteLLM
+  # pod so an operator can run device-auth FROM the cluster (not from
+  # a laptop). The resulting auth.json lands on the chatgpt-auth PVC
+  # and the codex-auth-rotator picks it up preferentially over env-var
+  # tokens. See litellm-deployment.yaml for the operator flow.
+  codexCli:
+    version: "0.125.0"
+  # chatgpt-auth volume backs the codex-auth-rotator's auth.json plus
+  # any pod-side device-auth'd auth-N.json files. Persistence is
+  # REQUIRED for the cluster-bound auth flow — emptyDir loses tokens
+  # on every pod restart, forcing re-device-auth every helm-upgrade.
+  chatgptAuth:
+    persistence:
+      enabled: false
+      size: 1Gi
+      # storageClass defaults to the cluster's default StorageClass.
   image:
     repository: ghcr.io/berriai/litellm
     tag: v1.82.3-stable
