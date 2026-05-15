@@ -492,6 +492,77 @@ spec:
         - name: chatgpt-auth
           mountPath: /chatgpt-auth
       {{- end }}
+      # codex-cli sidecar: provides the codex binary inside the LiteLLM pod
+      # so an operator can run `codex login --device-auth` from within the
+      # cluster. The resulting auth.json lands on the shared chatgpt-auth
+      # PVC (as /chatgpt-auth/auth-N.json), and the codex-auth-rotator
+      # above prefers those pod-side files over the env-var-fed tokens.
+      #
+      # ChatGPT binds OAuth sessions to the IP/device that completed
+      # device-auth. Doing device-auth on a laptop and uploading tokens
+      # to the cluster invalidates the session on first cluster use.
+      # Doing device-auth from inside this pod produces a cluster-IP-
+      # bound session that survives. See PR #362 / cloud-codex-deployment
+      # for the per-agent precedent.
+      #
+      # Operator flow (one-time per account, after pod is up):
+      #   kubectl exec -n {{ include "commonly.namespace" . }} -it deploy/litellm -c codex-cli -- /scripts/auth-login.sh 1
+      # Sign in to ChatGPT in browser with account #N. Upon success the
+      # script copies ~/.codex/auth.json to /chatgpt-auth/auth-1.json.
+      # Repeat for accounts 2 and 3.
+      - name: codex-cli
+        image: node:22-bookworm-slim
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # Install codex CLI + ca-certs on first boot, then idle so the
+          # operator can exec into us. The sleep loop is intentional —
+          # there's no continuous workload here; this sidecar exists
+          # purely to provide `codex` inside the same pod that holds the
+          # chatgpt-auth PVC.
+          if [ ! -x /usr/local/bin/codex ]; then
+            apt-get update >/dev/null 2>&1 || true
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates >/dev/null 2>&1 || true
+            update-ca-certificates >/dev/null 2>&1 || true
+            npm install --global --no-audit --no-fund "@openai/codex@{{ .Values.litellm.codexCli.version | default "0.125.0" }}" >/dev/null 2>&1 || true
+          fi
+          mkdir -p /scripts
+          cat > /scripts/auth-login.sh <<'SCRIPT'
+          #!/bin/sh
+          # auth-login.sh <account-number>
+          # Runs codex login --device-auth interactively. Operator follows the URL+code
+          # printed to stdout, completes in browser, and on success the resulting
+          # auth.json is copied to /chatgpt-auth/auth-N.json for the rotator to pick up.
+          set -e
+          N="${1:-}"
+          if [ -z "$N" ]; then echo "usage: $0 <account-number>"; exit 1; fi
+          HOMEDIR="/tmp/codex-login-$N"
+          rm -rf "$HOMEDIR"
+          mkdir -p "$HOMEDIR/.codex"
+          HOME="$HOMEDIR" codex login --device-auth
+          if [ ! -s "$HOMEDIR/.codex/auth.json" ]; then
+            echo "auth.json was not written — login did not complete"
+            exit 1
+          fi
+          cp "$HOMEDIR/.codex/auth.json" "/chatgpt-auth/auth-$N.json"
+          chmod 600 "/chatgpt-auth/auth-$N.json"
+          echo "wrote /chatgpt-auth/auth-$N.json — rotator will pick it up on next tick"
+          SCRIPT
+          chmod +x /scripts/auth-login.sh
+          echo "[codex-cli] ready. Run device-auth via:"
+          echo "[codex-cli]   kubectl exec -it <litellm-pod> -c codex-cli -- /scripts/auth-login.sh <1|2|3>"
+          while true; do sleep 3600; done
+        volumeMounts:
+        - name: chatgpt-auth
+          mountPath: /chatgpt-auth
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
       initContainers:
       # Write the best available (non-expired) Codex token to auth.json for LiteLLM's chatgpt/ provider.
       # Account-1 entries in litellm-config have no api_key — the chatgpt/ provider reads
@@ -666,77 +737,6 @@ spec:
         volumeMounts:
         - name: chatgpt-auth
           mountPath: /chatgpt-auth
-      # codex-cli sidecar: provides the codex binary inside the LiteLLM pod
-      # so an operator can run `codex login --device-auth` from within the
-      # cluster. The resulting auth.json lands on the shared chatgpt-auth
-      # PVC (as /chatgpt-auth/auth-N.json), and the codex-auth-rotator
-      # above prefers those pod-side files over the env-var-fed tokens.
-      #
-      # ChatGPT binds OAuth sessions to the IP/device that completed
-      # device-auth. Doing device-auth on a laptop and uploading tokens
-      # to the cluster invalidates the session on first cluster use.
-      # Doing device-auth from inside this pod produces a cluster-IP-
-      # bound session that survives. See PR #362 / cloud-codex-deployment
-      # for the per-agent precedent.
-      #
-      # Operator flow (one-time per account, after pod is up):
-      #   kubectl exec -n {{ include "commonly.namespace" . }} -it deploy/litellm -c codex-cli -- /scripts/auth-login.sh 1
-      # Sign in to ChatGPT in browser with account #N. Upon success the
-      # script copies ~/.codex/auth.json to /chatgpt-auth/auth-1.json.
-      # Repeat for accounts 2 and 3.
-      - name: codex-cli
-        image: node:22-bookworm-slim
-        command:
-        - /bin/sh
-        - -c
-        - |
-          # Install codex CLI + ca-certs on first boot, then idle so the
-          # operator can exec into us. The sleep loop is intentional —
-          # there's no continuous workload here; this sidecar exists
-          # purely to provide `codex` inside the same pod that holds the
-          # chatgpt-auth PVC.
-          if [ ! -x /usr/local/bin/codex ]; then
-            apt-get update >/dev/null 2>&1 || true
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates >/dev/null 2>&1 || true
-            update-ca-certificates >/dev/null 2>&1 || true
-            npm install --global --no-audit --no-fund "@openai/codex@{{ .Values.litellm.codexCli.version | default "0.125.0" }}" >/dev/null 2>&1 || true
-          fi
-          mkdir -p /scripts
-          cat > /scripts/auth-login.sh <<'SCRIPT'
-          #!/bin/sh
-          # auth-login.sh <account-number>
-          # Runs codex login --device-auth interactively. Operator follows the URL+code
-          # printed to stdout, completes in browser, and on success the resulting
-          # auth.json is copied to /chatgpt-auth/auth-N.json for the rotator to pick up.
-          set -e
-          N="${1:-}"
-          if [ -z "$N" ]; then echo "usage: $0 <account-number>"; exit 1; fi
-          HOMEDIR="/tmp/codex-login-$N"
-          rm -rf "$HOMEDIR"
-          mkdir -p "$HOMEDIR/.codex"
-          HOME="$HOMEDIR" codex login --device-auth
-          if [ ! -s "$HOMEDIR/.codex/auth.json" ]; then
-            echo "auth.json was not written — login did not complete"
-            exit 1
-          fi
-          cp "$HOMEDIR/.codex/auth.json" "/chatgpt-auth/auth-$N.json"
-          chmod 600 "/chatgpt-auth/auth-$N.json"
-          echo "wrote /chatgpt-auth/auth-$N.json — rotator will pick it up on next tick"
-          SCRIPT
-          chmod +x /scripts/auth-login.sh
-          echo "[codex-cli] ready. Run device-auth via:"
-          echo "[codex-cli]   kubectl exec -it <litellm-pod> -c codex-cli -- /scripts/auth-login.sh <1|2|3>"
-          while true; do sleep 3600; done
-        volumeMounts:
-        - name: chatgpt-auth
-          mountPath: /chatgpt-auth
-        resources:
-          requests:
-            cpu: 20m
-            memory: 64Mi
-          limits:
-            cpu: 200m
-            memory: 256Mi
       volumes:
       - name: litellm-config
         configMap:
