@@ -289,11 +289,19 @@ exports.getPodById = async (req: any, res: any) => {
         .json({ error: 'Pod not found or is not of specified type' });
     }
 
-    // Personal pod types are private 1:1/N:1 surfaces. Only members can
-    // read them — direct ID lookups by non-members 404 to avoid leaking
-    // existence and to keep admins from accidentally landing in another
-    // user's DM (the sidebar bug that surfaced this fix). Admins can
-    // still moderate via dedicated admin tooling, not this generic GET.
+    // Personal pod types are private 1:1/N:1 surfaces. Direct ID lookups
+    // by non-members 404 to avoid leaking existence (the sidebar bug that
+    // surfaced PR #375). Two carve-outs that match canViewPod semantics:
+    //   - `agent-dm` (agent ↔ agent): humans who share a pod with either
+    //     DM participant get read access via the §3.7 fan-out — they can
+    //     observe their team's agent collaborations without being a
+    //     formal DM member. Without this carve-out a user can't navigate
+    //     to an a2a DM from the agent inspector even though messages
+    //     under /api/messages/:podId already serve them (canViewPod).
+    //   - Global admins reading agent-dm — moderation observability.
+    // `agent-room` and `agent-admin` keep strict membership: those are
+    // truly private surfaces (user↔agent rooms; ops admin pods) and we
+    // don't want admins resolving someone else's agent-room by ID either.
     const personalTypes = new Set(['agent-room', 'agent-dm', 'agent-admin']);
     if (personalTypes.has(pod.type) && req.userId) {
       const uid = String(req.userId);
@@ -301,7 +309,15 @@ exports.getPodById = async (req: any, res: any) => {
         (m: any) => String(m?._id || m) === uid,
       );
       if (!isMember) {
-        return res.status(404).json({ error: 'Pod not found' });
+        if (pod.type === 'agent-dm') {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+          const DMService = require('../services/dmService').default
+            || require('../services/dmService');
+          const allowed = await DMService.canViewPod(uid, pod);
+          if (!allowed) return res.status(404).json({ error: 'Pod not found' });
+        } else {
+          return res.status(404).json({ error: 'Pod not found' });
+        }
       }
     }
 
