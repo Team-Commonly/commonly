@@ -187,9 +187,16 @@ spec:
           # which keeps non-dev tiers safe if the env ever lands without
           # the secret.
           if [ -n "${GITHUB_PAT:-}" ]; then
+            # Trim any trailing newline/carriage-return baked into the
+            # secret value (often present when the PAT was minted via
+            # `cat token | base64`). git's libcurl refuses to parse a URL
+            # whose password component contains a newline ("credential
+            # url cannot be parsed") — verified empirically against the
+            # live `commonly-github-pat` 2026-05-15.
+            TRIMMED_GITHUB_PAT=$(printf '%s' "${GITHUB_PAT}" | tr -d '\n\r')
             git config --global credential.helper store
             mkdir -p /state
-            printf 'https://x-access-token:%s@github.com\n' "${GITHUB_PAT}" > /state/.git-credentials
+            printf 'https://x-access-token:%s@github.com\n' "${TRIMMED_GITHUB_PAT}" > /state/.git-credentials
             chmod 600 /state/.git-credentials
             git config --global credential.helper "store --file=/state/.git-credentials"
             git config --global user.name "${GIT_AUTHOR_NAME:-Cody}"
