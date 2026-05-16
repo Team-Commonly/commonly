@@ -120,10 +120,14 @@ spec:
           # but codex CLI needs them for TLS to api.openai.com /
           # auth.openai.com. Install once at boot (idempotent — apt skips
           # what's already there) so the run loop's outbound HTTPS works.
-          if [ ! -d /etc/ssl/certs ] || [ -z "$(ls -A /etc/ssl/certs 2>/dev/null)" ]; then
-            echo "[cloud-codex] installing ca-certificates for TLS"
+          # git is also missing from the slim base; the agent shells out to
+          # `git clone`, `git push`, etc. during an agent run, so install
+          # it here alongside ca-certs. Boot delay is one-off (apt cache
+          # warm from ca-certs install above) and the binary is tiny.
+          if [ ! -d /etc/ssl/certs ] || [ -z "$(ls -A /etc/ssl/certs 2>/dev/null)" ] || ! command -v git >/dev/null 2>&1; then
+            echo "[cloud-codex] installing ca-certificates + git for TLS / VCS"
             apt-get update >/dev/null 2>&1 || true
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates >/dev/null 2>&1 || true
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git >/dev/null 2>&1 || true
             update-ca-certificates >/dev/null 2>&1 || true
           fi
 
