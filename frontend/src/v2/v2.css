@@ -4471,6 +4471,27 @@
   border-color: #9ca3af;
   color: #111827;
 }
+
+/* Hover-only "+" reaction trigger on devices with a pointer.
+ * Fade the wrapper (not display:none) so layout stays stable and the
+ * picker keeps anchoring correctly. :focus-within keeps the wrap visible
+ * while the emoji-picker popover is open (picker buttons inside hold
+ * focus). Mobile (hover: none) keeps the trigger always visible — there's
+ * no hover affordance to lean on. Reaction count badges
+ * (.v2-msg__reaction) are unaffected and always render when count > 0. */
+@media (hover: hover) {
+  .v2-msg .v2-msg__reaction-add-wrap {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+  .v2-msg:hover .v2-msg__reaction-add-wrap,
+  .v2-msg__reaction-add-wrap:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .v2-msg__reaction-picker {
   position: absolute;
   bottom: calc(100% + 6px);
