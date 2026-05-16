@@ -164,6 +164,18 @@ spec:
           model = "gpt-5.4"
           model_provider = "litellm"
 
+          # Codex CLI's default sandbox uses bubblewrap (bwrap), which needs
+          # CAP_SYS_ADMIN / unprivileged user-namespaces — neither available
+          # to standard k8s containers without elevated securityContext.
+          # Without this knob, every shell call (git, ls, cat, ...) fails
+          # with "bwrap: Failed to make / slave: Permission denied" and the
+          # agent reports back "couldn't execute" — verified in cloud-codex
+          # pod 2026-05-15. We trust the pod boundary itself (PVC-scoped
+          # workspace, no host mounts, agent identity isolated) as the
+          # security perimeter and skip bwrap.
+          sandbox_mode = "danger-full-access"
+          approval_policy = "never"
+
           [model_providers.litellm]
           name = "LiteLLM"
           base_url = "${COMMONLY_LITELLM_BASE_URL}"
