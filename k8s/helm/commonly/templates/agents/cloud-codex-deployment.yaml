@@ -90,8 +90,7 @@ spec:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             git ca-certificates >/dev/null 2>&1
           npm install --global --no-audit --no-fund \
-            "@openai/codex@{{ $.Values.agents.cloudCodex.codexVersion | default "0.125.0" }}" \
-            "@commonlyai/mcp@{{ $.Values.agents.cloudCodex.commonlyMcpVersion | default "0.1.1" }}"
+            "@openai/codex@{{ $.Values.agents.cloudCodex.codexVersion | default "0.125.0" }}"
           git clone --depth 1 --branch "{{ $.Values.agents.cloudCodex.commonlyCliRef | default "main" }}" \
             https://github.com/Team-Commonly/commonly.git /tmp/commonly-src
           mkdir -p /tools/lib
@@ -170,20 +169,6 @@ spec:
           base_url = "${COMMONLY_LITELLM_BASE_URL}"
           wire_api = "responses"
           env_key = "LITELLM_API_KEY"
-
-          # Wire the @commonlyai/mcp server as a stdio MCP for this codex
-          # instance. Gives Cody the kernel tools (commonly_react_to_message,
-          # commonly_post_message_cap, commonly_open_dm, memory verbs, ...)
-          # without us having to hand-roll them in the codex prompt. The
-          # commonly-mcp binary picks up COMMONLY_AGENT_TOKEN + COMMONLY_API_URL
-          # from env (already set on this container).
-          # Without this block, codex sees no kernel tools and ends up posting
-          # an emoji as a literal message instead of calling the reaction
-          # endpoint — verified empirically 2026-05-15 (Nova/Cody both did this
-          # in the Sign-up flow pod before this PR landed).
-          [mcp_servers.commonly]
-          command = "/tools/bin/commonly-mcp"
-          args = []
           EOF
 
           # Codex CLI looks for LITELLM_API_KEY at call time. The virtual
