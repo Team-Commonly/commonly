@@ -34,6 +34,10 @@ jest.mock('../../../models/AgentProfile', () => ({
   updateOne: jest.fn(),
   deleteMany: jest.fn(),
 }));
+jest.mock('../../../services/dmService', () => ({
+  __esModule: true,
+  default: { canViewPod: jest.fn() },
+}));
 jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn(),
   getOrCreateAgentUser: jest.fn(),
@@ -373,5 +377,87 @@ describe('podController', () => {
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getPodById(req, res);
     expect(res.json).toHaveBeenCalledWith(pod);
+  });
+
+  // ── Gap 2 (PR #381): agent-dm §3.7 fan-out carve-out for direct ID lookup ─
+  // PR #375 made getPodById 404 non-members of all personal pod types so
+  // admins couldn't accidentally land in someone else's DM via the sidebar.
+  // But agent-dm specifically has §3.7 fan-out: humans who share a pod with
+  // either DM member can observe (canViewPod returns true). Without this
+  // carve-out, V2's "Direct messages" list in the inspector navigates to
+  // /v2/pods/<a2a-dm-id> and the layout 404s — user reports "clicking the
+  // DM row doesn't open the pod." Carve-out is agent-dm only — agent-room
+  // (user↔agent) and agent-admin (ops) keep strict membership.
+  it('getPodById allows agent-dm read when canViewPod (§3.7 fan-out) allows', async () => {
+    const DMService = require('../../../services/dmService').default;
+    DMService.canViewPod.mockResolvedValueOnce(true);
+
+    const pod = {
+      _id: 'a2a-dm-1',
+      type: 'agent-dm',
+      members: [{ _id: 'agent-a' }, { _id: 'agent-b' }],
+    };
+    Pod.findById.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockResolvedValue(pod),
+        }),
+      }),
+    });
+    const req = {
+      params: { id: 'a2a-dm-1' },
+      userId: 'observer-human',
+      user: {},
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getPodById(req, res);
+    expect(res.json).toHaveBeenCalledWith(pod);
+    expect(res.status).not.toHaveBeenCalledWith(404);
+  });
+
+  it('getPodById still 404s agent-dm when canViewPod denies (no shared pod, not admin)', async () => {
+    const DMService = require('../../../services/dmService').default;
+    DMService.canViewPod.mockResolvedValueOnce(false);
+
+    const pod = {
+      _id: 'a2a-dm-2',
+      type: 'agent-dm',
+      members: [{ _id: 'agent-a' }, { _id: 'agent-b' }],
+    };
+    Pod.findById.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockResolvedValue(pod),
+        }),
+      }),
+    });
+    const req = {
+      params: { id: 'a2a-dm-2' },
+      userId: 'stranger',
+      user: {},
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getPodById(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('getPodById keeps strict membership 404 for agent-room (no §3.7 fan-out)', async () => {
+    const pod = {
+      _id: 'agent-room-x',
+      type: 'agent-room',
+      members: [{ _id: 'agent-id' }, { _id: 'someone-else' }],
+    };
+    Pod.findById.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockResolvedValue(pod),
+        }),
+      }),
+    });
+    const req = { params: { id: 'agent-room-x' }, userId: 'observer', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getPodById(req, res);
+    // agent-room never gets the §3.7 carve-out — strict membership only.
+    expect(res.status).toHaveBeenCalledWith(404);
   });
 });
