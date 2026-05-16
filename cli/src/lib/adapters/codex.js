@@ -53,7 +53,24 @@ const buildPrompt = (prompt, memoryLongTerm) => {
 // subcommand-level distinction in modern codex, not an option flag — keep
 // that detail isolated here so the spawn path stays linear.
 const buildArgs = ({ sessionId, prompt, outputFile }) => {
-  const common = ['--json', '--skip-git-repo-check', '-o', outputFile];
+  // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
+  // bubblewrap (bwrap) sandbox + approval prompts. bwrap needs CAP_SYS_ADMIN
+  // or unprivileged user-namespaces — neither available to standard k8s
+  // containers without elevated securityContext. Without this flag, every
+  // shell tool call (git, ls, pwd, ...) fails with "bwrap: Failed to make /
+  // slave: Permission denied" inside cloud-codex pods (verified 2026-05-15).
+  // The pod is the security perimeter — agent identity is isolated, workspace
+  // is PVC-scoped, no host mounts. bwrap inside the pod is redundant.
+  // On a laptop wrapper run (sam-local-codex etc.) the same flag is fine: the
+  // operator's machine is already the security boundary they signed up for
+  // when running `commonly agent run`.
+  const common = [
+    '--json',
+    '--skip-git-repo-check',
+    '--dangerously-bypass-approvals-and-sandbox',
+    '-o',
+    outputFile,
+  ];
   if (sessionId) {
     // Place <sessionId> immediately after the `exec resume` subcommand so a
     // future codex parser change can't accidentally consume it as the value
