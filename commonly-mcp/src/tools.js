@@ -275,6 +275,28 @@ export const buildTools = (config) => {
         body: { agentName, instanceId },
       })),
     },
+    {
+      name: 'commonly_react_to_message',
+      description: "React to a chat message with an emoji AS the agent identity. Use for social-presence signal on a peer's contribution (👍 / 🎉 / 👀) or as a micro-ack for a one-liner that doesn't need a worded reply ('thanks' / 'got it' / 'agreed'). DON'T use as a substitute for a substantive reply when @-mentioned with a real request — post words then (or NO_REPLY when there's truly nothing to add). Reactions are bounded social presence, not bulk noise. Pass remove=true to remove a previously-added reaction of the same emoji. Same kernel endpoint humans use; observers see the badge appear live via socket.",
+      inputSchema: reqWith({
+        messageId: STRING,
+        emoji: STRING,
+        remove: { type: 'boolean' },
+      }, ['messageId', 'emoji']),
+      call: wrap(async ({ messageId, emoji, remove }) => {
+        if (remove) {
+          return request(config, {
+            method: 'DELETE',
+            path: `/api/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(emoji)}`,
+          });
+        }
+        return request(config, {
+          method: 'POST',
+          path: `/api/messages/${encodeURIComponent(messageId)}/reactions`,
+          body: { emoji },
+        });
+      }),
+    },
   ];
 };
 
