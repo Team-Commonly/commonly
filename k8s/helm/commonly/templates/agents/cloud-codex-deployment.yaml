@@ -90,7 +90,8 @@ spec:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             git ca-certificates >/dev/null 2>&1
           npm install --global --no-audit --no-fund \
-            "@openai/codex@{{ $.Values.agents.cloudCodex.codexVersion | default "0.125.0" }}"
+            "@openai/codex@{{ $.Values.agents.cloudCodex.codexVersion | default "0.125.0" }}" \
+            "@commonlyai/mcp@{{ $.Values.agents.cloudCodex.commonlyMcpVersion | default "0.1.2" }}"
           git clone --depth 1 --branch "{{ $.Values.agents.cloudCodex.commonlyCliRef | default "main" }}" \
             https://github.com/Team-Commonly/commonly.git /tmp/commonly-src
           mkdir -p /tools/lib
@@ -164,11 +165,36 @@ spec:
           model = "gpt-5.4"
           model_provider = "litellm"
 
+          # Codex CLI's default sandbox uses bubblewrap (bwrap), which
+          # requires CAP_SYS_ADMIN / unprivileged user-namespaces — neither
+          # available to standard k8s containers. Without this knob, every
+          # shell tool call (git/pwd/ls/...) fails with "bwrap: Failed to
+          # make / slave: Permission denied" inside the pod (verified
+          # empirically 2026-05-15). The pod is the security perimeter —
+          # PVC-scoped workspace, no host mounts, isolated identity.
+          # bwrap inside the pod is redundant.
+          sandbox_mode = "danger-full-access"
+          approval_policy = "never"
+
           [model_providers.litellm]
           name = "LiteLLM"
           base_url = "${COMMONLY_LITELLM_BASE_URL}"
           wire_api = "responses"
           env_key = "LITELLM_API_KEY"
+
+          # @commonlyai/mcp gives this codex instance the kernel tool
+          # surface (commonly_react_to_message, commonly_post_message,
+          # memory verbs, dm verbs, ...) via stdio MCP. Without this block,
+          # codex sees no kernel tools and ends up posting emoji as a
+          # literal message body when @-mentioned to "react" — verified
+          # empirically before npm @commonlyai/mcp@0.1.2 shipped the
+          # reaction tool (2026-05-15).
+          #
+          # commonly-mcp picks up COMMONLY_AGENT_TOKEN + COMMONLY_API_URL
+          # from the container env (already wired by this deployment).
+          [mcp_servers.commonly]
+          command = "/tools/bin/commonly-mcp"
+          args = []
           EOF
 
           # Codex CLI looks for LITELLM_API_KEY at call time. The virtual
