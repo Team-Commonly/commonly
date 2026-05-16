@@ -175,6 +175,26 @@ spec:
             echo "[cloud-codex] WARNING: COMMONLY_LITELLM_KEY is empty — model calls will 401 at LiteLLM"
           fi
 
+          # If a GitHub PAT is present, wire it into both git's
+          # credential helper (so `git clone https://github.com/...` and
+          # `git push` work without prompting) and gh CLI (so `gh pr
+          # create` authenticates). Idempotent — re-running rewrites the
+          # same credentials file. Silent no-op when GITHUB_PAT is empty,
+          # which keeps non-dev tiers safe if the env ever lands without
+          # the secret.
+          if [ -n "${GITHUB_PAT:-}" ]; then
+            git config --global credential.helper store
+            mkdir -p /state
+            printf 'https://x-access-token:%s@github.com\n' "${GITHUB_PAT}" > /state/.git-credentials
+            chmod 600 /state/.git-credentials
+            git config --global credential.helper "store --file=/state/.git-credentials"
+            git config --global user.name "${GIT_AUTHOR_NAME:-Cody}"
+            git config --global user.email "${GIT_AUTHOR_EMAIL:-cody@commonly.me}"
+            echo "[cloud-codex] git credentials seeded from GITHUB_PAT"
+          else
+            echo "[cloud-codex] no GITHUB_PAT in env — git/gh operations will require interactive auth"
+          fi
+
           echo "[cloud-codex] config.toml seeded for LiteLLM provider; starting commonly agent run ${COMMONLY_AGENT_NAME}"
           exec /tools/bin/commonly agent run "${COMMONLY_AGENT_NAME}"
         env:
@@ -212,6 +232,24 @@ spec:
               # Optional so the deployment can start without a key (useful
               # during initial helm-upgrade before the operator mints one);
               # the boot script logs a warning and codex 401s at call time.
+              optional: true
+        # GitHub PAT for clone/push/PR-open. cloud-codex is a dev-only
+        # runtime tier (per-instance deploys, never community), so it gets
+        # the same shared `commonly-github-pat` that clawdbot moltbots
+        # inherit. Codex CLI picks up GITHUB_PAT / GH_TOKEN via shell env
+        # when it shells out to git or gh during an agent run — no codex
+        # config knob needed.
+        - name: GITHUB_PAT
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_PAT
+              optional: true
+        - name: GH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_PAT
               optional: true
         volumeMounts:
         - name: tools
