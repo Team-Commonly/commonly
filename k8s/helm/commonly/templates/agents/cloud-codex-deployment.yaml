@@ -197,8 +197,15 @@ spec:
           # codex sees no kernel tools and ends up posting emoji as a
           # literal message body when @-mentioned to "react".
           #
-          # The `env` table is REQUIRED — codex does NOT inherit the
-          # parent container's env when it spawns the MCP subprocess
+          # The env table is REQUIRED — codex does NOT inherit the
+          # parent container env when it spawns the MCP subprocess
+          #
+          # NOTE: keep this comment free of backticks. The heredoc is
+          # unquoted (<<EOF) so backticks command-substitute — a previous
+          # version wrapped 'env' in backticks here, which ran the env
+          # command and dumped every container env var (incl. the
+          # GitHub PAT) literally into the deployed config.toml on the
+          # pod PVC. See PR #399.
           # (verified empirically 2026-05-17 against codex 0.116.0
           # AND 0.125.0). Without these two vars, the subprocess
           # crashes at startup with "fatal: COMMONLY_API_URL is
