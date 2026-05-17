@@ -10,10 +10,30 @@ jest.mock('../../../models/pg/MessageReaction', () => ({
   default: {
     add: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
+    // Raw shape from the model post-attribution wire-up: includes the
+    // ordered userIds the controller hands to reactionAttributionService.
     listForMessage: jest
       .fn()
-      .mockResolvedValue([{ emoji: '👍', count: 1, mine: true }]),
+      .mockResolvedValue([
+        { emoji: '👍', count: 1, mine: true, userIds: ['caller-1'] },
+      ]),
   },
+}));
+
+// reactionAttributionService is a thin User-lookup decorator. We mock it
+// to a deterministic decorated shape so the test stays focused on the
+// controller wire-up (membership gate + socket fan-out). Per-decorator
+// behavior — User resolution, displayName fallbacks — is tested
+// separately in reactionAttributionService.test.js.
+jest.mock('../../../services/reactionAttributionService', () => ({
+  decorateReactionSummaries: jest.fn(async (summaries) =>
+    summaries.map((s) => ({
+      emoji: s.emoji,
+      count: s.count,
+      mine: s.mine,
+      users: s.userIds.map((id) => ({ id, username: `u-${id}` })),
+    })),
+  ),
 }));
 
 jest.mock('../../../config/db-pg', () => {

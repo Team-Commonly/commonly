@@ -21,10 +21,20 @@ export interface V2Message {
     username?: string;
     profilePicture?: string | null;
   };
-  // Sprint B5: per-message reactions, aggregated server-side. Each entry
-  // is {emoji, count, mine}. Absent in legacy fixtures + on Mongo fallback;
-  // bubbles fall back to the token-parsed `[[reactions:...]]` shape if so.
-  reactions?: Array<{ emoji: string; count: number; mine: boolean }>;
+  // Sprint B5: per-message reactions, aggregated server-side.
+  // Each entry is `{emoji, count, mine, users?}` — `users` is the
+  // Google-Chat-style attribution list decorated by
+  // backend/services/reactionAttributionService (resolves bot
+  // displayName via agentIdentityService.resolveAgentDisplayLabel).
+  // Absent in legacy fixtures + on Mongo fallback; bubbles fall back
+  // to the token-parsed `[[reactions:...]]` shape if so. Older servers
+  // omit `users` entirely — tooltips degrade to count-only.
+  reactions?: Array<{
+    emoji: string;
+    count: number;
+    mine: boolean;
+    users?: Array<{ id: string; username: string; displayName?: string }>;
+  }>;
 }
 
 export interface V2Agent {

@@ -6,6 +6,8 @@
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MessageReaction = require('../models/pg/MessageReaction').default;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { decorateReactionSummaries } = require('../services/reactionAttributionService');
 
 interface AuthedReq {
   params: { messageId?: string; emoji?: string };
@@ -121,7 +123,8 @@ export async function addReaction(req: AuthedReq, res: AuthedRes): Promise<void>
       return;
     }
     await MessageReaction.add(messageId, userId, emoji);
-    const reactions = await MessageReaction.listForMessage(messageId, userId);
+    const rawSummaries = await MessageReaction.listForMessage(messageId, userId);
+    const reactions = await decorateReactionSummaries(rawSummaries);
     void emitReactionChange(messageId, podId, reactions);
     res.json({ ok: true, reactions });
   } catch (err) {
@@ -154,7 +157,8 @@ export async function removeReaction(req: AuthedReq, res: AuthedRes): Promise<vo
       return;
     }
     await MessageReaction.remove(messageId, userId, emoji);
-    const reactions = await MessageReaction.listForMessage(messageId, userId);
+    const rawSummaries = await MessageReaction.listForMessage(messageId, userId);
+    const reactions = await decorateReactionSummaries(rawSummaries);
     void emitReactionChange(messageId, podId, reactions);
     res.json({ ok: true, reactions });
   } catch (err) {

@@ -468,6 +468,25 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
 
           if (renderList.length === 0 && !canInteract) return null;
 
+          // Google-Chat-style attribution: build a names-line for the
+          // reaction-chip tooltip from the decorated `users` array when
+          // the backend includes it (reactionAttributionService). Falls
+          // back to count-only on older servers / fixtures.
+          const formatReactionTitle = (r: typeof renderList[number]): string => {
+            const live = r as { users?: Array<{ username: string; displayName?: string }> };
+            const users = Array.isArray(live.users) ? live.users : [];
+            if (!users.length) {
+              return `${r.count} ${r.emoji}${r.mine ? ' (you)' : ''}`;
+            }
+            const names = users.map((u) => u.displayName || u.username);
+            // Caller's user ID isn't threaded down here; rather than
+            // guessing which entry in `users` is the caller, append a
+            // single "(you)" suffix to the whole line when r.mine —
+            // matches Google Chat's behavior on its own reaction
+            // tooltips and avoids mis-labelling an arbitrary entry.
+            return `${names.join(', ')} reacted with ${r.emoji}${r.mine ? ' (you)' : ''}`;
+          };
+
           return (
             <div className="v2-msg__reactions" aria-label="Reactions">
               {renderList.map((r, idx) => (
@@ -475,7 +494,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
                   key={`${r.emoji}-${idx}`}
                   type="button"
                   className={`v2-msg__reaction${r.mine ? ' v2-msg__reaction--mine' : ''}`}
-                  title={`${r.count} ${r.emoji}${r.mine ? ' (you)' : ''}`}
+                  title={formatReactionTitle(r)}
                   onClick={() => toggle(r.emoji, !!r.mine)}
                   disabled={!canInteract}
                 >

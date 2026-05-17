@@ -17,6 +17,10 @@ export interface ReactionSummary {
   emoji: string;
   count: number;
   mine: boolean;
+  // Reactor user IDs in insertion order (earliest first). Resolved to
+  // {username, displayName} downstream by reactionAttributionService —
+  // this model stays a thin DB wrapper and doesn't touch the User model.
+  userIds: string[];
 }
 
 class MessageReaction {
@@ -48,7 +52,8 @@ class MessageReaction {
     const result = await pool.query(
       `SELECT emoji,
               COUNT(*)::int AS count,
-              BOOL_OR(user_id = $2) AS mine
+              BOOL_OR(user_id = $2) AS mine,
+              ARRAY_AGG(user_id ORDER BY created_at) AS user_ids
        FROM message_reactions
        WHERE message_id = $1
        GROUP BY emoji
@@ -59,6 +64,7 @@ class MessageReaction {
       emoji: String(r.emoji),
       count: Number(r.count) || 0,
       mine: Boolean(r.mine),
+      userIds: Array.isArray(r.user_ids) ? r.user_ids.map(String) : [],
     }));
   }
 
@@ -78,7 +84,8 @@ class MessageReaction {
       `SELECT message_id,
               emoji,
               COUNT(*)::int AS count,
-              BOOL_OR(user_id = $2) AS mine
+              BOOL_OR(user_id = $2) AS mine,
+              ARRAY_AGG(user_id ORDER BY created_at) AS user_ids
        FROM message_reactions
        WHERE message_id = ANY($1::int[])
        GROUP BY message_id, emoji
@@ -92,6 +99,7 @@ class MessageReaction {
         emoji: String(r.emoji),
         count: Number(r.count) || 0,
         mine: Boolean(r.mine),
+        userIds: Array.isArray(r.user_ids) ? r.user_ids.map(String) : [],
       });
       out.set(key, list);
     }

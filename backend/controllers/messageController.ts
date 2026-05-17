@@ -111,9 +111,12 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
           .filter(Boolean);
         if (ids.length > 0) {
           const reactionsMap = await MessageReaction.listForMessages(ids, String(userId));
+          // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+          const { decorateReactionMap } = require('../services/reactionAttributionService');
+          const decorated = await decorateReactionMap(reactionsMap);
           for (const m of messages as Array<{ id?: string; _id?: string; reactions?: unknown }>) {
             const key = String(m.id || m._id || '');
-            m.reactions = reactionsMap.get(key) || [];
+            m.reactions = decorated.get(key) || [];
           }
         }
       } catch (rxnErr) {
