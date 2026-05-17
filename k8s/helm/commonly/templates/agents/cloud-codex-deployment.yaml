@@ -89,8 +89,17 @@ spec:
           apt-get update >/dev/null 2>&1
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             git ca-certificates >/dev/null 2>&1
+          # codex 0.116.0 is the last known-good version for MCP-server tool
+          # exposure under a custom model provider. From v0.117.0 onward
+          # `codex exec` stops surfacing `commonly_*` tools (and any
+          # MCP-server tools) to the model when `model_provider != native`
+          # — verified empirically against 0.125.0 and tracked upstream at
+          # openai/codex#19871, #19363, #17904 (all OPEN). We route codex
+          # through LiteLLM (custom provider) for the single-auth-surface
+          # invariant, so we need this pin until upstream lands a fix.
+          # Bump only after verifying MCP tools are surfaced again.
           npm install --global --no-audit --no-fund \
-            "@openai/codex@{{ $.Values.agents.cloudCodex.codexVersion | default "0.125.0" }}" \
+            "@openai/codex@{{ $.Values.agents.cloudCodex.codexVersion | default "0.116.0" }}" \
             "@commonlyai/mcp@{{ $.Values.agents.cloudCodex.commonlyMcpVersion | default "0.1.2" }}"
           git clone --depth 1 --branch "{{ $.Values.agents.cloudCodex.commonlyCliRef | default "main" }}" \
             https://github.com/Team-Commonly/commonly.git /tmp/commonly-src
