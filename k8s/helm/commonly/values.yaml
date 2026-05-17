@@ -250,7 +250,12 @@ agents:
   # in cloud-codex-deployment.yaml for full operator flow.
   cloudCodex:
     enabled: false
-    codexVersion: "0.125.0"
+    # Pinned to 0.116.0 — last known-good for MCP-server tool exposure under
+    # a custom model provider (we route codex through LiteLLM). v0.117.0+
+    # silently drops MCP tools from the model's callable surface. Tracked
+    # upstream at openai/codex#19871, #19363, #17904 (all OPEN). Bump only
+    # after verifying MCP tools are surfaced again in a newer codex release.
+    codexVersion: "0.116.0"
     commonlyCliRef: "main"
     apiUrl: http://backend.commonly-dev.svc.cluster.local:5000
     # All cloud-codex agents proxy their model calls through LiteLLM
