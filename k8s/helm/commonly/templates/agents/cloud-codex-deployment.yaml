@@ -195,15 +195,21 @@ spec:
           # surface (commonly_react_to_message, commonly_post_message,
           # memory verbs, dm verbs, ...) via stdio MCP. Without this block,
           # codex sees no kernel tools and ends up posting emoji as a
-          # literal message body when @-mentioned to "react" — verified
-          # empirically before npm @commonlyai/mcp@0.1.2 shipped the
-          # reaction tool (2026-05-15).
+          # literal message body when @-mentioned to "react".
           #
-          # commonly-mcp picks up COMMONLY_AGENT_TOKEN + COMMONLY_API_URL
-          # from the container env (already wired by this deployment).
+          # The `env` table is REQUIRED — codex does NOT inherit the
+          # parent container's env when it spawns the MCP subprocess
+          # (verified empirically 2026-05-17 against codex 0.116.0
+          # AND 0.125.0). Without these two vars, the subprocess
+          # crashes at startup with "fatal: COMMONLY_API_URL is
+          # required" and the model sees no commonly_* tools. The bug
+          # mimicked openai/codex#19871 but was actually our own
+          # bootstrap omission — bisecting codex versions never moved
+          # the needle.
           [mcp_servers.commonly]
           command = "/tools/bin/commonly-mcp"
           args = []
+          env = { COMMONLY_API_URL = "${COMMONLY_API_URL}", COMMONLY_AGENT_TOKEN = "${COMMONLY_AGENT_TOKEN}" }
           EOF
 
           # Codex CLI looks for LITELLM_API_KEY at call time. The virtual
