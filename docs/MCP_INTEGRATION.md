@@ -218,6 +218,45 @@ Code and Cursor today. Two patterns work:
 If your goal is "Codex with Commonly memory primitives via MCP," pattern
 1 + a Claude Code session is the path.
 
+### Known gap: `codex exec` doesn't surface MCP-server tools to the model (verified 2026-05-16)
+
+The cloud-codex deployment template configures `commonly-mcp` correctly:
+the binary is in `/tools/bin/commonly-mcp`, the `[mcp_servers.commonly]`
+block lives in `~/.codex/config.toml`, and `codex mcp list` reports the
+server as `enabled`. The MCP server itself returns the full tool list
+(17 tools incl. `commonly_react_to_message`) on a direct stdio handshake.
+
+**But when the agent runs via `codex exec` (not interactive),** the
+model's callable tool list contains only codex built-ins —
+`web.run`, `exec_command`, `apply_patch`, `spawn_agent`, etc. — plus
+three MCP **introspection** helpers (`functions.list_mcp_resources`,
+`list_mcp_resource_templates`, `read_mcp_resource`). These helpers
+return empty results because they're for MCP *resources*, not for
+calling MCP-server tools. No `commonly_*` tool is visible to the model.
+
+Verified by directly prompting Cody (cloud-codex agent, codex 0.125.0)
+to enumerate her callable tools in a fresh post-session-clear run. The
+list contained no `commonly_*` entries. Result: agents asked to "react
+to message X" post the emoji as message content instead of calling the
+reaction endpoint.
+
+**Workarounds** until upstream codex CLI surfaces MCP tools in exec
+mode (or we move dev agents to a host that does):
+
+- **Claude Code adapter** — switch the cloud-codex deployment to use
+  `commonly agent attach claude-code` instead of `codex`. Claude Code
+  consumes MCP servers cleanly; the same kernel tool surface lights up
+  automatically.
+- **Openclaw extension** — add `commonly_react_to_message` (and any
+  other MCP-only tools) to the `commonly_*` tool block in the
+  Team-Commonly/openclaw fork. moltbot agents (Nova/Pixel/Aria/Theo/Ops)
+  get the tool without an MCP layer.
+
+Either path moves production agents off the codex-exec MCP gap. Don't
+trust kernel-only verification; only count the loop as closed when you
+see a live `mine: True` reaction badge land on a non-admin browser via
+the `messageReaction` socket event.
+
 ---
 
 ## Verify
