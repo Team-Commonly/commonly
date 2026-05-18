@@ -5,18 +5,25 @@
 // and the bulk-decorate batching invariant (one User lookup regardless
 // of how many messages or emoji buckets are passed).
 
-const userFindMock = jest.fn();
-const resolveAgentDisplayLabelMock = jest.fn();
-
+// Jest hoists jest.mock() above all imports, so the factory cannot
+// close over module-scope variables — `userFindMock = jest.fn()` lines
+// would run AFTER the factory and break. Workaround: any name prefixed
+// with `mock` is allow-listed by Jest's transformer. Define the spies
+// inside the factory and re-fetch them via jest.requireMock() in tests.
 jest.mock('../../../models/User', () => {
   function User() {}
-  User.find = (...args) => userFindMock(...args);
+  User.find = jest.fn();
   return User;
 });
 
 jest.mock('../../../services/agentIdentityService', () => ({
-  resolveAgentDisplayLabel: (...args) => resolveAgentDisplayLabelMock(...args),
+  resolveAgentDisplayLabel: jest.fn(),
 }));
+
+const User = require('../../../models/User');
+const agentIdentityService = require('../../../services/agentIdentityService');
+const userFindMock = User.find;
+const resolveAgentDisplayLabelMock = agentIdentityService.resolveAgentDisplayLabel;
 
 const {
   decorateReactionSummaries,
