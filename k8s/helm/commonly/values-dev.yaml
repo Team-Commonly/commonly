@@ -15,12 +15,15 @@ backend:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
     tag: "20260417214615-r4"
     pullPolicy: Always  # Always pull in dev
+  # ADR-015: backend is stateless and tolerates a 30s reschedule on spot
+  # reclaim — socket.io reconnects automatically, mid-flight HTTP gets one
+  # 502. Keeps the larger always-on cost off the dev cluster.
   nodeSelector:
-    pool: dev
+    workload-tier: spot
   tolerations:
-    - key: "pool"
+    - key: "workload-tier"
       operator: "Equal"
-      value: "dev"
+      value: "spot"
       effect: "NoSchedule"
   env:
     nodeEnv: development
@@ -60,12 +63,13 @@ frontend:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
     tag: "20260412125218"
     pullPolicy: Always
+  # ADR-015: static asset server, completely fine to reschedule on spot.
   nodeSelector:
-    pool: dev
+    workload-tier: spot
   tolerations:
-    - key: "pool"
+    - key: "workload-tier"
       operator: "Equal"
-      value: "dev"
+      value: "spot"
       effect: "NoSchedule"
 
 mongodb:
@@ -89,12 +93,15 @@ postgresql:
 
 redis:
   enabled: true
+  # ADR-015: redis is the Socket.io adapter — ephemeral by design. Reschedule
+  # loses the in-memory pub/sub channel but socket clients reconnect within
+  # seconds. Safe on spot.
   nodeSelector:
-    pool: dev
+    workload-tier: spot
   tolerations:
-    - key: "pool"
+    - key: "workload-tier"
       operator: "Equal"
-      value: "dev"
+      value: "spot"
       effect: "NoSchedule"
 
 externalSecrets:
