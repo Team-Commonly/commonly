@@ -234,6 +234,73 @@ interface GetOrCreateOptions {
   botType?: string;
 }
 
+/**
+ * Disambiguate an agent's displayName at WRITE time so it doesn't collide
+ * with another bot User row's displayName. Mirrors the offline dedup
+ * script's logic (scripts/dedupe-agent-display-names.ts) but runs inline
+ * during getOrCreateAgentUser so a fresh install / reprovision can never
+ * (re-)introduce a "Pixel" / "Pixel" collision.
+ *
+ * Canonical rule (matches the one-shot script — keep these aligned):
+ *   - Group claimants by displayName.
+ *   - Canonical = shortest instanceId; alphabetical tiebreak.
+ *   - Non-canonical entries get suffixed `"<base> (<HumanizedInstanceId>)"`.
+ *
+ * This call returns the disambiguated name the CURRENT caller should use.
+ * It does NOT rewrite peers — for the "new shorter instanceId arrives
+ * after a longer one" edge case, re-run the offline dedup script as a
+ * sweep. In practice the inline check covers the common path: demo /
+ * stub variants installed after a canonical agent.
+ *
+ * `selfUserId` is passed when the caller is updating an existing row so
+ * we don't compare it against itself (would always return canonical and
+ * never apply a suffix).
+ */
+async function resolveCollisionFreeDisplayName(
+  desiredName: string,
+  instanceId: string,
+  selfUserId?: unknown,
+): Promise<string> {
+  const trimmed = (desiredName || '').trim();
+  if (!trimmed) return trimmed;
+  // If the name already carries a parenthetical suffix, treat as
+  // already-disambiguated and pass through. Avoids "Pixel (Pixel-Demo) (Pixel-Demo)"
+  // loops when the same install reprovisions.
+  if (/\([^)]+\)\s*$/.test(trimmed)) return trimmed;
+
+  const peerQuery: Record<string, unknown> = {
+    'botMetadata.displayName': trimmed,
+  };
+  if (selfUserId) {
+    peerQuery._id = { $ne: selfUserId };
+  }
+  const peers = await User.find(peerQuery)
+    .select('botMetadata')
+    .lean<Array<{ botMetadata?: { instanceId?: string } }>>();
+  if (peers.length === 0) return trimmed;
+
+  // Include `self` in the canonical-pick comparison so the rule is stable
+  // regardless of which row writes first.
+  const all = [
+    ...peers.map((p) => p.botMetadata?.instanceId || ''),
+    instanceId,
+  ];
+  const canonical = [...all].sort((a, b) => {
+    if (a.length !== b.length) return a.length - b.length;
+    return a.localeCompare(b);
+  })[0];
+  if (canonical === instanceId) {
+    // Caller is the canonical; let them keep the bare name. Peers may
+    // need rewriting via the offline sweep — see comment above.
+    return trimmed;
+  }
+  const humanizedInstance = (instanceId || '')
+    .split(/[-_]/)
+    .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
+    .join('-');
+  return `${trimmed} (${humanizedInstance})`;
+}
+
 class AgentIdentityService {
   /**
    * Get or create an agent user with proper bot metadata
@@ -255,8 +322,9 @@ class AgentIdentityService {
     const isOfficial = instanceId === 'default' && !!typeConfig;
 
     if (!agentUser) {
+      const rawDisplayName = options.displayName || typeConfig?.officialDisplayName || resolvedType;
       const botMetadata = {
-        displayName: options.displayName || typeConfig?.officialDisplayName || resolvedType,
+        displayName: await resolveCollisionFreeDisplayName(rawDisplayName, instanceId),
         description: options.description || typeConfig?.officialDescription || `${resolvedType} agent`,
         icon: typeConfig?.icon || '🤖',
         runtimeId: options.runtimeId || null,
@@ -285,8 +353,9 @@ class AgentIdentityService {
       // Upgrade existing user to bot if not already marked
       agentUser.isBot = true;
       agentUser.botType = (typeConfig?.botType || options.botType || 'agent') as typeof agentUser.botType;
+      const upgradeRawDisplayName = options.displayName || typeConfig?.officialDisplayName || agentUser.username;
       agentUser.botMetadata = {
-        displayName: options.displayName || typeConfig?.officialDisplayName || agentUser.username,
+        displayName: await resolveCollisionFreeDisplayName(upgradeRawDisplayName, instanceId, agentUser._id),
         description: options.description || typeConfig?.officialDescription || `${resolvedType} agent`,
         icon: typeConfig?.icon || '🤖',
         runtimeId: options.runtimeId || agentUser.botMetadata?.runtimeId || undefined,
@@ -309,9 +378,10 @@ class AgentIdentityService {
         || !existingMeta.runtime
         || (requestedDisplayName && existingMeta.displayName !== requestedDisplayName);
       if (needsUpdate) {
+        const refreshRawDisplayName = options.displayName || existingMeta.displayName || typeConfig?.officialDisplayName || resolvedType;
         agentUser.botMetadata = {
           ...existingMeta,
-          displayName: options.displayName || existingMeta.displayName || typeConfig?.officialDisplayName || resolvedType,
+          displayName: await resolveCollisionFreeDisplayName(refreshRawDisplayName, instanceId, agentUser._id),
           description: options.description || existingMeta.description || typeConfig?.officialDescription || `${resolvedType} agent`,
           icon: existingMeta.icon || typeConfig?.icon || '🤖',
           runtimeId: options.runtimeId || existingMeta.runtimeId || undefined,
