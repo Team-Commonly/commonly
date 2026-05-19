@@ -303,9 +303,23 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     );
 
     try {
+      // Task #62: don't clobber a curated per-instance displayName with the
+      // AgentRegistry's default. When installing a NEW pod for an EXISTING
+      // agent identity (e.g. installing Aria into a new pod when she's
+      // already Aria-named via prior install), `agent.displayName` is the
+      // registry-wide fallback ("Cuz 🦞" for openclaw, "Codex" for codex).
+      // Passing that into getOrCreateAgentUser overwrites the User row's
+      // curated displayName ("Aria"). Caller intent: install in pod, NOT
+      // rename. So: only pass `displayName` to identity service when the
+      // caller explicitly set one in the request body (truthy displayName
+      // from req.body); otherwise leave it undefined and let
+      // getOrCreateAgentUser preserve the existing User row's displayName.
+      const explicitDisplayName = typeof displayName === 'string' && displayName.trim()
+        ? displayName.trim()
+        : undefined;
       const agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
         instanceId: normalizedInstanceId,
-        displayName: displayName || agent.displayName,
+        ...(explicitDisplayName ? { displayName: explicitDisplayName } : {}),
       });
       await AgentIdentityService.ensureAgentInPod(agentUser, podId);
     } catch (identityError: unknown) {

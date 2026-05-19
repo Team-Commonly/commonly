@@ -116,9 +116,27 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       console.warn('Failed to update agent token usage:', (err as Error).message);
     }
 
+    // Task #66: a token may be bound to one AgentInstallation row, but the
+    // agent identity (agentName + instanceId) can have multiple active
+    // installations across pods. Surface ALL of them so the /events
+    // endpoint's podIds-from-installations filter doesn't silently drop
+    // events for the pods this token wasn't originally minted for.
+    // Path 1 (User-row tokens) already enumerates all installations the
+    // same way — this just makes path 2 (install-bound legacy tokens)
+    // match. Hit empirically 2026-05-18 when Cody's token from her old
+    // Codex Hub install couldn't see events from a new pod she'd been
+    // freshly installed into.
+    const allActiveInstallations = await AgentInstallation.find({
+      agentName: installation.agentName,
+      instanceId: installation.instanceId || 'default',
+      status: 'active',
+    });
+
     req.agentInstallation = installation as never;
-    req.agentInstallations = [installation] as never[];
-    req.agentAuthorizedPodIds = [installation?.podId?.toString()].filter(Boolean) as string[];
+    req.agentInstallations = allActiveInstallations as never[];
+    req.agentAuthorizedPodIds = allActiveInstallations
+      .map((inst: { podId?: { toString: () => string } }) => inst?.podId?.toString())
+      .filter(Boolean) as string[];
 
     // Also resolve and attach the bot User so downstream routes that derive
     // `req.agentUser._id` (file-upload uploaderId, message authorship) work
