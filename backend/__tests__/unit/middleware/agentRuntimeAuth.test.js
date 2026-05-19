@@ -4,25 +4,29 @@
 // endpoint silently filters out events for pods the token wasn't originally
 // minted for — exact bug we hit when Cody's token from her old install
 // couldn't see events from a new pod she'd been freshly installed into.
+//
+// jest.mock() factories may only reference variables whose name starts with
+// `mock` (Jest's hoisting-safety allow-list), so every mock binding here is
+// prefixed accordingly.
 
-const cryptoMock = { hash: jest.fn(), randomSecret: jest.fn() };
-jest.mock('../../../utils/crypto', () => cryptoMock);
+const mockSecret = { hash: jest.fn(), randomSecret: jest.fn() };
+jest.mock('../../../utils/secret', () => mockSecret);
 
-const userFindOneMock = jest.fn();
-const installationFindOneMock = jest.fn();
-const installationFindMock = jest.fn();
-const installationUpdateOneMock = jest.fn();
+const mockUserFindOne = jest.fn();
+const mockInstallationFindOne = jest.fn();
+const mockInstallationFind = jest.fn();
+const mockInstallationUpdateOne = jest.fn();
 
 jest.mock('../../../models/User', () => {
   function User() {}
-  User.findOne = (...args) => userFindOneMock(...args);
+  User.findOne = (...args) => mockUserFindOne(...args);
   return User;
 });
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
-    findOne: (...args) => installationFindOneMock(...args),
-    find: (...args) => installationFindMock(...args),
-    updateOne: (...args) => installationUpdateOneMock(...args),
+    findOne: (...args) => mockInstallationFindOne(...args),
+    find: (...args) => mockInstallationFind(...args),
+    updateOne: (...args) => mockInstallationUpdateOne(...args),
   },
 }));
 jest.mock('../../../models/Pod', () => ({
@@ -31,10 +35,14 @@ jest.mock('../../../models/Pod', () => ({
 
 const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
 
-const mockReq = (token) => ({
-  headers: { authorization: `Bearer ${token}` },
-});
-const mockRes = () => {
+const buildReq = (token) => {
+  const headers = { authorization: `Bearer ${token}` };
+  return {
+    headers,
+    header: (name) => headers[String(name).toLowerCase()],
+  };
+};
+const buildRes = () => {
   const res = {};
   res.status = jest.fn().mockReturnValue(res);
   res.json = jest.fn().mockReturnValue(res);
@@ -42,18 +50,17 @@ const mockRes = () => {
 };
 
 beforeEach(() => {
-  cryptoMock.hash.mockReset();
-  cryptoMock.hash.mockReturnValue('hashed-token');
-  userFindOneMock.mockReset();
-  installationFindOneMock.mockReset();
-  installationFindMock.mockReset();
-  installationUpdateOneMock.mockReset();
+  mockSecret.hash.mockReset();
+  mockSecret.hash.mockReturnValue('hashed-token');
+  mockUserFindOne.mockReset();
+  mockInstallationFindOne.mockReset();
+  mockInstallationFind.mockReset();
+  mockInstallationUpdateOne.mockReset();
 });
 
 describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
   test('surfaces ALL active installations for the same (agentName, instanceId), not just the matched one', async () => {
-    // No User-row token match → path 2 fires
-    userFindOneMock.mockResolvedValue(null);
+    mockUserFindOne.mockResolvedValue(null);
     const matchedInstall = {
       _id: 'install-a',
       agentName: 'codex',
@@ -68,17 +75,17 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
       podId: { toString: () => 'pod-b' },
       runtimeTokens: [{ tokenHash: 'different-hash' }],
     };
-    installationFindOneMock.mockResolvedValue(matchedInstall);
-    installationFindMock.mockResolvedValue([matchedInstall, otherInstall]);
-    installationUpdateOneMock.mockResolvedValue({});
+    mockInstallationFindOne.mockResolvedValue(matchedInstall);
+    mockInstallationFind.mockResolvedValue([matchedInstall, otherInstall]);
+    mockInstallationUpdateOne.mockResolvedValue({});
 
-    const req = mockReq('cm_agent_test');
-    const res = mockRes();
+    const req = buildReq('cm_agent_test');
+    const res = buildRes();
     const next = jest.fn();
 
     await agentRuntimeAuth(req, res, next);
 
-    expect(installationFindMock).toHaveBeenCalledWith({
+    expect(mockInstallationFind).toHaveBeenCalledWith({
       agentName: 'codex',
       instanceId: 'cody',
       status: 'active',
@@ -90,11 +97,11 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
   });
 
   test('returns 401 when token doesnt match any install OR user', async () => {
-    userFindOneMock.mockResolvedValue(null);
-    installationFindOneMock.mockResolvedValue(null);
+    mockUserFindOne.mockResolvedValue(null);
+    mockInstallationFindOne.mockResolvedValue(null);
 
-    const req = mockReq('cm_agent_bogus');
-    const res = mockRes();
+    const req = buildReq('cm_agent_bogus');
+    const res = buildRes();
     const next = jest.fn();
 
     await agentRuntimeAuth(req, res, next);

@@ -12,26 +12,29 @@ jest.mock('../../../models/Pod', () => ({}));
 
 // Mongo User mock — minimal save() + find() shape sufficient for the
 // three branches in getOrCreateAgentUser. Each test seeds state into
-// `peers` (other bot Users with potential displayName collisions) and
-// `existing` (the user the caller is trying to get-or-create).
-let peers = [];
-let existing = null;
-const saved = [];
+// `mockPeers` (other bot Users with potential displayName collisions) and
+// `mockExisting` (the user the caller is trying to get-or-create).
+//
+// All mutable state is prefixed with `mock` so the jest.mock() factory can
+// reference it — Jest's hoisting-safety allow-list only permits names
+// starting with `mock`.
+let mockPeers = [];
+let mockExisting = null;
+const mockSaved = [];
 
 jest.mock('../../../models/User', () => {
   function User(doc) {
     Object.assign(this, doc);
   }
   User.prototype.save = async function save() {
-    saved.push(JSON.parse(JSON.stringify(this)));
+    mockSaved.push(JSON.parse(JSON.stringify(this)));
     return this;
   };
   User.findOne = jest.fn(async (query) => {
-    if (existing && query.username === existing.username) {
-      // Return a mongoose-like doc with save()
-      const doc = JSON.parse(JSON.stringify(existing));
+    if (mockExisting && query.username === mockExisting.username) {
+      const doc = JSON.parse(JSON.stringify(mockExisting));
       doc.save = async function save() {
-        saved.push(JSON.parse(JSON.stringify(this)));
+        mockSaved.push(JSON.parse(JSON.stringify(this)));
         return this;
       };
       return doc;
@@ -41,9 +44,8 @@ jest.mock('../../../models/User', () => {
   User.find = (query) => ({
     select: () => ({
       lean: async () => {
-        // Match `'botMetadata.displayName': '<name>'`
         const dn = query['botMetadata.displayName'];
-        return peers
+        return mockPeers
           .filter((p) => p.botMetadata?.displayName === dn)
           .filter((p) => {
             if (!query._id || !query._id.$ne) return true;
@@ -58,9 +60,9 @@ jest.mock('../../../models/User', () => {
 const { default: AgentIdentityService } = require('../../../services/agentIdentityService');
 
 const reset = () => {
-  peers = [];
-  existing = null;
-  saved.length = 0;
+  mockPeers = [];
+  mockExisting = null;
+  mockSaved.length = 0;
 };
 
 describe('inline displayName collision resolver (sticky dedup)', () => {
@@ -71,13 +73,13 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
       instanceId: 'pixel',
       displayName: 'Pixel',
     });
-    expect(saved.length).toBe(1);
-    expect(saved[0].botMetadata.displayName).toBe('Pixel');
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Pixel');
   });
 
   test('new install collides with an existing canonical — gets suffix', async () => {
     // openclaw-pixel already has displayName="Pixel" with instanceId "pixel" (shorter)
-    peers = [
+    mockPeers = [
       {
         _id: 'canonical-id',
         botMetadata: { displayName: 'Pixel', instanceId: 'pixel' },
@@ -87,13 +89,13 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
       instanceId: 'pixel-demo',
       displayName: 'Pixel',
     });
-    expect(saved.length).toBe(1);
-    expect(saved[0].botMetadata.displayName).toBe('Pixel (Pixel-Demo)');
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Pixel (Pixel-Demo)');
   });
 
   test('new install IS canonical (shorter instanceId than existing peer) — keeps bare name', async () => {
     // pixel-stub-x already has displayName="Pixel" with longer instanceId
-    peers = [
+    mockPeers = [
       {
         _id: 'longer-instance',
         botMetadata: { displayName: 'Pixel', instanceId: 'pixel-stub-x' },
@@ -103,12 +105,12 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
       instanceId: 'pixel',
       displayName: 'Pixel',
     });
-    expect(saved.length).toBe(1);
-    expect(saved[0].botMetadata.displayName).toBe('Pixel');
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Pixel');
   });
 
   test('refresh (reprovision) on existing collision-suffixed name does NOT double-suffix', async () => {
-    existing = {
+    mockExisting = {
       _id: 'reprovision-id',
       username: 'openclaw-pixel-demo',
       isBot: true,
@@ -129,11 +131,11 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     // self-excluded, but there are still no OTHER peers in this test, so
     // the bare "Pixel" passes through. This is fine: in production the
     // canonical openclaw-pixel exists as a peer and the suffix is re-applied.
-    expect(saved.length).toBe(1);
+    expect(mockSaved.length).toBe(1);
   });
 
   test('already-disambiguated name passes through unchanged', async () => {
-    peers = [
+    mockPeers = [
       {
         _id: 'canonical-id',
         botMetadata: { displayName: 'Pixel', instanceId: 'pixel' },
@@ -143,11 +145,11 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
       instanceId: 'pixel-demo',
       displayName: 'Pixel (Pixel-Demo)',
     });
-    expect(saved[0].botMetadata.displayName).toBe('Pixel (Pixel-Demo)');
+    expect(mockSaved[0].botMetadata.displayName).toBe('Pixel (Pixel-Demo)');
   });
 
   test('humanizes multi-segment instanceId — underscore / dash boundaries capitalized', async () => {
-    peers = [
+    mockPeers = [
       {
         _id: 'canonical-id',
         botMetadata: { displayName: 'Cody', instanceId: 'cody' },
@@ -157,6 +159,6 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
       instanceId: 'cody-bot',
       displayName: 'Cody',
     });
-    expect(saved[0].botMetadata.displayName).toBe('Cody (Cody-Bot)');
+    expect(mockSaved[0].botMetadata.displayName).toBe('Cody (Cody-Bot)');
   });
 });

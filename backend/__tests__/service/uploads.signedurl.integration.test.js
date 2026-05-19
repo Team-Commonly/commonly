@@ -199,12 +199,16 @@ describe('ADR-002 Phase 1b-a — signed-URL mint (integration)', () => {
       .expect(200);
     expect(res.body.url).toMatch(/^\/api\/uploads\/chat-attachment\.png\?t=/);
 
-    // Audit log is fire-and-forget — give the microtask a beat, then verify.
-    await new Promise((r) => setImmediate(r));
-    const log = await AuditLog.findOne({
-      action: 'attachment.token.mint',
-      fileName: 'chat-attachment.png',
-    });
+    // Audit log is fire-and-forget. setImmediate only flushes microtasks —
+    // the Mongo write itself is async I/O, so poll briefly until it lands.
+    let log = null;
+    for (let i = 0; i < 50 && !log; i++) {
+      log = await AuditLog.findOne({
+        action: 'attachment.token.mint',
+        fileName: 'chat-attachment.png',
+      });
+      if (!log) await new Promise((r) => setTimeout(r, 20));
+    }
     expect(log).toBeTruthy();
     expect(String(log.userId)).toBe(String(viewer._id));
   });

@@ -15,11 +15,12 @@ const tools = buildTools(cfg);
 const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
 
 describe('tool registry shape', () => {
-  it('ships exactly the v1 surface (16 tools)', () => {
+  it('ships exactly the v1 surface (17 tools)', () => {
     // 14 tools (ADR-010 Phase 1) + 2 added in Phase 4 (commonly_save_my_memory,
     // commonly_log_cycle) so MCP-capable runtimes (Claude Code, Cursor, Codex
     // via wrapper) have the same memory write surface as the openclaw extension.
-    expect(tools).toHaveLength(16);
+    // + 1 added by PR #389 (commonly_react_to_message).
+    expect(tools).toHaveLength(17);
   });
 
   it('every tool has name, description, inputSchema, call', () => {
