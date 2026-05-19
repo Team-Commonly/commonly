@@ -160,6 +160,29 @@ spec:
           EOF
           chmod 600 /state/.commonly/tokens/${COMMONLY_AGENT_NAME}.json
 
+          # Task #65: ALSO rewrite /state/.commonly/config.json on every
+          # boot so `commonly agent run` resolves the dev instance + the
+          # current runtime token instead of falling back to its stale
+          # PVC copy or the public https://api.commonly.me default. Without
+          # this the CLI hits "fetch failed" forever after a token rotation
+          # or pod move (verified empirically 2026-05-18 — Cody silently
+          # polled the wrong URL for hours).
+          cat > /state/.commonly/config.json <<EOF
+          {
+            "instances": {
+              "dev": {
+                "url": "${COMMONLY_API_URL}",
+                "token": "",
+                "agentTokens": {
+                  "${COMMONLY_AGENT_NAME}": "${COMMONLY_AGENT_TOKEN}"
+                }
+              }
+            },
+            "active": "dev"
+          }
+          EOF
+          chmod 600 /state/.commonly/config.json
+
           # Seed ~/.codex/config.toml so codex CLI routes its model calls
           # through LiteLLM instead of straight to chatgpt.com. The LiteLLM
           # pod already holds cluster-IP-bound auth.json (rotator-managed,

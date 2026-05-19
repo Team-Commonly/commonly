@@ -8,6 +8,15 @@ metadata:
     {{- include "commonly.backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.backend.replicaCount }}
+  # ADR-015 + task #64: backend mounts skills-catalog-pvc as ReadWriteOnce.
+  # The default RollingUpdate strategy tries to bring up the new pod before
+  # the old one terminates, but RWO disks can't bind to two nodes — the new
+  # pod hangs in Init:0/1 indefinitely with `Multi-Attach error`. Recreate
+  # forces the old pod to die first, then the new one mounts cleanly. Cost
+  # is ~30s of downtime per deploy. Acceptable for dev; if prod ever wants
+  # zero-downtime, the underlying PVC needs to be RWX (filestore).
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "commonly.backend.selectorLabels" . | nindent 6 }}
