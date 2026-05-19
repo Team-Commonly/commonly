@@ -359,7 +359,30 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         && podDoc.type !== 'agent-room'
         && (podDoc.members?.length || 0) >= 2;
       if (introWorthy) {
-        const displayName = installation.displayName || agent.displayName;
+        // Task #62 follow-up: the intro post passes `displayName` to
+        // AgentMessageService.postMessage, which forwards it to
+        // getOrCreateAgentUser. If we pass the AgentRegistry default
+        // ("Cuz 🦞" / "Codex"), the User row's curated per-instance
+        // displayName ("Aria") gets clobbered or sticky-dedup-suffixed
+        // to "Cuz 🦞 (Aria)". Resolve the intro display label by
+        // preferring the live agent identity (User.botMetadata.displayName)
+        // first, so we never overwrite a curated label with a registry default.
+        let displayName: string;
+        try {
+          const existingBot = await User.findOne({
+            isBot: true,
+            'botMetadata.agentName': agent.agentName,
+            'botMetadata.instanceId': normalizedInstanceId,
+          }).select('botMetadata').lean() as { botMetadata?: { displayName?: string } } | null;
+          displayName = existingBot?.botMetadata?.displayName
+            || installation.displayName
+            || agent.displayName;
+        } catch (lookupErr: unknown) {
+          // Fall back to the legacy chain if the identity lookup blew up —
+          // don't take down the intro flow on a transient mongo hiccup.
+          console.warn('[install] intro displayName lookup failed:', (lookupErr as Error).message);
+          displayName = installation.displayName || agent.displayName;
+        }
         const blurb = (agent.description || '').trim().replace(/\s+/g, ' ');
         // Skip the blurb when it just repeats the name (the publish step in
         // older CLI versions seeded description from displayName, producing
