@@ -66,6 +66,8 @@ interface GarbageCollectOptions {
   stalePendingMinutes?: number;
   deliveredRetentionHours?: number;
   failedRetentionHours?: number;
+  requeueDeliveredMinutes?: number;
+  requeueMaxAttempts?: number;
 }
 
 interface GarbageCollectResult {
@@ -76,6 +78,8 @@ interface GarbageCollectResult {
   stalePendingMinutes: number;
   deliveredRetentionHours: number;
   failedRetentionHours: number;
+  requeuedDelivered?: number;
+  requeueDeliveredMinutes?: number;
 }
 
 interface SessionSizeEntry {
@@ -574,11 +578,48 @@ class AgentEventService {
     stalePendingMinutes = Number(process.env.AGENT_EVENT_STALE_PENDING_MINUTES || 30),
     deliveredRetentionHours = Number(process.env.AGENT_EVENT_DELIVERED_RETENTION_HOURS || 168),
     failedRetentionHours = Number(process.env.AGENT_EVENT_FAILED_RETENTION_HOURS || 168),
+    requeueDeliveredMinutes = Number(process.env.AGENT_EVENT_REQUEUE_DELIVERED_MINUTES || 10),
+    requeueMaxAttempts = Number(process.env.AGENT_EVENT_REQUEUE_MAX_ATTEMPTS || 3),
   }: GarbageCollectOptions = {}): Promise<GarbageCollectResult> {
     const now = Date.now();
     const stalePendingThreshold = new Date(now - (Math.max(stalePendingMinutes, 1) * 60 * 1000));
     const deliveredThreshold = new Date(now - (Math.max(deliveredRetentionHours, 1) * 60 * 60 * 1000));
     const failedThreshold = new Date(now - (Math.max(failedRetentionHours, 1) * 60 * 60 * 1000));
+    const requeueThreshold = new Date(now - (Math.max(requeueDeliveredMinutes, 1) * 60 * 1000));
+
+    // Task #67: requeue events stuck in 'delivered' status whose poller
+    // crashed/errored before processing. The /events endpoint only returns
+    // `status: 'pending'` events, so a 'delivered' event with no `ackedAt`
+    // becomes invisible to the agent forever — neither retried nor surfaced.
+    // Saw this 2026-05-18: Cody's old pod marked 2 chat.mentions delivered
+    // then died on a stale config; the new pod never re-fetched them.
+    //
+    // Requeue rule: status === 'delivered' AND ackedAt is null AND
+    // deliveredAt is older than 10 min (env-tunable) AND attempts < 3
+    // (prevent infinite loops on poison events). The 10-min default
+    // accommodates legitimately-long-running tool calls — codex exec for
+    // multi-slide LLM generation can take 3-5 min — without re-firing
+    // while the agent is still processing.
+    let requeuedDelivered = 0;
+    try {
+      const requeueResult = await AgentEvent.updateMany(
+        {
+          status: 'delivered',
+          ackedAt: { $in: [null, undefined] },
+          deliveredAt: { $lt: requeueThreshold },
+          $or: [{ attempts: { $lt: Math.max(requeueMaxAttempts, 1) } }, { attempts: { $exists: false } }],
+        },
+        {
+          $set: { status: 'pending', deliveredAt: null },
+        },
+      ) as { modifiedCount?: number };
+      requeuedDelivered = requeueResult?.modifiedCount || 0;
+      if (requeuedDelivered > 0) {
+        console.log(`[agent-event] requeued ${requeuedDelivered} stuck 'delivered' events older than ${requeueDeliveredMinutes}min`);
+      }
+    } catch (err: unknown) {
+      console.warn('[agent-event] requeue pass failed:', (err as Error).message);
+    }
 
     // ADR-012 §3: 'delivered' is now an intermediate state (claimed, awaiting ack)
     // and 'acked' is the new terminal state. Both age out on the same retention
@@ -602,6 +643,8 @@ class AgentEventService {
       stalePendingMinutes: Math.max(stalePendingMinutes, 1),
       deliveredRetentionHours: Math.max(deliveredRetentionHours, 1),
       failedRetentionHours: Math.max(failedRetentionHours, 1),
+      requeuedDelivered,
+      requeueDeliveredMinutes: Math.max(requeueDeliveredMinutes, 1),
     };
   }
 
