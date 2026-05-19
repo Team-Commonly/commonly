@@ -35,9 +35,13 @@ jest.mock('../../../models/Pod', () => ({
 
 const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
 
-const buildReq = (token) => ({
-  headers: { authorization: `Bearer ${token}` },
-});
+const buildReq = (token) => {
+  const headers = { authorization: `Bearer ${token}` };
+  return {
+    headers,
+    header: (name) => headers[String(name).toLowerCase()],
+  };
+};
 const buildRes = () => {
   const res = {};
   res.status = jest.fn().mockReturnValue(res);
