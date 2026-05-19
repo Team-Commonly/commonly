@@ -9,8 +9,8 @@
 // `mock` (Jest's hoisting-safety allow-list), so every mock binding here is
 // prefixed accordingly.
 
-const mockCrypto = { hash: jest.fn(), randomSecret: jest.fn() };
-jest.mock('../../../utils/crypto', () => mockCrypto);
+const mockSecret = { hash: jest.fn(), randomSecret: jest.fn() };
+jest.mock('../../../utils/secret', () => mockSecret);
 
 const mockUserFindOne = jest.fn();
 const mockInstallationFindOne = jest.fn();
@@ -46,8 +46,8 @@ const buildRes = () => {
 };
 
 beforeEach(() => {
-  mockCrypto.hash.mockReset();
-  mockCrypto.hash.mockReturnValue('hashed-token');
+  mockSecret.hash.mockReset();
+  mockSecret.hash.mockReturnValue('hashed-token');
   mockUserFindOne.mockReset();
   mockInstallationFindOne.mockReset();
   mockInstallationFind.mockReset();
