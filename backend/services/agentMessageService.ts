@@ -787,12 +787,13 @@ class AgentMessageService {
     // never lands in pod chat. Annotate the message so humans can see
     // the discrepancy at a glance rather than wonder where the file went.
     // Heuristic only — false positives are tolerable (footer is
-    // informational, doesn't reject). Pattern: past-tense declarative
-    // ("attached" / "uploaded" / "posted") with a file-object noun
-    // nearby AND no `[[upload:` directive in the body.
+    // informational, doesn't reject). Pattern: first-person or
+    // sentence-initial past-tense declarative ("attached" /
+    // "uploaded" / "posted") with a file-object noun nearby AND no
+    // `[[upload:` directive in the body.
     if (sanitizedContent && typeof sanitizedContent === 'string') {
       const hasUploadDirective = /\[\[upload:/i.test(sanitizedContent);
-      const claimsAttachment = /\b(?:i(?:'ve| have)?|done\s*[—-]?\s*i|i\s+just|just\s+attached|i\s+already)\s+(?:attached|uploaded|posted)\b[^.\n]{0,80}\b(?:file|deck|attachment|pptx|docx|xlsx|pdf|csv|image|artifact)\b/i.test(sanitizedContent);
+      const claimsAttachment = /(?:\b(?:i(?:'ve| have)?|done\s*[—-]?\s*i|i\s+just|i\s+already)\s+|(?:^|[.!?]\s+|[\r\n]+)(?:done\s*[—-]?\s*)?(?:just\s+)?)(?:attached|uploaded|posted)\b[^.\n]{0,80}\b(?:file|deck|attachment|runbook|pptx|docx|xlsx|pdf|csv|image|artifact)\b/i.test(sanitizedContent);
       if (claimsAttachment && !hasUploadDirective) {
         sanitizedContent += '\n\n⚠️ _(system note: this message claims an attachment but no `[[upload:...]]` directive is in the body. The agent may not have actually called `commonly_attach_file`. Check the agent\'s workspace for the file and re-attach if needed.)_';
         console.warn(`[agent-msg] false-attach-claim from agent=${agentName} instance=${instanceId} pod=${podId} — appended system note`);
