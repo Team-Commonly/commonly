@@ -21,6 +21,8 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 
+const File = require('../models/File');
+
 let PGMessage: unknown = null;
 try {
   // eslint-disable-next-line global-require
@@ -796,6 +798,62 @@ class AgentMessageService {
       if (claimsAttachment && !hasUploadDirective) {
         sanitizedContent += '\n\n⚠️ _(system note: this message claims an attachment but no `[[upload:...]]` directive is in the body. The agent may not have actually called `commonly_attach_file`. Check the agent\'s workspace for the file and re-attach if needed.)_';
         console.warn(`[agent-msg] false-attach-claim from agent=${agentName} instance=${instanceId} pod=${podId} — appended system note`);
+      }
+
+      // Round 2 of the false-attach defence (smoke 2026-05-20): the previous
+      // check only catches "Done — I attached..." narration with NO directive.
+      // It does NOT catch an agent who TYPES a `[[upload:X]]` directive as a
+      // string without actually calling `commonly_attach_file` first. Aria did
+      // this in cycle 11 — message contained `[[upload:smoke-postmortem-v2.md]]`
+      // but the pod had zero File rows. Bypasses the directive-presence check
+      // entirely because the substring is there.
+      //
+      // Fix: when a directive IS present, validate its first segment against
+      // the File collection scoped to this podId. Agents are taught the
+      // canonical format `[[upload:<id>|<name>|<size>|<kind>]]` (pod-context
+      // cue in agentMentionService); the first segment is the storage key
+      // (matches File.fileName). For tolerance with agents that put a human
+      // name in the first slot, also check File.originalName. Any directive
+      // whose first segment matches NEITHER → fake. Append a different system
+      // note so operators can tell the two failure modes apart.
+      //
+      // Heuristic / informational only — never rejects the message. Per-podId
+      // single-query batching (an $in over all referenced names) keeps the
+      // hot-path cost flat regardless of how many directives a message has.
+      if (hasUploadDirective && podId) {
+        try {
+          const directivePattern = /\[\[upload:([^|\]]+)/gi;
+          const referencedNames: string[] = [];
+          let match;
+          while ((match = directivePattern.exec(sanitizedContent)) !== null) {
+            const name = (match[1] || '').trim();
+            if (name && !referencedNames.includes(name)) referencedNames.push(name);
+          }
+          if (referencedNames.length > 0) {
+            const existingFiles = await File.find({
+              podId,
+              $or: [
+                { fileName: { $in: referencedNames } },
+                { originalName: { $in: referencedNames } },
+              ],
+            }).select('fileName originalName').lean();
+            const known = new Set<string>();
+            for (const f of existingFiles) {
+              if (f.fileName) known.add(String(f.fileName));
+              if (f.originalName) known.add(String(f.originalName));
+            }
+            const phantoms = referencedNames.filter((n) => !known.has(n));
+            if (phantoms.length > 0) {
+              const phantomList = phantoms.map((n) => `\`${n}\``).join(', ');
+              sanitizedContent += `\n\n⚠️ _(system note: this message references ${phantoms.length === 1 ? 'an upload directive' : 'upload directives'} for ${phantomList} but no matching attachment was found in this pod. The agent may have typed the directive without actually calling \`commonly_attach_file\`. Check the agent's workspace.)_`;
+              console.warn(`[agent-msg] phantom-upload-directive from agent=${agentName} instance=${instanceId} pod=${podId} — names=${JSON.stringify(phantoms)}`);
+            }
+          }
+        } catch (validationErr) {
+          // Validation is informational — never block the message on a
+          // lookup failure. The original directive still passes through.
+          console.warn(`[agent-msg] phantom-directive lookup failed: ${(validationErr as Error).message}`);
+        }
       }
     }
 
