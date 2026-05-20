@@ -883,4 +883,32 @@ describe('AgentMessageService summary persistence', () => {
     expect(result.skipped).toBeUndefined();
     expect(Message).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ['Attached the runbook.', true],
+    ['I attached the deck.', true],
+    ['Posted the artifact.', true],
+    ['Pixel attached the file.', false],
+  ])('flags false attachment claim footer for %p => %p', async (content, shouldFlag) => {
+    const result = await AgentMessageService.postMessage({
+      agentName: 'commonly-bot',
+      instanceId: 'default',
+      podId: 'pod-1',
+      content,
+      metadata: { sourceEventId: `evt-false-attach-${content.replace(/[^a-z]+/gi, '-').toLowerCase()}` },
+      messageType: 'text',
+      installationConfig: { errorRouting: { ownerDm: false } },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+    }));
+
+    if (shouldFlag) {
+      expect(result.message.content).toContain('system note: this message claims an attachment');
+      expect(result.message.content).toContain('`[[upload:...]]` directive');
+    } else {
+      expect(result.message.content).not.toContain('system note: this message claims an attachment');
+    }
+  });
 });
