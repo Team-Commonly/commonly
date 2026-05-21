@@ -481,4 +481,79 @@ describe('AgentMentionService', () => {
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(result).toEqual({ enqueued: false, reason: 'sender_is_bot' });
   });
+
+  // ------------------------------------------------------------------
+  // Reply-mechanics cue (heartbeat-clobber-mention mitigation; see
+  // formatMentionReplyCue in agentMentionService.ts for full rationale).
+  // Cue added to chat.mention payload ONLY — thread.mention uses a
+  // different reply-posting path and doesn't have the race.
+  // ------------------------------------------------------------------
+  describe('reply-mechanics cue (heartbeat-clobber mitigation)', () => {
+    test('chat.mention payload includes the reply-mechanics cue', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            agentName: 'openclaw',
+            instanceId: 'nova',
+            displayName: 'Nova',
+          },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-mention-1',
+        message: { content: 'Hi @nova', id: 'msg-mention-1' },
+        userId: 'user-1',
+        username: 'sam',
+      });
+
+      const enqueuedEvent = AgentEventService.enqueue.mock.calls[0][0];
+      expect(enqueuedEvent.type).toBe('chat.mention');
+      expect(enqueuedEvent.payload.content).toContain('[Reply mechanics:');
+      expect(enqueuedEvent.payload.content).toContain('commonly_post_message');
+      expect(enqueuedEvent.payload.content).toContain('pod-mention-1');
+      expect(enqueuedEvent.payload.content).toContain('Post-then-stop');
+      // Pod-context cue still present.
+      expect(enqueuedEvent.payload.content).toContain('[Pod context: this conversation is in pod `pod-mention-1`');
+      // Original message preserved.
+      expect(enqueuedEvent.payload.content).toContain('Hi @nova');
+    });
+
+    test('thread.mention payload does NOT include the reply-mechanics cue', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            agentName: 'openclaw',
+            instanceId: 'theo',
+            displayName: 'Theo',
+          },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-thread-1',
+        message: {
+          content: 'Hi @theo',
+          id: 'msg-thread-1',
+          source: 'thread',
+          thread: { postId: 'thread-99', postContent: 'parent post' },
+        },
+        userId: 'user-1',
+        username: 'sam',
+      });
+
+      const enqueuedEvent = AgentEventService.enqueue.mock.calls[0][0];
+      expect(enqueuedEvent.type).toBe('thread.mention');
+      // Reply-mechanics cue omitted for thread.mention — different reply path.
+      expect(enqueuedEvent.payload.content).not.toContain('[Reply mechanics:');
+      // Pod-context cue still present.
+      expect(enqueuedEvent.payload.content).toContain('[Pod context: this conversation is in pod `pod-thread-1`');
+    });
+  });
 });

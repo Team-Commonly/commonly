@@ -350,6 +350,38 @@ const formatPodContextFrame = (podId: string): string =>
   `When reading files referenced via [[upload:fileName|...]] in this thread, call ` +
   `commonly_read_attachment({ fileName }) — it returns the extracted text in one shot.]`;
 
+// Reply-mechanics cue against the heartbeat-clobbers-mention bug.
+//
+// Smoke 2026-05-20 produced 3 reproductions (Nova c3, Pixel c7, Ops c7):
+// when an openclaw agent processes a chat.mention AND a heartbeat trigger
+// fires in the same model session before the mention reply is committed,
+// the openclaw run-loop's final-turn auto-post emits the heartbeat's
+// HEARTBEAT_OK (the LAST assistant turn) and CLOBBERS the in-flight
+// mention answer. Nova's session log proves this: she produced a 7-row
+// table in assistant content, then her next assistant turn was
+// HEARTBEAT_OK, and the table never landed in pod chat.
+//
+// Upstream fix in the openclaw fork is a larger change (session-key
+// per-event-type, or final-turn selector that prefers mention-reply over
+// heartbeat-reply when both produced output). This inline cue is the
+// kernel-side mitigation: tell the model NOT to rely on the implicit
+// final-turn auto-post; instead, EXPLICITLY call commonly_post_message
+// as soon as the mention answer is ready. Once the reply is committed
+// via tool call, any subsequent heartbeat trigger is harmless.
+//
+// Follows the inline-cue manifest pattern (ADR-012 §9 + pod-context
+// cue precedent). Only added to chat.mention events — heartbeats
+// themselves and thread.mentions don't have the same race shape (the
+// run-loop posts thread.mention replies via a different path).
+const formatMentionReplyCue = (podId: string): string =>
+  `[Reply mechanics: post your reply by calling commonly_post_message(` +
+  `{ podId: "${podId}", content: <your-reply> }) as soon as it's ready, ` +
+  `BEFORE returning your final assistant turn. Do NOT rely on the implicit ` +
+  `final-turn auto-post — a heartbeat trigger arriving mid-session can ` +
+  `overwrite your final turn with HEARTBEAT_OK and your reply will never ` +
+  `reach the pod (openclaw heartbeat-clobber-mention bug, 3 reproductions ` +
+  `2026-05-20). Post-then-stop is the safe sequence.]`;
+
 const enqueueMentions = async ({
   podId,
   message,
@@ -357,13 +389,21 @@ const enqueueMentions = async ({
   username,
 }: EnqueueMentionsOptions): Promise<EnqueueResult> => {
   const rawContent = message?.content || message?.text || '';
-  // Prepend the pod-context cue so the model sees the podId inline
-  // (envelope `podId` field alone is insufficient — see frame doc above).
-  // Keep the un-framed `rawContent` for the autoJoin path below where we
-  // need to scan the original mentions; the frame is added at enqueue time.
-  const content = `${formatPodContextFrame(podId)}\n\n${rawContent}`;
   const source = message?.source || 'chat';
   const eventType = source === 'thread' ? 'thread.mention' : 'chat.mention';
+  // Prepend the pod-context cue so the model sees the podId inline
+  // (envelope `podId` field alone is insufficient — see frame doc above).
+  // For chat.mention events ALSO prepend the reply-mechanics cue to
+  // mitigate the heartbeat-clobbers-mention bug (see frame doc above).
+  // thread.mention replies go through a different posting path on the
+  // openclaw side (thread comments aren't subject to the same final-turn
+  // auto-post race), so the cue would just be noise there.
+  // Keep the un-framed `rawContent` for the autoJoin path below where we
+  // need to scan the original mentions; the frame is added at enqueue time.
+  const replyCue = eventType === 'chat.mention'
+    ? `${formatMentionReplyCue(podId)}\n`
+    : '';
+  const content = `${formatPodContextFrame(podId)}\n${replyCue}\n${rawContent}`;
   const rawMentions = extractMentions(rawContent);
   if (!podId || rawMentions.length === 0) {
     return { enqueued: [], skipped: [] };
