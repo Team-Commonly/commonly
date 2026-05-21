@@ -285,10 +285,15 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         // displayName on reinstall" can correlate the install attempt
         // to the agent it failed for, instead of just seeing a bare
         // Mongoose error.
-        console.warn(
-          `[install] displayName lookup failed for ${agent.agentName}:${normalizedInstanceId}:`,
-          (lookupErr as Error).message,
-        );
+        // Structured args (object) instead of template-literal in the
+        // format string — CodeQL's js/format-string-injection flags
+        // user-tainted values in the format-string slot. Same diagnostic
+        // payload, just shaped to keep the analyzer happy.
+        console.warn('[install] displayName lookup failed', {
+          agent: agent.agentName,
+          instance: normalizedInstanceId,
+          error: (lookupErr as Error).message,
+        });
       }
     }
     if (!effectiveDisplayName) {
@@ -418,10 +423,12 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
           // Fall back to the legacy chain if the identity lookup blew up —
           // don't take down the intro flow on a transient mongo hiccup.
           // Log with agent identity for operator correlation.
-          console.warn(
-            `[install] intro displayName lookup failed for ${agent.agentName}:${normalizedInstanceId}:`,
-            (lookupErr as Error).message,
-          );
+          // Same CodeQL-safe shape as the install-path log above.
+          console.warn('[install] intro displayName lookup failed', {
+            agent: agent.agentName,
+            instance: normalizedInstanceId,
+            error: (lookupErr as Error).message,
+          });
           displayName = installation.displayName || agent.displayName;
         }
         const blurb = (agent.description || '').trim().replace(/\s+/g, ' ');
