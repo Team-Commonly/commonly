@@ -23,6 +23,8 @@ const Pod = require('../models/Pod');
 
 const File = require('../models/File');
 
+const mongoose = require('mongoose');
+
 let PGMessage: unknown = null;
 try {
   // eslint-disable-next-line global-require
@@ -844,7 +846,7 @@ class AgentMessageService {
               referencedNames.push(sanitized);
             }
           }
-          if (referencedNames.length > 0) {
+          if (referencedNames.length > 0 && mongoose.Types.ObjectId.isValid(podId)) {
             // Single-query, in-memory set comparison.
             //
             // History on this hot path: tried `$in` and per-name findOne
@@ -870,7 +872,13 @@ class AgentMessageService {
             // pipeline — 500 is well above any realistic pod-file
             // count (typical: 10-100; even Nova's YC pitch pod after
             // a heavy artifact day had ~30).
-            const podFiles = await File.find({ podId })
+            // podId is guarded by the `mongoose.Types.ObjectId.isValid(podId)`
+            // check at the outer `if` above — that's the canonical CodeQL
+            // SqlSanitizer pattern for Mongo ObjectId fields. Cast through
+            // `new ObjectId(...)` here so the analyzer sees a definitely-
+            // safe ObjectId in the query, not a passed-in string.
+            const safePodId = new mongoose.Types.ObjectId(String(podId));
+            const podFiles = await File.find({ podId: safePodId })
               .select('fileName originalName')
               .limit(500)
               .lean();
