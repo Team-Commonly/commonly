@@ -21,6 +21,25 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 
+const File = require('../models/File');
+
+const mongoose = require('mongoose');
+
+// Upper bound on how many File rows we fetch per phantom-directive
+// scan. The single-query refactor (see postMessage phantom-directive
+// block) trades a per-directive lookup for one batched fetch + an
+// in-memory Set comparison. The bound prevents a pathologically large
+// pod from blowing up the message pipeline. Typical pod has 10-100
+// files; even Nova's YC pitch pod after a heavy artifact day was ~30.
+// Tunable here without touching the hot path. Override at deploy via
+// env if a real workload ever justifies it.
+const FILE_DIRECTIVE_SCAN_LIMIT = (() => {
+  const raw = process.env.COMMONLY_FILE_DIRECTIVE_SCAN_LIMIT;
+  if (!raw) return 500;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 500;
+})();
+
 let PGMessage: unknown = null;
 try {
   // eslint-disable-next-line global-require
@@ -796,6 +815,105 @@ class AgentMessageService {
       if (claimsAttachment && !hasUploadDirective) {
         sanitizedContent += '\n\n⚠️ _(system note: this message claims an attachment but no `[[upload:...]]` directive is in the body. The agent may not have actually called `commonly_attach_file`. Check the agent\'s workspace for the file and re-attach if needed.)_';
         console.warn(`[agent-msg] false-attach-claim from agent=${agentName} instance=${instanceId} pod=${podId} — appended system note`);
+      }
+
+      // Round 2 of the false-attach defence (smoke 2026-05-20): the previous
+      // check only catches "Done — I attached..." narration with NO directive.
+      // It does NOT catch an agent who TYPES a `[[upload:X]]` directive as a
+      // string without actually calling `commonly_attach_file` first. Aria did
+      // this in cycle 11 — message contained `[[upload:smoke-postmortem-v2.md]]`
+      // but the pod had zero File rows. Bypasses the directive-presence check
+      // entirely because the substring is there.
+      //
+      // Fix: when a directive IS present, validate its first segment against
+      // the File collection scoped to this podId. Agents are taught the
+      // canonical format `[[upload:<id>|<name>|<size>|<kind>]]` (pod-context
+      // cue in agentMentionService); the first segment is the storage key
+      // (matches File.fileName). For tolerance with agents that put a human
+      // name in the first slot, also check File.originalName. Any directive
+      // whose first segment matches NEITHER → fake. Append a different system
+      // note so operators can tell the two failure modes apart.
+      //
+      // Heuristic / informational only — never rejects the message. Per-podId
+      // single-query batching (an $in over all referenced names) keeps the
+      // hot-path cost flat regardless of how many directives a message has.
+      if (hasUploadDirective && podId) {
+        try {
+          const directivePattern = /\[\[upload:([^|\]]+)/gi;
+          const referencedNames: string[] = [];
+          let match;
+          while ((match = directivePattern.exec(sanitizedContent)) !== null) {
+            // Coerce + sanitize each captured name before it reaches the
+            // Mongoose query — CodeQL doesn't trust regex output as a
+            // SqlSanitizer for the NoSQL-injection query, so we apply the
+            // same String().replace() pattern documented at
+            // routes/registry/install.ts:114-116. The pattern strips
+            // anything that isn't a filename-safe char, which also blocks
+            // the `{$ne: null}` / array-injection vectors the rule guards
+            // against. We also bound length to keep a malformed directive
+            // from blowing up the query.
+            const captured = match[1] === undefined ? '' : String(match[1]);
+            const sanitized = captured
+              .trim()
+              .replace(/[^A-Za-z0-9._\-/+ ]/g, '')
+              .slice(0, 256);
+            if (sanitized && !referencedNames.includes(sanitized)) {
+              referencedNames.push(sanitized);
+            }
+          }
+          if (referencedNames.length > 0 && mongoose.Types.ObjectId.isValid(podId)) {
+            // Single-query, in-memory set comparison.
+            //
+            // History on this hot path: tried `$in` and per-name findOne
+            // with progressively stricter sanitizers (String+replace+
+            // roundtrip+regex.test, 5 gates). CodeQL's js/nosql-injection
+            // analyzer kept flagging the query value as user-tainted
+            // because the source ultimately traces back to a regex
+            // capture from message content — the analyzer doesn't trust
+            // the .replace() chain on regex captures the way it does on
+            // direct String() of req.body.
+            //
+            // The cleaner refactor — and the one the analyzer can't
+            // object to: fetch ALL of this pod's files in one query
+            // keyed ONLY by `podId` (which is the validated route/
+            // session pod, not user content), build an in-memory Set
+            // of the legitimate names, then do the phantom check
+            // purely in JS. The user-tainted directive names never
+            // enter a Mongoose filter.
+            //
+            // Perf: a single round-trip per message instead of N
+            // per-directive lookups. Bound the fetch with .limit(500)
+            // so a pathologically large pod can't blow up the message
+            // pipeline — 500 is well above any realistic pod-file
+            // count (typical: 10-100; even Nova's YC pitch pod after
+            // a heavy artifact day had ~30).
+            // podId is guarded by the `mongoose.Types.ObjectId.isValid(podId)`
+            // check at the outer `if` above — that's the canonical CodeQL
+            // SqlSanitizer pattern for Mongo ObjectId fields. Cast through
+            // `new ObjectId(...)` here so the analyzer sees a definitely-
+            // safe ObjectId in the query, not a passed-in string.
+            const safePodId = new mongoose.Types.ObjectId(String(podId));
+            const podFiles = await File.find({ podId: safePodId })
+              .select('fileName originalName')
+              .limit(FILE_DIRECTIVE_SCAN_LIMIT)
+              .lean();
+            const knownNames = new Set<string>();
+            for (const f of podFiles) {
+              if (f.fileName) knownNames.add(String(f.fileName));
+              if (f.originalName) knownNames.add(String(f.originalName));
+            }
+            const phantoms = referencedNames.filter((n) => typeof n === 'string' && n && !knownNames.has(n));
+            if (phantoms.length > 0) {
+              const phantomList = phantoms.map((n) => `\`${n}\``).join(', ');
+              sanitizedContent += `\n\n⚠️ _(system note: this message references ${phantoms.length === 1 ? 'an upload directive' : 'upload directives'} for ${phantomList} but no matching attachment was found in this pod. The agent may have typed the directive without actually calling \`commonly_attach_file\`. Check the agent's workspace.)_`;
+              console.warn(`[agent-msg] phantom-upload-directive from agent=${agentName} instance=${instanceId} pod=${podId} — names=${JSON.stringify(phantoms)}`);
+            }
+          }
+        } catch (validationErr) {
+          // Validation is informational — never block the message on a
+          // lookup failure. The original directive still passes through.
+          console.warn(`[agent-msg] phantom-directive lookup failed: ${(validationErr as Error).message}`);
+        }
       }
     }
 
