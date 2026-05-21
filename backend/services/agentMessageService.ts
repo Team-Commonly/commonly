@@ -845,42 +845,41 @@ class AgentMessageService {
             }
           }
           if (referencedNames.length > 0) {
-            // Per-name findOne loop rather than a single $in batch. The
-            // batched-$in form is faster (one round-trip), but CodeQL's
-            // js/nosql-injection rule flags any user-tainted array inserted
-            // into a Mongoose `$in` even when each element has been
-            // String()+replace()-sanitized — the analyzer doesn't track
-            // through regex-capture + array.filter + array.push. Looping
-            // here makes the query value at each call site obviously a
-            // single sanitized scalar string, which the rule does accept.
-            // Typical message has 0–1 directive; the perf delta is
-            // negligible against the LLM call cost upstream.
-            // Strict 4-gate sanitizer at the call site — the exact shape
-            // CodeQL's js/nosql-injection rule recognises as a
-            // SqlSanitizer (mirrors backend/routes/registry/install.ts:114-119):
-            //   1. String() coerce
-            //   2. .replace() strip non-allowlist chars
-            //   3. non-empty check (rejects if stripped to empty)
-            //   4. roundtrip check (rejects if stripping CHANGED anything)
-            //   5. .test() final allowlist assertion (belt + suspenders,
-            //      also the CodeQL-recognised SanitizingRegex shape)
-            // Any value that survives all five gates is provably a string
-            // of [A-Za-z0-9._\-/+ ] chars, length 1-256, untainted.
-            const SAFE_NAME_RE = /^[A-Za-z0-9._\-/+ ]{1,256}$/;
-            const phantoms: string[] = [];
-            for (const rawName of referencedNames) {
-              if (typeof rawName !== 'string' || !rawName) continue;
-              const stripped = String(rawName).replace(/[^A-Za-z0-9._\-/+ ]/g, '');
-              if (!stripped || stripped !== rawName || !SAFE_NAME_RE.test(stripped)) continue;
-              const hit = await File.findOne({
-                podId,
-                $or: [
-                  { fileName: stripped },
-                  { originalName: stripped },
-                ],
-              }).select('_id').lean();
-              if (!hit) phantoms.push(stripped);
+            // Single-query, in-memory set comparison.
+            //
+            // History on this hot path: tried `$in` and per-name findOne
+            // with progressively stricter sanitizers (String+replace+
+            // roundtrip+regex.test, 5 gates). CodeQL's js/nosql-injection
+            // analyzer kept flagging the query value as user-tainted
+            // because the source ultimately traces back to a regex
+            // capture from message content — the analyzer doesn't trust
+            // the .replace() chain on regex captures the way it does on
+            // direct String() of req.body.
+            //
+            // The cleaner refactor — and the one the analyzer can't
+            // object to: fetch ALL of this pod's files in one query
+            // keyed ONLY by `podId` (which is the validated route/
+            // session pod, not user content), build an in-memory Set
+            // of the legitimate names, then do the phantom check
+            // purely in JS. The user-tainted directive names never
+            // enter a Mongoose filter.
+            //
+            // Perf: a single round-trip per message instead of N
+            // per-directive lookups. Bound the fetch with .limit(500)
+            // so a pathologically large pod can't blow up the message
+            // pipeline — 500 is well above any realistic pod-file
+            // count (typical: 10-100; even Nova's YC pitch pod after
+            // a heavy artifact day had ~30).
+            const podFiles = await File.find({ podId })
+              .select('fileName originalName')
+              .limit(500)
+              .lean();
+            const knownNames = new Set<string>();
+            for (const f of podFiles) {
+              if (f.fileName) knownNames.add(String(f.fileName));
+              if (f.originalName) knownNames.add(String(f.originalName));
             }
+            const phantoms = referencedNames.filter((n) => typeof n === 'string' && n && !knownNames.has(n));
             if (phantoms.length > 0) {
               const phantomList = phantoms.map((n) => `\`${n}\``).join(', ');
               sanitizedContent += `\n\n⚠️ _(system note: this message references ${phantoms.length === 1 ? 'an upload directive' : 'upload directives'} for ${phantomList} but no matching attachment was found in this pod. The agent may have typed the directive without actually calling \`commonly_attach_file\`. Check the agent's workspace.)_`;

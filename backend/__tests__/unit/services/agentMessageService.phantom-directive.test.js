@@ -68,20 +68,24 @@ jest.mock('../../../models/Pod', () => ({
   })),
 }));
 jest.mock('../../../models/File', () => ({
-  findOne: jest.fn(),
+  find: jest.fn(),
 }));
 
-// Build a File.findOne mock that resolves to the matching row when the
-// directive name is in `present`, otherwise null. Pass an object keyed by
-// directive name to fileName (so the test reads naturally).
-const mockFindOneAgainst = (present) => {
-  File.findOne.mockImplementation((query) => {
-    const orClauses = query?.$or || [];
-    const candidate = orClauses[0]?.fileName || orClauses[1]?.originalName;
-    return {
-      select: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue(present[candidate] || null),
-    };
+// Configure File.find to return the rows whose fileName/originalName are
+// in the `present` map. The implementation does a single `File.find({podId})`
+// then builds an in-memory Set from the result. Test by handing back a
+// canned list whose fileName/originalName cover the legitimate directives.
+const mockFindAgainst = (present) => {
+  // `present` is { canonicalName: rowOrAlias } — produce rows where
+  // fileName === canonical (and optionally originalName === alias).
+  const rows = Object.entries(present).map(([name, row]) => ({
+    fileName: row?.fileName || name,
+    originalName: row?.originalName || null,
+  }));
+  File.find.mockReturnValue({
+    select: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(rows),
   });
 };
 
@@ -124,7 +128,7 @@ afterEach(() => {
 describe('AgentMessageService phantom-upload-directive footer', () => {
   it('appends a phantom-directive footer when [[upload:X]] references no File row', async () => {
     // No File row matches any directive → phantom.
-    mockFindOneAgainst({});
+    mockFindAgainst({});
 
     await AgentMessageService.postMessage({
       agentName: 'openclaw',
@@ -144,7 +148,7 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
 
   it('does NOT append a footer when a File row matches the directive', async () => {
     // Real upload exists → no phantom.
-    mockFindOneAgainst({
+    mockFindAgainst({
       'storage-key-abc': { _id: 'file-1' },
     });
 
@@ -166,7 +170,7 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
     // resolves. Mock returns a hit when queried with 'pitch.pptx' as
     // either field. Tested by having the mock return a row for any name
     // we configure.
-    mockFindOneAgainst({
+    mockFindAgainst({
       'pitch.pptx': { _id: 'file-2' },
     });
 
@@ -183,7 +187,7 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
 
   it('flags only the phantom directive when multiple are present and some are real', async () => {
     // 'real-storage-key' resolves, 'made-up.md' does not.
-    mockFindOneAgainst({
+    mockFindAgainst({
       'real-storage-key': { _id: 'file-3' },
     });
 
@@ -213,11 +217,11 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
 
     expect(persistedDoc.content).not.toContain('no matching attachment was found');
     // File lookup should not even fire when no directive is present.
-    expect(File.findOne).not.toHaveBeenCalled();
+    expect(File.find).not.toHaveBeenCalled();
   });
 
   it('does not block the message when the File lookup throws', async () => {
-    File.findOne.mockImplementationOnce(() => {
+    File.find.mockImplementationOnce(() => {
       throw new Error('mongo connection lost');
     });
 
