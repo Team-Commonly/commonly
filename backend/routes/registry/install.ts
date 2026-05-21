@@ -281,7 +281,14 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         }
       } catch (lookupErr) {
         // Non-fatal — fall through to registry default below.
-        console.warn('[install] displayName lookup failed:', (lookupErr as Error).message);
+        // Log with agent identity so an operator chasing "wrong
+        // displayName on reinstall" can correlate the install attempt
+        // to the agent it failed for, instead of just seeing a bare
+        // Mongoose error.
+        console.warn(
+          `[install] displayName lookup failed for ${agent.agentName}:${normalizedInstanceId}:`,
+          (lookupErr as Error).message,
+        );
       }
     }
     if (!effectiveDisplayName) {
@@ -410,7 +417,11 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         } catch (lookupErr: unknown) {
           // Fall back to the legacy chain if the identity lookup blew up —
           // don't take down the intro flow on a transient mongo hiccup.
-          console.warn('[install] intro displayName lookup failed:', (lookupErr as Error).message);
+          // Log with agent identity for operator correlation.
+          console.warn(
+            `[install] intro displayName lookup failed for ${agent.agentName}:${normalizedInstanceId}:`,
+            (lookupErr as Error).message,
+          );
           displayName = installation.displayName || agent.displayName;
         }
         const blurb = (agent.description || '').trim().replace(/\s+/g, ' ');
