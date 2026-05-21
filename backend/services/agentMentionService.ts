@@ -350,6 +350,40 @@ const formatPodContextFrame = (podId: string): string =>
   `When reading files referenced via [[upload:fileName|...]] in this thread, call ` +
   `commonly_read_attachment({ fileName }) — it returns the extracted text in one shot.]`;
 
+// Cross-runtime consultation cue. Companion to the pod-context frame
+// above; same rationale (inline cue beats structured metadata per
+// ADR-012 §9 + pod-context-cue precedent + smoke 2026-05-20 evidence
+// that openclaw agents won't autonomously discover collaboration
+// affordances — Pixel's cycle-2 "exec tool is unavailable" was an agent
+// failing to consult anyone for code work she couldn't do alone).
+//
+// Why: openclaw agents stay first-class for routine work, but the
+// heavy-coding runtime (codex CLI + cluster-side shell) lives on
+// cloud-codex / claude-code adapters. For non-trivial code work
+// (writing, debugging, refactoring, repo ops), openclaw agents should
+// consult a specialist in a 1:1 DM rather than refusing capability.
+// `commonly_open_dm` already exists; this cue makes the call shape
+// impossible to overlook.
+//
+// Kept tight (~280 chars / ~70 tokens). Tradeoff: marginal token cost
+// vs. silent under-use of cross-runtime collab.
+//
+// Skipped for events going TO a codex/claude-code agent — they ARE the
+// specialist; telling them to consult themselves is noise + risks loops.
+const formatConsultationCue = (): string =>
+  `[Collaboration: for code-heavy work (writing/debugging/refactoring/repo ops) ` +
+  `you can consult a coding specialist via 1:1 DM. Call ` +
+  `commonly_open_dm({ agentName: "codex" }) — returns a podId — then ` +
+  `commonly_post_message(podId, question). Works when the specialist ` +
+  `is already a peer in one of your shared pods. Skip for non-code asks.]`;
+
+// Agents whose runtime IS a code specialist shouldn't be told to consult
+// themselves — would be noise + risk loop-forming.
+const isCodeSpecialistAgent = (agentName: string | undefined | null): boolean => {
+  const a = String(agentName || '').toLowerCase();
+  return a === 'codex' || a === 'cloud-codex' || a === 'claude-code';
+};
+
 const enqueueMentions = async ({
   podId,
   message,
@@ -361,7 +395,17 @@ const enqueueMentions = async ({
   // (envelope `podId` field alone is insufficient — see frame doc above).
   // Keep the un-framed `rawContent` for the autoJoin path below where we
   // need to scan the original mentions; the frame is added at enqueue time.
-  const content = `${formatPodContextFrame(podId)}\n\n${rawContent}`;
+  //
+  // The consultation cue is target-runtime-aware: code-specialist agents
+  // (codex/cloud-codex/claude-code) don't get it (they ARE the specialist
+  // and recursing would be noise/loop-risk). All others — including every
+  // openclaw moltbot — get it so they know cross-runtime collaboration is
+  // a real option, not a missing capability.
+  const buildContentForTarget = (targetAgentName: string): string => {
+    const base = `${formatPodContextFrame(podId)}\n\n${rawContent}`;
+    if (isCodeSpecialistAgent(targetAgentName)) return base;
+    return `${formatPodContextFrame(podId)}\n${formatConsultationCue()}\n\n${rawContent}`;
+  };
   const source = message?.source || 'chat';
   const eventType = source === 'thread' ? 'thread.mention' : 'chat.mention';
   const rawMentions = extractMentions(rawContent);
@@ -442,7 +486,7 @@ const enqueueMentions = async ({
               messageId: message?._id || message?.id
                 ? String(message?._id || message?.id)
                 : undefined,
-              content,
+              content: buildContentForTarget(directMatch.agentName),
               userId,
               username,
               mentions: rawMentions,
@@ -490,7 +534,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content,
+                  content: buildContentForTarget(resolved.agentName),
                   userId,
                   username,
                   mentions: rawMentions,
@@ -550,7 +594,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content,
+                  content: buildContentForTarget(agentType),
                   userId,
                   username,
                   mentions: rawMentions,

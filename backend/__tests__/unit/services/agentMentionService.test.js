@@ -481,4 +481,95 @@ describe('AgentMentionService', () => {
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(result).toEqual({ enqueued: false, reason: 'sender_is_bot' });
   });
+
+  // ------------------------------------------------------------------
+  // Cross-runtime consultation cue (inline-cue pattern; see service file
+  // for full rationale). Cue is added to chat.mention payload.content for
+  // every NON-specialist agent; specialists (codex/cloud-codex/claude-code)
+  // do not get the cue (recursive consult is noise + loop risk).
+  // ------------------------------------------------------------------
+  describe('cross-runtime consultation cue', () => {
+    test('enqueueMentions adds the consultation cue for an openclaw target', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            agentName: 'openclaw',
+            instanceId: 'aria',
+            displayName: 'Aria',
+          },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Hi @aria can you help?', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'sam',
+      });
+
+      const enqueuedPayload = AgentEventService.enqueue.mock.calls[0][0].payload;
+      expect(enqueuedPayload.content).toContain('[Pod context: this conversation is in pod `pod-1`');
+      expect(enqueuedPayload.content).toContain('[Collaboration:');
+      expect(enqueuedPayload.content).toContain('commonly_open_dm({ agentName: "codex" })');
+      // Original message body is still present after the cues.
+      expect(enqueuedPayload.content).toContain('Hi @aria can you help?');
+    });
+
+    test('enqueueMentions OMITS the consultation cue for a codex target (recursive consult guard)', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            agentName: 'codex',
+            instanceId: 'cody',
+            displayName: 'Cody',
+          },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-2',
+        message: { content: 'Hi @cody can you debug?', id: 'msg-2' },
+        userId: 'user-1',
+        username: 'sam',
+      });
+
+      const enqueuedPayload = AgentEventService.enqueue.mock.calls[0][0].payload;
+      // Pod context cue still present (every chat.mention gets it).
+      expect(enqueuedPayload.content).toContain('[Pod context: this conversation is in pod `pod-2`');
+      // Consultation cue NOT present — codex is the specialist; would be self-recurse noise.
+      expect(enqueuedPayload.content).not.toContain('[Collaboration:');
+      expect(enqueuedPayload.content).not.toContain('commonly_open_dm');
+    });
+
+    test('enqueueMentions OMITS the consultation cue for a claude-code target', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            agentName: 'claude-code',
+            instanceId: 'default',
+            displayName: 'Claude Code',
+          },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-3',
+        message: { content: 'Hi @claude-code', id: 'msg-3' },
+        userId: 'user-1',
+        username: 'sam',
+      });
+
+      const enqueuedPayload = AgentEventService.enqueue.mock.calls[0][0].payload;
+      expect(enqueuedPayload.content).not.toContain('[Collaboration:');
+    });
+  });
 });
