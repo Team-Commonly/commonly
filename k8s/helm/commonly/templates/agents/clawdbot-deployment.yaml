@@ -538,7 +538,46 @@ spec:
               command:
               - /bin/sh
               - -c
-              - mkdir -p /home/node/.codex && cp /state/.codex/auth.json /home/node/.codex/auth.json 2>/dev/null || true
+              # Two unrelated bootstrap steps bundled into one postStart hook
+              # because k8s only allows ONE exec command per lifecycle phase:
+              #
+              # 1. Copy codex auth.json into node user's HOME so the CLI
+              #    can find it on `kubectl exec` invocations.
+              #
+              # 2. Wire GITHUB_PAT into git credential.helper so subagents
+              #    (acpx_run sub-codex invocations, ad-hoc operator
+              #    `kubectl exec ... git clone`) can authenticate against
+              #    private repos. PR #382 plumbed the env var but never
+              #    wired the credential helper — surfaced in smoke
+              #    2026-05-20 when Theo tried `git clone` and got
+              #    `could not read Username for 'https://github.com'`.
+              #    The cloud-codex boot script does the same wiring; this
+              #    is the moltbot-side equivalent so both runtimes are
+              #    consistent. Idempotent — repeated postStart invocations
+              #    (on container restart) rewrite the same file.
+              #    Silent no-op when GITHUB_PAT is empty to keep the hook
+              #    safe across community-tier deployments that ship no
+              #    PAT by design.
+              - |
+                set +e
+                mkdir -p /home/node/.codex
+                cp /state/.codex/auth.json /home/node/.codex/auth.json 2>/dev/null || true
+                if [ -n "${GITHUB_PAT:-}" ]; then
+                  # Trim trailing newline / CR from the PAT — base64-decoded
+                  # secret values often carry a trailing newline that git's
+                  # libcurl refuses to parse ("credential url cannot be
+                  # parsed"), verified empirically on cloud-codex 2026-05-15.
+                  TRIMMED_PAT=$(printf '%s' "${GITHUB_PAT}" | tr -d '\n\r')
+                  printf 'https://x-access-token:%s@github.com\n' "${TRIMMED_PAT}" > /state/.git-credentials
+                  chmod 600 /state/.git-credentials
+                  git config --global credential.helper "store --file=/state/.git-credentials"
+                  git config --global user.name "${GIT_AUTHOR_NAME:-Clawdbot Agent}"
+                  git config --global user.email "${GIT_AUTHOR_EMAIL:-clawdbot@commonly.me}"
+                  echo "[clawdbot postStart] git credentials seeded from GITHUB_PAT"
+                else
+                  echo "[clawdbot postStart] GITHUB_PAT empty — git/gh operations will require interactive auth"
+                fi
+                exit 0
         env:
         # ADR-005 Stage 2: prepend the codex-tools volume to PATH so
         # `codex` and `commonly` are on PATH for operator `kubectl exec`
