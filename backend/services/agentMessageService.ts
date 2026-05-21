@@ -858,15 +858,23 @@ class AgentMessageService {
             const phantoms: string[] = [];
             for (const name of referencedNames) {
               if (typeof name !== 'string' || !name) continue;
-              const safeName: string = String(name);
+              // Re-sanitize + reject-if-changed pattern (proven CodeQL
+              // SqlSanitizer shape, cf. backend/routes/registry/install.ts:114-119).
+              // The upstream regex already restricts captures, but CodeQL
+              // doesn't trace through array-build; doing it again here at
+              // the call site, with an explicit equality gate that exits
+              // when sanitization MODIFIES the value, gives the analyzer
+              // a clean tainted→checked→safe control-flow it accepts.
+              const reSanitized = String(name).replace(/[^A-Za-z0-9._\-/+ ]/g, '').slice(0, 256);
+              if (!reSanitized || reSanitized !== name) continue;
               const hit = await File.findOne({
                 podId,
                 $or: [
-                  { fileName: safeName },
-                  { originalName: safeName },
+                  { fileName: reSanitized },
+                  { originalName: reSanitized },
                 ],
               }).select('_id').lean();
-              if (!hit) phantoms.push(safeName);
+              if (!hit) phantoms.push(reSanitized);
             }
             if (phantoms.length > 0) {
               const phantomList = phantoms.map((n) => `\`${n}\``).join(', ');
