@@ -42,7 +42,29 @@ import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // ADR-005 §Spawning semantics
+// Default timeout for a single codex spawn (exec mode).
+//
+// 2026-05-20 smoke surface: Cody's cycle-0 research task ran 15+ web
+// searches across openai/codex release notes (a legitimate research
+// workload) and was SIGTERM'd at exactly 300_000ms — the adapter killed
+// her before she could synthesize the final reply. 5 minutes is too
+// tight for codex `exec` mode under real tool-use; the bigger model
+// (gpt-5.4) + web.run + reasoning is just slower than a chat turn.
+// Bumping to 15 minutes gives multi-step research / repo investigation
+// room to finish without disabling the cap (pathological hangs still
+// SIGTERM).
+//
+// Operators can override via the COMMONLY_AGENT_RUN_TIMEOUT_MS env var
+// without rebuilding (caller-supplied `ctx.timeoutMs` still wins).
+// Invalid / non-positive values fall through to the default rather
+// than disabling the timeout entirely.
+const DEFAULT_TIMEOUT_MS = (() => {
+  const fallback = 15 * 60 * 1000;
+  const raw = process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS;
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+})();
 
 const buildPrompt = (prompt, memoryLongTerm) => {
   if (!memoryLongTerm) return prompt;
