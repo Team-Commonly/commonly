@@ -258,13 +258,43 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       ...AUTO_GRANTED_INTEGRATION_SCOPES,
     ]));
 
+    // Task #62 (round 2): prefer the curated User.botMetadata.displayName
+    // for the SAME agentName + instanceId over the registry-default
+    // (`agent.displayName` e.g. "Cuz 🦞" / "Codex"). PR #408 fixed this
+    // seam on the intro-post path; this is the install-path equivalent.
+    // Without this, installing an existing agent identity (e.g. openclaw:nova)
+    // into a NEW pod writes "Cuz 🦞" to both AgentInstallation.displayName
+    // AND AgentProfile.name — and the V2 member list reads AgentProfile FIRST,
+    // so users see "Cuz" on every member row even though the underlying
+    // identity has the right name. Order: explicit caller intent > existing
+    // identity > registry default.
+    let effectiveDisplayName: string = displayName || '';
+    if (!effectiveDisplayName) {
+      try {
+        const existingAgentUser = await User.findOne({
+          'botMetadata.agentName': agent.agentName,
+          'botMetadata.instanceId': normalizedInstanceId,
+          isBot: true,
+        }).select('botMetadata.displayName').lean();
+        if (existingAgentUser?.botMetadata?.displayName) {
+          effectiveDisplayName = String(existingAgentUser.botMetadata.displayName);
+        }
+      } catch (lookupErr) {
+        // Non-fatal — fall through to registry default below.
+        console.warn('[install] displayName lookup failed:', (lookupErr as Error).message);
+      }
+    }
+    if (!effectiveDisplayName) {
+      effectiveDisplayName = agent.displayName;
+    }
+
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,
       config: installConfig,
       scopes: grantedScopes,
       installedBy: userId,
       instanceId: normalizedInstanceId,
-      displayName: displayName || agent.displayName,
+      displayName: effectiveDisplayName,
     });
 
     // Use upsert by the natural key (podId + agentId) so reinstalling
@@ -281,7 +311,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         $set: {
           agentName: safeAgentName,
           instanceId: normalizedInstanceId,
-          name: displayName || agent.displayName,
+          name: effectiveDisplayName,
           purpose: agent.description,
           instructions: agent.manifest.configSchema?.defaultInstructions || '',
           persona: {
