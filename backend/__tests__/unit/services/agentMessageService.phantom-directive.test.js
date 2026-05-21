@@ -200,10 +200,10 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
   it('does not append a footer when there is no upload directive at all', async () => {
     // No directive at all → phantom check skipped. (The earlier narration
     // footer is a separate code path tested elsewhere.)
-    File.find.mockReturnValueOnce({
-      select: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([]),
-    });
+    // Do NOT set up a File.find mockReturnValueOnce here — when the impl
+    // correctly skips the lookup, an unconsumed `Once` mock leaks into the
+    // next test's queue and silently overrides its setup. The assertion
+    // below proves the lookup is skipped.
 
     await AgentMessageService.postMessage({
       agentName: 'openclaw',

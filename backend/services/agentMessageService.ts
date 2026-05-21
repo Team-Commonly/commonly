@@ -826,8 +826,23 @@ class AgentMessageService {
           const referencedNames: string[] = [];
           let match;
           while ((match = directivePattern.exec(sanitizedContent)) !== null) {
-            const name = (match[1] || '').trim();
-            if (name && !referencedNames.includes(name)) referencedNames.push(name);
+            // Coerce + sanitize each captured name before it reaches the
+            // Mongoose query — CodeQL doesn't trust regex output as a
+            // SqlSanitizer for the NoSQL-injection query, so we apply the
+            // same String().replace() pattern documented at
+            // routes/registry/install.ts:114-116. The pattern strips
+            // anything that isn't a filename-safe char, which also blocks
+            // the `{$ne: null}` / array-injection vectors the rule guards
+            // against. We also bound length to keep a malformed directive
+            // from blowing up the query.
+            const captured = match[1] === undefined ? '' : String(match[1]);
+            const sanitized = captured
+              .trim()
+              .replace(/[^A-Za-z0-9._\-/+ ]/g, '')
+              .slice(0, 256);
+            if (sanitized && !referencedNames.includes(sanitized)) {
+              referencedNames.push(sanitized);
+            }
           }
           if (referencedNames.length > 0) {
             const existingFiles = await File.find({
