@@ -855,26 +855,31 @@ class AgentMessageService {
             // single sanitized scalar string, which the rule does accept.
             // Typical message has 0–1 directive; the perf delta is
             // negligible against the LLM call cost upstream.
+            // Strict 4-gate sanitizer at the call site — the exact shape
+            // CodeQL's js/nosql-injection rule recognises as a
+            // SqlSanitizer (mirrors backend/routes/registry/install.ts:114-119):
+            //   1. String() coerce
+            //   2. .replace() strip non-allowlist chars
+            //   3. non-empty check (rejects if stripped to empty)
+            //   4. roundtrip check (rejects if stripping CHANGED anything)
+            //   5. .test() final allowlist assertion (belt + suspenders,
+            //      also the CodeQL-recognised SanitizingRegex shape)
+            // Any value that survives all five gates is provably a string
+            // of [A-Za-z0-9._\-/+ ] chars, length 1-256, untainted.
+            const SAFE_NAME_RE = /^[A-Za-z0-9._\-/+ ]{1,256}$/;
             const phantoms: string[] = [];
-            for (const name of referencedNames) {
-              if (typeof name !== 'string' || !name) continue;
-              // Re-sanitize + reject-if-changed pattern (proven CodeQL
-              // SqlSanitizer shape, cf. backend/routes/registry/install.ts:114-119).
-              // The upstream regex already restricts captures, but CodeQL
-              // doesn't trace through array-build; doing it again here at
-              // the call site, with an explicit equality gate that exits
-              // when sanitization MODIFIES the value, gives the analyzer
-              // a clean tainted→checked→safe control-flow it accepts.
-              const reSanitized = String(name).replace(/[^A-Za-z0-9._\-/+ ]/g, '').slice(0, 256);
-              if (!reSanitized || reSanitized !== name) continue;
+            for (const rawName of referencedNames) {
+              if (typeof rawName !== 'string' || !rawName) continue;
+              const stripped = String(rawName).replace(/[^A-Za-z0-9._\-/+ ]/g, '');
+              if (!stripped || stripped !== rawName || !SAFE_NAME_RE.test(stripped)) continue;
               const hit = await File.findOne({
                 podId,
                 $or: [
-                  { fileName: reSanitized },
-                  { originalName: reSanitized },
+                  { fileName: stripped },
+                  { originalName: stripped },
                 ],
               }).select('_id').lean();
-              if (!hit) phantoms.push(reSanitized);
+              if (!hit) phantoms.push(stripped);
             }
             if (phantoms.length > 0) {
               const phantomList = phantoms.map((n) => `\`${n}\``).join(', ');
