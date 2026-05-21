@@ -45,7 +45,16 @@ import { join } from 'path';
 import { linkSkills } from '../environment.js';
 import { wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // ADR-005 §Spawning semantics
+// See codex.js for the rationale on bumping the default + env override.
+// Keeping both adapters in lockstep so any wrapper agent runtime has the
+// same timeout posture regardless of which CLI is underneath.
+const DEFAULT_TIMEOUT_MS = (() => {
+  const fallback = 15 * 60 * 1000;
+  const raw = process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS;
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+})();
 
 const buildPrompt = (prompt, memoryLongTerm) => {
   if (!memoryLongTerm) return prompt;
