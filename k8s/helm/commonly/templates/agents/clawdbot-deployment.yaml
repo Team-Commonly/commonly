@@ -571,6 +571,19 @@ spec:
                   printf 'https://x-access-token:%s@github.com\n' "${TRIMMED_PAT}" > /state/.git-credentials
                   chmod 600 /state/.git-credentials
                   git config --global credential.helper "store --file=/state/.git-credentials"
+                  # GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL are read from the
+                  # container env if present, otherwise default to the
+                  # generic Clawdbot identity. They're NOT declared in the
+                  # `env:` block below by design — there's currently no per-
+                  # agent author override flowing through Helm values. If
+                  # operators ever want to override (e.g. per-instanceId
+                  # author for clearer commit attribution), add them to
+                  # the env: block as plain `value:` entries OR wire them
+                  # through `values.yaml` -> `.Values.agents.clawdbot.git.authorName`.
+                  # The fallbacks below keep the generic identity as the
+                  # safe default — git commits + PR opens attribute to
+                  # "Clawdbot Agent <clawdbot@commonly.me>" without
+                  # additional configuration.
                   git config --global user.name "${GIT_AUTHOR_NAME:-Clawdbot Agent}"
                   git config --global user.email "${GIT_AUTHOR_EMAIL:-clawdbot@commonly.me}"
                   echo "[clawdbot postStart] git credentials seeded from GITHUB_PAT"
