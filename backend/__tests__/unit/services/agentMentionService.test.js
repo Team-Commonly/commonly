@@ -481,4 +481,113 @@ describe('AgentMentionService', () => {
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(result).toEqual({ enqueued: false, reason: 'sender_is_bot' });
   });
+
+  // ------------------------------------------------------------------
+  // Inline-cue composition (consultation + reply-mechanics) — verifies
+  // the 4-way matrix: chat-vs-thread × specialist-vs-not.
+  //   chat.mention + non-specialist  → [Pod] [Collab] [Reply] body
+  //   chat.mention + specialist      → [Pod] [Reply] body
+  //   thread.mention + non-specialist→ [Pod] [Collab] body
+  //   thread.mention + specialist    → [Pod] body
+  // See buildContentForTarget in agentMentionService.ts for full
+  // rationale + invariants.
+  // ------------------------------------------------------------------
+  describe('inline cue composition (consultation + reply-mechanics)', () => {
+    const setupForAgent = ({ agentName, instanceId, displayName }) => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ agentName, instanceId, displayName }]),
+      });
+      AgentProfile.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+    };
+    const lastPayload = () => AgentEventService.enqueue.mock.calls[0][0];
+
+    test('chat.mention + openclaw (non-specialist) → pod + consultation + reply-mechanics', async () => {
+      setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-mention-1',
+        message: { content: 'Hi @nova', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'sam',
+      });
+      const ev = lastPayload();
+      expect(ev.type).toBe('chat.mention');
+      expect(ev.payload.content).toContain('[Pod context:');
+      expect(ev.payload.content).toContain('[Collaboration:');
+      expect(ev.payload.content).toContain('[Reply mechanics:');
+      expect(ev.payload.content).toContain('Hi @nova');
+    });
+
+    test('chat.mention + codex (specialist) → pod + reply-mechanics, NO consultation', async () => {
+      setupForAgent({ agentName: 'codex', instanceId: 'cody', displayName: 'Cody' });
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-mention-2',
+        message: { content: 'Hi @cody', id: 'msg-2' },
+        userId: 'user-1',
+        username: 'sam',
+      });
+      const ev = lastPayload();
+      expect(ev.type).toBe('chat.mention');
+      expect(ev.payload.content).toContain('[Pod context:');
+      expect(ev.payload.content).not.toContain('[Collaboration:');
+      // chat.mention always gets reply-mechanics regardless of specialist
+      // status — heartbeat-clobber affects all openclaw event paths; cloud-
+      // codex runs codex CLI which posts via the same path, so the rule
+      // is fine to apply uniformly to chat.mention.
+      expect(ev.payload.content).toContain('[Reply mechanics:');
+    });
+
+    test('thread.mention + openclaw (non-specialist) → pod + consultation, NO reply-mechanics', async () => {
+      setupForAgent({ agentName: 'openclaw', instanceId: 'theo', displayName: 'Theo' });
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-thread-1',
+        message: {
+          content: 'Hi @theo',
+          id: 'msg-3',
+          source: 'thread',
+          thread: { postId: 'thread-99', postContent: 'parent post' },
+        },
+        userId: 'user-1',
+        username: 'sam',
+      });
+      const ev = lastPayload();
+      expect(ev.type).toBe('thread.mention');
+      expect(ev.payload.content).toContain('[Pod context:');
+      expect(ev.payload.content).toContain('[Collaboration:');
+      // Thread replies post via a different openclaw path — no clobber race.
+      expect(ev.payload.content).not.toContain('[Reply mechanics:');
+    });
+
+    test('thread.mention + codex (specialist) → pod only, no consultation or reply-mechanics', async () => {
+      setupForAgent({ agentName: 'codex', instanceId: 'cody', displayName: 'Cody' });
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-thread-2',
+        message: {
+          content: 'Hi @cody',
+          id: 'msg-4',
+          source: 'thread',
+          thread: { postId: 'thread-100', postContent: 'parent post' },
+        },
+        userId: 'user-1',
+        username: 'sam',
+      });
+      const ev = lastPayload();
+      expect(ev.type).toBe('thread.mention');
+      expect(ev.payload.content).toContain('[Pod context:');
+      expect(ev.payload.content).not.toContain('[Collaboration:');
+      expect(ev.payload.content).not.toContain('[Reply mechanics:');
+    });
+
+    test('claude-code is also treated as a specialist (cross-runtime parity)', async () => {
+      setupForAgent({ agentName: 'claude-code', instanceId: 'default', displayName: 'Claude Code' });
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-cc-1',
+        message: { content: 'Hi @claude-code', id: 'msg-5' },
+        userId: 'user-1',
+        username: 'sam',
+      });
+      expect(lastPayload().payload.content).not.toContain('[Collaboration:');
+    });
+  });
 });
