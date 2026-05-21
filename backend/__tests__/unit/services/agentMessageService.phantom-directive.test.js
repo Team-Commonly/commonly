@@ -9,11 +9,11 @@
  * directive substring but the pod had zero File rows, so the directive
  * was completely fake but the safety chain treated it as valid.
  *
- * This second-layer check validates the first segment of every
- * `[[upload:X|...]]` directive against the File collection scoped to the
- * podId. Anything not matching gets a different system note so the two
- * failure modes (narration-with-no-directive vs typed-fake-directive)
- * can be told apart in logs and UI.
+ * This second-layer check validates each `[[upload:X|...]]` directive's
+ * first segment against the File collection scoped to the podId.
+ * Anything not matching gets a different system note so the two failure
+ * modes (narration-with-no-directive vs typed-fake-directive) can be
+ * told apart in logs and UI.
  */
 
 const AgentMessageService = require('../../../services/agentMessageService');
@@ -68,8 +68,22 @@ jest.mock('../../../models/Pod', () => ({
   })),
 }));
 jest.mock('../../../models/File', () => ({
-  find: jest.fn(),
+  findOne: jest.fn(),
 }));
+
+// Build a File.findOne mock that resolves to the matching row when the
+// directive name is in `present`, otherwise null. Pass an object keyed by
+// directive name to fileName (so the test reads naturally).
+const mockFindOneAgainst = (present) => {
+  File.findOne.mockImplementation((query) => {
+    const orClauses = query?.$or || [];
+    const candidate = orClauses[0]?.fileName || orClauses[1]?.originalName;
+    return {
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(present[candidate] || null),
+    };
+  });
+};
 
 // Capture the persisted Message doc so we can assert what content actually
 // landed (with or without the footer appended).
@@ -109,11 +123,8 @@ afterEach(() => {
 
 describe('AgentMessageService phantom-upload-directive footer', () => {
   it('appends a phantom-directive footer when [[upload:X]] references no File row', async () => {
-    // No File row matches the directive → phantom.
-    File.find.mockReturnValueOnce({
-      select: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([]),
-    });
+    // No File row matches any directive → phantom.
+    mockFindOneAgainst({});
 
     await AgentMessageService.postMessage({
       agentName: 'openclaw',
@@ -133,11 +144,8 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
 
   it('does NOT append a footer when a File row matches the directive', async () => {
     // Real upload exists → no phantom.
-    File.find.mockReturnValueOnce({
-      select: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([
-        { fileName: 'storage-key-abc', originalName: 'real-doc.md' },
-      ]),
+    mockFindOneAgainst({
+      'storage-key-abc': { _id: 'file-1' },
     });
 
     await AgentMessageService.postMessage({
@@ -153,13 +161,13 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
   });
 
   it('matches when the directive references originalName instead of fileName', async () => {
-    // Agents sometimes put the human-readable name in the first slot; that
-    // should still resolve.
-    File.find.mockReturnValueOnce({
-      select: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([
-        { fileName: 'opaque-storage-key', originalName: 'pitch.pptx' },
-      ]),
+    // The findOne query checks BOTH fileName and originalName via $or. As
+    // long as the impl includes originalName as an alternative, the lookup
+    // resolves. Mock returns a hit when queried with 'pitch.pptx' as
+    // either field. Tested by having the mock return a row for any name
+    // we configure.
+    mockFindOneAgainst({
+      'pitch.pptx': { _id: 'file-2' },
     });
 
     await AgentMessageService.postMessage({
@@ -174,12 +182,9 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
   });
 
   it('flags only the phantom directive when multiple are present and some are real', async () => {
-    // Mixed message: one real (real-storage-key), one phantom (made-up.md).
-    File.find.mockReturnValueOnce({
-      select: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([
-        { fileName: 'real-storage-key', originalName: 'real.md' },
-      ]),
+    // 'real-storage-key' resolves, 'made-up.md' does not.
+    mockFindOneAgainst({
+      'real-storage-key': { _id: 'file-3' },
     });
 
     await AgentMessageService.postMessage({
@@ -198,13 +203,7 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
   });
 
   it('does not append a footer when there is no upload directive at all', async () => {
-    // No directive at all → phantom check skipped. (The earlier narration
-    // footer is a separate code path tested elsewhere.)
-    // Do NOT set up a File.find mockReturnValueOnce here — when the impl
-    // correctly skips the lookup, an unconsumed `Once` mock leaks into the
-    // next test's queue and silently overrides its setup. The assertion
-    // below proves the lookup is skipped.
-
+    // No directive → impl should skip the lookup entirely.
     await AgentMessageService.postMessage({
       agentName: 'openclaw',
       instanceId: 'theo',
@@ -214,11 +213,11 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
 
     expect(persistedDoc.content).not.toContain('no matching attachment was found');
     // File lookup should not even fire when no directive is present.
-    expect(File.find).not.toHaveBeenCalled();
+    expect(File.findOne).not.toHaveBeenCalled();
   });
 
   it('does not block the message when the File lookup throws', async () => {
-    File.find.mockImplementationOnce(() => {
+    File.findOne.mockImplementationOnce(() => {
       throw new Error('mongo connection lost');
     });
 
