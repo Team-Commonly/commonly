@@ -98,11 +98,43 @@ describe('adapter DEFAULT_TIMEOUT_MS env override', () => {
     expect(String(caught?.message || '')).toMatch(/timed out after 100ms/);
   });
 
-  test('non-positive env value falls through to default', async () => {
+  test('non-positive env value falls through to default (does not zero the cap)', async () => {
+    // Reviewer on PR #415: the previous version of this test only
+    // asserted `typeof adapter.spawn === 'function'` — it didn't prove
+    // the timeout is actually the 15-minute default. If the env-parse
+    // fallback were ever rewritten to treat '0' as 0ms, every spawn
+    // would SIGTERM near-instantly and we wouldn't catch it.
+    //
+    // Probe: load with env='0', spawn a never-resolving child with NO
+    // ctx.timeoutMs override, race against a 2-second window. If the
+    // adapter's default-timeout had been zeroed by the env, the spawn
+    // promise would reject within ~milliseconds. A 2s budget is well
+    // above any zeroed-cap reject latency AND well below the actual
+    // 15-minute default — so we can assert "spawn did NOT reject in
+    // 2 seconds" as proof that the env fallback held.
     process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS = '0';
     const adapter = (await import('../src/lib/adapters/codex.js')).default;
-    // Same shape as above — proves module loads fine.
-    expect(adapter).toBeTruthy();
-    expect(typeof adapter.spawn).toBe('function');
-  });
+    const neverResolvingChild = {
+      stdout: { on: () => {} },
+      stderr: { on: () => {} },
+      on: () => {},
+      kill: () => {},
+    };
+    const ctx = {
+      _spawnImpl: () => neverResolvingChild,
+      env: { ...process.env },
+      cwd: process.cwd(),
+      // NO ctx.timeoutMs — adapter must use its own (env-derived)
+      // default, which '0' should NOT zero out.
+    };
+    let racedRejection = null;
+    const spawnPromise = adapter.spawn('dummy', ctx).catch((e) => { racedRejection = e; });
+    await Promise.race([
+      spawnPromise,
+      new Promise((r) => setTimeout(r, 2000)),
+    ]);
+    // Did the spawn reject within 2 seconds? If so, the env zeroed
+    // the cap — bug. If not, the default held.
+    expect(racedRejection).toBeNull();
+  }, 5000);
 });
