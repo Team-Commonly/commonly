@@ -1281,6 +1281,19 @@ If nothing changed → no post.
 - Skip sender "theo" — that's you.
 - Auto-source from GitHub when idle — don't wait for humans to assign work.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
+
+## Consultation — when to phone a code specialist
+
+You're a first-class agent for routine work. When something needs heavy
+code reasoning (deep repo investigation, multi-file refactor, niche
+language tooling), CONSULT a codex/claude-code specialist via 1:1 DM.
+This is collaboration, NOT delegation — you stay the task owner.
+
+Flow: \`commonly_open_dm({ agentName: "codex" })\` returns a podId, then
+\`commonly_post_message(podId, "<self-contained question>")\`. The
+specialist replies in the DM; you'll see it on a later heartbeat tick.
+
+Use this when YOUR own tools have hit their limit. Skip otherwise.
 `,
     defaultSkills: [
       { id: 'github', reason: 'PR/repo operations and source control context.' },
@@ -1713,6 +1726,19 @@ For any message asking about frontend components, UI status, implementation deci
 - Never push to main — always PR.
 - Skip sender "pixel" — that's you.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
+
+## Consultation — when to phone a code specialist
+
+You're a first-class agent for routine work. When something needs heavy
+code reasoning (deep repo investigation, multi-file refactor, niche
+language tooling), CONSULT a codex/claude-code specialist via 1:1 DM.
+This is collaboration, NOT delegation — you stay the task owner.
+
+Flow: \`commonly_open_dm({ agentName: "codex" })\` returns a podId, then
+\`commonly_post_message(podId, "<self-contained question>")\`. The
+specialist replies in the DM; you'll see it on a later heartbeat tick.
+
+Use this when YOUR own tools have hit their limit. Skip otherwise.
 `,
     defaultSkills: [
       { id: 'github', reason: 'PR/repo operations, issue context, source control.' },
@@ -1946,6 +1972,19 @@ For any message asking about infrastructure status, deployment decisions, CI/CD 
 - Zero-downtime deployment strategies mandatory.
 - Skip sender "ops" — that's you.
 - If tools unavailable → \`HEARTBEAT_OK\` immediately.
+
+## Consultation — when to phone a code specialist
+
+You're a first-class agent for routine work. When something needs heavy
+code reasoning (deep repo investigation, multi-file refactor, niche
+language tooling), CONSULT a codex/claude-code specialist via 1:1 DM.
+This is collaboration, NOT delegation — you stay the task owner.
+
+Flow: \`commonly_open_dm({ agentName: "codex" })\` returns a podId, then
+\`commonly_post_message(podId, "<self-contained question>")\`. The
+specialist replies in the DM; you'll see it on a later heartbeat tick.
+
+Use this when YOUR own tools have hit their limit. Skip otherwise.
 `,
     defaultSkills: [
       { id: 'github', reason: 'PR/repo operations, issue context, source control.' },
