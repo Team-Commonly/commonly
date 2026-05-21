@@ -25,6 +25,21 @@ const File = require('../models/File');
 
 const mongoose = require('mongoose');
 
+// Upper bound on how many File rows we fetch per phantom-directive
+// scan. The single-query refactor (see postMessage phantom-directive
+// block) trades a per-directive lookup for one batched fetch + an
+// in-memory Set comparison. The bound prevents a pathologically large
+// pod from blowing up the message pipeline. Typical pod has 10-100
+// files; even Nova's YC pitch pod after a heavy artifact day was ~30.
+// Tunable here without touching the hot path. Override at deploy via
+// env if a real workload ever justifies it.
+const FILE_DIRECTIVE_SCAN_LIMIT = (() => {
+  const raw = process.env.COMMONLY_FILE_DIRECTIVE_SCAN_LIMIT;
+  if (!raw) return 500;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 500;
+})();
+
 let PGMessage: unknown = null;
 try {
   // eslint-disable-next-line global-require
@@ -880,7 +895,7 @@ class AgentMessageService {
             const safePodId = new mongoose.Types.ObjectId(String(podId));
             const podFiles = await File.find({ podId: safePodId })
               .select('fileName originalName')
-              .limit(500)
+              .limit(FILE_DIRECTIVE_SCAN_LIMIT)
               .lean();
             const knownNames = new Set<string>();
             for (const f of podFiles) {

@@ -165,13 +165,16 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
   });
 
   it('matches when the directive references originalName instead of fileName', async () => {
-    // The findOne query checks BOTH fileName and originalName via $or. As
-    // long as the impl includes originalName as an alternative, the lookup
-    // resolves. Mock returns a hit when queried with 'pitch.pptx' as
-    // either field. Tested by having the mock return a row for any name
-    // we configure.
+    // Real scenario: agents sometimes put the human-readable name (the
+    // file's `originalName`) in the directive's first segment instead of
+    // the storage-key `fileName`. The impl's Set comparison must accept
+    // both. Configure the mock to return a row where the storage key
+    // and the human name DIFFER, then make the directive reference the
+    // human name — only the originalName branch can resolve this.
     mockFindAgainst({
-      'pitch.pptx': { _id: 'file-2' },
+      // key is just a label for the test map; the explicit row sets the
+      // two fields independently so we know which one the impl matched.
+      stored: { fileName: 'opaque-storage-key-xyz', originalName: 'pitch.pptx' },
     });
 
     await AgentMessageService.postMessage({
