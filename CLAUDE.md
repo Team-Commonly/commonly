@@ -209,6 +209,58 @@ npm run lint                                  # 0 errors
 - `.agents/skills` is the OpenAI/Codex agent-facing symlink and should point to `../.claude/skills`.
 - Do not recreate `.codex/skills`; it was replaced by `.agents/skills`.
 
+### Knowledge-Base Discipline (IMPORTANT)
+
+**This file and every `SKILL.md` stay slim.** They are anchors — they
+point to deeper material, they do not host it. When new knowledge
+emerges, write a focused doc in the right `docs/` subdir and add a
+pointer from the slim anchor; do not inline the content here.
+
+**Knowledge layout — where things actually live:**
+
+| Tier | Lives in | What it holds | Slim? |
+|---|---|---|---|
+| **Strategic decisions** | `docs/adr/ADR-*.md` (15 ADRs) | Decisions with multi-quarter horizon, irreversibles, the "why" | No — full reasoning belongs in the ADR |
+| **Operational deep docs** | `docs/<area>/` in this repo — already categorized | Runbooks, architecture overviews, integration guides, deployment, design, audits | No — full detail; the durable knowledge base |
+| **Time-stamped facts** | `commonly-skills/memory/<name>.md` (66 entries, see `MEMORY.md` index) | What changed when, what surfaced, what was tried (per the auto-memory schema in the system prompt) | Yes — facts + a pointer to the relevant deep doc |
+| **Skill anchors** | `commonly-skills/<skill>/SKILL.md` (~28 skills) | Capability summary + pointer table into `docs/<area>/` | **Yes** |
+| **CLAUDE.md (this file)** | `/CLAUDE.md` | Product framing, design rules, active tracks, key-doc anchors, slash-command-equivalents | **Yes — slim, never inline** |
+
+**`docs/` is already organized — use the existing categories rather than inventing new ones:**
+
+| Category | When to use |
+|---|---|
+| `docs/adr/` | A strategic decision worth defending across time |
+| `docs/architecture/` | How the system is shaped at a layer (services, data, message flow) |
+| `docs/runbooks/` | "When X happens / when you need to do Y, here's how" — operational |
+| `docs/deployment/` | How to deploy, k8s/Helm specifics, CI/CD, env config |
+| `docs/development/` | Local dev workflows, linting, conventions |
+| `docs/design/` | Design system, UX rationale, brand |
+| `docs/agents/` | Agent-specific behavior, runtime-tier specifics |
+| `docs/ai-features/`, `docs/database/`, `docs/cli/`, `docs/api/`, `docs/openapi/` | Subsystem-specific deep docs |
+| `docs/integrations/` + per-platform `docs/<discord\|slack\|telegram\|whatsapp\|x\|...>/` | Integration deep docs |
+| `docs/audits/`, `docs/plans/`, `docs/skills/`, `docs/marketplace/`, `docs/self-hosting/` | Topic-specific bundles |
+| Top-level `docs/*.md` (e.g. `COMMONLY_SCOPE.md`, `MCP_INTEGRATION.md`, `security-patterns.md`) | Cross-cutting reference one level above any subdir |
+
+If a new doc doesn't fit an existing category, default to `docs/runbooks/` for operational how-to. Create a new subdir only when there are 3+ docs that share a clearly distinct topic.
+
+**Cadence: update the knowledge base after each ship → deploy → verify
+cycle.** Specifically at the end of any session that landed PRs +
+dispatched `Deploy Dev` + confirmed the change live. The trigger
+question: *"Did anything new or surprising surface today?"*
+
+- **Yes** — write a memory entry (always), and a deep doc in the right `docs/<area>/` subdir (only if the pattern is generalizable, not one-off). Update the relevant `SKILL.md` pointer table. Commit the deep doc to `commonly`; commit memory + skill pointer updates to `commonly-skills`.
+- **No** — skip. Repeated empty updates clutter the index.
+
+A clean bug-fix sprint with no new patterns surfaced needs nothing
+beyond the sprint memory entry.
+
+**Audit periodically** (monthly or after a major sprint): scan memory
+for outdated entries; slim bloated `SKILL.md` files by pushing
+long-form content into the appropriate `docs/<area>/` subdir; remove
+dead pointers; consolidate when 3+ memory entries describe the same
+pattern.
+
 ---
 
 ## Development Commands
