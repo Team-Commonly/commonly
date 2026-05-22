@@ -141,7 +141,17 @@ m.connect(process.env.MONGO_URI).then(async ()=>{
   const KEEP_DM_IDS = ['6a01a1ffcf199a9aed01d9d1'];
   const roomRes = await Pod.deleteMany({ type: 'agent-room', createdAt: { \$gt: cutoff }, name: { \$nin: ['Nova', 'Pixel', 'Cody'] } });
   const dmRes = await Pod.deleteMany({ type: 'agent-dm', createdAt: { \$gt: cutoff }, _id: { \$nin: KEEP_DM_IDS.map(id => m.Types.ObjectId.createFromHexString(id)) } });
-  console.log(roomRes.deletedCount + dmRes.deletedCount);
+  // Belt-and-braces: a name-pattern sweep that runs INDEPENDENT of the
+  // cutoff. Catches byo-* test residue that pre-dates cutoff (the
+  // 2026-05-13 BYO smoke run leaked 18 agent-dm pods named
+  // \`byo-smoke-<unix-ts>\` that the cutoff-only filter never touched,
+  // surfaced 2026-05-21 in the V2 inspector's a2a-DMs panel). These
+  // pods are always test artifacts regardless of age — the byo-*
+  // username prefix is reserved for the self-serve install smoke
+  // (scripts/smoke-test-demo.sh:252 b3_name="byo-smoke-\$(date +%s)").
+  const byoRoomRes = await Pod.deleteMany({ type: 'agent-room', name: /^byo-/ });
+  const byoDmRes = await Pod.deleteMany({ type: 'agent-dm', name: /^byo-/, _id: { \$nin: KEEP_DM_IDS.map(id => m.Types.ObjectId.createFromHexString(id)) } });
+  console.log(roomRes.deletedCount + dmRes.deletedCount + byoRoomRes.deletedCount + byoDmRes.deletedCount);
   process.exit(0);
 })" 2>/dev/null | tail -1)
 echo "[reset]     deleted $deleted_rooms test pod(s)"
