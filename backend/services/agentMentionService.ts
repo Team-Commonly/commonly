@@ -350,6 +350,93 @@ const formatPodContextFrame = (podId: string): string =>
   `When reading files referenced via [[upload:fileName|...]] in this thread, call ` +
   `commonly_read_attachment({ fileName }) — it returns the extracted text in one shot.]`;
 
+// Cross-runtime consultation cue. Companion to the pod-context frame
+// above; same rationale (inline cue beats structured metadata per
+// ADR-012 §9 + pod-context-cue precedent + smoke 2026-05-20 evidence
+// that openclaw agents won't autonomously discover collaboration
+// affordances — Pixel's cycle-2 "exec tool is unavailable" was an
+// agent failing to consult anyone for code work she couldn't do alone).
+//
+// Openclaw agents stay first-class; the heavy-coding runtime lives on
+// cloud-codex / claude-code adapters. For non-trivial code work
+// (writing, debugging, refactoring, repo ops), openclaw agents should
+// consult a specialist via 1:1 DM instead of refusing capability.
+// commonly_open_dm already exists in the openclaw extension; this cue
+// makes the call shape impossible to overlook.
+//
+// Token cost: ~70 per mention. Skipped for events going TO a
+// code specialist (recursive consult is noise + loop risk).
+const formatConsultationCue = (): string =>
+  `[Collaboration: for code-heavy work (writing/debugging/refactoring/repo ops) ` +
+  `you can consult a coding specialist via 1:1 DM. Call ` +
+  `commonly_open_dm({ agentName: "codex" }) — returns a podId — then ` +
+  `commonly_post_message(podId, question). Works when the specialist ` +
+  `is already a peer in one of your shared pods (if you get a 403, ` +
+  `they're not — skip). Skip for non-code asks.]`;
+
+// Reply-mechanics cue against the openclaw heartbeat-clobbers-mention
+// bug. Smoke 2026-05-20 produced 3 reproductions (Nova c3, Pixel c7,
+// Ops c7): when an agent processes a chat.mention AND a heartbeat
+// trigger fires in the same model session before the mention reply is
+// committed, the openclaw run-loop's final-turn auto-post emits
+// HEARTBEAT_OK (the LAST assistant turn) and CLOBBERS the in-flight
+// mention answer. Nova's session log proves it — she produced a 7-row
+// table in assistant content, her next assistant turn was
+// HEARTBEAT_OK, and the table never landed in pod chat.
+//
+// Upstream fix in the openclaw fork is a larger change. This kernel-
+// side mitigation: tell the model NOT to rely on the implicit final-
+// turn auto-post; instead, EXPLICITLY call commonly_post_message as
+// soon as the mention answer is ready. Once committed via tool call,
+// any subsequent heartbeat trigger is harmless.
+//
+// chat.mention only — thread.mention replies post via a different
+// path (thread comments aren't subject to the same final-turn auto-
+// post race), so the cue would be noise there.
+const formatMentionReplyCue = (podId: string): string =>
+  `[Reply mechanics: post your reply by calling commonly_post_message(` +
+  `{ podId: "${podId}", content: <your-reply> }) as soon as it's ready, ` +
+  `BEFORE returning your final assistant turn. Do NOT rely on the implicit ` +
+  `final-turn auto-post — a heartbeat trigger arriving mid-session can ` +
+  `overwrite your final turn with HEARTBEAT_OK and your reply will never ` +
+  `reach the pod (openclaw heartbeat-clobber-mention bug, 3 reproductions ` +
+  `2026-05-20). Post-then-stop is the safe sequence.]`;
+
+// Agents whose runtime IS a code specialist shouldn't be told to consult
+// themselves — would be noise + risk loop-forming.
+const isCodeSpecialistAgent = (agentName: string | undefined | null): boolean => {
+  const a = String(agentName || '').toLowerCase();
+  return a === 'codex' || a === 'cloud-codex' || a === 'claude-code';
+};
+
+// Compose the payload.content prefix per event type AND target runtime.
+// All chat.mention events get a reply-mechanics cue (heartbeat-clobber
+// mitigation); thread.mention events skip it. All non-specialist targets
+// get a consultation cue (cross-runtime collab nudge); specialists skip
+// it. Both pieces compose with the pod-context cue that fires for
+// every mention.
+//
+// Final shapes:
+//   chat.mention + non-specialist  → [Pod] [Collab] [Reply] body
+//   chat.mention + specialist      → [Pod] [Reply] body
+//   thread.mention + non-specialist→ [Pod] [Collab] body
+//   thread.mention + specialist    → [Pod] body
+const buildContentForTarget = (
+  podId: string,
+  rawContent: string,
+  eventType: 'chat.mention' | 'thread.mention',
+  targetAgentName: string,
+): string => {
+  const frames: string[] = [formatPodContextFrame(podId)];
+  if (!isCodeSpecialistAgent(targetAgentName)) {
+    frames.push(formatConsultationCue());
+  }
+  if (eventType === 'chat.mention') {
+    frames.push(formatMentionReplyCue(podId));
+  }
+  return `${frames.join('\n')}\n\n${rawContent}`;
+};
+
 const enqueueMentions = async ({
   podId,
   message,
@@ -357,13 +444,12 @@ const enqueueMentions = async ({
   username,
 }: EnqueueMentionsOptions): Promise<EnqueueResult> => {
   const rawContent = message?.content || message?.text || '';
-  // Prepend the pod-context cue so the model sees the podId inline
-  // (envelope `podId` field alone is insufficient — see frame doc above).
-  // Keep the un-framed `rawContent` for the autoJoin path below where we
-  // need to scan the original mentions; the frame is added at enqueue time.
-  const content = `${formatPodContextFrame(podId)}\n\n${rawContent}`;
   const source = message?.source || 'chat';
-  const eventType = source === 'thread' ? 'thread.mention' : 'chat.mention';
+  const eventType: 'chat.mention' | 'thread.mention' = source === 'thread' ? 'thread.mention' : 'chat.mention';
+  // Per-target content composition: see buildContentForTarget above for
+  // the four-case matrix (chat-vs-thread × specialist-vs-not). Each
+  // enqueue site below passes its own `targetAgentName` so the cue
+  // composition is correct for that target's runtime.
   const rawMentions = extractMentions(rawContent);
   if (!podId || rawMentions.length === 0) {
     return { enqueued: [], skipped: [] };
@@ -442,7 +528,7 @@ const enqueueMentions = async ({
               messageId: message?._id || message?.id
                 ? String(message?._id || message?.id)
                 : undefined,
-              content,
+              content: buildContentForTarget(podId, rawContent, eventType, directMatch.agentName),
               userId,
               username,
               mentions: rawMentions,
@@ -490,7 +576,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content,
+                  content: buildContentForTarget(podId, rawContent, eventType, resolved.agentName),
                   userId,
                   username,
                   mentions: rawMentions,
@@ -550,7 +636,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content,
+                  content: buildContentForTarget(podId, rawContent, eventType, agentType),
                   userId,
                   username,
                   mentions: rawMentions,
