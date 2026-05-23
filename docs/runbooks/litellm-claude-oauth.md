@@ -99,12 +99,47 @@ shape, OAuth token scope, etc.
 | Δ shows in `extra_usage`, billed at API rates | Anthropic detects the proxy hop — proxy still works but costs per call | Decide: pay the `extra_usage` rate for centralized observability/quota, OR fall back to `ANTHROPIC_API_KEY` (which has known cost) |
 | Δ shows in BOTH pools | Likely a misclassification or double-count — file with Anthropic | Hold rollout |
 | Call fails with `"OAuth authentication is currently not supported"` | LiteLLM is dropping the Bearer header despite the flags | Check LiteLLM version (need ≥ v1.83 per BerriAI/litellm PR #19912); confirm both `general_settings` flags reach the proxy |
+| Call fails with `401 Authentication Error, Invalid proxy server token passed ... Unable to find token in cache or LiteLLM_VerificationTokenTable` | LiteLLM `master_key` is set, so the proxy authenticates the inbound `Authorization` header against its own virtual-key table **before** the forward flags get a chance to act. The OAuth bearer never reaches the upstream-forwarding stage. | See "Forward flags vs `master_key` — incompatible by default" below. |
 
 Record the result here once verified:
 
-- **Verified date:**
-- **Outcome:**
-- **Decision:**
+- **Verified date:** 2026-05-22
+- **Outcome:** Verification BLOCKED. Both config flags landed in the running pod (verified via `kubectl exec litellm -c litellm -- grep -E "forward_client_headers_to_llm_api|forward_llm_provider_auth_headers" /app/config.yaml`) and the litellm Deployment was rolled to pick them up (Helm doesn't restart on ConfigMap-only changes — required `kubectl rollout restart deployment/litellm`). The laptop test `ANTHROPIC_BASE_URL=https://litellm-dev.commonly.me claude -p '...'` returned the 5th-row failure above — LiteLLM's `master_key` (set from `LITELLM_MASTER_KEY` env) gates incoming requests at its own proxy-auth layer, rejecting the Claude Code OAuth bearer as "Invalid proxy server token" before `forward_llm_provider_auth_headers` can forward it.
+- **Decision:** The two config flags shipped in PR #428 are necessary but not sufficient. The next iteration needs one of: (a) drop `master_key` on a dedicated `/v1/messages` route (public-internet exposure risk), (b) put a layer-7 proxy in front of LiteLLM that rewrites Claude Code's `Authorization` → upstream-forward header + injects `LITELLM_MASTER_KEY` as the proxy bearer, or (c) accept that the OAuth-pass-through path is incompatible with Claude Code CLI's single-Authorization-header model and fall back to `ANTHROPIC_API_KEY` (see "Why not just use ANTHROPIC_API_KEY" below). No `cloud-claude-code` Deployment exists yet, so no immediate consumer is blocked — parking the iteration until a real cluster-side Claude Code agent is provisioned and the choice becomes load-bearing.
+
+## Forward flags vs `master_key` — incompatible by default
+
+The current LiteLLM ConfigMap sets `general_settings.master_key:
+os.environ/LITELLM_MASTER_KEY` so codex CLI sidecars and other
+internal callers can authenticate to the proxy with a known shared
+key. This same `master_key` setting is what causes the OAuth
+pass-through path to 401: LiteLLM treats the inbound `Authorization`
+header as the proxy-auth credential and validates it against its
+`LiteLLM_VerificationTokenTable` before the forward flags run.
+
+Claude Code CLI sends exactly one `Authorization` header per request
+(its OAuth bearer) — there's no way to supply a separate proxy key
+alongside it. So `master_key` + `forward_llm_provider_auth_headers`
+are mutually exclusive from a single-header client's perspective.
+
+Resolution options when a `cloud-claude-code` Deployment lands:
+
+1. **Drop `master_key` on a dedicated route.** Expose a second LiteLLM
+   route or instance with no `master_key`, scoped to Anthropic models
+   only, behind cluster-internal network only (no Cloudflare tunnel).
+   Public exposure of an unauthenticated proxy is unacceptable.
+2. **Rewriting front-proxy.** Put a small auth shim (e.g. an
+   `envoyproxy` filter or a single-purpose Cloudflare Worker) in
+   front of LiteLLM that strips the inbound `Authorization`, stashes
+   it as `x-anthropic-passthrough-auth`, and injects
+   `LITELLM_MASTER_KEY` as the new `Authorization` for LiteLLM. Then
+   add a LiteLLM custom callback that copies that header back into
+   the upstream request. Most flexible but most code.
+3. **Fall back to `ANTHROPIC_API_KEY`.** Per "Why not just use
+   ANTHROPIC_API_KEY" below — predictable cost, no per-user
+   attribution, no quota-pool ambiguity. Recommended default unless
+   the verification matrix above lands in the green cell, which we
+   cannot test until (1) or (2) lets us run the call.
 
 ## Why not just use `ANTHROPIC_API_KEY`?
 
