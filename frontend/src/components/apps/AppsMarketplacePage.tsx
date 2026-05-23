@@ -168,18 +168,36 @@ const AppsMarketplacePage: React.FC = () => {
     setError(null);
 
     try {
+      // PR #215/#230 backend lives at /api/marketplace/* with an Installable
+      // schema. The legacy /api/apps/marketplace* routes never lit up in dev,
+      // so v2 mounted this page on top of a dead endpoint surface. This wires
+      // browse onto the shipped endpoint; the App[] shim below stays narrow
+      // (only the fields AppCard renders).
+      //
+      // Param mapping: search→q (text-index search), category passthrough,
+      // type→kind. sort/page/limit default to backend's installs/1/20.
       const params = new URLSearchParams();
-      if (searchQuery) params.append('search', searchQuery);
+      if (searchQuery) params.append('q', searchQuery);
       if (category !== 'all') params.append('category', category);
-      if (typeFilter !== 'all') params.append('type', typeFilter);
+      if (typeFilter !== 'all') params.append('kind', typeFilter);
 
-      const [appsRes, featuredRes] = await Promise.all([
-        axios.get(`/api/apps/marketplace?${params.toString()}`),
-        axios.get('/api/apps/marketplace/featured'),
-      ]);
+      const browseRes = await axios.get(`/api/marketplace/browse?${params.toString()}`);
+      const items = ((browseRes.data as { items?: any[] }).items) || [];
+      // Map Installable doc to the loose App shape AppCard consumes
+      // (id/name/displayName/installationId + everything else via the
+      // index signature). Keep the original doc accessible via spread so
+      // downstream renderers can still reach Installable-only fields.
+      const mapped: App[] = items.map((it: any) => ({
+        ...it,
+        id: String(it._id ?? it.id ?? ''),
+        name: it.name,
+        displayName: it.marketplace?.displayName || it.name,
+      }));
 
-      setApps((appsRes.data as { apps?: App[] }).apps || []);
-      setFeatured((featuredRes.data as { apps?: App[] }).apps || []);
+      setApps(mapped);
+      // Featured shelf isn't shipped on the new endpoint family yet; surface
+      // the first 4 of the browse list as a stand-in so the row isn't empty.
+      setFeatured(mapped.slice(0, 4));
     } catch (err) {
       console.error('Error loading marketplace apps:', err);
       setError('Failed to load apps marketplace');

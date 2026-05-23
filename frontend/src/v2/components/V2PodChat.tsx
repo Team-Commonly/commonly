@@ -506,12 +506,13 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     ? botMembers.slice(0, 2).map((m) => m.username || 'Agent')
     : null;
 
-  const handleSend = async () => {
-    if (!draft.trim() || sending) return;
+  const handleSend = async (override?: string) => {
+    const text = (override ?? draft).trim();
+    if (!text || sending) return;
     setSending(true);
     setComposerError(null);
     try {
-      const created = await sendMessage(draft);
+      const created = await sendMessage(text);
       if (created) setDraft('');
     } finally {
       setSending(false);
@@ -712,7 +713,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                                 type="button"
                                 role="listitem"
                                 className="v2-empty__chip"
-                                onClick={() => setDraft(s)}
+                                onClick={() => handleSend(s)}
                               >
                                 {s}
                               </button>
