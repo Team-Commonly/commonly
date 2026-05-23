@@ -1,68 +1,67 @@
-# LiteLLM Claude Code — OAuth Pass-Through
+# LiteLLM Anthropic Routing (cluster API key)
 
-How both cluster-side (`cloud-claude-code`, future) and operator-laptop
-Claude Code use the Commonly LiteLLM as a stable proxy to
-`api.anthropic.com`, with the caller's OAuth bearer (Max
-subscription) passed through unchanged. Follows the official LiteLLM
-pattern from
-<https://docs.litellm.ai/docs/tutorials/claude_code_max_subscription>.
+How cluster-side `cloud-claude-code` runtime pods and openclaw moltbots
+(any caller in the cluster that needs Claude models) use the Commonly
+LiteLLM as a stable proxy to `api.anthropic.com`. Same pattern every
+other LiteLLM caller already uses (`cloud-codex`, backend services,
+dev/community moltbots for ChatGPT/OpenRouter): virtual key in
+`Authorization`, LiteLLM substitutes the cluster's own
+`ANTHROPIC_API_KEY` upstream.
 
 ## Architecture
 
 ```
-laptop Claude Code ─┐                              ┌─► api.anthropic.com
-                    ├─► litellm-dev.commonly.me ─► LiteLLM ─► (forwards caller's
-cloud-claude-code ──┘  (or http://litellm:4000          OAuth bearer unchanged)
-                       from inside cluster)
+cloud-claude-code pod ─┐
+                       ├─► http://litellm:4000 ─► LiteLLM ─► api.anthropic.com
+openclaw moltbot ──────┘    (or litellm-dev.commonly.me)    (uses cluster's
+                                                              ANTHROPIC_API_KEY)
 ```
 
-Two headers on the inbound request:
+Caller sends:
 
-- `x-litellm-api-key: Bearer sk-<litellm-virtual-key>` — proxy auth,
-  validated against `LiteLLM_VerificationTokenTable`, applies per-key
-  limits (rpm/tpm/spend, allowed models, etc.). Set client-side via
-  `ANTHROPIC_CUSTOM_HEADERS`.
-- `Authorization: Bearer sk-ant-oat01-*` — the caller's own Claude
-  Code OAuth bearer. Forwarded unchanged to `api.anthropic.com` via
-  `general_settings.forward_client_headers_to_llm_api: true` so the
-  call bills against the caller's Max subscription, not against any
-  cluster-owned key.
+- `Authorization: Bearer sk-<litellm-virtual-key>` — per-identity
+  LiteLLM virtual key (issued via `/key/generate`, validated against
+  `LiteLLM_VerificationTokenTable`, scopes models + applies
+  rpm/tpm/spend limits)
+- Standard Anthropic request body (`{"model": "claude-opus-4-7", ...}`)
 
-The split-header pattern is what makes `master_key` + OAuth
-coexist: proxy auth lives in `x-litellm-api-key`, leaving
-`Authorization` free for the upstream OAuth bearer. (PR #428 tried
-to put both in `Authorization` and master_key consumed the bearer
-before it could be forwarded — fixed by switching to the
-custom-header pattern.)
+LiteLLM validates the key, applies per-key limits, then calls
+`api.anthropic.com` using the cluster's own `ANTHROPIC_API_KEY` (set
+on the litellm Deployment env, populated from `api-keys` secret via
+ESO). Calls bill against the cluster's prepaid Anthropic API credit
+pool (~$200/mo as of 2026-06-15).
 
 The four `claude-*` model entries in
 `k8s/helm/commonly/templates/configmaps/litellm-config.yaml` declare
-the routing. They have **no `api_key` fallback** — every caller must
-bring its own credential (OAuth bearer or `x-api-key` for BYOK
-mode). A global fallback would mask credential bugs as silent
-upstream 401s and defeat per-caller billing attribution.
+the routing. No forward-headers flags — the proxy substitutes its
+own upstream credential, which is the standard LiteLLM operating
+mode and what cloud-codex / openclaw moltbots already do for the
+Codex + OpenRouter providers.
+
+## Prerequisite — real `ANTHROPIC_API_KEY` in the cluster
+
+As of writing, the `anthropic-api-key` slot in the `api-keys` secret
+holds the literal string `placeholder`. **Until the real Anthropic
+API key is provisioned (target: 2026-06-15), any call to a `claude-*`
+model returns `401 invalid x-api-key` upstream.** No current consumers
+exist, so this dormant 401 affects nothing — but anyone testing the
+Anthropic path before 6/15 will hit it.
+
+To provision (do this on 6/15 or when the $200/mo credit lands):
+
+1. Get the real API key from <https://console.anthropic.com/settings/keys>
+   (the account holding the prepaid credit).
+2. Push it into GCP SM: `gcloud secrets versions add anthropic-api-key
+   --data-file=<file with the key>` (operator-private project).
+3. Force ESO sync: `kubectl annotate externalsecret api-keys
+   force-sync=$(date +%s) -n commonly-dev --overwrite`.
+4. Wait ~10s for ESO to reconcile, then `kubectl rollout restart
+   deployment/litellm -n commonly-dev` so the env var is re-read on
+   pod start (LiteLLM doesn't hot-reload secrets).
+
+After step 4, the path goes live with no further changes needed.
 
 ## Configuration
-
-### Operator-laptop Claude Code
-
-Claude Code reads its OAuth bearer from `~/.claude/.credentials.json`
-(or macOS Keychain — version-dependent). Point it at the cluster
-proxy with the virtual key in the custom header:
-
-```bash
-export ANTHROPIC_BASE_URL=https://litellm-dev.commonly.me
-export ANTHROPIC_CUSTOM_HEADERS="x-litellm-api-key: Bearer sk-<your-virtual-key>"
-# Claude Code's OAuth bearer lands in Authorization automatically
-claude
-```
-
-To revert: `unset ANTHROPIC_BASE_URL ANTHROPIC_CUSTOM_HEADERS` —
-Claude Code goes back to hitting `api.anthropic.com` direct.
-
-**Do NOT also set `ANTHROPIC_API_KEY`** — that would replace the
-OAuth bearer with an API key and you'd be in BYOK mode (calls bill
-against that API key, not your subscription).
 
 ### Cluster-side `cloud-claude-code` Deployment (future)
 
@@ -72,36 +71,32 @@ Parallel to `cloud-codex` — every per-pod Deployment gets:
 env:
   - name: ANTHROPIC_BASE_URL
     value: "http://litellm:4000"
-  - name: ANTHROPIC_CUSTOM_HEADERS
+  - name: ANTHROPIC_API_KEY
     valueFrom:
       secretKeyRef:
         name: claude-code-litellm-keys
-        key: <pod-name>   # "x-litellm-api-key: Bearer sk-<vk>"
-  # No ANTHROPIC_API_KEY — Claude Code uses its mounted OAuth credentials
-  # for the Authorization header
+        key: <pod-name>   # one virtual key per pod, scoped + rate-limited
 ```
 
 The cluster-side runtime Deployment template doesn't exist yet — it
 will be added when the first `cloud-claude-code` agent is
-provisioned, alongside its OAuth seeding strategy (see
-"OAuth seeding" below).
+provisioned.
 
-### BYOK mode (alternative)
+### Openclaw moltbots needing Claude
 
-For callers that prefer to supply their own Anthropic API key
-instead of an OAuth bearer:
+Same as how dev moltbots get `openai-codex/*` via the LiteLLM proxy:
+per-agent model override pointing at `claude-*` model names. Gating
+must be added in the same shape as the existing `openai-codex/*`
+hard-assertion in `applyOpenClawModelDefaults` to prevent community
+agents from leaking onto the paid pool.
 
-```bash
-export ANTHROPIC_BASE_URL=https://litellm-dev.commonly.me
-export ANTHROPIC_CUSTOM_HEADERS="x-litellm-api-key: Bearer sk-<virtual-key>"
-export ANTHROPIC_API_KEY="sk-ant-..."  # Anthropic API key
-```
+### Operator-laptop Claude Code
 
-`general_settings.forward_llm_provider_auth_headers: true` forwards
-the `x-api-key` header (which Claude Code sends when
-`ANTHROPIC_API_KEY` is set) to `api.anthropic.com`. Calls bill
-against that API key. Useful for testing or for callers who don't
-want subscription attribution.
+Use Anthropic direct — `unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY`
+and Claude Code talks to `api.anthropic.com` straight. Your Max
+subscription absorbs the cost; no virtual-key bookkeeping; no extra
+hop. The LiteLLM proxy adds no value for solo laptop use (verified
+2026-05-23, see [[project-litellm-claude-code-oauth]]).
 
 ## Issuing a virtual key
 
@@ -121,92 +116,37 @@ curl -s -X POST http://localhost:14000/key/generate \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "key_alias": "claude-code-laptop-<operator>",
+    "key_alias": "<pod-or-agent-name>",
     "models": [
       "claude-opus-4-7",
       "claude-sonnet-4-6",
       "claude-haiku-4-5",
       "claude-haiku-4-5-20251001"
     ],
-    "max_budget": 50,
+    "max_budget": 20,
     "budget_duration": "30d",
-    "metadata": {"purpose": "laptop-claude-code", "operator": "<name>"}
+    "metadata": {"purpose": "<consumer>", "owner": "<who>"}
   }'
 
 kill $PF_PID
 ```
 
-The response includes `"key": "sk-..."` — store it in your laptop's
-shell rc or secrets manager, then set `ANTHROPIC_CUSTOM_HEADERS` per
-the laptop config above. Lost keys are revocable via `/key/delete`
-and re-issuable; the key string itself is not recoverable after
-generation.
+The response includes `"key": "sk-..."` — store it in the per-pod
+Secret. Lost keys are revocable via `/key/delete` and re-issuable;
+the key string itself is not recoverable after generation.
 
-Per-pod keys for future `cloud-claude-code` Deployments follow the
-same recipe — one `/key/generate` per pod at provision time, written
-into the per-pod secret the Deployment env mounts.
+Set `max_budget` conservatively per-key. With $200/mo total credit
+shared across all consumers, runaway agents are a real risk —
+per-key spend caps are the brake.
 
-## Verification
+## History — what didn't work
 
-End-to-end smoke from operator laptop, after issuing a virtual key
-+ confirming `~/.claude/.credentials.json` (or Keychain) has a
-valid OAuth bearer:
-
-```bash
-export ANTHROPIC_BASE_URL=https://litellm-dev.commonly.me
-export ANTHROPIC_CUSTOM_HEADERS="x-litellm-api-key: Bearer sk-<vk>"
-claude -p "reply with exactly: pong"
-```
-
-Expected: `pong` in the response. Verify in LiteLLM Logs UI
-(<https://litellm-dev.commonly.me/ui/>) that the request landed,
-with the `key_alias` matching your laptop key — confirms proxy auth
-worked. Verify on Anthropic's usage page
-(<https://www.anthropic.com/account/usage>) that the call landed in
-the subscription pool — confirms OAuth was forwarded upstream and
-honored.
-
-If `pong` came back but the Anthropic usage page shows the call in
-`extra_usage` instead of the subscription pool, see "Why might the
-call still bill `extra_usage`?" below.
-
-## Why might the call still bill `extra_usage`?
-
-Anthropic's 2026-04-04 policy routes third-party-tool Claude Code
-OAuth use to a separate paid `extra_usage` pool, NOT the user's Max
-subscription quota. Whether a LiteLLM-proxied call counts as
-"Claude Code itself" (subscription) or "third-party tool"
-(extra_usage) depends on how Anthropic fingerprints the request:
-User-Agent, anthropic-version, client_id in the OAuth token scope,
-etc.
-
-`forward_client_headers_to_llm_api: true` forwards User-Agent +
-`anthropic-version` + `anthropic-beta` headers verbatim, so a
-proxied call looks structurally identical to a direct one. But if
-Anthropic ever ties classification to TLS fingerprint, source IP,
-or other transport-layer signal we can't impersonate from a
-different host, proxied calls will land in `extra_usage`.
-
-Empirical: if your test call lands in `extra_usage`, the proxy still
-works — it just costs per-token at API rates. Decide whether to
-keep the path for centralized observability/quota or fall back to
-BYOK mode with a real API key.
-
-## OAuth seeding (cluster-side, future)
-
-When the first `cloud-claude-code` Deployment lands, Claude Code
-OAuth tokens for the cluster-side identity will need to be device-
-auth'd **from inside the cluster** IF Anthropic implements IP-binding
-the way ChatGPT does. As of 2026-05-22 there's no public evidence
-that Anthropic IP-binds Claude Code OAuth tokens (claude-code#44587
-is an open feature *request* for this exact behavior), so a
-laptop-auth'd token can probably be uploaded directly. Re-verify
-before the first production deploy.
-
-If IP-binding turns out to apply, mirror the cluster-side device-
-auth pattern from `cloud-codex` (`litellm-deployment.yaml` already
-has a `codex-cli` sidecar for the same purpose — a `claude-code-cli`
-sidecar would be the parallel).
+| Approach | PR | Status | Why rejected |
+|---|---|---|---|
+| OAuth bearer in Authorization, forward to upstream | #428 | Reverted | `master_key` consumes the inbound Authorization at the proxy-auth gate before forward flags fire — Claude Code's single-Authorization-header model is incompatible |
+| Virtual key in Authorization, drop OAuth entirely (fall back to cluster `ANTHROPIC_API_KEY`) | #430 | Superseded by #432 then this PR | Right pattern, but at the time we believed we wanted OAuth subscription billing |
+| OAuth in Authorization + virtual key in `x-litellm-api-key` (split-header) via `ANTHROPIC_CUSTOM_HEADERS` | #432 | Reverted by this PR | Works end-to-end and bills against Max subscription (verified 2026-05-23, $1.22 of API-equivalent activity → zero `extra_usage` delta), but multiplexing one Max across cluster pods raises TOS concerns, needs an OAuth refresh sidecar, and concentrates quota — and once the $200/mo API credit lands this complexity buys nothing the predictable BYOK doesn't already buy |
+| **Virtual key + cluster `ANTHROPIC_API_KEY` (this PR)** | this | **Live (pending 6/15 key provisioning)** | Matches every other LiteLLM caller. Predictable billing, no refresh sidecar, no TOS risk, per-key spend caps as the brake on runaway agents |
 
 ## Operational notes
 
@@ -229,18 +169,11 @@ sidecar would be the parallel).
 - **Spend tracking** lands in `LiteLLM_SpendLogs` (retention capped
   at 7d via `maximum_spend_logs_retention_period` to keep the table
   from growing unbounded — see config comment).
-- **`ANTHROPIC_API_KEY` in the cluster's `api-keys` secret is
-  currently `placeholder`** (verified 2026-05-22) and that's OK
-  for the OAuth path — the model entries no longer carry an
-  `api_key` fallback, so the env var is unreferenced for these
-  routes. BYOK callers supply their own key per request.
+- **$200/mo is finite.** Per-key `max_budget` is the brake against
+  runaway agents. Default to conservative caps and raise on demand.
 
 ## References
 
-- LiteLLM Claude Code Max OAuth tutorial:
-  <https://docs.litellm.ai/docs/tutorials/claude_code_max_subscription>
-- LiteLLM Claude Code BYOK tutorial:
-  <https://docs.litellm.ai/docs/tutorials/claude_code_byok>
 - LiteLLM virtual key docs:
   <https://docs.litellm.ai/docs/proxy/virtual_keys>
 - `/key/generate` API:
@@ -248,10 +181,5 @@ sidecar would be the parallel).
 - Parallel pattern in this repo: `cloud-codex` (uses
   `LITELLM_API_KEY` env var as the virtual-key bearer in
   `Authorization` when calling `http://litellm:4000/v1` from inside
-  the cluster — different from this path because codex CLI has no
-  OAuth, so the virtual key takes Authorization directly).
-- Why `forward_*_headers` + `master_key` need the split-header
-  pattern: the `x-litellm-api-key` header was added by LiteLLM
-  specifically to give proxy auth its own header lane so OAuth
-  bearers in Authorization can be forwarded — see the Max tutorial
-  link above.
+  the cluster — same Authorization-only shape as this Anthropic
+  path).
