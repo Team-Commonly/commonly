@@ -248,6 +248,22 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       resolvedGateway = await resolveGatewayForRequest({ gatewayId, userId });
       runtimeConfig.gatewayId = resolvedGateway._id.toString();
     }
+    // Fall back to the registry manifest's declared runtimeType when the caller
+    // didn't pick one. Without this, native first-party apps installed via the
+    // v2 UI land with runtimeType=null → events route to the external queue
+    // (which has no listener for native apps) → agent never replies. The
+    // demo-pod seed path already sets runtimeType='native' explicitly; this
+    // mirrors that for every other install target.
+    if (!runtimeConfig.runtimeType) {
+      const manifestRuntimeType = String(
+        (agent.manifest as any)?.runtime?.runtimeType
+        || (agent.manifest as any)?.runtime?.type
+        || '',
+      ).toLowerCase();
+      if (manifestRuntimeType) {
+        runtimeConfig.runtimeType = manifestRuntimeType;
+      }
+    }
     if (Object.keys(runtimeConfig).length) {
       installConfig.runtime = runtimeConfig;
     }
