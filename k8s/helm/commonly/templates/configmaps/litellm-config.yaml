@@ -183,52 +183,50 @@ data:
           model: openai/gpt-image-1
           api_key: os.environ/OPENAI_API_KEY
 
-      # --- Anthropic (Claude Code via virtual key + cluster ANTHROPIC_API_KEY) ---
+      # --- Anthropic (Claude Code OAuth pass-through OR BYOK) ---
       # Two consumers will point at these entries:
       #   1. cluster-side `cloud-claude-code` runtime pods (Deployment templated
       #      parallel to cloud-codex) — set ANTHROPIC_BASE_URL=http://litellm:4000
-      #      and ANTHROPIC_API_KEY=<per-pod virtual key>
-      #   2. operator-laptop Claude Code via litellm-dev.commonly.me — sets
-      #      ANTHROPIC_BASE_URL=https://litellm-dev.commonly.me and
-      #      ANTHROPIC_API_KEY=<operator virtual key>
+      #      and ANTHROPIC_CUSTOM_HEADERS="x-litellm-api-key: Bearer sk-<vk>"
+      #      (per-pod virtual key for proxy auth); Claude Code's own OAuth
+      #      bearer goes in Authorization and is forwarded upstream
+      #   2. operator-laptop Claude Code via litellm-dev.commonly.me — same:
+      #      ANTHROPIC_BASE_URL + ANTHROPIC_CUSTOM_HEADERS for the virtual key
       #
-      # Auth model matches every other LiteLLM caller in the cluster (codex CLI,
-      # backend services, dev/community moltbots): caller sends its LiteLLM
-      # virtual key as the `Authorization` bearer; LiteLLM validates it against
-      # LiteLLM_VerificationTokenTable; on hit, LiteLLM forwards the request
-      # upstream using the cluster's own ANTHROPIC_API_KEY (api_key below).
+      # Auth model follows the official LiteLLM Claude Code Max OAuth pattern
+      # (docs.litellm.ai/docs/tutorials/claude_code_max_subscription):
+      #   - x-litellm-api-key header carries the LiteLLM virtual key (proxy
+      #     auth, validated against LiteLLM_VerificationTokenTable)
+      #   - Authorization header carries the caller's OAuth bearer
+      #     (sk-ant-oat01-*) and is forwarded to api.anthropic.com via
+      #     general_settings.forward_client_headers_to_llm_api below
+      #   - BYOK fallback: caller sends x-api-key with their own Anthropic
+      #     key; forwarded upstream via forward_llm_provider_auth_headers
+      #
+      # NO api_key fallback on these entries — the caller MUST bring its own
+      # credential (OAuth bearer or x-api-key). This is deliberate: a global
+      # ANTHROPIC_API_KEY fallback would (a) mask placeholder/invalid keys
+      # behind silent upstream 401s and (b) defeat the per-caller billing
+      # attribution that's the whole point of the OAuth path.
       #
       # Per-key scoping (models[], rpm/tpm/spend limits, key_alias) is set at
       # `/key/generate` time — see docs/runbooks/litellm-claude-code.md.
-      #
-      # Claude Code OAuth pass-through was considered (forward_client_headers
-      # + forward_llm_provider_auth_headers) but the proxy's master_key gate
-      # consumes the inbound Authorization header before the forward flags
-      # can act, and that's fundamentally incompatible with Claude Code CLI's
-      # single-Authorization-header model. Virtual key is the standard pattern
-      # the rest of the cluster uses; we use it here too. Trade-off accepted:
-      # calls bill against the cluster's ANTHROPIC_API_KEY at API rates rather
-      # than the operator's Max subscription.
       - model_name: claude-opus-4-7
         litellm_params:
           model: anthropic/claude-opus-4-7
-          api_key: os.environ/ANTHROPIC_API_KEY
 
       - model_name: claude-sonnet-4-6
         litellm_params:
           model: anthropic/claude-sonnet-4-6
-          api_key: os.environ/ANTHROPIC_API_KEY
 
       - model_name: claude-haiku-4-5
         litellm_params:
           model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
 
       # Versioned alias — Claude Code sometimes sends date-suffixed IDs
       - model_name: claude-haiku-4-5-20251001
         litellm_params:
           model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
 
     router_settings:
       # The codex-auth-rotator sidecar rotates Codex accounts every 10 min on
@@ -290,6 +288,23 @@ data:
       store_model_in_db: true
       # Allow UI access
       ui_access_mode: "all"
+      # Forward client request headers (User-Agent, anthropic-version,
+      # anthropic-beta, AND Authorization) to the upstream LLM provider.
+      # Required for the official Claude Code Max OAuth pass-through path
+      # (docs.litellm.ai/docs/tutorials/claude_code_max_subscription):
+      # caller's OAuth bearer rides in Authorization and is forwarded to
+      # api.anthropic.com so the call bills against their Max subscription.
+      # Proxy auth lives in x-litellm-api-key (set client-side via
+      # ANTHROPIC_CUSTOM_HEADERS) so it does NOT collide with the
+      # Authorization header — that's how master_key + OAuth coexist.
+      forward_client_headers_to_llm_api: true
+      # Forward the client's x-api-key header through to the provider
+      # instead of substituting the proxy's own. Required for BYOK mode
+      # (caller supplies their own Anthropic key via x-api-key); harmless
+      # for the OAuth-only path. Distinct flag from forward_client_headers
+      # above because LiteLLM's x-api-key handling lives in a separate code
+      # path inside the proxy.
+      forward_llm_provider_auth_headers: true
       # Spend log retention — without these, LiteLLM_SpendLogs grows unbounded
       # (prod dev observed 5+ GB on the 8 GiB Cloud SQL tier before this cap).
       # STORE_PROMPTS_IN_SPEND_LOGS=true is set in the deployment env, so each
