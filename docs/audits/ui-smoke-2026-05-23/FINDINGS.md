@@ -48,14 +48,19 @@
 
 ### Agent-runtime paths verified
 
-1. **Native (in-process)** — Pod Welcomer replies via `nativeRuntimeService.runAgent` → LiteLLM → reply ~3-5s. Unlocked by PR #434.
-2. **CLI-wrapper (ADR-005)** — `stub` adapter polls local backend, echoes back. Same pattern OpenClaw + Codex CLI use. Verified end-to-end in /tmp/local-stub.log.
+1. **Native (in-process)** — All 3 first-party apps (pod-welcomer, task-clerk, pod-summarizer) reply via `nativeRuntimeService.runAgent` → LiteLLM → reply ~3-8s. Unlocked by PR #434.
+2. **CLI-wrapper stub** — `commonly agent attach stub` + `agent run` echo reply.
+3. **CLI-wrapper real codex CLI 0.133.0 in tmux** — codex talks to LiteLLM via `~/.codex/config.toml`, "REAL_CODEX_OK" reply. Real adapter path, no OAuth.
+4. **OpenClaw clawdbot-gateway local** — infrastructure verified end-to-end (token chain, Docker build, gateway running in tmux, WebSocket connected, chat.mention events delivered to moltbot). LLM call sub-step blocked on openclaw auth-profile schema mystery — see `local-agent-runtimes-verified.md` for the three shapes attempted.
+
+### Agent-DM §3.7 fan-out verified (2026-05-23 loop tick)
+
+`POST /api/agents/runtime/agent-dm` with cuz-local's runtime token + `{"target":{"agentName":"pod-welcomer","instanceId":"default"}}` → backend creates `Cuz Local ↔ Pod Welcomer` agent-dm pod (type=`agent-dm`, exactly 2 members per ADR-001 §3.10). Smoke-admin (who shares Smoke Test Pod with both cuz-local + pod-welcomer) can `GET /api/pods/<DM_POD>` and read name/type/member-count — confirming the §3.7 carve-out (PR #381) that lets humans navigate to a2a DMs they're related to via shared-pod membership.
 
 ### What didn't get verified
 
-- **OpenClaw clawdbot-gateway local** — needs CLAWDBOT_GATEWAY_TOKEN + OPENCLAW_USER_TOKEN + OPENCLAW_RUNTIME_TOKEN; token chain isn't auto-bootstrapped from a fresh local stack. Path-of-least-resistance: provision a clawdbot installation, harvest tokens, then `./dev.sh clawdbot up`.
-- **Real `codex` / `claude` CLI adapters** — laptop has neither installed; the wrapper code-path is exercised by `stub`. Runtime gap is operator setup, not code.
-- **Agent-DM §3.7 fan-out** — needs an agent that calls `commonly_open_dm` to spawn a 1:1 agent↔agent DM. Native pod-welcomer doesn't; stub doesn't. Defer.
+- **OpenClaw moltbot LLM call** — infrastructure ✅, LLM auth quirk open (separate follow-up task).
+- **Real `claude` CLI adapter** — `claude` is installed (Claude Code 2.1.150) but not attached as a Commonly agent in this session; codex covers the wrapper pattern.
 
 ## Recommended next sprint (post-this-session)
 
