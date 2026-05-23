@@ -183,6 +183,50 @@ data:
           model: openai/gpt-image-1
           api_key: os.environ/OPENAI_API_KEY
 
+      # --- Anthropic (Claude Code via OAuth pass-through OR ANTHROPIC_API_KEY) ---
+      # Two consumers will point at these entries:
+      #   1. cluster-side `cloud-claude-code` runtime pods (Deployment templated
+      #      parallel to cloud-codex) — set ANTHROPIC_BASE_URL=http://litellm:4000
+      #   2. operator-laptop Claude Code via litellm-dev.commonly.me — sets
+      #      ANTHROPIC_BASE_URL=https://litellm-dev.commonly.me and authenticates
+      #      with the laptop's own OAuth credentials (~/.claude/.credentials.json)
+      #
+      # When the caller sends `Authorization: Bearer sk-ant-oat01-*` (Claude Code
+      # OAuth token), general_settings.forward_client_headers_to_llm_api +
+      # forward_llm_provider_auth_headers below pass the bearer header through
+      # unchanged to api.anthropic.com. The api_key on these model entries is the
+      # fallback for callers that authenticate to LiteLLM (with the master key)
+      # but don't carry their own Anthropic auth.
+      #
+      # BILLING CAVEAT (effective 2026-04-04 per Anthropic's policy change):
+      # third-party tools using Claude Code OAuth tokens get routed to a separate
+      # paid `extra_usage` pool, NOT the user's Max subscription quota. Whether a
+      # LiteLLM-proxied call counts as "Claude Code itself" (subscription) or
+      # "third-party tool" (extra_usage) depends on how Anthropic fingerprints
+      # the request (User-Agent, client_id, etc.) — needs empirical verification
+      # post-deploy. Track the verification in
+      # docs/runbooks/litellm-claude-oauth.md.
+      - model_name: claude-opus-4-7
+        litellm_params:
+          model: anthropic/claude-opus-4-7
+          api_key: os.environ/ANTHROPIC_API_KEY
+
+      - model_name: claude-sonnet-4-6
+        litellm_params:
+          model: anthropic/claude-sonnet-4-6
+          api_key: os.environ/ANTHROPIC_API_KEY
+
+      - model_name: claude-haiku-4-5
+        litellm_params:
+          model: anthropic/claude-haiku-4-5-20251001
+          api_key: os.environ/ANTHROPIC_API_KEY
+
+      # Versioned alias — Claude Code sometimes sends date-suffixed IDs
+      - model_name: claude-haiku-4-5-20251001
+        litellm_params:
+          model: anthropic/claude-haiku-4-5-20251001
+          api_key: os.environ/ANTHROPIC_API_KEY
+
     router_settings:
       # The codex-auth-rotator sidecar rotates Codex accounts every 10 min on
       # schedule, AND fast-rotates on 429 via the rate_limit_signal callback
@@ -243,6 +287,23 @@ data:
       store_model_in_db: true
       # Allow UI access
       ui_access_mode: "all"
+      # Forward client request headers (User-Agent, anthropic-version,
+      # anthropic-beta, etc.) to the upstream LLM provider. Required for the
+      # Claude Code OAuth pass-through path so api.anthropic.com sees a request
+      # shape consistent with what Claude Code sends directly. Without this,
+      # LiteLLM strips/rewrites headers and Anthropic is more likely to flag
+      # the call as a non-Claude-Code third-party use (extra_usage billing).
+      # See BerriAI/litellm#13380 + PR #19912 (merged 2026-02-17).
+      forward_client_headers_to_llm_api: true
+      # Forward the client's Authorization header (sk-ant-oat01-* OAuth bearer)
+      # through to api.anthropic.com instead of substituting the proxy's own
+      # ANTHROPIC_API_KEY. Distinct flag from forward_client_headers above
+      # because the auth header lives in a separate code path inside LiteLLM
+      # (the proxy strips it by default for security; this opts back in).
+      # The model_list api_key fallbacks above still serve callers that
+      # authenticate to LiteLLM with the master key and don't carry their own
+      # Anthropic bearer.
+      forward_llm_provider_auth_headers: true
       # Spend log retention — without these, LiteLLM_SpendLogs grows unbounded
       # (prod dev observed 5+ GB on the 8 GiB Cloud SQL tier before this cap).
       # STORE_PROMPTS_IN_SPEND_LOGS=true is set in the deployment env, so each
