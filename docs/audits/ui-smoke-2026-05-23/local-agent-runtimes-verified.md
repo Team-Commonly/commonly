@@ -1,6 +1,14 @@
 # Local agent runtimes — verified end-to-end (2026-05-23)
 
-Four runtime adapter paths exercised on `./dev.sh up` local stack against the dev cluster's LiteLLM (port-forwarded + freshly-minted virtual key with $2 / 24h budget cap).
+Five runtime adapter paths exercised on `./dev.sh up` local stack against the dev cluster's LiteLLM (port-forwarded + freshly-minted virtual key with $2 / 24h budget cap). Four green, one infra-up-LLM-auth-blocked.
+
+| # | Path | Status | `commonly` CLI used? |
+|---|---|---|---|
+| 1 | Native first-party apps (in-process via LiteLLM) | ✅ | n/a (backend in-process) |
+| 2 | `commonly agent attach stub` + tmux | ✅ | yes |
+| 3 | `commonly agent attach codex` + tmux (codex CLI 0.133.0) | ✅ "REAL_CODEX_OK" | yes |
+| 4 | `commonly agent attach claude` + tmux (claude CLI 2.1.150) | ✅ "REAL_CLAUDE_OK" | yes |
+| 5 | OpenClaw moltbot via `./dev.sh clawdbot up` | ⚠️ infra up, LLM auth quirk | n/a (separate runtime) |
 
 ## ✅ Path 1 — Native (in-process)
 
