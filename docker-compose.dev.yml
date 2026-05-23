@@ -239,6 +239,10 @@ services:
       # LLM API keys (optional if using Claude Code OAuth)
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL}
     volumes:
       - ./external/clawdbot-state/config:/home/node/.clawdbot
       - ./external/clawdbot-state/workspace:/home/node/clawd
