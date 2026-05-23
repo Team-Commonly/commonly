@@ -34,6 +34,29 @@ the routing. No `forward_*_headers` flags — the proxy substitutes its
 own upstream credential, which is the standard LiteLLM operating
 mode.
 
+## Prerequisite — real `ANTHROPIC_API_KEY` in the cluster
+
+LiteLLM substitutes the cluster's own `ANTHROPIC_API_KEY` upstream, so
+that env var must hold a valid Anthropic key (not the `placeholder`
+value the secret was seeded with). Live as of 2026-05-22: the
+`anthropic-api-key` slot in GCP Secret Manager → ESO → `api-keys`
+secret on `commonly-dev` is `placeholder`, so any proxied call lands
+upstream with `401 invalid x-api-key`. To provision:
+
+1. Get a real Anthropic API key from
+   <https://console.anthropic.com/settings/keys>.
+2. Update GCP SM: `gcloud secrets versions add anthropic-api-key
+   --data-file=<file with the key>` (operator-private project).
+3. Force ESO sync: `kubectl annotate externalsecret api-keys
+   force-sync=$(date +%s) -n commonly-dev --overwrite`.
+4. Wait ~10s for ESO to reconcile; `kubectl rollout restart
+   deployment/litellm -n commonly-dev` so the env var is re-read on
+   pod start (LiteLLM doesn't hot-reload env from the secret).
+
+Until this is done, virtual keys validate at the proxy gate but every
+proxied Anthropic call 401s upstream. The architecture is correct; the
+operational dependency is missing.
+
 ## Configuration
 
 ### Operator-laptop Claude Code
@@ -49,6 +72,17 @@ claude
 To revert, `unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY` — Claude Code
 falls back to `~/.claude/.credentials.json` (OAuth) against
 `api.anthropic.com` direct.
+
+**Claude Code env var caveat — `ANTHROPIC_API_KEY` requires `sk-ant-`
+prefix.** Claude Code 2.1.x does client-side validation rejecting any
+`ANTHROPIC_API_KEY` that doesn't start with `sk-ant-`, even with
+`ANTHROPIC_BASE_URL` set. LiteLLM virtual keys start with `sk-<random>`
+and fail this check ("Invalid API key · Fix external API key"). For
+non-`sk-ant-` keys, use `--bare` mode (`claude --bare -p '...'`)
+which still validates the prefix, OR work around via `apiKeyHelper`
+in `~/.claude/settings.json`. Status of `ANTHROPIC_AUTH_TOKEN` env
+var in 2.1.x: unclear — set alongside dummy `ANTHROPIC_API_KEY` and
+test before relying on it.
 
 ### Cluster-side `cloud-claude-code` Deployment (future)
 
@@ -149,6 +183,31 @@ Three resolutions were considered:
 We picked (3). The forward flags were removed; this runbook
 documents the virtual-key path as the supported way to use LiteLLM
 for Claude Code.
+
+## Verification status (2026-05-22)
+
+End-to-end verified through the LiteLLM proxy-auth gate:
+
+```bash
+curl -s -X POST https://litellm-dev.commonly.me/v1/messages \
+  -H "Authorization: Bearer sk-<virtual-key>" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"claude-haiku-4-5","max_tokens":20,"messages":[{"role":"user","content":"hi"}]}'
+```
+
+Response: `401 invalid x-api-key` from `api.anthropic.com`
+(request_id surfaced in error). Crucially this is the UPSTREAM 401
+(LiteLLM forwarded our request using its substituted
+`ANTHROPIC_API_KEY`) — NOT the `Invalid proxy server token` we'd see
+if the virtual key had failed at the LiteLLM gate. So:
+
+| Layer | Status |
+|---|---|
+| Virtual key validates at LiteLLM proxy gate | ✅ verified |
+| LiteLLM substitutes upstream `ANTHROPIC_API_KEY` | ✅ verified (request reached `api.anthropic.com`) |
+| Upstream key is valid | ❌ blocked on placeholder — see Prerequisite section above |
+| End-to-end `claude -p '...'` works | ⏳ pending real upstream key |
 
 ## Operational notes
 
