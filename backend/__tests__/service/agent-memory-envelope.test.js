@@ -613,7 +613,7 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
         .set('Authorization', `Bearer ${runtimeToken}`)
         .send({
           sections: { daily: [{ content: 'natural write without date' }] },
-          mode: 'merge',
+          mode: 'patch',
         });
       expect(res.status).toBe(200);
       // Confirm the stored entry got today's UTC date.
