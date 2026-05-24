@@ -18,6 +18,8 @@ import UserProfile from '../components/UserProfile';
 import Dashboard from '../components/Dashboard';
 import DailyDigest from '../components/DailyDigest';
 import AppsMarketplacePage from '../components/apps/AppsMarketplacePage';
+import V2MarketplaceDetailPage from './marketplace/V2MarketplaceDetailPage';
+import './marketplace/V2MarketplaceDetailPage.css';
 import AgentsHub from '../components/agents/AgentsHub';
 import V2AgentBYO from './components/V2AgentBYO';
 import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
@@ -193,6 +195,10 @@ const V2App: React.FC = () => {
                 <Route
                   path="marketplace"
                   element={feature('Marketplace', 'Browse apps, integrations, official listings, and installed apps.', <AppsMarketplacePage />)}
+                />
+                <Route
+                  path="marketplace/:installableId"
+                  element={feature('Marketplace', 'Manifest detail.', <V2MarketplaceDetailPage />, false)}
                 />
                 <Route path="apps" element={<Navigate to="/v2/marketplace" replace />} />
                 <Route
