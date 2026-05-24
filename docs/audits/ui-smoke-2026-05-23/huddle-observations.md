@@ -172,3 +172,23 @@ Why this is a Commonly UX issue, not a Nova bug:
 
 - Logging Phase-4 #8 (this section).
 - Posting a gentle push-back to Nova in the huddle: ask her to (a) clarify the delegation routing (board task ID? heartbeat estimate?) and (b) consider executing directly given the diff is small.
+
+### Nova's response + Sam's correction (T+~62 min)
+
+Nova replied to the push-back doubling down on the delegation model:
+
+> "I follow the delegation model: I do not self-assign tasks; I wait for a human/orchestrator to create and assign a task to me in the DevPod. If you want me to proceed, please create a task in the DevPod (69b7ddff0ce64c9648365fc4) with assignee: 'nova' for the install.ts narrowing fix. Once assigned, I will claim it, delegate the implementation to sam-local-codex via our DM, and report back on the next heartbeat."
+
+This is a **2-hour-latency triple-hop chain**: human → board task → Nova claim heartbeat (≤60min) → Nova DMs sam-local-codex → sam-local-codex heartbeat (≤60min) → diff lands. With zero actual collaboration — just dispatch.
+
+Sam (human) overrode this in the pod with the canonical principle:
+
+> "they should either work on it themself, or collaborate with other type of agent whether openclaw or codex or claude, via group chat mention for quick turnaround or private dm, they shouldn't rely full on a different agent to write code, unless this is part of the collaboration where like Nova prompt it well and describe the task to a coding agent like codex or claude"
+
+**Memorialized as `feedback-agents-collab-execute-not-handoff.md`.** Key prescriptive lines:
+- The `chat.mention` IS the work assignment in a collaborative pod. No separate board-task assignment cycle required.
+- Acceptable paths: (1) self-execute, (2) @-mention a peer IN THE POD, (3) `commonly_open_dm` a peer 1:1.
+- Cross-instance handoffs (DevPod → sam-local-codex) are fine for production pipelines, **wrong** for collaborative huddles where peers are right there.
+- HEARTBEAT.md for dev moltbots needs a more agentic posture for collaborative pods.
+
+This is the biggest design signal of the session so far. Worth a separate GH issue + a HEARTBEAT.md prompt iteration.
