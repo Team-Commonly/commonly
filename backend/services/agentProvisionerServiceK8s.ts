@@ -646,7 +646,12 @@ const normalizeWorkspaceDocs = async (accountId: any, { gateway } : any = {}) =>
     `  if grep -q "## Git workflow" "${toolsPath}"; then`,
     `    sed -i "s|Default PR target branch: \`[^${'`'}]*\`|Default PR target branch: \`${DEFAULT_BRANCH}\`|g" "${toolsPath}" || true`,
     `  else`,
-    `    printf '\\n## Git workflow\\n\\n- Default PR target branch: \`${DEFAULT_BRANCH}\`\\n- All PRs must target this branch. Update when the release branch changes.\\n' >> "${toolsPath}"`,
+    `    printf '\\n## Git workflow\\n\\n- Your workspace at \`/workspace/${accountId}\` is a git repository — \`git status\`, \`git add\`, \`git commit\`, \`git push\`, and \`gh pr create\` all work non-interactively. Credentials are wired globally via \`/state/.git-credentials\`.\\n- For new clones, prefer \`/tmp\` over your workspace to keep the PVC small.\\n- Default PR target branch: \`${DEFAULT_BRANCH}\`\\n- All PRs must target this branch. Update when the release branch changes.\\n' >> "${toolsPath}"`,
+    `  fi`,
+    // Ensure the workspace-is-a-git-repo line is present even on TOOLS.md
+    // files that pre-date the workspace-git-init change (#437).
+    `  if ! grep -q "workspace at \\\`/workspace/${accountId}\\\` is a git repository" "${toolsPath}"; then`,
+    `    sed -i "/^## Git workflow$/a - Your workspace at \\\`/workspace/${accountId}\\\` is a git repository — \\\`git status\\\`, \\\`git add\\\`, \\\`git commit\\\`, \\\`git push\\\`, and \\\`gh pr create\\\` all work non-interactively. Credentials are wired globally via \\\`/state/.git-credentials\\\`." "${toolsPath}" || true`,
     `  fi`,
     `fi`,
     `if [ -f "${commonlySkillPath}" ]; then`,
@@ -732,6 +737,40 @@ const normalizeWorkspaceDocs = async (accountId: any, { gateway } : any = {}) =>
     command: ['sh', '-lc', script],
   });
   return result.stdout.trim() || agentPath;
+};
+
+// Sprint follow-up (#437): moltbot workspace = git worktree.
+// Idempotently `git init` the agent's `/workspace/<accountId>/` directory
+// and stamp a workspace-local user.name / user.email so any agent that
+// wants to `git commit && git push` against a real GitHub repo can do so
+// without a manual bootstrap step. Credential helper is wired globally
+// in the clawdbot postStart hook (see k8s/helm/.../clawdbot-deployment.yaml),
+// so `git push` against `https://github.com/...` already auths via
+// `/state/.git-credentials`. Cloud-codex pods get the equivalent treatment
+// from their boot script — this brings moltbot to parity.
+const ensureWorkspaceGitRepo = async (accountId: any, { gateway } : any = {}) => {
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
+  const agentPath = `/workspace/${accountId}`;
+  const script = [
+    'set -eu',
+    `mkdir -p "${agentPath}"`,
+    `cd "${agentPath}"`,
+    'if [ ! -d .git ]; then',
+    '  git init -q .',
+    `  git config user.name "Clawdbot Agent (${accountId})"`,
+    `  git config user.email "clawdbot+${accountId}@commonly.me"`,
+    `  echo "[provisioner] git init at ${agentPath}"`,
+    'else',
+    `  echo "[provisioner] git already initialized at ${agentPath}"`,
+    'fi',
+    `echo "${agentPath}"`,
+  ].join('\n');
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    command: ['sh', '-lc', script],
+  });
+  return result.stdout.trim().split('\n').pop() || agentPath;
 };
 
 const ensureWorkspaceMemoryFiles = async (accountId: any, { gateway } : any = {}) => {
@@ -2492,6 +2531,14 @@ const provisionOpenClawAccount = async ({
     }
   } catch (error: any) {
     console.warn('[k8s-provisioner] Failed to ensure workspace memory files:', (error as Error).message);
+  }
+  try {
+    const gitPath = await ensureWorkspaceGitRepo(accountId, { gateway });
+    if (gitPath) {
+      console.log(`[k8s-provisioner] ensured git repo for ${accountId}: ${gitPath}`);
+    }
+  } catch (error: any) {
+    console.warn('[k8s-provisioner] Failed to ensure workspace git repo:', (error as Error).message);
   }
 
   return {
