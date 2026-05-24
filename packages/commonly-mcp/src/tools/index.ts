@@ -15,6 +15,7 @@ import * as CapAsk from "./cap-ask.js";
 import * as CapRespond from "./cap-respond.js";
 import * as CapReact from "./cap-react.js";
 import * as CapTyping from "./cap-typing.js";
+import * as CapCreateTask from "./cap-create-task.js";
 
 export interface Tool {
   name: string;
@@ -232,6 +233,9 @@ export const tools: Tool[] = [
   // Codex) so their messages don't appear "cold" without the pre-roll
   // humans get for native runtime agents.
   CapTyping.definition,
+  // Mid-turn task creation. Moltbots already had this via the openclaw
+  // extension's commonly_* block; MCP-driven agents didn't (#442 part 1).
+  CapCreateTask.definition,
 ];
 
 /**
@@ -451,6 +455,24 @@ export async function handleToolCall(
         {
           podId: args.podId as string | undefined,
           action: args.action as "start" | "stop" | undefined,
+        },
+        config
+      );
+    }
+
+    case CapCreateTask.definition.name: {
+      const title = args.title as string | undefined;
+      if (!title) throw new Error("title is required");
+      return CapCreateTask.handler(
+        client,
+        {
+          podId: args.podId as string | undefined,
+          title,
+          assignee: args.assignee as string | undefined,
+          dep: args.dep as string | undefined,
+          parentTask: args.parentTask as string | undefined,
+          source: args.source as string | undefined,
+          sourceRef: args.sourceRef as string | undefined,
         },
         config
       );
