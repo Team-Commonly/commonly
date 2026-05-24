@@ -103,6 +103,38 @@ export const listLocalAgents = () => {
 // as no_action even if they happen to carry `content` in their payload.
 const CHAT_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message']);
 
+// ── default environment for adapters that benefit from auto-MCP wiring ─────
+
+// Adapters that can consume `mcp[]` from the resolved environment spec.
+// `claude` reads it via --mcp-config (see adapters/claude.js). `codex` and
+// `stub` do not (codex uses ~/.codex/config.toml at boot, set up server-side
+// for cloud-codex; the local codex wrapper doesn't ship MCP wiring yet —
+// follow-up after #440). Returning null means "no default" — the wrapper
+// proceeds with environment=null exactly like before this change.
+const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude']);
+
+// Minimum-viable environment for fresh attach: wire @commonlyai/mcp so the
+// agent gets commonly_* kernel tools out of the box. ${COMMONLY_API_URL} and
+// ${COMMONLY_AGENT_TOKEN} are substituted at spawn-time by the adapter
+// (cli/src/lib/adapters/claude.js §substitutePlaceholders) so the env file
+// stays free of per-attach secrets.
+export const buildDefaultEnvironment = (adapterName) => {
+  if (!ADAPTERS_WITH_DEFAULT_MCP.has(adapterName)) return null;
+  return {
+    mcp: [
+      {
+        name: 'commonly',
+        transport: 'stdio',
+        command: ['npx', '-y', '@commonlyai/mcp@latest'],
+        env: {
+          COMMONLY_API_URL: '${COMMONLY_API_URL}',
+          COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+        },
+      },
+    ],
+  };
+};
+
 // ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
 
 /**
@@ -157,6 +189,17 @@ export const performAttach = async ({
         `sandbox.mode=${sandboxMode} is not yet implemented in the local-CLI driver. `
         + `Phase 1 supports: none, bwrap.`,
       );
+    }
+  } else {
+    // No --env provided. Apply a sensible default if the adapter supports MCP
+    // so a fresh `commonly agent attach claude` gives the agent commonly_*
+    // kernel tools out of the box (parity with cloud-codex, which boots with
+    // @commonlyai/mcp pre-wired in ~/.codex/config.toml). Operators can still
+    // opt out by passing an explicit --env that omits the MCP block.
+    // See #440 for the gap that motivated this default.
+    environment = buildDefaultEnvironment(adapterName);
+    if (environment) {
+      log(`environment: applied default with @commonlyai/mcp wired (pass --env to override)`);
     }
   }
 

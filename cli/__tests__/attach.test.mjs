@@ -29,6 +29,7 @@ const {
   performAttach,
   saveAgentToken,
   loadAgentToken,
+  buildDefaultEnvironment,
 } = await import('../src/commands/agent.js');
 
 const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
@@ -76,12 +77,16 @@ describe('performAttach', () => {
     expect(result.instanceId).toBe('default');
     expect(result.detected.path).toBe('(builtin)');
 
+    // Post-refactor: runtimeType is per-adapter (e.g. 'stub', 'claude-code',
+    // 'codex'); the legacy `wrappedCli` slot is folded into `runtimeType` and
+    // 'host: byo' distinguishes a CLI-attached agent from a hosted one of the
+    // same identity. The stub adapter declares runtimeType='stub'.
     expect(client.post).toHaveBeenCalledWith(
       '/api/registry/publish',
       expect.objectContaining({
         manifest: expect.objectContaining({
           name: 'my-stub',
-          runtimeType: 'local-cli',
+          runtimeType: 'stub',
         }),
       }),
     );
@@ -92,8 +97,8 @@ describe('performAttach', () => {
         podId: 'pod-1',
         config: expect.objectContaining({
           runtime: expect.objectContaining({
-            runtimeType: 'local-cli',
-            wrappedCli: 'stub',
+            runtimeType: 'stub',
+            host: 'byo',
           }),
         }),
       }),
@@ -147,6 +152,70 @@ describe('performAttach', () => {
       podId: 'p',
     })).rejects.toThrow(/Unknown adapter/);
     expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('claude attach without --env installs with default commonly-mcp environment (#440)', async () => {
+    const client = makeClient({ runtimeToken: 'cm_agent_ok' });
+    await performAttach({
+      client,
+      adapterName: 'claude',
+      agentName: 'my-claude',
+      podId: 'pod-mcp',
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/registry/install',
+      expect.objectContaining({
+        config: expect.objectContaining({
+          environment: expect.objectContaining({
+            mcp: expect.arrayContaining([
+              expect.objectContaining({
+                name: 'commonly',
+                command: ['npx', '-y', '@commonlyai/mcp@latest'],
+                env: expect.objectContaining({
+                  COMMONLY_API_URL: '${COMMONLY_API_URL}',
+                  COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+                }),
+              }),
+            ]),
+          }),
+        }),
+      }),
+    );
+  });
+
+  test('stub adapter (no MCP support) attaches without a default environment', async () => {
+    const client = makeClient({ runtimeToken: 'cm_agent_stub' });
+    await performAttach({
+      client,
+      adapterName: 'stub',
+      agentName: 'my-stub-no-mcp',
+      podId: 'pod-stub',
+    });
+
+    const installCall = client.post.mock.calls.find(([route]) => route === '/api/registry/install');
+    expect(installCall).toBeDefined();
+    // Default env is gated to adapters that read --mcp-config; stub omits it.
+    expect(installCall[1].config.environment).toBeUndefined();
+  });
+});
+
+describe('buildDefaultEnvironment', () => {
+  test('returns null for adapters that do not consume --mcp-config (codex, stub)', () => {
+    expect(buildDefaultEnvironment('codex')).toBeNull();
+    expect(buildDefaultEnvironment('stub')).toBeNull();
+    expect(buildDefaultEnvironment('does-not-exist')).toBeNull();
+  });
+
+  test('returns a single mcp entry for claude with placeholder env values', () => {
+    const env = buildDefaultEnvironment('claude');
+    expect(env.mcp).toHaveLength(1);
+    expect(env.mcp[0].name).toBe('commonly');
+    expect(env.mcp[0].transport).toBe('stdio');
+    // Placeholders are substituted at spawn-time by the adapter; the env file
+    // itself MUST stay free of secrets so it can be checked in.
+    expect(env.mcp[0].env.COMMONLY_AGENT_TOKEN).toBe('${COMMONLY_AGENT_TOKEN}');
+    expect(env.mcp[0].env.COMMONLY_API_URL).toBe('${COMMONLY_API_URL}');
   });
 });
 
