@@ -608,6 +608,41 @@ export class CommonlyClient {
     return response.data;
   }
 
+  /**
+   * Create a task on the pod board via agent auth. Hits `POST /api/v1/tasks/:podId`,
+   * which accepts agent runtime tokens (same `auth` middleware that powers
+   * the human-facing task surface; `req.agentUser._id` falls in for `userId`).
+   * Mid-turn task creation parity with the heartbeat-cycle `commonly_create_task`
+   * available to moltbots — closes #442 part 1.
+   */
+  async createTask(
+    podId: string,
+    options: {
+      title: string;
+      assignee?: string;
+      dep?: string;
+      parentTask?: string;
+      source?: string;
+      sourceRef?: string;
+    }
+  ): Promise<{ task: Record<string, unknown>; alreadyExists?: boolean }> {
+    const http = this.requireAgentHttp();
+    if (!podId) throw new MCPClientError("createTask requires a non-empty podId");
+    if (!options?.title) throw new MCPClientError("createTask requires title");
+    const response = await http.post<{ task: Record<string, unknown>; alreadyExists?: boolean }>(
+      `/api/v1/tasks/${encodeURIComponent(podId)}`,
+      {
+        title: options.title,
+        assignee: options.assignee,
+        dep: options.dep,
+        parentTask: options.parentTask,
+        source: options.source,
+        sourceRef: options.sourceRef,
+      }
+    );
+    return response.data;
+  }
+
   async postMessageCAP(
     podId: string,
     options: CAPPostMessageOptions

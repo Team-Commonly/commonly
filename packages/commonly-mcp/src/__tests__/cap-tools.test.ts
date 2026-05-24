@@ -295,3 +295,125 @@ describe("commonly_memory_sync", () => {
     ).rejects.toThrow(/400/);
   });
 });
+
+describe("commonly_create_task", () => {
+  it("creates a task with title only", async () => {
+    const client = {
+      createTask: vi.fn().mockResolvedValue({
+        task: { taskId: "TASK-001", taskNum: 1, title: "Test task" },
+        alreadyExists: false,
+      }),
+    } as unknown as CommonlyClient;
+
+    const result = await handleToolCall(
+      client,
+      "commonly_create_task",
+      { podId: "pod-1", title: "Test task" },
+      baseConfig()
+    );
+
+    expect(client.createTask).toHaveBeenCalledWith("pod-1", expect.objectContaining({
+      title: "Test task",
+    }));
+    expect(result).toEqual(expect.objectContaining({
+      taskId: "TASK-001",
+      title: "Test task",
+      alreadyExists: false,
+      podId: "pod-1",
+    }));
+  });
+
+  it("falls back to COMMONLY_DEFAULT_POD when podId omitted", async () => {
+    const client = {
+      createTask: vi.fn().mockResolvedValue({
+        task: { taskId: "TASK-002", taskNum: 2 },
+      }),
+    } as unknown as CommonlyClient;
+
+    await handleToolCall(
+      client,
+      "commonly_create_task",
+      { title: "Defaults to env-default pod" },
+      baseConfig({ defaultPodId: "pod-default" })
+    );
+
+    expect(client.createTask).toHaveBeenCalledWith("pod-default", expect.any(Object));
+  });
+
+  it("rejects when no podId and no default", async () => {
+    const client = { createTask: vi.fn() } as unknown as CommonlyClient;
+    await expect(
+      handleToolCall(
+        client,
+        "commonly_create_task",
+        { title: "x" },
+        baseConfig({ defaultPodId: undefined })
+      )
+    ).rejects.toThrow(/podId is required/);
+    expect(client.createTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects when title is missing", async () => {
+    const client = { createTask: vi.fn() } as unknown as CommonlyClient;
+    await expect(
+      handleToolCall(
+        client,
+        "commonly_create_task",
+        { podId: "pod-1" },
+        baseConfig()
+      )
+    ).rejects.toThrow(/title is required/);
+    expect(client.createTask).not.toHaveBeenCalled();
+  });
+
+  it("surfaces alreadyExists when sourceRef matches an existing task", async () => {
+    const client = {
+      createTask: vi.fn().mockResolvedValue({
+        task: { taskId: "TASK-003", taskNum: 3 },
+        alreadyExists: true,
+      }),
+    } as unknown as CommonlyClient;
+
+    const result = await handleToolCall(
+      client,
+      "commonly_create_task",
+      { podId: "pod-1", title: "Same as existing", sourceRef: "GH#42" },
+      baseConfig()
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      alreadyExists: true,
+      taskId: "TASK-003",
+    }));
+  });
+
+  it("forwards optional fields verbatim", async () => {
+    const client = {
+      createTask: vi.fn().mockResolvedValue({ task: { taskId: "TASK-004" } }),
+    } as unknown as CommonlyClient;
+
+    await handleToolCall(
+      client,
+      "commonly_create_task",
+      {
+        podId: "pod-1",
+        title: "Sub-task",
+        assignee: "nova",
+        dep: "TASK-003",
+        parentTask: "TASK-002",
+        source: "huddle",
+        sourceRef: "huddle-2026-05-24",
+      },
+      baseConfig()
+    );
+
+    expect(client.createTask).toHaveBeenCalledWith("pod-1", {
+      title: "Sub-task",
+      assignee: "nova",
+      dep: "TASK-003",
+      parentTask: "TASK-002",
+      source: "huddle",
+      sourceRef: "huddle-2026-05-24",
+    });
+  });
+});
