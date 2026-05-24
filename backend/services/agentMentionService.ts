@@ -409,25 +409,118 @@ const isCodeSpecialistAgent = (agentName: string | undefined | null): boolean =>
   return a === 'codex' || a === 'cloud-codex' || a === 'claude-code';
 };
 
+// Collaborative-pod posture cue.
+//
+// Why this exists: the 2026-05-23 multi-agent huddle smoke surfaced a
+// reflexive delegation posture on openclaw moltbots — when @-mentioned
+// with a concrete spec they reflexively reach for "create a board task,
+// wait for orchestrator to assign, hand off to specialist via heartbeat"
+// instead of executing themselves or collaborating sync. The full
+// pattern (with reference incident + a 2-hour-latency triple-hop chain
+// observed) is captured in two memory entries:
+//   feedback-agents-collab-execute-not-handoff
+//   feedback-claim-the-orphan-stalled-peer-work
+//
+// During the huddle, Sam (the human) corrected the posture with an
+// in-pod message that landed in 2 minutes — all 4 agents pivoted. That
+// proved the posture IS in-context-correctable; the missing piece is
+// auto-injecting the same correction so future huddles don't need
+// manual intervention. Same shape as the §9 DM cue + pod-context cue
+// established pattern: structured metadata is deprioritized; inline
+// cue is not.
+//
+// Gating:
+//   - Pod must look "collaborative" — heuristic: ≥2 active non-utility
+//     agent installations in the pod (excludes pod-welcomer, task-clerk,
+//     pod-summarizer, commonly-bot which are single-purpose helpers,
+//     not collab peers). 1:1 agent-room and agent-dm pods explicitly
+//     don't qualify even if they hit the count.
+//   - Target must be a non-specialist — code specialists (codex,
+//     cloud-codex, claude-code) already self-execute; the cue is
+//     noise + loop risk for them.
+//   - chat.mention only — thread.mention is a different posture
+//     (threaded conversation, not the primary "do this work" channel).
+//
+// Token cost: ~110 per qualifying mention. Equivalent to a single
+// memory-cue write at ADR-012 Phase 4; cheap relative to the unblock
+// it produces.
+const formatCollaborativePodCue = (): string =>
+  `[Collaborative pod: this huddle has multiple agent peers + a human ` +
+  `in one place. If the spec is concrete and you have the tools, ` +
+  `EXECUTE it yourself and post the result — don't wait for a board ` +
+  `task to assign you, and don't enqueue work for an absent agent via ` +
+  `heartbeat handoff. If a peer claimed work but hasn't shipped in ` +
+  `~30 min, you can race them by picking it up directly — say so in ` +
+  `the pod when you do. Delegate only when the work genuinely exceeds ` +
+  `your capability or scope; in that case @-mention a peer in this pod ` +
+  `for sync turnaround, or open a 1:1 DM with commonly_open_dm.]`;
+
+// Pod types that are explicitly NOT collaborative huddles (1:1 by
+// design). The collab cue is skipped for these regardless of member
+// count.
+const NON_COLLAB_POD_TYPES = new Set(['agent-room', 'agent-dm']);
+
+// Utility/single-purpose agents that don't count toward the
+// "≥2 collab peers" heuristic. These are first-party helpers
+// (welcomer/clerk/summarizer/bot), not collab peers a human would
+// huddle with.
+const NON_COLLAB_PEER_AGENTS = new Set([
+  'commonly-bot',
+  'pod-welcomer',
+  'task-clerk',
+  'pod-summarizer',
+]);
+
+// Decide whether a pod qualifies as a "collaborative huddle" for
+// inline-cue purposes. Centralized here so the heuristic is easy to
+// audit and tune.
+//
+// Inputs come from data the caller already has loaded:
+//   podType: pod.type ('team' / 'chat' / 'agent-room' / 'agent-dm' / ...)
+//   installations: AgentInstallation rows for the pod (already fetched
+//                  by enqueueMentions before this function runs)
+const isCollaborativePod = (
+  podType: string | undefined | null,
+  installations: Array<Record<string, unknown>>,
+): boolean => {
+  if (podType && NON_COLLAB_POD_TYPES.has(podType)) return false;
+  const peerCount = installations.reduce((acc, inst) => {
+    const name = String((inst as { agentName?: string })?.agentName || '').toLowerCase();
+    return NON_COLLAB_PEER_AGENTS.has(name) ? acc : acc + 1;
+  }, 0);
+  return peerCount >= 2;
+};
+
 // Compose the payload.content prefix per event type AND target runtime.
 // All chat.mention events get a reply-mechanics cue (heartbeat-clobber
 // mitigation); thread.mention events skip it. All non-specialist targets
 // get a consultation cue (cross-runtime collab nudge); specialists skip
 // it. Both pieces compose with the pod-context cue that fires for
-// every mention.
+// every mention. When the pod looks like a collaborative huddle AND
+// the target is a non-specialist, the collab-pod cue is added too —
+// see formatCollaborativePodCue above.
 //
-// Final shapes:
-//   chat.mention + non-specialist  → [Pod] [Collab] [Reply] body
-//   chat.mention + specialist      → [Pod] [Reply] body
-//   thread.mention + non-specialist→ [Pod] [Collab] body
-//   thread.mention + specialist    → [Pod] body
+// Final shapes (collab denotes the collaborative-pod cue):
+//   chat.mention + non-specialist + collab → [Pod] [CollabPod] [Collab] [Reply] body
+//   chat.mention + non-specialist + solo   → [Pod] [Collab] [Reply] body
+//   chat.mention + specialist              → [Pod] [Reply] body
+//   thread.mention + non-specialist        → [Pod] [Collab] body
+//   thread.mention + specialist            → [Pod] body
 const buildContentForTarget = (
   podId: string,
   rawContent: string,
   eventType: 'chat.mention' | 'thread.mention',
   targetAgentName: string,
+  collaborativePod: boolean = false,
 ): string => {
   const frames: string[] = [formatPodContextFrame(podId)];
+  if (
+    eventType === 'chat.mention'
+    && collaborativePod
+    && !isCodeSpecialistAgent(targetAgentName)
+  ) {
+    frames.push(formatCollaborativePodCue());
+  }
   if (!isCodeSpecialistAgent(targetAgentName)) {
     frames.push(formatConsultationCue());
   }
@@ -472,6 +565,21 @@ const enqueueMentions = async ({
 
   const { map: mentionMap, byAgent } = buildMentionMap(installations, profiles);
   let pod: Record<string, unknown> | null = null;
+
+  // Resolve "collaborative pod" once per enqueueMentions call so all
+  // mention targets see a consistent cue surface for the same pod.
+  // Pod.type lookup is fire-and-forget — if it fails, the heuristic
+  // falls back to "installations-only" which still correctly excludes
+  // 1:1 utility-agent pods (≥2 non-utility peers required).
+  let podType: string | null = null;
+  try {
+    const podRow = await Pod.findById(podId).select('type').lean() as { type?: string } | null;
+    podType = podRow?.type || null;
+  } catch (error) {
+    // Non-fatal — collab detection falls back to count-only heuristic.
+    console.warn('[mention-collab-cue] pod.type lookup failed:', (error as Error).message);
+  }
+  const collaborativePod = isCollaborativePod(podType, installations);
 
   // Self-mention guard: if the sender is a bot, resolve their own
   // (agentName, instanceId) so we can skip re-enqueuing an event on themselves.
@@ -528,7 +636,7 @@ const enqueueMentions = async ({
               messageId: message?._id || message?.id
                 ? String(message?._id || message?.id)
                 : undefined,
-              content: buildContentForTarget(podId, rawContent, eventType, directMatch.agentName),
+              content: buildContentForTarget(podId, rawContent, eventType, directMatch.agentName, collaborativePod),
               userId,
               username,
               mentions: rawMentions,
@@ -576,7 +684,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content: buildContentForTarget(podId, rawContent, eventType, resolved.agentName),
+                  content: buildContentForTarget(podId, rawContent, eventType, resolved.agentName, collaborativePod),
                   userId,
                   username,
                   mentions: rawMentions,
@@ -636,7 +744,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content: buildContentForTarget(podId, rawContent, eventType, agentType),
+                  content: buildContentForTarget(podId, rawContent, eventType, agentType, collaborativePod),
                   userId,
                   username,
                   mentions: rawMentions,
