@@ -53,18 +53,22 @@ const categories: Category[] = [
 ];
 
 const types: Category[] = [
-  { id: 'all', label: 'All Types' },
-  { id: 'agent', label: 'Agent Apps' },
-  { id: 'integration', label: 'Integrations' },
-  { id: 'mcp-app', label: 'MCP Apps' },
-  { id: 'webhook', label: 'Webhook Apps' },
+  { id: 'all', label: 'All Kinds' },
+  { id: 'agent', label: 'Agents' },
+  { id: 'app', label: 'Apps' },
+  { id: 'skill', label: 'Skills' },
+  { id: 'bundle', label: 'Bundles' },
 ];
 
 interface App {
   id: string;
+  installableId?: string;
   name?: string;
   displayName?: string;
+  description?: string;
   installationId?: string;
+  instanceId?: string;
+  installBackend?: 'apps' | 'registry';
   [key: string]: unknown;
 }
 
@@ -101,6 +105,59 @@ interface SnackbarState {
   message: string;
   severity: 'info' | 'error' | 'success' | 'warning';
 }
+
+const toMarketplaceApp = (item: any): App => {
+  const installableId = String(item?.installableId ?? item?._id ?? item?.id ?? '');
+  const handle = installableId.replace(/^@/, '');
+  const stats = item?.stats && typeof item.stats === 'object' ? item.stats : {};
+  const marketplace = item?.marketplace && typeof item.marketplace === 'object' ? item.marketplace : {};
+  const requires = Array.isArray(item?.requires) ? item.requires : [];
+
+  return {
+    ...item,
+    id: installableId,
+    installableId,
+    name: handle || String(item?.name || ''),
+    displayName: String(item?.name || installableId || 'Unknown App'),
+    description: String(item?.description || ''),
+    type: String(item?.kind || 'default'),
+    category: String(marketplace.category || 'other'),
+    verified: Boolean(marketplace.verified),
+    rating: Number(marketplace.rating || 0),
+    ratingCount: Number(marketplace.ratingCount || 0),
+    installs: Number(stats.totalInstalls || marketplace.installCount || 0),
+    logo: marketplace.logoUrl || marketplace.logo || null,
+    scopes: requires,
+    installBackend: 'registry',
+  };
+};
+
+const toInstalledRegistryApp = (agent: any): App => {
+  const installableId = String(agent?.name || '');
+  const handle = installableId.replace(/^@/, '');
+  const profile = agent?.profile && typeof agent.profile === 'object' ? agent.profile : {};
+
+  return {
+    ...agent,
+    id: installableId,
+    installableId,
+    name: handle,
+    displayName: String(agent?.displayName || installableId || 'Unknown App'),
+    description: String(profile.purpose || ''),
+    type: 'agent',
+    category: String(agent?.category || 'other'),
+    logo: agent?.iconUrl || null,
+    scopes: Array.isArray(agent?.scopes) ? agent.scopes : [],
+    instanceId: String(agent?.instanceId || 'default'),
+    installBackend: 'registry',
+  };
+};
+
+const toInstalledLegacyApp = (app: any): App => ({
+  ...app,
+  id: String(app?.id || ''),
+  installBackend: 'apps',
+});
 
 const AppsMarketplacePage: React.FC = () => {
   const v2Embedded = useV2Embedded();
@@ -183,16 +240,7 @@ const AppsMarketplacePage: React.FC = () => {
 
       const browseRes = await axios.get(`/api/marketplace/browse?${params.toString()}`);
       const items = ((browseRes.data as { items?: any[] }).items) || [];
-      // Map Installable doc to the loose App shape AppCard consumes
-      // (id/name/displayName/installationId + everything else via the
-      // index signature). Keep the original doc accessible via spread so
-      // downstream renderers can still reach Installable-only fields.
-      const mapped: App[] = items.map((it: any) => ({
-        ...it,
-        id: String(it._id ?? it.id ?? ''),
-        name: it.name,
-        displayName: it.marketplace?.displayName || it.name,
-      }));
+      const mapped: App[] = items.map(toMarketplaceApp);
 
       setApps(mapped);
       // Featured shelf isn't shipped on the new endpoint family yet; surface
@@ -247,10 +295,23 @@ const AppsMarketplacePage: React.FC = () => {
 
   const fetchInstalled = async (): Promise<void> => {
     try {
-      const response = await axios.get(`/api/apps/pods/${selectedPodId}/apps`, {
-        headers: getAuthHeaders(),
-      });
-      setInstalledApps((response.data as { apps?: App[] }).apps || []);
+      const [legacyRes, registryRes] = await Promise.allSettled([
+        axios.get(`/api/apps/pods/${selectedPodId}/apps`, {
+          headers: getAuthHeaders(),
+        }),
+        axios.get(`/api/registry/pods/${selectedPodId}/agents`, {
+          headers: getAuthHeaders(),
+        }),
+      ]);
+
+      const legacyApps = legacyRes.status === 'fulfilled'
+        ? (((legacyRes.value.data as { apps?: any[] }).apps) || []).map(toInstalledLegacyApp)
+        : [];
+      const registryApps = registryRes.status === 'fulfilled'
+        ? (((registryRes.value.data as { agents?: any[] }).agents) || []).map(toInstalledRegistryApp)
+        : [];
+
+      setInstalledApps([...legacyApps, ...registryApps]);
     } catch (err) {
       console.error('Error fetching installed apps:', err);
     }
@@ -263,11 +324,14 @@ const AppsMarketplacePage: React.FC = () => {
     }
 
     try {
-      await axios.post(
-        `/api/apps/pods/${selectedPodId}/apps`,
-        { appId: app.id },
-        { headers: getAuthHeaders() }
-      );
+      const installableId = String(app.installableId || app.id || '');
+      await axios.post('/api/registry/install', {
+        agentName: installableId,
+        podId: selectedPodId,
+        version: typeof app.version === 'string' ? app.version : undefined,
+        displayName: app.displayName || undefined,
+        scopes: Array.isArray(app.scopes) ? app.scopes : [],
+      }, { headers: getAuthHeaders() });
       setSnackbar({ open: true, message: `Installed ${app.displayName || app.name}`, severity: 'success' });
       fetchInstalled();
     } catch (err) {
@@ -285,9 +349,21 @@ const AppsMarketplacePage: React.FC = () => {
     if (!selectedPodId) return;
 
     try {
-      await axios.delete(`/api/apps/pods/${selectedPodId}/apps/${app.installationId}`, {
-        headers: getAuthHeaders(),
-      });
+      if (app.installBackend === 'registry') {
+        const installableId = encodeURIComponent(String(app.installableId || app.id || ''));
+        const params = new URLSearchParams();
+        if (app.instanceId && app.instanceId !== 'default') {
+          params.append('instanceId', app.instanceId);
+        }
+        const suffix = params.toString() ? `?${params.toString()}` : '';
+        await axios.delete(`/api/registry/agents/${installableId}/pods/${selectedPodId}${suffix}`, {
+          headers: getAuthHeaders(),
+        });
+      } else {
+        await axios.delete(`/api/apps/pods/${selectedPodId}/apps/${app.installationId}`, {
+          headers: getAuthHeaders(),
+        });
+      }
       setSnackbar({ open: true, message: `Removed ${app.displayName || app.name}`, severity: 'info' });
       fetchInstalled();
     } catch (err) {

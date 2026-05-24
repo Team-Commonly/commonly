@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import AppsMarketplacePage from './AppsMarketplacePage';
 
 const axios = require('axios');
@@ -24,27 +24,33 @@ jest.mock('@mui/material', () => {
 describe('AppsMarketplacePage', () => {
   beforeEach(() => {
     localStorage.setItem('token', 'test-token');
+    axios.post.mockResolvedValue({ data: { success: true } });
+    axios.delete.mockResolvedValue({ data: { success: true } });
     axios.get.mockImplementation((url) => {
       if (url === '/api/pods') {
         return Promise.resolve({ data: [{ _id: 'pod-1', name: 'Alpha' }] });
       }
-      if (url.startsWith('/api/apps/marketplace?')) {
-        return Promise.resolve({ data: { apps: [] } });
-      }
-      if (url === '/api/apps/marketplace/featured') {
+      if (url.startsWith('/api/marketplace/browse?')) {
         return Promise.resolve({
           data: {
-            apps: [
+            items: [
               {
-                id: 'app-1',
-                name: 'App One',
-                displayName: 'App One',
-                description: 'Featured app',
-                type: 'webhook',
-                category: 'other',
-                installs: 42,
-                rating: 4.5,
-                ratingCount: 10,
+                _id: 'installable-1',
+                installableId: '@sam/community-agent',
+                name: 'Community Agent',
+                description: 'Published via installables.',
+                kind: 'agent',
+                marketplace: {
+                  category: 'development',
+                  verified: true,
+                  rating: 4.5,
+                  ratingCount: 10,
+                  logoUrl: 'https://cdn.example.com/community.png',
+                },
+                stats: {
+                  totalInstalls: 42,
+                },
+                requires: ['context:read', 'messages:write'],
               },
             ],
           },
@@ -83,6 +89,9 @@ describe('AppsMarketplacePage', () => {
       if (url.startsWith('/api/apps/pods/pod-1/apps')) {
         return Promise.resolve({ data: { apps: [] } });
       }
+      if (url.startsWith('/api/registry/pods/pod-1/agents')) {
+        return Promise.resolve({ data: { agents: [] } });
+      }
       return Promise.reject(new Error(`Unhandled request: ${url}`));
     });
   });
@@ -90,6 +99,8 @@ describe('AppsMarketplacePage', () => {
   afterEach(() => {
     localStorage.removeItem('token');
     axios.get.mockReset();
+    axios.post.mockReset();
+    axios.delete.mockReset();
   });
 
   it('renders official marketplace listings', async () => {
@@ -100,6 +111,28 @@ describe('AppsMarketplacePage', () => {
 
     await waitFor(() => {
       expect(axios.get).toHaveBeenCalledWith('/api/marketplace/official');
+    });
+  });
+
+  it('renders installable browse results and installs via registry', async () => {
+    render(<AppsMarketplacePage />);
+
+    expect((await screen.findAllByText('Community Agent')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('@sam/community-agent').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('42 installs').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Install' })[0]);
+
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith('/api/registry/install', {
+        agentName: '@sam/community-agent',
+        podId: 'pod-1',
+        version: undefined,
+        displayName: 'Community Agent',
+        scopes: ['context:read', 'messages:write'],
+      }, {
+        headers: { 'x-auth-token': 'test-token' },
+      });
     });
   });
 });
