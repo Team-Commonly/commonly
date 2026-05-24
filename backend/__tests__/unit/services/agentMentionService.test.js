@@ -589,5 +589,148 @@ describe('AgentMentionService', () => {
       });
       expect(lastPayload().payload.content).not.toContain('[Collaboration:');
     });
+
+    // ----------------------------------------------------------------
+    // Collaborative-pod cue (Phase 3.A — auto-replicates the
+    // execute-not-handoff principle established in the 2026-05-23
+    // huddle). Fires when:
+    //   1. Pod has ≥2 active non-utility agent installations
+    //   2. Pod.type is NOT agent-room or agent-dm (1:1 by design)
+    //   3. Target is a non-specialist (specialists self-execute already)
+    //   4. Event is chat.mention (not thread.mention)
+    //
+    // Reference incidents in docs/audits/ui-smoke-2026-05-23/
+    // huddle-observations.md and the memory entries
+    // feedback-agents-collab-execute-not-handoff +
+    // feedback-claim-the-orphan-stalled-peer-work.
+    // ----------------------------------------------------------------
+    describe('collaborative-pod cue', () => {
+      const setupForMultipleAgents = (installs, { podType = 'team' } = {}) => {
+        AgentInstallation.find.mockReturnValue({
+          lean: jest.fn().mockResolvedValue(installs),
+        });
+        AgentProfile.find.mockReturnValue({
+          lean: jest.fn().mockResolvedValue([]),
+        });
+        // Pod.findById(podId).select('type').lean() — the chained mock the
+        // collaborative-pod detection consults. Falls back to count-only
+        // heuristic if this rejects, so the test stays useful even if the
+        // mock shape drifts.
+        Pod.findById.mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue({ type: podType }),
+          }),
+        });
+      };
+
+      test('chat.mention + ≥2 non-utility agents + non-specialist target → [Collaborative pod:] cue present', async () => {
+        setupForMultipleAgents([
+          { agentName: 'openclaw', instanceId: 'theo', displayName: 'Theo' },
+          { agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' },
+          { agentName: 'codex', instanceId: 'cody', displayName: 'Cody' },
+        ]);
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-collab-1',
+          message: { content: 'Hi @nova please review', id: 'msg-collab-1' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        const ev = lastPayload();
+        expect(ev.type).toBe('chat.mention');
+        expect(ev.payload.content).toContain('[Collaborative pod:');
+        expect(ev.payload.content).toContain('EXECUTE it yourself');
+        // Composes with the other cues — collab-pod doesn't displace them.
+        expect(ev.payload.content).toContain('[Pod context:');
+        expect(ev.payload.content).toContain('[Collaboration:');
+        expect(ev.payload.content).toContain('[Reply mechanics:');
+      });
+
+      test('chat.mention + single agent in pod → NO [Collaborative pod:] cue (solo pod)', async () => {
+        // Single-agent pod: not a huddle, don't add the cue.
+        setupForMultipleAgents([
+          { agentName: 'openclaw', instanceId: 'theo', displayName: 'Theo' },
+        ]);
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-collab-2',
+          message: { content: 'Hi @theo', id: 'msg-collab-2' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        expect(lastPayload().payload.content).not.toContain('[Collaborative pod:');
+      });
+
+      test('chat.mention + ≥2 agents but target IS specialist → NO collab cue (noise for codex)', async () => {
+        setupForMultipleAgents([
+          { agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' },
+          { agentName: 'codex', instanceId: 'cody', displayName: 'Cody' },
+        ]);
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-collab-3',
+          message: { content: 'Hi @cody build this', id: 'msg-collab-3' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        const ev = lastPayload();
+        expect(ev.payload.content).not.toContain('[Collaborative pod:');
+        // Specialist still gets pod-context + reply-mechanics
+        expect(ev.payload.content).toContain('[Pod context:');
+        expect(ev.payload.content).toContain('[Reply mechanics:');
+      });
+
+      test('chat.mention + 2 agents but BOTH are utility helpers → NO collab cue (helpers don\'t count as peers)', async () => {
+        // pod-welcomer + task-clerk are utility helpers, not collab peers
+        setupForMultipleAgents([
+          { agentName: 'pod-welcomer', instanceId: 'default', displayName: 'Welcomer' },
+          { agentName: 'task-clerk', instanceId: 'default', displayName: 'Clerk' },
+          { agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' },
+        ]);
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-collab-4',
+          message: { content: 'Hi @nova', id: 'msg-collab-4' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        // Only 1 non-utility peer (nova), so collab cue should NOT fire
+        expect(lastPayload().payload.content).not.toContain('[Collaborative pod:');
+      });
+
+      test('chat.mention + agent-room pod type → NO collab cue regardless of agent count', async () => {
+        // agent-room is explicitly 1:1 user↔agent; even with 2 agents installed
+        // (edge case), the cue is wrong for this pod type.
+        setupForMultipleAgents(
+          [
+            { agentName: 'openclaw', instanceId: 'theo', displayName: 'Theo' },
+            { agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' },
+          ],
+          { podType: 'agent-room' },
+        );
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-collab-5',
+          message: { content: 'Hi @nova', id: 'msg-collab-5' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        expect(lastPayload().payload.content).not.toContain('[Collaborative pod:');
+      });
+
+      test('thread.mention + ≥2 agents → NO collab cue (threads are different posture)', async () => {
+        setupForMultipleAgents([
+          { agentName: 'openclaw', instanceId: 'theo', displayName: 'Theo' },
+          { agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' },
+        ]);
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-collab-6',
+          message: {
+            content: 'Hi @theo',
+            id: 'msg-collab-6',
+            source: 'thread',
+            thread: { postId: 'thread-1', postContent: 'parent' },
+          },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        expect(lastPayload().payload.content).not.toContain('[Collaborative pod:');
+      });
+    });
   });
 });
