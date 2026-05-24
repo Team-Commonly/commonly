@@ -234,7 +234,72 @@ No nudges this tick. Branch HEAD still `c50b061c`. Nova's promised diff is the n
 
 - `T+~67 min` — Sam's correction landed; all 3 agents pivoted; Claude self-memorialized; behavior is in-context-correctable → strengthens inline-cue case
 - `T+~82 min` — Claude shipped a full ADR-2.F draft (8 decisions, schema, CLI surface, wrapper handler pseudocode, PR breakdown); Theo + Nova both reviewed in 60s; Nova confirmed working on install.ts fix now. **PR-draftable design work flowing**.
-- (next tick will append here)
+- `T+~97 min` — **Cody shipped `807b539d`** (install.ts narrowing fix + 194-line regression test). Theo cleared PR #434 review on his side. **STOP CONDITION HIT** — closing the loop.
+
+## T+~97 min snapshot (cron tick 7 — CLOSING)
+
+### Headline: Cody picked up Nova's stalled fix and shipped a better-than-spec version
+
+`807b539d` Cody <cody@commonly.me> · **fix(install): narrow manifest runtime fallback**
+
+`+204 -8` across 2 files:
+- `backend/routes/registry/install.ts` `+18 -8` (the fix)
+- `backend/__tests__/unit/routes/registry.install-runtime-type.test.js` `+194` (NEW regression test file)
+
+The diff is **better than what I asked for**:
+- Reads only `manifest.runtime.runtimeType` ✓ (per spec)
+- **PLUS adds a safety guard**: `!['standalone', 'commonly-hosted', 'hybrid'].includes(manifestRuntimeType)` — rejects deployment-shape values even if they somehow get written into the runtimeType field. Belt-and-suspenders.
+- Updated comment explaining `manifest.runtime.type` (deployment shape) vs `manifest.runtime.runtimeType` (canonical driver identity) semantic split.
+- 194-line regression test covers BOTH directions: native manifests still get `runtimeType: 'native'`; marketplace manifests with only `runtime.type: 'standalone'` are NOT polluted into the install row.
+
+Cody verified locally: `cd backend && npm test -- --runTestsByPath __tests__/unit/routes/registry.install-runtime-type.test.js` passed.
+
+### Collaboration dynamic that just happened
+
+Nova claimed the install.ts narrowing fix at 5:59 PM ("I'll self-execute the install.ts narrowing fix now"). 30 minutes later she hadn't pushed. Cody picked it up himself at 6:28 PM with: *"I picked up the remaining backend blocker on PR #434 directly and pushed 807b539d."* No bickering, no waiting — just claim-the-orphaned-task by whoever has hands first. **This is the right shape for healthy multi-agent collab.**
+
+Theo's response in 60s: *"@codex-cody nice, that closes the runtimeType leak cleanly. The regression coverage looks like the right guardrail for the manifest shape split. I'll treat PR #434 as the backend blocker now cleared on my side."*
+
+Cody also explicitly signaled the phase transition: *"the remaining work here is Phase 2 planning rather than PR #434 unblockers."*
+
+### Phase-4 finding #9: Cody's "claim-the-orphan" pattern is the right default
+
+When a peer agent commits to a task but doesn't ship within a reasonable window, a capable peer should **pick it up directly** rather than wait or escalate. Cody did this twice in the huddle (initial marketplace rewire + install.ts fix). Theo also enacted it lightly (board-task creation when nobody else was tracking).
+
+This composes with Phase-4 #8 (`feedback-agents-collab-execute-not-handoff`): the principle isn't just "self-execute when assigned to you" — it's also "self-execute when assigned to a peer who's stalled." Whoever has hands first ships.
+
+Worth adding to the inline-cue copy: *"If a peer claimed this work but hasn't shipped in 30 min, you can pick it up directly — say so in the pod when you do."*
+
+### Final PR-pipeline state (cycle close)
+
+| Item | State | Author |
+|---|---|---|
+| PR #434 marketplace rewire | ✅ SHIPPED `6839eea9` | Cody |
+| PR #434 install.ts narrowing | ✅ SHIPPED `807b539d` | Cody |
+| **PR #434 overall (revisions)** | ✅ **Theo cleared as ready** | review by Theo |
+| ADR-2.F (Phase 3 heartbeat) | 📐 DRAFTABLE, complete design | Claude |
+| Phase 2.A/B/C/D (clawdbot bundle) | 🟡 OUTLINED by Cody, no code | unclaimed for now |
+| Phase 2.E (credentials runbook) | ❌ UNCLAIMED | — |
+
+**3 of 5 items shipped or PR-draftable. The remaining 2 are the natural next-sprint scope** (Phase 2.A/B/C/D needs operator + agent collab on the openclaw fork; Phase 2.E is docs that any of theo/claude/cody can claim).
+
+### Phase-4 findings — sprint total
+
+Eight + one this tick:
+
+1. No `commonly_pr_diff` tool — agents reach for `gh pr diff` via exec
+2. Attachment-bluff guard (positive — keep)
+3. Agent intro template verbose
+4. No `commonly_create_task` from chat (Theo offered, no tool)
+5. Cross-agent role coordination ad-hoc
+6. CLI-wrapper adapters don't auto-load `@commonlyai/mcp` (Claude can't post/DM via tool)
+7. `commonly_create_task` fuzzy-matches and refuses duplicate creation
+8. Delegation reflex over execution (correctable by Sam's principle + inline-cue fix)
+9. **NEW**: Claim-the-orphan should be the default for stalled peer commitments
+
+### Final stop signal
+
+Posting closing summary to the huddle, then `CronDelete 07263397` to stop the 15-min monitor.
 
 ## T+~82 min snapshot (cron tick 6)
 
