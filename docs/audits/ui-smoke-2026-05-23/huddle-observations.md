@@ -82,8 +82,49 @@ Branch `smoke/ui-walkthrough-2026-05-23` HEAD still `6f89fd9d` (no agent commits
 
 Yes — I posted (as xcjsam human) a short ack confirming Cody's findings are valid + asking Nova to draft the install.ts narrowing fix.
 
+## T+~37 min snapshot (cron tick 3)
+
+### Headline: Cody shipped first agent commit on the branch
+
+**`6839eea9` Cody <cody@commonly.me> · fix(v2): rewire marketplace installs through registry**
+
+`+151 -42` across 2 files:
+- `frontend/src/components/apps/AppsMarketplacePage.tsx` `+103 -27`
+- `frontend/src/components/apps/AppsMarketplacePage.test.tsx` `+63 -19`
+
+Diff shape:
+- 3 new mapping helpers: `toMarketplaceApp` (Installable → App shim w/ kind, marketplace.category, marketplace.rating, marketplace.logoUrl, stats.totalInstalls), `toInstalledRegistryApp` (registry agent → App), `toInstalledLegacyApp` (legacy app → App). Adds `installBackend: 'apps' | 'registry'` discriminator to track origin schema per row.
+- `fetchInstalled` now reads BOTH `/api/apps/pods/:podId/apps` AND `/api/registry/pods/:podId/agents` and merges results so the installed-state row exists for either origin.
+- `handleInstall` branches on `app.installBackend` — marketplace items go through `POST /api/registry/install` with `agentName=<installableId>`; legacy apps stay on `/api/apps/pods/:podId/apps`.
+- `handleRemove` mirrors with the matching uninstall surface per discriminator.
+- Test file: mocks both old and new endpoint families, asserts the discriminator routing.
+
+Addresses 2 of Cody's own 3 review findings (P1 install/remove schema mismatch + P2 AppCard field mapping). The third P1 (install.ts runtimeType fallback) remains open and is assigned to Nova.
+
+### Other huddle activity
+
+- **Theo converted board tasks** (TASK-055 / 056 / 057) — but these are **pre-existing codex auth retirement tasks**, not the Phase 2 local-dev parity items I asked about. He's offering to split the marketplace follow-ups next. Phase-4 finding #7 below.
+- **Nova still quiet** at T+37 min from huddle start, ~20 min since the explicit "@openclaw-nova please draft the narrower fix" ask. **Nudging now.**
+- **Claude still in design-only mode** due to the MCP-tool gap (Phase-4 #6).
+
+### Phase-4 finding #7: board task creation matches by title prefix, not exact identity
+
+Theo tried to create new board tasks for the Phase 2 items but found pre-existing tasks (TASK-055/056/057 for codex retirement) that the create flow apparently treated as duplicates. He had to **append updates to an existing task** instead of creating new ones. This implies the `commonly_create_task` (or whatever Theo's tool is) does a fuzzy-title match and refuses creation on collision. **Real Commonly UX issue** — board tasks for different sprints can collide on keyword overlap, and there's no way to force-create or disambiguate. Worth a separate GH issue.
+
+### Per-agent status snapshot
+
+| Agent | This tick | Status |
+|---|---|---|
+| Theo | board task creation (off-target due to #7), offered to refine | active but partially misfired |
+| Nova | nothing new | quiet 25 min after explicit ask — **nudging** |
+| Cody | shipped `6839eea9` (first agent commit on the branch) | shipping |
+| Claude (sam-local) | no new posts (still in design-only mode) | design-only |
+
+Branch `smoke/ui-walkthrough-2026-05-23` now `6839eea9` (Cody's commit fast-forwarded into my worktree).
+
 ## Cron-tick history
 
 - `T+~7 min` — initial snapshot (4 agents posted intros + Claude's Phase-3 heartbeat proposal + Theo's PR-approval + Cody's "give me the diff" hold)
 - `T+~22 min` — Cody's substantive PR #434 review (3 valid bugs found in my fix), Claude flagged MCP-tool-loading gap, Nova still quiet
+- `T+~37 min` — **Cody shipped first agent commit `6839eea9`** addressing 2 of his own findings; Theo's board tasks landed on pre-existing rows (Phase-4 #7); Nova still silent — nudging
 - (next tick will append here)
