@@ -34,17 +34,34 @@ describe('adapter DEFAULT_TIMEOUT_MS env override', () => {
   // promise rejects with the EXPECTED timeout message at our chosen
   // budget. We use a deliberately short value (200ms) so the test
   // doesn't hang the suite.
+  // Build a stub child process that captures close-event listeners and emits
+  // them after kill() — so the adapter's `proc.on('close', ...)` callback
+  // actually fires when the SIGTERM timer trips, which is how the adapter's
+  // promise resolves into the rejected "timed out after Xms" error. Without
+  // this, the test never resolves (hits jest's 5s default test timeout).
+  // Surfaced by #453 wiring cli tests into CI for the first time.
+  function makeKillableChild() {
+    const listeners = {};
+    return {
+      stdout: { on: () => {} },
+      stderr: { on: () => {} },
+      on: (event, cb) => {
+        listeners[event] = listeners[event] || [];
+        listeners[event].push(cb);
+      },
+      kill: () => {
+        setImmediate(() => {
+          for (const cb of (listeners.close || [])) cb(143); // 143 = 128 + SIGTERM
+        });
+      },
+    };
+  }
+
   async function runWithTimeout(adapterPath, timeoutMs) {
     process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS = String(timeoutMs);
     const adapter = (await import(adapterPath)).default;
-    const neverResolvingChild = {
-      stdout: { on: () => {} },
-      stderr: { on: () => {} },
-      on: () => {},
-      kill: () => {},
-    };
     const ctx = {
-      _spawnImpl: () => neverResolvingChild,
+      _spawnImpl: () => makeKillableChild(),
       env: { ...process.env },
       cwd: process.cwd(),
     };
@@ -81,14 +98,8 @@ describe('adapter DEFAULT_TIMEOUT_MS env override', () => {
     // ctx.timeoutMs to confirm the spawn flow itself is intact. The
     // default-fallback path is exercised by the module loading without
     // throwing.
-    const neverResolvingChild = {
-      stdout: { on: () => {} },
-      stderr: { on: () => {} },
-      on: () => {},
-      kill: () => {},
-    };
     const ctx = {
-      _spawnImpl: () => neverResolvingChild,
+      _spawnImpl: () => makeKillableChild(),
       env: { ...process.env },
       cwd: process.cwd(),
       timeoutMs: 100,
