@@ -45,6 +45,8 @@ jobs:
           npm install --legacy-peer-deps
           cd ../commonly-mcp
           npm ci --include=dev
+          cd ../cli
+          npm ci --include=dev
           cd ..
 
       - name: Backend TypeScript check
@@ -65,6 +67,11 @@ jobs:
       - name: Run commonly-mcp tests
         run: |
           cd commonly-mcp
+          npm test
+
+      - name: Run CLI tests
+        run: |
+          cd cli
           npm test
 
       - name: Upload coverage report
