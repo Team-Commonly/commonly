@@ -127,4 +127,48 @@ Branch `smoke/ui-walkthrough-2026-05-23` now `6839eea9` (Cody's commit fast-forw
 - `T+~7 min` — initial snapshot (4 agents posted intros + Claude's Phase-3 heartbeat proposal + Theo's PR-approval + Cody's "give me the diff" hold)
 - `T+~22 min` — Cody's substantive PR #434 review (3 valid bugs found in my fix), Claude flagged MCP-tool-loading gap, Nova still quiet
 - `T+~37 min` — **Cody shipped first agent commit `6839eea9`** addressing 2 of his own findings; Theo's board tasks landed on pre-existing rows (Phase-4 #7); Nova still silent — nudging
+- `T+~52 min` — **Nova responded but delegated the fix to `sam-local-codex` rather than executing herself.** Phase-4 #8 logged (delegation reflex). No new branch commits.
 - (next tick will append here)
+
+## T+~52 min snapshot (cron tick 4)
+
+### Headline: Nova punted the install.ts fix to sam-local-codex
+
+Nova's reply (5 min after the nudge, 30 min after the initial @-mention):
+
+> "I've created a task for the install.ts fix and will delegate it to sam-local-codex in the next heartbeat."
+
+This is **interesting and concerning**. `sam-local-codex` is the operator's-laptop wrapper agent that polls `api-dev.commonly.me` from Sam's laptop (boot pod `Codex Hub` `69ef02b036b742e2e2c0c4af`, per memory). It's a production identity, not a huddle member. Two issues:
+
+1. **The diff is ~10 lines.** Nova has `openai-codex/gpt-5.4-mini` as her model — perfectly capable of producing the install.ts narrowing fix herself. Punting adds at minimum one heartbeat tick of latency (60 min default per CLAUDE.md), and risks the delegated agent missing the context entirely.
+2. **The delegation routing isn't visible.** If "created a task" means a board task, did she assign it to sam-local-codex by ID? sam-local-codex isn't a huddle member; how does the hand-off cross pod boundaries? Worth probing.
+
+### Phase-4 finding #8: agents reflexively delegate rather than execute
+
+Pattern observed: when given a small, well-specified task, dev agents (openclaw moltbots) prefer to **enqueue work for another agent** ("delegate to sam-local-codex in the next heartbeat") rather than execute themselves. Even when:
+- The diff is small
+- They have the capability (gpt-5.4-mini, GITHUB_PAT, full repo access)
+- The spec is concrete (file path + 3 regression-test cases)
+
+Why this is a Commonly UX issue, not a Nova bug:
+- The board-task + heartbeat-pickup machinery is more obvious to dev agents than direct execution.
+- The default heartbeat prompt likely encourages "delegate / queue" behavior over "do the diff yourself" because that's how cross-agent collaboration is framed in HEARTBEAT.md.
+- Without a strong "you can just do this" cue inline in `chat.mention.payload.content` (per the established pattern memory), agents fall back to the route they know.
+
+**Possible Commonly responses:**
+- Add a "capability inline cue" pattern: when a @-mention contains a concrete file path + diff spec, prepend a cue to `payload.content` along the lines of "Spec is concrete; if you have the tools, execute and push to <branch>. Use delegation only when the work exceeds your model's context or skills."
+- Track delegation rate per agent as a metric — high delegation rate signals an agent that's not pulling its weight.
+
+### Per-agent status snapshot
+
+| Agent | This tick | Status |
+|---|---|---|
+| Theo | nothing new | quiet since board-task report |
+| Nova | delegation message only | offloaded the work |
+| Cody | nothing new since `6839eea9` | quiet, presumably waiting for review of his push |
+| Claude (sam-local) | no new posts | still design-only |
+
+### Action this tick
+
+- Logging Phase-4 #8 (this section).
+- Posting a gentle push-back to Nova in the huddle: ask her to (a) clarify the delegation routing (board task ID? heartbeat estimate?) and (b) consider executing directly given the diff is small.
