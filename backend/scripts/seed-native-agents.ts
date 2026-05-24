@@ -23,6 +23,8 @@ import type { NativeAgentDefinition } from '../config/native-agents/apps';
 // Lazy requires keep this file import-safe even if dependent services move
 // and avoid pulling the full Mongoose model graph into typecheck.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const Installable = require('../models/Installable');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentIdentityService = require('../services/agentIdentityService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Pod = require('../models/Pod');
@@ -204,6 +206,58 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
       (err as { message?: string })?.message || err,
     );
     return;
+  }
+
+  // 1b. Project an Installable row (ADR-001) alongside the AgentRegistry
+  //     row so first-party apps appear in the unified taxonomy. The v2
+  //     marketplace detail page (`/v2/marketplace/:installableId`) hits
+  //     `/api/marketplace/manifests/:id` which reads from this collection.
+  //     Browse intentionally filters source=='marketplace' only — a builtin
+  //     app appears via Agent Hub / direct URL, not the marketplace browse.
+  //     Idempotent: a fresh app inserts; subsequent boots refresh display
+  //     metadata via $set without touching stats.
+  try {
+    await Installable.findOneAndUpdate(
+      { installableId: app.agentName.toLowerCase() },
+      {
+        $set: {
+          name: app.displayName,
+          description: app.description,
+          version: VERSION,
+          kind: 'app',
+          source: 'builtin',
+          scope: 'instance',
+          status: 'active',
+          components: [
+            {
+              name: app.agentName,
+              type: 'agent',
+              version: VERSION,
+              description: app.description,
+              runtime: 'native',
+              persona: {
+                displayName: app.displayName,
+              },
+            },
+          ],
+        },
+        $setOnInsert: {
+          installableId: app.agentName.toLowerCase(),
+          stats: {
+            totalInstalls: 0,
+            activeInstalls: 0,
+            forkCount: 0,
+          },
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+  } catch (err: unknown) {
+    console.warn(
+      `[native-seed]   failed to project Installable for ${appLabel}:`,
+      (err as { message?: string })?.message || err,
+    );
+    // Non-fatal — registry row is in place; marketplace projection is best-effort.
   }
 
   // 2. Demo pod must exist; if not, skip the install step gracefully.
