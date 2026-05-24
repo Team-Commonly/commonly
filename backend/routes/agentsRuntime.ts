@@ -1759,7 +1759,27 @@ function validateSectionsPayload(sections: any): SectionsValidationError | null 
   }
   if (sections.daily !== undefined) {
     if (!Array.isArray(sections.daily)) return { kind: 'bad_request', message: 'sections.daily must be an array' };
+    // Default missing `date` to today's UTC YYYY-MM-DD. The
+    // `commonly_save_my_memory` MCP tool contract (commonly-mcp/src/
+    // tools.js) documents `entries` as the daily-write shape but does
+    // NOT disclose that each entry must already carry a `date` field
+    // in strict YYYY-MM-DD form. Surfaced 2026-05-24 by Cody during
+    // the Phase 2 huddle smoke (issue #435): `long_term` writes
+    // succeeded; a natural `daily` write failed with
+    // `sections.daily[].date must be YYYY-MM-DD`.
+    //
+    // Fix: server-side default to today (UTC) when `date` is absent,
+    // BEFORE validation. Explicit values still flow through unchanged
+    // — if a caller passes `date: 'not-a-date'` we still 400. This is
+    // a kindness for the common case (agent saying "today's note") and
+    // doesn't widen the schema's accepted shape. Mutation of the
+    // request body is intentional + scoped to this one defaulting
+    // step; the route handler downstream sees the normalized array.
+    const todayYMD = new Date().toISOString().slice(0, 10);
     for (const d of sections.daily) {
+      if (d && typeof d === 'object' && d.date === undefined) {
+        d.date = todayYMD;
+      }
       if (!isValidYMD(d?.date)) return { kind: 'bad_request', message: 'sections.daily[].date must be YYYY-MM-DD' };
       if (d.visibility !== undefined && !VALID_VISIBILITIES.has(d.visibility)) {
         return { kind: 'bad_request', message: 'sections.daily[].visibility must be one of private|pod|public' };

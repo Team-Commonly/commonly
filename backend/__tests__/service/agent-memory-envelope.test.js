@@ -602,6 +602,32 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
       expect(res.body.message).toMatch(/YYYY-MM-DD/);
     });
 
+    // GH issue #435 — `commonly_save_my_memory` MCP tool contract
+    // didn't disclose that each daily entry must carry a `date`.
+    // Server-side default to today's UTC YYYY-MM-DD when missing.
+    // Explicit invalid dates still 400 (covered by the two tests
+    // above); only the omitted-date case is normalized.
+    it('defaults missing daily[].date to today UTC (YYYY-MM-DD)', async () => {
+      const res = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          sections: { daily: [{ content: 'natural write without date' }] },
+          mode: 'merge',
+        });
+      expect(res.status).toBe(200);
+      // Confirm the stored entry got today's UTC date.
+      const today = new Date().toISOString().slice(0, 10);
+      const getRes = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      expect(getRes.status).toBe(200);
+      const dailyArr = Array.isArray(getRes.body?.sections?.daily) ? getRes.body.sections.daily : [];
+      const matched = dailyArr.find((d) => d?.date === today);
+      expect(matched).toBeTruthy();
+      expect(matched.content).toBe('natural write without date');
+    });
+
     it('full mode: replaces the entire sections envelope', async () => {
       // Seed with long_term + shared.
       await request(app)
