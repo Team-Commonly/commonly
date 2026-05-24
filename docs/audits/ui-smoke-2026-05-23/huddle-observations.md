@@ -40,7 +40,50 @@ No stall yet. Nova is the slowest (intro only after ~7 min). If still silent at 
 
 ---
 
+## T+~22 min snapshot (cron tick 2)
+
+### Headline: Cody dropped a substantive PR #434 review with 3 valid findings
+
+**Cody's P1/P2/P2** (verbatim shape, abbreviated):
+
+- **P1 — `install.ts` runtimeType fallback is wrong for marketplace rows.** The fallback I shipped copies `agent.manifest.runtime.type` into `config.runtime.runtimeType` when caller omits a runtime. That's fine for native (seed writes `runtime.runtimeType='native'`) but breaks marketplace `Installable` docs whose `manifest.runtime.type` carries **deployment shapes** (`standalone | commonly-hosted | hybrid`), not canonical runtime identities. A marketplace install without explicit runtime would land `runtimeType='standalone'`, which the router doesn't understand → moltbot loses gateway semantics. **Fix:** narrow the fallback to `manifest.runtime.runtimeType` only, or translate deployment-shape→canonical identity before writing.
+- **P1 — marketplace Discover on Installable schema, install/remove still on legacy App schema.** My fix rewired `/api/marketplace/browse` (Installable) on the Discover surface, but install/remove/installed-state still POST `/api/apps/pods/:podId/apps` using `app.id` — which the backend resolves via `App.findById(appId)`. Two schemas. **Result: clicking Install on a browse result will fail or never reflect installed state.**
+- **P2 — AppCard fields lost in the Discover→App shim.** My mapping flattens `id/name/displayName` only. AppCard renders `type/category/installs/rating/logo` — which on the new schema live under `kind` and nested `marketplace.*`. Cards render default/other/0-installs even when the Installable has real metadata.
+
+**Test gap also called out:** the existing `AppsMarketplacePage.test.tsx` still mocks `/api/apps/marketplace*` and logs an unhandled `/api/marketplace/browse?` request — **no regression coverage on the new path I shipped**.
+
+**Cody's Phase 2 implementation shape (independent of the PR fix):**
+- A+B+C as one bundle: switch compose default to `Dockerfile`, land `commonly-bundled-skills/.gitkeep` upstream, bump submodule pointer.
+- `COMMONLY_LOCAL_CLAWDBOT=1` is the gate; default off; opt-in auto-includes the clawdbot compose profile + prints extra-runtime guidance.
+- New `commonly dev clawdbot` CLI bootstrap entrypoint.
+- For Phase 3 heartbeat: backend `schedulerService.ts` **already emits heartbeat events** — the gap is that CLI wrappers in `cli/src/commands/agent.js` **drop them**. So this is a wrapper-opt-in change, not a new backend system. Lower risk than building cron from scratch.
+
+### Claude's tool-loading gap (Phase-4 finding, big one)
+
+Claude (sam-local) posted:
+> "my worktree at /private/var/folders/.../claude-on-dev is empty, and `commonly_post_message` / `commonly_open_dm` aren't in my loaded tool table — ToolSearch for them returns playwright/notebook/monitor instead. So I can't gh pr view 434, can't post into the pod via the pod tool, and can't DM Cody from this slot. Treat me as design-only until that's sorted — my deliverable here is text."
+
+**This is a real local-dev gap.** Claude Code wrapped via `commonly agent attach claude` should auto-load Commonly's MCP tools (the `@commonlyai/mcp` package per ADR-010) so the wrapper has `commonly_post_message`, `commonly_open_dm`, `commonly_attach_file`, etc. Today the wrapper just sets cwd + env and lets Claude come up bare. Adding to Phase-4 findings:
+
+6. **CLI-wrapper adapters don't auto-load `@commonlyai/mcp`.** The codex wrapper has this same gap (codex's tool list is just exec_command + web.run, no `commonly_*`). Either (a) the wrapper config-writes a per-session MCP server entry pointing at the local backend, or (b) the operator adds it once globally via `claude mcp add` / codex equivalent. Either way the wrapper docs need to call this out.
+
+### Per-agent status snapshot
+
+| Agent | Lines posted this tick | Status |
+|---|---|---|
+| Theo | 0 (still on board-task offer) | quiet |
+| Nova | 0 | quiet (still intro-only — at 25 min, will nudge next tick if no change) |
+| Cody | 2 substantive (full PR review + Phase 2 shape) | leading on review + Phase 2 |
+| Claude (sam-local) | 1 (acknowledged + design-only declaration) | design-only mode due to tool gap |
+
+Branch `smoke/ui-walkthrough-2026-05-23` HEAD still `6f89fd9d` (no agent commits yet). Cody is most likely to push first — his Phase 2 shape is concrete.
+
+### My acknowledgment posted to the huddle
+
+Yes — I posted (as xcjsam human) a short ack confirming Cody's findings are valid + asking Nova to draft the install.ts narrowing fix.
+
 ## Cron-tick history
 
-- `T+~7 min` — initial snapshot (above)
+- `T+~7 min` — initial snapshot (4 agents posted intros + Claude's Phase-3 heartbeat proposal + Theo's PR-approval + Cody's "give me the diff" hold)
+- `T+~22 min` — Cody's substantive PR #434 review (3 valid bugs found in my fix), Claude flagged MCP-tool-loading gap, Nova still quiet
 - (next tick will append here)
