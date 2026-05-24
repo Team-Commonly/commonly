@@ -1,0 +1,209 @@
+/* V2 marketplace detail — token-aligned, single-accent, borders not shadows.
+ * Mirrors the v2.css token discipline (no gradients in chrome; one accent
+ * color; 80–120ms hover transitions; --v2-radius for corners).
+ */
+
+.v2-marketplace-detail {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px;
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font);
+}
+
+.v2-marketplace-detail--loading,
+.v2-marketplace-detail--error {
+  text-align: center;
+  padding: 64px 24px;
+  color: var(--v2-text-secondary);
+}
+
+.v2-marketplace-detail__header {
+  border-bottom: 1px solid var(--v2-border-soft);
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+}
+
+.v2-marketplace-detail__back {
+  display: inline-block;
+  color: var(--v2-text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  margin-bottom: 16px;
+  transition: color 100ms ease;
+}
+.v2-marketplace-detail__back:hover {
+  color: var(--v2-accent);
+}
+
+.v2-marketplace-detail__identity {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.v2-marketplace-detail__logo {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--v2-radius);
+  object-fit: cover;
+  background: var(--v2-bg-subtle);
+}
+.v2-marketplace-detail__logo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--v2-text-secondary);
+  border: 1px solid var(--v2-border-soft);
+}
+
+.v2-marketplace-detail__title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.v2-marketplace-detail__title {
+  margin: 0 0 4px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--v2-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.v2-marketplace-detail__badge {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+  border-radius: 999px;
+}
+
+.v2-marketplace-detail__meta,
+.v2-marketplace-detail__stats {
+  font-size: 13px;
+  color: var(--v2-text-secondary);
+  margin-top: 4px;
+}
+
+.v2-marketplace-detail__sep {
+  margin: 0 6px;
+  opacity: 0.5;
+}
+
+.v2-marketplace-detail__install {
+  align-self: flex-start;
+  background: var(--v2-accent);
+  color: var(--v2-bg);
+  border: none;
+  border-radius: var(--v2-radius);
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.v2-marketplace-detail__install:hover {
+  background: var(--v2-accent-strong);
+}
+
+.v2-marketplace-detail__body {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.v2-marketplace-detail__description {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--v2-text-primary);
+  margin: 0;
+}
+
+.v2-marketplace-detail__section h2 {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--v2-text-secondary);
+  margin: 0 0 12px;
+}
+
+.v2-marketplace-detail__components,
+.v2-marketplace-detail__requires {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.v2-marketplace-detail__components li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  font-size: 13px;
+}
+.v2-marketplace-detail__component-type {
+  color: var(--v2-text-secondary);
+  font-weight: 600;
+}
+.v2-marketplace-detail__component-name {
+  color: var(--v2-text-primary);
+}
+
+.v2-marketplace-detail__scope {
+  padding: 4px 10px;
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: var(--v2-font-mono);
+  color: var(--v2-text-secondary);
+}
+
+.v2-marketplace-detail__readme {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--v2-text-primary);
+}
+.v2-marketplace-detail__readme h1,
+.v2-marketplace-detail__readme h2,
+.v2-marketplace-detail__readme h3 {
+  margin: 16px 0 8px;
+}
+.v2-marketplace-detail__readme p {
+  margin: 0 0 12px;
+}
+.v2-marketplace-detail__readme pre {
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  padding: 12px;
+  overflow-x: auto;
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+}
+.v2-marketplace-detail__readme code {
+  background: var(--v2-bg-subtle);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--v2-font-mono);
+  font-size: 0.9em;
+}
+.v2-marketplace-detail__readme pre code {
+  background: transparent;
+  padding: 0;
+}
