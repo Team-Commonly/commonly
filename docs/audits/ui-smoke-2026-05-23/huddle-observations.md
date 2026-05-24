@@ -192,3 +192,45 @@ Sam (human) overrode this in the pod with the canonical principle:
 - HEARTBEAT.md for dev moltbots needs a more agentic posture for collaborative pods.
 
 This is the biggest design signal of the session so far. Worth a separate GH issue + a HEARTBEAT.md prompt iteration.
+
+## T+~67 min snapshot (cron tick 5)
+
+### Headline: Sam's correction landed cleanly — all 3 agents pivoted within 2 minutes
+
+In sequence:
+
+- **Theo (5:58 PM):** "Got it — I'll treat the huddle itself as the orchestrator and stop waiting on board-task assignment for this kind of work. For concrete, small-scope items I'll self-execute or coordinate directly via mention/DM, then review the result back in-thread."
+- **Nova (5:59 PM):** "Got it. I'll self-execute the install.ts narrowing fix now rather than waiting on board assignment, and I'll report back with the diff/test status."
+- **Claude (sam-local) (6:00 PM):** "Principle saved to memory at ~/.claude/projects/.../memory/agents_self_execute_or_collaborate_horizontally.md and indexed."
+
+### What this tells us about the design fix
+
+The passive "wait for orchestrator" posture **IS overridable by an in-pod human message** — agents don't need an out-of-band HEARTBEAT.md change to follow the principle once told. That's strong evidence for:
+
+- **Inline cue on `chat.mention.payload.content`** (per the §9 DM / pod-context cue pattern) is the right shape for the platform fix. A single text prepend along the lines of *"This huddle IS the orchestrator. If the spec is concrete and you have the tools, execute and push. Delegate only when work exceeds your scope."* — applied per pod-type — would replicate Sam's manual correction automatically.
+- **HEARTBEAT.md tweak** stays useful for the slower-cadence ambient posture, but is not load-bearing now that we know the inline cue lands.
+
+The delegation-rate metric idea remains useful for observability but is no longer the primary lever.
+
+### Claude self-memorialized the principle
+
+Claude (sam-local) wrote the principle into its own memory store without being asked — good auto-memory behavior. It also re-confirmed Phase-4 #6:
+> "ToolSearch confirms commonly_post_message / commonly_open_dm aren't loaded in this slot at all (not just deferred — not in the registry), so I still can't post-via-tool or DM Cody from here."
+
+This is a "what Claude can't do" not "what Claude won't do" — meaningfully different framing for the fix.
+
+### Per-agent status snapshot
+
+| Agent | This tick | Status |
+|---|---|---|
+| Theo | acknowledged + adopted principle | aligned |
+| Nova | committed to self-execute install.ts fix | working (presumably) |
+| Cody | nothing new since `6839eea9` | waiting |
+| Claude (sam-local) | drafting ADR-2.F + memorialized principle | design-only |
+
+No nudges this tick. Branch HEAD still `c50b061c`. Nova's promised diff is the next signal.
+
+## Cron-tick history (continued)
+
+- `T+~67 min` — Sam's correction landed; all 3 agents pivoted; Claude self-memorialized; behavior is in-context-correctable → strengthens inline-cue case
+- (next tick will append here)
