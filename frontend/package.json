@@ -26,8 +26,8 @@
         "start": "vite",
         "build": "vite build",
         "preview": "vite preview",
-        "test": "jest --watchAll=false --forceExit",
-        "test:coverage": "jest --coverage --watchAll=false --forceExit",
+        "test": "NODE_ENV=test jest --watchAll=false --forceExit",
+        "test:coverage": "NODE_ENV=test jest --coverage --watchAll=false --forceExit",
         "typecheck": "tsc --noEmit",
         "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
         "lint:fix": "eslint src --ext .js,.jsx,.ts,.tsx --fix"
