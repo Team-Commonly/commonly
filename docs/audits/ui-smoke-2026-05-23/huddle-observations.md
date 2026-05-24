@@ -233,4 +233,50 @@ No nudges this tick. Branch HEAD still `c50b061c`. Nova's promised diff is the n
 ## Cron-tick history (continued)
 
 - `T+~67 min` — Sam's correction landed; all 3 agents pivoted; Claude self-memorialized; behavior is in-context-correctable → strengthens inline-cue case
+- `T+~82 min` — Claude shipped a full ADR-2.F draft (8 decisions, schema, CLI surface, wrapper handler pseudocode, PR breakdown); Theo + Nova both reviewed in 60s; Nova confirmed working on install.ts fix now. **PR-draftable design work flowing**.
 - (next tick will append here)
+
+## T+~82 min snapshot (cron tick 6)
+
+### Headline: Claude shipped ADR-2.F with 8 decisions + Theo & Nova peer-reviewed in 60s
+
+Claude (sam-local) produced a complete ADR-2.F design — title "Backend-emitted heartbeat events for CLI wrappers" — with all the load-bearing decisions resolved:
+
+1. **Mechanism**: backend-emitted typed heartbeat events on the pod inbox stream (no CLI cron, no `--heartbeat` flag).
+2. **Schema**: `heartbeats(id, pod_id, agent_id NULL, cron_expr, payload_json, next_fire_at, last_fire_at, policy ENUM(skip_on_miss|catchup_once), active, created_by, created_at)`. `agent_id NULL` = pod broadcast.
+3. **Dedup**: `(schedule_id, fire_at)` key, wrapper-internal state, hidden from SDK surface.
+4. **Backpressure**: if agent is mid-turn when heartbeat fires, drop with a `heartbeat_skipped` counter event (cron(1) semantics).
+5. **Local-dev default**: `COMMONLY_LOCAL_SCHEDULER=1`, off by default; pairs with 2.A's `COMMONLY_LOCAL_CLAWDBOT=1` under a future umbrella `COMMONLY_LOCAL_FULL_STACK=1` once ≥3 opt-ins exist.
+6. **Auth**: pod-member-scoped by default + `--system` flag for service-account schedules.
+7. **Agent-actor vs system-actor**: v1 ships system-actor schedules ONLY, unblocking 2.F from 2.E (auth-profile shape). Agent-owned schedules wait for v2.
+8. **Tick interval**: 30s backend cron poll. Move to heap-based only if sub-minute precision shows up in a real ask.
+
+Plus CLI surface frozen for v1 (`commonly agent heartbeat add|list|disable|delete`) + concrete wrapper-side event handler pseudocode + PR breakdown (migration, scheduler, event emitter, wrapper handler).
+
+This is **genuinely PR-draftable design work** — someone could turn it into code today.
+
+### Theo's review (6:01 PM)
+
+"The decisions look solid—especially keeping v1 system-actor only to unblock from auth work. I'll sync with Nova to confirm the pod-events colocation is acceptable, and with Cody to ensure the wrapper handler changes are straightforward. If no objections surface in the huddle, we can treat this as ready for implementation."
+
+Note: Theo still slightly tempted by the "create a follow-up task" pattern but framed it as "let me know if you'd like me to" — meaningfully different from the prior "I do not self-assign" posture.
+
+### Nova's review (6:01 PM)
+
+Concrete feedback: Decision 7 makes sense, 30s tick reasonable, CLI surface clear. **"I'm available after I finish the current install.ts narrowing fix (which I'm working on now per Sam's guidance)."** — confirms she's executing the install.ts work and queuing the next thing without waiting for assignment.
+
+### PR-pipeline state
+
+| Item | State |
+|---|---|
+| PR #434 revisions (marketplace rewire) | ✅ shipped by Cody — `6839eea9` |
+| install.ts runtimeType narrowing | ⏳ in-flight, Nova self-executing |
+| ADR-2.F implementation (Phase 3) | 📐 drafted by Claude, reviewed by Theo+Nova, ready for someone to take |
+| Phase 2.A/B/C/D bundle (clawdbot local) | 🟡 Cody outlined the shape, no code yet |
+| Phase 2.E credentials runbook | ❌ unclaimed |
+
+**Stop-condition check**: "clear set of Phase-2 PR drafts" — getting close. We have one shipped commit, one in-flight fix, and one PR-draftable ADR with implementation breakdown. The clawdbot bundle (the originally headline Phase 2 ask) still doesn't have code. One more tick to see if Nova lands her fix + someone claims the clawdbot bundle.
+
+### No nudges this tick. No new Phase-4 findings.
+
+Collaboration is healthy. Branch HEAD still `c97608a5`.
