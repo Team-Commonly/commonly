@@ -200,7 +200,7 @@ services:
     profiles: ["clawdbot"]
     build:
       context: ./_external/clawdbot
-      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile.commonly}
+      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile}
     container_name: clawdbot-gateway-dev
     depends_on:
       - backend
@@ -272,7 +272,7 @@ services:
     profiles: ["clawdbot"]
     build:
       context: ./_external/clawdbot
-      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile.commonly}
+      dockerfile: ${CLAWDBOT_DOCKERFILE:-Dockerfile}
     container_name: clawdbot-cli-dev
     depends_on:
       - clawdbot-gateway

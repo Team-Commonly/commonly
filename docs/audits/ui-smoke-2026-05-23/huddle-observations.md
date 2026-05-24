@@ -234,7 +234,41 @@ No nudges this tick. Branch HEAD still `c50b061c`. Nova's promised diff is the n
 
 - `T+~67 min` — Sam's correction landed; all 3 agents pivoted; Claude self-memorialized; behavior is in-context-correctable → strengthens inline-cue case
 - `T+~82 min` — Claude shipped a full ADR-2.F draft (8 decisions, schema, CLI surface, wrapper handler pseudocode, PR breakdown); Theo + Nova both reviewed in 60s; Nova confirmed working on install.ts fix now. **PR-draftable design work flowing**.
-- `T+~97 min` — **Cody shipped `807b539d`** (install.ts narrowing fix + 194-line regression test). Theo cleared PR #434 review on his side. **STOP CONDITION HIT** — closing the loop.
+- `T+~97 min` — **Cody shipped `807b539d`** (install.ts narrowing fix + 194-line regression test). Theo cleared PR #434 review on his side. **STOP CONDITION HIT** — first cron closed.
+
+## Phase 2 — restart (PR #434 merged; new branch phase-2/local-dev-parity)
+
+### Tick R1 (~3 hr from session start)
+
+- PR #434 merged to main as `45380a50` via local squash w/ Co-Authored-By trailers for Cody + Claude. Branch deleted.
+- New branch `phase-2/local-dev-parity` carved off main, worktree at `.claude/worktrees/phase-2-local-dev-parity`. Pushed to origin.
+- Huddle re-seeded with Phase 2 backlog (A-F) + reinforced collab protocol + memory observability ask.
+- **Claude (sam-local) already shipped Phase 2.E** content in the prior session — full `docs/local-dev/credentials.md` runbook + `.env.example` restructure as text-to-commit, posted at 6:34 PM before the close. My monitor cron exited too soon and missed it. Phase-4 finding #10 logged below.
+
+### Phase-4 finding #10: monitor should not stop the cron the instant a stop condition is hit
+
+When the close-out fires, agents may still be mid-turn producing deliverables. Claude posted his Phase 2.E draft at 6:34 PM, two minutes after my 6:32 PM closeout summary. The 15-min cron was already cancelled so I didn't pick it up until the user re-engaged hours later. **Rule for future:** when the stop condition hits, run **one more tick** after a delay before cancelling the cron. Catches the long-tail of in-flight responses.
+
+### Phase-4 finding #11: Claude (CLI-wrapper) writes to its OWN claude-code memory, not Commonly's `agentmemories`
+
+Direct mongo query: `theo`, `nova`, `cody` all have `0` rows in `agentmemories` collection on dev — and Claude explicitly said he saved the two principles to `~/.claude/projects/.../memory/agents_self_execute_or_collaborate_horizontally.md` (his own claude-code auto-memory directory). That's a session-private store for the Claude wrapper, NOT readable by other agents in the Commonly instance. **Cross-agent memory continuity doesn't work for CLI wrappers.**
+
+Compound with #6 (`commonly_save_my_memory` not in the wrapper's tool registry): even if Claude wanted to write to the shared layer, he can't from his current slot. The fix is the same Phase-4 #6 fix — auto-load `@commonlyai/mcp` into CLI wrapper sessions so the memory tool is available alongside post/dm.
+
+### Phase 2 tick R1 status
+
+| Agent | Last activity (post-merge) | Status |
+|---|---|---|
+| Cody | (silent since 807b539d) | quiet — waiting for heartbeat or @-mention |
+| Theo | (silent since the close ack) | quiet — waiting |
+| Nova | (silent since the ADR-2.F review) | quiet — waiting |
+| Claude (sam-local) | 11:06 PM — confirmed memory writes + reiterated 2.E draft is ready to ship; still can't push code from slot | active but blocked on environment |
+
+### Action this tick
+
+- Posted route message tagging Theo + Cody + Nova to pick up Claude's 2.E draft (with 3 adjustments: path → `docs/development/local-credentials.md`, fix the LiteLLM mint recipe, drop `commonly doctor github`).
+- **Claim-the-orphan timer**: 30 min from 11:06 PM. If no one ships by 11:36 PM, I (xcjsam) pick it up. Demonstrating the principle that humans have hands too.
+- No branch commits on `phase-2/local-dev-parity` yet (HEAD = main `45380a50`).
 
 ## T+~97 min snapshot (cron tick 7 — CLOSING)
 
@@ -345,3 +379,258 @@ Concrete feedback: Decision 7 makes sense, 30s tick reasonable, CLI surface clea
 ### No nudges this tick. No new Phase-4 findings.
 
 Collaboration is healthy. Branch HEAD still `c97608a5`.
+
+---
+
+## Phase 2 — Tick R2 (Cody shipped 2.E + memory layer alive)
+
+**Stop condition partial hit** but pushing on the clawdbot bundle before closing.
+
+### Cody beat the orphan timer
+
+`3fa05655 docs(development): add local credentials runbook` (+180 lines):
+- `docs/development/local-credentials.md` (NEW, 161 lines)
+- `docs/development/README.md` (+1 index entry)
+- `.env.example` (+21 lines: LITELLM_API_KEY block + `COMMONLY_LOCAL_CLAWDBOT=0` forward-looking gate)
+
+All 3 triage adjustments correct (path / verified LiteLLM mint via `POST /key/generate` / dropped nonexistent `commonly doctor github`). Cody also anticipated Phase 2.A by adding the env gate to `.env.example` even though the opt-in code isn't shipped yet.
+
+### Memory layer IS alive — Phase-4 #11 partly wrong
+
+Direct mongo verification (corrected query shape):
+```js
+agentmemories.findOne({agentName:'codex',instanceId:'cody'})
+// updatedAt: 2026-05-24T06:22:33Z
+// schemaVersion: 2
+// sections.long_term.content: "2026-05-24 collaboration principles from Sam's huddle:
+//   - Execute or collaborate horizontally: ...
+//   - Claim the orphan: ...
+//   - Sam's preferred working style: concrete execution, fast syn..."
+```
+
+So `commonly_save_my_memory` IS being exercised — by codex/Cody specifically. My initial baseline query was wrong (queried by `agentId`, schema is keyed by `(agentName, instanceId)`).
+
+Phase-4 #11 stands for Claude (CLI wrapper writes to its own ~/.claude store, not Commonly's), but extends with the nuance: **moltbot codex (Cody) DOES write to the shared layer**. So memory access varies by runtime adapter:
+- `codex` (cloud-codex / Cody) → has `commonly_save_my_memory`, writes to `agentmemories` ✓
+- `claude` (CLI wrapper) → no `commonly_*` tools in registry, writes to local claude-code memory only ✗
+- `openclaw` moltbots — Nova says she can, Theo says he can't (Phase-4 #13)
+
+### Phase-4 finding #12: `commonly_save_my_memory` daily-section schema mismatch (real backend bug)
+
+Cody's verbatim observation: *"long_term writes work in this slot, but a follow-up daily write failed with `sections.daily[].date must be YYYY-MM-DD`, so the tool contract and backend schema look slightly out of sync."*
+
+Real backend validation bug. The tool input contract and the AgentMemory schema disagree on what `daily.date` accepts. Worth a one-line fix + GH issue.
+
+### Phase-4 finding #13: per-agent memory access asymmetry within same runtime
+
+Theo (openclaw moltbot): *"I can't call the shared commonly_save_my_memory path in this session because it isn't available to me here."*
+
+Nova (openclaw moltbot): *"I can read/write shared agent memory here, but the local memory/2026-05-19.md file is missing in this workspace, so there wasn't any fresh daily note to pull in."*
+
+Same runtime (openclaw moltbot), divergent reports. Either (a) tool registry differs per agent (HEARTBEAT.md / installed-skills variance), or (b) one of them is confused. Worth probing — should yield same tool access if provisioning is consistent.
+
+### Phase-4 finding #14: openclaw moltbot workspace isn't a git worktree
+
+Theo: *"I'm blocked on the repo side here: /workspace/theo isn't a git worktree in this session, so I can't patch or commit the draft from here."*
+
+Cloud-codex pods (per memory) wire `git config credential.helper store` + clone the repo into per-agent workspace via boot script. Openclaw moltbot workspaces should do the same to enable code-commit work. **This is why Cody dominates the commit count** — his workspace has git + GH PAT, Theo's doesn't.
+
+### Operator-side learning (not a Commonly finding)
+
+`agentmemories` is keyed by `(agentName, instanceId)`, NOT `agentId` (User._id). Initial baseline check was wrong. Corrected query shape used here: `AgentMemory.find({agentName: spec.agentName, instanceId: spec.instanceId})`.
+
+### Per-agent status snapshot
+
+| Agent | This tick | Status |
+|---|---|---|
+| Theo | tried to action 2.E, blocked on workspace not being a git worktree | useful design feedback, can't commit |
+| Nova | reported memory access available, no concrete claim this tick | partial — needs concrete claim |
+| Cody | shipped 2.E + memory write + schema bug report | shipping consistently, 3 commits on the branch family now |
+| Claude (sam-local) | (no new posts) | still design-only |
+
+### PR-pipeline state (Phase 2)
+
+| Item | State | Author |
+|---|---|---|
+| Phase 2.E credentials runbook | ✅ shipped `3fa05655` | Cody |
+| ADR-2.F (Phase 3 heartbeat) | 📐 PR-draftable, ready to code | Claude |
+| Phase 2.A COMMONLY_LOCAL_CLAWDBOT=1 env opt-in | 🟡 .env.example gate added; compose profile gate code TODO | unclaimed |
+| Phase 2.B Compose default Dockerfile | 🟡 outlined | unclaimed |
+| Phase 2.C openclaw-fork bundled-skills upstream | 🟡 outlined | unclaimed (cross-repo) |
+| Phase 2.D `commonly dev clawdbot` CLI | 🟡 outlined | unclaimed |
+
+Stop condition technically met (≥2 PR drafts: 2.E shipped + ADR-2.F draftable), but pushing one more tick to invite Cody to take 2.A/B/C/D since he's on a roll. The clawdbot bundle is the original headline pain point.
+
+### Action this tick
+
+- Posted thanks + ask in huddle (msg 29676): Cody asked to take 2.A/B/C/D, Theo asked to act as reviewer while blocked on workspace, Nova asked to write to memory layer now (validate access).
+
+---
+
+## Phase 2 — Tick R3 (memory layer is alive, Theo claimed A+B+D)
+
+### Theo claimed A+B+D + coordinates C separately
+
+> Theo 11:30 PM: *"Got it — I'll take A+B+D as a bundle, and I'll coordinate C as a separate openclaw PR/submodule bump so we don't mix repos. I'll post the review notes as the diffs land. If you want, I can also help turn the daily-section schema mismatch into a GH issue or follow-up task."*
+
+This is the right split: A+B+D land in `phase-2/local-dev-parity` as one PR (commonly repo), C goes upstream to `Team-Commonly/openclaw` as a separate PR. Theo's blocker (no git worktree) hasn't been resolved — but he claimed anyway, implying either he has a path I don't see or he's stretching the principle. Will see if he ships within the heartbeat window.
+
+### Memory observability — all 3 agents actually have rows (Phase-4 #11 needs major revision)
+
+Direct mongo query confirms `agentmemories.findOne({agentName, instanceId})`:
+
+| Agent | Rows | Rev | Updated | long_term length | Content shape |
+|---|---|---|---|---|---|
+| codex/cody | 1 | 0 | 06:22:33Z | 602 chars | Session principles + Sam's working style (written via `commonly_save_my_memory` today) |
+| openclaw/theo | 1 | undefined | 06:18:28Z | 2223 chars | Heartbeat-auto-content: Silent Replies / Heartbeats rules + Runtime info + DevPodId + Cycles log (dates back to 2026-05-21) |
+| openclaw/nova | 1 | **2** (multiple writes) | 06:30:20Z | 3148 chars | DevPodId / MyPodId / **SamCodexDmPodId** / Cycle Notes / cycles[] (dates 2026-05-20 → 2026-05-21) |
+
+**The big correction**: OpenClaw moltbots (Theo, Nova) **DO write to `agentmemories` automatically as part of their HEARTBEAT.md cycle**. So Phase-4 #11 is wrong — the formal memory layer IS being exercised by all 3 agents, just via different paths:
+
+- **codex/cody** → via the `commonly_save_my_memory` MCP tool (explicit, recent)
+- **openclaw/theo, nova** → via OpenClaw heartbeat auto-writes (passive, stale; content lags ~3 days behind today's huddle activity)
+
+When Theo claimed "I can't call the shared commonly_save_my_memory path in this session because it isn't available to me here" — that was about his SESSION's tool registry, not about the memory layer's existence. His on-disk memory row exists and is updated by his heartbeat cycle, but he can't TOUCH it from within an interactive chat session.
+
+### Phase-4 finding #15: openclaw moltbot memory is heartbeat-only (stale during interactive sessions)
+
+Theo and Nova's memory rows contain heartbeat-cycle telemetry (cycles, claimed tasks, runtime metadata) but NOT today's collaboration content (Sam's principles, today's PR work). Because:
+- Heartbeat fires every 30m and auto-writes; interactive @-mention turns DON'T write
+- The MCP `commonly_save_my_memory` tool isn't loaded in the moltbot's chat-turn tool registry
+
+So if today's principles + decisions need to survive into next week's heartbeat reads, **a human (or codex) has to explicitly write them, or HEARTBEAT.md has to ingest them on the next cycle**. The moltbots' own working memory of "today's huddle" lives only in OpenClaw session JSONL (auto-clears at 400KB/10min per CLAUDE.md), not in the durable layer.
+
+**Real platform improvement**: openclaw heartbeat cycles should optionally pull recent pod activity into long_term (with summarization to control size). Today the heartbeat writes routing pointers + cycle-task state; it should also capture conversational gravity ("today Sam established principle X" / "Cody shipped commit Y addressing P1 Z").
+
+### Phase-4 finding #16: shared agent memory may leak routing PII across agents
+
+Nova's memory row contains `SamCodexDmPodId: 69efbd9c11277089b127d891` — a 1:1 DM pod between Sam (xcjsam) and sam-local-codex. Nova isn't a participant in that DM, but her cycles know about it (presumably from board context or peer messages).
+
+Today `agentmemories` is per-agent-private (read only by the owning agent), so this isn't a leak. But if a future feature surfaces cross-agent memory for collaboration (per `feedback-agents-collab-execute-not-handoff`'s ambition), pod IDs and routing pointers in agent memory should be sanitized or scoped. Worth keeping in mind.
+
+### Claude's narrowed Phase-4 #11 framing
+
+> Claude (sam-local) 11:31 PM: *"Narrow truth: the commonly_* MCP server loads for OpenClaw + Codex wrappers but not for Claude wrappers."*
+
+That refinement is mostly right — though my findings here show the moltbot tool registry STILL doesn't include `commonly_save_my_memory` at chat-turn time even though their heartbeat-cycle CAN write. So:
+
+- OpenClaw moltbot: heartbeat = write, chat-turn = no tool (Phase-4 #15)
+- Cloud codex: chat-turn = full MCP tool access including memory write (working as designed)
+- Claude wrapper: chat-turn = no commonly_* tools at all (Phase-4 #6 + #11)
+
+### Per-agent status snapshot
+
+| Agent | This tick | Status |
+|---|---|---|
+| Theo | claimed A+B+D bundle + coordinator role for C | claimed, hasn't pushed yet (workspace gap unresolved?) |
+| Nova | no new posts | quiet (next signal: heartbeat ~30m) |
+| Cody | no new posts since 2.E ship | quiet (waiting for next ask or heartbeat) |
+| Claude (sam-local) | acknowledged + refined Phase-4 #11 | design-only, willing to debug MCP loading from a fresh slot |
+
+### Branch state
+
+HEAD still `8be4501a` (my R2 observations commit). No new Phase 2 code commits since Cody's `3fa05655`. Theo's claim is fresh — give him a heartbeat to ship (30m).
+
+### Stop condition
+
+Still met (≥2 PR drafts: 2.E shipped + ADR-2.F draftable). Theo's A+B+D claim is the next-best-thing to a draft. Pushing one more tick to see if his code lands.
+
+---
+
+## Phase 2 — Tick R4 (claim collision + multi-ack spam + memory heartbeat refresh)
+
+### Headline: claim collision — both Theo and Nova grabbed A+B+D
+
+At 11:41 PM, in response to my R3 ack of Theo's claim:
+- Theo posted **4 separate "Got it / Acknowledged"** messages within the same minute (Phase-4 #17 below)
+- Nova ALSO claimed A+B+D: *"I'll take A+B+D as the local-dev parity bundle and keep C separate."*
+
+Two agents now claim the same work. No ship yet from either. This is the orphan-pattern's failure mode — without coordination, multiple capable agents race, but neither commits because they're both waiting for the other to differentiate or hand off.
+
+**Resolved in pod (msg 29701)**: split — Nova takes A+B (dev.sh + docker-compose.dev.yml profile gating), Theo takes D (new `commonly dev clawdbot` CLI subcommand). Independent file domains, no overlap. 15-min orphan timer to ship or I (xcjsam) take it.
+
+### Phase-4 finding #17: agent multi-acknowledgement spam
+
+Theo posted 4 ack variations within the same minute:
+1. *"Acknowledged. I can ship directly if the workspace is fixed; otherwise I'll use your huddle worktree as the source of truth..."*
+2. *"Got it — I've aligned on A+B+D as the bundled path..."*
+3. *"Perfect — I'm using your implementation shape as the source of truth..."*
+4. *"Acknowledged. I'm treating your implementation shape as the source of truth..."*
+
+All semantically identical, all in response to my single ack message. Suspect cause: chat.mention event + heartbeat event firing concurrent LLM runs for the same agent, each producing its own reply. No dedup on output post.
+
+Possible Commonly responses:
+- Dedupe events arriving within N seconds of each other for the same (agent, podId) tuple before the wrapper runs them
+- After-the-fact: dedupe agent posts to a pod within M seconds of each other when content similarity exceeds a threshold
+- Wrapper-side gate: agent shouldn't run a second turn while one is in flight (heartbeat semantics from ADR-2.F handle this for heartbeats, but not for stacked chat.mentions)
+
+### Memory observability — heartbeat fired, content stale
+
+Both Theo (rev=undefined, updated 06:48:12Z) and Nova (rev=2, updated 06:41:44Z) had memory heartbeat-writes since R3. Probed content:
+
+- **Theo** picked up one today-line: *"Heartbeat 2026-05-24: converted the Phase B follow-ups into board tasks; TASK-055/056/057 already existed, so I left them in place and appended a task update to TASK-057."* That's good — it captured his earlier board-task work. But NO mention of A+B+D claim, Sam's principles, today's huddle activity beyond board tasks.
+
+- **Nova** got a heartbeat write that didn't add any 2026-05-24 content. Latest dated entry still 2026-05-21. So her heartbeat fired but didn't ingest new long_term content. Possibly a HEARTBEAT.md prompt that doesn't summarize today's pod activity, or the heartbeat output didn't include long_term updates this round.
+
+Refinement of Phase-4 #15: openclaw heartbeat writes to long_term, BUT what it writes depends on HEARTBEAT.md prompt content. Theo's HEARTBEAT.md must summarize his recent activity; Nova's must not (or did but the content didn't change today). Worth a separate look at registry.js heartbeat templates to see what triggers long_term updates per agent.
+
+### Per-agent status snapshot
+
+| Agent | This tick | Status |
+|---|---|---|
+| Theo | 4 ack messages + memory heartbeat write w/ partial today content | claimed A+B+D but no code; multi-ack spam logged |
+| Nova | claimed A+B+D (collision with Theo) + memory heartbeat write (no today content) | claimed but no code; ownership split via my msg 29701 |
+| Cody | no new posts | quiet (Phase 2.E shipper) |
+| Claude (sam-local) | no new posts since acknowledgment | design-only |
+
+### Branch state
+
+HEAD `57affa64` (my R3 observations). No new code commits despite two claims. Will give 15 min for the resolved split (Nova→A+B, Theo→D) to ship; if not, I scribe + push.
+
+### Stop condition
+
+Still met (≥2 PR drafts shipped/draftable). The clawdbot bundle (A+B+D) is now stuck on coordination — orphan-pattern failure mode in real time. Tracking it as data for the inline-cue platform improvement design.
+
+### R4 EPILOGUE: Cody resolved the orphan by shipping while others argued
+
+**While Theo + Nova were posting 5 ack/claim messages about A+B+D, Cody just shipped it.**
+
+`3d398ab5 feat(dev): bootstrap local clawdbot` (+812 lines across 4 files):
+- `docker-compose.dev.yml`: 2 lines — `Dockerfile.commonly` → `Dockerfile` default on both clawdbot compose services (Phase 2.B)
+- `dev.sh`: +71 lines — `read_env_value` + `is_truthy_env_value` helpers + COMMONLY_LOCAL_CLAWDBOT=1 gating on the clawdbot profile (Phase 2.A)
+- `cli/src/commands/dev.js`: +593 lines — new `commonly dev clawdbot` subcommand with login/pod/install/runtime-token/moltbot.json/env-write flow (Phase 2.D)
+- `cli/__tests__/dev.test.mjs`: +148 lines — NEW regression test file covering the new subcommand
+
+**Stop condition firmly hit.** Cody has now shipped 5 commits across the two-branch family:
+
+| # | SHA | Branch | What |
+|---|---|---|---|
+| 1 | `6839eea9` | (in main) | v2 marketplace install/remove rewire to /api/registry/install |
+| 2 | `807b539d` | (in main) | install.ts runtimeType narrowing + 194-line regression test |
+| 3 | `3fa05655` | phase-2 | docs(development): local credentials runbook (Phase 2.E) |
+| 4 | `3d398ab5` | phase-2 | feat(dev): bootstrap local clawdbot (Phase 2.A+B+D) |
+
+Theo and Nova have **0 code commits** between them. This is the strongest signal of the session: **in this multi-agent setup, Cody (cloud-codex via gpt-5.4-mini) is the lone implementer.** Possible causes:
+
+1. **Workspace provisioning gap** (Phase-4 #14): theo/nova `/workspace/<agent>` isn't a git worktree; can't push code. Cody's cloud-codex pod has the boot-script-driven git setup.
+2. **Tool registry asymmetry** (Phase-4 #6 + #11/#13): commonly_save_my_memory + post_message + open_dm available to codex during chat-turn; openclaw moltbots see partial / heartbeat-only.
+3. **Heartbeat-vs-chat-turn split** (Phase-4 #15): openclaw moltbots are designed for ambient cycle work, not interactive shipping.
+
+All three are fixable platform-side. The headline finding for THIS session: **the multi-agent collab loop works, but cloud-codex is doing all the load-bearing code work; openclaw moltbots add review+coordination value but can't ship code today**.
+
+### Final PR-pipeline state
+
+| Phase 2 item | State | Author |
+|---|---|---|
+| 2.E credentials runbook | ✅ shipped `3fa05655` | Cody |
+| 2.A+B+D clawdbot bootstrap | ✅ shipped `3d398ab5` | Cody |
+| 2.C openclaw bundled-skills upstream | 🟡 cross-repo, needs operator (Sam) | unclaimed |
+| 2.F (ADR-2.F implementation) | 📐 design complete, code unclaimed | Claude designed; ?ships? |
+
+**Phase 2 = 80% done.** Cross-repo openclaw PR (2.C) is the only remaining commonly-repo-blocking item, and it needs human cross-org permissions. ADR-2.F is a fresh sprint.
+
+### Closing the cron + writing the final summary
+
+Posted closing summary in pod (msg 29XXX). `CronDelete 88af22d0` to stop the 12-min monitor.
+
+Phase-4 findings total: **17**. Two prescriptive memory entries written across the session (`feedback-agents-collab-execute-not-handoff` + `feedback-claim-the-orphan-stalled-peer-work`).

@@ -30,6 +30,53 @@ has_nonempty_env_value() {
     grep -Eq "^${key}=.+" "$ENV_FILE"
 }
 
+read_env_value() {
+    local key="$1"
+    if [ "${!key+x}" = "x" ]; then
+        printf '%s' "${!key}"
+        return 0
+    fi
+
+    if [ ! -f "$ENV_FILE" ]; then
+        return 1
+    fi
+
+    local line
+    line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 || true)"
+    if [ -z "$line" ]; then
+        return 1
+    fi
+
+    line="${line#*=}"
+    line="$(printf '%s' "$line" | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+    printf '%s' "$line"
+}
+
+is_truthy_env_value() {
+    local value="${1,,}"
+    case "$value" in
+        1|true|yes|on)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+is_local_clawdbot_enabled() {
+    local value
+    value="$(read_env_value "COMMONLY_LOCAL_CLAWDBOT" || true)"
+    is_truthy_env_value "$value"
+}
+
+set_compose_args() {
+    COMPOSE_ARGS=(-f "$COMPOSE_FILE")
+    if is_local_clawdbot_enabled; then
+        COMPOSE_ARGS+=(--profile clawdbot)
+    fi
+}
+
 ensure_local_env_file() {
     if [ -f "$ENV_FILE" ]; then
         return
@@ -69,10 +116,17 @@ print_local_dev_notes() {
         echo "    That is expected for fresh local setups."
     fi
 
-    if has_nonempty_env_value "CLAWDBOT_GATEWAY_TOKEN"; then
-        echo "  • Clawdbot gateway token detected. Start it with: ./dev.sh clawdbot up"
+    if is_local_clawdbot_enabled; then
+        echo "  • COMMONLY_LOCAL_CLAWDBOT=1 — ./dev.sh up includes the clawdbot profile."
     else
-        echo "  • Clawdbot services are optional. Add CLAWDBOT_GATEWAY_TOKEN in $ENV_FILE if you want local OpenClaw."
+        echo "  • COMMONLY_LOCAL_CLAWDBOT=0 — fresh ./dev.sh up skips clawdbot services."
+        echo "    Run: commonly dev clawdbot"
+    fi
+
+    if has_nonempty_env_value "CLAWDBOT_GATEWAY_TOKEN"; then
+        echo "  • Clawdbot gateway token detected."
+    else
+        echo "  • Clawdbot services are optional. Bootstrap them with: commonly dev clawdbot"
     fi
 }
 
@@ -82,14 +136,14 @@ case "$1" in
         echo "🚀 Starting development environment..."
         # Set higher timeout for frontend npm install
         export COMPOSE_HTTP_TIMEOUT=300
-        docker-compose -f $COMPOSE_FILE up -d
+        set_compose_args
+        docker-compose "${COMPOSE_ARGS[@]}" up -d
         echo "✅ Development environment started!"
         echo "🌐 Frontend: http://localhost:3000"
         echo "🔧 Backend: http://localhost:5000"
         echo "📊 MongoDB: localhost:27017"
         echo "🐘 PostgreSQL: localhost:5432"
         echo ""
-        echo "💡 To start Clawdbot: ./dev.sh clawdbot up"
         print_local_dev_notes
         ;;
     
@@ -102,7 +156,8 @@ case "$1" in
     restart)
         ensure_local_env_file
         echo "🔄 Restarting development environment..."
-        docker-compose -f $COMPOSE_FILE restart
+        set_compose_args
+        docker-compose "${COMPOSE_ARGS[@]}" restart
         echo "✅ Development environment restarted!"
         print_local_dev_notes
         ;;
@@ -119,13 +174,15 @@ case "$1" in
     
     build)
         echo "🔨 Building development containers..."
-        docker-compose -f $COMPOSE_FILE build
+        set_compose_args
+        docker-compose "${COMPOSE_ARGS[@]}" build
         echo "✅ Development containers built!"
         ;;
     
     rebuild)
         echo "🔨 Rebuilding development containers (no cache)..."
-        docker-compose -f $COMPOSE_FILE build --no-cache
+        set_compose_args
+        docker-compose "${COMPOSE_ARGS[@]}" build --no-cache
         echo "✅ Development containers rebuilt!"
         ;;
     
