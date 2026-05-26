@@ -12,7 +12,31 @@ interface PgConfig {
   port: number | string;
   database: string | undefined;
   ssl?: { rejectUnauthorized: boolean; ca: string } | false;
+  // Pool sizing — see #454 (2026-05-26 incident). pg.Pool defaults to
+  // max=10 and connectionTimeoutMillis=0 (wait forever). On any traffic
+  // surge — e.g. the hourly summarizer fanning out 60 summary.request
+  // events — concurrent pool.query() calls saturate the 10 slots and
+  // every subsequent caller hangs indefinitely instead of failing fast.
+  // User-facing endpoints (getAllPods, /api/messages) then appear to
+  // "freeze" with no diagnostic signal. Bumping max + adding an explicit
+  // connection-acquire timeout fixes both: more headroom for the burst,
+  // and a clear acquire-timeout error if it does saturate.
+  max: number;
+  connectionTimeoutMillis: number;
 }
+
+// Defaults: max=50 (Aiven dev plan supports 100+ connections; 50 gives
+// ample room for the 60-event summarizer burst without claiming the
+// entire DB connection budget), connectionTimeoutMillis=5000ms (fail
+// fast as a 5xx so the user sees an error rather than a perpetual
+// "loading"). Operators can tune via env without rebuilding;
+// non-numeric / non-positive env values fall through to the default
+// rather than zeroing the pool.
+const parsePoolInt = (raw: string | undefined, fallback: number): number => {
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
 
 const pgConfig: PgConfig = {
   user: process.env.PG_USER,
@@ -20,6 +44,8 @@ const pgConfig: PgConfig = {
   host: process.env.PG_HOST,
   port: process.env.PG_PORT || 5432,
   database: process.env.PG_DATABASE,
+  max: parsePoolInt(process.env.PG_POOL_MAX, 50),
+  connectionTimeoutMillis: parsePoolInt(process.env.PG_POOL_CONNECT_TIMEOUT_MS, 5000),
 };
 
 if (process.env.PG_SSL_CA_PATH) {

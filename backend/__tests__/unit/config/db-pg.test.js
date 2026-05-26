@@ -38,3 +38,22 @@ describe('connectPG', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('Pool config (#454 incident — pool exhaustion)', () => {
+  // Capture the constructor args passed to pg.Pool when db-pg.ts loads.
+  // The mock above intercepts the constructor; reading
+  // `require('pg').Pool.mock.calls[0][0]` gives us the config object the
+  // backend would have handed to a real Pool.
+  const getPoolArgs = () => require('pg').Pool.mock.calls[0][0];
+
+  it('sets a default pool max well above pg.Pool default of 10', () => {
+    const args = getPoolArgs();
+    expect(args.max).toBeGreaterThanOrEqual(50);
+  });
+
+  it('sets a finite connectionTimeoutMillis (no infinite hang on saturation)', () => {
+    const args = getPoolArgs();
+    expect(args.connectionTimeoutMillis).toBeGreaterThan(0);
+    expect(args.connectionTimeoutMillis).toBeLessThanOrEqual(60_000);
+  });
+});
