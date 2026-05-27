@@ -17,6 +17,13 @@ jest.mock('pg', () => ({
   Pool: jest.fn(() => mockPool),
 }));
 
+// db-pg.ts only constructs a Pool when PG_HOST is set; otherwise it
+// returns null and `new Pool(...)` is never called. CI doesn't set
+// PG_HOST in the unit-test job (only the Service Tests Tier 1 job
+// boots real PG). Ensure a placeholder is present so the Pool ctor
+// runs and our config assertions below have something to inspect.
+process.env.PG_HOST = process.env.PG_HOST || 'localhost-test';
+
 delete require.cache[require.resolve('../../../config/db-pg')];
 const { pool, connectPG } = require('../../../config/db-pg');
 
