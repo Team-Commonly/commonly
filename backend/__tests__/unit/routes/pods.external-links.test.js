@@ -241,10 +241,28 @@ describe('pods routes - external links', () => {
     await request(app).delete('/api/pods/external-link/l1').expect(404);
   });
 
-  it('returns 403 when deleting link as non-owner', async () => {
-    ExternalLink.findById.mockResolvedValue({ podId: 'p1' });
-    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'other' } });
+  it('returns 403 when deleting link as neither owner nor creator', async () => {
+    ExternalLink.findById.mockResolvedValue({
+      podId: 'p1',
+      createdBy: { toString: () => 'someone-else' },
+    });
+    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'other-owner' } });
     await request(app).delete('/api/pods/external-link/l1').expect(403);
+  });
+
+  it('allows the link creator to delete (even if not pod owner)', async () => {
+    const podSave = jest.fn();
+    ExternalLink.findById.mockResolvedValue({
+      podId: 'p1',
+      createdBy: { toString: () => 'user1' }, // current authed user
+    });
+    Pod.findById.mockResolvedValue({
+      createdBy: { toString: () => 'other-owner' },
+      externalLinks: ['l1'],
+      save: podSave,
+    });
+    await request(app).delete('/api/pods/external-link/l1').expect(200);
+    expect(ExternalLink.findByIdAndDelete).toHaveBeenCalledWith('l1');
   });
 
   it('fetches qrcode when user is member', async () => {
