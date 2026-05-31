@@ -10,7 +10,7 @@ import Register from '../components/Register';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
-import LandingPage from '../components/landing/LandingPage';
+import V2LandingPage from './landing/V2LandingPage';
 import UseCasePage from '../components/landing/UseCasePage';
 import PostFeed from '../components/PostFeed';
 import Thread from '../components/Thread';
@@ -122,7 +122,7 @@ const V2App: React.FC = () => {
     <div className="v2-root">
       <V2ErrorBoundary>
         <Routes>
-          <Route path="landing" element={<LandingPage />} />
+          <Route path="landing" element={<V2LandingPage />} />
           <Route path="use-cases/:useCaseId" element={<UseCasePage />} />
           <Route path="login" element={<V2Login />} />
           <Route path="register" element={<Register />} />

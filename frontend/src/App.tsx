@@ -6,6 +6,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import RegistrationInviteRequired from './components/RegistrationInviteRequired';
 import LandingPage from './components/landing/LandingPage';
+import V2LandingPage from './v2/landing/V2LandingPage';
 import UseCasePage from './components/landing/UseCasePage';
 import VerifyEmail from './components/VerifyEmail';
 import PostFeed from './components/PostFeed';
@@ -281,7 +282,8 @@ function App(): React.ReactElement {
                   <div className="App">
                     <Routes>
                     <Route path="/v2/*" element={<V2App />} />
-                    <Route path="/" element={<LandingPage />} />
+                    <Route path="/" element={<V2LandingPage />} />
+                    <Route path="/legacy-landing" element={<LandingPage />} />
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
