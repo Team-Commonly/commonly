@@ -229,13 +229,23 @@ cloudflared:
 
 litellm:
   enabled: true
-  # Pinned override on top of values.yaml's v1.82.3-stable default. Testing
-  # whether v1.83.7-stable resolves the chatgpt/gpt-5.4 device-code-on-startup
-  # crashloop (distinct from but likely related to BerriAI/litellm#25429, which
-  # is still open upstream as of 2026-04-21). Roll back here if it regresses.
+  # Pinned override on top of values.yaml's v1.82.3-stable default.
+  #
+  # 2026-05-31: bumped from v1.83.7-stable to v1.88.0-rc.1 to fix the
+  # ChatgptException `'ResponsesAPIResponse' object has no attribute
+  # 'output'` bug. Symptom: every openai-codex/* call silently fell
+  # through to the OpenRouter fallback chain (Nemotron) even with valid
+  # auth.json — agents posted but never on Codex output. The fix lands
+  # in v1.87.x; first ghcr stable that includes it would be v1.87.0
+  # (not yet published as plain v1.87.x — only RCs available). v1.88.0-
+  # rc.1 is the earliest tag that ghcr serves which has the patch.
+  #
+  # Pinning to the RC is the price; revisit when v1.87.0 stable or
+  # v1.88.0 stable lands on ghcr.io/berriai/litellm. v1.86.2 confirmed
+  # still broken via direct kubectl set image test (2026-05-31).
   image:
     repository: ghcr.io/berriai/litellm
-    tag: v1.83.7-stable
+    tag: v1.88.0-rc.1
   # BerriAI/litellm#25429 workaround used to live here. Now off — acpx is
   # being deprecated in commonly (see ADR-005 Stage 3) and we'd rather route
   # everything through LiteLLM than chase an upstream bug for a code path
