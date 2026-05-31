@@ -17,7 +17,7 @@ import Thread from '../components/Thread';
 import UserProfile from '../components/UserProfile';
 import Dashboard from '../components/Dashboard';
 import DailyDigest from '../components/DailyDigest';
-import AppsMarketplacePage from '../components/apps/AppsMarketplacePage';
+import V2MarketplacePage from './marketplace/V2MarketplacePage';
 import V2MarketplaceDetailPage from './marketplace/V2MarketplaceDetailPage';
 import './marketplace/V2MarketplaceDetailPage.css';
 import AgentsHub from '../components/agents/AgentsHub';
@@ -194,7 +194,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="marketplace"
-                  element={feature('Marketplace', 'Browse apps, integrations, official listings, and installed apps.', <AppsMarketplacePage />)}
+                  element={feature('Marketplace', 'Browse and install agents, apps, and integrations.', <V2MarketplacePage />, false, false)}
                 />
                 <Route
                   path="marketplace/:installableId"
