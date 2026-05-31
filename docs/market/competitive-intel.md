@@ -73,6 +73,36 @@ Sourcing rule: public builders voicing the exact pain (multi-tool context fragme
 
 ---
 
+## Differentiation stress-test — 2026-05-30
+
+**Question asked:** what can a user do in Commonly that they genuinely can't in Multica or Subspace today? And how does solo-vs-backed + no-marketing change the picture?
+
+**Multica (~29k★, OSS):**
+- Shape is **project-management for agents** (assignee picker, issue tracker, activity timeline), single-operator-centric. Its own issue #815: *"Multica still manages AI the way it manages people."*
+- **No first-class memory layer.** Reviewers (mem0, agentpedia) note: skills say *how*, but there's no first-class place for *what's true about the codebase*. **This is exactly Commonly's wedge (project memory) — Multica does not have it.**
+- No event-driven orchestration (schedule triggers only as of v0.3.1; no fire-on-PR/Slack), weak agent output visibility.
+- Funding: **no Crunchbase entry** ("Multicast" is unrelated). Star spike looks like trending/build-in-public, not a VC war chest.
+
+**Subspace ($12/mo or $99/yr; Mac Apple-Silicon only; CLOSED source):**
+- Structurally the **inverse of Commonly on every axis**: closed-source (vs OSS), Mac-only (vs web/self-host any platform), and **explicitly single-developer** ("built for people running 3–10 agents," "before anyone else sees them").
+- Strong *background memory* — but it's a **personal desktop power-user tool. No multi-human collaboration.** Nobody else joins your Subspace.
+
+**Verdict:** Commonly's combination — **multi-human + multi-vendor + OSS + project-owned memory** — is **genuinely unoccupied.** Multica = single-operator PM (no memory primitive). Subspace = single-dev closed desktop (no multi-human). Notion = doc-centric/backed. The premise holds; the gap is structural, not wishful.
+
+**The real risk is distribution, not product.** Solo + no marketing budget vs teams with earlier flywheel momentum. Mitigations grounded in precedent:
+- Competitors are **indie/small, not heavily VC-funded** (Multica no funding record; Subspace a $12/mo indie app). Beatable.
+- Solo-OSS distribution playbook needs one repeatable motion, not budget: **launch small + often, show up where devs are, reply within hours** (the thing backed teams can't match). Precedent: Supermemory (solo → 25k★ → $3M raise), Pieter Levels ($1M ARR, 0 employees, 0 paid marketing, build-in-public).
+- **Unique owned asset:** the repo is built by its own agents. That narrative *is* the marketing — a live self-demo neither Multica nor Subspace can tell.
+
+**Action items for Sam:**
+- [ ] Reframe YC "competitors" answer: Multica = single-operator PM w/ no memory layer; Subspace = closed single-dev desktop. Commonly's multi-human + memory combo is the unoccupied slice.
+- [ ] Pick ONE build-in-public motion (e.g. weekly "what the agent team shipped" post) — distribution is the binding constraint, and it's the lever you actually control.
+- [ ] Lead with the "built by its own agents" story everywhere — it's your unfair distribution asset.
+
+**Sources:** [Multica GitHub](https://github.com/multica-ai/multica) · [Multica issue #815](https://github.com/multica-ai/multica/issues/815) · [mem0 on Multica memory](https://mem0.ai/blog/how-memory-works-in-a-multi-agent-system-inside-multica) · [Subspace](https://www.subspace.build/) · [Subspace on Product Hunt](https://www.producthunt.com/products/subspace-4) · [Supermemory/Levels solo-OSS distribution](https://www.indiehackers.com/post/i-did-it-my-open-source-company-now-makes-14-2k-monthly-as-a-single-developer-f2fec088a4)
+
+---
+
 ## Pass log
 
 ### Pass 0 — 2026-05-30 (seed)
