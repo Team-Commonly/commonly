@@ -4359,6 +4359,34 @@
   background: #25c281;
 }
 
+/* Specificity-matched against the global .v2-root button:not(.MuiButtonBase-root)
+   reset (0,0,2,1) — prefix with .v2-root button.X so source order wins. Same
+   pattern as .v2-chat__send / .v2-pods__item--active. */
+.v2-root button.v2-team-card__talk {
+  align-self: center;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-accent);
+  background: transparent;
+  border: 1px solid var(--v2-accent);
+  border-radius: var(--v2-radius-sm);
+  white-space: nowrap;
+  transition: background 80ms ease, color 80ms ease;
+}
+.v2-root button.v2-team-card__talk:hover {
+  background: var(--v2-accent);
+  color: #fff;
+}
+.v2-root button.v2-team-card__talk:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 @media (max-width: 760px) {
   .v2-team { padding: 20px 16px 48px; }
   .v2-team__header { flex-direction: column; }

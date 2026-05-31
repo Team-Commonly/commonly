@@ -76,6 +76,9 @@ const V2YourTeamPage: React.FC = () => {
   // from the union of categories present on loaded agents so a sparse team
   // doesn't render empty filters.
   const [filter, setFilter] = useState<string>('all');
+  // Key (`name:instanceId`) of the agent whose 1:1 room is currently opening,
+  // so its "Talk to" button can show progress and block a double-submit.
+  const [opening, setOpening] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +146,33 @@ const V2YourTeamPage: React.FC = () => {
       ? sortedAgents
       : sortedAgents.filter((a) => (a.category || 'Uncategorized') === filter)
   ), [sortedAgents, filter]);
+
+  // Open the coached 1:1 (agent-room) for this agent — the same surface the
+  // post-install handoff lands on. Without this, "talk to your agent" is only
+  // reachable from the project pod (a group), so the 1:1 relationship a user
+  // forms at install has no entry point on their primary team surface.
+  const handleTalkTo = async (a: AgentInstallationSummary, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const key = `${a.name}:${a.instanceId}`;
+    setOpening(key);
+    setError(null);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const res = await axios.post<{ room?: { _id?: string } }>(
+        '/api/agents/runtime/room',
+        { agentName: a.name, instanceId: a.instanceId || 'default', podId: a.podId || undefined },
+        { headers },
+      );
+      const roomId = res.data?.room?._id;
+      if (!roomId) throw new Error('Agent room not returned');
+      navigate(`/v2/pods/${roomId}`);
+    } catch (err: unknown) {
+      const resp = (err as { response?: { data?: { message?: string } } })?.response;
+      setError(resp?.data?.message || 'Could not open a 1:1 with this agent — try again.');
+      setOpening(null);
+    }
+  };
 
   return (
     <div className="v2-team">
@@ -221,12 +251,14 @@ const V2YourTeamPage: React.FC = () => {
           const podLabel = a.podName || 'Untitled project';
           const runtimeLabel = formatRuntime(a);
           const lastSeen = formatRelative(a.lastHeartbeatAt);
+          const cardKey = `${a.name}:${a.instanceId}`;
+          const isOpening = opening === cardKey;
           const onCardClick = () => {
             if (a.podId) navigate(`/v2/pods/${a.podId}`);
           };
           return (
             <article
-              key={`${a.name}:${a.instanceId}`}
+              key={cardKey}
               className="v2-team-card"
               onClick={onCardClick}
               role="button"
@@ -253,6 +285,15 @@ const V2YourTeamPage: React.FC = () => {
                   {lastSeen}
                 </div>
               </div>
+              <button
+                type="button"
+                className="v2-team-card__talk"
+                onClick={(e) => handleTalkTo(a, e)}
+                disabled={isOpening}
+                aria-label={`Talk to ${display} one-to-one`}
+              >
+                {isOpening ? 'Opening…' : 'Talk to'}
+              </button>
             </article>
           );
         })}

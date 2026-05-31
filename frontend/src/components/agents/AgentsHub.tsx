@@ -1333,7 +1333,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       if (!dmPodId) {
         throw new Error('DM pod not returned');
       }
-      navigate(`/pods/agent-admin/${dmPodId}`);
+      // Stay in the shell that launched this — a v2 card must not eject the
+      // user into the legacy ChatRoom. Mirrors the install handoff above.
+      const isV2Context = typeof window !== 'undefined' && window.location.pathname.startsWith('/v2');
+      navigate(isV2Context ? `/v2/pods/${dmPodId}` : `/pods/agent-admin/${dmPodId}`);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to open agent DM');
     }
@@ -1352,7 +1355,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       if (!roomPodId) {
         throw new Error('Agent room not returned');
       }
-      navigate(`/pods/agent-room/${roomPodId}`);
+      // Stay in the shell that launched this — a v2 card must not eject the
+      // user into the legacy ChatRoom. Mirrors the install handoff above.
+      const isV2Context = typeof window !== 'undefined' && window.location.pathname.startsWith('/v2');
+      navigate(isV2Context ? `/v2/pods/${roomPodId}` : `/pods/agent-room/${roomPodId}`);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to open agent room');
     }
