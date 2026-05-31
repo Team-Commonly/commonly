@@ -59,13 +59,22 @@ Applied 2026-05-26 in PR #455 (`backend/config/db-pg.ts`):
 
 With this, an exhausted pool fails fast as a 5xx instead of hanging — user sees an error, on-call sees an alert, response is actionable.
 
-## Still TODO (post-#455)
+## Follow-ups shipped in #459 (2026-05-31)
 
-- **Audit summarizer + heartbeat dispatch concurrency** — burst-rate-limit the per-event PG calls so a 60-pod fanout doesn't claim 60 slots simultaneously. Chunking by 10 with `await Promise.all` per batch is the natural shape.
-- **Add `/api/health/db` probe** that returns `pool.idleCount` + `pool.waitingCount` and alerts when waiting > 5 for >30s. Would have caught this before user impact.
+Both items below were "still TODO" after #455; PR #459 shipped them:
+
+- **Summarizer fanout chunked** — `SchedulerService.dispatchPodSummaryRequests` now enqueues in batches of `SUMMARIZER_FANOUT_BATCH_SIZE` (default 10) with a `SUMMARIZER_FANOUT_BATCH_PAUSE_MS` gap (default 500ms) between batches, instead of a bare `Promise.all` over all installations. For 60 pods that spreads the burst across ~3s so the consumer side never claims all pool slots at once.
+- **`/api/health/db` probe added** — returns `{ pg: { max, total, idle, waiting, connectionTimeoutMillis } }` with NO `SELECT` round-trip (safe to scrape every 10s). Returns **503 only when `waiting > 0 AND idle === 0`** (true saturation); transient `waiting > 0 / idle > 0` returns 200 to avoid alert noise. Code: `backend/routes/health.ts`.
+
+Probe it:
+
+```bash
+kubectl exec -n commonly-dev deploy/backend -- curl -sS http://localhost:5000/api/health/db
+# → {"pg":{"status":"ok","max":50,"total":N,"idle":N,"waiting":0,...}}
+```
 
 ## Related
 
 - Incident issue: [#454](https://github.com/Team-Commonly/commonly/issues/454)
-- Fix PR: [#455](https://github.com/Team-Commonly/commonly/pull/455)
-- Code: `backend/config/db-pg.ts` (pool config), `backend/controllers/podController.ts:199-227` (getAllPods PG call site), `backend/services/summarizerService.ts` (likely surge source)
+- Fix PRs: [#455](https://github.com/Team-Commonly/commonly/pull/455) (pool ceiling), [#459](https://github.com/Team-Commonly/commonly/pull/459) (fanout chunk + health probe)
+- Code: `backend/config/db-pg.ts` (pool config), `backend/controllers/podController.ts:199-227` (getAllPods PG call site), `backend/services/schedulerService.ts` (`dispatchPodSummaryRequests` — the chunked surge source), `backend/routes/health.ts` (`/api/health/db`)
