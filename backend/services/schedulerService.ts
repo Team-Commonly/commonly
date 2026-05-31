@@ -675,23 +675,45 @@ class SchedulerService {
       return { enqueued: 0 };
     }
 
-    await Promise.all(
-      installations.map((installation) => (
-        AgentEventService.enqueue({
-          agentName: 'commonly-bot',
-          instanceId: installation.instanceId || 'default',
-          podId: installation.podId,
-          type: 'summary.request',
-          payload: {
-            source: 'pod',
-            trigger,
-            windowMinutes,
-            includeDigest: true,
-            silent: true,
-          },
-        })
-      )),
-    );
+    // #454 follow-up: chunk the fanout. A bare Promise.all over all
+    // installations means 60+ events become ready at the exact same
+    // instant; the agent runtime then races to process them, and each
+    // downstream summary handler queries PG for messages — which under
+    // pg.Pool max=10 (pre-#455) saturated the pool and hung user-facing
+    // /api/pods. PR #455 raised the pool ceiling, but the burst itself
+    // is still wasteful: better to spread enqueue (and therefore the
+    // downstream processing window) over a few seconds. Batches of 10
+    // with a 500ms gap caps peak concurrency on the consumer side while
+    // keeping total wall time well under the next hourly tick.
+    const BATCH_SIZE = parseInt(process.env.SUMMARIZER_FANOUT_BATCH_SIZE || '10', 10) || 10;
+    const BATCH_PAUSE_MS = parseInt(process.env.SUMMARIZER_FANOUT_BATCH_PAUSE_MS || '500', 10) || 500;
+
+    for (let i = 0; i < installations.length; i += BATCH_SIZE) {
+      const batch = installations.slice(i, i + BATCH_SIZE);
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all(
+        batch.map((installation) => (
+          AgentEventService.enqueue({
+            agentName: 'commonly-bot',
+            instanceId: installation.instanceId || 'default',
+            podId: installation.podId,
+            type: 'summary.request',
+            payload: {
+              source: 'pod',
+              trigger,
+              windowMinutes,
+              includeDigest: true,
+              silent: true,
+            },
+          })
+        )),
+      );
+      // Sleep between batches; skip the final pause.
+      if (i + BATCH_SIZE < installations.length && BATCH_PAUSE_MS > 0) {
+        // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
+        await new Promise((resolve) => setTimeout(resolve, BATCH_PAUSE_MS));
+      }
+    }
 
     return { enqueued: installations.length };
   }

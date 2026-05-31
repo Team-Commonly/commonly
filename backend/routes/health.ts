@@ -109,6 +109,58 @@ router.get('/live', (_req: unknown, res: Res) => {
   res.status(200).json({ status: 'alive', timestamp: new Date().toISOString() });
 });
 
+// #454 follow-up: dedicated DB-pool probe. The main /api/health does a
+// `SELECT 1` round-trip but doesn't surface pool stats. Alerting on
+// pool.waitingCount > N for sustained windows would have caught the
+// 2026-05-26 incident before user impact. Lightweight (no PG query) so
+// safe to scrape frequently (e.g. every 10s from Prometheus).
+//
+// Returns 503 when waiting > 0 AND idle === 0 — the only signal that
+// surely indicates saturation (waiting>0 alone could be a brief blip
+// during normal bursts). Operators tune via env.
+router.get('/db', (_req: unknown, res: Res) => {
+  const stats: Record<string, unknown> = {
+    timestamp: new Date().toISOString(),
+    mongo: {
+      state: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown',
+    },
+  };
+
+  if (!process.env.PG_HOST || !pgPool) {
+    stats.pg = { status: 'not_configured' };
+    return res.status(200).json(stats);
+  }
+
+  const p = pgPool as {
+    options?: { max?: number; connectionTimeoutMillis?: number; idleTimeoutMillis?: number };
+    totalCount?: number;
+    idleCount?: number;
+    waitingCount?: number;
+  };
+  const idle = p.idleCount ?? 0;
+  const waiting = p.waitingCount ?? 0;
+  const total = p.totalCount ?? 0;
+  const max = p.options?.max ?? 0;
+
+  // Saturation signal: waiting callers AND zero idle connections.
+  // waiting > 0 with idle > 0 just means clients ask in bursts faster
+  // than they release — pool will catch up. Both being non-zero is
+  // when actual queueing happens and latency stacks up.
+  const saturated = waiting > 0 && idle === 0;
+
+  stats.pg = {
+    status: saturated ? 'saturated' : 'ok',
+    max,
+    total,
+    idle,
+    waiting,
+    connectionTimeoutMillis: p.options?.connectionTimeoutMillis ?? 0,
+    idleTimeoutMillis: p.options?.idleTimeoutMillis ?? 0,
+  };
+
+  return res.status(saturated ? 503 : 200).json(stats);
+});
+
 router.get('/ready', async (_req: unknown, res: Res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
