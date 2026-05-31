@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import AppsMarketplacePage from './AppsMarketplacePage';
 
 const axios = require('axios');
@@ -104,7 +105,7 @@ describe('AppsMarketplacePage', () => {
   });
 
   it('renders official marketplace listings', async () => {
-    render(<AppsMarketplacePage />);
+    render(<MemoryRouter><AppsMarketplacePage /></MemoryRouter>);
 
     expect(await screen.findByText('Official Marketplace')).toBeInTheDocument();
     expect(await screen.findByText('Discord')).toBeInTheDocument();
@@ -115,7 +116,7 @@ describe('AppsMarketplacePage', () => {
   });
 
   it('renders installable browse results and installs via registry', async () => {
-    render(<AppsMarketplacePage />);
+    render(<MemoryRouter><AppsMarketplacePage /></MemoryRouter>);
 
     expect((await screen.findAllByText('Community Agent')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('@sam/community-agent').length).toBeGreaterThan(0);

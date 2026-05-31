@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Container,
@@ -161,6 +162,14 @@ const toInstalledLegacyApp = (app: any): App => ({
 
 const AppsMarketplacePage: React.FC = () => {
   const v2Embedded = useV2Embedded();
+  const navigate = useNavigate();
+
+  // Open the v2-native manifest detail page. Only wired in the v2 shell —
+  // the detail route lives at /v2/marketplace/:id and has no v1 equivalent.
+  const handleViewDetail = (app: { installableId?: string; id?: string }) => {
+    const id = String(app?.installableId || app?.id || '');
+    if (id) navigate(`/v2/marketplace/${encodeURIComponent(id)}`);
+  };
   const theme = useTheme();
   const [apps, setApps] = useState<App[]>([]);
   const [featured, setFeatured] = useState<App[]>([]);
@@ -687,6 +696,7 @@ const AppsMarketplacePage: React.FC = () => {
                       installed={isInstalled(app.id)}
                       onInstall={handleInstall}
                       onRemove={handleRemove}
+                      onViewDetail={v2Embedded ? handleViewDetail : undefined}
                     />
                   </Box>
                 ))}
@@ -806,6 +816,7 @@ const AppsMarketplacePage: React.FC = () => {
                       installed={isInstalled(app.id)}
                       onInstall={handleInstall}
                       onRemove={handleRemove}
+                      onViewDetail={v2Embedded ? handleViewDetail : undefined}
                     />
                   </Grid>
                 ))}

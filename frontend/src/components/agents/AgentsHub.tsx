@@ -173,6 +173,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     const params = new URLSearchParams(location.search);
     return params.get('tab') || '';
   }, [location.search]);
+  const queryInstallable = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('installable') || '';
+  }, [location.search]);
   const [selectedPodId, setSelectedPodId] = useState(propPodId || queryPodId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -258,6 +262,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const runtimeLogsInputRef = useRef(null);
   const runtimeLogsScrollRef = useRef({ top: 0, atBottom: true });
   const deepLinkHandledRef = useRef('');
+  const installableDeepLinkHandledRef = useRef('');
   const [userTokenValue, setUserTokenValue] = useState('');
   const [userTokenScopes, setUserTokenScopes] = useState([]);
   const [userTokenMeta, setUserTokenMeta] = useState({
@@ -477,6 +482,25 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       openAgentOverviewDialog(matched);
     }
   }, [queryAgentName, queryInstanceId, queryView, selectedPodId, installedAgents]);
+
+  // Deep-link from the marketplace detail page: /v2/agents/browse?installable=<id>
+  // opens the install dialog pre-targeted to that listing. The marketplace keys
+  // on installableId; our catalog (/api/registry/agents) keys on name — match on
+  // either (plus id/displayName) and no-op if the catalog doesn't carry it, so a
+  // miss just leaves the user on the browse list (no regression).
+  useEffect(() => {
+    if (!queryInstallable || !agents.length) return;
+    if (installableDeepLinkHandledRef.current === queryInstallable) return;
+    const target = String(queryInstallable).trim().toLowerCase();
+    const matched = agents.find((a) => (
+      [a.installableId, a.name, a.id, a._id, a.displayName]
+        .some((v) => String(v || '').trim().toLowerCase() === target)
+    ));
+    if (!matched) return;
+    installableDeepLinkHandledRef.current = queryInstallable;
+    setActiveTab(TAB_DISCOVER);
+    openInstallDialog(matched);
+  }, [queryInstallable, agents]);
 
   const fetchAgents = async () => {
     setLoading(true);

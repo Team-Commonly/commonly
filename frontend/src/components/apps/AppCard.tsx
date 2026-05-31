@@ -31,6 +31,7 @@ import { SvgIconComponent } from '@mui/icons-material';
 export interface AppCardApp {
   id?: string;
   _id?: string;
+  installableId?: string;
   name?: string;
   displayName?: string;
   description?: string;
@@ -50,6 +51,7 @@ interface AppCardProps {
   installed?: boolean;
   onInstall?: (app: AppCardApp) => void;
   onRemove?: (app: AppCardApp) => void;
+  onViewDetail?: (app: AppCardApp) => void;
   loading?: boolean;
   showScopes?: boolean;
 }
@@ -73,6 +75,7 @@ const AppCard: React.FC<AppCardProps> = ({
   installed = false,
   onInstall,
   onRemove,
+  onViewDetail,
   loading = false,
   showScopes = false,
 }) => {
@@ -143,7 +146,13 @@ const AppCard: React.FC<AppCardProps> = ({
           textTransform: 'capitalize',
         }}
       />
-      <CardContent sx={{ flex: 1 }}>
+      <CardContent
+        sx={{ flex: 1, ...(onViewDetail ? { cursor: 'pointer' } : {}) }}
+        onClick={onViewDetail ? () => onViewDetail(app) : undefined}
+        role={onViewDetail ? 'button' : undefined}
+        tabIndex={onViewDetail ? 0 : undefined}
+        onKeyDown={onViewDetail ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewDetail(app); } } : undefined}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
           <Avatar
             src={logo || undefined}
