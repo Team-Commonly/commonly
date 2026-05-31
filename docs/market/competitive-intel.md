@@ -57,6 +57,8 @@ Sourcing rule: public builders voicing the exact pain (multi-tool context fragme
 | 1 | **itlackey** (dev.to) | Maintains 3 duplicate skill dirs (Claude/Codex/Cursor) that drift weekly; Sunday re-sync ritual. Canonical wedge user (already in PAIN_RESEARCH). | dev.to profile | draft below |
 | 2 | **nolynchong** (dev.to) | Wrote "How I solved AI context fragmentation between Claude, ChatGPT, and Cursor" — actively built a workaround = high-intent. | dev.to profile | draft below |
 | 3 | **Wenxiao Pan** (existing user, AI-chip founder) | Already on Commonly; asked unprompted for "more runtime types / local runtimes." Expansion/testimonial, not cold. | already connected | follow-up note below |
+| 4 | **amariahak** (dev.to) | Wrote "I Got Tired of Re-Explaining My Codebase to AI Every Single Session" (May 2026). Names the exact pain in the title; high-intent. | dev.to profile / comment | draft below |
+| 5 | **escott** (dev.to) | Wrote "I Got Tired of Re-Explaining My Codebase to AI — So I Built a Memory Layer." Already built a workaround = very high intent, technical, opinionated. | dev.to profile / comment | draft below |
 
 > More prospects accumulate on each loop pass.
 
@@ -70,6 +72,12 @@ Sourcing rule: public builders voicing the exact pain (multi-tool context fragme
 
 **#3 Wenxiao Pan (existing-user follow-up):**
 > hey Wenxiao — you asked about more runtime types + local runtime support a while back. that's exactly the direction we've been pushing. would love to show you what's landed and hear what's still missing for your setup — got 15 min this week?
+
+**#4 amariahak (dev.to comment):**
+> this post is basically my whole reason for building commonly. the re-explain-every-session tax is real — i went with "the memory belongs to the project, not the tool," so any agent you point at it (claude code, codex, cursor) reads the same context and you stop re-pasting. it's open source if you want to poke at it: github.com/Team-Commonly/commonly — would genuinely value a builder's take.
+
+**#5 escott (dev.to comment):**
+> nice — you built the memory layer i kept wishing existed. i went one step out from per-tool memory: commonly makes the memory belong to the *project* so it's shared across tools AND across teammates, not just across your own sessions. curious whether the cross-human part resonates with how you work, or if solo-session memory is really the whole problem for you. oss: github.com/Team-Commonly/commonly
 
 ---
 
@@ -104,6 +112,28 @@ Sourcing rule: public builders voicing the exact pain (multi-tool context fragme
 ---
 
 ## Pass log
+
+### Pass 1 — 2026-05-30
+
+**🚨 Surfaced to Sam in chat (urgent):**
+- **Notion Developer Platform + External Agents API — launched 2026-05-13** (seed doc said May 25; corrected). Brings Claude/Codex/Decagon in as "first-class workspace participants"; lets teams bring *their own* internal agents into Notion; **1M+ Custom Agents already built**; ships a Notion CLI. This is the strongest "teams + humans + external agents in one workspace" play yet — closest to Commonly's multi-human pitch. **Wedge survives** because Notion is doc-centric and not runtime-neutral at the *memory* layer, but this is the #1 competitor to position against in the YC app. ([TechCrunch](https://techcrunch.com/2026/05/13/notion-just-turned-its-workspace-into-a-hub-for-ai-agents/) · [Notion blog](https://www.notion.com/blog/introducing-developer-platform) · [InfoWorld](https://www.infoworld.com/article/4171166/notion-courts-developers-with-platform-for-ai-agents-and-workflow-automation/))
+
+**Other deltas:**
+- **Google: Vertex AI → "Gemini Enterprise Agent Platform" (2026-05-21)** — agent-first rehierarchy, 200+ models incl. Claude, pushing **A2A as the cross-vendor coordination protocol**. Validates the "agent↔agent coordination is the open problem" thesis, but enterprise-flavored, not a multi-human social room. ([roborhythms](https://www.roborhythms.com/gemini-enterprise-agent-platform-launch/) · [TNW](https://thenextweb.com/news/google-cloud-next-ai-agents-agentic-era))
+- **Taskade** claims to be the **only platform with real-time human+agent co-edit** (Google-Docs-style OT, human cursor in the agent's doc). Narrow but a direct multi-human claim — watch. ([Taskade](https://www.taskade.com/blog/agent-teams-collaboration))
+- **Anthropic (2026-05-19):** Managed Agents now have self-hosted sandboxes + "MCP tunnels" (outbound-only gateway to internal MCP servers). Relevant to Commonly's driver/runtime story.
+- **Memory-layer crowd still thickening** (Mneme, ContextStream, plus the dev.to "I got tired of re-explaining my codebase" genre is now a recurring post format). Demand for the memory primitive keeps compounding; defensibility must stay on coordination + multi-human, not memory alone.
+
+**Demand-side signal (strong, for marketing):** "I got tired of re-explaining my codebase to AI every session" is now a **repeating viral dev.to headline** (multiple near-identical posts, May 2026). This is a ready-made content wedge — Commonly's "memory belongs to the project" line answers the exact title. Devs report **10–15 min/session** lost to context rebuild ([The New Stack](https://thenewstack.io/context-is-ai-codings-real-bottleneck-in-2026/)).
+
+**New prospects added:** #4 amariahak, #5 escott (both below).
+
+**Action items for Sam:**
+- [ ] YC app: add **Notion Developer Platform** as the headline competitor in the big-platform row; correct any May-25 reference to **May 13**.
+- [ ] Marketing: the dev.to "tired of re-explaining my codebase" headline is a proven format — write a Commonly version (build-in-public asset).
+- [ ] Approve/edit outreach drafts for #4 and #5 before any send.
+
+**Sources (Pass 1):** Notion (TechCrunch/InfoWorld/Notion blog, 2026-05-13); Google Gemini Enterprise (roborhythms/TNW, 2026-05-21); Taskade agent-teams blog; Anthropic Managed Agents update (2026-05-19); dev.to context-loss posts ([amariahak](https://dev.to/amariahak/i-got-tired-of-re-explaining-my-codebase-to-ai-every-single-session-10dk), [escott](https://dev.to/escott/i-got-tired-of-re-explaining-my-codebase-to-ai-so-i-built-a-memory-layer-4dhl)); The New Stack (context bottleneck).
 
 ### Pass 0 — 2026-05-30 (seed)
 **New / changed since the YC draft:**
