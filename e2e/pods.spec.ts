@@ -2,15 +2,15 @@ import { test, expect } from '././fixtures/auth';
 
 test.describe('Pods', () => {
   test('authenticated user can view pod listing', async ({ authenticatedPage: page }) => {
-    await page.goto('/pods');
-    // Page should render pod UI — at minimum no crash/blank page
+    await page.goto('/v2');
+    // Page should render the v2 pod UI — at minimum no crash/blank page
     await expect(page.locator('#root')).toBeAttached();
-    // URL should remain on /pods (not redirected to /login)
-    expect(page.url()).toContain('/pods');
+    // v2 is the default shell; an authenticated user should not bounce to login
+    expect(page.url()).toContain('/v2');
   });
 
   test('authenticated user can navigate to feed', async ({ authenticatedPage: page }) => {
-    await page.goto('/feed');
+    await page.goto('/v2/feed');
     await expect(page.locator('#root')).toBeAttached();
     expect(page.url()).toContain('/feed');
   });

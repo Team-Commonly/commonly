@@ -33,11 +33,11 @@ export const test = base.extend<AuthFixtures>({
   authenticatedPage: async ({ page, request }, use) => {
     await ensureTestUser(request);
 
-    await page.goto('/login');
+    await page.goto('/v2/login');
     await page.getByLabel('Email').fill(TEST_USER.email);
     await page.getByLabel('Password').fill(TEST_USER.password);
-    await page.getByRole('button', { name: 'Login' }).click();
-    await page.waitForURL('**/feed', { timeout: 15000 });
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL(/\/v2(\/|$)/, { timeout: 15000 });
 
     await use(page);
   },

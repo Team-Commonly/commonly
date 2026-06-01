@@ -4,7 +4,7 @@ const uniqueTag = () => `e2e${Date.now()}`;
 
 test.describe('Authentication', () => {
   test('register form renders correctly', async ({ page }) => {
-    await page.goto('/register');
+    await page.goto('/v2/register');
     await expect(page.getByLabel('Username')).toBeVisible();
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
@@ -13,7 +13,7 @@ test.describe('Authentication', () => {
 
   test('register new user shows success message', async ({ page }) => {
     const tag = uniqueTag();
-    await page.goto('/register');
+    await page.goto('/v2/register');
     await page.getByLabel('Username').fill(`user_${tag}`);
     await page.getByLabel('Email').fill(`${tag}@commonly.test`);
     await page.getByLabel('Password').fill('TestPass123!');
@@ -25,23 +25,18 @@ test.describe('Authentication', () => {
   });
 
   test('login with wrong password shows error', async ({ page }) => {
-    await page.goto('/login');
+    await page.goto('/v2/login');
     await page.getByLabel('Email').fill('nobody@commonly.test');
     await page.getByLabel('Password').fill('wrongpassword');
-    await page.getByRole('button', { name: 'Login' }).click();
+    await page.getByRole('button', { name: 'Sign in' }).click();
 
-    // MUI v5: error text appears as Typography with color="error" — selector via style or role="alert"
-    // Fall back to any visible text containing common error keywords
-    await expect(
-      page.locator('[role="alert"], .MuiAlert-root').or(
-        page.locator('.MuiTypography-root').filter({ hasText: /invalid|incorrect|wrong|error|failed|not found/i })
-      )
-    ).toBeVisible({ timeout: 8000 });
-    // URL must still be /login — not redirected
-    expect(page.url()).toContain('/login');
+    // v2 login surfaces the failure in a .v2-login__error div
+    await expect(page.locator('.v2-login__error')).toBeVisible({ timeout: 8000 });
+    // URL must still be the login page — not redirected
+    expect(page.url()).toContain('/v2/login');
   });
 
-  test('login with valid credentials redirects to /feed', async ({ page, request }) => {
+  test('login with valid credentials redirects into /v2', async ({ page, request }) => {
     // Register a fresh user (auto-verified when SENDGRID_API_KEY not set)
     const tag = uniqueTag();
     const email = `login_${tag}@commonly.test`;
@@ -51,13 +46,13 @@ test.describe('Authentication', () => {
       { data: { username: `loginuser_${tag}`, email, password, invitationCode: '' } },
     );
 
-    await page.goto('/login');
+    await page.goto('/v2/login');
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password').fill(password);
-    await page.getByRole('button', { name: 'Login' }).click();
+    await page.getByRole('button', { name: 'Sign in' }).click();
 
-    await page.waitForURL('**/feed', { timeout: 15000 });
-    expect(page.url()).toContain('/feed');
+    await page.waitForURL(/\/v2(\/|$)/, { timeout: 15000 });
+    expect(page.url()).toContain('/v2');
   });
 
   test('protected route redirects unauthenticated user', async ({ page }) => {
@@ -68,9 +63,7 @@ test.describe('Authentication', () => {
     });
     await page.goto('/feed');
 
-    // Either redirected to /login or shows a login prompt
-    await page.waitForURL(url => url.pathname === '/login' || url.pathname === '/feed', { timeout: 8000 });
-    // If still on /feed: the login button/form should appear (not full authenticated UI)
-    // This is acceptable as long as protected content is not directly visible
+    // v2 default: /feed → /v2/feed → V2RequireAuth → /v2/login when unauthenticated
+    await page.waitForURL((url) => url.pathname === '/v2/login', { timeout: 8000 });
   });
 });
