@@ -51,8 +51,8 @@ test.describe('Authentication', () => {
     await page.getByLabel('Password').fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
 
-    await page.waitForURL(/\/v2(\/|$)/, { timeout: 15000 });
-    expect(page.url()).toContain('/v2');
+    await page.waitForURL((url) => url.pathname.startsWith('/v2') && !url.pathname.startsWith('/v2/login'), { timeout: 15000 });
+    expect(page.url()).not.toContain('/login');
   });
 
   test('protected route redirects unauthenticated user', async ({ page }) => {

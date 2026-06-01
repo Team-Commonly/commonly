@@ -37,7 +37,9 @@ export const test = base.extend<AuthFixtures>({
     await page.getByLabel('Email').fill(TEST_USER.email);
     await page.getByLabel('Password').fill(TEST_USER.password);
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.waitForURL(/\/v2(\/|$)/, { timeout: 15000 });
+    // Wait for the post-login redirect OFF the login page (v2 login lands on
+    // /v2). A bare /v2 regex would match /v2/login and resolve before login.
+    await page.waitForURL((url) => url.pathname.startsWith('/v2') && !url.pathname.startsWith('/v2/login'), { timeout: 15000 });
 
     await use(page);
   },
