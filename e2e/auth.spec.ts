@@ -8,7 +8,7 @@ test.describe('Authentication', () => {
     await expect(page.getByLabel('Username')).toBeVisible();
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Register' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create account' })).toBeVisible();
   });
 
   test('register new user shows success message', async ({ page }) => {
@@ -17,11 +17,10 @@ test.describe('Authentication', () => {
     await page.getByLabel('Username').fill(`user_${tag}`);
     await page.getByLabel('Email').fill(`${tag}@commonly.test`);
     await page.getByLabel('Password').fill('TestPass123!');
-    await page.getByRole('button', { name: 'Register' }).click();
+    await page.getByRole('button', { name: 'Create account' }).click();
 
-    // Success message from res.data.message — exact text depends on backend
-    // but it must be non-error text visible on the page
-    await expect(page.locator('.MuiTypography-root').filter({ hasNotText: /Register|Create|Start/ }).last()).toBeVisible({ timeout: 8000 });
+    // v2 register swaps to a success state with a "Continue to sign in" CTA
+    await expect(page.getByRole('button', { name: 'Continue to sign in' })).toBeVisible({ timeout: 8000 });
   });
 
   test('login with wrong password shows error', async ({ page }) => {
