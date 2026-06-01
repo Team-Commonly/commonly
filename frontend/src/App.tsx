@@ -6,7 +6,6 @@ import Login from './components/Login';
 import Register from './components/Register';
 import RegistrationInviteRequired from './components/RegistrationInviteRequired';
 import LandingPage from './components/landing/LandingPage';
-import V2LandingPage from './v2/landing/V2LandingPage';
 import UseCasePage from './components/landing/UseCasePage';
 import VerifyEmail from './components/VerifyEmail';
 import PostFeed from './components/PostFeed';
@@ -225,17 +224,15 @@ function NavigationHandler(): null {
   const navigate = useNavigate();
 
   useEffect(() => {
-    try {
-      const v2Active = sessionStorage.getItem('commonly.v2.active') === '1';
-      if (v2Active && !location.pathname.startsWith('/v2')) {
-        const v2Path = getV2EquivalentPath(location.pathname, location.search);
-        if (v2Path) {
-          navigate(v2Path, { replace: true });
-          return;
-        }
+    // v2 is the default UI: redirect any non-/v2 path that has a v2
+    // equivalent into the v2 shell. /v2/* stays directly routable; paths
+    // without a v2 equivalent (e.g. /legacy-landing) render as-is.
+    if (!location.pathname.startsWith('/v2')) {
+      const v2Path = getV2EquivalentPath(location.pathname, location.search);
+      if (v2Path) {
+        navigate(v2Path, { replace: true });
+        return;
       }
-    } catch {
-      // sessionStorage may be blocked; navigation still works normally.
     }
 
     // Force a re-render when the location changes
@@ -282,7 +279,7 @@ function App(): React.ReactElement {
                   <div className="App">
                     <Routes>
                     <Route path="/v2/*" element={<V2App />} />
-                    <Route path="/" element={<V2LandingPage />} />
+                    <Route path="/" element={<Navigate to="/v2" replace />} />
                     <Route path="/legacy-landing" element={<LandingPage />} />
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/login" element={<Login />} />
