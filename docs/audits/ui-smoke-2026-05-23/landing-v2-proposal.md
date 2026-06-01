@@ -1,5 +1,7 @@
 # V2 Landing Page — Design Proposal (2026-05-23)
 
+> **Status: SHIPPED 2026-06-01** (`V2LandingPage`, `frontend/src/v2/landing/`). Built **richer** than this proposal per user feedback — marketing isn't bound by the in-app flat rules, so it gained a two-column hero with a product mockup, a deep-navy (`--v2-accent-deep`) live-stats band (the `/api/stats/public` endpoint deferred below **is** wired), iconned value cards, and a deep-navy CTA — all still v2-native (one accent, borders, no gradients in chrome). Routing then evolved in the same arc: **v2 is now the default UI** — `/` redirects to `/v2` (logged-out → `/v2/login`); the landing lives at `/v2/landing` and the legacy page at `/legacy-landing`. See `docs/development/FRONTEND.md` → "Routing".
+
 Source: subagent `Plan` proposal grounded in `commonly-design` skill, `frontend/design-system/tokens.css` + README, `frontend/src/v2/v2.css`, current legacy `LandingPage.tsx`, CLAUDE.md "Product Vision" section, and ADR-011 (shell-first pre-GTM).
 
 ## Conversion goal (single)

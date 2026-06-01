@@ -190,6 +190,17 @@ The application uses a combination of React Context API and local component stat
 
 ## Routing
 
+### v2 is the default UI (2026-06-01)
+
+The v2 shell (`frontend/src/v2/V2App.tsx`, mounted at `/v2/*`) is the default experience. Any non-`/v2` path that has a v2 equivalent is **redirected into the v2 shell** by `NavigationHandler` in `App.tsx` (via `getV2EquivalentPath`) — e.g. `/` → `/v2`, `/login` → `/v2/login`, `/register` → `/v2/register`, `/apps` → `/v2/marketplace`, `/feed` → `/v2/feed`. `/v2/*` is directly routable; a logged-out visitor lands on `/v2/login`.
+
+- **Auth pair**: `/v2/login` (`V2Login`) + `/v2/register` (`V2Register`, `src/v2/components/`) are v2-native (the `.v2-login` styles). The legacy MUI `Login`/`Register` only render at the bypassed v1 paths. Note: v2 auth components must put `.v2-login__card` on the `<form>`/`<div>` directly — a bare `<form>` picks up a dark global background.
+- **Landing**: the public marketing page is `V2LandingPage` (`src/v2/landing/`) at `/v2/landing`; the pre-v2 landing is preserved at `/legacy-landing`.
+- **Marketplace browse**: `V2MarketplacePage` (`src/v2/marketplace/`) at `/v2/marketplace`; the legacy `AppsMarketplacePage` stays on the v1 `/apps` mount.
+- Paths without a v2 equivalent (e.g. `/legacy-landing`, some `/admin/*`) render as-is.
+
+The v1 routes below are the **legacy surface** — mostly redirect sources now, kept for direct-link/back-compat.
+
 The application uses React Router with the following main routes:
 
 - `/`: Home page with feed of posts
