@@ -3381,7 +3381,10 @@
   border-color: var(--v2-accent);
 }
 
-.v2-login__submit {
+/* Specificity-matched against the global .v2-root button:not(.MuiButtonBase-root)
+   reset (0,0,2,1) — prefix with .v2-root button.X so the accent fill wins.
+   Without this the submit button renders transparent (login + register). */
+.v2-root button.v2-login__submit {
   width: 100%;
   margin-top: 8px;
   padding: 10px 14px;
@@ -3393,11 +3396,11 @@
   transition: background 80ms ease;
 }
 
-.v2-login__submit:hover:not(:disabled) {
+.v2-root button.v2-login__submit:hover:not(:disabled) {
   background: var(--v2-accent-strong);
 }
 
-.v2-login__submit:disabled {
+.v2-root button.v2-login__submit:disabled {
   background: var(--v2-border-strong);
   cursor: not-allowed;
 }
