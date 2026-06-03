@@ -63,6 +63,28 @@ spec:
             else:
                 print('LiteLLM patch: pattern not found, may already be fixed upstream')
             "
+            # Disable LiteLLM_SpendLogToolIndex population. LiteLLM (1.88.0) inserts one
+            # row per tool-call into this table but provides NO retention, cleanup, or
+            # disable flag for it, so it grows unbounded (hit 6.4M rows / ~4 GB on dev,
+            # 2026-06). SpendLogs itself is still pruned by LiteLLM's own
+            # maximum_spend_logs_retention_period; only this un-prunable sibling is disabled
+            # (we don't use the tool-usage dashboard). Path resolved via litellm.__file__
+            # (the server imports from /app/litellm, not site-packages). No-ops cleanly if
+            # the upstream signature changes.
+            python3 -c "
+            import litellm, os
+            f=os.path.join(os.path.dirname(litellm.__file__),'proxy','db','spend_log_tool_index.py')
+            s=open(f).read()
+            old='async def process_spend_logs_tool_usage(\n    prisma_client: PrismaClient,\n    logs_to_process: List[Dict[str, Any]],\n) -> None:'
+            new=old+'\n    return  # commonly: disabled (LiteLLM never prunes SpendLogToolIndex; unbounded)'
+            if 'commonly: disabled' in s:
+                print('LiteLLM tool-index patch: already applied')
+            elif old in s:
+                open(f,'w').write(s.replace(old,new,1))
+                print('LiteLLM tool-index patch applied: SpendLogToolIndex population disabled')
+            else:
+                print('LiteLLM tool-index patch: pattern not found (version changed?) - review needed')
+            "
             # Write the custom callback that signals the rotator on 429s.
             # LiteLLM's get_instance_fn resolves callbacks via spec_from_file_location
             # relative to the config file's directory (/app/), NOT via importlib.
