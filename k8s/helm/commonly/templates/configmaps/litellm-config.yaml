@@ -75,6 +75,11 @@ data:
       # back to OpenRouter Nemotron. The /responses endpoint is NOT challenged. OAuth tokens
       # are valid; this is a LiteLLM endpoint-routing bug, not an auth/IP/OpenAI block.
       # See BerriAI/litellm#27175 (workaround) + openclaw#68033 (2026-06).
+      # Equally LOAD-BEARING: do NOT add `model_info: mode: responses` here. With the
+      # responses/ prefix, mode:responses routes through LiteLLM's responses-transformation
+      # handler, which strips `chatgpt/` and sends the invalid model `responses/gpt-5.4-mini`
+      # (400 "model not supported"). No mode -> the proxy uses the completion handler, which
+      # parses the responses/ prefix correctly. Verified 3/3 via proxy /chat/completions.
       # NOTE: LiteLLM's chatgpt/ provider reads tokens from auth.json (written by the
       # codex-auth-seed init + codex-auth-rotator sidecar). The Authenticator ignores
       # api_key in litellm_params, so duplicate deployments per account are useless.
@@ -88,8 +93,6 @@ data:
       #   gpt-5.4-mini: $0.75 input / $4.50  output per 1M tokens
       #   gpt-5.4-nano: $0.20 input / $1.25  output per 1M tokens
       - model_name: gpt-5.4
-        model_info:
-          mode: responses
         litellm_params:
           model: chatgpt/responses/gpt-5.4
           timeout: 120
@@ -97,8 +100,6 @@ data:
           output_cost_per_token: 0.000015
 
       - model_name: openai-codex/gpt-5.4
-        model_info:
-          mode: responses
         litellm_params:
           model: chatgpt/responses/gpt-5.4
           timeout: 120
@@ -107,8 +108,6 @@ data:
 
       # --- gpt-5.4-mini (used for dev agent heartbeat orchestration) ---
       - model_name: gpt-5.4-mini
-        model_info:
-          mode: responses
         litellm_params:
           model: chatgpt/responses/gpt-5.4-mini
           timeout: 120
@@ -116,8 +115,6 @@ data:
           output_cost_per_token: 0.0000045
 
       - model_name: openai-codex/gpt-5.4-mini
-        model_info:
-          mode: responses
         litellm_params:
           model: chatgpt/responses/gpt-5.4-mini
           timeout: 120
@@ -126,8 +123,6 @@ data:
 
       # --- gpt-5.4-nano (community agents — cheapest Codex model) ---
       - model_name: gpt-5.4-nano
-        model_info:
-          mode: responses
         litellm_params:
           model: chatgpt/responses/gpt-5.4-nano
           timeout: 120
@@ -135,8 +130,6 @@ data:
           output_cost_per_token: 0.00000125
 
       - model_name: openai-codex/gpt-5.4-nano
-        model_info:
-          mode: responses
         litellm_params:
           model: chatgpt/responses/gpt-5.4-nano
           timeout: 120
@@ -146,16 +139,12 @@ data:
       # Aliases for Codex CLI default model names in openai mode
       # When acpx_run spawns with auth_mode=openai, the CLI may send these model names
       - model_name: codex-mini-latest
-        model_info:
-          mode: responses
         litellm_params:
           model: chatgpt/responses/gpt-5.4-mini
           input_cost_per_token: 0.00000075
           output_cost_per_token: 0.0000045
 
       - model_name: o4-mini
-        model_info:
-          mode: responses
         litellm_params:
           model: chatgpt/responses/gpt-5.4-mini
           input_cost_per_token: 0.00000075
