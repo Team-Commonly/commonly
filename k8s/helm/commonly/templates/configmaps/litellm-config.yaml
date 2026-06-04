@@ -69,6 +69,12 @@ data:
       # paired entry alongside nemotron above.
 
       # --- Codex (chatgpt/ provider) ---
+      # The `responses/` in `chatgpt/responses/gpt-5.4*` is LOAD-BEARING. Plain
+      # `chatgpt/gpt-5.4*` routes to /backend-api/codex/chat/completions, which Cloudflare
+      # serves a JS bot-challenge for (HTML, not JSON) -> the call fails and silently falls
+      # back to OpenRouter Nemotron. The /responses endpoint is NOT challenged. OAuth tokens
+      # are valid; this is a LiteLLM endpoint-routing bug, not an auth/IP/OpenAI block.
+      # See BerriAI/litellm#27175 (workaround) + openclaw#68033 (2026-06).
       # NOTE: LiteLLM's chatgpt/ provider reads tokens from auth.json (written by the
       # codex-auth-seed init + codex-auth-rotator sidecar). The Authenticator ignores
       # api_key in litellm_params, so duplicate deployments per account are useless.
@@ -85,7 +91,7 @@ data:
         model_info:
           mode: responses
         litellm_params:
-          model: chatgpt/gpt-5.4
+          model: chatgpt/responses/gpt-5.4
           timeout: 120
           input_cost_per_token: 0.0000025
           output_cost_per_token: 0.000015
@@ -94,7 +100,7 @@ data:
         model_info:
           mode: responses
         litellm_params:
-          model: chatgpt/gpt-5.4
+          model: chatgpt/responses/gpt-5.4
           timeout: 120
           input_cost_per_token: 0.0000025
           output_cost_per_token: 0.000015
@@ -104,7 +110,7 @@ data:
         model_info:
           mode: responses
         litellm_params:
-          model: chatgpt/gpt-5.4-mini
+          model: chatgpt/responses/gpt-5.4-mini
           timeout: 120
           input_cost_per_token: 0.00000075
           output_cost_per_token: 0.0000045
@@ -113,7 +119,7 @@ data:
         model_info:
           mode: responses
         litellm_params:
-          model: chatgpt/gpt-5.4-mini
+          model: chatgpt/responses/gpt-5.4-mini
           timeout: 120
           input_cost_per_token: 0.00000075
           output_cost_per_token: 0.0000045
@@ -123,7 +129,7 @@ data:
         model_info:
           mode: responses
         litellm_params:
-          model: chatgpt/gpt-5.4-nano
+          model: chatgpt/responses/gpt-5.4-nano
           timeout: 120
           input_cost_per_token: 0.0000002
           output_cost_per_token: 0.00000125
@@ -132,7 +138,7 @@ data:
         model_info:
           mode: responses
         litellm_params:
-          model: chatgpt/gpt-5.4-nano
+          model: chatgpt/responses/gpt-5.4-nano
           timeout: 120
           input_cost_per_token: 0.0000002
           output_cost_per_token: 0.00000125
@@ -143,7 +149,7 @@ data:
         model_info:
           mode: responses
         litellm_params:
-          model: chatgpt/gpt-5.4-mini
+          model: chatgpt/responses/gpt-5.4-mini
           input_cost_per_token: 0.00000075
           output_cost_per_token: 0.0000045
 
@@ -151,7 +157,7 @@ data:
         model_info:
           mode: responses
         litellm_params:
-          model: chatgpt/gpt-5.4-mini
+          model: chatgpt/responses/gpt-5.4-mini
           input_cost_per_token: 0.00000075
           output_cost_per_token: 0.0000045
 
