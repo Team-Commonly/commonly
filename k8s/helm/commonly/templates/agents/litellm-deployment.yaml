@@ -107,6 +107,15 @@ spec:
                     'ratelimiterror',
                 ))
 
+            def _is_codex_model(model: str) -> bool:
+                # Only codex rotates the ChatGPT account pool. Nemotron (the codex
+                # fallback) and every other provider also throw 429s under load, but
+                # rotating codex accounts can't help them — it only thrashes the
+                # active-account pointer and burns refresh_tokens. Codex surfaces as
+                # 'openai-codex/*' (public alias) or 'chatgpt/*' (litellm_params.model).
+                m = (model or '').lower()
+                return 'codex' in m or 'chatgpt' in m
+
             def _write_signal(model: str, exc_str: str):
                 try:
                     tmp = SIGNAL_FILE + '.tmp'
@@ -132,8 +141,9 @@ spec:
                     exc = kwargs.get('exception')
                     if not exc: return
                     exc_str = str(exc)
-                    if _is_rate_limit(exc_str):
-                        _write_signal(kwargs.get('model', 'unknown'), exc_str)
+                    model = kwargs.get('model', 'unknown')
+                    if _is_rate_limit(exc_str) and _is_codex_model(model):
+                        _write_signal(model, exc_str)
 
                 async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
                     pass
@@ -142,8 +152,9 @@ spec:
                     exc = kwargs.get('exception')
                     if not exc: return
                     exc_str = str(exc)
-                    if _is_rate_limit(exc_str):
-                        _write_signal(kwargs.get('model', 'unknown'), exc_str)
+                    model = kwargs.get('model', 'unknown')
+                    if _is_rate_limit(exc_str) and _is_codex_model(model):
+                        _write_signal(model, exc_str)
 
             proxy_handler_instance = RateLimitSignaler()
             PYEOF
