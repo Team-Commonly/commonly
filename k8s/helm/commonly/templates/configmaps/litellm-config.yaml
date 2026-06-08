@@ -150,6 +150,23 @@ data:
           input_cost_per_token: 0.00000075
           output_cost_per_token: 0.0000045
 
+      # --- Codex CLI native /responses path (cloud-codex / Cody, wire_api="responses") ---
+      # Unlike the chat-path aliases above, the codex CLI hits LiteLLM's /v1/responses
+      # endpoint directly. There the chatgpt provider's get_complete_url already targets
+      # /responses, so the `responses/` prefix is redundant AND breaks: it gets sent
+      # literally to OpenAI as `responses/gpt-5.4` -> 400 "model not supported". These
+      # aliases map to plain `chatgpt/gpt-5.4*` (NO prefix) so /v1/responses sends the
+      # bare model name. Verified end-to-end via litellm.aresponses: real codex (served=
+      # gpt-5.4 / gpt-5.4-mini-2026-03-17). Do NOT point chat-path (/chat/completions)
+      # callers here — plain chatgpt/gpt-5.4* on the chat path hits the Cloudflare-
+      # challenged /backend-api/codex/chat/completions (see the chat-path note above).
+      - model_name: codex-cli/gpt-5.4
+        litellm_params:
+          model: chatgpt/gpt-5.4
+          timeout: 120
+          input_cost_per_token: 0.0000025
+          output_cost_per_token: 0.000015
+
       # --- OpenAI (optional, for embeddings) ---
       - model_name: text-embedding-3-large
         litellm_params:
@@ -253,6 +270,7 @@ data:
         - {"openai-codex/gpt-5.4-mini": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
         - {"gpt-5.4-nano":            ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
         - {"openai-codex/gpt-5.4-nano": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
+        - {"codex-cli/gpt-5.4":        ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
         # No fallback for nemotron itself — fail fast rather than chain through
         # dead endpoints. The rotator + next-request path will pick a fresh
         # Codex account on the subsequent call.

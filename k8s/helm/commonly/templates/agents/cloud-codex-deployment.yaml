@@ -193,7 +193,10 @@ spec:
           # Runtime stays codex: codex CLI still spawns, still sandboxes,
           # still owns tool use and sessions. Only the HTTPS layer is proxied.
           cat > /state/.codex/config.toml <<EOF
-          model = "gpt-5.4"
+          # wire_api=responses below -> LiteLLM /v1/responses. Must use the unprefixed
+          # codex-cli/* alias (maps to chatgpt/gpt-5.4); the prefixed chat-path aliases
+          # 400 with "model not supported" on /responses. See litellm-config.yaml.
+          model = "codex-cli/gpt-5.4"
           model_provider = "litellm"
 
           # Codex CLI's default sandbox uses bubblewrap (bwrap), which

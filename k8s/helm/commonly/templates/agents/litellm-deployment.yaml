@@ -52,16 +52,25 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
           - |
+            # Patch litellm's OpenAI responses-input transform to wrap a bare string
+            # `input` into a [{"role":"user","content":...}] list. OpenAI's Codex /responses
+            # backend rejects a raw string ("Input must be a list"); the chatgpt provider
+            # inherits this openai transform. Path resolved via litellm.__file__ (the server
+            # imports from /app/litellm — an earlier hardcoded /usr/lib path made this a
+            # silent no-op). Idempotent; no-ops cleanly if the upstream signature changes.
             python3 -c "
-            f='/usr/lib/python3.13/site-packages/litellm/llms/openai/responses/transformation.py'
+            import litellm, os
+            f=os.path.join(os.path.dirname(litellm.__file__),'llms','openai','responses','transformation.py')
             s=open(f).read()
             old='        # Input is expected to be either str or List, no single BaseModel expected\n        return input'
-            new='        # Input is expected to be either str or List, no single BaseModel expected\n        if isinstance(input, str):\n            return [{\"role\": \"user\", \"content\": input}]\n        return input'
-            if old in s:
-                open(f,'w').write(s.replace(old,new))
-                print('LiteLLM patch applied: string input -> list for chatgpt responses API')
+            new='        # Input is expected to be either str or List, no single BaseModel expected\n        if isinstance(input, str):  # commonly: wrap bare str for chatgpt /responses\n            return [{\"role\": \"user\", \"content\": input}]\n        return input'
+            if 'commonly: wrap bare str' in s:
+                print('LiteLLM responses-input patch: already applied')
+            elif old in s:
+                open(f,'w').write(s.replace(old,new,1))
+                print('LiteLLM responses-input patch applied: bare-str input -> list for chatgpt /responses')
             else:
-                print('LiteLLM patch: pattern not found, may already be fixed upstream')
+                print('LiteLLM responses-input patch: pattern not found (version changed?) - review needed')
             "
             # Disable LiteLLM_SpendLogToolIndex population. LiteLLM (1.88.0) inserts one
             # row per tool-call into this table but provides NO retention, cleanup, or
