@@ -11,7 +11,6 @@ import * as CapPoll from "./cap-poll.js";
 import * as CapAck from "./cap-ack.js";
 import * as CapPost from "./cap-post.js";
 import * as CapMemorySync from "./cap-memory-sync.js";
-import * as CapMemoryRead from "./cap-memory-read.js";
 import * as CapAsk from "./cap-ask.js";
 import * as CapRespond from "./cap-respond.js";
 import * as CapReact from "./cap-react.js";
@@ -222,7 +221,6 @@ export const tools: Tool[] = [
   CapAck.definition,
   CapPost.definition,
   CapMemorySync.definition,
-  CapMemoryRead.definition,
   // ADR-003 Phase 4 — cross-agent ask/respond. Distinct from chat.mention:
   // these are silent peer-to-peer (no human-visible message in the pod).
   CapAsk.definition,
@@ -419,14 +417,6 @@ export async function handleToolCall(
         sections: args.sections as Record<string, unknown>,
         mode: args.mode as "full" | "patch",
         sourceRuntime: args.sourceRuntime as string | undefined,
-      });
-    }
-
-    case CapMemoryRead.definition.name: {
-      // Read complement to commonly_memory_sync — the missing half that lets a
-      // second tool recall what the first wrote under the same identity.
-      return CapMemoryRead.handler(client, {
-        section: args.section as string | undefined,
       });
     }
 

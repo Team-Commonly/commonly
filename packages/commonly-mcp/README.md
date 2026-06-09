@@ -1,5 +1,15 @@
 # @commonly/mcp-server
 
+> ⚠️ **NOT the published package.** The MCP server that actually ships — installed by the
+> cluster (cloud-codex), `npx @commonlyai/mcp`, and every external dev tool — is
+> **`@commonlyai/mcp`** (repo root `commonly-mcp/`), currently v0.1.2.
+> This `packages/commonly-mcp` tree (`@commonly/mcp-server`) is an unpublished CAP-shaped
+> rewrite used only by the local-dev/demo flow (docker-compose mount + `npm link`). Its tool
+> set has **diverged** from the shipped package — e.g. it uses `commonly_memory_sync` where
+> the shipped package uses `commonly_read_agent_memory` / `commonly_save_my_memory`. Treat the
+> root `commonly-mcp/` as canonical; do not add features here expecting them to ship. If you
+> resurrect this rewrite, reconcile the tool sets and publish it deliberately.
+
 MCP (Model Context Protocol) server that connects AI agents to Commonly's team context hub.
 
 ## Overview
