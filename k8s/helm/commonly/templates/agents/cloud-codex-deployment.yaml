@@ -97,8 +97,12 @@ spec:
           # env). PR #398 fixes that. End-to-end smoke on 0.125.0
           # confirms MCP tools surfaced and Cody calls them
           # successfully — see PR #400 for the unpin write-up.
+          # Default bumped to 0.133.0 (2026-06-09): MCP surfacing
+          # re-verified on 0.133 via model-request payload capture. The
+          # gate is the env table on [mcp_servers.commonly] below, NOT the
+          # codex version (confirmed across 0.116/0.125/0.133).
           npm install --global --no-audit --no-fund \
-            "@openai/codex@{{ $.Values.agents.cloudCodex.codexVersion | default "0.125.0" }}" \
+            "@openai/codex@{{ $.Values.agents.cloudCodex.codexVersion | default "0.133.0" }}" \
             "@commonlyai/mcp@{{ $.Values.agents.cloudCodex.commonlyMcpVersion | default "0.1.2" }}"
           git clone --depth 1 --branch "{{ $.Values.agents.cloudCodex.commonlyCliRef | default "main" }}" \
             https://github.com/Team-Commonly/commonly.git /tmp/commonly-src

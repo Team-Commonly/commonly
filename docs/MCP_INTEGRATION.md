@@ -218,27 +218,32 @@ Code and Cursor today. Two patterns work:
 If your goal is "Codex with Commonly memory primitives via MCP," pattern
 1 + a Claude Code session is the path.
 
-### `codex exec` MCP-tool surfacing — FIXED in codex 0.133 (was broken on 0.125)
+### `codex exec` MCP-tool surfacing — gated on the env table, not the codex version
 
-**Update 2026-06-09:** this gap is resolved by a codex version bump. The
-original 2026-05-16 finding was specific to **codex 0.125**, where
-`codex exec` surfaced only built-ins (`web.run`, `exec_command`,
-`apply_patch`, …) plus three MCP **introspection** helpers
-(`list_mcp_resources`, `list_mcp_resource_templates`, `read_mcp_resource`)
-and **no `commonly_*` tools** — so Cody, asked to react, posted the emoji
-as message text instead of calling the tool.
+**The gate is configuration, not the codex version.** codex sandboxes the MCP
+subprocess it spawns and does NOT pass parent-process env to it, so the
+`[mcp_servers.commonly]` block in `~/.codex/config.toml` MUST declare its own
+`env = { COMMONLY_API_URL = "…", COMMONLY_AGENT_TOKEN = "…" }`. Without it the
+MCP server crashes at startup (`fatal: COMMONLY_API_URL is required`), the model
+sees no `commonly_*` tools, and an agent asked to "react" posts the emoji as
+message text. PR #398 added that env table to the cloud-codex template.
 
-On **codex 0.133.0** that no longer holds. Verified by capturing the exact
-request codex builds for the model (a mock Responses endpoint that logs the
-payload): codex now forwards the full MCP toolset as a `namespace`-type tool
-`mcp__commonly__` with **all `commonly_*` tool schemas inline**, memory and
-reaction tools included. The model receives and can call them.
+History (this section has been wrong twice — read carefully): the 2026-05-16
+"no `commonly_*` tools on 0.125" finding was this env omission, mis-attributed
+to a codex-exec/version limitation. Post-#398, the in-cluster cloud-codex
+comments record MCP tools surfacing end-to-end on **0.116 and 0.125** (verified
+live 2026-05-17; "bisecting codex versions never moved the needle"). A
+2026-06-09 edit then mis-attributed the fix to "codex 0.133" — also wrong.
+Independently re-verified on **codex 0.133** 2026-06-09 by capturing the
+model-request payload from `codex exec` against a mock Responses endpoint:
+codex forwards the full toolset inline as a `namespace`-type `mcp__commonly__`
+tool with all `commonly_*` schemas (memory + reaction tools included).
 
-**Action:** ensure cloud-codex / Cody and any local codex wrapper run codex
-**≥ 0.133** (`agents.cloudCodex.commonlyMcpVersion` governs the MCP package
-version; the codex CLI version is set in the cloud-codex image / the
-operator's local install). Once on 0.133+, no Claude-Code-adapter detour is
-needed for codex to consume MCP tools.
+**So:** with the env table present (it is, in the cloud-codex template),
+0.116/0.125/0.133 all surface MCP tools. cloud-codex defaults to codex 0.133.0
+(`agents.cloudCodex.codexVersion`) as of 2026-06-09 — keep codex reasonably
+current, but if tools ever stop surfacing, check the env table FIRST, not the
+version.
 
 **Still open (separate gap):** the **openclaw extension** `commonly_*` block
 (Team-Commonly/openclaw fork) is a different code path that does *not* go

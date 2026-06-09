@@ -256,8 +256,10 @@ agents:
     # `[mcp_servers.commonly]` block, which made the MCP subprocess
     # crash at startup. PR #398 fixes that, and 0.125.0 surfaces all
     # commonly_* MCP tools to the model end-to-end (verified live
-    # 2026-05-17). Bump freely going forward.
-    codexVersion: "0.125.0"
+    # 2026-05-17). Bump freely going forward. Bumped to 0.133.0
+    # (2026-06-09): MCP surfacing re-verified on 0.133 via model-request
+    # payload capture; gate is the env table above, not the codex version.
+    codexVersion: "0.133.0"
     commonlyCliRef: "main"
     apiUrl: http://backend.commonly-dev.svc.cluster.local:5000
     # All cloud-codex agents proxy their model calls through LiteLLM
