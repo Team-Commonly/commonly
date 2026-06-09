@@ -3,7 +3,7 @@
 LiteLLM provides an OpenAI-compatible proxy for multiple LLM providers.
 In Commonly it serves two roles:
 
-_last_updated: 2026-05-02_
+_last_updated: 2026-06-08_
 
 1. **Agent gateway** — all OpenClaw (dev + community) agent LLM calls route through it, including Codex OAuth traffic and OpenRouter traffic
 2. **Backend gateway** — `llmService.js` uses it for summarization, digest, and embedding calls
@@ -142,22 +142,66 @@ to LiteLLM. LiteLLM then attaches the real Codex OAuth token when forwarding to 
 
 This decouples agent auth from raw OAuth tokens — agents never hold OAuth credentials directly.
 
+**Keys are model-restricted (allowlist).** A virtual key only works for the models in its
+allowlist; anything else returns `403 "key not allowed to access model"`. Most keys are
+issued by the backend provisioner (`issueLiteLLMVirtualKey` / `issueLiteLLMOpenRouterKey` in
+`backend/services/agentProvisionerServiceK8s.ts`, which set `metadata.agent_id`). **cloud-codex
+keys are different — they are operator-provisioned manually** (`/key/generate` with
+`user_id: cloud-codex-<name>`, empty metadata) and stored in the `cloud-codex-<name>-litellm-key`
+secret. When you add a model alias that a cloud-codex / codex-CLI agent must call (e.g.
+`codex-cli/gpt-5.4`), you MUST add it to that agent's key allowlist or the call 403s:
+
+```bash
+# inspect:  GET  /key/info?key=<sk-...>                                  (master-key auth)
+# update:   POST /key/update  {"key":"<sk-...>","models":[...,"codex-cli/gpt-5.4"]}
+```
+
+This allowlist lives only in LiteLLM's Postgres (`LiteLLM_VerificationToken`), **not in IaC** —
+if a cloud-codex key is ever regenerated, re-add `codex-cli/*`. (Verified gap, 2026-06-08, PR #472.)
+
+---
+
+## Codex: chat path vs responses path (the `responses/` prefix rule)
+
+LiteLLM exposes the chatgpt/ provider on TWO endpoints, and the codex model name must match
+the endpoint the caller uses:
+
+| Caller | LiteLLM endpoint | Model alias | `litellm_params.model` |
+|---|---|---|---|
+| OpenClaw dev agents | `/chat/completions` | `gpt-5.4*`, `openai-codex/gpt-5.4*` | `chatgpt/responses/gpt-5.4*` (**prefixed**) |
+| codex CLI / cloud-codex (`wire_api="responses"`) | `/v1/responses` | `codex-cli/gpt-5.4` | `chatgpt/gpt-5.4` (**unprefixed**) |
+
+- On `/chat/completions`, the `responses/` prefix is **load-bearing**: plain `chatgpt/gpt-5.4*`
+  routes to `/backend-api/codex/chat/completions`, which Cloudflare serves a bot-challenge for
+  (HTML, not JSON) → silent Nemotron fallback. Do NOT add `model_info: mode: responses` to these
+  — it strips `chatgpt/` and sends the invalid model `responses/gpt-5.4` (400).
+- On `/v1/responses`, the chatgpt provider's `get_complete_url` already targets `/responses`, so
+  the `responses/` prefix is redundant and **leaks** to OpenAI as `responses/gpt-5.4` →
+  400 "model not supported". This path needs the UNPREFIXED `codex-cli/*` alias.
+- A single model name can't serve both — the endpoint is chosen by which LiteLLM URL the caller
+  hits, not by the model name. Keep the two alias families separate. (PR #469 added the chat-path
+  prefix; PR #472 added the responses-path `codex-cli/*` alias after the prefix change silently
+  broke cloud-codex on `/responses`.)
+
 ---
 
 ## Config (`litellm-config.yaml`)
 
 ```yaml
 model_list:
-  # Codex — chatgpt/ provider reads auth.json from CHATGPT_TOKEN_DIR
+  # Codex — chatgpt/ provider reads auth.json from the chatgpt-auth PVC.
+  # CHAT path: responses/ prefix is load-bearing; NO `model_info: mode: responses`.
+  # See "Codex: chat path vs responses path" above for why.
   - model_name: gpt-5.4
-    model_info:
-      mode: responses
     litellm_params:
-      model: chatgpt/gpt-5.4
+      model: chatgpt/responses/gpt-5.4
 
   - model_name: openai-codex/gpt-5.4
-    model_info:
-      mode: responses
+    litellm_params:
+      model: chatgpt/responses/gpt-5.4
+
+  # RESPONSES path (codex CLI / cloud-codex, wire_api="responses"): UNPREFIXED alias.
+  - model_name: codex-cli/gpt-5.4
     litellm_params:
       model: chatgpt/gpt-5.4
 

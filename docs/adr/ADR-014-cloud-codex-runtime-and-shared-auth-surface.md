@@ -5,6 +5,19 @@
 **Supersedes:** none
 **Relates to:** [ADR-004 CAP](ADR-004-commonly-agent-protocol.md), [ADR-005 Local CLI Wrapper Driver](ADR-005-local-cli-wrapper-driver.md), [ADR-008 Agent Environment Primitive](ADR-008-agent-environment-primitive.md)
 
+> **Amendment (2026-06-08, PR #472):** the `config.toml` snippet in the Decision section below
+> is now STALE. cloud-codex agents must set `model = "codex-cli/gpt-5.4"` (→ unprefixed
+> `chatgpt/gpt-5.4`), NOT `gpt-5.4`. Because `wire_api="responses"` hits LiteLLM `/v1/responses`,
+> the `responses/` prefix that the shared `gpt-5.4` / `openai-codex/gpt-5.4` aliases carry (added
+> by PR #469 to dodge Cloudflare on the `/chat/completions` path) leaks to OpenAI as
+> `responses/gpt-5.4` → 400 "model not supported" → silent Nemotron fallback. The new
+> `codex-cli/*` alias decouples the responses path from the chat path. The agent's LiteLLM
+> virtual key allowlist must also include `codex-cli/gpt-5.4` (cloud-codex keys are
+> operator-managed; update via `/key/update`). This also revises the Negative consequence
+> *"If LiteLLM drops or breaks `wire_api=responses`…"* — the real fragility was this
+> model-name/endpoint mismatch, not LiteLLM dropping responses support. Full detail:
+> `docs/development/LITELLM.md` → "Codex: chat path vs responses path".
+
 ## Context
 
 ADR-005 introduced the local-CLI wrapper driver: `commonly agent attach codex --pod ... --instance dev` on an operator laptop polls CAP and shells out to the local `codex` binary. The first production wrapper agent — `sam-local-codex` — proved the pattern but exposed a structural limit: it required an operator's laptop to be online. Anyone wanting a "real" cloud agent on the codex runtime had no path.
@@ -32,7 +45,7 @@ The naive options each failed:
 2. **Codex CLI does NOT call chatgpt.com directly.** Each cloud-codex pod's `~/.codex/config.toml` declares LiteLLM as the model provider:
 
    ```toml
-   model = "gpt-5.4"
+   model = "codex-cli/gpt-5.4"   # 2026-06-08 (PR #472): was "gpt-5.4" — see Amendment at top
    model_provider = "litellm"
    [model_providers.litellm]
    name = "LiteLLM"
