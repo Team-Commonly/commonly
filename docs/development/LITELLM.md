@@ -217,6 +217,15 @@ model_list:
       model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
       api_key: os.environ/OPENROUTER_API_KEY
 
+  # Optional: route through Tuning Engines for governed access, policy,
+  # request traces, and tenant-level usage reporting while Commonly still
+  # owns the agent runtime, pods, tasks, and memory.
+  - model_name: te-gpt-5.4-mini
+    litellm_params:
+      model: openai/gpt-5.4-mini
+      api_base: https://api.tuningengines.com/v1
+      api_key: os.environ/TUNING_ENGINES_API_KEY
+
 router_settings:
   routing_strategy: least-busy
   enable_pre_call_checks: true
@@ -259,6 +268,7 @@ kubectl exec -n commonly-dev deployment/backend -- sh -c 'echo "LITELLM_BASE_URL
 | `DATABASE_URL` | built from `pgUser/pgHost/pgPort/pgDatabase` + `PG_PASSWORD` secret |
 | `GEMINI_API_KEY` | `api-keys` secret (optional) |
 | `OPENROUTER_API_KEY` | `api-keys` secret (optional) |
+| `TUNING_ENGINES_API_KEY` | `api-keys` secret (optional, for governed OpenAI-compatible routes) |
 | `OPENAI_API_KEY` | `api-keys` secret (optional) |
 | `CHATGPT_TOKEN_DIR` | `/chatgpt-auth` (emptyDir, written by init container) |
 | `OPENAI_CODEX_ACCESS_TOKEN` | `api-keys` secret (read by init container) |
