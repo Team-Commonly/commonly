@@ -1,40 +1,6 @@
 export const CONTEXT_CONTINUITY_PACKET_SCHEMA = 'commonly.ccp.v1';
 
-export type ContinuityFreshnessStatus = 'valid' | 'stale' | 'unknown';
-
-export interface ContextContinuityPacketV1 {
-  schema: typeof CONTEXT_CONTINUITY_PACKET_SCHEMA;
-  contextId: string;
-  owner: {
-    agentName: string;
-    instanceId: string;
-    podId?: string;
-  };
-  provenance: {
-    source: 'cap.event';
-    eventId?: string;
-    eventType?: string;
-    trigger?: string;
-    createdAt?: string;
-    deliveredAt?: string;
-  };
-  freshness?: {
-    memoryRevision?: number;
-    memoryRevisionAtDelivery?: number;
-    lastSeenRevision?: number;
-    status: ContinuityFreshnessStatus;
-  };
-  refs?: {
-    messageId?: string;
-    replyToMessageId?: string;
-    threadId?: string;
-    taskId?: string;
-    requestId?: string;
-    summaryId?: string;
-    integrationId?: string;
-    memorySections?: string[];
-  };
-}
+type ContinuityFreshnessStatus = 'valid' | 'stale' | 'unknown';
 
 interface EventLike {
   _id?: unknown;
@@ -113,10 +79,10 @@ export const memorySectionsFromDigestBundle = (
 
 const buildFreshnessStatus = (
   memoryRevision: number | undefined,
-  memoryRevisionAtDelivery: number | undefined,
+  lastSeenRevision: number | undefined,
 ): ContinuityFreshnessStatus => {
-  if (memoryRevision === undefined || memoryRevisionAtDelivery === undefined) return 'unknown';
-  return memoryRevisionAtDelivery >= memoryRevision ? 'valid' : 'stale';
+  if (memoryRevision === undefined || lastSeenRevision === undefined) return 'unknown';
+  return lastSeenRevision < memoryRevision ? 'stale' : 'valid';
 };
 
 export function buildContextContinuityPacket({
@@ -125,7 +91,7 @@ export function buildContextContinuityPacket({
   lastSeenRevision,
   memoryRevisionAtDelivery,
   memorySections = [],
-}: BuildContextContinuityPacketArgs): ContextContinuityPacketV1 {
+}: BuildContextContinuityPacketArgs) {
   const eventId = toStringValue(event?._id);
   const agentName = toStringValue(event?.agentName)?.toLowerCase() || 'unknown';
   const instanceId = toStringValue(event?.instanceId) || 'default';
@@ -135,7 +101,7 @@ export function buildContextContinuityPacket({
   const currentRevision = toNumber(memoryRevision);
   const seenRevision = toNumber(lastSeenRevision);
 
-  const refs: ContextContinuityPacketV1['refs'] = {};
+  const refs: Record<string, string | string[]> = {};
   const messageId = pickPayloadRef(payload, ['messageId', 'message_id']);
   const replyToMessageId = pickPayloadRef(payload, ['replyToMessageId', 'replyToId', 'reply_to_message_id']);
   const threadId = pickPayloadRef(payload, ['threadId', 'thread_id']);
@@ -154,7 +120,10 @@ export function buildContextContinuityPacket({
   const uniqueMemorySections = Array.from(new Set((memorySections || []).filter(Boolean)));
   if (uniqueMemorySections.length > 0) refs.memorySections = uniqueMemorySections;
 
-  const packet: ContextContinuityPacketV1 = {
+  const packet: Record<string, unknown> & {
+    freshness?: Record<string, unknown>;
+    refs?: Record<string, string | string[]>;
+  } = {
     schema: CONTEXT_CONTINUITY_PACKET_SCHEMA,
     contextId: eventId
       ? `cap-event:${eventId}`
@@ -183,7 +152,7 @@ export function buildContextContinuityPacket({
       ...(currentRevision !== undefined ? { memoryRevision: currentRevision } : {}),
       ...(capturedRevision !== undefined ? { memoryRevisionAtDelivery: capturedRevision } : {}),
       ...(seenRevision !== undefined ? { lastSeenRevision: seenRevision } : {}),
-      status: buildFreshnessStatus(currentRevision, capturedRevision),
+      status: buildFreshnessStatus(currentRevision, seenRevision),
     };
   }
 
@@ -202,4 +171,4 @@ export default {
 
 // CJS compat: let require() consume the named helpers from TS-transpiled output.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = exports;
+module.exports = exports["default"]; Object.assign(module.exports, exports);

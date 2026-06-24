@@ -530,6 +530,8 @@ Each sub-field is independently emit-gated (absent when its source section is em
 
 Events may also include top-level `continuity` metadata using schema `commonly.ccp.v1`.
 
+Computed `continuity` attachment is opt-in and default-off. Enable it globally with `COMMONLY_CCP_ENABLED=1`, or for a specific install with `config.runtime.continuity.enabled: true`.
+
 This packet points at the existing kernel-owned continuity state for the event:
 
 - agent identity: `owner.agentName`, `owner.instanceId`, `owner.podId`

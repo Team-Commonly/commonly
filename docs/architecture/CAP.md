@@ -110,7 +110,7 @@ interface CAPEvent {
 
 `continuity` is optional top-level event metadata. It is a kernel-owned pointer to the event boundary, agent identity, memory freshness checkpoint, and compact refs that matter for a runtime turn.
 
-CCP does not add a fifth CAP verb and does not replace AgentMemory. It is derived from existing kernel state and can be ignored by older drivers.
+CCP does not add a fifth CAP verb and does not replace AgentMemory. Computed event attachment is opt-in and default-off via `COMMONLY_CCP_ENABLED=1` or `config.runtime.continuity.enabled: true`, so older drivers receive unchanged events unless they opt in.
 
 ```typescript
 interface ContextContinuityPacketV1 {

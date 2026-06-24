@@ -45,7 +45,7 @@ describe('contextContinuityPacketService', () => {
         memoryRevision: 7,
         memoryRevisionAtDelivery: 7,
         lastSeenRevision: 5,
-        status: 'valid',
+        status: 'stale',
       },
       refs: {
         messageId: '42',
@@ -108,6 +108,48 @@ describe('contextContinuityPacketService', () => {
       memoryRevisionAtDelivery: 7,
       lastSeenRevision: 6,
       status: 'stale',
+    });
+  });
+
+  it('marks freshness valid when the agent has seen the current memory revision', () => {
+    const packet = buildContextContinuityPacket({
+      event: {
+        _id: 'evt-valid',
+        agentName: 'openclaw',
+        instanceId: 'pixel',
+        podId: 'pod-valid',
+        payload: {},
+      },
+      memoryRevision: 9,
+      memoryRevisionAtDelivery: 9,
+      lastSeenRevision: 9,
+    });
+
+    expect(packet.freshness).toEqual({
+      memoryRevision: 9,
+      memoryRevisionAtDelivery: 9,
+      lastSeenRevision: 9,
+      status: 'valid',
+    });
+  });
+
+  it('marks freshness unknown when lastSeenRevision is missing', () => {
+    const packet = buildContextContinuityPacket({
+      event: {
+        _id: 'evt-unknown',
+        agentName: 'openclaw',
+        instanceId: 'pixel',
+        podId: 'pod-unknown',
+        payload: {},
+      },
+      memoryRevision: 9,
+      memoryRevisionAtDelivery: 9,
+    });
+
+    expect(packet.freshness).toEqual({
+      memoryRevision: 9,
+      memoryRevisionAtDelivery: 9,
+      status: 'unknown',
     });
   });
 

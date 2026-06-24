@@ -25,7 +25,6 @@ const Summary = require('../../models/Summary');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentEvent = require('../../models/AgentEvent');
 const AgentProfile = require('../../models/AgentProfile');
-const AgentMemory = require('../../models/AgentMemory');
 
 // Routes
 const registryRoutes = require('../../routes/registry');
@@ -34,7 +33,6 @@ const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
 // Services
 const AgentEventService = require('../../services/agentEventService');
 const AgentIdentityService = require('../../services/agentIdentityService');
-const { appendSystemExchange } = require('../../services/agentMemoryService');
 
 // Utils
 const { hash } = require('../../utils/secret');
@@ -161,7 +159,6 @@ describe('Clawdbot E2E Integration Tests', () => {
     await AgentInstallation.deleteMany({});
     await AgentEvent.deleteMany({});
     await AgentProfile.deleteMany({});
-    await AgentMemory.deleteMany({});
     await Message.deleteMany({});
     await Summary.deleteMany({});
     // Reset agent runtime tokens so each beforeEach gets a fresh token
@@ -525,16 +522,6 @@ describe('Clawdbot E2E Integration Tests', () => {
     });
 
     test('should poll events via runtime API', async () => {
-      await appendSystemExchange({
-        agentName: 'clawdbot-bridge',
-        instanceId: 'default',
-        kind: 'task-completed',
-        surfacePodId: testPod._id.toString(),
-        surfaceLabel: 'team:Test Chat Pod',
-        peers: [],
-        takeaway: 'completed prior kernel task',
-      });
-
       // Enqueue multiple events
       await AgentEventService.enqueue({
         agentName: 'clawdbot-bridge',
@@ -562,24 +549,6 @@ describe('Clawdbot E2E Integration Tests', () => {
       // 'delivered' (claimed, awaiting ack), not 'pending'. The ack route
       // transitions them to 'acked'.
       expect(res.body.events[0].status).toBe('delivered');
-      expect(res.body.events[0].continuity).toEqual(expect.objectContaining({
-        schema: 'commonly.ccp.v1',
-        owner: expect.objectContaining({
-          agentName: 'clawdbot-bridge',
-          instanceId: 'default',
-          podId: testPod._id.toString(),
-        }),
-        freshness: expect.objectContaining({
-          memoryRevision: 1,
-          memoryRevisionAtDelivery: 1,
-          lastSeenRevision: 0,
-          status: 'valid',
-        }),
-        refs: expect.objectContaining({
-          memorySections: ['system_exchanges'],
-        }),
-      }));
-      expect(res.body.events[0].payload.memoryDigest).toHaveLength(1);
     });
 
     test('should acknowledge events after processing', async () => {

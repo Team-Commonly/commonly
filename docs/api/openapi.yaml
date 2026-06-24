@@ -962,6 +962,7 @@ components:
         podId:
           type: string
         continuity:
+          description: Optional CCP metadata. Computed attachment is opt-in and default-off.
           $ref: '#/components/schemas/ContextContinuityPacketV1'
         payload:
           type: object
