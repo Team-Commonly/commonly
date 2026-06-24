@@ -168,6 +168,34 @@ spec:
             proxy_handler_instance = RateLimitSignaler()
             PYEOF
             echo "rate-limit-signaler callback installed at /app/rate_limit_signal.py"
+            # Patch litellm's ChatGPT authenticator to FAIL FAST in headless mode instead
+            # of dropping into an interactive device-login. When auth.json is expired AND
+            # the refresh token is dead, the stock get_access_token() calls
+            # _login_device_code(), which prints a device code and BLOCKS up to 15 min
+            # polling for an operator to approve. There is no operator in this pod, so it
+            # hangs past the startup probe -> SIGKILL -> crash loop, and each restart
+            # re-requests a device code, hammering the endpoint into a 429. This turned a
+            # routine ~2-week token expiry into a ~10-day litellm OUTAGE (2026-06-24): the
+            # proxy never bound :4000, so the router's codex->nemotron fallback never got a
+            # turn. With CHATGPT_DISABLE_DEVICE_LOGIN set, get_access_token() raises
+            # GetAccessTokenError instead -> litellm boots, marks codex unhealthy, and the
+            # fallback serves requests until an operator re-auths OUT OF BAND via the
+            # codex-cli sidecar (a separate codex process, unaffected by this patch).
+            # Idempotent; no-ops cleanly if the upstream signature changes.
+            python3 -c "
+            import litellm, os
+            f=os.path.join(os.path.dirname(litellm.__file__),'llms','chatgpt','authenticator.py')
+            s=open(f).read()
+            old='        cooldown_remaining = self._get_device_code_cooldown_remaining(auth_data)'
+            new='        if os.getenv(\"CHATGPT_DISABLE_DEVICE_LOGIN\"):  # commonly: fail-fast headless\n            raise GetAccessTokenError(\"ChatGPT auth invalid/expired and interactive device-login is disabled (CHATGPT_DISABLE_DEVICE_LOGIN); re-auth out-of-band via the codex-cli sidecar. Requests fall back per router fallbacks.\")\n' + old
+            if 'commonly: fail-fast headless' in s:
+                print('LiteLLM chatgpt fail-fast patch: already applied')
+            elif old in s:
+                open(f,'w').write(s.replace(old,new,1))
+                print('LiteLLM chatgpt fail-fast patch applied: headless device-login -> GetAccessTokenError')
+            else:
+                print('LiteLLM chatgpt fail-fast patch: pattern not found (version changed?) - review needed')
+            "
             exec litellm --config /app/config.yaml
         ports:
         - name: http
@@ -221,6 +249,14 @@ spec:
         # sidecar). See ADR-014.
         - name: CHATGPT_TOKEN_DIR
           value: /chatgpt-auth
+        # Fail fast instead of interactive device-login when codex auth is dead. The
+        # chatgpt authenticator otherwise blocks startup on a 15-min device-code poll
+        # (no operator in-pod) -> crash loop -> 429 endpoint lockout. With this set, dead
+        # auth raises GetAccessTokenError and the router falls back to nemotron; an
+        # operator re-auths out-of-band via the codex-cli sidecar. See the startup patch
+        # above + ADR-014.
+        - name: CHATGPT_DISABLE_DEVICE_LOGIN
+          value: "1"
         # Force prompt/response storage in spend logs regardless of runtime general_settings.
         # The config-file setting (store_prompts_in_spend_logs: true) is sometimes shadowed by
         # the in-memory general_settings dict at startup; the env var is the reliable fallback.
