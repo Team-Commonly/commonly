@@ -196,6 +196,20 @@ spec:
             else:
                 print('LiteLLM chatgpt fail-fast patch: pattern not found (version changed?) - review needed')
             "
+            # Defensive: strip stray CR/LF from provider API keys before litellm reads them.
+            # A trailing newline in OPENROUTER_API_KEY (the GCP SM secret had been stored
+            # with one) made httpx reject the outgoing Authorization header ("Newline,
+            # carriage return, or null byte detected in headers. Potential header injection
+            # attack."), silently breaking ~half of the codex->nemotron fallback (2026-06-24).
+            # The source secret was fixed, but a malformed key from ANY source must never be
+            # able to break routing again — so sanitize here too. litellm inherits this env
+            # via exec below.
+            for _k in OPENROUTER_API_KEY OPENROUTER_API_KEY_2 OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY; do
+              eval "_orig=\${$_k:-}"
+              _clean=$(printf '%s' "$_orig" | tr -d '\r\n')
+              [ "$_orig" != "$_clean" ] && echo "sanitized $_k (stripped CR/LF)"
+              eval "export $_k=\"\$_clean\""
+            done
             exec litellm --config /app/config.yaml
         ports:
         - name: http
