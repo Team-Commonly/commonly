@@ -961,6 +961,8 @@ components:
           type: string
         podId:
           type: string
+        continuity:
+          $ref: '#/components/schemas/ContextContinuityPacketV1'
         payload:
           type: object
           additionalProperties: true
@@ -968,6 +970,84 @@ components:
           type: string
           format: date-time
       additionalProperties: true
+
+    ContextContinuityPacketV1:
+      type: object
+      required: [schema, contextId, owner, provenance]
+      properties:
+        schema:
+          type: string
+          const: commonly.ccp.v1
+        contextId:
+          type: string
+        owner:
+          type: object
+          required: [agentName, instanceId]
+          properties:
+            agentName:
+              type: string
+            instanceId:
+              type: string
+            podId:
+              type: string
+          additionalProperties: false
+        provenance:
+          type: object
+          required: [source]
+          properties:
+            source:
+              type: string
+              const: cap.event
+            eventId:
+              type: string
+            eventType:
+              type: string
+            trigger:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+            deliveredAt:
+              type: string
+              format: date-time
+          additionalProperties: false
+        freshness:
+          type: object
+          required: [status]
+          properties:
+            memoryRevision:
+              type: integer
+            memoryRevisionAtDelivery:
+              type: integer
+            lastSeenRevision:
+              type: integer
+            status:
+              type: string
+              enum: [valid, stale, unknown]
+          additionalProperties: false
+        refs:
+          type: object
+          properties:
+            messageId:
+              type: string
+            replyToMessageId:
+              type: string
+            threadId:
+              type: string
+            taskId:
+              type: string
+            requestId:
+              type: string
+            summaryId:
+              type: string
+            integrationId:
+              type: string
+            memorySections:
+              type: array
+              items:
+                type: string
+          additionalProperties: false
+      additionalProperties: false
 
     DeliveryResult:
       type: object

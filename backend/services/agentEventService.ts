@@ -23,6 +23,10 @@ const AgentMemory = require('../models/AgentMemory');
 const {
   buildMemoryDigestBundle,
 } = require('./agentMemoryService');
+const {
+  buildContextContinuityPacket,
+  memorySectionsFromDigestBundle,
+} = require('./contextContinuityPacketService');
 
 interface EventDoc {
   _id?: unknown;
@@ -36,6 +40,7 @@ interface EventDoc {
   attempts?: number;
   delivery?: DeliveryMeta;
   memoryRevisionAtDelivery?: number | null;
+  continuity?: unknown;
 }
 
 interface InstallationDoc {
@@ -148,6 +153,8 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
   if (!webhookUrl) return;
 
+  const continuity = buildContextContinuityPacket({ event });
+
   const payload = JSON.stringify({
     _id: event._id,
     type: event.type,
@@ -155,6 +162,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     agentName: event.agentName,
     instanceId: event.instanceId,
     createdAt: event.createdAt,
+    continuity,
     payload: event.payload,
   });
 
@@ -820,6 +828,8 @@ class AgentEventService {
         : {}),
     }) as EventDoc;
 
+    const continuity = buildContextContinuityPacket({ event });
+
     if (routedToNative && nativeInstallation) {
       try {
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -830,6 +840,7 @@ class AgentEventService {
         Promise.resolve(runAgent(nativeInstallation, {
           type,
           eventId: eventIdStr,
+          continuity,
           payload: event.payload,
         })).catch((err: Error) => {
           console.error('[native-runtime] runAgent failed:', err?.message || err);
@@ -861,6 +872,7 @@ class AgentEventService {
         instanceId: event.instanceId,
         podId: event.podId,
         type: event.type,
+        continuity,
         payload: event.payload,
         createdAt: event.createdAt,
       });
@@ -953,6 +965,7 @@ class AgentEventService {
     const currentRevision = memoryDoc?.revision ?? 0;
     const lastSeenRevision = memoryDoc?.lastSeenRevision ?? 0;
     const digestBundle = buildMemoryDigestBundle(memoryDoc || {}, lastSeenRevision);
+    const hasMemorySnapshot = Boolean(memoryDoc) || currentRevision > 0 || lastSeenRevision > 0;
 
     const claimed: EventDoc[] = [];
     for (const candidate of candidates) {
@@ -989,7 +1002,16 @@ class AgentEventService {
       if (messageId !== undefined && messageId !== null && typeof messageId !== 'string') {
         enrichedPayload.messageId = String(messageId);
       }
-      return { ...event, payload: enrichedPayload };
+      const continuity = buildContextContinuityPacket({
+        event: { ...event, payload: enrichedPayload },
+        memoryRevision: hasMemorySnapshot ? currentRevision : undefined,
+        lastSeenRevision: hasMemorySnapshot ? lastSeenRevision : undefined,
+        memoryRevisionAtDelivery: hasMemorySnapshot
+          ? (event.memoryRevisionAtDelivery ?? currentRevision)
+          : undefined,
+        memorySections: memorySectionsFromDigestBundle(digestBundle),
+      });
+      return { ...event, continuity, payload: enrichedPayload };
     });
   }
 

@@ -526,6 +526,21 @@ Each event returned by `GET /api/agents/runtime/events` carries up to four memor
 
 Each sub-field is independently emit-gated (absent when its source section is empty). These are **structured metadata** — runtimes that want to surface them in an analytics dashboard, inspector panel, or as an opt-in system block in the model prompt may read them. The platform does NOT inject them into the prompt by default (see §Memory-changed cue and ADR-012 §11 for why prefix injection was rejected).
 
+### Context Continuity Packet (CCP)
+
+Events may also include top-level `continuity` metadata using schema `commonly.ccp.v1`.
+
+This packet points at the existing kernel-owned continuity state for the event:
+
+- agent identity: `owner.agentName`, `owner.instanceId`, `owner.podId`
+- event provenance: `provenance.eventId`, `provenance.eventType`, `provenance.trigger`
+- memory freshness: `freshness.memoryRevision`, `freshness.memoryRevisionAtDelivery`, `freshness.lastSeenRevision`
+- compact refs: message, reply, thread, task, ask, summary, integration, and memory section ids
+
+CCP is not a memory body and is not a prompt block. It is metadata for routing, logging, deduplication, and deciding whether to pull memory through the existing memory tools or CAP memory endpoints.
+
+See `docs/design/context-continuity-packet.md` for the full draft convention.
+
 ### Memory-changed cue (ADR-012 §11)
 
 When an agent receives a `chat.mention` or `thread.mention` event AND its `revision > lastSeenRevision`, the backend prepends a single line to `payload.content`:

@@ -262,6 +262,25 @@ describe('AgentEventService', () => {
       cyclesDigest: expect.any(Array),
       longTermDigest: 'durable',
     }));
+    expect(events[0].continuity).toEqual(expect.objectContaining({
+      schema: 'commonly.ccp.v1',
+      contextId: 'cap-event:evt-1',
+      owner: {
+        agentName: 'openclaw',
+        instanceId: 'liz',
+        podId: 'pod-1',
+      },
+      freshness: {
+        memoryRevision: 7,
+        memoryRevisionAtDelivery: 7,
+        lastSeenRevision: 5,
+        status: 'valid',
+      },
+      refs: expect.objectContaining({
+        messageId: '1800',
+        memorySections: ['system_exchanges', 'cycles', 'long_term'],
+      }),
+    }));
   });
 
   test('list returns [] when no candidates are pending (no envelope read)', async () => {

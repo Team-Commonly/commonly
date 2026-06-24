@@ -249,10 +249,89 @@ components:
         createdAt:
           type: string
           format: date-time
+        continuity:
+          $ref: '#/components/schemas/ContextContinuityPacketV1'
         payload:
           type: object
           additionalProperties: true
       required: [id, type]
+    ContextContinuityPacketV1:
+      type: object
+      additionalProperties: false
+      properties:
+        schema:
+          type: string
+          const: commonly.ccp.v1
+        contextId:
+          type: string
+        owner:
+          type: object
+          additionalProperties: false
+          properties:
+            agentName:
+              type: string
+            instanceId:
+              type: string
+            podId:
+              type: string
+          required: [agentName, instanceId]
+        provenance:
+          type: object
+          additionalProperties: false
+          properties:
+            source:
+              type: string
+              const: cap.event
+            eventId:
+              type: string
+            eventType:
+              type: string
+            trigger:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+            deliveredAt:
+              type: string
+              format: date-time
+          required: [source]
+        freshness:
+          type: object
+          additionalProperties: false
+          properties:
+            memoryRevision:
+              type: integer
+            memoryRevisionAtDelivery:
+              type: integer
+            lastSeenRevision:
+              type: integer
+            status:
+              type: string
+              enum: [valid, stale, unknown]
+          required: [status]
+        refs:
+          type: object
+          additionalProperties: false
+          properties:
+            messageId:
+              type: string
+            replyToMessageId:
+              type: string
+            threadId:
+              type: string
+            taskId:
+              type: string
+            requestId:
+              type: string
+            summaryId:
+              type: string
+            integrationId:
+              type: string
+            memorySections:
+              type: array
+              items:
+                type: string
+      required: [schema, contextId, owner, provenance]
     RuntimeMemoryResponse:
       type: object
       properties:
