@@ -187,7 +187,7 @@ spec:
             f=os.path.join(os.path.dirname(litellm.__file__),'llms','chatgpt','authenticator.py')
             s=open(f).read()
             old='        cooldown_remaining = self._get_device_code_cooldown_remaining(auth_data)'
-            new='        if os.getenv(\"CHATGPT_DISABLE_DEVICE_LOGIN\"):  # commonly: fail-fast headless\n            raise GetAccessTokenError(\"ChatGPT auth invalid/expired and interactive device-login is disabled (CHATGPT_DISABLE_DEVICE_LOGIN); re-auth out-of-band via the codex-cli sidecar. Requests fall back per router fallbacks.\")\n' + old
+            new='        if os.getenv(\"CHATGPT_DISABLE_DEVICE_LOGIN\"):  # commonly: fail-fast headless\n            raise GetAccessTokenError(401, \"ChatGPT auth invalid/expired and interactive device-login is disabled (CHATGPT_DISABLE_DEVICE_LOGIN); re-auth out-of-band via the codex-cli sidecar. Requests fall back per router fallbacks.\")\n' + old
             if 'commonly: fail-fast headless' in s:
                 print('LiteLLM chatgpt fail-fast patch: already applied')
             elif old in s:
