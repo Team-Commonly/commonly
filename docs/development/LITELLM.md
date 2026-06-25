@@ -311,6 +311,67 @@ kubectl rollout restart deployment/litellm -n commonly-dev
 kubectl rollout status deployment/litellm -n commonly-dev --timeout=120s
 ```
 
+### LiteLLM crash-loops (high RESTARTS) on dead codex auth → 429 lockout (the 2026-06 incident)
+
+When the cluster's ChatGPT auth (`auth-1.json`/`auth-2.json` on the `litellm-chatgpt-auth`
+PVC) fully expires, litellm's chatgpt provider drops into an **interactive
+`codex login --device-auth` at startup**, prints a device code, and blocks ≤15 min polling.
+There is no operator in the pod, so it hangs past the startup probe → `SIGKILL` → restart,
+and **every restart re-requests a device code**, hammering OpenAI's device-auth endpoint into
+a **429** that then blocks the fix too. Symptom: `litellm` container with a huge `RESTARTS`
+count, `2/3` ready, `:4000` connection-refused, and `Sign in with ChatGPT using device code`
+in `kubectl logs ... -c litellm`. This left the proxy down ~10 days in June 2026.
+
+**The 429 is the trap — you must stop the crash loop before you can re-auth:**
+
+```bash
+# 1. PAUSE litellm (stop the restart loop + the device-code spam) WITHOUT killing the
+#    codex-cli sidecar you need for re-auth. Neuter the command + drop the kill-probes.
+kubectl patch deploy/litellm -n commonly-dev --type=json -p='[
+  {"op":"replace","path":"/spec/template/spec/containers/0/command","value":["/bin/sh","-c","echo PAUSED-FOR-REAUTH; sleep infinity"]},
+  {"op":"remove","path":"/spec/template/spec/containers/0/startupProbe"},
+  {"op":"remove","path":"/spec/template/spec/containers/0/livenessProbe"}
+]'   # save the original probes first (kubectl get ... -o json) for the revert in step 4
+
+# 2. WAIT ~30 min of TOTAL silence for the 429 to cool. Do NOT keep retrying — each attempt
+#    re-warms it. (The device-code REQUEST cools first; the token-EXCHANGE step stays 429
+#    longer — you'll get "device auth failed with status 429" at exchange until fully cool.)
+
+# 3. Device-auth from INSIDE the cluster (tokens are cluster-IP-bound). Run PERSISTENT
+#    (it prints a code then polls); approve at https://auth.openai.com/codex/device.
+#    Codes are XXXX-XXXXX (4 then 5 chars) — DO NOT truncate.
+kubectl exec -n commonly-dev deploy/litellm -c codex-cli -- /scripts/auth-login.sh 1   # and 2
+
+# 4. Activate fresh tokens, UNPAUSE litellm, verify.
+kubectl exec -n commonly-dev deploy/litellm -c codex-cli -- cp /chatgpt-auth/auth-1.json /chatgpt-auth/auth.json
+kubectl patch deploy/litellm -n commonly-dev --type=json -p='[
+  {"op":"replace","path":"/spec/template/spec/containers/0/command","value":["/bin/sh","-c"]},
+  {"op":"add","path":"/spec/template/spec/containers/0/startupProbe","value":{"failureThreshold":18,"httpGet":{"path":"/health/readiness","port":4000,"scheme":"HTTP"},"initialDelaySeconds":15,"periodSeconds":10,"timeoutSeconds":1}},
+  {"op":"add","path":"/spec/template/spec/containers/0/livenessProbe","value":{"failureThreshold":3,"httpGet":{"path":"/health/readiness","port":4000,"scheme":"HTTP"},"periodSeconds":30,"timeoutSeconds":1}}
+]'
+# Verify real codex (not silent nemotron fallback) with an identity probe — ask the model
+# "Which company created you? One word." -> OpenAI = real codex, NVIDIA = nemotron fallback.
+```
+
+**Watch out — the fallback may also be broken.** In this incident `OPENROUTER_API_KEY` had a
+**trailing newline at the GCP SM source** (`commonly-dev-openrouter-api-key`), which made httpx
+reject the outgoing `Authorization` header ("Newline... detected in headers. Potential header
+injection") and 500 ~half of `nemotron` fallback calls. Fix at the source
+(`gcloud secrets versions access latest --secret=commonly-dev-openrouter-api-key` piped through
+`tr -d '\r\n'` into `gcloud secrets versions add --data-file=-`), then
+`kubectl annotate externalsecret api-keys force-sync=$(date +%s) -n commonly-dev --overwrite`
+and restart litellm. The startup script now also strips CR/LF from key env vars (PR #481).
+
+**Why litellm doesn't degrade gracefully (open).** A dead codex auth *should* fall back to
+nemotron without an outage, but it doesn't, and it has resisted fixes (#479/#480/#482):
+(a) startup `.py` monkeypatches that depend on a **runtime `os.getenv`** are no-ops — litellm
+rebuilds its `os.environ` and drops the var (gate in the shell at startup instead);
+(b) the patches can be shadowed by a **stale image `.pyc`** on first import (clear `__pycache__`
+after patching); and (c) litellm's probes hit `/health/readiness`, which reports **not-ready when
+codex is unhealthy** → the pod sits `2/3` and k8s won't route to it even if the hang is fixed
+(probes should use `/health/liveliness` or a TCP check). Graceful degradation is a 2-part fix,
+still open as of 2026-06-25.
+
 ### 401 on every Codex call — silent token expiry
 
 Symptom: LiteLLM pod is `1/1 Running`, but every `gpt-5.4` call returns HTTP 401.
