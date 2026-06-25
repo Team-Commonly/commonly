@@ -168,34 +168,43 @@ spec:
             proxy_handler_instance = RateLimitSignaler()
             PYEOF
             echo "rate-limit-signaler callback installed at /app/rate_limit_signal.py"
-            # Patch litellm's ChatGPT authenticator to FAIL FAST in headless mode instead
-            # of dropping into an interactive device-login. When auth.json is expired AND
-            # the refresh token is dead, the stock get_access_token() calls
-            # _login_device_code(), which prints a device code and BLOCKS up to 15 min
-            # polling for an operator to approve. There is no operator in this pod, so it
-            # hangs past the startup probe -> SIGKILL -> crash loop, and each restart
-            # re-requests a device code, hammering the endpoint into a 429. This turned a
-            # routine ~2-week token expiry into a ~10-day litellm OUTAGE (2026-06-24): the
-            # proxy never bound :4000, so the router's codex->nemotron fallback never got a
-            # turn. With CHATGPT_DISABLE_DEVICE_LOGIN set, get_access_token() raises
-            # GetAccessTokenError instead -> litellm boots, marks codex unhealthy, and the
-            # fallback serves requests until an operator re-auths OUT OF BAND via the
-            # codex-cli sidecar (a separate codex process, unaffected by this patch).
-            # Idempotent; no-ops cleanly if the upstream signature changes.
+            # Hard-disable ChatGPT interactive device-login in this headless pod so a dead
+            # codex auth degrades gracefully (router codex->nemotron fallback) instead of
+            # hanging startup.
+            #
+            # History (this patch was WRONG once — read before changing): the first version
+            # added an env-gated guard INSIDE get_access_token:
+            #     if os.getenv("CHATGPT_DISABLE_DEVICE_LOGIN"): raise ...
+            # That was a silent NO-OP in the live proxy. litellm rebuilds its runtime
+            # os.environ at startup and drops CHATGPT_DISABLE_DEVICE_LOGIN, so the runtime
+            # os.getenv() never saw it (the guard fires in an isolated python import, but
+            # NOT inside litellm). Device-login still fired -> _login_device_code prints a
+            # code + BLOCKS 15 min polling -> startup probe SIGKILL -> crash loop -> 429
+            # endpoint lockout. That was the ~10-day OUTAGE (2026-06-24/25): the proxy never
+            # bound :4000, so the codex->nemotron fallback never got a turn.
+            #
+            # Robust fix: gate at STARTUP in the shell (which reads the env reliably) and
+            # patch _login_device_code to raise UNCONDITIONALLY — no runtime os.getenv, so
+            # litellm's env rebuild can't no-op it. get_access_token -> _login_device_code
+            # -> immediate raise -> litellm boots, marks codex unhealthy, fallback serves.
+            # Operator re-auth is OUT OF BAND via the codex-cli sidecar (separate codex
+            # process, unaffected). Idempotent; no-ops if the upstream signature changes.
+            if [ -n "${CHATGPT_DISABLE_DEVICE_LOGIN:-}" ]; then
             python3 -c "
             import litellm, os
             f=os.path.join(os.path.dirname(litellm.__file__),'llms','chatgpt','authenticator.py')
             s=open(f).read()
-            old='        cooldown_remaining = self._get_device_code_cooldown_remaining(auth_data)'
-            new='        if os.getenv(\"CHATGPT_DISABLE_DEVICE_LOGIN\"):  # commonly: fail-fast headless\n            raise GetAccessTokenError(401, \"ChatGPT auth invalid/expired and interactive device-login is disabled (CHATGPT_DISABLE_DEVICE_LOGIN); re-auth out-of-band via the codex-cli sidecar. Requests fall back per router fallbacks.\")\n' + old
-            if 'commonly: fail-fast headless' in s:
-                print('LiteLLM chatgpt fail-fast patch: already applied')
+            old='    def _login_device_code(self) -> Dict[str, str]:'
+            new=old+'\n        raise GetAccessTokenError(401, \"ChatGPT interactive device-login is disabled in this headless pod; re-auth out-of-band via the codex-cli sidecar. Requests fall back per router fallbacks.\")  # commonly: device-login hard-disabled'
+            if 'commonly: device-login hard-disabled' in s:
+                print('LiteLLM chatgpt device-login-disable patch: already applied')
             elif old in s:
                 open(f,'w').write(s.replace(old,new,1))
-                print('LiteLLM chatgpt fail-fast patch applied: headless device-login -> GetAccessTokenError')
+                print('LiteLLM chatgpt device-login-disable patch applied: _login_device_code -> raise')
             else:
-                print('LiteLLM chatgpt fail-fast patch: pattern not found (version changed?) - review needed')
+                print('LiteLLM chatgpt device-login-disable patch: pattern not found (version changed?) - review needed')
             "
+            fi
             # Defensive: strip stray CR/LF from provider API keys before litellm reads them.
             # A trailing newline in OPENROUTER_API_KEY (the GCP SM secret had been stored
             # with one) made httpx reject the outgoing Authorization header ("Newline,
@@ -263,12 +272,13 @@ spec:
         # sidecar). See ADR-014.
         - name: CHATGPT_TOKEN_DIR
           value: /chatgpt-auth
-        # Fail fast instead of interactive device-login when codex auth is dead. The
-        # chatgpt authenticator otherwise blocks startup on a 15-min device-code poll
-        # (no operator in-pod) -> crash loop -> 429 endpoint lockout. With this set, dead
-        # auth raises GetAccessTokenError and the router falls back to nemotron; an
-        # operator re-auths out-of-band via the codex-cli sidecar. See the startup patch
-        # above + ADR-014.
+        # Disable interactive ChatGPT device-login. Read at STARTUP by the shell (the
+        # startup patch above gates on this var), NOT by runtime os.getenv — litellm
+        # rebuilds its env and drops unreferenced vars, so a runtime check is a no-op
+        # (that bug caused the 2026-06 outage; see the startup-patch history comment).
+        # When set, _login_device_code is patched to raise -> dead auth degrades to the
+        # nemotron fallback instead of hanging startup. Operator re-auths out-of-band via
+        # the codex-cli sidecar. See the startup patch above + ADR-014.
         - name: CHATGPT_DISABLE_DEVICE_LOGIN
           value: "1"
         # Force prompt/response storage in spend logs regardless of runtime general_settings.
