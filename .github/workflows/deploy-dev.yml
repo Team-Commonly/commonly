@@ -85,7 +85,7 @@ jobs:
         run: |
           REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-frontend
           docker build frontend \
-            --build-arg REACT_APP_API_URL=https://api-dev.commonly.me \
+            --build-arg REACT_APP_API_URL=https://api.commonly.me \
             -t "$REPO:$TAG"
           docker push "$REPO:$TAG"
 

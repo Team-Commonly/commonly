@@ -56,8 +56,8 @@ backend:
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: ""
-    frontendUrl: "https://app-dev.commonly.me"
-    backendUrl: "https://api-dev.commonly.me"
+    frontendUrl: "https://commonly.me"
+    backendUrl: "https://api.commonly.me"
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
@@ -299,17 +299,17 @@ ingress:
     nginx.ingress.kubernetes.io/session-cookie-name: "commonly-backend"
   hosts:
     frontend:
-      host: app-dev.commonly.me
+      host: commonly.me
       path: /
       pathType: Prefix
       aliases: []
     backend:
-      host: api-dev.commonly.me
+      host: api.commonly.me
       path: /
       pathType: Prefix
       aliases: []
     litellm:
-      host: litellm-dev.commonly.me
+      host: litellm.commonly.me
       path: /
       pathType: Prefix
   tls:
@@ -364,11 +364,9 @@ cloudflared:
   ingressPort: 80
   metricsPort: 2000
   hostnames:
-    - app.commonly.me
-    - api-dev.commonly.me
-    - app-dev.commonly.me
-    - api-dev.commonly.me
-    - litellm-dev.commonly.me
+    - commonly.me
+    - api.commonly.me
+    - litellm.commonly.me
 
 # LiteLLM proxy (model gateway + request logging)
 litellm:

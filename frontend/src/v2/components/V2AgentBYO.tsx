@@ -118,7 +118,7 @@ const V2AgentBYO: React.FC = () => {
 
   const apiUrl = typeof window !== 'undefined' && /api-dev|api\./.test(window.location.hostname)
     ? `https://${window.location.hostname.replace(/^app/, 'api')}`
-    : 'https://api-dev.commonly.me';
+    : 'https://api.commonly.me';
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`

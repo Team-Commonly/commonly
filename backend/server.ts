@@ -77,7 +77,7 @@ const app = express();
 // `req.protocol` returns 'http' even when the public URL is HTTPS, because
 // the cluster-internal hop is plain HTTP. The downstream effect: any URL
 // we build with `${req.protocol}://...` (avatar uploads, profile pictures,
-// pod attachments) gets emitted as `http://api-dev.commonly.me/...` and
+// pod attachments) gets emitted as `http://api.commonly.me/...` and
 // triggers Mixed Content warnings in every page load. Trusting the proxy
 // makes Express honor X-Forwarded-Proto.
 app.set('trust proxy', true);
@@ -89,7 +89,7 @@ const buildAllowedOrigins = () => {
       .map((value) => value.trim())
       .filter(Boolean);
   }
-  return ['http://localhost:3000', 'https://app-dev.commonly.me'];
+  return ['http://localhost:3000', 'https://commonly.me'];
 };
 
 const allowedOrigins = buildAllowedOrigins();
