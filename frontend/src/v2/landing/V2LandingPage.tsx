@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { useAuth } from '../../context/AuthContext';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
 import AlternateEmailOutlinedIcon from '@mui/icons-material/AlternateEmailOutlined';
@@ -62,7 +63,13 @@ const Shot: React.FC<{ src: string; alt: string; caption: string; wide?: boolean
 );
 
 const V2LandingPage: React.FC = () => {
+  const { isAuthenticated } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
+
+  // "Open the app" must take you INTO the app: signed-in → the shell; signed-out
+  // → the sign-in portal (registration is invite-only, so never dump a visitor
+  // at /v2/register). V2Home then routes an authed /v2 to the shell.
+  const appHref = isAuthenticated ? '/v2' : '/v2/login';
 
   useEffect(() => {
     let cancelled = false;
@@ -88,7 +95,12 @@ const V2LandingPage: React.FC = () => {
           <a className="v2-landing__navlink" href="#pricing">Pricing</a>
           <Link className="v2-landing__navlink" to="/compare">Compare</Link>
           <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">GitHub</a>
-          <Link className="v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to="/v2/register">Open the app</Link>
+          {!isAuthenticated && (
+            <Link className="v2-landing__navlink" to="/v2/login">Sign in</Link>
+          )}
+          <Link className="v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to={appHref}>
+            {isAuthenticated ? 'Open the app' : 'Get started'}
+          </Link>
         </nav>
       </header>
 
@@ -115,7 +127,7 @@ const V2LandingPage: React.FC = () => {
             </div>
 
             <div className="v2-landing__cta-row">
-              <Link className="v2-landing__btn v2-landing__btn--primary" to="/v2/register">Open the app</Link>
+              <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>Open the app</Link>
               <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">
                 <span className="v2-landing__btn-mark"><Mark size={18} /></span>
                 Star on GitHub
@@ -378,7 +390,7 @@ const V2LandingPage: React.FC = () => {
                 <li>Your infra, your data</li>
               </ul>
               <div className="v2-landing__cta-row">
-                <Link className="v2-landing__btn v2-landing__btn--primary" to="/v2/register">Open the app</Link>
+                <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>Open the app</Link>
                 <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">Self-host it</a>
               </div>
             </div>
@@ -390,7 +402,7 @@ const V2LandingPage: React.FC = () => {
           <h2 className="v2-landing__cta-title">Give your agents one place to remember.</h2>
           <p className="v2-landing__cta-sub">Open the hosted app, or clone the repo and self-host in one command. It&apos;s all open.</p>
           <div className="v2-landing__cta-row">
-            <Link className="v2-landing__btn v2-landing__btn--onaccent" to="/v2/register">Open the app</Link>
+            <Link className="v2-landing__btn v2-landing__btn--onaccent" to={appHref}>Open the app</Link>
             <a className="v2-landing__btn v2-landing__btn--onaccent-ghost" href={REPO} target="_blank" rel="noreferrer">Star on GitHub</a>
             <Link className="v2-landing__btn v2-landing__btn--onaccent-ghost" to="/compare">Compare to Raft</Link>
           </div>
@@ -406,7 +418,7 @@ const V2LandingPage: React.FC = () => {
         <div className="v2-landing__footer-cols">
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">Product</div>
-            <Link className="v2-landing__footer-link" to="/v2/register">Open the app</Link>
+            <Link className="v2-landing__footer-link" to={appHref}>Open the app</Link>
             <Link className="v2-landing__footer-link" to="/v2/marketplace">Marketplace</Link>
             <Link className="v2-landing__footer-link" to="/v2/agents/browse">Hire an agent</Link>
             <Link className="v2-landing__footer-link" to="/compare">Compare to Raft</Link>

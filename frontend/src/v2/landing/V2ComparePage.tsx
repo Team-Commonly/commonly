@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import '../v2.css';
@@ -38,7 +39,10 @@ const ROWS: Row[] = [
   { dim: 'Bring your own runtime', commonly: 'Native, OpenClaw, Codex, Claude Code, webhook', commonlyWin: false, raft: 'Bring your own agent daemon' },
 ];
 
-const V2ComparePage: React.FC = () => (
+const V2ComparePage: React.FC = () => {
+  const { isAuthenticated } = useAuth();
+  const appHref = isAuthenticated ? '/v2' : '/v2/login';
+  return (
   <div className="v2-root v2-landing">
     <header className="v2-landing__bar">
       <Link className="v2-landing__brand" to="/v2/landing" style={{ textDecoration: 'none' }}>
@@ -48,7 +52,12 @@ const V2ComparePage: React.FC = () => (
       <nav className="v2-landing__nav" aria-label="Primary">
         <Link className="v2-landing__navlink" to="/v2/landing">Home</Link>
         <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">GitHub</a>
-        <Link className="v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to="/v2/register">Open the app</Link>
+        {!isAuthenticated && (
+          <Link className="v2-landing__navlink" to="/v2/login">Sign in</Link>
+        )}
+        <Link className="v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to={appHref}>
+          {isAuthenticated ? 'Open the app' : 'Get started'}
+        </Link>
       </nav>
     </header>
 
@@ -91,7 +100,7 @@ const V2ComparePage: React.FC = () => (
         </p>
 
         <div className="v2-landing__cta-row v2-compare__cta">
-          <Link className="v2-landing__btn v2-landing__btn--primary" to="/v2/register">Open the app</Link>
+          <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>Open the app</Link>
           <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">
             <span className="v2-landing__btn-mark"><Mark size={18} /></span>
             Star on GitHub
@@ -113,7 +122,7 @@ const V2ComparePage: React.FC = () => (
         <div className="v2-landing__footer-col">
           <div className="v2-landing__footer-title">Product</div>
           <Link className="v2-landing__footer-link" to="/v2/landing">Home</Link>
-          <Link className="v2-landing__footer-link" to="/v2/register">Open the app</Link>
+          <Link className="v2-landing__footer-link" to={appHref}>Open the app</Link>
         </div>
         <div className="v2-landing__footer-col">
           <div className="v2-landing__footer-title">Open source</div>
@@ -123,6 +132,7 @@ const V2ComparePage: React.FC = () => (
       </div>
     </footer>
   </div>
-);
+  );
+};
 
 export default V2ComparePage;

@@ -92,7 +92,7 @@
 }
 .v2-landing__btn--ghost:hover { background: var(--v2-surface-hover); border-color: var(--v2-border-strong, var(--v2-border)); }
 .v2-landing__btn--onaccent {
-  color: var(--v2-accent-text);
+  color: var(--v2-accent);
   background: #ffffff;
   border: 1px solid #ffffff;
 }
@@ -120,7 +120,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--v2-accent-text);
+  color: var(--v2-accent);
   margin-bottom: 16px;
 }
 .v2-landing__title {
@@ -146,7 +146,7 @@
   border-radius: 6px;
   background: var(--v2-surface-tint);
   border: 1px solid var(--v2-border-soft);
-  color: var(--v2-accent-text);
+  color: var(--v2-accent);
 }
 
 /* Hero stat badges (light surface) */
@@ -177,7 +177,7 @@
   border-radius: var(--v2-radius);
   overflow-x: auto;
 }
-.v2-landing__install-prompt { color: var(--v2-accent-text); font-family: var(--v2-font-mono); font-weight: 700; }
+.v2-landing__install-prompt { color: var(--v2-accent); font-family: var(--v2-font-mono); font-weight: 700; }
 .v2-landing__install-cmd {
   font-family: var(--v2-font-mono);
   font-size: 13px;
@@ -185,7 +185,7 @@
   white-space: nowrap;
 }
 .v2-landing__hero-by { margin-top: 20px; font-size: 13px; color: var(--v2-text-tertiary); }
-.v2-landing__hero-by a { color: var(--v2-accent-text); text-decoration: none; }
+.v2-landing__hero-by a { color: var(--v2-accent); text-decoration: none; }
 .v2-landing__hero-by a:hover { text-decoration: underline; }
 
 .v2-landing__hero-art { display: flex; justify-content: center; }
@@ -261,7 +261,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--v2-accent-text);
+  color: var(--v2-accent);
   margin-bottom: 8px;
 }
 .v2-landing__kicker--light { color: rgba(255, 255, 255, 0.6); }
@@ -298,7 +298,7 @@
   height: 28px;
   border-radius: var(--v2-radius-pill);
   background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  color: var(--v2-accent);
   font-size: 14px;
   font-weight: 700;
   margin-bottom: 14px;
@@ -402,7 +402,7 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: var(--v2-accent-text);
+  color: var(--v2-accent);
   margin-bottom: 12px;
 }
 .v2-landing__tile-title { font-size: 17px; font-weight: 700; color: var(--v2-text-primary); margin-bottom: 8px; }
@@ -521,7 +521,7 @@
   text-decoration: none;
   transition: color 80ms ease;
 }
-.v2-landing__footer-link:hover { color: var(--v2-accent-text); }
+.v2-landing__footer-link:hover { color: var(--v2-accent); }
 
 /* ---------- Compare page (/compare) ---------- */
 .v2-compare__head { max-width: 920px; margin: 0 auto; padding-top: 56px; }
@@ -568,7 +568,7 @@
 .v2-compare__cell--dim { font-weight: 650; color: var(--v2-text-primary); }
 .v2-compare__row--head .v2-compare__cell { font-weight: 700; color: var(--v2-text-primary); font-size: 15px; }
 .v2-compare__cell--us { background: var(--v2-accent-soft); }
-.v2-compare__row--head .v2-compare__cell--us { color: var(--v2-accent-text); }
+.v2-compare__row--head .v2-compare__cell--us { color: var(--v2-accent); }
 .v2-compare__cell--us .v2-landing__mark { color: var(--v2-accent); display: inline-flex; }
 .v2-compare__ic { font-size: 18px; flex-shrink: 0; }
 .v2-compare__ic--yes { color: var(--v2-accent); }
