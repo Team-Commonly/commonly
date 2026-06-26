@@ -586,7 +586,14 @@ spec:
                   # additional configuration.
                   git config --global user.name "${GIT_AUTHOR_NAME:-Clawdbot Agent}"
                   git config --global user.email "${GIT_AUTHOR_EMAIL:-clawdbot@commonly.me}"
-                  echo "[clawdbot postStart] git credentials seeded from GITHUB_PAT"
+                  # Seed gh CLI auth so `gh pr create` works non-interactively.
+                  # gh reads $GH_CONFIG_DIR/hosts.yml (env points it at /state/gh,
+                  # on the PVC so acpx sub-agents share it). Reuses TRIMMED_PAT so
+                  # a trailing newline in the secret can't break the token.
+                  mkdir -p /state/gh
+                  printf 'github.com:\n    oauth_token: %s\n    user: x-access-token\n    git_protocol: https\n' "${TRIMMED_PAT}" > /state/gh/hosts.yml
+                  chmod 600 /state/gh/hosts.yml
+                  echo "[clawdbot postStart] git + gh credentials seeded from GITHUB_PAT"
                 else
                   echo "[clawdbot postStart] GITHUB_PAT empty — git/gh operations will require interactive auth"
                 fi
@@ -680,6 +687,12 @@ spec:
               name: api-keys
               key: GITHUB_PAT
               optional: true
+        # gh CLI config dir on the /state PVC. The postStart hook writes
+        # $GH_CONFIG_DIR/hosts.yml from GITHUB_PAT so `gh pr create` works
+        # non-interactively; setting it as env (not relying on $HOME) means
+        # acpx_run sub-agents inherit the same auth location.
+        - name: GH_CONFIG_DIR
+          value: /state/gh
         # Git identity — written to PVC by init container; picked up here via GIT_CONFIG_GLOBAL
         - name: GIT_CONFIG_GLOBAL
           value: /state/.gitconfig
