@@ -2,31 +2,18 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
+// v1 auth / OAuth / use-case entry stubs — retained as thin pass-through pages
+// so hard-loaded external links (and their query strings) still resolve. The
+// rest of the v1 UI (Layout shell + feed/agents/pods/dashboard/… and the old
+// LandingPage) is deprecated and no longer mounted; NavigationHandler's
+// getV2EquivalentPath map redirects every legacy path into the v2 shell.
 import Login from './components/Login';
 import Register from './components/Register';
 import RegistrationInviteRequired from './components/RegistrationInviteRequired';
-import LandingPage from './components/landing/LandingPage';
 import UseCasePage from './components/landing/UseCasePage';
 import VerifyEmail from './components/VerifyEmail';
-import PostFeed from './components/PostFeed';
-import Thread from './components/Thread';
-import UserProfile from './components/UserProfile';
-import Dashboard from './components/Dashboard';
-import Layout from './components/Layout';
-import Pod from './components/Pod';
-import PodRedirect from './components/PodRedirect';
-import ChatRoom from './components/ChatRoom';
-import ApiDevPage from './components/ApiDevPage';
-import PodContextDevPage from './components/PodContextDevPage';
 import DiscordCallback from './components/DiscordCallback';
-import DailyDigest from './components/DailyDigest';
-import ProtectedRoute from './components/ProtectedRoute';
-// New agent-related pages
-import AgentsHub from './components/agents/AgentsHub';
-import ActivityFeedPage from './components/activity/ActivityFeedPage';
-import SkillsCatalogPage from './components/skills/SkillsCatalogPage';
-import AppsMarketplacePage from './components/apps/AppsMarketplacePage';
-import GlobalIntegrations from './components/admin/GlobalIntegrations';
+import V2ComparePage from './v2/landing/V2ComparePage';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
@@ -280,51 +267,25 @@ function App(): React.ReactElement {
                     <Routes>
                     <Route path="/v2/*" element={<V2App />} />
                     <Route path="/" element={<Navigate to="/v2" replace />} />
-                    <Route path="/legacy-landing" element={<LandingPage />} />
+                    {/* Public marketing page — no v2 equivalent, renders as-is. */}
+                    <Route path="/compare" element={<V2ComparePage />} />
+                    {/* v1 auth / OAuth / use-case entry stubs. Kept so hard-loaded
+                        external links resolve with their query strings intact; in-app
+                        navigation to these paths is redirected into the v2 shell by
+                        NavigationHandler. */}
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/register/invite-required" element={<RegistrationInviteRequired />} />
                     <Route path="/verify-email" element={<VerifyEmail />} />
-                    <Route element={<Layout />}>
-                      <Route path="/feed" element={<PostFeed />} />
-                      <Route path="/thread/:id" element={<Thread />} />
-                      <Route path="/profile" element={<UserProfile />} />
-                      <Route path="/profile/:id" element={<UserProfile />} />
-                      <Route path="/dashboard" element={<Dashboard />} />
-                      <Route path="/digest" element={<DailyDigest />} />
-                      <Route path="/apps" element={<AppsMarketplacePage />} />
-                      <Route path="/agents" element={<AgentsHub />} />
-                      <Route path="/skills" element={<SkillsCatalogPage />} />
-                      <Route path="/activity" element={<ActivityFeedPage />} />
-                      <Route path="/admin/integrations/global" element={
-                        <ProtectedRoute requireAdmin={true}>
-                          <GlobalIntegrations />
-                        </ProtectedRoute>
-                      } />
-                      <Route path="/admin/users" element={
-                        <ProtectedRoute requireAdmin={true}>
-                          <Navigate to="/profile?tab=user-admin" replace />
-                        </ProtectedRoute>
-                      } />
-                      <Route path="/pods" element={<PodRedirect />} />
-                      <Route path="/pods/:podType" element={<Pod />} />
-                      <Route path="/pods/:podType/:roomId" element={<ChatRoom />} />
-                      <Route path="/dev/api" element={
-                        <ProtectedRoute requireAdmin={true}>
-                          <ApiDevPage />
-                        </ProtectedRoute>
-                      } />
-                      <Route path="/dev/pod-context" element={
-                        <ProtectedRoute requireAdmin={true}>
-                          <PodContextDevPage />
-                        </ProtectedRoute>
-                      } />
-                    </Route>
-                    <Route path="/chat/:podId" element={<Layout><ChatRoom /></Layout>} />
                     <Route path="/discord/callback" element={<DiscordCallback />} />
                     <Route path="/discord/success" element={<DiscordCallback type="success" />} />
                     <Route path="/discord/error" element={<DiscordCallback type="error" />} />
+                    {/* v1 shell (Layout + feed/agents/pods/dashboard/digest/apps/
+                        skills/activity/profile/admin/dev and the old /legacy-landing)
+                        is deprecated and no longer mounted. NavigationHandler
+                        redirects every legacy path into the v2 shell; the v1 component
+                        files remain on disk for now, just unrendered. */}
                     </Routes>
                   </div>
                 </BrowserRouter>
