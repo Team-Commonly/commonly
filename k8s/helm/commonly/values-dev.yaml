@@ -31,8 +31,8 @@ backend:
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: "dev"
-    frontendUrl: "https://app-dev.commonly.me"
-    backendUrl: "https://api-dev.commonly.me"
+    frontendUrl: "https://commonly.me"
+    backendUrl: "https://api.commonly.me"
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
@@ -182,11 +182,11 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
   hosts:
     frontend:
-      host: app-dev.commonly.me
+      host: commonly.me
     backend:
-      host: api-dev.commonly.me
+      host: api.commonly.me
     litellm:
-      host: litellm-dev.commonly.me
+      host: litellm.commonly.me
   tls:
     enabled: false  # Enable after setting up cert-manager
 

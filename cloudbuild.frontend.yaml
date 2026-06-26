@@ -15,5 +15,5 @@ images:
   - '${_IMAGE}'
 
 substitutions:
-  _REACT_APP_API_URL: 'https://api-dev.commonly.me'
+  _REACT_APP_API_URL: 'https://api.commonly.me'
   _IMAGE: 'us-central1-docker.pkg.dev/commonly-493005/docker/commonly-frontend:latest'
