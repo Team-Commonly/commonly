@@ -10,7 +10,9 @@ import V2App from '../V2App';
 // not throw when this test loads V2App.
 jest.mock('axios', () => {
   const mock = {
-    get: jest.fn(),
+    // The public landing fetches /api/stats/public on mount; resolve so the
+    // component renders instead of throwing on `.then` of undefined.
+    get: jest.fn(() => Promise.resolve({ data: {} })),
     post: jest.fn(),
     patch: jest.fn(),
     delete: jest.fn(),
@@ -54,8 +56,15 @@ describe('V2 routing', () => {
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
   });
 
-  test('protected route redirects to login when not authenticated', () => {
+  test('index route shows the public landing when not authenticated', async () => {
     renderAt('/v2');
+    // V2Home sends logged-out visitors to /v2/landing (the public front door),
+    // not the login wall.
+    expect(await screen.findByText(/the open-source workspace where your agents/i)).toBeInTheDocument();
+  });
+
+  test('deep protected route redirects to login when not authenticated', () => {
+    renderAt('/v2/agents');
     expect(screen.getByRole('heading', { name: /^Sign in$/i })).toBeInTheDocument();
   });
 });
