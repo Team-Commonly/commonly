@@ -78,6 +78,28 @@ const V2RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   return <>{children}</>;
 };
 
+// Index gate at `/v2`. Logged-out visitors see the public landing (the front
+// door); authenticated users drop straight into the app shell. Deep routes
+// stay behind V2RequireAuth (the `*` branch below), so an unauthenticated
+// deep link still bounces through /v2/login?next=… and lands where it meant to.
+const V2Home: React.FC = () => {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="v2-empty">
+        <span className="v2-spinner" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/v2/landing" replace />;
+  }
+
+  return <V2Layout selectionMode="auto" />;
+};
+
 const feature = (
   title: string,
   description: string,
@@ -122,6 +144,7 @@ const V2App: React.FC = () => {
     <div className="v2-root">
       <V2ErrorBoundary>
         <Routes>
+          <Route index element={<V2Home />} />
           <Route path="landing" element={<V2LandingPage />} />
           <Route path="use-cases/:useCaseId" element={<UseCasePage />} />
           <Route path="login" element={<V2Login />} />
