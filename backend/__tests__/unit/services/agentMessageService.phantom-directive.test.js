@@ -36,6 +36,7 @@ jest.mock('../../../models/Summary', () => ({
 jest.mock('../../../services/agentIdentityService', () => ({
   getOrCreateAgentUser: jest.fn(),
   ensureAgentInPod: jest.fn(),
+  buildAgentUsername: jest.fn((agentName, instanceId) => `${agentName}-${instanceId}`),
 }));
 jest.mock('../../../services/podAssetService', () => ({
   createChatSummaryAsset: jest.fn(),
@@ -60,6 +61,10 @@ jest.mock('../../../models/User', () => ({
     select: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue([]),
   })),
+  findOne: jest.fn(() => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(null),
+  })),
 }));
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(() => ({
@@ -69,6 +74,10 @@ jest.mock('../../../models/Pod', () => ({
 }));
 jest.mock('../../../models/File', () => ({
   find: jest.fn(),
+  findOne: jest.fn(() => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(null),
+  })),
 }));
 
 // Configure File.find to return the rows whose fileName/originalName are
@@ -240,5 +249,59 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
     // Lookup failure must NOT corrupt the message with a footer.
     expect(persistedDoc.content).not.toContain('no matching attachment was found');
     expect(result).toBeTruthy();
+  });
+});
+
+describe('AgentMessageService false-attach footer (recent-attach suppression)', () => {
+  const FALSE_ATTACH_NOTE = 'this message claims an attachment but no';
+
+  it('appends the false-attach footer when the agent did NOT recently attach a file', async () => {
+    // Default mocks: User.findOne → null, File.findOne → null → no recent attach.
+    await AgentMessageService.postMessage({
+      agentName: 'openclaw',
+      instanceId: 'pixel',
+      podId: '6a0da39bae757028b39f87a6',
+      content: 'Done — attached the launch deck here.',
+    });
+
+    expect(persistedDoc.content).toContain(FALSE_ATTACH_NOTE);
+  });
+
+  it('suppresses the footer when THIS agent uploaded a file to the pod moments ago', async () => {
+    // The agent's `commonly_attach_file` call already landed a File row; the
+    // follow-up narration ("Done — attached…") legitimately has no directive.
+    User.findOne.mockReturnValueOnce({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ _id: 'bot-user-1' }),
+    });
+    File.findOne.mockReturnValueOnce({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ _id: 'recent-file-1' }),
+    });
+
+    await AgentMessageService.postMessage({
+      agentName: 'openclaw',
+      instanceId: 'pixel',
+      podId: '6a0da39bae757028b39f87a6',
+      content: 'Done — attached the launch deck here.',
+    });
+
+    expect(persistedDoc.content).not.toContain(FALSE_ATTACH_NOTE);
+    expect(persistedDoc.content).toContain('Done — attached the launch deck here.');
+  });
+
+  it('still appends the footer when the recent-attach lookup throws', async () => {
+    User.findOne.mockImplementationOnce(() => {
+      throw new Error('mongo connection lost');
+    });
+
+    await AgentMessageService.postMessage({
+      agentName: 'openclaw',
+      instanceId: 'pixel',
+      podId: '6a0da39bae757028b39f87a6',
+      content: 'Done — attached the report file here.',
+    });
+
+    expect(persistedDoc.content).toContain(FALSE_ATTACH_NOTE);
   });
 });

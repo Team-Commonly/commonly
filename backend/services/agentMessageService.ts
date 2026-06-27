@@ -40,6 +40,13 @@ const FILE_DIRECTIVE_SCAN_LIMIT = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 500;
 })();
 
+// How recently THIS agent must have uploaded a file to this pod for a
+// "Done — attached the deck" narration (which carries no `[[upload:]]`
+// directive of its own) to be treated as a legitimate post-attach follow-up
+// rather than a false-attach claim. The tool posts the directive message and
+// the narration within the same turn, so a few minutes is ample.
+const RECENT_ATTACH_WINDOW_MS = 5 * 60 * 1000;
+
 let PGMessage: unknown = null;
 try {
   // eslint-disable-next-line global-require
@@ -814,8 +821,39 @@ class AgentMessageService {
       const hasUploadDirective = /\[\[upload:/i.test(sanitizedContent);
       const claimsAttachment = /(?:\b(?:i(?:'ve| have)?|done\s*[—-]?\s*i|i\s+just|i\s+already)\s+|(?:^|[.!?]\s+|[\r\n]+)(?:done\s*[—-]?\s*)?(?:just\s+)?)(?:attached|uploaded|posted)\b[^.\n]{0,80}\b(?:file|deck|attachment|runbook|pptx|docx|xlsx|pdf|csv|image|artifact)\b/i.test(sanitizedContent);
       if (claimsAttachment && !hasUploadDirective) {
-        sanitizedContent += '\n\n⚠️ _(system note: this message claims an attachment but no `[[upload:...]]` directive is in the body. The agent may not have actually called `commonly_attach_file`. Check the agent\'s workspace for the file and re-attach if needed.)_';
-        console.warn(`[agent-msg] false-attach-claim from agent=${agentName} instance=${instanceId} pod=${podId} — appended system note`);
+        // Suppress the warning when THIS agent genuinely attached a file to
+        // this pod moments ago. `commonly_attach_file` posts the clean
+        // directive message AND the agent then posts a natural-language
+        // "Done — attached the deck" follow-up; that follow-up legitimately
+        // has no `[[upload:]]` directive of its own, but the attachment
+        // really happened. Without this check the guard false-positives on
+        // every successful tool-driven attach (smoke 2026-06-26). We look
+        // for a File row this agent uploaded to this pod inside a short
+        // window — informational-only, so a miss just restores the old
+        // (over-eager) behaviour rather than blocking the message.
+        let recentlyAttached = false;
+        try {
+          if (podId && mongoose.Types.ObjectId.isValid(podId)) {
+            const botUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
+            const botUser = await User.findOne({ username: botUsername }).select('_id').lean();
+            if (botUser && botUser._id) {
+              const since = new Date(Date.now() - RECENT_ATTACH_WINDOW_MS);
+              const recentFile = await File.findOne({
+                podId: new mongoose.Types.ObjectId(String(podId)),
+                uploadedBy: botUser._id,
+                createdAt: { $gte: since },
+              }).select('_id').lean();
+              recentlyAttached = !!recentFile;
+            }
+          }
+        } catch (recentAttachErr) {
+          // Lookup failure → fall back to the original warning behaviour.
+          console.warn(`[agent-msg] recent-attach lookup failed: ${(recentAttachErr as Error).message}`);
+        }
+        if (!recentlyAttached) {
+          sanitizedContent += '\n\n⚠️ _(system note: this message claims an attachment but no `[[upload:...]]` directive is in the body. The agent may not have actually called `commonly_attach_file`. Check the agent\'s workspace for the file and re-attach if needed.)_';
+          console.warn(`[agent-msg] false-attach-claim from agent=${agentName} instance=${instanceId} pod=${podId} — appended system note`);
+        }
       }
 
       // Round 2 of the false-attach defence (smoke 2026-05-20): the previous
