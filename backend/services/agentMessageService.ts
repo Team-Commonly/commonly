@@ -807,6 +807,19 @@ class AgentMessageService {
     }
     let sanitizedContent = AgentMessageService.sanitizeAgentContent(content);
 
+    // Suppress runtime model-failure errors. When a runtime's model chain is
+    // exhausted (bad/missing provider auth, 429s, all fallbacks down) the
+    // gateway posts the raw failover error AS the agent's "reply" — e.g.
+    // "⚠️ Agent failed before reply: All models failed (4): openrouter/...: 401".
+    // Those are operator diagnostics, never user-facing content; left alone they
+    // spam every pod the agent heartbeats in (~every 30 min). Treat them like a
+    // silent reply (empty → skipped below) and log instead, so a degraded
+    // community agent fails quietly rather than flooding chat.
+    if (sanitizedContent && AgentMessageService.isRuntimeModelFailure(sanitizedContent)) {
+      console.warn(`[agent-msg] suppressed runtime model-failure from agent=${agentName} instance=${instanceId} pod=${podId}: ${sanitizedContent.slice(0, 120)}`);
+      sanitizedContent = '';
+    }
+
     // Task #68: detect false-attachment claims. Agents sometimes post
     // "Done — I attached the file" without actually calling
     // commonly_attach_file. The file may exist in their workspace but
@@ -1384,6 +1397,24 @@ class AgentMessageService {
       }) => Promise<void>;
     };
     return triggers.recordAgentDmConclusion(args);
+  }
+
+  /**
+   * True when the content IS a runtime-generated model-failure error (not
+   * legitimate agent prose that happens to mention an error). These are posted
+   * by the gateway when the model chain is exhausted and must never reach
+   * user-facing chat. Strict signatures only — the runtime prefix
+   * ("[Embedded ]Agent failed before reply:") or the "All models failed (N):"
+   * failover summary — so an agent legitimately discussing an error is untouched.
+   */
+  static isRuntimeModelFailure(content: unknown): boolean {
+    if (!content) return false;
+    const c = String(content).trim();
+    if (!c) return false;
+    return (
+      /^(?:⚠️\s*)?(?:embedded\s+)?agent failed before reply\s*:/i.test(c)
+      || /\ball models failed\s*\(\d+\)\s*:/i.test(c)
+    );
   }
 
   static sanitizeAgentContent(content: unknown): string {
