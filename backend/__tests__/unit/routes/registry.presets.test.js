@@ -99,10 +99,10 @@ describe('registry presets', () => {
     ]));
   });
 
-  // Task #5 cutover (ADR-005 Stage 3 / ADR-010 Phase 3): nova HEARTBEAT delegates
-  // codex tasks via DM to sam-local-codex instead of acpx_run. Lock the structural
+  // In-session coding migration (retire acpx_run + sam-local-codex delegation):
+  // nova writes code herself in one heartbeat tick. Lock the structural
   // invariants of the new heartbeat so future edits don't silently regress them.
-  it('nova heartbeat: DM delegation surface, no acpx_run', async () => {
+  it('nova heartbeat: in-session coding, no delegation', async () => {
     const handler = getRouteHandler('/presets', 'get');
     const req = { userId: 'user-1', user: { id: 'user-1' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
@@ -115,29 +115,32 @@ describe('registry presets', () => {
     const heartbeat = novaPreset.heartbeatTemplate;
     expect(typeof heartbeat).toBe('string');
 
-    // acpx_run only appears in retirement/negative-instruction lines (the
-    // tool is still loaded in the gateway, so we tell nova not to call it
-    // until Task #8 deletes it from the openclaw fork). No imperative call.
-    const acpxLines = heartbeat.split('\n').filter((line) => line.includes('acpx_run'));
-    for (const line of acpxLines) {
-      expect(line).toMatch(/never|retir|cutover|do not|don't/i);
+    // acpx_run and sam-local-codex appear ONLY in negative/prohibition lines —
+    // both delegation paths are retired; nova must never invoke them.
+    const delegationLines = heartbeat
+      .split('\n')
+      .filter((line) => line.includes('acpx_run') || line.includes('sam-local-codex'));
+    expect(delegationLines.length).toBeGreaterThan(0); // the prohibitions are present
+    for (const line of delegationLines) {
+      expect(line).toMatch(/never|retir|cutover|do not|don't|not delegate/i);
     }
 
-    // The DM-delegation primitives must be present.
-    expect(heartbeat).toContain('SamCodexDmPodId');
-    expect(heartbeat).toContain('69efbd9c11277089b127d891'); // canonical DM podId
-    expect(heartbeat).toContain('PendingDelegation');
-    expect(heartbeat).toContain('sam-local-codex');
+    // The delegation primitives must be GONE.
+    expect(heartbeat).not.toContain('SamCodexDmPodId');
+    expect(heartbeat).not.toContain('PendingDelegation');
+    expect(heartbeat).not.toContain('69efbd9c11277089b127d891'); // sam DM podId
 
-    // The five-branch decision tree labels are load-bearing.
-    expect(heartbeat).toContain('Branch A');
-    expect(heartbeat).toContain('Branch B');
-    expect(heartbeat).toContain('Branch C');
-    expect(heartbeat).toContain('Branch D');
-    expect(heartbeat).toContain('Branch E');
+    // In-session coding primitives + the git-hygiene invariants (validated on
+    // PR #497) must be present.
+    expect(heartbeat).toContain('in-session');
+    expect(heartbeat).toContain('git checkout -B'); // clean branch
+    expect(heartbeat).toContain('origin/main'); // off a clean main base
+    expect(heartbeat).toContain('git add -A'); // referenced in the never-do prohibition
+    expect(heartbeat).toMatch(/never .{0,30}git add -A|only the files you changed/i);
+    expect(heartbeat).toContain('gh pr create');
 
-    // SOUL.md should also call out the delegation model.
-    expect(novaPreset.soulTemplate).toContain('sam-local-codex');
+    // SOUL.md should call out in-session ownership, not delegation.
+    expect(novaPreset.soulTemplate).toMatch(/yourself|in your own session/i);
     expect(novaPreset.soulTemplate).not.toContain('acpx_run on the gateway');
   });
 });
