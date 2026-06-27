@@ -38,7 +38,8 @@
  */
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { mkdtemp, readFile, rm } from 'fs/promises';
+import { existsSync } from 'fs';
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -69,6 +70,28 @@ const DEFAULT_TIMEOUT_MS = (() => {
 const buildPrompt = (prompt, memoryLongTerm) => {
   if (!memoryLongTerm) return prompt;
   return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
+};
+
+const COMMONLY_MCP_BLOCK = `[mcp_servers.commonly]
+command = "npx"
+args = ["-y", "@commonlyai/mcp@latest"]
+env = { COMMONLY_API_URL = "${COMMONLY_API_URL}", COMMONLY_AGENT_TOKEN = "${COMMONLY_AGENT_TOKEN}" }
+`;
+
+const substituteMcpPlaceholders = (value, ctx = {}) => {
+  if (typeof value !== 'string') return value;
+  return value
+    .replace(/\$\{COMMONLY_API_URL\}/g, ctx.instanceUrl || '${COMMONLY_API_URL}')
+    .replace(/\$\{COMMONLY_AGENT_TOKEN\}/g, ctx.runtimeToken || '${COMMONLY_AGENT_TOKEN}');
+};
+
+const writeCodexMcpConfig = async (cwd, ctx = {}) => {
+  const configPath = join(cwd, '.codex', 'config.toml');
+  const existing = existsSync(configPath) ? await readFile(configPath, 'utf8') : '';
+  const merged = existing.replace(/\n?\[mcp_servers\.commonly\][\s\S]*?(?=\n\[|$)/, '').trimEnd();
+  const next = `${merged}${merged ? '\n\n' : ''}${COMMONLY_MCP_BLOCK}`;
+  await writeFile(configPath, substituteMcpPlaceholders(next, ctx), 'utf8');
+  return configPath;
 };
 
 // Build the argv after the `codex` binary. Resume vs new turn is a
@@ -213,6 +236,13 @@ export default {
     // so a crash in the middle of the spawn doesn't leak files in $TMPDIR.
     const dir = await mkdtemp(join(tmpdir(), 'commonly-codex-'));
     const outputFile = join(dir, 'last-message.txt');
+
+    if (ctx.cwd && ctx.environment?.mcp?.length) {
+      await writeCodexMcpConfig(ctx.cwd, {
+        runtimeToken: ctx.runtimeToken,
+        instanceUrl: ctx.instanceUrl,
+      });
+    }
 
     try {
       const args = buildArgs({
