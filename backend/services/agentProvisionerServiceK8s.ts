@@ -500,7 +500,7 @@ const ensureHeartbeatTemplate = async (accountId: any, heartbeat: any, { gateway
  * ConfigMap, so new accounts must appear there too or the init container will
  * never write their auth-profiles.json and the gateway will skip them on startup.
  */
-const syncAccountToStateMoltbot = async (accountId: any, accountEntry: any, agentEntry: any, binding: any, { gateway, agentsDefaults } : any = {}) => {
+const syncAccountToStateMoltbot = async (accountId: any, accountEntry: any, agentEntry: any, binding: any, { gateway, agentsDefaults, modelsProviders } : any = {}) => {
   let podName;
   try {
     podName = await resolveGatewayPodNameWithRetry(gateway);
@@ -530,12 +530,25 @@ const syncAccountToStateMoltbot = async (accountId: any, accountEntry: any, agen
     `agent_entry = json.loads(${pyJsonLiteral(agentEntry)})`,
     `binding = json.loads(${pyJsonLiteral(binding)})`,
     `agents_defaults = json.loads(${pyJsonLiteral(agentsDefaults || null)})`,
+    `models_providers = json.loads(${pyJsonLiteral(modelsProviders || null)})`,
     // Global agents.defaults — overwrite on every sync. Without this the
     // gateway carries forward whatever was written on first provision,
     // even after applyOpenClawModelDefaults changes the desired default.
     'if agents_defaults is not None:',
     '    d.setdefault("agents", {})["defaults"] = agents_defaults',
     '    print("[state-sync] updated agents.defaults")',
+    // models.providers — overwrite on every sync, same rationale as
+    // agents.defaults. The auth-seed init container copies providers from the
+    // ConfigMap, but a freshly-mounted ConfigMap volume can lag the API write
+    // by ~60-90s, so a reprovision-then-restart can seed the PVC from a stale
+    // ConfigMap and drop a just-added provider (e.g. the openrouter→LiteLLM
+    // route that community agents need — they 401'd until this was synced).
+    // Writing providers straight to the PVC here is immune to that race.
+    // Providers are fully derived from config (no per-agent injection — those
+    // live in per-agent auth-profiles.json), so a full overwrite is safe.
+    'if models_providers is not None:',
+    '    d.setdefault("models", {})["providers"] = models_providers',
+    '    print("[state-sync] updated models.providers:", ",".join(sorted(models_providers.keys())))',
     // Accounts
     'd.setdefault("channels", {}).setdefault("commonly", {}).setdefault("accounts", {})',
     'accts = d["channels"]["commonly"]["accounts"]',
@@ -2474,6 +2487,10 @@ const provisionOpenClawAccount = async ({
       // this, the global default (e.g. nemotron) lives only in the in-memory
       // config and the persisted file keeps a stale primary forever.
       agentsDefaults: config.agents?.defaults || null,
+      // Same for the model providers (openai-codex + openrouter→LiteLLM).
+      // Relying on the init container to copy these from the ConfigMap races
+      // the ConfigMap-volume propagation lag on reprovision-then-restart.
+      modelsProviders: config.models?.providers || null,
     });
     console.log(`[k8s-provisioner] synced ${accountId} to /state/moltbot.json`);
   } catch (err: any) {
