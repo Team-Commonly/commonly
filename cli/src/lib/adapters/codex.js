@@ -70,16 +70,14 @@ const DEFAULT_TIMEOUT_MS = (() => {
 const buildPrompt = (prompt, memoryLongTerm) => {
   if (!memoryLongTerm) return prompt;
   return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
-};
-
-const COMMONLY_MCP_BLOCK = `[mcp_servers.commonly]
+}
+const COMMONLY_MCP_BLOCK = String.raw`[mcp_servers.commonly]
 command = "npx"
 args = ["-y", "@commonlyai/mcp@latest"]
 env = { COMMONLY_API_URL = "${COMMONLY_API_URL}", COMMONLY_AGENT_TOKEN = "${COMMONLY_AGENT_TOKEN}" }
 `;
 
 const substituteMcpPlaceholders = (value, ctx = {}) => {
-  if (typeof value !== 'string') return value;
   return value
     .replace(/\$\{COMMONLY_API_URL\}/g, ctx.instanceUrl || '${COMMONLY_API_URL}')
     .replace(/\$\{COMMONLY_AGENT_TOKEN\}/g, ctx.runtimeToken || '${COMMONLY_AGENT_TOKEN}');
