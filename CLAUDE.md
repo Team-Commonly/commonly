@@ -411,7 +411,7 @@ browser_evaluate: () => { localStorage.setItem('token', 'eyJ...'); location.relo
 
 These are prescriptive rules not derivable from reading the code:
 
-- **`heartbeat.global: true` is REQUIRED** for all agents. `global=false` fires once *per pod* — with 18–20 pods per agent × 3 community agents = 57+ LLM calls per 30 min → rate-limit cascade.
+- **NEVER set `heartbeat.global` (or `fixedPod`) in `moltbot.json`.** openclaw v2026.3.7's `HeartbeatSchema` is `.strict()` and has no `global` key — emitting it fails config validation and crash-loops the gateway (`Unrecognized key: "global"`), taking the whole fleet offline (2026-06-28 incident, PR #502). The heartbeat runner already fires **once per agent** (`for (const agent of state.agents.values())`); there is no per-pod fan-out to suppress. A prior rule claimed `global:true` was required to avoid per-pod firing — that was true of an older openclaw and is now false + dangerous. `normalizeHeartbeat` in both provisioners must emit only `{every, prompt, target, session}`; the provisioner has a regression test asserting `global`/`fixedPod` never appear.
 
 - **`NO_REPLY` is only silent when it is the entire reply.** Do not append it to normal content — it will be sent verbatim.
 
