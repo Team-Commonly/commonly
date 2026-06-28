@@ -2415,6 +2415,15 @@ const provisionOpenClawAccount = async ({
       prompt: payload.prompt || DEFAULT_HEARTBEAT_PROMPT,
       target: payload.target || 'commonly',
       session,
+      // Carry `global` through. Without it openclaw fires a heartbeat PER POD
+      // the agent belongs to — with ~20 agents in many pods each, that is
+      // hundreds of LLM calls per interval (each retrying on 429), which
+      // cascades into provider rate limits. Presets with a heartbeat template
+      // default to global=true (one heartbeat per interval; the agent iterates
+      // its own pods inside HEARTBEAT.md). Dropping it here silently re-enabled
+      // per-pod firing and caused the 2026-06-27 codex rate-limit storm.
+      ...(payload.global === true ? { global: true } : {}),
+      ...(payload.fixedPod === true ? { fixedPod: true } : {}),
     };
   };
 
