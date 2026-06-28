@@ -71,12 +71,7 @@ const buildPrompt = (prompt, memoryLongTerm) => {
   if (!memoryLongTerm) return prompt;
   return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
 }
-const COMMONLY_MCP_BLOCK = String.raw`[mcp_servers.commonly]
-command = "npx"
-args = ["-y", "@commonlyai/mcp@latest"]
-env = { COMMONLY_API_URL = "${COMMONLY_API_URL}", COMMONLY_AGENT_TOKEN = "${COMMONLY_AGENT_TOKEN}" }
-`;
-
+const COMMONLY_MCP_BLOCK = '[mcp_servers.commonly]\\ncommand = \"npx\"\\nargs = [\"-y\", \"@commonlyai/mcp@latest\"]\\nenv = { COMMONLY_API_URL = \"${COMMONLY_API_URL}\", COMMONLY_AGENT_TOKEN = \"${COMMONLY_AGENT_TOKEN}\" }\\n';
 const substituteMcpPlaceholders = (value, ctx = {}) => {
   return value
     .replace(/\$\{COMMONLY_API_URL\}/g, ctx.instanceUrl || '${COMMONLY_API_URL}')
