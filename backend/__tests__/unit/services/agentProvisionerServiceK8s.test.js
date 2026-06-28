@@ -126,6 +126,33 @@ describe('agentProvisionerServiceK8s', () => {
     expect(config.channels.commonly.accounts.cuz.authProfiles).toEqual(authProfiles);
   });
 
+  it('never emits heartbeat.global/fixedPod (openclaw HeartbeatSchema is strict)', async () => {
+    // Regression for the 2026-06-28 fleet outage: emitting `global` made the
+    // gateway fail openclaw's strict HeartbeatSchema validation and crash-loop
+    // ("Unrecognized key: global"). The provisioner must translate everyMinutes
+    // into `every` and drop global/fixedPod entirely.
+    await provisionAgentRuntime({
+      runtimeType: 'moltbot',
+      agentName: 'openclaw',
+      instanceId: 'cuz',
+      runtimeToken: 'cm_agent_test',
+      userToken: 'cm_user_test',
+      baseUrl: 'http://backend',
+      displayName: 'Cuz',
+      heartbeat: { global: true, fixedPod: true, everyMinutes: 30, prompt: 'hb', session: 'heartbeat' },
+    });
+
+    const calls = k8s.__mock.replaceNamespacedConfigMap.mock.calls;
+    const configMapPayload = calls[calls.length - 1][2];
+    const config = JSON.parse(configMapPayload.data['moltbot.json']);
+    const agent = config.agents.list.find((a) => a.id === 'cuz');
+    expect(agent).toBeTruthy();
+    expect(agent.heartbeat).toBeTruthy();
+    expect(agent.heartbeat.every).toBe('30m');
+    expect(agent.heartbeat).not.toHaveProperty('global');
+    expect(agent.heartbeat).not.toHaveProperty('fixedPod');
+  });
+
   it('stores connected integration channel accounts in gateway config map', async () => {
     await provisionAgentRuntime({
       runtimeType: 'moltbot',
