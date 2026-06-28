@@ -127,9 +127,10 @@ const reprovisionInstallation = async ({
   const explicitPresetId = configPayload?.presetId || null;
   const matchedPreset = PRESET_DEFINITIONS.find((p: any) => p.id === (explicitPresetId || normalizedInstanceId));
   const heartbeatForProvision = {
-    // Presets with a heartbeat template default to global=true: the agent iterates
-    // its own pods during the heartbeat rather than firing once per pod.
-    ...(matchedPreset?.heartbeatTemplate ? { global: true, everyMinutes: 30 } : {}),
+    // Presets with a heartbeat template fire on a 30m cadence. (Heartbeats fire
+    // once per agent regardless — do NOT set a `global` flag here: openclaw's
+    // HeartbeatSchema is strict and rejects it, crash-looping the gateway.)
+    ...(matchedPreset?.heartbeatTemplate ? { everyMinutes: 30 } : {}),
     ...(matchedPreset?.defaultHeartbeat || {}),
     ...(configPayload.heartbeat || {}),
     ...(matchedPreset?.heartbeatTemplate ? {

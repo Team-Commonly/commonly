@@ -1043,10 +1043,10 @@ const provisionOpenClawAccount = async ({
       prompt: payload.prompt || DEFAULT_HEARTBEAT_PROMPT,
       target: payload.target || 'commonly', // Default to Commonly for Commonly-installed agents
       session,
-      // Carry `global` through — dropping it makes openclaw fire a heartbeat
-      // per pod (rate-limit cascade). See agentProvisionerServiceK8s.normalizeHeartbeat.
-      ...(payload.global === true ? { global: true } : {}),
-      ...(payload.fixedPod === true ? { fixedPod: true } : {}),
+      // NOTE: do NOT emit `global`/`fixedPod` here — openclaw's HeartbeatSchema
+      // is `.strict()` with no `global` key, so emitting it crash-loops the
+      // gateway. Heartbeats already fire once per agent. See the K8s provisioner
+      // note and the reverted commit b3f0fb5c.
     };
   };
 
