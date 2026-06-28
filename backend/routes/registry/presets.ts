@@ -1150,42 +1150,31 @@ For any message that asks a direct question (status, priorities, dependency orde
 - Do not reply to your own messages or task completion notifications — those are handled in later steps.
 
 **Step 3.5: Scan all open PRs for CI failures → create fix tasks**
-Call \`acpx_run\`:
-- agentId: "codex"
-- timeoutSeconds: 120
-- task: |
-    GH_TOKEN="\${GITHUB_PAT}"
-    # List all open PRs with CI status
-    GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --state open \
-      --json number,headRefName,statusCheckRollup \
-      --jq '.[] | {number, branch: .headRefName, failing: ([.statusCheckRollup[]? | select(.conclusion=="FAILURE" or .conclusion=="TIMED_OUT")] | length > 0)}' \
-      2>&1
-Parse output: for each PR where \`failing: true\`:
+Run this with your shell tool directly (NOT acpx_run):
+\`\`\`
+GH_TOKEN="\${GITHUB_PAT}" gh pr list --repo Team-Commonly/commonly --state open \\
+  --json number,headRefName,statusCheckRollup \\
+  --jq '.[] | {number, branch: .headRefName, failing: ([.statusCheckRollup[]? | select(.conclusion=="FAILURE" or .conclusion=="TIMED_OUT")] | length > 0)}'
+\`\`\`
+From the output: for each PR where \`failing: true\`:
 - Determine assignee from branch: nova/* → "nova", pixel/* → "pixel", ops/* → "ops", quick-canyon → skip (human PR)
 - \`commonly_create_task(devPodId, { title: "Fix CI failures on PR #N (<branch>)", assignee, source: "ci-monitor", sourceRef: "CI#N" })\`
   — deduped (safe to call again — returns alreadyExists:true if task already exists for that sourceRef)
 
 **Step 4: Review ONE open PR (code review gate)**
-4a. Fetch all open PRs and merge into reviewQueue:
-Call \`acpx_run\`:
-- agentId: "codex"
-- timeoutSeconds: 300
-- task: |
-    GH_TOKEN="\${GITHUB_PAT}"
-    GH_TOKEN=\$GH_TOKEN gh pr list --repo Team-Commonly/commonly --state open \
-      --json number,url,headRefName,isDraft \
-      --jq '.[] | select(.isDraft == false) | "PR_OPEN:" + (.number | tostring) + ":" + .url + ":" + .headRefName' \
-      2>&1
+4a. Fetch all open PRs and merge into reviewQueue. Run with your shell tool directly (NOT acpx_run):
+\`\`\`
+GH_TOKEN="\${GITHUB_PAT}" gh pr list --repo Team-Commonly/commonly --state open \\
+  --json number,url,headRefName,isDraft \\
+  --jq '.[] | select(.isDraft == false) | "PR_OPEN:" + (.number | tostring) + ":" + .url + ":" + .headRefName'
+\`\`\`
 
-Parse output: for each line matching \`PR_OPEN:N:url:branch\`:
+From the output: for each line matching \`PR_OPEN:N:url:branch\`:
 - If url NOT in \`ReviewedPRs[]\` → add to reviewQueue (deduped).
 - Skip draft PRs (isDraft filter already applied above).
 
-4b. Review ONE PR from reviewQueue NOT already in \`ReviewedPRs[]\` — review ONE per heartbeat:
-Call \`acpx_run\`:
-- agentId: "codex"
-- timeoutSeconds: 300
-- task: |
+4b. Review ONE PR from reviewQueue NOT already in \`ReviewedPRs[]\` — review ONE per heartbeat.
+Run these commands yourself with your shell tool (NOT acpx_run):
     GH_TOKEN="\${GITHUB_PAT}"
     PR_URL="<url from reviewQueue>"
     PR_NUM=\$(echo \$PR_URL | grep -oE '[0-9]+$')
@@ -1223,7 +1212,7 @@ Call \`acpx_run\`:
     #   --body "Changes requested: [specific issues found in diff]" 2>&1
     # echo "REVIEW_DONE:CHANGES_REQUESTED:[assignee]:[summary]:\$PR_URL"
 
-Parse acpx_run output:
+From the command output:
 - If output contains "REVIEW_DONE:LGTM" → add PR URL to \`ReviewedPRs[]\` (keep last 20).
 - If output contains "REVIEW_DONE:CHANGES_REQUESTED:[assignee]:[summary]" → extract fields, then:
   \`commonly_create_task(devPodId, { title: "Address PR #N review: [summary]", assignee: "[assignee]", source: "review" })\`
