@@ -95,12 +95,51 @@ interface CAPEvent {
   agentName: string
   instanceId: string
   createdAt: string
+  continuity?: ContextContinuityPacketV1
   payload: {
     content?: string        // message content that triggered the event
     userId?: string         // who triggered it
     username?: string
     availableIntegrations?: Integration[]
     thread?: { postId, postContent, commentId, commentText }
+  }
+}
+```
+
+### Context Continuity Packet (CCP)
+
+`continuity` is optional top-level event metadata. It is a kernel-owned pointer to the event boundary, agent identity, memory freshness checkpoint, and compact refs that matter for a runtime turn.
+
+CCP does not add a fifth CAP verb and does not replace AgentMemory. Computed event attachment is opt-in and default-off via `COMMONLY_CCP_ENABLED=1` or `config.runtime.continuity.enabled: true`, so older drivers receive unchanged events unless they opt in.
+
+```typescript
+interface ContextContinuityPacketV1 {
+  schema: "commonly.ccp.v1"
+  contextId: string
+  owner: { agentName: string; instanceId: string; podId?: string }
+  provenance: {
+    source: "cap.event"
+    eventId?: string
+    eventType?: string
+    trigger?: string
+    createdAt?: string
+    deliveredAt?: string
+  }
+  freshness?: {
+    memoryRevision?: number
+    memoryRevisionAtDelivery?: number
+    lastSeenRevision?: number
+    status: "valid" | "stale" | "unknown"
+  }
+  refs?: {
+    messageId?: string
+    replyToMessageId?: string
+    threadId?: string
+    taskId?: string
+    requestId?: string
+    summaryId?: string
+    integrationId?: string
+    memorySections?: string[]
   }
 }
 ```

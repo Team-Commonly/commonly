@@ -23,6 +23,10 @@ const AgentMemory = require('../models/AgentMemory');
 const {
   buildMemoryDigestBundle,
 } = require('./agentMemoryService');
+const {
+  buildContextContinuityPacket,
+  memorySectionsFromDigestBundle,
+} = require('./contextContinuityPacketService');
 
 interface EventDoc {
   _id?: unknown;
@@ -36,6 +40,7 @@ interface EventDoc {
   attempts?: number;
   delivery?: DeliveryMeta;
   memoryRevisionAtDelivery?: number | null;
+  continuity?: unknown;
 }
 
 interface InstallationDoc {
@@ -143,10 +148,33 @@ const normalizeConfig = (config: unknown): Record<string, unknown> => {
   return config as Record<string, unknown>;
 };
 
+const normalizeRuntimeConfig = (config: unknown): Record<string, unknown> => (
+  normalizeConfig(normalizeConfig(config).runtime)
+);
+
+const isTruthyFlag = (value: unknown): boolean => (
+  ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase())
+);
+
+const isContinuityConfigEnabled = (config: unknown): boolean => {
+  if (isTruthyFlag(process.env.COMMONLY_CCP_ENABLED)) return true;
+  const continuity = normalizeRuntimeConfig(config).continuity;
+  if (continuity === true) return true;
+  if (!continuity || typeof continuity !== 'object') return false;
+  return normalizeConfig(continuity).enabled === true;
+};
+
 const deliverEventViaWebhook = async (installation: InstallationDoc, event: EventDoc): Promise<void> => {
-  const runtimeConfig = (normalizeConfig(installation.config)?.runtime || {}) as Record<string, unknown>;
+  const runtimeConfig = normalizeRuntimeConfig(installation.config);
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
   if (!webhookUrl) return;
+
+  const continuity = isContinuityConfigEnabled(installation.config)
+    ? buildContextContinuityPacket({
+      event,
+      memoryRevisionAtDelivery: event.memoryRevisionAtDelivery,
+    })
+    : undefined;
 
   const payload = JSON.stringify({
     _id: event._id,
@@ -155,6 +183,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     agentName: event.agentName,
     instanceId: event.instanceId,
     createdAt: event.createdAt,
+    ...(continuity ? { continuity } : {}),
     payload: event.payload,
   });
 
@@ -366,7 +395,7 @@ class AgentEventService {
   }
 
   static async resolveGatewayFromInstallation(installation: InstallationDoc): Promise<GatewayDoc | null> {
-    const runtimeConfig = (normalizeConfig(installation?.config)?.runtime || {}) as Record<string, unknown>;
+    const runtimeConfig = normalizeRuntimeConfig(installation?.config);
     const gatewayId = runtimeConfig?.gatewayId;
     if (!gatewayId) return null;
     const gateway = await Gateway.findById(gatewayId).lean() as GatewayDoc | null;
@@ -441,7 +470,7 @@ class AgentEventService {
       if (typeConfig?.runtime !== 'moltbot') return;
       const agentName = String(installation.agentName || '').toLowerCase();
       const instanceId = String(installation.instanceId || 'default');
-      const runtimeConfig = (normalizeConfig(installation?.config)?.runtime || {}) as Record<string, unknown>;
+      const runtimeConfig = normalizeRuntimeConfig(installation?.config);
       const gatewayId = runtimeConfig?.gatewayId ? String(runtimeConfig.gatewayId) : '';
       const key = `${agentName}:${instanceId}:${gatewayId}`;
       if (!byInstance.has(key)) {
@@ -783,6 +812,7 @@ class AgentEventService {
     // loop in-process instead. Non-native installations continue to land in
     // the pending queue exactly as before.
     let routedToNative = false;
+    let routingInstallation: InstallationDoc | null = null;
     let nativeInstallation: InstallationDoc | null = null;
     try {
       const installationDoc = await AgentInstallation.findOne({
@@ -792,7 +822,8 @@ class AgentEventService {
         status: 'active',
       }).lean() as InstallationDoc | null;
       if (installationDoc) {
-        const installationRuntimeCfg = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
+        routingInstallation = installationDoc;
+        const installationRuntimeCfg = normalizeRuntimeConfig(installationDoc.config);
         const installationRuntimeType = String(installationRuntimeCfg.runtimeType || '').toLowerCase();
         if (installationRuntimeType === 'native') {
           routedToNative = true;
@@ -820,6 +851,9 @@ class AgentEventService {
         : {}),
     }) as EventDoc;
 
+    const continuityEnabled = isContinuityConfigEnabled(routingInstallation?.config);
+    const continuity = continuityEnabled ? buildContextContinuityPacket({ event }) : undefined;
+
     if (routedToNative && nativeInstallation) {
       try {
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -830,6 +864,7 @@ class AgentEventService {
         Promise.resolve(runAgent(nativeInstallation, {
           type,
           eventId: eventIdStr,
+          ...(continuity ? { continuity } : {}),
           payload: event.payload,
         })).catch((err: Error) => {
           console.error('[native-runtime] runAgent failed:', err?.message || err);
@@ -861,6 +896,7 @@ class AgentEventService {
         instanceId: event.instanceId,
         podId: event.podId,
         type: event.type,
+        ...(continuity ? { continuity } : {}),
         payload: event.payload,
         createdAt: event.createdAt,
       });
@@ -880,7 +916,7 @@ class AgentEventService {
       status: 'active',
     }).lean().then((installations: InstallationDoc[]) => {
       for (const inst of installations) {
-        const runtimeConfig = (normalizeConfig(inst.config)?.runtime || {}) as Record<string, unknown>;
+        const runtimeConfig = normalizeRuntimeConfig(inst.config);
         if (runtimeConfig.webhookUrl) {
           deliverEventViaWebhook(inst, event);
         }
@@ -953,6 +989,17 @@ class AgentEventService {
     const currentRevision = memoryDoc?.revision ?? 0;
     const lastSeenRevision = memoryDoc?.lastSeenRevision ?? 0;
     const digestBundle = buildMemoryDigestBundle(memoryDoc || {}, lastSeenRevision);
+    const hasMemorySnapshot = Boolean(memoryDoc) || currentRevision > 0 || lastSeenRevision > 0;
+    const continuityEnabled = isTruthyFlag(process.env.COMMONLY_CCP_ENABLED)
+      || Boolean(await AgentInstallation.findOne({
+        agentName: safeAgentName,
+        instanceId: safeInstanceId,
+        status: 'active',
+        ...(podIds && Array.isArray(podIds) && podIds.length > 0
+          ? { podId: { $in: podIds } }
+          : (podId ? { podId } : {})),
+        'config.runtime.continuity.enabled': true,
+      }).select({ _id: 1 }).lean());
 
     const claimed: EventDoc[] = [];
     for (const candidate of candidates) {
@@ -989,7 +1036,18 @@ class AgentEventService {
       if (messageId !== undefined && messageId !== null && typeof messageId !== 'string') {
         enrichedPayload.messageId = String(messageId);
       }
-      return { ...event, payload: enrichedPayload };
+      const continuity = continuityEnabled
+        ? buildContextContinuityPacket({
+          event: { ...event, payload: enrichedPayload },
+          memoryRevision: hasMemorySnapshot ? currentRevision : undefined,
+          lastSeenRevision: hasMemorySnapshot ? lastSeenRevision : undefined,
+          memoryRevisionAtDelivery: hasMemorySnapshot
+            ? (event.memoryRevisionAtDelivery ?? currentRevision)
+            : undefined,
+          memorySections: memorySectionsFromDigestBundle(digestBundle),
+        })
+        : undefined;
+      return { ...event, ...(continuity ? { continuity } : {}), payload: enrichedPayload };
     });
   }
 
