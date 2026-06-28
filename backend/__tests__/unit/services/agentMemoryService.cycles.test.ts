@@ -330,3 +330,19 @@ describe('digest builders (pure)', () => {
     });
   });
 });
+
+describe('normalizeHeartbeatCycleTakeaway', () => {
+  it('trims whitespace and caps content to the cycle limit', () => {
+    const { normalizeHeartbeatCycleTakeaway } = require('../../../services/agentMemoryService');
+    const input = `  ${'z'.repeat(600)}  `;
+    const out = normalizeHeartbeatCycleTakeaway(input);
+    expect(out.length).toBeLessThanOrEqual(CYCLE_CONTENT_MAX);
+    expect(out).toBe('z'.repeat(CYCLE_CONTENT_MAX));
+  });
+
+  it('returns empty string for non-string input', () => {
+    const { normalizeHeartbeatCycleTakeaway } = require('../../../services/agentMemoryService');
+    expect(normalizeHeartbeatCycleTakeaway(null)).toBe('');
+    expect(normalizeHeartbeatCycleTakeaway(undefined)).toBe('');
+  });
+});
