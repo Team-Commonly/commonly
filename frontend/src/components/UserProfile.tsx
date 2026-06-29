@@ -509,6 +509,13 @@ const UserProfile = () => {
                                 <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1, flexWrap: 'wrap' }}>
                                     <Button
                                         variant="outlined"
+                                        startIcon={<AdminPanelSettingsIcon />}
+                                        onClick={() => navigate('/v2/admin/users')}
+                                    >
+                                        Manage Users
+                                    </Button>
+                                    <Button
+                                        variant="outlined"
                                         startIcon={<DeveloperModeIcon />}
                                         onClick={() => navigate('/dev/api')}
                                     >
