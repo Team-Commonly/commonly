@@ -371,12 +371,25 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 
       console.log(`Found ${activePodIds.length} active chat pods`);
 
-      const summaryPromises = activePodIds.map((podId) => this.summarizePodMessages(podId).catch((error) => {
-        console.error(`Failed to summarize pod ${podId}:`, error);
-        return null;
-      }));
-
-      const summaries = await Promise.all(summaryPromises);
+      // Bounded fan-out. Each summary runs through LiteLLM on the shared master
+      // key (no per-key concurrency cap), and this previously fired Promise.all
+      // over EVERY active pod at once — the same unbounded fan-out that saturated
+      // the PG pool in the 2026-05-26 incident and floods the single-replica
+      // LiteLLM proxy. Process in fixed-size batches so all pods are still
+      // summarized, just rate-bounded.
+      const SUMMARY_CONCURRENCY = 5;
+      const summaries: unknown[] = [];
+      for (let i = 0; i < activePodIds.length; i += SUMMARY_CONCURRENCY) {
+        const batch = activePodIds.slice(i, i + SUMMARY_CONCURRENCY);
+        // eslint-disable-next-line no-await-in-loop
+        const batchResults = await Promise.all(
+          batch.map((podId) => this.summarizePodMessages(podId).catch((error) => {
+            console.error(`Failed to summarize pod ${podId}:`, error);
+            return null;
+          })),
+        );
+        summaries.push(...batchResults);
+      }
       const successfulSummaries = summaries.filter((summary) => summary !== null);
 
       console.log(`Successfully created ${successfulSummaries.length} chat summaries`);

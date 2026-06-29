@@ -305,6 +305,12 @@ data:
     litellm_settings:
       # Drop unsupported params instead of erroring (important for OpenRouter quirks)
       drop_params: true
+      # Global upstream request timeout (seconds). Only the codex model entries set a
+      # per-model `timeout`; nemotron/gemini/openai/anthropic entries have none, so a
+      # hung non-codex upstream could otherwise pin a worker on this single-replica
+      # proxy indefinitely. This global cap bounds every request lacking a per-model
+      # timeout; it matches the codex per-model value (120s).
+      request_timeout: 120
       # Custom callback that writes /chatgpt-auth/rotate-now when any request hits a
       # rate limit. The codex-auth-rotator sidecar polls that file and rotates
       # accounts immediately (instead of waiting for its next scheduled tick).
