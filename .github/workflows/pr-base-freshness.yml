@@ -1,0 +1,74 @@
+# PR Base Freshness Guard
+#
+# Codifies the stale-base squash-merge footgun (issue #516):
+# an agent PR cut from a stale main, squash-merged via
+# `git reset --soft origin/main && commit`, silently reverted
+# intervening merged work — GitHub's diff looked clean because it
+# is computed against the merge-base, not the tip of main.
+#
+# Safe-merge rule this guard enforces:
+#   - Rebase a PR onto origin/main before merge.
+#   - NEVER blind `git reset --soft origin/main && commit` (squash)
+#     from a branch whose merge-base has drifted behind main.
+#
+# This job fails when the PR's merge-base is more than MAX_BEHIND
+# commits behind origin/main, forcing a rebase first. Pure git, no
+# external deps — fast and non-flaky.
+
+name: PR Base Freshness
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Maximum number of commits the PR's merge-base may be behind
+  # origin/main before the PR is refused and a rebase is required.
+  MAX_BEHIND: 40
+
+jobs:
+  base-freshness:
+    name: Stale-base merge guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Check out the PR branch HEAD, not the default merge ref. On
+          # pull_request, actions/checkout otherwise checks out GitHub's
+          # auto-merge commit (PR head already merged with main), whose
+          # merge-base with origin/main is main's tip → BEHIND=0 always,
+          # making this guard a silent no-op. The head sha gives the real
+          # divergence point so we can measure how far the base has drifted.
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Fail if PR base has drifted too far behind main
+        run: |
+          set -euo pipefail
+
+          # actions/checkout fetches the PR ref but origin/main may be
+          # absent or stale in the local clone; fetch it explicitly so
+          # the merge-base is computable against an up-to-date tip.
+          git fetch --no-tags origin main
+
+          MERGE_BASE=$(git merge-base HEAD origin/main)
+          BEHIND=$(git rev-list --count "${MERGE_BASE}..origin/main")
+
+          echo "Merge-base: ${MERGE_BASE}"
+          echo "PR base is ${BEHIND} commit(s) behind origin/main (threshold: ${MAX_BEHIND})."
+
+          if [ "${BEHIND}" -gt "${MAX_BEHIND}" ]; then
+            echo "::error::This PR is ${BEHIND} commits behind main; rebase onto origin/main before merge to avoid the stale-base squash-merge footgun — see issue #516."
+            exit 1
+          fi
+
+          echo "Base is fresh enough — OK."
