@@ -3,8 +3,13 @@ module.exports = {
   testPathIgnorePatterns: [
     '/node_modules/',
     '__tests__/utils/testUtils.js',
+    '__tests__/utils/globalSetup.js',
+    '__tests__/utils/mongoBinaryConfig.js',
     '__tests__/setup.js',
   ],
+  // Pre-download/cache the mongod binary ONCE before any worker starts so
+  // parallel workers never race the download lock (the CI flake root cause).
+  globalSetup: '<rootDir>/__tests__/utils/globalSetup.js',
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { allowJs: true, checkJs: false } }],
     '^.+\\.jsx?$': 'babel-jest',

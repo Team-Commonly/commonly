@@ -4,11 +4,43 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { newDb } = require('pg-mem');
 const jwt = require('jsonwebtoken');
+const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('./mongoBinaryConfig');
 
 const useRealServices = () => process.env.INTEGRATION_TEST === 'true';
 
 // MongoDB setup — Tier 1 (real services) or Tier 0 (in-memory)
 let mongoServer;
+
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+// Defense-in-depth: globalSetup pre-caches the binary once, but retry the
+// create() anyway to absorb any residual lock/CDN hiccup in parallel workers.
+const createMongoServer = async () => {
+  const maxAttempts = 3;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      return await MongoMemoryServer.create({
+        binary: {
+          version: MONGO_BINARY_VERSION,
+          downloadDir: MONGOMS_DOWNLOAD_DIR,
+          skipMD5: true,
+        },
+        instance: {
+          dbName: 'jest-test-db',
+        },
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) {
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(attempt * 1000);
+      }
+    }
+  }
+  throw lastError;
+};
 
 const setupMongoDb = async () => {
   try {
@@ -24,15 +56,7 @@ const setupMongoDb = async () => {
       return;
     }
 
-    mongoServer = await MongoMemoryServer.create({
-      binary: {
-        version: '7.0.11',
-        skipMD5: true,
-      },
-      instance: {
-        dbName: 'jest-test-db',
-      },
-    });
+    mongoServer = await createMongoServer();
 
     await mongoose.connect(mongoServer.getUri());
     console.log('Connected to in-memory MongoDB');
