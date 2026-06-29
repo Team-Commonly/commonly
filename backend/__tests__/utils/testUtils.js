@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { Mutex } = require('async-mutex');
 const { newDb } = require('pg-mem');
 const jwt = require('jsonwebtoken');
 
@@ -9,6 +10,7 @@ const useRealServices = () => process.env.INTEGRATION_TEST === 'true';
 
 // MongoDB setup — Tier 1 (real services) or Tier 0 (in-memory)
 let mongoServer;
+const mongoCreateMutex = new Mutex();
 
 const setupMongoDb = async () => {
   try {
@@ -24,14 +26,18 @@ const setupMongoDb = async () => {
       return;
     }
 
-    mongoServer = await MongoMemoryServer.create({
-      binary: {
-        version: '7.0.11',
-        skipMD5: true,
-      },
-      instance: {
-        dbName: 'jest-test-db',
-      },
+    await mongoCreateMutex.runExclusive(async () => {
+      if (!mongoServer) {
+        mongoServer = await MongoMemoryServer.create({
+          binary: {
+            version: '7.0.11',
+            skipMD5: true,
+          },
+          instance: {
+            dbName: 'jest-test-db',
+          },
+        });
+      }
     });
 
     await mongoose.connect(mongoServer.getUri());
