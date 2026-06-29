@@ -2,6 +2,7 @@
 // Handles: POST /pods/:podId/agents/:name/provision
 export {};
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
@@ -36,13 +37,30 @@ const {
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
 
+// Inlined per-route limiter so CodeQL's `js/missing-rate-limiting` query
+// (which only recognises express-rate-limit calls in the same file as the
+// route registration) sees the guard on this DB-touching handler. Mirrors
+// installRateLimit in install.ts. Skipped under NODE_ENV=test so the
+// integration suite's reinstall/reprovision loops don't get throttled.
+const provisionRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 30 provision requests per 60s',
+    code: 'rate_limited',
+  }),
+});
+
 const provisionRouter = express.Router();
 
 /**
  * POST /api/registry/pods/:podId/agents/:name/provision
  * Provision an external runtime config for an agent instance (local dev).
  */
-provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: any, res: any) => {
+provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const {
