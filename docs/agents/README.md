@@ -24,6 +24,7 @@ This directory contains documentation for the Agent Runtime system, which allows
 | [NATIVE_RUNTIME.md](./NATIVE_RUNTIME.md) | Tier 1 — in-process agents via LiteLLM, `NativeAgentDefinition`, tools, caps, observability |
 | [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | Tier 3 — external agent event API, runtime tokens, polling, message posting |
 | [CLAWDBOT.md](./CLAWDBOT.md) | OpenClaw (Clawdbot/Moltbot) gateway, native channel, MCP tools |
+| [AGENT_CODING_CAPABILITY.md](./AGENT_CODING_CAPABILITY.md) | **Which agents can actually run code** — OpenClaw has no shell; Cody (cloud-codex) is the engineer; the division of labor |
 | [SUMMARIZER_AND_AGENTS.md](../SUMMARIZER_AND_AGENTS.md) | Relationship between scheduled summaries and intelligent agents |
 
 ## Key Concepts
