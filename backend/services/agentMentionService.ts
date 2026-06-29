@@ -9,6 +9,8 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const AgentEvent = require('../models/AgentEvent');
+// eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('./agentIdentityService') as {
@@ -93,6 +95,19 @@ interface SenderRow {
   isBot?: boolean;
   botMetadata?: { agentName?: string; instanceId?: string };
 }
+
+// #508 mutual bot<->bot @mention loop dampener.
+// The self-mention guard below only catches an agent looping on its OWN
+// handle. Two DIFFERENT bots (e.g. Theo<->Cody) that @mention each other
+// ping-pong forever, burning quota, without ever tripping that guard.
+// This count-based sliding-window backstop suppresses a bot->bot mention
+// once the target has already received more than MENTION_LOOP_MAX
+// chat.mention events in the same pod within MENTION_LOOP_WINDOW_MS — i.e.
+// >3 mentions to the same bot in 5 min in a pod = treat as a loop. Genuine
+// handoffs (a human mention, or an infrequent agent handoff) stay under
+// the threshold and are never dampened.
+const MENTION_LOOP_WINDOW_MS = 5 * 60 * 1000; // #508 dampener — 5 min sliding window
+const MENTION_LOOP_MAX = 3; // #508 dampener — >3 mentions to same bot/pod/window = loop
 
 /**
  * Mention Aliases
@@ -602,6 +617,37 @@ const enqueueMentions = async ({
     && (target.instanceId || 'default') === senderInstanceId
   );
 
+  // #508 mutual bot<->bot loop dampener. Returns true when this mention
+  // should be SUPPRESSED because the target bot has already been mentioned
+  // more than MENTION_LOOP_MAX times in this pod within the recent window.
+  // CRITICAL: only dampens bot->bot. `senderAgentName` is non-null ONLY
+  // when the sender is a bot (set above from sender.isBot + botMetadata), so
+  // a human sender short-circuits to `false` and is NEVER dampened. The
+  // count check failing is non-fatal — fall through to enqueue rather than
+  // drop a possibly-genuine mention.
+  const isLoopDampened = async (target: MentionTarget): Promise<boolean> => {
+    if (!senderAgentName) return false; // human (or unknown) sender — never dampen
+    try {
+      const count = await AgentEvent.countDocuments({
+        agentName: target.agentName.toLowerCase(),
+        instanceId: target.instanceId || 'default',
+        podId,
+        type: 'chat.mention',
+        createdAt: { $gte: new Date(Date.now() - MENTION_LOOP_WINDOW_MS) },
+      });
+      if (count > MENTION_LOOP_MAX) {
+        console.warn(
+          `[mention-dampener] suppressed bot<->bot loop — sender=${senderAgentName}:${senderInstanceId} `
+          + `target=${target.agentName.toLowerCase()}:${target.instanceId || 'default'} pod=${podId} count=${count}`,
+        );
+        return true;
+      }
+    } catch (err) {
+      console.warn('[mention-dampener] loop count check failed (allowing through):', (err as Error).message);
+    }
+    return false;
+  };
+
   await Promise.all(
     rawMentions.map(async (raw) => {
       const normalized = raw.toLowerCase();
@@ -609,6 +655,10 @@ const enqueueMentions = async ({
       if (directMatch) {
         if (isSelfMention(directMatch)) {
           skipped.push(`${directMatch.agentName}:self`);
+          return;
+        }
+        if (await isLoopDampened(directMatch)) {
+          skipped.push(`${directMatch.agentName}:loop-dampened`);
           return;
         }
         try {
@@ -717,6 +767,10 @@ const enqueueMentions = async ({
           matches.map(async (match) => {
             if (isSelfMention({ agentName: agentType, instanceId: match.instanceId })) {
               skipped.push(`${agentType}:self`);
+              return;
+            }
+            if (await isLoopDampened({ agentName: agentType, instanceId: match.instanceId })) {
+              skipped.push(`${agentType}:loop-dampened`);
               return;
             }
             try {
