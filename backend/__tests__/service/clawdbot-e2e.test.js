@@ -64,11 +64,14 @@ describe('Clawdbot E2E Integration Tests', () => {
     app.use('/api/registry', registryRoutes);
     app.use('/api/agents/runtime', agentsRuntimeRoutes);
 
-    // Create test users
+    // Create test users. The pod owner installs commonly-bot (a cloud
+    // 'internal' agent), so they need the cloudAgents entitlement to pass the
+    // hosted-agent gate.
     testUser = await User.create({
       username: 'podadmin',
       email: 'podadmin@test.com',
       password: 'password123',
+      entitlements: { cloudAgents: true },
     });
 
     testUser2 = await User.create({

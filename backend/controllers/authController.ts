@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const User = require('../models/User');
+const Pod = require('../models/Pod');
 const InvitationCode = require('../models/InvitationCode');
 const WaitlistRequest = require('../models/WaitlistRequest');
 const AgentIdentityService = require('../services/agentIdentityService');
@@ -147,6 +148,25 @@ exports.register = async (req: any, res: any) => {
 
     // Save user to database
     await user.save();
+
+    // Give every new signup a default private workspace pod so the BYO
+    // onboarding flow has a target to install/talk-to an agent in. Matches
+    // the Mongo Pod shape created by podController.createPod (type 'chat',
+    // creator = sole member); joinPolicy 'invite-only' keeps it private.
+    // Best-effort: a pod-create hiccup must never fail registration — the user
+    // can always create a pod from the UI later.
+    try {
+      await Pod.create({
+        name: 'My Workspace',
+        description: 'Your private workspace',
+        type: 'chat',
+        joinPolicy: 'invite-only',
+        createdBy: user._id,
+        members: [user._id],
+      });
+    } catch (podError: any) {
+      console.warn('[register] default workspace pod creation failed:', podError?.message);
+    }
 
     if (hasEmailConfig) {
       // Generate email verification token

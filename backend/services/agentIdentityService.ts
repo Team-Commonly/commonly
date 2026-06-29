@@ -220,6 +220,59 @@ const AGENT_TYPES: Record<string, AgentTypeConfig> = {
   },
 };
 
+// Cloud-hosted runtime types — the ones that consume Commonly-managed compute
+// (shared k8s gateway, in-process native runtime, Anthropic managed-agents).
+// This is the single source of truth for the hosted-agent entitlement gate
+// (see routes/registry/install.ts + provision.ts). Installing/provisioning any
+// runtime in this set requires `user.entitlements.cloudAgents` (or admin) so
+// that open registration can be turned on later without handing every new
+// signup free hosted compute. BYO / self-hosted runtimes (webhook, claude-code,
+// or anything carrying `host: 'byo'`) are intentionally NOT gated — connecting
+// your own agent stays open to all authenticated users.
+//
+// `codex` is deliberately absent: a codex install is cloud-hosted by default
+// (LiteLLM-proxied) but flips to BYO when `host === 'byo'` (sam-local-codex et
+// al.), so it's classified in isCloudRuntime() rather than by set membership.
+export const CLOUD_RUNTIME_TYPES = new Set<string>([
+  'moltbot',
+  'internal',
+  'native',
+  'managed-agents',
+]);
+
+/**
+ * Classify an install/provision runtime as cloud-hosted (gated) vs BYO (open).
+ * Pure function over the two fields the install record stores on
+ * `config.runtime`: `runtimeType` and `host`.
+ *
+ * Decision order is load-bearing:
+ *   1. `host: 'byo'` ALWAYS wins → NON-cloud. When a user points Commonly at
+ *      their own compute (laptop CLI wrapper, their own server polling CAP) the
+ *      install record carries `host: 'byo'`. That path must stay open to every
+ *      authenticated user regardless of `runtimeType`, so this is checked first.
+ *   2. `webhook` / `claude-code` are pure BYO runtime types (no Commonly-hosted
+ *      variant exists) → NON-cloud.
+ *   3. Anything in CLOUD_RUNTIME_TYPES (moltbot/internal/native/managed-agents)
+ *      → cloud.
+ *   4. `codex` with no `host: 'byo'` (handled in step 1) → cloud (LiteLLM-proxied).
+ *   5. Everything else (unknown / unspecified runtimeType, e.g. a generic
+ *      standalone marketplace agent that brings its own compute) → NON-cloud.
+ *      Callers that want a built-in cloud agent caught even when the install
+ *      omits an explicit runtimeType should resolve the effective runtimeType
+ *      from AGENT_TYPES first (getAgentTypeConfig(name)?.runtime).
+ */
+export function isCloudRuntime(
+  runtime: { runtimeType?: string | null; host?: string | null } | null | undefined,
+): boolean {
+  const runtimeType = String(runtime?.runtimeType || '').trim().toLowerCase();
+  const host = String(runtime?.host || '').trim().toLowerCase();
+  if (host === 'byo') return false;
+  if (runtimeType === 'webhook' || runtimeType === 'claude-code') return false;
+  if (CLOUD_RUNTIME_TYPES.has(runtimeType)) return true;
+  if (runtimeType === 'codex') return true;
+  return false;
+}
+
 // Legacy agent name mapping is intentionally disabled to avoid alias collisions.
 const LEGACY_AGENT_MAP: Record<string, string> = {
   'commonly-summarizer': 'commonly-bot',

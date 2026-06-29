@@ -6,6 +6,7 @@ const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
 const Pod = require('../../models/Pod');
+const User = require('../../models/User');
 const Integration = require('../../models/Integration');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const DMService = require('../../services/dmService');
@@ -123,6 +124,30 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: an
     const runtimeType = typeConfig?.runtime;
     if (!runtimeType) {
       return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+
+    // Hosted-agent entitlement gate (mirrors routes/registry/install.ts). A
+    // cloud (Commonly-hosted) runtime requires admin OR the cloudAgents
+    // entitlement. BYO provisions (host:'byo') and external runtimes
+    // (webhook / claude-code) stay open to all pod members. runtimeType comes
+    // from AGENT_TYPES (typeConfig.runtime); host from the stored install
+    // config. Placed after the membership check above so non-members still 403
+    // first. commonly-bot is additionally admin-gated above — this is additive.
+    if (AgentIdentityService.isCloudRuntime({
+      runtimeType,
+      host: installation.config?.runtime?.host,
+    })) {
+      const isGlobalAdmin = await isGlobalAdminUser(userId);
+      if (!isGlobalAdmin) {
+        const provisionerUser = await User.findById(userId).select('entitlements').lean();
+        const isEntitled = provisionerUser?.entitlements?.cloudAgents === true;
+        if (!isEntitled) {
+          return res.status(403).json({
+            code: 'cloud_agents_not_entitled',
+            message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
+          });
+        }
+      }
     }
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(name.toLowerCase(), {

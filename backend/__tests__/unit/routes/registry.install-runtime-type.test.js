@@ -33,6 +33,18 @@ jest.mock('../../../services/agentIdentityService', () => ({
   )),
   getOrCreateAgentUser: jest.fn().mockResolvedValue({ _id: 'bot-1' }),
   ensureAgentInPod: jest.fn().mockResolvedValue(true),
+  // Unknown agentName in these tests → no AGENT_TYPES runtime fallback.
+  getAgentTypeConfig: jest.fn(() => null),
+  // Faithful mirror of the real taxonomy so the entitlement gate behaves.
+  isCloudRuntime: jest.fn(({ runtimeType, host } = {}) => {
+    const rt = String(runtimeType || '').toLowerCase();
+    const h = String(host || '').toLowerCase();
+    if (h === 'byo') return false;
+    if (rt === 'webhook' || rt === 'claude-code') return false;
+    if (['moltbot', 'internal', 'native', 'managed-agents'].includes(rt)) return true;
+    if (rt === 'codex') return true;
+    return false;
+  }),
 }));
 
 jest.mock('../../../services/agentMessageService', () => ({
@@ -97,7 +109,10 @@ describe('registry install runtimeType fallback', () => {
     AgentRegistry.incrementInstalls.mockResolvedValue({ acknowledged: true });
 
     User.findOne.mockImplementation(() => buildSelectLeanChain(null));
-    User.findById.mockReturnValue(buildSelectLeanChain({ username: 'installer' }));
+    // Installer is an admin so the cloud-agent entitlement gate passes — these
+    // tests install a 'native' runtime (a cloud runtime) and assert the
+    // runtimeType fallback, not the gate.
+    User.findById.mockReturnValue(buildSelectLeanChain({ username: 'installer', role: 'admin' }));
 
     AgentProfile.findOneAndUpdate.mockResolvedValue(true);
     Activity.create.mockResolvedValue(true);
