@@ -12,6 +12,47 @@ interface Res {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+const getPgPoolSnapshot = (): null | {
+  max: number;
+  total: number;
+  idle: number;
+  waiting: number;
+  connectionTimeoutMillis: number;
+  idleTimeoutMillis: number;
+  saturated: boolean;
+} => {
+  if (!process.env.PG_HOST || !pgPool) return null;
+
+  const p = pgPool as {
+    options?: { max?: number; connectionTimeoutMillis?: number; idleTimeoutMillis?: number };
+    totalCount?: number;
+    idleCount?: number;
+    waitingCount?: number;
+  };
+  const idle = p.idleCount ?? 0;
+  const waiting = p.waitingCount ?? 0;
+
+  return {
+    max: p.options?.max ?? 0,
+    total: p.totalCount ?? 0,
+    idle,
+    waiting,
+    connectionTimeoutMillis: p.options?.connectionTimeoutMillis ?? 0,
+    idleTimeoutMillis: p.options?.idleTimeoutMillis ?? 0,
+    saturated: waiting > 0 && idle === 0,
+  };
+};
+
+// Shared PG-pool detail block surfaced by both /db and /ready, so the two
+// probes can't drift in what they report. (Theo review on PR #503.)
+const pgPoolDetail = (s: NonNullable<ReturnType<typeof getPgPoolSnapshot>>) => ({
+  max: s.max,
+  total: s.total,
+  idle: s.idle,
+  waiting: s.waiting,
+  connectionTimeoutMillis: s.connectionTimeoutMillis,
+});
+
 router.get('/', async (_req: unknown, res: Res) => {
   const startTime = Date.now();
   const health: Record<string, unknown> = {
@@ -131,34 +172,19 @@ router.get('/db', (_req: unknown, res: Res) => {
     return res.status(200).json(stats);
   }
 
-  const p = pgPool as {
-    options?: { max?: number; connectionTimeoutMillis?: number; idleTimeoutMillis?: number };
-    totalCount?: number;
-    idleCount?: number;
-    waitingCount?: number;
-  };
-  const idle = p.idleCount ?? 0;
-  const waiting = p.waitingCount ?? 0;
-  const total = p.totalCount ?? 0;
-  const max = p.options?.max ?? 0;
-
-  // Saturation signal: waiting callers AND zero idle connections.
-  // waiting > 0 with idle > 0 just means clients ask in bursts faster
-  // than they release — pool will catch up. Both being non-zero is
-  // when actual queueing happens and latency stacks up.
-  const saturated = waiting > 0 && idle === 0;
+  const snapshot = getPgPoolSnapshot();
+  if (!snapshot) {
+    stats.pg = { status: 'not_configured' };
+    return res.status(200).json(stats);
+  }
 
   stats.pg = {
-    status: saturated ? 'saturated' : 'ok',
-    max,
-    total,
-    idle,
-    waiting,
-    connectionTimeoutMillis: p.options?.connectionTimeoutMillis ?? 0,
-    idleTimeoutMillis: p.options?.idleTimeoutMillis ?? 0,
+    status: snapshot.saturated ? 'saturated' : 'ok',
+    ...pgPoolDetail(snapshot),
+    idleTimeoutMillis: snapshot.idleTimeoutMillis,
   };
 
-  return res.status(saturated ? 503 : 200).json(stats);
+  return res.status(snapshot.saturated ? 503 : 200).json(stats);
 });
 
 router.get('/ready', async (_req: unknown, res: Res) => {
@@ -168,6 +194,14 @@ router.get('/ready', async (_req: unknown, res: Res) => {
     }
 
     if (process.env.PG_HOST && pgPool) {
+      const snapshot = getPgPoolSnapshot();
+      if (snapshot?.saturated) {
+        return res.status(503).json({
+          status: 'not_ready',
+          reason: 'PostgreSQL pool saturated',
+          pg: pgPoolDetail(snapshot),
+        });
+      }
       try {
         await (pgPool as { query: (q: string) => Promise<unknown> }).query('SELECT 1');
       } catch {
