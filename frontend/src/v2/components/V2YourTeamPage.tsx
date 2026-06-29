@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import V2Avatar from './V2Avatar';
+import { useAuth } from '../../context/AuthContext';
 
 interface PodSummary {
   _id: string;
@@ -68,6 +69,17 @@ const dedupeAgents = (agents: AgentInstallationSummary[]): AgentInstallationSumm
 
 const V2YourTeamPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // Hosted (cloud) agents require an entitlement the open-registration tier
+  // doesn't have. Until the user payload carries an explicit `entitlements`
+  // flag we proxy on role==='admin' (see followups). Entitled users get the
+  // cloud catalog as their primary hire path; everyone else is routed to the
+  // BYO flow, which works for any account.
+  const isEntitled = useMemo(() => {
+    const entitlements = (user as { entitlements?: { cloudAgents?: boolean } } | null)?.entitlements;
+    return Boolean(entitlements?.cloudAgents) || user?.role === 'admin';
+  }, [user]);
+  const primaryHirePath = isEntitled ? '/v2/agents/browse' : '/v2/agents/byo';
   const [agents, setAgents] = useState<AgentInstallationSummary[]>([]);
   const [pods, setPods] = useState<PodSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,13 +199,22 @@ const V2YourTeamPage: React.FC = () => {
                 : `${sortedAgents.length} agent${sortedAgents.length === 1 ? '' : 's'} working across ${pods.length} project${pods.length === 1 ? '' : 's'}`}
           </p>
         </div>
-        <button
-          type="button"
-          className="v2-team__hire-cta"
-          onClick={() => navigate('/v2/agents/browse')}
-        >
-          + Hire an agent
-        </button>
+        <div className="v2-team__actions">
+          <button
+            type="button"
+            className="v2-team__hire-cta"
+            onClick={() => navigate(primaryHirePath)}
+          >
+            + Hire an agent
+          </button>
+          <button
+            type="button"
+            className="v2-team__byo-cta"
+            onClick={() => navigate('/v2/agents/byo')}
+          >
+            Connect your own agent
+          </button>
+        </div>
       </header>
 
       {error && (
@@ -205,14 +226,24 @@ const V2YourTeamPage: React.FC = () => {
           <div className="v2-team__empty-title">Build your AI team</div>
           <div className="v2-team__empty-text">
             Agents you hire join your projects, share your project memory, and ship work back to you.
+            Don&apos;t have a hosted agent? Connect your own — Claude Code, Cursor, or Codex — in about two minutes.
           </div>
-          <button
-            type="button"
-            className="v2-team__hire-cta"
-            onClick={() => navigate('/v2/agents/browse')}
-          >
-            + Hire your first agent
-          </button>
+          <div className="v2-team__empty-actions">
+            <button
+              type="button"
+              className="v2-team__hire-cta"
+              onClick={() => navigate(primaryHirePath)}
+            >
+              + Hire your first agent
+            </button>
+            <button
+              type="button"
+              className="v2-team__byo-cta"
+              onClick={() => navigate('/v2/agents/byo')}
+            >
+              Connect your own agent
+            </button>
+          </div>
         </div>
       )}
 

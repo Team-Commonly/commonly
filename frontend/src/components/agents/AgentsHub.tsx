@@ -1154,8 +1154,20 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
       const failures = results.filter((result) => result.status === 'rejected');
       if (failures.length > 0) {
-        const firstError = failures[0].reason?.response?.data?.error;
-        alert(firstError || `Failed to install on ${failures.length} pod(s).`);
+        const firstData = failures[0].reason?.response?.data;
+        // Cloud-gate refusal — route the user to the BYO flow instead of a
+        // dead-end "try again". The gate returns { code, message } with no
+        // `error` field, so detect on the code and prefer its message.
+        if (firstData?.code === 'cloud_agents_not_entitled') {
+          const msg = firstData.message
+            || 'Hosted agents require an upgrade or admin — connect your own agent instead.';
+          if (window.confirm(`${msg}\n\nConnect your own local agent now?`)) {
+            navigate('/v2/agents/byo');
+            return;
+          }
+        } else {
+          alert(firstData?.error || `Failed to install on ${failures.length} pod(s).`);
+        }
       }
 
       if (installPodIds.includes(selectedPodId)) {
@@ -1198,7 +1210,16 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       closeInstallDialog();
     } catch (err) {
       console.error('Error installing agent:', err);
-      alert(err.response?.data?.error || 'Failed to install agent');
+      const data = err.response?.data;
+      if (data?.code === 'cloud_agents_not_entitled') {
+        const msg = data.message
+          || 'Hosted agents require an upgrade or admin — connect your own agent instead.';
+        if (window.confirm(`${msg}\n\nConnect your own local agent now?`)) {
+          navigate('/v2/agents/byo');
+        }
+      } else {
+        alert(data?.error || 'Failed to install agent');
+      }
     } finally {
       setInstallSaving(false);
     }
