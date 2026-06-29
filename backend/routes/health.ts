@@ -43,6 +43,16 @@ const getPgPoolSnapshot = (): null | {
   };
 };
 
+// Shared PG-pool detail block surfaced by both /db and /ready, so the two
+// probes can't drift in what they report. (Theo review on PR #503.)
+const pgPoolDetail = (s: NonNullable<ReturnType<typeof getPgPoolSnapshot>>) => ({
+  max: s.max,
+  total: s.total,
+  idle: s.idle,
+  waiting: s.waiting,
+  connectionTimeoutMillis: s.connectionTimeoutMillis,
+});
+
 router.get('/', async (_req: unknown, res: Res) => {
   const startTime = Date.now();
   const health: Record<string, unknown> = {
@@ -170,11 +180,7 @@ router.get('/db', (_req: unknown, res: Res) => {
 
   stats.pg = {
     status: snapshot.saturated ? 'saturated' : 'ok',
-    max: snapshot.max,
-    total: snapshot.total,
-    idle: snapshot.idle,
-    waiting: snapshot.waiting,
-    connectionTimeoutMillis: snapshot.connectionTimeoutMillis,
+    ...pgPoolDetail(snapshot),
     idleTimeoutMillis: snapshot.idleTimeoutMillis,
   };
 
@@ -193,13 +199,7 @@ router.get('/ready', async (_req: unknown, res: Res) => {
         return res.status(503).json({
           status: 'not_ready',
           reason: 'PostgreSQL pool saturated',
-          pg: {
-            max: snapshot.max,
-            total: snapshot.total,
-            idle: snapshot.idle,
-            waiting: snapshot.waiting,
-            connectionTimeoutMillis: snapshot.connectionTimeoutMillis,
-          },
+          pg: pgPoolDetail(snapshot),
         });
       }
       try {
