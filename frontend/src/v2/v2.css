@@ -4336,6 +4336,33 @@
 .v2-root button.v2-team__hire-cta:hover { background: #3d43c4; }
 .v2-root button.v2-team__hire-cta:focus-visible { outline: 2px solid #4c52d8; outline-offset: 2px; }
 
+.v2-team__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.v2-team__empty-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.v2-root button.v2-team__byo-cta {
+  background: transparent;
+  color: #4c52d8;
+  border: 1px solid #c7c9d4;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.v2-root button.v2-team__byo-cta:hover { background: #f0f1fb; border-color: #4c52d8; }
+.v2-root button.v2-team__byo-cta:focus-visible { outline: 2px solid #4c52d8; outline-offset: 2px; }
+
 .v2-team__error {
   padding: 12px 14px;
   background: #fdf2f2;

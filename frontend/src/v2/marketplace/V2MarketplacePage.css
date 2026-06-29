@@ -112,6 +112,36 @@
   color: var(--v2-danger);
 }
 
+/* Cloud-entitlement gate — actionable, routes to BYO instead of dead-ending */
+.v2-mkt__gate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--v2-radius);
+  font-size: 13px;
+  margin-bottom: 16px;
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+  border: 1px solid var(--v2-accent, #4c52d8);
+}
+.v2-mkt__gate-text { flex: 1 1 240px; }
+.v2-mkt__gate .v2-mkt__gate-btn {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--v2-accent, #4c52d8);
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.v2-mkt__gate .v2-mkt__gate-btn:hover { background: var(--v2-accent-hover, #3d43c4); }
+
 /* Sections */
 .v2-mkt__section {
   margin-bottom: 32px;

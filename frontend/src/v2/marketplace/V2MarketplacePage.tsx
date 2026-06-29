@@ -114,6 +114,10 @@ const V2MarketplacePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  // Set when an install is refused because the account lacks the cloud-agents
+  // entitlement. Rendered as an actionable banner pointing at the BYO flow,
+  // which works for any account — never the generic "try again" error.
+  const [gate, setGate] = useState<string | null>(null);
   const [busyId, setBusyId] = useState('');
 
   useEffect(() => {
@@ -215,6 +219,7 @@ const V2MarketplacePage: React.FC = () => {
     if (!selectedPodId) { setStatus('Pick a pod above to install into.'); return; }
     setBusyId(app.id);
     setStatus(null);
+    setGate(null);
     try {
       await axios.post('/api/registry/install', {
         agentName: String(app.installableId || app.id || ''),
@@ -226,7 +231,12 @@ const V2MarketplacePage: React.FC = () => {
       setStatus(`Installed ${app.displayName || app.name} into ${pods.find((p) => p._id === selectedPodId)?.name || 'pod'}.`);
       fetchInstalled();
     } catch (err: any) {
-      setStatus(err?.response?.data?.error || 'Could not install — try again.');
+      const data = err?.response?.data;
+      if (data?.code === 'cloud_agents_not_entitled') {
+        setGate(data.message || 'Hosted agents require an upgrade or admin — connect your own agent instead.');
+      } else {
+        setStatus(data?.error || 'Could not install — try again.');
+      }
     } finally {
       setBusyId('');
     }
@@ -393,6 +403,18 @@ const V2MarketplacePage: React.FC = () => {
       </div>
 
       {status && <div className="v2-mkt__status" role="status">{status}</div>}
+      {gate && (
+        <div className="v2-mkt__gate" role="alert">
+          <span className="v2-mkt__gate-text">{gate}</span>
+          <button
+            type="button"
+            className="v2-mkt__gate-btn"
+            onClick={() => navigate('/v2/agents/byo')}
+          >
+            Connect your own agent
+          </button>
+        </div>
+      )}
       {error && <div className="v2-mkt__error">{error}</div>}
 
       {tab === 'discover' ? (
