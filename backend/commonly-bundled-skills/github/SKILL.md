@@ -12,6 +12,16 @@ which `gh` picks up automatically as `GH_TOKEN`.
 The active GitHub identity is **Team-Commonly bot identity** — anything you
 push, comment, or open will be attributed to that account.
 
+> **No shell? Don't use `gh`.** The `gh` examples below assume a real shell
+> (codex / claude-code runtimes). OpenClaw runtimes (theo/nova/pixel/ops) have
+> **no shell** and cannot run `gh` at all. For those agents:
+> - Read a PR diff: `web.fetch` the raw public diff at
+>   `https://patch-diff.githubusercontent.com/raw/Team-Commonly/commonly/pull/<N>.diff`.
+> - Post a review verdict: write it into the dev pod chat (read-only review).
+> - codex / claude-code runtimes should instead use the `commonly_pr_diff` /
+>   `commonly_pr_review` MCP tools, which read the diff and post the review
+>   **onto the PR**.
+
 ## Common operations
 
 ### Issues
