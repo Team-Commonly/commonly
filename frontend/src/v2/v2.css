@@ -282,6 +282,23 @@
   background: var(--v2-surface-tint);
 }
 
+/* Mobile pods-drawer affordances — hidden on desktop, where the pods sidebar
+   is a permanent grid column. The <=760px media query (bottom of file) turns
+   these on and converts .v2-pods-aside into a slide-over overlay. Declared
+   here so resizing a phone-open drawer up to desktop can't leak the overlay
+   or backdrop into the normal multi-column layout. */
+.v2-mobile-backdrop {
+  display: none;
+}
+
+.v2-chat__mobile-nav-btn {
+  display: none;
+}
+
+.v2-pods__mobile-close {
+  display: none;
+}
+
 /* ---------- Nav rail ---------- */
 
 .v2-rail {
@@ -4178,8 +4195,88 @@
     grid-template-columns: var(--v2-rail-w) minmax(0, 1fr);
   }
 
-  .v2-pane:not(.v2-pane--rail):not(.v2-pane--main) {
+  /* Hide secondary panes (e.g. the inspector) — but NOT the pods sidebar,
+     which becomes a slide-over drawer below. The extra :not() keeps the
+     drawer reachable instead of dead-ending the user in a single pod. */
+  .v2-pane:not(.v2-pane--rail):not(.v2-pane--main):not(.v2-pods-aside) {
     display: none;
+  }
+
+  /* Pods sidebar → slide-over drawer. Off-canvas by default; .--open slides
+     it in. Sits above the backdrop (z 60 vs 55). */
+  .v2-pods-aside {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 60;
+    width: min(86vw, 320px);
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 2px 0 24px rgba(15, 17, 21, 0.18);
+    border-right: 1px solid var(--v2-border-soft);
+  }
+
+  .v2-pods-aside--open {
+    transform: translateX(0);
+  }
+
+  .v2-mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    border: none;
+    margin: 0;
+    padding: 0;
+    background: rgba(15, 17, 21, 0.42);
+    cursor: pointer;
+  }
+
+  /* Hamburger in the chat header — primary way back to the pod list. */
+  .v2-chat__mobile-nav-btn {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    color: var(--v2-text-secondary);
+    border: 1px solid var(--v2-border);
+    border-radius: var(--v2-radius-sm);
+    background: var(--v2-surface);
+  }
+
+  .v2-chat__mobile-nav-btn:hover {
+    background: var(--v2-surface-hover);
+    color: var(--v2-text-primary);
+  }
+
+  /* Close (X) inside the drawer header. Title row becomes a flex row so the
+     X sits at the far end. Drop the fixed 32px height so the 44px tap target
+     fits. */
+  .v2-pods__title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: auto;
+    min-height: 44px;
+  }
+
+  .v2-pods__mobile-close {
+    display: inline-grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin-right: -8px;
+    color: var(--v2-text-secondary);
+    border: none;
+    background: transparent;
+    border-radius: var(--v2-radius-sm);
+  }
+
+  .v2-pods__mobile-close:hover {
+    background: var(--v2-surface-hover);
+    color: var(--v2-text-primary);
   }
 
   .v2-chat__header-row {

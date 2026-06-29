@@ -27,7 +27,20 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'settings', label: 'Settings', path: '/v2/settings', icon: <Icon d="M12 15a3 3 0 100-6 3 3 0 000 6zM19 12a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 00-2-1.2L14 3h-4l-.5 2.6a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 002 1.2L10 21h4l.5-2.6a7 7 0 002-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" /> },
 ];
 
-const V2NavRail: React.FC = () => {
+interface V2NavRailProps {
+  // On phones (<=760px) the pods sidebar collapses to a slide-over drawer.
+  // When provided, tapping "Pods" opens that drawer instead of navigating to
+  // /v2 (which auto-redirects into the first pod and dead-ends the user in a
+  // single chat with no way back to the list). Undefined on surfaces without a
+  // drawer (feature pages) — those fall back to plain navigation.
+  onPodsMobileNav?: () => void;
+}
+
+const isMobileViewport = (): boolean => (
+  typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 760px)').matches
+);
+
+const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, logout } = useAuth();
@@ -37,6 +50,14 @@ const V2NavRail: React.FC = () => {
       return location.pathname === '/v2' || location.pathname.startsWith('/v2/pods');
     }
     return location.pathname.startsWith(item.path);
+  };
+
+  const handleNavClick = (item: NavItem) => {
+    if (item.key === 'pods' && onPodsMobileNav && isMobileViewport()) {
+      onPodsMobileNav();
+      return;
+    }
+    navigate(item.path);
   };
 
   return (
@@ -60,7 +81,7 @@ const V2NavRail: React.FC = () => {
               <button
                 type="button"
                 className={`v2-rail__item${isActive(item) ? ' v2-rail__item--active' : ''}`}
-                onClick={() => navigate(item.path)}
+                onClick={() => handleNavClick(item)}
                 title={item.label}
                 data-label={item.label}
               >
