@@ -30,6 +30,10 @@ jest.mock('../../../services/chatSummarizerService', () => ({
   summarizePodMessages: jest.fn(),
 }));
 
+jest.mock('../../../models/AgentEvent', () => ({
+  countDocuments: jest.fn(),
+}));
+
 const AgentMentionService = require('../../../services/agentMentionService');
 const AgentEventService = require('../../../services/agentEventService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -37,6 +41,7 @@ const AgentProfile = require('../../../models/AgentProfile');
 const Pod = require('../../../models/Pod');
 const chatSummarizerService = require('../../../services/chatSummarizerService');
 const User = require('../../../models/User');
+const AgentEvent = require('../../../models/AgentEvent');
 
 describe('AgentMentionService', () => {
   beforeEach(() => {
@@ -47,6 +52,8 @@ describe('AgentMentionService', () => {
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue({ _id: 'user-1', isBot: false }),
     });
+    // #508 dampener default — no prior mentions, so nothing is dampened.
+    AgentEvent.countDocuments.mockResolvedValue(0);
   });
 
   test('extractMentions finds supported agent aliases', () => {
@@ -731,6 +738,98 @@ describe('AgentMentionService', () => {
         });
         expect(lastPayload().payload.content).not.toContain('[Collaborative pod:');
       });
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // #508 mutual bot<->bot @mention loop dampener. Suppresses a bot->bot
+  // mention once the target has received > MENTION_LOOP_MAX (3) chat.mention
+  // events in this pod within the recent window. Genuine handoffs (under
+  // threshold) and ALL human->agent mentions are never dampened.
+  // ------------------------------------------------------------------
+  describe('bot<->bot loop dampener (#508)', () => {
+    const setupTargetAgent = () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'openclaw', instanceId: 'cody', displayName: 'Cody' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+    };
+    const asBotSender = () => {
+      User.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({
+          _id: 'agent-theo',
+          isBot: true,
+          botMetadata: { agentName: 'openclaw', instanceId: 'theo' },
+        }),
+      });
+    };
+
+    test('bot -> bot UNDER threshold still enqueues (genuine collaboration)', async () => {
+      setupTargetAgent();
+      asBotSender();
+      // 3 prior mentions == MENTION_LOOP_MAX; not strictly greater, so allowed.
+      AgentEvent.countDocuments.mockResolvedValue(3);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-loop-1',
+        message: { content: '@cody can you take this?', id: 'msg-loop-1' },
+        userId: 'agent-theo',
+        username: 'theo',
+      });
+
+      expect(AgentEvent.countDocuments).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentName: 'openclaw',
+          instanceId: 'cody',
+          podId: 'pod-loop-1',
+          type: 'chat.mention',
+        }),
+      );
+      expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+      expect(res.enqueued).toEqual(['openclaw']);
+      expect(res.skipped).toEqual([]);
+    });
+
+    test('bot -> bot OVER threshold is suppressed (loop dampened)', async () => {
+      setupTargetAgent();
+      asBotSender();
+      // 4 prior mentions > MENTION_LOOP_MAX (3) → treat as a loop.
+      AgentEvent.countDocuments.mockResolvedValue(4);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-loop-2',
+        message: { content: '@cody and again', id: 'msg-loop-2' },
+        userId: 'agent-theo',
+        username: 'theo',
+      });
+
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(res.enqueued).toEqual([]);
+      expect(res.skipped).toEqual(['openclaw:loop-dampened']);
+    });
+
+    test('human -> bot is NEVER suppressed even over threshold', async () => {
+      setupTargetAgent();
+      // Default sender is a human (User.findById from beforeEach).
+      AgentEvent.countDocuments.mockResolvedValue(999);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-loop-3',
+        message: { content: '@cody please help', id: 'msg-loop-3' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      // Human sender short-circuits before any count check.
+      expect(AgentEvent.countDocuments).not.toHaveBeenCalled();
+      expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+      expect(res.enqueued).toEqual(['openclaw']);
+      expect(res.skipped).toEqual([]);
     });
   });
 });
