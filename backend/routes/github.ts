@@ -1,6 +1,8 @@
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
+const rateLimit = require('express-rate-limit');
+// eslint-disable-next-line global-require
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
@@ -20,6 +22,23 @@ interface Res {
 }
 
 const VALID_NAME = /^[a-zA-Z0-9_.-]+$/;
+const VALID_REVIEW_EVENTS = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
+
+// Per-route limiter on the PR endpoints — they proxy to the GitHub API (which
+// has its own abuse limits on our shared PAT), so bound callers here. Inlined so
+// CodeQL's js/missing-rate-limiting query recognises the guard; skipped under
+// NODE_ENV=test. Mirrors installRateLimit (routes/registry/install.ts).
+const githubPrRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  handler: (_req: unknown, res: Res) => res.status(429).json({
+    message: 'rate limit exceeded: 30 GitHub PR requests per 60s',
+    code: 'rate_limited',
+  }),
+});
 
 function anyAuth(req: AuthReq, res: Res, next: () => void) {
   const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
@@ -127,6 +146,49 @@ router.post('/issues/:number/close', anyAuth, async (req: AuthReq, res: Res) => 
     const e = err as { message?: string };
     console.error('POST /github/issues/close error:', e.message);
     return res.status(500).json({ error: 'Failed to close issue', detail: e.message });
+  }
+});
+
+// ─── Pull Requests ───────────────────────────────────────────────────────
+
+router.get('/pulls/:number/diff', githubPrRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+  try {
+    if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
+      return res.status(503).json({ error: 'No GitHub credentials configured' });
+    }
+    const pullNumber = Number(req.params?.number);
+    if (!Number.isInteger(pullNumber) || pullNumber <= 0) return res.status(400).json({ error: 'Invalid pull number' });
+    const { owner = 'Team-Commonly', repo = 'commonly' } = (req.query || {}) as { owner?: string; repo?: string };
+    if (!VALID_NAME.test(owner) || !VALID_NAME.test(repo)) return res.status(400).json({ error: 'Invalid owner or repo' });
+    const diff = await GitHubAppService.getPullDiff({ owner, repo, pullNumber });
+    return res.json({ number: pullNumber, diff });
+  } catch (err) {
+    const e = err as { response?: { status?: number }; message?: string };
+    if (e.response?.status === 404) return res.status(404).json({ error: 'Pull request not found' });
+    console.error('GET /github/pulls/diff error:', e.message);
+    return res.status(500).json({ error: 'Failed to fetch pull diff', detail: e.message });
+  }
+});
+
+router.post('/pulls/:number/review', githubPrRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
+  try {
+    if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
+      return res.status(503).json({ error: 'No GitHub credentials configured' });
+    }
+    const pullNumber = Number(req.params?.number);
+    if (!Number.isInteger(pullNumber) || pullNumber <= 0) return res.status(400).json({ error: 'Invalid pull number' });
+    const { event, body, owner = 'Team-Commonly', repo = 'commonly' } = (req.body || {}) as { event?: string; body?: string; owner?: string; repo?: string };
+    if (!VALID_NAME.test(owner) || !VALID_NAME.test(repo)) return res.status(400).json({ error: 'Invalid owner or repo' });
+    if (!event || !VALID_REVIEW_EVENTS.includes(event)) return res.status(400).json({ error: 'event must be one of APPROVE, REQUEST_CHANGES, COMMENT' });
+    if (event !== 'APPROVE' && !body) return res.status(400).json({ error: 'body is required for REQUEST_CHANGES and COMMENT reviews' });
+    const review = await GitHubAppService.createPullReview({ owner, repo, pullNumber, event: event as 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body });
+    const r = review as { id?: number; state?: string; html_url?: string };
+    return res.status(201).json({ ok: true, id: r?.id, state: r?.state, url: r?.html_url });
+  } catch (err) {
+    const e = err as { response?: { status?: number }; message?: string };
+    if (e.response?.status === 404) return res.status(404).json({ error: 'Pull request not found' });
+    console.error('POST /github/pulls/review error:', e.message);
+    return res.status(500).json({ error: 'Failed to submit review', detail: e.message });
   }
 });
 

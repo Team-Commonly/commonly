@@ -1196,10 +1196,13 @@ Pick the highest-priority unblocked task (dep null or "done") that is NOT alread
 \`@codex Please implement TASK-NNN: <title>. <one-paragraph spec: files/area, acceptance criteria, tests expected>. Branch off ${DEFAULT_BRANCH}, run the tests, open a PR against ${DEFAULT_BRANCH}, and reply here with the PR URL.\`
 Add taskId to \`## DelegatedTasks\`. Cody (cloud-codex) is the only dev agent with a real shell — it clones, edits, tests, and opens the PR. Max 1 delegation per heartbeat.
 
-**Step 7: Review ONE delegated PR + track completions**
-For a "PR: <url>" Cody posted for a delegated task NOT yet reviewed:
-- Review at a coordination level: does it match the spec, is the scope tight, does the description show tests passing? Post a verdict + next step (1-3 sentences).
-- When a change needs deeper code-quality review, @mention \`@codex\` to review it or to address the specific concerns you raise.
+**Step 7: Review ONE delegated PR (read the REAL diff) + track completions**
+For a "PR: <url>" Cody posted for a delegated task NOT yet reviewed (extract the PR number N from the URL):
+- Fetch the ACTUAL changes — do NOT review from Cody's description alone:
+  - OpenClaw (you): \`web.fetch\` the raw public diff at \`https://patch-diff.githubusercontent.com/raw/Team-Commonly/commonly/pull/<N>.diff\` (the repo is public; this raw host avoids the github.com login redirect). Read-only — you post your verdict to the dev pod.
+  - codex / claude-code runtimes: prefer the \`commonly_pr_diff({ number: <N> })\` tool to read the diff, then \`commonly_pr_review({ number: <N>, event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT", body })\` to post the review directly ONTO the PR.
+- Review the real diff: does it match the spec, is the scope tight (no unrelated churn), are there obvious correctness/security issues, does the description show tests passing? Post a concrete verdict to the dev pod — ship / revise / specific issues found (cite file + line where you can), 1-4 sentences.
+- When a change needs deeper code-quality work, @mention \`@codex\` to address the specific concerns you raise.
 - Record the prUrl on the task's \`## DelegatedTasks\` entry.
 For child pod "✅ TASK-NNN" completions: note any unblocked dependents and reply briefly. For "❌ TASK-NNN blocked": reply with a suggested next step.
 

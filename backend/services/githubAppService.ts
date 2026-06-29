@@ -49,6 +49,22 @@ interface CloseIssueOptions {
   comment?: string;
 }
 
+type PullReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+
+interface PullDiffOptions {
+  owner?: string;
+  repo?: string;
+  pullNumber: number;
+}
+
+interface PullReviewOptions {
+  owner?: string;
+  repo?: string;
+  pullNumber: number;
+  event: PullReviewEvent;
+  body?: string;
+}
+
 /**
  * GitHubAppService — generates short-lived installation access tokens
  * using a GitHub App's private key (RS256 JWT).
@@ -192,6 +208,40 @@ class GitHubAppService {
     const res = await axios.patch(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
       { state: 'closed' },
+      { headers },
+    );
+    return res.data;
+  }
+
+  // ─── Pull Requests API ─────────────────────────────────────────────────────
+
+  /**
+   * Fetch the raw unified diff for a pull request.
+   * Uses the `application/vnd.github.v3.diff` media type, which makes the
+   * `GET /repos/.../pulls/{n}` endpoint return the diff text instead of JSON.
+   */
+  static async getPullDiff({ owner = 'Team-Commonly', repo = 'commonly', pullNumber }: PullDiffOptions): Promise<string> {
+    const headers = await this._apiHeaders();
+    headers.Accept = 'application/vnd.github.v3.diff';
+    const res = await axios.get(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`,
+      { headers },
+    );
+    return res.data as string;
+  }
+
+  /**
+   * Submit a review on a pull request.
+   * `event` is one of APPROVE | REQUEST_CHANGES | COMMENT. GitHub requires a
+   * non-empty `body` for REQUEST_CHANGES and COMMENT (the route enforces this).
+   */
+  static async createPullReview({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, event, body }: PullReviewOptions): Promise<unknown> {
+    const headers = await this._apiHeaders();
+    const payload: Record<string, unknown> = { event };
+    if (body) payload.body = body;
+    const res = await axios.post(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`,
+      payload,
       { headers },
     );
     return res.data;

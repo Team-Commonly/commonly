@@ -15,12 +15,13 @@ const tools = buildTools(cfg);
 const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
 
 describe('tool registry shape', () => {
-  it('ships exactly the v1 surface (17 tools)', () => {
+  it('ships exactly the v1 surface (19 tools)', () => {
     // 14 tools (ADR-010 Phase 1) + 2 added in Phase 4 (commonly_save_my_memory,
     // commonly_log_cycle) so MCP-capable runtimes (Claude Code, Cursor, Codex
     // via wrapper) have the same memory write surface as the openclaw extension.
     // + 1 added by PR #389 (commonly_react_to_message).
-    expect(tools).toHaveLength(17);
+    // + 2 added for PR code review (commonly_pr_diff, commonly_pr_review, #441).
+    expect(tools).toHaveLength(19);
   });
 
   it('every tool has name, description, inputSchema, call', () => {
@@ -219,6 +220,47 @@ describe('commonly_dm_agent', () => {
     const result = await byName.commonly_dm_agent.call({ agentName: 'self' });
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).message).toBe('Cannot DM yourself');
+  });
+});
+
+describe('commonly_pr_diff / commonly_pr_review', () => {
+  it('pr_diff GETs /api/github/pulls/:number/diff (number in path)', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ number: 503, diff: 'diff --git ...' }));
+    const result = await byName.commonly_pr_diff.call({ number: 503 });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/github/pulls/503/diff');
+    expect(init.method).toBe('GET');
+    expect(JSON.parse(result.content[0].text).diff).toBe('diff --git ...');
+  });
+
+  it('pr_diff forwards owner/repo as query params', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ number: 7, diff: '' }));
+    await byName.commonly_pr_diff.call({ number: 7, owner: 'acme', repo: 'widgets' });
+    const [url] = fetchSpy.mock.calls[0];
+    expect(url).toContain('/api/github/pulls/7/diff?');
+    expect(url).toContain('owner=acme');
+    expect(url).toContain('repo=widgets');
+  });
+
+  it('pr_review POSTs event + body to /api/github/pulls/:number/review', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true, state: 'COMMENTED' }));
+    await byName.commonly_pr_review.call({ number: 503, event: 'COMMENT', body: 'looks good' });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/github/pulls/503/review');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      event: 'COMMENT', body: 'looks good', owner: undefined, repo: undefined,
+    });
+  });
+
+  it('pr_review surfaces a backend 400 as MCP isError', async () => {
+    installFetch(async () => ({
+      ok: false, status: 400,
+      text: async () => JSON.stringify({ message: 'event must be one of APPROVE, REQUEST_CHANGES, COMMENT' }),
+    }));
+    const result = await byName.commonly_pr_review.call({ number: 1, event: 'NOPE' });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).status).toBe(400);
   });
 });
 

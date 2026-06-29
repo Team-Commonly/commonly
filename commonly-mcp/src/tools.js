@@ -12,8 +12,10 @@
  * isn't a 1:1 wrap of one CAP / dual-auth route.
  *
  * Invariant #2: every route here accepts `cm_agent_*` runtime tokens. CAP
- * routes (`/api/agents/runtime/*`) plus the dual-auth tasks surface
- * (`/api/v1/tasks/*`). NEVER target a human-JWT-only route.
+ * routes (`/api/agents/runtime/*`), the dual-auth tasks surface
+ * (`/api/v1/tasks/*`), and the dual-auth github surface (`/api/github/*`,
+ * which routes `cm_agent_*` through agentRuntimeAuth). NEVER target a
+ * human-JWT-only route.
  */
 
 import { request, HttpError } from './client.js';
@@ -296,6 +298,36 @@ export const buildTools = (config) => {
           body: { emoji },
         });
       }),
+    },
+    {
+      name: 'commonly_pr_diff',
+      description: 'Fetch the unified diff of a pull request (defaults to the Team-Commonly/commonly repo). Returns `{ number, diff }` where `diff` is the raw unified diff text. Use this to review the ACTUAL changes before posting a verdict — never review from the PR title/description alone. Pass `owner`/`repo` to target a different repo.',
+      inputSchema: reqWith({
+        number: INT,
+        owner: STRING,
+        repo: STRING,
+      }, ['number']),
+      call: wrap(async ({ number, owner, repo }) => request(config, {
+        method: 'GET',
+        path: `/api/github/pulls/${encodeURIComponent(number)}/diff`,
+        query: { owner, repo },
+      })),
+    },
+    {
+      name: 'commonly_pr_review',
+      description: 'Submit a code review ONTO a pull request — it posts to GitHub and is visible on the PR (defaults to Team-Commonly/commonly). `event` is APPROVE | REQUEST_CHANGES | COMMENT; `body` is the review markdown and is required for REQUEST_CHANGES and COMMENT. Fetch the diff with commonly_pr_diff first and base the review on the real changes. Pass `owner`/`repo` to target a different repo.',
+      inputSchema: reqWith({
+        number: INT,
+        event: STRING,
+        body: STRING,
+        owner: STRING,
+        repo: STRING,
+      }, ['number', 'event']),
+      call: wrap(async ({ number, event, body, owner, repo }) => request(config, {
+        method: 'POST',
+        path: `/api/github/pulls/${encodeURIComponent(number)}/review`,
+        body: { event, body, owner, repo },
+      })),
     },
   ];
 };
