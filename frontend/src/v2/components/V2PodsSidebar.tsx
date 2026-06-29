@@ -72,9 +72,17 @@ const matchesFilter = (pod: V2Pod, filter: Filter): boolean => {
 interface V2PodsSidebarProps {
   selectedPodId: string | null;
   podsState?: UseV2PodsResult;
+  // Mobile (<=760px) slide-over drawer state. On phones the sidebar is a
+  // fixed overlay rather than a grid column; `mobileOpen` drives the
+  // open/closed transform and `onMobileClose` dismisses it (selecting a pod,
+  // creating one). Both no-ops on desktop where the sidebar is always visible.
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState }) => {
+const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
+  selectedPodId, podsState, mobileOpen = false, onMobileClose,
+}) => {
   const navigate = useNavigate();
   const ownPodsState = useV2Pods();
   const { pods, loading, error, createPod, patchLastMessage } = podsState || ownPodsState;
@@ -259,6 +267,13 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
     return buckets;
   }, [filter, filtered, pinned]);
 
+  // Navigate to a pod and, on mobile, dismiss the slide-over drawer so the
+  // user lands directly in the chat instead of behind the overlay.
+  const selectPod = (podId: string) => {
+    navigate(`/v2/pods/${podId}`);
+    onMobileClose?.();
+  };
+
   const handleCreatePod = async (event: React.FormEvent) => {
     event.preventDefault();
     const name = newPodName.trim();
@@ -271,7 +286,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
         setNewPodName('');
         setNewPodGoal('');
         setShowCreate(false);
-        navigate(`/v2/pods/${pod._id}`);
+        selectPod(pod._id);
       } else {
         setCreateError('Unable to create pod. Check that you are signed in and try again.');
       }
@@ -281,10 +296,23 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
   };
 
   return (
-    <aside className="v2-pane">
+    <aside className={`v2-pane v2-pods-aside${mobileOpen ? ' v2-pods-aside--open' : ''}`}>
       <div className="v2-pods">
         <div className="v2-pods__header">
-          <div className="v2-pods__title">Pods</div>
+          <div className="v2-pods__title">
+            Pods
+            <button
+              type="button"
+              className="v2-pods__mobile-close"
+              onClick={() => onMobileClose?.()}
+              title="Close pods"
+              aria-label="Close pods list"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
           <button
             type="button"
             className="v2-pods__new-btn"
@@ -416,7 +444,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({ selectedPodId, podsState 
                     <button
                       type="button"
                       className={`v2-pods__item${active ? ' v2-pods__item--active' : ''}${unread ? ' v2-pods__item--unread' : ''}`}
-                      onClick={() => navigate(`/v2/pods/${pod._id}`)}
+                      onClick={() => selectPod(pod._id)}
                     >
                       <span className={podMarkClass(pod)}>
                         {podMarkFor(pod)}

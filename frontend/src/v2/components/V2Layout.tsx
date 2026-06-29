@@ -54,6 +54,12 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const [inviteOpen, setInviteOpen] = useState(false);
   const openInvite = useCallback(() => setInviteOpen(true), []);
   const closeInvite = useCallback(() => setInviteOpen(false), []);
+  // Mobile (<=760px) pods drawer. The sidebar is a fixed slide-over on phones
+  // instead of a grid column; this owns its open/closed state. Desktop ignores
+  // it entirely (the sidebar is always a visible column there).
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const openMobileNav = useCallback(() => setMobileNavOpen(true), []);
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const toggleInspector = useCallback(() => {
     setInspectorCollapsed((prev) => {
       const next = !prev;
@@ -101,9 +107,11 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const clearPendingOpenFileName = useCallback(() => setPendingOpenFileName(null), []);
   const resetInspectorView = useCallback(() => setInspectorView({ kind: 'overview' }), []);
 
-  // When pod changes, drop any stale sub-page state.
+  // When pod changes, drop any stale sub-page state and close the mobile
+  // drawer (in case navigation came from somewhere other than a drawer tap).
   useEffect(() => {
     setInspectorView({ kind: 'overview' });
+    setMobileNavOpen(false);
   }, [paramPodId]);
 
   // Auto-pick the first pod when the user lands on /v2 directly, so the
@@ -124,8 +132,21 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   return (
     <div className={shellClass}>
-      <V2NavRail />
-      <V2PodsSidebar selectedPodId={selectedPodId} podsState={podsState} />
+      <V2NavRail onPodsMobileNav={openMobileNav} />
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="v2-mobile-backdrop"
+          aria-label="Close pods list"
+          onClick={closeMobileNav}
+        />
+      )}
+      <V2PodsSidebar
+        selectedPodId={selectedPodId}
+        podsState={podsState}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={closeMobileNav}
+      />
       <V2PodChat
         detail={detail}
         podsState={podsState}
@@ -134,6 +155,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         onOpenMember={openInspectorMember}
         onOpenInvite={selectedPodId ? openInvite : undefined}
         onOpenFile={openInspectorByFileName}
+        onOpenMobileNav={openMobileNav}
       />
       {selectedPodId && !inspectorCollapsed && (
         <V2PodInspector

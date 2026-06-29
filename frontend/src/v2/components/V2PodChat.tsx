@@ -131,6 +131,10 @@ interface V2PodChatProps {
   // to V2MessageBubble → FilePill so the click opens the inspector
   // artifact preview instead of window.open()'ing a raw file in a new tab.
   onOpenFile?: (fileName: string) => void;
+  // Opens the mobile pods drawer (<=760px). The hamburger in the chat header
+  // is the primary way back to the pod list on phones, where the sidebar is
+  // an overlay rather than a visible column. Hidden via CSS on desktop.
+  onOpenMobileNav?: () => void;
 }
 
 const Icon = ({ d }: { d: string }) => (
@@ -139,7 +143,7 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
-const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile }) => {
+const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav }) => {
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
   const navigate = useNavigate();
   const api = useV2Api();
@@ -474,9 +478,31 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     return [...humans, ...activeAgentMembers];
   }, [members, activeMemberAgentUsernames]);
 
+  // Mobile-only hamburger: opens the pods slide-over drawer. CSS hides it on
+  // desktop (>=761px) where the sidebar is a permanent column. Without it a
+  // phone user who lands in a pod chat has no way back to the pod list.
+  const mobileNavButton = onOpenMobileNav ? (
+    <button
+      type="button"
+      className="v2-chat__mobile-nav-btn"
+      onClick={onOpenMobileNav}
+      title="Show pods"
+      aria-label="Show pods list"
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 6h18M3 12h18M3 18h18" />
+      </svg>
+    </button>
+  ) : null;
+
   if (!pod) {
     return (
       <main className="v2-pane v2-pane--main">
+        {mobileNavButton && (
+          <div className="v2-chat__header">
+            <div className="v2-chat__header-row">{mobileNavButton}</div>
+          </div>
+        )}
         <div className="v2-empty">
           <div className="v2-empty__title">No pod selected</div>
           <div className="v2-empty__text">Pick a pod from the sidebar, or create a new one to get started.</div>
@@ -583,6 +609,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
       <div className="v2-chat">
         <header className="v2-chat__header">
           <div className="v2-chat__header-row">
+            {mobileNavButton}
             <div className="v2-chat__title">
               <span className="v2-chat__title-mark">{podMarkFor(pod.name, pod.type)}</span>
               <span className="v2-chat__title-text">{pod.name}</span>
