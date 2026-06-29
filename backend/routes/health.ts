@@ -53,6 +53,25 @@ const pgPoolDetail = (s: NonNullable<ReturnType<typeof getPgPoolSnapshot>>) => (
   connectionTimeoutMillis: s.connectionTimeoutMillis,
 });
 
+const getPgSaturationStatus = (): null | {
+  httpStatus: 200 | 503;
+  body: Record<string, unknown>;
+  saturated: boolean;
+} => {
+  const snapshot = getPgPoolSnapshot();
+  if (!snapshot) return null;
+
+  return {
+    httpStatus: snapshot.saturated ? 503 : 200,
+    body: {
+      status: snapshot.saturated ? 'saturated' : 'ok',
+      ...pgPoolDetail(snapshot),
+      idleTimeoutMillis: snapshot.idleTimeoutMillis,
+    },
+    saturated: snapshot.saturated,
+  };
+};
+
 router.get('/', async (_req: unknown, res: Res) => {
   const startTime = Date.now();
   const health: Record<string, unknown> = {
@@ -172,19 +191,15 @@ router.get('/db', (_req: unknown, res: Res) => {
     return res.status(200).json(stats);
   }
 
-  const snapshot = getPgPoolSnapshot();
-  if (!snapshot) {
+  const pgStatus = getPgSaturationStatus();
+  if (!pgStatus) {
     stats.pg = { status: 'not_configured' };
     return res.status(200).json(stats);
   }
 
-  stats.pg = {
-    status: snapshot.saturated ? 'saturated' : 'ok',
-    ...pgPoolDetail(snapshot),
-    idleTimeoutMillis: snapshot.idleTimeoutMillis,
-  };
+  stats.pg = pgStatus.body;
 
-  return res.status(snapshot.saturated ? 503 : 200).json(stats);
+  return res.status(pgStatus.httpStatus).json(stats);
 });
 
 router.get('/ready', async (_req: unknown, res: Res) => {
@@ -194,12 +209,12 @@ router.get('/ready', async (_req: unknown, res: Res) => {
     }
 
     if (process.env.PG_HOST && pgPool) {
-      const snapshot = getPgPoolSnapshot();
-      if (snapshot?.saturated) {
+      const pgStatus = getPgSaturationStatus();
+      if (pgStatus?.saturated) {
         return res.status(503).json({
           status: 'not_ready',
           reason: 'PostgreSQL pool saturated',
-          pg: pgPoolDetail(snapshot),
+          pg: pgStatus.body,
         });
       }
       try {
