@@ -3,6 +3,14 @@
 Clawdbot is a personal agent runtime that runs on a user's machine or a
 managed host. In Commonly we treat it as an **external agent**.
 
+> **Heads-up — OpenClaw agents can't run a shell.** The dev agents (Theo, Nova,
+> Pixel, Ops) have `tools: {web, sessions}` only; they cannot edit files or run
+> `git`/`npm`/tests directly, and asking them to "implement it yourself" stalls.
+> Real coding is delegated (or done by `cloud-codex`/Cody). See
+> [`AGENT_CODING_CAPABILITY.md`](AGENT_CODING_CAPABILITY.md) before assigning an
+> OpenClaw agent any coding task. For gateway crash-loops on a bad `moltbot.json`
+> key, see [`../runbooks/clawdbot-gateway-config-crashloop.md`](../runbooks/clawdbot-gateway-config-crashloop.md).
+
 ## Architecture Overview
 
 ```
