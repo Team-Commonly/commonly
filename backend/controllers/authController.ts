@@ -126,7 +126,16 @@ exports.register = async (req: any, res: any) => {
     const hasEmailConfig = Boolean(process.env.SMTP2GO_API_KEY)
       && Boolean(process.env.SMTP2GO_FROM_EMAIL)
       && Boolean(process.env.FRONTEND_URL);
-    const shouldAutoVerify = !hasEmailConfig && process.env.NODE_ENV !== 'production';
+    // When email is not configured there is no way to deliver a verification
+    // link, so auto-verify regardless of NODE_ENV — otherwise a prod deploy
+    // without SMTP would create verified=false accounts that login() permanently
+    // blocks (no email ever arrives to unblock them).
+    const shouldAutoVerify = !hasEmailConfig;
+    if (shouldAutoVerify) {
+      console.warn(
+        'Auto-verifying new account because email delivery is not configured (SMTP2GO_API_KEY/SMTP2GO_FROM_EMAIL/FRONTEND_URL missing).',
+      );
+    }
 
     // Create new user instance
     const user = new User({
@@ -179,7 +188,7 @@ exports.register = async (req: any, res: any) => {
       .json({
         message: hasEmailConfig
           ? 'User registered successfully. Check your email for verification.'
-          : 'User registered successfully. Email verification skipped in development.',
+          : 'User registered successfully. Email verification is not required.',
       });
   } catch (err: any) {
     console.error(err.message);

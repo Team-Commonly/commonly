@@ -104,15 +104,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const register = async (formData: unknown): Promise<unknown> => {
     try {
       setLoading(true);
-      const res = await axios.post<{ token: string; user: User }>('/api/auth/register', formData);
-      localStorage.setItem('token', res.data.token);
-      setToken(res.data.token);
-      setCurrentUser(res.data.user);
+      // Registration does NOT return a session token — the backend either sends
+      // a verification email or auto-verifies, then expects the user to sign in.
+      // Return the response data (e.g. { message }) so callers can route to
+      // /v2/login.
+      const res = await axios.post<{ message?: string }>('/api/auth/register', formData);
       setError(null);
       return res.data;
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { msg?: string } } };
-      setError(e.response?.data?.msg || 'Registration failed');
+      const e = err as { response?: { data?: { error?: string; msg?: string } } };
+      setError(e.response?.data?.error || e.response?.data?.msg || 'Registration failed');
       throw err;
     } finally {
       setLoading(false);

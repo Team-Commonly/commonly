@@ -446,7 +446,7 @@ router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req:
     }
 
     const frontendUrl = getPrimaryFrontendUrl();
-    const registerUrl = `${frontendUrl.replace(/\/$/, '')}/register?invite=${encodeURIComponent(invitation.code)}`;
+    const registerUrl = `${frontendUrl.replace(/\/$/, '')}/v2/register?invite=${encodeURIComponent(invitation.code)}`;
     const recipientName = waitlistRequest.name || 'there';
     const subject = 'Your Commonly invitation code';
     const textBody = [

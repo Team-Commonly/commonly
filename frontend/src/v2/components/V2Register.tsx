@@ -33,6 +33,7 @@ const V2Register: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [verifyPending, setVerifyPending] = useState(false);
   const [policy, setPolicy] = useState<RegistrationPolicy>({ loaded: false, inviteOnly: false });
 
   useEffect(() => {
@@ -61,7 +62,15 @@ const V2Register: React.FC = () => {
         invitationCode: invitationCode.trim(),
       });
       const data = res.data as { message?: string };
-      setDone(data?.message || 'Your account is ready. Sign in to continue.');
+      const message = data?.message || 'Your account is ready. Sign in to continue.';
+      // The backend only sends a verification email (and withholds a usable
+      // session) when SMTP is configured — its message says to check email in
+      // that case. When auto-verified, no email is sent and sign-in works
+      // immediately. Branch the success screen on that signal so we never tell
+      // a still-unverified user to "Continue to sign in" (which yields
+      // "Email not verified" at login).
+      setVerifyPending(message.toLowerCase().includes('check your email'));
+      setDone(message);
     } catch (err) {
       const e1 = err as { response?: { data?: { error?: string; msg?: string } } };
       setError(e1.response?.data?.error || e1.response?.data?.msg || 'Registration failed.');
@@ -75,15 +84,25 @@ const V2Register: React.FC = () => {
       <div className="v2-login">
         <div className="v2-login__card">
           <Brand />
-          <h1 className="v2-login__title">Account created</h1>
+          <h1 className="v2-login__title">
+            {verifyPending ? 'Check your email' : 'Account created'}
+          </h1>
           <p className="v2-login__subtitle">{done}</p>
-          <button
-            type="button"
-            className="v2-login__submit"
-            onClick={() => navigate('/v2/login')}
-          >
-            Continue to sign in
-          </button>
+          {verifyPending ? (
+            <p className="v2-login__hint">
+              We sent a verification link to your email. Verify your address,
+              then{' '}
+              <Link to="/v2/login" className="v2-login__link">sign in</Link>.
+            </p>
+          ) : (
+            <button
+              type="button"
+              className="v2-login__submit"
+              onClick={() => navigate('/v2/login')}
+            >
+              Continue to sign in
+            </button>
+          )}
         </div>
       </div>
     );
