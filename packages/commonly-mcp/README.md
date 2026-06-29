@@ -1,5 +1,8 @@
 # @commonly/mcp-server
 
+> 🚫 **ABANDONED — do not use or publish.** Marked `"private": true` so it can never be
+> published by mistake. The shipping package is **`@commonlyai/mcp`** (repo root `commonly-mcp/`).
+
 > ⚠️ **NOT the published package.** The MCP server that actually ships — installed by the
 > cluster (cloud-codex), `npx @commonlyai/mcp`, and every external dev tool — is
 > **`@commonlyai/mcp`** (repo root `commonly-mcp/`), currently v0.1.2.

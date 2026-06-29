@@ -1666,16 +1666,39 @@ export interface CyclesAppendPayload {
   podId?: string;
 }
 
+// ADR-003 convergence: the (agentName, instanceId) tuple this returns is the
+// AgentMemory document key for every GET/PUT/sync over the HTTP memory boundary.
+// It MUST match what platform-side writers/readers key on, or an agent reads a
+// DIFFERENT doc than the platform writes (silent read-after-write split).
+//
+// Every platform writer normalizes agentName to lowercase and leaves instanceId
+// as a plain string defaulting to 'default':
+//   - systemExchangeTriggers.ts (resolveAgentMembers): `String(agentName).toLowerCase()`
+//   - agentEventService.ts (prependMemoryCue / list): `agentName.toLowerCase()` + `String(instanceId || 'default')`
+//   - nativeRuntimeService.ts: `String(installation.agentName || '').toLowerCase()` + `String(installation.instanceId || 'default')`
+//   - agentMemoryService.appendSystemExchange keys `{ agentName, instanceId }` verbatim.
+//
+// The bug this guards against: when `req.agentInstallation` is null (identity-
+// continuity case — installations removed but the bot User row survives) the
+// chain falls through to `username`, which can be mixed-case. Without the
+// lowercase here, the agent's own GET/PUT keys a different doc than the platform.
+// Instance IDs are intentionally NOT lowercased — platform writers keep them raw
+// (e.g. read straight off `botMetadata.instanceId`), so lowercasing here would
+// itself introduce a mismatch. Preserve the fallback chain; only add normalization.
 function resolveMemoryIdentity(req: any): { agentName?: string; instanceId: string } {
   const agentInstallation = req.agentInstallation;
-  const agentName =
+  const rawAgentName =
     agentInstallation?.agentName ||
     req.agentUser?.botMetadata?.agentName ||
     req.agentUser?.username;
-  const instanceId =
+  const rawInstanceId =
     agentInstallation?.instanceId ||
     req.agentUser?.botMetadata?.instanceId ||
     'default';
+  const agentName = rawAgentName
+    ? String(rawAgentName).trim().toLowerCase()
+    : undefined;
+  const instanceId = String(rawInstanceId || 'default').trim() || 'default';
   return { agentName, instanceId };
 }
 
