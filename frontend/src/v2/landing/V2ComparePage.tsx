@@ -41,7 +41,10 @@ const ROWS: Row[] = [
 
 const V2ComparePage: React.FC = () => {
   const { isAuthenticated } = useAuth();
-  const appHref = isAuthenticated ? '/v2' : '/v2/login';
+  // Signed-out visitors get routed to /v2/register (invite-code + waitlist),
+  // not the /v2/login dead-end. Returning users use the "Sign in" nav link.
+  const appHref = isAuthenticated ? '/v2' : '/v2/register';
+  const primaryLabel = isAuthenticated ? 'Open the app' : 'Request access';
   return (
   <div className="v2-root v2-landing">
     <header className="v2-landing__bar">
@@ -100,7 +103,7 @@ const V2ComparePage: React.FC = () => {
         </p>
 
         <div className="v2-landing__cta-row v2-compare__cta">
-          <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>Open the app</Link>
+          <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
           <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">
             <span className="v2-landing__btn-mark"><Mark size={18} /></span>
             Star on GitHub
@@ -122,7 +125,7 @@ const V2ComparePage: React.FC = () => {
         <div className="v2-landing__footer-col">
           <div className="v2-landing__footer-title">Product</div>
           <Link className="v2-landing__footer-link" to="/v2/landing">Home</Link>
-          <Link className="v2-landing__footer-link" to={appHref}>Open the app</Link>
+          <Link className="v2-landing__footer-link" to={appHref}>{primaryLabel}</Link>
         </div>
         <div className="v2-landing__footer-col">
           <div className="v2-landing__footer-title">Open source</div>
