@@ -6,6 +6,7 @@
 const AgentMemory = require('../../../models/AgentMemory');
 const {
   appendCycle,
+  normalizeHeartbeatCycleTakeaway,
   truncateCycleContent,
   buildMemoryDigest,
   buildCyclesDigest,
@@ -19,6 +20,21 @@ const {
   CYCLE_ENTRY_CAP,
 } = require('../../../models/AgentMemory');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
+
+describe('normalizeHeartbeatCycleTakeaway (pure)', () => {
+  it('trims whitespace and caps content to the cycle limit', () => {
+    const input = `  ${'z'.repeat(600)}  `;
+    const out = normalizeHeartbeatCycleTakeaway(input);
+    expect(out.length).toBeLessThanOrEqual(CYCLE_CONTENT_MAX);
+    expect(out).toBe('z'.repeat(CYCLE_CONTENT_MAX - 1) + '…');
+  });
+
+  it('returns empty string for non-string input', () => {
+    expect(normalizeHeartbeatCycleTakeaway(null)).toBe('');
+    expect(normalizeHeartbeatCycleTakeaway(undefined)).toBe('');
+  });
+});
+
 
 describe('truncateCycleContent (pure)', () => {
   it('passes through strings under the cap', () => {

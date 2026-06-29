@@ -500,6 +500,13 @@ export async function appendSystemExchange(
 //     (it's not in the writable-sections allowlist; the only write path is the
 //     append helper here), so a cycle write does NOT make the sync dedup key
 //     stale. Same logic as invariant 8a for system_exchanges.
+export function normalizeHeartbeatCycleTakeaway(raw: unknown, max = CYCLE_CONTENT_MAX): string {
+  const s = typeof raw === 'string' ? raw.trim() : '';
+  if (!s) return '';
+  if (s.length <= max) return s;
+  return s.slice(0, Math.max(0, max - 1)) + '…';
+}
+
 export function truncateCycleContent(raw: unknown, max = CYCLE_CONTENT_MAX): string {
   const s = typeof raw === 'string' ? raw : (raw == null ? '' : String(raw));
   if (s.length <= max) return s;
