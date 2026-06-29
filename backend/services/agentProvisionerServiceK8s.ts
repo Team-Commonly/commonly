@@ -42,6 +42,14 @@ const AGENT_TOLERATIONS = (() => {
   }];
 })();
 
+// LiteLLM per-key abuse circuit-breakers, stamped onto every issued virtual key.
+// These are NOT usage quotas — an agent's heartbeat makes sequential LLM calls, so
+// 4 parallel requests / 120 rpm is generous headroom for legitimate use. The caps
+// only trip on runaway flooding (e.g. a tight loop hammering the proxy), so a single
+// misbehaving agent can't monopolize the single-replica LiteLLM proxy.
+const LITELLM_KEY_MAX_PARALLEL_REQUESTS = 4;
+const LITELLM_KEY_RPM_LIMIT = 120;
+
 /**
  * Resolve OpenClaw account ID from agent name and instance ID
  */
@@ -1572,6 +1580,10 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
           'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
           'nvidia/nemotron-3-super-120b-a12b:free',
         ],
+        // Abuse circuit-breakers — generous for legit sequential heartbeat use,
+        // trips only on runaway flooding (see constant comment).
+        max_parallel_requests: LITELLM_KEY_MAX_PARALLEL_REQUESTS,
+        rpm_limit: LITELLM_KEY_RPM_LIMIT,
         metadata: { agent_id: agentId, provisioned_at: new Date().toISOString() },
       },
       { headers },
@@ -1664,6 +1676,10 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
           'google/gemini-2.0-flash',
           'gemini-2.5-flash',
         ],
+        // Abuse circuit-breakers — generous for legit sequential heartbeat use,
+        // trips only on runaway flooding (see constant comment).
+        max_parallel_requests: LITELLM_KEY_MAX_PARALLEL_REQUESTS,
+        rpm_limit: LITELLM_KEY_RPM_LIMIT,
         metadata: { agent_id: agentId, key_type: 'openrouter', provisioned_at: new Date().toISOString() },
       },
       { headers },
