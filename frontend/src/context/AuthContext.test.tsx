@@ -42,13 +42,17 @@ afterEach(() => {
   delete global.testAuth;
 });
 
-test('register stores token and user', async () => {
-  axios.post.mockResolvedValue({ data: { token: 'abc', user: { name: 'Bob' } } });
+test('register does not store a token and returns the response message', async () => {
+  const message = 'User registered successfully. Check your email for verification.';
+  axios.post.mockResolvedValue({ data: { message } });
+  let result;
   await act(async () => {
-    await global.testAuth.register({});
+    result = await global.testAuth.register({});
   });
-  expect(localStorage.getItem('token')).toBe('abc');
-  expect(global.testAuth.currentUser).toEqual({ name: 'Bob' });
+  // Registration returns no session — the user must sign in afterward.
+  expect(localStorage.getItem('token')).toBeNull();
+  expect(global.testAuth.currentUser).toBeNull();
+  expect(result).toEqual({ message });
   expect(axios.post).toHaveBeenCalledWith('/api/auth/register', {});
 });
 

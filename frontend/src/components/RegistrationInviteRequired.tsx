@@ -27,7 +27,7 @@ const RegistrationInviteRequired: React.FC = () => {
     e.preventDefault();
     const trimmed = invitationCode.trim();
     if (!trimmed) return;
-    navigate(`/register?invite=${encodeURIComponent(trimmed)}`);
+    navigate(`/v2/register?invite=${encodeURIComponent(trimmed)}`);
   };
 
   const onWaitlistSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -39,7 +39,7 @@ const RegistrationInviteRequired: React.FC = () => {
       const res = await axios.post<{ message?: string }>('/api/auth/waitlist', {
         email: waitlistEmail,
         name: waitlistName,
-        note: waitlistNote,
+        useCase: waitlistNote,
       });
       setWaitlistSuccess(res.data?.message || 'Waitlist request submitted.');
       setWaitlistName('');
@@ -165,7 +165,7 @@ const RegistrationInviteRequired: React.FC = () => {
           </Box>
           <Typography variant="body2" sx={{ mt: 2.5, color: 'rgba(226, 232, 240, 0.85)' }}>
             Already have an account?{' '}
-            <Link to="/login" style={{ color: '#93c5fd' }}>Login here</Link>
+            <Link to="/v2/login" style={{ color: '#93c5fd' }}>Login here</Link>
           </Typography>
         </Paper>
       </Container>
