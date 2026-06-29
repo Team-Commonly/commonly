@@ -99,10 +99,12 @@ describe('registry presets', () => {
     ]));
   });
 
-  // In-session coding migration (retire acpx_run + sam-local-codex delegation):
-  // nova writes code herself in one heartbeat tick. Lock the structural
-  // invariants of the new heartbeat so future edits don't silently regress them.
-  it('nova heartbeat: in-session coding, no delegation', async () => {
+  // Coding-delegation migration (#511): OpenClaw dev agents have no exec/shell
+  // (the provisioner sets tools.web only), so they DELEGATE all coding to the
+  // codex runtime (Cody) via @codex rather than writing it themselves. Lock the
+  // structural invariants of the delegation posture so a future edit can't
+  // silently re-introduce self-coding instructions the runtime can't honor.
+  it('nova heartbeat: delegates coding to @codex, no self-coding/shell', async () => {
     const handler = getRouteHandler('/presets', 'get');
     const req = { userId: 'user-1', user: { id: 'user-1' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
@@ -115,8 +117,24 @@ describe('registry presets', () => {
     const heartbeat = novaPreset.heartbeatTemplate;
     expect(typeof heartbeat).toBe('string');
 
+    // Delegation posture: nova hands implementation to the codex runtime.
+    expect(heartbeat).toContain('@codex');
+    expect(heartbeat).toMatch(/delegate/i);
+    expect(heartbeat).toMatch(/no shell|NO shell|no file-editing tool/);
+
+    // Executable self-coding / shell / git commands must be GONE — the runtime
+    // cannot run them, and their presence makes the agent stall. (Prohibition
+    // PROSE like "never attempt git clone/checkout/commit/push" is fine; the
+    // checks below target the actual command forms, not the warning.)
+    expect(heartbeat).not.toContain('git checkout -B');
+    expect(heartbeat).not.toContain('git clone https');
+    expect(heartbeat).not.toContain('git push origin');
+    expect(heartbeat).not.toContain('gh pr create');
+    expect(heartbeat).not.toContain('/workspace/nova/repo');
+    expect(heartbeat).not.toContain('npm test -- --watchAll');
+
     // acpx_run and sam-local-codex appear ONLY in negative/prohibition lines —
-    // both delegation paths are retired; nova must never invoke them.
+    // both legacy delegation paths are retired; nova must never invoke them.
     const delegationLines = heartbeat
       .split('\n')
       .filter((line) => line.includes('acpx_run') || line.includes('sam-local-codex'));
@@ -125,22 +143,15 @@ describe('registry presets', () => {
       expect(line).toMatch(/never|retir|cutover|do not|don't|not delegate/i);
     }
 
-    // The delegation primitives must be GONE.
+    // The old delegation primitives must be GONE.
     expect(heartbeat).not.toContain('SamCodexDmPodId');
     expect(heartbeat).not.toContain('PendingDelegation');
     expect(heartbeat).not.toContain('69efbd9c11277089b127d891'); // sam DM podId
 
-    // In-session coding primitives + the git-hygiene invariants (validated on
-    // PR #497) must be present.
-    expect(heartbeat).toContain('in-session');
-    expect(heartbeat).toContain('git checkout -B'); // clean branch
-    expect(heartbeat).toContain('origin/main'); // off a clean main base
-    expect(heartbeat).toContain('git add -A'); // referenced in the never-do prohibition
-    expect(heartbeat).toMatch(/never .{0,30}git add -A|only the files you changed/i);
-    expect(heartbeat).toContain('gh pr create');
-
-    // SOUL.md should call out in-session ownership, not delegation.
-    expect(novaPreset.soulTemplate).toMatch(/yourself|in your own session/i);
-    expect(novaPreset.soulTemplate).not.toContain('acpx_run on the gateway');
+    // SOUL.md should call out the delegate-and-review posture, not self-coding.
+    expect(novaPreset.soulTemplate).toMatch(/delegate|review|scope/i);
+    expect(novaPreset.soulTemplate).toContain('@codex');
+    expect(novaPreset.soulTemplate).not.toContain('write code YOURSELF');
+    expect(novaPreset.soulTemplate).not.toContain('in your own session');
   });
 });
