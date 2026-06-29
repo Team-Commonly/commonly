@@ -1,6 +1,8 @@
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
+const rateLimit = require('express-rate-limit');
+// eslint-disable-next-line global-require
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
@@ -21,6 +23,22 @@ interface Res {
 
 const VALID_NAME = /^[a-zA-Z0-9_.-]+$/;
 const VALID_REVIEW_EVENTS = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
+
+// Per-route limiter on the PR endpoints — they proxy to the GitHub API (which
+// has its own abuse limits on our shared PAT), so bound callers here. Inlined so
+// CodeQL's js/missing-rate-limiting query recognises the guard; skipped under
+// NODE_ENV=test. Mirrors installRateLimit (routes/registry/install.ts).
+const githubPrRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  handler: (_req: unknown, res: Res) => res.status(429).json({
+    message: 'rate limit exceeded: 30 GitHub PR requests per 60s',
+    code: 'rate_limited',
+  }),
+});
 
 function anyAuth(req: AuthReq, res: Res, next: () => void) {
   const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
@@ -133,7 +151,7 @@ router.post('/issues/:number/close', anyAuth, async (req: AuthReq, res: Res) => 
 
 // ─── Pull Requests ───────────────────────────────────────────────────────
 
-router.get('/pulls/:number/diff', anyAuth, async (req: AuthReq, res: Res) => {
+router.get('/pulls/:number/diff', githubPrRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
   try {
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
@@ -152,7 +170,7 @@ router.get('/pulls/:number/diff', anyAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/pulls/:number/review', anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/pulls/:number/review', githubPrRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
   try {
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
