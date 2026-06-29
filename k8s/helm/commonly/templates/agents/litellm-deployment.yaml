@@ -281,11 +281,16 @@ spec:
         # the codex-cli sidecar. See the startup patch above + ADR-014.
         - name: CHATGPT_DISABLE_DEVICE_LOGIN
           value: "1"
-        # Force prompt/response storage in spend logs regardless of runtime general_settings.
-        # The config-file setting (store_prompts_in_spend_logs: true) is sometimes shadowed by
-        # the in-memory general_settings dict at startup; the env var is the reliable fallback.
+        # Do NOT store prompt/response TEXT inline in SpendLogs. Cost/usage data
+        # (tokens, spend, model, timestamps) is still retained — only the raw
+        # prompt/response payloads are dropped. SpendLogs had ballooned to ~2.6GB
+        # because every request's full prompt+completion was persisted inline; the
+        # text is non-essential for billing/usage accounting and the table is never
+        # pruned. Set to "false" to keep the table bounded.
+        # (The dead SpendLogToolIndex table was already truncated live and its
+        # population patched off in the startup script above — that patch stays.)
         - name: STORE_PROMPTS_IN_SPEND_LOGS
-          value: "true"
+          value: "false"
         volumeMounts:
         - name: litellm-config
           mountPath: /app/config.yaml
@@ -343,6 +348,44 @@ spec:
           SIGNAL_FILE = '/chatgpt-auth/rotate-now'
           SIGNAL_POLL_SEC = 10  # how often to check for rate-limit signal during sleep
           SIGNAL_MAX_AGE_SEC = 120  # ignore stale signals older than this
+          # Cap-cooldown: when a ChatGPT account returns a USAGE-CAP 429
+          # (usage_limit_reached), park it so the selection loop stops
+          # round-robining straight back into a capped account. ChatGPT Team
+          # caps run multi-hour to ~3-day, so 3h is a conservative FLOOR — the
+          # account is re-checked (and re-picked if its JWT is still valid) once
+          # the cooldown expires. An ambiguous/transient per-minute 429 gets a
+          # much shorter park so we skip past it this tick without benching it
+          # for hours. Both are env-overridable per deploy.
+          CAP_COOLDOWN_SEC = int(os.environ.get('CODEX_CAP_COOLDOWN_SEC', '10800'))            # 3h floor for usage caps
+          TRANSIENT_COOLDOWN_SEC = int(os.environ.get('CODEX_TRANSIENT_COOLDOWN_SEC', '300'))  # 5m for ambiguous 429s
+
+          def _is_usage_cap(exc_str):
+              """True when a 429 indicates a hard usage cap (account quota exhausted)
+              rather than a transient per-minute rate limit. ChatGPT surfaces caps as
+              'usage_limit_reached'; be conservative and only treat clear markers as a
+              hard cap — everything else gets the shorter transient cooldown."""
+              s = (exc_str or '').lower()
+              return any(t in s for t in ('usage_limit_reached', 'usage limit reached', 'usage limit'))
+
+          def _record_cap_cooldown(model, duration, kind):
+              """Park the CURRENTLY-ACTIVE account (state['last_label']) for `duration`
+              seconds so the selection loop skips it. Keyed by account label and
+              persisted in rotator_state.json. No-op if no active account is recorded
+              yet (old/empty state)."""
+              st = load_state()
+              label = st.get('last_label')
+              if not label:
+                  print(f'[rotator] {kind} 429 but no active account recorded yet — no cooldown set (model={model})', flush=True)
+                  return
+              cds = st.get('cooldowns')
+              if not isinstance(cds, dict):
+                  cds = {}
+              until = int(time.time()) + duration
+              cds[label] = until
+              st['cooldowns'] = cds
+              save_state(st)
+              until_str = datetime.datetime.fromtimestamp(until, datetime.timezone.utc).isoformat()
+              print(f'[rotator] account-{label} parked ({kind} cooldown {duration}s, until {until_str}) — model={model}', flush=True)
 
           def check_and_consume_signal():
               """Check if LiteLLM's rate-limit callback wrote a signal file. Returns True if we should rotate NOW."""
@@ -358,7 +401,16 @@ spec:
                       return False
                   # Consume the signal
                   model = sig.get('model', '?')
+                  exc = sig.get('exception', '') or ''
                   os.remove(SIGNAL_FILE)
+                  # A hard usage cap means the active account is exhausted for hours —
+                  # park it long so we stop round-robining straight back into it. An
+                  # ambiguous/transient 429 gets only a short park (we can't tell, so be
+                  # conservative: bench it briefly rather than for hours).
+                  if _is_usage_cap(exc):
+                      _record_cap_cooldown(model, CAP_COOLDOWN_SEC, 'usage-cap')
+                  else:
+                      _record_cap_cooldown(model, TRANSIENT_COOLDOWN_SEC, 'transient')
                   print(f'[rotator] rate-limit signal consumed — model={model}, rotating early', flush=True)
                   return True
               except Exception as e:
@@ -477,6 +529,20 @@ spec:
               exp_str = datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat() if exp else 'unknown'
               print(f'[rotator] active account-{label} (expires {exp_str})', flush=True)
 
+          def resolve_candidate(idx, candidates, now_ts, client_id):
+              """Return a chosen tuple (idx, label, access, refresh, id_tok, exp) for the
+              candidate at idx if its token is valid (or refreshable), else None."""
+              label, access, refresh, id_tok = candidates[idx]
+              exp = token_exp(access) if access else 0
+              if access and exp > now_ts + 60:
+                  return (idx, label, access, refresh, id_tok, exp)
+              if refresh and client_id:
+                  print(f'[rotator] account-{label} expired, refreshing…', flush=True)
+                  fresh = refresh_token_call(refresh, client_id, label)
+                  if fresh:
+                      return (idx, label, fresh['access_token'], fresh['refresh_token'], fresh['id_token'] or id_tok, fresh['exp'])
+              return None
+
           print(f'[rotator] starting — rotation every {ROTATION_INTERVAL_SEC}s (or on 429 signal)', flush=True)
           client_id = os.environ.get('OPENAI_CODEX_CLIENT_ID', '')
           # Clean any stale signal file from a previous pod instance
@@ -496,28 +562,42 @@ spec:
 
               state = load_state()
               start_idx = (state.get('last_index', -1) + 1) % len(candidates)
+              # Cap-cooldown filter: skip accounts parked by a recent usage-cap 429.
+              # Prune expired entries so the state file stays small. Old state files
+              # have no 'cooldowns' key -> {} -> nothing skipped (backward-compatible).
+              cooldowns = state.get('cooldowns') if isinstance(state.get('cooldowns'), dict) else {}
+              cooldowns = {l: t for l, t in cooldowns.items() if t > now_ts}
 
               chosen = None
+              skipped_cooled = []
               for offset in range(len(candidates)):
                   idx = (start_idx + offset) % len(candidates)
-                  label, access, refresh, id_tok = candidates[idx]
-                  exp = token_exp(access) if access else 0
-                  if access and exp > now_ts + 60:
-                      chosen = (idx, label, access, refresh, id_tok, exp)
+                  label = candidates[idx][0]
+                  if cooldowns.get(label, 0) > now_ts:
+                      until_str = datetime.datetime.fromtimestamp(cooldowns[label], datetime.timezone.utc).isoformat()
+                      print(f'[rotator] skipping account-{label} — usage-cap cooldown until {until_str}', flush=True)
+                      skipped_cooled.append(idx)
+                      continue
+                  chosen = resolve_candidate(idx, candidates, now_ts, client_id)
+                  if chosen:
                       break
-                  if refresh and client_id:
-                      print(f'[rotator] account-{label} expired, refreshing…', flush=True)
-                      fresh = refresh_token_call(refresh, client_id, label)
-                      if fresh:
-                          chosen = (idx, label, fresh['access_token'], fresh['refresh_token'], fresh['id_token'] or id_tok, fresh['exp'])
-                          break
+
+              # Never deadlock: if EVERY candidate is cooled down, fall through to the
+              # least-recently-cooled one (smallest cooldown-until) so the codex path
+              # always has *some* auth instead of zero. Its cooldown is left intact —
+              # the cap is real, we're just forced to use the least-bad option.
+              if not chosen and skipped_cooled and len(skipped_cooled) == len(candidates):
+                  fb_idx = min(skipped_cooled, key=lambda i: cooldowns.get(candidates[i][0], 0))
+                  fb_label = candidates[fb_idx][0]
+                  print(f'[rotator] ALL accounts usage-capped — falling back to least-recently-cooled account-{fb_label}', flush=True)
+                  chosen = resolve_candidate(fb_idx, candidates, now_ts, client_id)
 
               if not chosen:
                   print('[rotator] no usable account this tick, keeping existing auth.json', flush=True)
               else:
                   idx, label, access, refresh, id_tok, exp = chosen
                   write_auth(label, access, refresh, id_tok, exp)
-                  save_state({'last_index': idx, 'timestamp': now_ts})
+                  save_state({'last_index': idx, 'last_label': label, 'timestamp': now_ts, 'cooldowns': cooldowns})
 
               # Sleep until next scheduled tick OR until a rate-limit signal fires
               interruptible_sleep(ROTATION_INTERVAL_SEC)

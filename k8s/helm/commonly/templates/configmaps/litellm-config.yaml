@@ -291,6 +291,16 @@ data:
       # See feedback-litellm-retry-doubles-rotation-burn (2026-05-03 incident).
       num_retries: 1
       retry_after: 1
+      # Deployment cooldown: when a model deployment trips allowed_fails failures
+      # (e.g. a 429'd / failing Codex account), LiteLLM parks that deployment for
+      # cooldown_time seconds instead of immediately re-picking it on the next
+      # request. This complements the rotator's account-level cap-cooldown: the
+      # router stops hammering a sick deployment while the rotator swaps auth.json
+      # underneath. Conservative values — short enough that a transient blip
+      # recovers within a minute, long enough to break a tight re-pick loop.
+      # Does NOT alter the fallback chain order above.
+      allowed_fails: 2
+      cooldown_time: 60
 
     litellm_settings:
       # Drop unsupported params instead of erroring (important for OpenRouter quirks)
