@@ -29,6 +29,7 @@ import ChatRoom from '../components/ChatRoom';
 import ApiDevPage from '../components/ApiDevPage';
 import PodContextDevPage from '../components/PodContextDevPage';
 import GlobalIntegrations from '../components/admin/GlobalIntegrations';
+import V2AdminUsers from './components/V2AdminUsers';
 import ProtectedRoute from '../components/ProtectedRoute';
 import './v2.css';
 
@@ -261,7 +262,15 @@ const V2App: React.FC = () => {
                     false,
                   )}
                 />
-                <Route path="admin/users" element={<Navigate to="/v2/profile?tab=user-admin" replace />} />
+                <Route
+                  path="admin/users"
+                  element={feature(
+                    'User Admin',
+                    'Review waitlist requests and manage invitation codes.',
+                    <ProtectedRoute requireAdmin><V2AdminUsers /></ProtectedRoute>,
+                    false,
+                  )}
+                />
                 <Route
                   path="dev/api"
                   element={feature(
