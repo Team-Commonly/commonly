@@ -222,7 +222,7 @@ export async function recordAgentDmConclusion(args: RecordAgentDmConclusionArgs)
     // Speaker gets the verbatim takeaway; listener(s) get a `@peer:`-prefixed
     // version so the entry reads as "what the other side said" — eliminates
     // the "why does my memory say I shipped X when I didn't?" failure mode.
-    const writes = agents.map((a) => {
+    const writes = agents.map(async (a) => {
       const isSpeaker = a.agentName === senderName && a.instanceId === senderInst;
       const peers = agents
         .filter((p) => !(p.agentName === a.agentName && p.instanceId === a.instanceId))
@@ -231,7 +231,7 @@ export async function recordAgentDmConclusion(args: RecordAgentDmConclusionArgs)
       const takeaway = isSpeaker
         ? speakerTakeaway
         : truncateTakeaway(`@${speakerLabel}: ${speakerTakeaway}`);
-      return appendSystemExchange({
+      const result = await appendSystemExchange({
         agentName: a.agentName,
         instanceId: a.instanceId,
         kind: 'agent-dm-conclusion',
@@ -241,10 +241,23 @@ export async function recordAgentDmConclusion(args: RecordAgentDmConclusionArgs)
         takeaway,
         ts,
       });
+      // appendSystemExchange returns null (it does NOT throw) on a rejected
+      // input (missing identity, unknown kind, bad surfacePodId). A null here
+      // is a silently-dropped memory write — make it visible.
+      if (result === null) {
+        console.error(
+          '[system-exchange] append dropped (appendSystemExchange returned null) '
+          + `kind=agent-dm-conclusion agentName=${a.agentName} instanceId=${a.instanceId} podId=${String(podId)}`,
+        );
+      }
     });
     await Promise.all(writes);
   } catch (err) {
-    console.warn('[system-exchange] recordAgentDmConclusion failed:', (err as Error).message);
+    console.error(
+      '[system-exchange] append dropped: recordAgentDmConclusion threw '
+      + `kind=agent-dm-conclusion agentName=${String(senderAgentName || '').toLowerCase()} `
+      + `instanceId=${String(senderInstanceId || 'default')} podId=${String(podId)}: ${(err as Error).message}`,
+    );
   }
 }
 
@@ -269,11 +282,11 @@ export async function recordAgentDmLoopTrip(args: RecordAgentDmLoopTripArgs): Pr
     const surfaceLabel = surfaceLabelFor(podType, podName, podId);
     const takeaway = '8 consecutive bot turns within 30 min — guard tripped';
 
-    const writes = agents.map((a) => {
+    const writes = agents.map(async (a) => {
       const peers = agents
         .filter((p) => !(p.agentName === a.agentName && p.instanceId === a.instanceId))
         .map((p) => p.instanceId);
-      return appendSystemExchange({
+      const result = await appendSystemExchange({
         agentName: a.agentName,
         instanceId: a.instanceId,
         kind: 'agent-dm-loop-trip',
@@ -283,10 +296,19 @@ export async function recordAgentDmLoopTrip(args: RecordAgentDmLoopTripArgs): Pr
         takeaway,
         ts,
       });
+      if (result === null) {
+        console.error(
+          '[system-exchange] append dropped (appendSystemExchange returned null) '
+          + `kind=agent-dm-loop-trip agentName=${a.agentName} instanceId=${a.instanceId} podId=${String(podId)}`,
+        );
+      }
     });
     await Promise.all(writes);
   } catch (err) {
-    console.warn('[system-exchange] recordAgentDmLoopTrip failed:', (err as Error).message);
+    console.error(
+      '[system-exchange] append dropped: recordAgentDmLoopTrip threw '
+      + `kind=agent-dm-loop-trip podId=${String(podId)}: ${(err as Error).message}`,
+    );
   }
 }
 
@@ -366,7 +388,7 @@ export async function recordTaskCompleted(args: RecordTaskCompletedArgs): Promis
       : '';
     const takeaway = truncateTakeaway(`${titlePart}${tailPart}`);
 
-    await appendSystemExchange({
+    const result = await appendSystemExchange({
       agentName: assigneeLower,
       instanceId,
       kind: 'task-completed',
@@ -376,7 +398,16 @@ export async function recordTaskCompleted(args: RecordTaskCompletedArgs): Promis
       takeaway,
       ts,
     });
+    if (result === null) {
+      console.error(
+        '[system-exchange] append dropped (appendSystemExchange returned null) '
+        + `kind=task-completed agentName=${assigneeLower} instanceId=${instanceId} podId=${String(podId)}`,
+      );
+    }
   } catch (err) {
-    console.warn('[system-exchange] recordTaskCompleted failed:', (err as Error).message);
+    console.error(
+      '[system-exchange] append dropped: recordTaskCompleted threw '
+      + `kind=task-completed agentName=${String(assignee || '').toLowerCase()} podId=${String(podId)}: ${(err as Error).message}`,
+    );
   }
 }
