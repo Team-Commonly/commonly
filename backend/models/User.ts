@@ -51,6 +51,14 @@ export interface IUser extends Document {
   verified: boolean;
   profilePicture: string;
   role: UserRole;
+  // Capability gate for hosted (cloud) agents. Defaults to false so opening
+  // registration doesn't hand every new signup free Commonly-managed compute.
+  // Admins are implicitly allowed (the gate checks role === 'admin' OR this
+  // flag). BYO / self-hosted agents are never gated by this field — see
+  // agentIdentityService.isCloudRuntime + routes/registry/{install,provision}.
+  entitlements: {
+    cloudAgents: boolean;
+  };
   apiToken?: string;
   apiTokenCreatedAt?: Date;
   apiTokenScopes: string[];
@@ -123,6 +131,11 @@ const userSchema = new Schema<IUser>({
   verified: { type: Boolean, default: false },
   profilePicture: { type: String, default: 'default' },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  // Hosted-agent entitlement gate (see IUser.entitlements). Default false;
+  // admins bypass it. Nested object so future entitlements slot in here.
+  entitlements: {
+    cloudAgents: { type: Boolean, default: false },
+  },
   apiToken: { type: String, unique: true, sparse: true },
   apiTokenCreatedAt: { type: Date },
   apiTokenScopes: [{ type: String }],

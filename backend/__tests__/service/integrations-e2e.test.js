@@ -94,6 +94,9 @@ describe('Integrations E2E Tests', () => {
       username: 'integrationadmin',
       email: 'integrationadmin@test.com',
       password: 'password123',
+      // commonly-bot is a cloud (internal) agent — entitle the installer so the
+      // hosted-agent gate passes.
+      entitlements: { cloudAgents: true },
     });
 
     authToken = jwt.sign({ id: testUser._id.toString() }, JWT_SECRET);

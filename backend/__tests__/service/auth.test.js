@@ -3,6 +3,7 @@ const express = require('express');
 // eslint-disable-next-line no-unused-vars
 const mongoose = require('mongoose');
 const User = require('../../models/User');
+const Pod = require('../../models/Pod');
 const authRoutes = require('../../routes/auth');
 const {
   setupMongoDb,
@@ -68,6 +69,45 @@ describe('Auth Routes Integration Tests', () => {
       expect(user).toBeTruthy();
       expect(user.username).toBe(userData.username);
       expect(typeof user.verified).toBe('boolean');
+    });
+
+    it('creates a default private workspace pod owned by the new user', async () => {
+      const userData = {
+        username: 'workspaceowner',
+        email: 'workspace@example.com',
+        password: 'Password123!',
+      };
+
+      await request(app)
+        .post('/api/auth/register')
+        .send(userData)
+        .expect(201);
+
+      const user = await User.findOne({ email: userData.email });
+      expect(user).toBeTruthy();
+
+      const pods = await Pod.find({ createdBy: user._id });
+      expect(pods).toHaveLength(1);
+      const pod = pods[0];
+      expect(pod.name).toBe('My Workspace');
+      expect(pod.type).toBe('chat');
+      expect(pod.joinPolicy).toBe('invite-only');
+      // Creator is the sole member.
+      expect(pod.members.map((m) => m.toString())).toEqual([user._id.toString()]);
+    });
+
+    it('defaults entitlements.cloudAgents to false for new signups', async () => {
+      await request(app)
+        .post('/api/auth/register')
+        .send({
+          username: 'gateduser',
+          email: 'gated@example.com',
+          password: 'Password123!',
+        })
+        .expect(201);
+
+      const user = await User.findOne({ email: 'gated@example.com' });
+      expect(user.entitlements.cloudAgents).toBe(false);
     });
 
     it('should return 400 for existing user', async () => {

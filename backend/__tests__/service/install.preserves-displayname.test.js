@@ -50,6 +50,9 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
       username: 'installer',
       email: 'installer@test.com',
       password: 'password123',
+      // openclaw is a cloud (moltbot) agent — entitle the installer so the
+      // hosted-agent gate passes; this test asserts displayName preservation.
+      entitlements: { cloudAgents: true },
     });
     installerToken = jwt.sign({ id: installer._id.toString() }, JWT_SECRET);
 

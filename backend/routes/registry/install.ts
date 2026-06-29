@@ -270,6 +270,32 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       installConfig.runtime = runtimeConfig;
     }
 
+    // Hosted-agent entitlement gate (open-registration prerequisite). A cloud
+    // (Commonly-hosted) runtime requires the installer to be an admin OR to
+    // carry the `cloudAgents` entitlement. BYO / self-serve installs (webhook,
+    // claude-code, or host:'byo') are intentionally NOT gated — connecting your
+    // own local agent stays open to all authenticated users. Resolve the
+    // effective runtimeType from the same place we just stored it
+    // (config.runtime), falling back to the agent's AGENT_TYPES runtime so a
+    // built-in cloud agent (openclaw→moltbot, commonly-bot→internal) is caught
+    // even when the caller omits an explicit runtimeType.
+    const effectiveRuntimeType = String(runtimeConfig.runtimeType || '').trim().toLowerCase()
+      || String(AgentIdentityService.getAgentTypeConfig(safeAgentName)?.runtime || '').trim().toLowerCase();
+    if (AgentIdentityService.isCloudRuntime({
+      runtimeType: effectiveRuntimeType,
+      host: runtimeConfig.host,
+    })) {
+      const installerUser = await User.findById(userId).select('role entitlements').lean();
+      const isAdmin = installerUser?.role === 'admin';
+      const isEntitled = installerUser?.entitlements?.cloudAgents === true;
+      if (!isAdmin && !isEntitled) {
+        return res.status(403).json({
+          code: 'cloud_agents_not_entitled',
+          message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
+        });
+      }
+    }
+
     const grantedScopes = Array.from(new Set([
       ...requiredScopes,
       ...scopes,

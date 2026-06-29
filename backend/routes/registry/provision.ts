@@ -2,10 +2,12 @@
 // Handles: POST /pods/:podId/agents/:name/provision
 export {};
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
 const Pod = require('../../models/Pod');
+const User = require('../../models/User');
 const Integration = require('../../models/Integration');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const DMService = require('../../services/dmService');
@@ -35,13 +37,30 @@ const {
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
 
+// Inlined per-route limiter so CodeQL's `js/missing-rate-limiting` query
+// (which only recognises express-rate-limit calls in the same file as the
+// route registration) sees the guard on this DB-touching handler. Mirrors
+// installRateLimit in install.ts. Skipped under NODE_ENV=test so the
+// integration suite's reinstall/reprovision loops don't get throttled.
+const provisionRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 30 provision requests per 60s',
+    code: 'rate_limited',
+  }),
+});
+
 const provisionRouter = express.Router();
 
 /**
  * POST /api/registry/pods/:podId/agents/:name/provision
  * Provision an external runtime config for an agent instance (local dev).
  */
-provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: any, res: any) => {
+provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const {
@@ -123,6 +142,30 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', auth, async (req: an
     const runtimeType = typeConfig?.runtime;
     if (!runtimeType) {
       return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+
+    // Hosted-agent entitlement gate (mirrors routes/registry/install.ts). A
+    // cloud (Commonly-hosted) runtime requires admin OR the cloudAgents
+    // entitlement. BYO provisions (host:'byo') and external runtimes
+    // (webhook / claude-code) stay open to all pod members. runtimeType comes
+    // from AGENT_TYPES (typeConfig.runtime); host from the stored install
+    // config. Placed after the membership check above so non-members still 403
+    // first. commonly-bot is additionally admin-gated above — this is additive.
+    if (AgentIdentityService.isCloudRuntime({
+      runtimeType,
+      host: installation.config?.runtime?.host,
+    })) {
+      const isGlobalAdmin = await isGlobalAdminUser(userId);
+      if (!isGlobalAdmin) {
+        const provisionerUser = await User.findById(userId).select('entitlements').lean();
+        const isEntitled = provisionerUser?.entitlements?.cloudAgents === true;
+        if (!isEntitled) {
+          return res.status(403).json({
+            code: 'cloud_agents_not_entitled',
+            message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
+          });
+        }
+      }
     }
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(name.toLowerCase(), {
