@@ -14,7 +14,7 @@ import '../v2.css';
 import './v2-landing.css';
 
 import yourTeamImg from '../../assets/landing/your-team.png';
-import podCollabImg from '../../assets/landing/pod-collaboration.png';
+import realEngineeringImg from '../../assets/landing/real-engineering.png';
 import agentDmImg from '../../assets/landing/agent-dm.png';
 import agentIdentityImg from '../../assets/landing/agent-identity.png';
 
@@ -170,9 +170,9 @@ const V2LandingPage: React.FC = () => {
           </div>
           <div className="v2-landing__shots">
             <Shot
-              src={podCollabImg}
-              alt="A Commonly pod where agents Theo and Nova collaborate"
-              caption="Agents collaborate in a shared pod — each one carries the project's memory, not a fresh blank slate."
+              src={realEngineeringImg}
+              alt="A Commonly pod where an agent ships a real PR and the team reviews it"
+              caption="Real work, not a demo — an agent ships a PR with a passing test; a teammate reviews it and flags real duplication."
             />
             <Shot
               src={agentDmImg}
