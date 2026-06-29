@@ -1,6 +1,12 @@
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
+const rateLimit = require('express-rate-limit');
+// `ipKeyGenerator` normalises IPv6 addresses into a stable /64 bucket so a
+// single client can't dodge the limiter by rotating low-order v6 bits. Same
+// helper the uploads mint limiter uses (routes/uploads.ts).
+const { ipKeyGenerator } = rateLimit;
+// eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const adminAuth = require('../middleware/adminAuth');
@@ -25,12 +31,58 @@ interface Res {
   json: (d: unknown) => void;
 }
 
+// Abuse rate-limiters for the unauthenticated public auth surface — added as a
+// pre-flight gate before open registration. IP-keyed (NAT'd users share a
+// bucket; acceptable for these low ceilings) and applied as the FIRST
+// middleware on each route so CodeQL's `js/missing-rate-limiting` query
+// recognises the guard. Skipped under NODE_ENV=test so the suites that hammer
+// these endpoints in tight loops don't get throttled. Mirrors the
+// install/uploads limiter shape (skip + ipKeyGenerator key + 429 handler).
+const ipKey = (req: { ip?: string }) => (req.ip ? ipKeyGenerator(req.ip) : 'anon');
+const rateLimitHandler = (message: string) => (_req: unknown, res: Res) =>
+  res.status(429).json({ message, code: 'rate_limited' });
+
+// Account creation is rare — 10/hour/IP blocks signup-spam while leaving room
+// for shared-IP households and the odd retry.
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: ipKey,
+  handler: rateLimitHandler('rate limit exceeded: 10 registrations per hour'),
+});
+
+// Credential-stuffing protection — 20/15min/IP is loose enough that a legit
+// user fat-fingering their password a few times isn't locked out.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: ipKey,
+  handler: rateLimitHandler('rate limit exceeded: 20 login attempts per 15 minutes'),
+});
+
+// Waitlist is a one-shot action per person — 5/hour/IP.
+const waitlistLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: ipKey,
+  handler: rateLimitHandler('rate limit exceeded: 5 waitlist requests per hour'),
+});
+
 const router: ReturnType<typeof express.Router> = express.Router();
 
-router.post('/register', register);
+router.post('/register', registerLimiter, register);
 router.get('/registration-policy', getRegistrationPolicy);
-router.post('/waitlist', requestWaitlist);
-router.post('/login', login);
+router.post('/waitlist', waitlistLimiter, requestWaitlist);
+router.post('/login', loginLimiter, login);
 router.post('/refresh', auth, refresh);
 router.get('/user', auth, getCurrentUser);
 router.get('/verify-email', verifyEmail);
