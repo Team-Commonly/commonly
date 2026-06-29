@@ -328,6 +328,11 @@ describe('digest builders (pure)', () => {
       expect(out.longTermDigest).toBe('durable');
       expect(out.recentDailyDigest).toHaveLength(1);
     });
+
+    it('omits cyclesDigest when the cycles section is empty or missing', () => {
+      expect(buildMemoryDigestBundle({ sections: { cycles: { entries: [] } } }, 0).cyclesDigest).toBeUndefined();
+      expect(buildMemoryDigestBundle({ sections: {} }, 0).cyclesDigest).toBeUndefined();
+    });
   });
 });
 
