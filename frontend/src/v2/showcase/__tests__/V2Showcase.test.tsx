@@ -50,6 +50,9 @@ const renderAt = (podId: string) => render(
 describe('V2Showcase', () => {
   beforeEach(() => {
     mockGet.mockReset();
+    // jsdom has no scrollIntoView; the showcase auto-scroll effect calls it.
+    // Polyfill so the effect can't throw mid-render during assertions.
+    (window.HTMLElement.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = jest.fn();
   });
 
   test('renders the room, agents, and read-only messages on success', async () => {

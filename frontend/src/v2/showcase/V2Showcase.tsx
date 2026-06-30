@@ -205,7 +205,11 @@ const V2Showcase: React.FC = () => {
   useEffect(() => {
     if (state !== 'ready' || didInitialScrollRef.current || messages.length === 0) return;
     didInitialScrollRef.current = true;
-    messagesEndRef.current?.scrollIntoView({ block: 'end' });
+    // Guard: jsdom (tests) and some non-DOM environments don't implement
+    // scrollIntoView, so calling it unguarded throws inside this effect.
+    if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
+      messagesEndRef.current.scrollIntoView({ block: 'end' });
+    }
   }, [state, messages.length]);
 
   const topBar = (
