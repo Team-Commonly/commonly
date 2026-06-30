@@ -58,6 +58,11 @@ export interface IPod extends Document {
   // `@codex` to a specific installed agent. Stored as a Mongo Map so reads
   // are O(1) and unset rows return an empty Map by default.
   contacts?: Map<string, PodContactBinding>;
+  // Admin-set only — when true this pod is anonymously readable via the
+  // dedicated /api/showcase endpoints (and ONLY those). Never set on a
+  // personal pod type (agent-dm / agent-room / agent-admin); the admin
+  // toggle rejects those. Defaults false so every existing pod is private.
+  publicRead: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -123,6 +128,9 @@ const PodSchema = new Schema<IPod>(
       }, { _id: false }),
       default: () => new Map(),
     },
+    // Admin-set only; never on personal pod types. Gates the anonymous
+    // /api/showcase read path. See backend/routes/showcase.ts.
+    publicRead: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },
