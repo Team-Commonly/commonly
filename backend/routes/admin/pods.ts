@@ -2,6 +2,8 @@ export {};
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const rateLimit = require('express-rate-limit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../../middleware/auth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const adminAuth = require('../../middleware/adminAuth');
@@ -11,6 +13,18 @@ const Pod = require('../../models/Pod');
 const AuditLog = require('../../models/AuditLog');
 
 const router = express.Router();
+
+// Inlined limiter so CodeQL's js/missing-rate-limiting recognises the guard on
+// this DB-touching admin route; skipped under NODE_ENV=test. Admin-gated, so
+// this is defense-in-depth, not the primary control.
+const adminPodsRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  handler: (_req: any, res: any) => res.status(429).json({ error: 'rate_limited' }),
+});
 
 // Personal / DM pod types that must NEVER be published to the public
 // showcase, regardless of admin intent. A 1:1 DM is private by definition.
@@ -29,6 +43,7 @@ const PERSONAL_POD_TYPES = new Set(['agent-dm', 'agent-room', 'agent-admin']);
 // public forever, including everything said in it from now on."
 router.post(
   '/:podId/showcase',
+  adminPodsRateLimit,
   auth,
   adminAuth,
   async (req: any, res: any) => {
