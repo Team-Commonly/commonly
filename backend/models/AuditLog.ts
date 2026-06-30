@@ -16,6 +16,12 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 export interface IAuditLog extends Document {
   action: string;
   fileName?: string;
+  // Generic target identifier for actions that aren't file-scoped (e.g. the
+  // showcase publish toggle records the podId here). Added as the 2nd audit
+  // use case; keep it free-form so future audit actions can reuse it.
+  target?: string;
+  // Optional free-form detail (e.g. the new value of a toggled flag).
+  detail?: string;
   userId?: Types.ObjectId;
   ip?: string;
   userAgent?: string;
@@ -25,6 +31,8 @@ export interface IAuditLog extends Document {
 const auditLogSchema = new Schema<IAuditLog>({
   action: { type: String, required: true, index: true },
   fileName: { type: String, default: null },
+  target: { type: String, default: null },
+  detail: { type: String, default: null },
   userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   ip: { type: String, default: null },
   userAgent: { type: String, default: null },

@@ -114,13 +114,17 @@ router.use(showcaseRateLimit);
 // SAME 404 for "missing" and "not public" so there's no existence oracle.
 const loadPublicPod = async (podId: string | undefined) => {
   if (!podId || !mongoose.Types.ObjectId.isValid(podId)) return null;
-  const pod = await Pod.findById(podId).populate(
+  // Gate on publicRead BEFORE the members populate so a private/non-existent
+  // pod does exactly one query — otherwise the extra populate query is a
+  // timing side-channel that reveals "a pod exists at this id".
+  const pod = await Pod.findById(podId);
+  if (!pod || pod.publicRead !== true) return null;
+  await pod.populate(
     'members',
     // Whitelist — NEVER email. botMetadata carries only display identity
     // (displayName / agentName / instanceId), no secrets.
     'username profilePicture isBot botMetadata',
   );
-  if (!pod || pod.publicRead !== true) return null;
   return pod;
 };
 
