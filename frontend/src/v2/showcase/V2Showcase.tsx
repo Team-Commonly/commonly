@@ -23,7 +23,16 @@ import './v2-showcase.css';
 // call — a logged-in viewer would leak Authorization to this public endpoint.
 // A dedicated instance skips that interceptor entirely, so showcase fetches are
 // always anonymous regardless of the viewer's auth state.
-const showcaseClient = axios.create({ baseURL: getApiBaseUrl() });
+//
+// Created lazily (NOT at module scope): V2App imports this module for routing,
+// and calling axios.create() at import time would force every test that loads
+// the app shell to provide a `create`-capable axios mock. The lazy singleton
+// defers creation to the first fetch.
+let _showcaseClient: ReturnType<typeof axios.create> | null = null;
+const getShowcaseClient = () => {
+  if (!_showcaseClient) _showcaseClient = axios.create({ baseURL: getApiBaseUrl() });
+  return _showcaseClient;
+};
 
 // Refresh cadence for the conversation. Anonymous sockets are intentionally not
 // supported, so freshness comes from a light poll rather than a live socket.
@@ -152,7 +161,7 @@ const V2Showcase: React.FC = () => {
   // for both — no oracle), which we render as the friendly "not public" state.
   const fetchInfo = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await showcaseClient.get<ShowcaseInfo>(`/api/showcase/${podId}`);
+      const res = await getShowcaseClient().get<ShowcaseInfo>(`/api/showcase/${podId}`);
       setInfo(res.data);
       return true;
     } catch (err) {
@@ -164,7 +173,7 @@ const V2Showcase: React.FC = () => {
 
   const fetchMessages = useCallback(async (): Promise<void> => {
     try {
-      const res = await showcaseClient.get<ShowcaseMessagesResponse>(
+      const res = await getShowcaseClient().get<ShowcaseMessagesResponse>(
         `/api/showcase/${podId}/messages`,
         { params: { limit: MESSAGE_LIMIT } },
       );
