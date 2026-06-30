@@ -202,14 +202,22 @@ describe('digest builders (pure)', () => {
       expect(buildCyclesDigest({ sections: {} })).toEqual([]);
     });
 
-    it('returns up to N most-recent entries', () => {
-      const entries = Array.from({ length: 10 }, (_, i) => ({ ts: new Date(), content: `c${i}` }));
-      expect(buildCyclesDigest({ sections: { cycles: { entries } } }, 3)).toHaveLength(3);
+    it('returns the most recent entries in storage order up to the cap', () => {
+      const entries = [
+        { ts: new Date('2026-05-04T00:02:00Z'), content: 'newest' },
+        { ts: new Date('2026-05-04T00:01:00Z'), content: 'middle' },
+        { ts: new Date('2026-05-04T00:00:00Z'), content: 'older' },
+      ];
+      expect(buildCyclesDigest({ sections: { cycles: { entries } } }, 2)).toEqual(entries.slice(0, 2));
     });
 
     it('emits all entries when fewer than the cap', () => {
       const entries = [{ ts: new Date(), content: 'one' }, { ts: new Date(), content: 'two' }];
-      expect(buildCyclesDigest({ sections: { cycles: { entries } } }, 5)).toHaveLength(2);
+      expect(buildCyclesDigest({ sections: { cycles: { entries } } }, 5)).toEqual(entries);
+    });
+
+    it('returns [] when cycles exists but entries is empty', () => {
+      expect(buildCyclesDigest({ sections: { cycles: { entries: [] } } })).toEqual([]);
     });
   });
 
