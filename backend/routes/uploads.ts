@@ -18,7 +18,7 @@
 
 // ADR-002 Phase 1b: ESM import (not require) so CodeQL's js/missing-rate-limiting
 // query recognises the middleware on the mint route.
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
 import path from 'path';
 import {
@@ -27,6 +27,7 @@ import {
   signAttachmentToken,
 } from '../services/attachmentAccess';
 import { logAttachmentTokenMint } from '../services/auditService';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -133,10 +134,10 @@ const uploadSingle = (field: string) => (req: AuthReq, res: Res, next: (err?: un
 // images (clients cache until TTL expiry) and low enough that a compromised
 // JWT can't scrape attachments en masse. Keyed on the Authorization header
 // (hashed) so each user's bearer token gets its own bucket — NAT'd users
-// sharing one office IP don't collide. Falling back to `req.ip` covers the
-// unauth path. Inlined in this file and applied as the FIRST middleware on
-// the route so CodeQL's `js/missing-rate-limiting` query sees it (the query
-// only recognises the limiter when it precedes other middleware).
+// sharing one office IP don't collide. Falling back to the Cloudflare edge IP
+// covers the unauth path. Inlined in this file and applied as the FIRST
+// middleware on the route so CodeQL's `js/missing-rate-limiting` query sees it
+// (the query only recognises the limiter when it precedes other middleware).
 const mintRateLimit = rateLimit({
   windowMs: 60_000,
   max: 30,
@@ -147,7 +148,7 @@ const mintRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: Res) =>
     res.status(429).json({ msg: 'rate limit exceeded: 30 mints per 60s' }),
@@ -166,7 +167,7 @@ const artifactReadRateLimit = rateLimit({
   max: 240,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: AuthReq) => (req.ip ? ipKeyGenerator(req.ip) : 'anon'),
+  keyGenerator: (req: AuthReq) => cloudflareIpRateLimitKeyGenerator(req as never),
   handler: (_req: unknown, res: Res) =>
     res.status(429).json({ msg: 'rate limit exceeded: 240 requests per 60s' }),
 });

@@ -2,10 +2,7 @@
 const express = require('express');
 // eslint-disable-next-line global-require
 const rateLimit = require('express-rate-limit');
-// `ipKeyGenerator` normalises IPv6 addresses into a stable /64 bucket so a
-// single client can't dodge the limiter by rotating low-order v6 bits. Same
-// helper the uploads mint limiter uses (routes/uploads.ts).
-const { ipKeyGenerator } = rateLimit;
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -32,13 +29,11 @@ interface Res {
 }
 
 // Abuse rate-limiters for the unauthenticated public auth surface — added as a
-// pre-flight gate before open registration. IP-keyed (NAT'd users share a
-// bucket; acceptable for these low ceilings) and applied as the FIRST
-// middleware on each route so CodeQL's `js/missing-rate-limiting` query
-// recognises the guard. Skipped under NODE_ENV=test so the suites that hammer
-// these endpoints in tight loops don't get throttled. Mirrors the
-// install/uploads limiter shape (skip + ipKeyGenerator key + 429 handler).
-const ipKey = (req: { ip?: string }) => (req.ip ? ipKeyGenerator(req.ip) : 'anon');
+// pre-flight gate before open registration. Cloudflare sets
+// `CF-Connecting-IP` at the edge, so this avoids trusting a client-supplied
+// `X-Forwarded-For` once `app.set('trust proxy', true)` is enabled. Skipped
+// under NODE_ENV=test so the suites that hammer these endpoints in tight loops
+// don't get throttled.
 const rateLimitHandler = (message: string) => (_req: unknown, res: Res) =>
   res.status(429).json({ message, code: 'rate_limited' });
 
@@ -50,7 +45,7 @@ const registerLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
-  keyGenerator: ipKey,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
   handler: rateLimitHandler('rate limit exceeded: 10 registrations per hour'),
 });
 
@@ -62,7 +57,7 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
-  keyGenerator: ipKey,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
   handler: rateLimitHandler('rate limit exceeded: 20 login attempts per 15 minutes'),
 });
 
@@ -73,7 +68,7 @@ const waitlistLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
-  keyGenerator: ipKey,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
   handler: rateLimitHandler('rate limit exceeded: 5 waitlist requests per hour'),
 });
 
