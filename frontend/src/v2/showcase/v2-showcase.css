@@ -1,0 +1,231 @@
+/* Public read-only showcase view. Logged-out front-door onto a real Commonly
+   room. Strictly v2 design language — tokens from v2.css, one accent, borders,
+   sentence case. Mobile-safe down to 390px (no fixed widths, no horizontal
+   overflow). Self-wraps in .v2-root so tokens apply wherever it mounts. */
+
+.v2-showcase {
+  min-height: 100vh;
+  background: var(--v2-bg);
+  color: var(--v2-text-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Top bar ---- */
+.v2-showcase__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+}
+.v2-showcase__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--v2-text-primary);
+}
+.v2-showcase__mark { display: inline-flex; color: var(--v2-accent); }
+.v2-showcase__brand-name { font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
+.v2-showcase__nav { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.v2-showcase__navlink {
+  color: var(--v2-text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+.v2-showcase__navlink:hover { color: var(--v2-text-primary); }
+
+/* ---- Buttons (mirror landing button language) ---- */
+.v2-showcase__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 20px;
+  border-radius: var(--v2-radius);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.v2-showcase__btn--sm { height: 36px; padding: 0 16px; font-size: 14px; }
+.v2-showcase__btn--primary {
+  color: #fff;
+  background: var(--v2-accent);
+  border-color: var(--v2-accent);
+}
+.v2-showcase__btn--primary:hover {
+  background: var(--v2-accent-strong);
+  border-color: var(--v2-accent-strong);
+}
+.v2-showcase__btn--ghost {
+  color: var(--v2-text-primary);
+  background: var(--v2-surface);
+  border-color: var(--v2-border-strong, var(--v2-border));
+}
+.v2-showcase__btn--ghost:hover {
+  background: var(--v2-surface-hover);
+}
+
+/* ---- Sticky conversion banner ---- */
+.v2-showcase__banner {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  background: var(--v2-accent-soft);
+  border-bottom: 1px solid var(--v2-accent);
+}
+.v2-showcase__banner-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--v2-accent-deep, var(--v2-accent-text));
+}
+.v2-showcase__banner-cta { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ---- Main column ---- */
+.v2-showcase__main {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+  box-sizing: border-box;
+}
+.v2-showcase__center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 20px;
+}
+
+/* ---- Room header ---- */
+.v2-showcase__room-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.v2-showcase__room-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.v2-showcase__room-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: var(--v2-radius);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+  font-weight: 700;
+  font-size: 15px;
+}
+.v2-showcase__room-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.v2-showcase__room-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--v2-text-tertiary);
+  margin-top: 2px;
+}
+.v2-showcase__room-live { color: var(--v2-text-muted); }
+.v2-showcase__agents { display: inline-flex; align-items: center; gap: 4px; }
+.v2-showcase__agents-more {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-tertiary);
+  margin-left: 2px;
+}
+.v2-showcase__room-desc {
+  margin: 14px 0 0;
+  color: var(--v2-text-secondary);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Messages (read-only) ---- */
+.v2-showcase__messages {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2-showcase__older-note {
+  text-align: center;
+  font-size: 12px;
+  color: var(--v2-text-muted);
+  padding: 8px 0 12px;
+}
+
+/* ---- Empty / not-public states ---- */
+.v2-showcase__empty {
+  text-align: center;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 40px 8px;
+}
+.v2-showcase__empty-title { font-size: 18px; font-weight: 700; }
+.v2-showcase__empty-text {
+  margin-top: 8px;
+  color: var(--v2-text-secondary);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.v2-showcase__empty-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* ---- Footer conversion card ---- */
+.v2-showcase__footer-cta {
+  margin-top: 40px;
+  padding: 28px 24px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface-tint);
+  text-align: center;
+}
+.v2-showcase__footer-title { font-size: 18px; font-weight: 700; }
+.v2-showcase__footer-text {
+  margin-top: 8px;
+  color: var(--v2-text-secondary);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.v2-showcase__footer-cta .v2-showcase__empty-cta { margin-top: 20px; }
+
+/* ---- Mobile (<= 480px) ---- */
+@media (max-width: 480px) {
+  .v2-showcase__bar { padding: 12px 16px; }
+  .v2-showcase__nav { gap: 12px; }
+  .v2-showcase__banner { padding: 10px 16px; }
+  .v2-showcase__banner-text { font-size: 13px; }
+  .v2-showcase__main { padding: 20px 16px 56px; }
+  .v2-showcase__room-name { font-size: 18px; }
+}

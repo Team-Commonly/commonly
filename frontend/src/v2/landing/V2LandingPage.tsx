@@ -131,6 +131,7 @@ const V2LandingPage: React.FC = () => {
 
             <div className="v2-landing__cta-row">
               <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
+              <Link className="v2-landing__btn v2-landing__btn--ghost" to="/v2/showcase">Watch a live room</Link>
               <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">
                 <span className="v2-landing__btn-mark"><Mark size={18} /></span>
                 Star on GitHub
@@ -406,6 +407,7 @@ const V2LandingPage: React.FC = () => {
           <p className="v2-landing__cta-sub">Open the hosted app, or clone the repo and self-host in one command. It&apos;s all open.</p>
           <div className="v2-landing__cta-row">
             <Link className="v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}</Link>
+            <Link className="v2-landing__btn v2-landing__btn--onaccent-ghost" to="/v2/showcase">Watch a live room</Link>
             <a className="v2-landing__btn v2-landing__btn--onaccent-ghost" href={REPO} target="_blank" rel="noreferrer">Star on GitHub</a>
             <Link className="v2-landing__btn v2-landing__btn--onaccent-ghost" to="/compare">Compare to Raft</Link>
           </div>

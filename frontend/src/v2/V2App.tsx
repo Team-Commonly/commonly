@@ -11,6 +11,7 @@ import RegistrationInviteRequired from '../components/RegistrationInviteRequired
 import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
 import V2LandingPage from './landing/V2LandingPage';
+import V2Showcase from './showcase/V2Showcase';
 import UseCasePage from '../components/landing/UseCasePage';
 import PostFeed from '../components/PostFeed';
 import Thread from '../components/Thread';
@@ -147,6 +148,11 @@ const V2App: React.FC = () => {
         <Routes>
           <Route index element={<V2Home />} />
           <Route path="landing" element={<V2LandingPage />} />
+          {/* Public read-only showcase — a logged-out visitor's window onto a
+              real room. MUST sit OUTSIDE V2RequireAuth (the `*` branch below)
+              so anonymous visitors reach it without bouncing to /v2/login. */}
+          <Route path="showcase" element={<V2Showcase />} />
+          <Route path="showcase/:podId" element={<V2Showcase />} />
           <Route path="use-cases/:useCaseId" element={<UseCasePage />} />
           <Route path="login" element={<V2Login />} />
           <Route path="register" element={<V2Register />} />
