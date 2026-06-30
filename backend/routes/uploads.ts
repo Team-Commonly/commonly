@@ -153,6 +153,24 @@ const mintRateLimit = rateLimit({
     res.status(429).json({ msg: 'rate limit exceeded: 30 mints per 60s' }),
 });
 
+// IP-keyed limiter for the UNAUTHENTICATED artifact GETs below
+// (`/:fileName` + `/:fileName/preview-pptx-html`). These have public read by
+// design today (the showcase renders artifacts through them, ADR-002 Phase 1);
+// this blunts mass scraping without changing their auth. The full signed-URL
+// flip that removes public-read is the documented follow-up. ~240/min/IP is
+// generous for a showcase page loading dozens of artifacts but caps a scraper.
+// Applied as the FIRST middleware on each GET so CodeQL's js/missing-rate-limiting
+// query recognises it.
+const artifactReadRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: AuthReq) => (req.ip ? ipKeyGenerator(req.ip) : 'anon'),
+  handler: (_req: unknown, res: Res) =>
+    res.status(429).json({ msg: 'rate limit exceeded: 240 requests per 60s' }),
+});
+
 const router: ReturnType<typeof express.Router> = express.Router();
 
 // Shared upload handler — used by both the user-auth POST / and the
@@ -272,7 +290,7 @@ router.get('/:fileName/url', mintRateLimit, auth, async (req: AuthReq, res: Res)
   }
 });
 
-router.get('/:fileName', async (req: AuthReq, res: Res) => {
+router.get('/:fileName', artifactReadRateLimit, async (req: AuthReq, res: Res) => {
   try {
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });
@@ -377,7 +395,7 @@ const officecliPreview = (() => {
 // officecli process. Plenty for normal decks (sub-second to a few seconds).
 const PPTX_RENDER_TIMEOUT_MS = 30_000;
 
-router.get('/:fileName/preview-pptx-html', async (req: AuthReq, res: Res) => {
+router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, async (req: AuthReq, res: Res) => {
   try {
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });
