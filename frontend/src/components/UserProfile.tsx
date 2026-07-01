@@ -375,7 +375,7 @@ const UserProfile = () => {
             <Card sx={{ mb: 4, borderRadius: 3 }}>
                 <CardContent sx={{ p: { xs: 2, md: 3 } }}>
                     <Grid container spacing={3} alignItems="center">
-                        <Grid item xs={12} md={4}>
+                        <Grid item xs={12} md={v2Embedded ? 12 : 4}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                 <Box sx={{ position: 'relative' }}>
                                     <Avatar
@@ -442,6 +442,10 @@ const UserProfile = () => {
                                 </Box>
                             </Box>
                         </Grid>
+                        {/* Vestigial social metrics (posts/comments/followers/following)
+                            are hidden on the v2 surface — meaningless for a dev-agent
+                            workspace. Kept for any non-v2 usage. */}
+                        {!v2Embedded && (
                         <Grid item xs={12} md={8}>
                             <Grid container spacing={2}>
                                 <Grid item xs={6} sm={3}>
@@ -486,6 +490,7 @@ const UserProfile = () => {
                                 </Grid>
                             </Grid>
                         </Grid>
+                        )}
                     </Grid>
 
                     <Divider sx={{ my: 3 }} />

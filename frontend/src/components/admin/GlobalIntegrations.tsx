@@ -702,12 +702,14 @@ const GlobalIntegrations = () => {
                     Save X Configuration
                   </Button>
                   <Tooltip title="Test connection">
-                    <IconButton
-                      onClick={() => testConnection('x')}
-                      disabled={xConfig.status !== 'connected'}
-                    >
-                      <RefreshIcon />
-                    </IconButton>
+                    <span>
+                      <IconButton
+                        onClick={() => testConnection('x')}
+                        disabled={xConfig.status !== 'connected'}
+                      >
+                        <RefreshIcon />
+                      </IconButton>
+                    </span>
                   </Tooltip>
                 </Box>
               </Box>
@@ -811,12 +813,14 @@ const GlobalIntegrations = () => {
                     Save Instagram Configuration
                   </Button>
                   <Tooltip title="Test connection">
-                    <IconButton
-                      onClick={() => testConnection('instagram')}
-                      disabled={instagramConfig.status !== 'connected'}
-                    >
-                      <RefreshIcon />
-                    </IconButton>
+                    <span>
+                      <IconButton
+                        onClick={() => testConnection('instagram')}
+                        disabled={instagramConfig.status !== 'connected'}
+                      >
+                        <RefreshIcon />
+                      </IconButton>
+                    </span>
                   </Tooltip>
                 </Box>
               </Box>

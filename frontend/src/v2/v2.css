@@ -3686,6 +3686,33 @@
   color: var(--v2-text-secondary);
 }
 
+/* Flatten MUI outlined form controls to the v2 look. The recolor above kept the
+   MUI signature — a floated label sitting in a notched border. Here we finish the
+   job: continuous border (kill the notch legend), v2 radius, and lift the label
+   to a static v2-style label ABOVE the field. One block skins every legacy admin
+   form (Global Integrations model policy, etc.) without a component rewrite. */
+.v2-feature__legacy .MuiFormControl-root { margin-top: 20px; }
+.v2-feature__legacy .MuiOutlinedInput-root { border-radius: var(--v2-radius); }
+.v2-feature__legacy .MuiOutlinedInput-notchedOutline legend { max-width: 0.01px; }
+.v2-feature__legacy .MuiInputLabel-outlined {
+  position: static;
+  transform: none;
+  margin-bottom: 6px;
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+  pointer-events: auto;
+  overflow: visible;
+}
+.v2-feature__legacy .MuiInputBase-input,
+.v2-feature__legacy .MuiSelect-select {
+  padding: 10px 12px;
+  font-size: 14px;
+  min-height: 20px;
+  box-sizing: border-box;
+}
+
 .v2-feature__legacy .MuiDivider-root {
   border-color: var(--v2-border-soft);
 }
