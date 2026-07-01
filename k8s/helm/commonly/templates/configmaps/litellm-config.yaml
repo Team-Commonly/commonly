@@ -318,6 +318,37 @@ data:
       # the container startup script; PYTHONPATH is set accordingly.
       callbacks: rate_limit_signal.proxy_handler_instance
 
+    guardrails:
+      # Anti-pattern content guardrails for the public-launch exposure. Both are
+      # ENFORCE (block) + default_on:false, so they run ONLY when a caller opts in
+      # via the request-body `guardrails:[...]` field. The ONLY opt-in caller is
+      # backend/services/llmService.ts (platform features — summarizer / daily digest
+      # / skills / avatars — which ingest UNTRUSTED pod content: the indirect-prompt-
+      # injection surface once registration is public). Dev-agent per-agent-key
+      # traffic never sends the field, so coding prompts are never blocked.
+      #
+      # INCIDENT NOTE (2026-06-29): an `openai-moderation-monitor` guardrail with
+      # `mode: "logging_only"` was added here and crash-looped the litellm pod —
+      # logging_only is NOT a supported event hook on v1.88.0-rc.1. Only during_call
+      # (and pre_call/post_call) validate at startup. This block was boot-tested in a
+      # throwaway litellm pod (Application startup complete, 0 errors) before shipping.
+      # Do NOT reintroduce logging_only without re-validating against the pinned image.
+      - guardrail_name: "openai-moderation-enforce"
+        litellm_params:
+          guardrail: openai_moderation
+          mode: "during_call"
+          model: "omni-moderation-latest"
+          api_key: os.environ/OPENAI_API_KEY
+          default_on: false
+      - guardrail_name: "injection-guard"
+        litellm_params:
+          # Heuristic prompt-injection / jailbreak / prompt-exfiltration detector.
+          # Custom module written to /app/prompt_injection_guard.py by the container
+          # startup script (same mechanism as rate_limit_signal.py). No external dep.
+          guardrail: prompt_injection_guard.PromptInjectionGuard
+          mode: "during_call"
+          default_on: false
+
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY
       database_url: os.environ/DATABASE_URL
