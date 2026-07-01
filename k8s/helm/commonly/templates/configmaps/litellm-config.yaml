@@ -342,12 +342,30 @@ data:
           default_on: false
       - guardrail_name: "injection-guard"
         litellm_params:
-          # Heuristic prompt-injection / jailbreak / prompt-exfiltration detector.
-          # Custom module written to /app/prompt_injection_guard.py by the container
-          # startup script (same mechanism as rate_limit_signal.py). No external dep.
-          guardrail: prompt_injection_guard.PromptInjectionGuard
-          mode: "during_call"
+          # NATIVE LiteLLM content-filter guardrail (first-party, local keyword +
+          # conditional matching — no external service, key, or license, and no
+          # custom module to maintain). Replaced the hand-rolled regex module
+          # (prompt_injection_guard.PromptInjectionGuard) — the built-in categories
+          # cover more attack shapes and it blocks with a clean HTTP 400.
+          # pre_call = reject BEFORE the upstream LLM call (saves the spend + latency).
+          # severity_threshold=high keeps false-positives low: boot- + functionally
+          # tested in a throwaway litellm — all injection attacks (ignore+reveal
+          # system prompt / print original instructions / disregard-safety+DAN)
+          # block; normal chat ("act as if the demo works", "sql query for users",
+          # "reveal the winner") passes. Known residual FP: the jailbreak category's
+          # standalone "you are now" keyword. Mitigated by default_on:false (opt-in
+          # only, same callers as above) + the per-path env off-switches
+          # (NATIVE_RUNTIME_GUARDRAILS / LLMSERVICE_GUARDRAILS). sql + malicious_code
+          # categories are intentionally OFF — this is a dev-agent platform; blocking
+          # SQL/code discussion would be absurd. See docs/runbooks/litellm-guardrails.md.
+          guardrail: litellm_content_filter
+          mode: "pre_call"
           default_on: false
+          severity_threshold: "high"
+          categories:
+            - { category: "prompt_injection_jailbreak", action: "BLOCK" }
+            - { category: "prompt_injection_system_prompt", action: "BLOCK" }
+            - { category: "prompt_injection_data_exfiltration", action: "BLOCK" }
 
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY
