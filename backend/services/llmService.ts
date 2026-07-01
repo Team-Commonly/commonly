@@ -124,6 +124,14 @@ const generateViaLiteLLM = async (prompt: string, options: GenerateOptions = {})
       messages: [{ role: 'user', content: prompt }],
       temperature: options.temperature ?? 0.4,
       max_tokens: options.maxTokens || DEFAULT_MAX_OUTPUT_TOKENS,
+      // Per-request guardrail opt-in (LiteLLM). This is the shared LLM path for
+      // PLATFORM features (summarizer / daily digest / skills / avatars) which
+      // ingest untrusted pod content — the indirect-prompt-injection surface once
+      // registration is public. These enforce guardrails are default_on:false in
+      // litellm-config, so ONLY these platform calls get them; dev-agent per-agent-
+      // key traffic never sends the field and is never blocked (no false-positives
+      // on coding prompts). See docs/runbooks/litellm-guardrails.md.
+      guardrails: ['openai-moderation-enforce', 'injection-guard'],
     },
     {
       headers: {
