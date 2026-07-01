@@ -341,25 +341,6 @@ data:
           model: "omni-moderation-latest"
           api_key: os.environ/OPENAI_API_KEY
           default_on: true
-      # ── ENFORCE guardrails — BLOCK, but attached ONLY to the platform virtual
-      # key (LITELLM_API_KEY) via its /key/generate guardrails:[...] list. They
-      # are default_on:false so they NEVER touch dev-agent per-agent keys (whose
-      # coding prompts would false-positive). The platform key is what the
-      # platform features (summarizer/digest/native runtime/vector embeddings)
-      # use — the indirect-prompt-injection surface that ingests untrusted pod
-      # content once registration is public. See docs/runbooks/litellm-guardrails.md.
-      - guardrail_name: "openai-moderation-enforce"
-        litellm_params:
-          guardrail: openai_moderation
-          mode: "during_call"          # blocks (raises) on a policy hit, in parallel with the call
-          model: "omni-moderation-latest"
-          api_key: os.environ/OPENAI_API_KEY
-          default_on: false
-      - guardrail_name: "injection-guard"
-        litellm_params:
-          guardrail: prompt_injection_guard.PromptInjectionGuard
-          mode: "during_call"
-          default_on: false
 
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY
