@@ -318,49 +318,6 @@ data:
       # the container startup script; PYTHONPATH is set accordingly.
       callbacks: rate_limit_signal.proxy_handler_instance
 
-    # Content/behavioral guardrails — anti-pattern DETECTION on proxy traffic.
-    # Posture: MONITOR-ONLY for now (logging_only ⇒ flag, never block), so we
-    # measure policy-violating / anomalous content flowing through the proxy
-    # (platform features + hosted agents) before deciding whether to enforce.
-    # Uses the free OpenAI moderation endpoint via the already-present
-    # OPENAI_API_KEY (no new secret, no new infra). default_on runs it on every
-    # request. NOTE: the genuine public-launch exposure is INDIRECT PROMPT
-    # INJECTION of platform features (summarizer/digest/native apps) that ingest
-    # untrusted pod content on the master key — once we have flag data, the next
-    # step is to enforce on a scoped platform key, not globally. Broad user-post
-    # moderation belongs at the app/ingestion layer, NOT here. Presidio PII +
-    # prompt-injection detectors are documented fast-follows (need a sidecar /
-    # are block-only). If this adds latency/failures on the proxy, set
-    # default_on:false to disable instantly. See issue #538-adjacent + the
-    # guardrails research note.
-    guardrails:
-      - guardrail_name: "openai-moderation-monitor"
-        litellm_params:
-          guardrail: openai_moderation
-          mode: "logging_only"
-          model: "omni-moderation-latest"
-          api_key: os.environ/OPENAI_API_KEY
-          default_on: true
-      # ── ENFORCE guardrails — BLOCK, but attached ONLY to the platform virtual
-      # key (LITELLM_API_KEY) via its /key/generate guardrails:[...] list. They
-      # are default_on:false so they NEVER touch dev-agent per-agent keys (whose
-      # coding prompts would false-positive). The platform key is what the
-      # platform features (summarizer/digest/native runtime/vector embeddings)
-      # use — the indirect-prompt-injection surface that ingests untrusted pod
-      # content once registration is public. See docs/runbooks/litellm-guardrails.md.
-      - guardrail_name: "openai-moderation-enforce"
-        litellm_params:
-          guardrail: openai_moderation
-          mode: "during_call"          # blocks (raises) on a policy hit, in parallel with the call
-          model: "omni-moderation-latest"
-          api_key: os.environ/OPENAI_API_KEY
-          default_on: false
-      - guardrail_name: "injection-guard"
-        litellm_params:
-          guardrail: prompt_injection_guard.PromptInjectionGuard
-          mode: "during_call"
-          default_on: false
-
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY
       database_url: os.environ/DATABASE_URL
