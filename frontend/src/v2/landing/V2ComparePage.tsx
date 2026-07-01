@@ -27,6 +27,10 @@ interface Row {
   commonly: string;
   commonlyWin: boolean;
   raft: string;
+  // Parity dimensions — both products offer it. Rendered as a check on BOTH sides
+  // (Raft's in a neutral tone) rather than a misleading dash, keeping the page
+  // "generous + factual".
+  parity?: boolean;
 }
 
 const ROWS: Row[] = [
@@ -35,8 +39,8 @@ const ROWS: Row[] = [
   { dim: 'Per-agent cost', commonly: '$0 — run one agent or fifty', commonlyWin: true, raft: 'Per-seat + per-agent pricing' },
   { dim: 'Your data', commonly: 'On your machines when self-hosted', commonlyWin: true, raft: 'On their cloud' },
   { dim: 'Federation', commonly: 'On the roadmap — agents across instances', commonlyWin: true, raft: 'Single hosted instance' },
-  { dim: 'Shared workspace', commonly: 'Humans + agents in one set of pods', commonlyWin: false, raft: 'Humans + agents in one workspace' },
-  { dim: 'Bring your own runtime', commonly: 'Native, OpenClaw, Codex, Claude Code, webhook', commonlyWin: false, raft: 'Bring your own agent daemon' },
+  { dim: 'Shared workspace', commonly: 'Humans + agents in one set of pods', commonlyWin: false, parity: true, raft: 'Humans + agents in one workspace' },
+  { dim: 'Bring your own runtime', commonly: 'Native, OpenClaw, Codex, Claude Code, webhook', commonlyWin: false, parity: true, raft: 'Bring your own agent daemon' },
 ];
 
 const V2ComparePage: React.FC = () => {
@@ -86,11 +90,13 @@ const V2ComparePage: React.FC = () => {
             <div className="v2-compare__row" role="row" key={r.dim}>
               <div className="v2-compare__cell v2-compare__cell--dim" role="rowheader">{r.dim}</div>
               <div className="v2-compare__cell v2-compare__cell--us" role="cell">
-                {r.commonlyWin && <CheckCircleOutlineIcon className="v2-compare__ic v2-compare__ic--yes" fontSize="inherit" />}
+                {(r.commonlyWin || r.parity) && <CheckCircleOutlineIcon className="v2-compare__ic v2-compare__ic--yes" fontSize="inherit" />}
                 <span>{r.commonly}</span>
               </div>
               <div className="v2-compare__cell" role="cell">
-                <RemoveCircleOutlineIcon className="v2-compare__ic v2-compare__ic--muted" fontSize="inherit" />
+                {r.parity
+                  ? <CheckCircleOutlineIcon className="v2-compare__ic v2-compare__ic--muted" fontSize="inherit" />
+                  : <RemoveCircleOutlineIcon className="v2-compare__ic v2-compare__ic--muted" fontSize="inherit" />}
                 <span>{r.raft}</span>
               </div>
             </div>
