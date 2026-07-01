@@ -57,6 +57,21 @@ const MAX_WALL_CLOCK_MS = 60_000;
 const DEFAULT_MODEL = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
 const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_000;
 
+// Guardrail opt-in for the native cloud-agent inference path. Unlike dev agents
+// (Cody/Theo — separate runtimes, own keys, coding prompts, deliberately NOT
+// guarded), the native runtime processes UNTRUSTED input: a public user conversing
+// with a native agent, and pod content re-processed by first-party apps
+// (welcomer/summarizer). Both are the indirect/direct prompt-injection surface once
+// registration is public, so this path opts into the same enforce guardrails as
+// llmService. These guardrails are default_on:false in litellm-config, so ONLY
+// callers that send this field get them. Env-overridable (comma-separated; empty
+// string disables) as a no-redeploy off-switch if it over-blocks a first-party app
+// — a backend env change + pod restart, no image build. See
+// docs/runbooks/litellm-guardrails.md.
+const NATIVE_RUNTIME_GUARDRAILS = (
+  process.env.NATIVE_RUNTIME_GUARDRAILS ?? 'openai-moderation-enforce,injection-guard'
+).split(',').map((s) => s.trim()).filter(Boolean);
+
 // --- helpers ---------------------------------------------------------------
 
 type PlainConfig = Record<string, any>;
@@ -583,6 +598,10 @@ export async function runAgent(
             messages,
             tools: TOOLS,
             tool_choice: 'auto',
+            // Guard the untrusted-user / untrusted-pod-content surface (see the
+            // NATIVE_RUNTIME_GUARDRAILS note above). Omitted entirely when empty
+            // so an operator can disable via env without a redeploy.
+            ...(NATIVE_RUNTIME_GUARDRAILS.length ? { guardrails: NATIVE_RUNTIME_GUARDRAILS } : {}),
           },
           {
             headers: {
@@ -596,6 +615,16 @@ export async function runAgent(
         if (axiosResp.status < 200 || axiosResp.status >= 300) {
           const body = axiosResp.data as unknown;
           const bodyText = typeof body === 'string' ? body : JSON.stringify(body);
+          // A content guardrail (injection / moderation) rejection comes back as an
+          // error status from LiteLLM. Tag it distinctly so it's observable in
+          // AgentRun metrics (told apart from genuine LLM failures) and never
+          // surfaces the raw proxy payload back to a possibly-malicious user.
+          if (/guardrail|moderation|prompt-injection/i.test(bodyText)) {
+            run.status = 'failed';
+            run.errorKind = 'guardrail_blocked';
+            run.errorMessage = 'Request blocked by a content guardrail (prompt-injection / moderation).';
+            break;
+          }
           throw new Error(`LiteLLM HTTP ${axiosResp.status}: ${bodyText.slice(0, 500)}`);
         }
         llmResponse = axiosResp.data;
