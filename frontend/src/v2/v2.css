@@ -4561,8 +4561,8 @@
   font-variant-emoji: emoji;
 }
 .v2-msg__reaction:hover {
-  background: #eef2ff;
-  border-color: #c7d2fe;
+  background: var(--v2-accent-soft);
+  border-color: var(--v2-accent-soft);
 }
 .v2-msg__reaction-emoji {
   font-size: 13px;
@@ -4591,13 +4591,13 @@
   line-height: 1;
 }
 .v2-root button.v2-msg__reaction--mine {
-  background: #eef2ff;
-  border-color: #c7d2fe;
-  color: #4338ca;
+  background: var(--v2-accent-soft);
+  border-color: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
 }
 .v2-root button.v2-msg__reaction:hover:not(:disabled) {
-  background: #e0e7ff;
-  border-color: #a5b4fc;
+  background: var(--v2-accent-soft);
+  border-color: var(--v2-accent);
 }
 .v2-root button.v2-msg__reaction:disabled {
   cursor: default;
@@ -4677,12 +4677,12 @@
   background: #f3f4f6;
 }
 .v2-root button.v2-msg__reaction-picker-item--mine {
-  background: #eef2ff;
+  background: var(--v2-accent-soft);
 }
 
 /* Sprint B3 — Bring-your-own MCP agent onboarding page. Lives at
  * /v2/agents/byo. Single-column form + result. Aligned with v2's
- * border-not-shadow aesthetic; copy buttons use the indigo accent. */
+ * border-not-shadow aesthetic; accent-blue for interactive controls. */
 .v2-byo__form, .v2-byo__result {
   display: flex;
   flex-direction: column;
@@ -4715,8 +4715,8 @@
   transition: border-color 0.15s ease;
 }
 .v2-byo__input:focus {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  border-color: var(--v2-accent);
+  box-shadow: var(--v2-focus-ring);
 }
 .v2-byo__hint {
   font-size: 12px;
@@ -4734,16 +4734,16 @@
   align-self: flex-start;
   padding: 10px 18px;
   border-radius: 8px;
-  background: #4338ca;
+  background: var(--v2-accent);
   color: #fff;
-  border: 1px solid #4338ca;
+  border: 1px solid var(--v2-accent);
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
 }
 .v2-root button.v2-byo__submit:hover:not(:disabled) {
-  background: #3730a3;
-  border-color: #3730a3;
+  background: var(--v2-accent-strong);
+  border-color: var(--v2-accent-strong);
 }
 .v2-root button.v2-byo__submit:disabled {
   opacity: 0.6;
@@ -4790,9 +4790,9 @@
   cursor: pointer;
 }
 .v2-root button.v2-byo__copy:hover {
-  background: #eef2ff;
-  border-color: #c7d2fe;
-  color: #4338ca;
+  background: var(--v2-accent-soft);
+  border-color: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
 }
 .v2-byo__pre {
   margin: 0;

@@ -1,13 +1,17 @@
+// Avatar background tints. Blue-forward and cohesive with the design system's
+// single accent (#2f6feb) — deliberately purple-free (the old palette led with
+// two bright violets, #6d5dfc/#7367c7, and defaulted un-seeded avatars to purple,
+// which read as "the app is purple"). All values are dark enough for legible white
+// initials. The brand blue is first, so it is also the default for an empty seed.
 const AVATAR_PALETTE = [
-  '#6d5dfc',
-  '#64748b',
-  '#2f9e8f',
-  '#b7791f',
-  '#3b82a0',
-  '#a8556f',
-  '#6b7280',
-  '#7367c7',
-  '#4b8b73',
+  '#2f6feb', // brand blue
+  '#0e7490', // cyan
+  '#0f766e', // teal
+  '#15803d', // green
+  '#b45309', // amber
+  '#be123c', // rose
+  '#3b82a0', // steel blue
+  '#475569', // slate
 ];
 
 const hashString = (input: string): number => {
