@@ -104,6 +104,16 @@
 }
 .v2-landing__btn--onaccent-ghost:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.7); }
 
+/* Specificity fix: `.v2-root a { color: inherit }` (0,1,1) outranks the
+   single-class button color rules above (0,1,0), so on-accent buttons inherit
+   dark body text and render dark-on-navy on the deep bands (unreadable). Re-assert
+   the intended colors with a `.v2-root` prefix (0,2,0 beats 0,1,1). Same trap the
+   login link documents in v2.css. */
+.v2-root .v2-landing__btn--primary { color: #ffffff; }
+.v2-root .v2-landing__btn--ghost { color: var(--v2-text-primary); }
+.v2-root .v2-landing__btn--onaccent { color: var(--v2-accent); }
+.v2-root .v2-landing__btn--onaccent-ghost { color: #ffffff; }
+
 .v2-landing__cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
 
 /* ---------- Hero ---------- */
@@ -188,7 +198,16 @@
 .v2-landing__hero-by a { color: var(--v2-accent); text-decoration: none; }
 .v2-landing__hero-by a:hover { text-decoration: underline; }
 
-.v2-landing__hero-art { display: flex; justify-content: center; }
+.v2-landing__hero-art { display: flex; justify-content: center; min-width: 0; max-width: 100%; }
+
+/* Overflow guard: grid/flex children default to min-width:auto, so the hero's
+   nowrap install line (and the wide screenshot) can force the column past the
+   viewport — the root's overflow-x:hidden then CLIPS the hero text + caption on
+   mobile. min-width:0 lets the column shrink so the install line scrolls inside
+   its own overflow-x:auto instead of blowing out the page width. */
+.v2-landing__hero > * { min-width: 0; }
+.v2-landing__shot,
+.v2-landing__shot-frame { max-width: 100%; }
 
 /* ---------- Screenshot card (the one allowed shadow — floating UI) ---------- */
 .v2-landing__shot { display: block; width: 100%; margin: 0; }
