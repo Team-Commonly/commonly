@@ -11,8 +11,10 @@ COPY . .
 # Add build arguments for environment variables
 ARG VITE_API_URL
 ARG REACT_APP_API_URL
+ARG REACT_APP_SHOWCASE_POD_ID
 ENV VITE_API_URL=${VITE_API_URL}
 ENV REACT_APP_API_URL=${REACT_APP_API_URL}
+ENV REACT_APP_SHOWCASE_POD_ID=${REACT_APP_SHOWCASE_POD_ID}
 # Ensure ESLint warnings don't fail the build
 ENV CI=false
 
