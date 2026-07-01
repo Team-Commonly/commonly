@@ -21,7 +21,8 @@
 
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query
 // recognises the limiter on the router — same pattern as routes/uploads.ts.
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
@@ -101,7 +102,7 @@ const showcaseRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
-  keyGenerator: (req: Req) => (req.ip ? ipKeyGenerator(req.ip) : 'anon'),
+  keyGenerator: (req: Req) => cloudflareIpRateLimitKeyGenerator(req as never),
   handler: (_req: unknown, res: Res) => res.status(429).json({ code: 'rate_limited' }),
 });
 
