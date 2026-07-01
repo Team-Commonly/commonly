@@ -33,6 +33,7 @@ export type AgentRunErrorKind =
   | 'timeout'
   | 'tool_error'
   | 'llm_error'
+  | 'guardrail_blocked'
   | 'config'
   | 'unknown';
 
@@ -121,7 +122,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     completedAt: { type: Date },
     errorKind: {
       type: String,
-      enum: ['turn_cap', 'token_cap', 'timeout', 'tool_error', 'llm_error', 'config', 'unknown'],
+      enum: ['turn_cap', 'token_cap', 'timeout', 'tool_error', 'llm_error', 'guardrail_blocked', 'config', 'unknown'],
     },
     errorMessage: { type: String },
   },

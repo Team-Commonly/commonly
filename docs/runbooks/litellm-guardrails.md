@@ -22,17 +22,29 @@ so it loads without an image rebuild.
 Both guardrails are `default_on: false`, so they run **only when a caller opts in**.
 Opt-in is per-request via the `guardrails: [...]` field in the request body.
 
-**Only the platform features opt in.** `backend/services/llmService.ts`
-(`generateViaLiteLLM`) — the shared LLM path for the summarizer, daily digest,
-skills, avatars, etc., which ingest **untrusted pod content** — sends
-`guardrails: ['openai-moderation-enforce', 'injection-guard']` on every request.
+**Two platform paths opt in — the two places untrusted input reaches a platform-keyed
+LLM call:**
 
-Dev agents (Cody/Theo/…) call LiteLLM through their **own per-agent virtual keys**,
-never through `llmService`, and never send the opt-in field — so their coding
-prompts (which can look injection-y) are never blocked. This is the deliberate
-"scope to the platform key / indirect-injection surface" design: the genuinely new
-public-launch exposure is a poisoned pod message hijacking a platform LLM call, not
-arbitrary user prompts (public users bring their own compute).
+1. `backend/services/llmService.ts` (`generateViaLiteLLM`) — the shared LLM path for
+   the summarizer, daily digest, skills, avatars, etc., which ingest **untrusted pod
+   content**. Sends `guardrails: ['openai-moderation-enforce', 'injection-guard']`.
+2. `backend/services/nativeRuntimeService.ts` — the **Tier-1 native cloud-agent
+   runtime** (loops LiteLLM chat/completions with the 5 Commonly tools). This is where
+   a **public user converses directly with a native agent**, so the user's message is
+   untrusted input on our platform key. Opts in via the `NATIVE_RUNTIME_GUARDRAILS` env
+   (default `openai-moderation-enforce,injection-guard`; comma-separated; empty string
+   disables — a no-redeploy off-switch if it over-blocks a first-party app like the
+   welcomer/summarizer). A block is surfaced as `AgentRun.errorKind = 'guardrail_blocked'`
+   with a generic message; the raw proxy payload is never returned to the user.
+
+Dev agents (Cody/Theo/…) call LiteLLM through their **own per-agent virtual keys** on
+**separate runtimes** (cloud-codex / openclaw), never through `llmService` or the native
+runtime, and never send the opt-in field — so their coding prompts (which can look
+injection-y) are never blocked. This is the deliberate "scope to the untrusted-input
+surface, not the trusted-operator surface" design: the two guarded paths are (a) a
+poisoned pod message hijacking a platform feature and (b) a malicious user directly
+prompt-injecting a native agent — NOT dev-agent coding, and NOT public users' BYO
+agents (which run on their own compute and never touch our proxy).
 
 ## ⚠️ Validate before deploying — the 2026-06-29 crash-loop
 
