@@ -11,11 +11,25 @@ Two guardrails in `k8s/helm/commonly/templates/configmaps/litellm-config.yaml`
 | Guardrail | Provider | Mode | Scope | Purpose |
 |---|---|---|---|---|
 | `openai-moderation-enforce` | `openai_moderation` (free, uses `OPENAI_API_KEY`) | `during_call` (blocks) | `default_on: false` (opt-in) | **Block** policy-violating content. |
-| `injection-guard` | custom `prompt_injection_guard.PromptInjectionGuard` (heuristic, no external dep) | `during_call` (blocks) | `default_on: false` (opt-in) | **Block** obvious prompt-injection / jailbreak / prompt-exfiltration patterns. |
+| `injection-guard` | **native `litellm_content_filter`** (first-party, local keyword + conditional matching — no external service/key/license) | `pre_call` (blocks with HTTP 400) | `default_on: false` (opt-in) | **Block** prompt-injection / jailbreak / prompt-exfiltration. |
 
-The custom injection guardrail module is written to `/app/prompt_injection_guard.py`
-by the litellm container startup script (same mechanism as `rate_limit_signal.py`),
-so it loads without an image rebuild.
+Both are **first-party LiteLLM guardrails** — there is no custom module to maintain.
+`injection-guard` uses the built-in content-filter categories
+`prompt_injection_jailbreak`, `prompt_injection_system_prompt`, and
+`prompt_injection_data_exfiltration` at `severity_threshold: high`. The `sql` and
+`malicious_code` categories are intentionally **off** — Commonly is a dev-agent
+platform, so blocking SQL/code discussion would be all false-positives.
+
+> **History:** `injection-guard` was originally a hand-rolled regex module
+> (`prompt_injection_guard.PromptInjectionGuard`, written to `/app/` by the startup
+> script). It was replaced by the native `litellm_content_filter` — more attack-shape
+> coverage, a clean HTTP 400 (vs the custom module's 500), and no code to maintain.
+
+**Known residual false-positive:** the jailbreak category has a standalone
+`you are now` keyword, so "you are now assigned to X" in pod content can be blocked.
+Bounded by the opt-in scoping + the per-path env off-switches below. If it bites,
+either flip the env off-switch or override that category with a trimmed
+`category_file`.
 
 ## The scoping (why dev agents aren't blocked)
 
@@ -27,7 +41,9 @@ LLM call:**
 
 1. `backend/services/llmService.ts` (`generateViaLiteLLM`) — the shared LLM path for
    the summarizer, daily digest, skills, avatars, etc., which ingest **untrusted pod
-   content**. Sends `guardrails: ['openai-moderation-enforce', 'injection-guard']`.
+   content**. Opts in via the `LLMSERVICE_GUARDRAILS` env (default
+   `openai-moderation-enforce,injection-guard`; comma-separated; empty string disables
+   — a no-redeploy off-switch, symmetric with `NATIVE_RUNTIME_GUARDRAILS`).
 2. `backend/services/nativeRuntimeService.ts` — the **Tier-1 native cloud-agent
    runtime** (loops LiteLLM chat/completions with the 5 Commonly tools). This is where
    a **public user converses directly with a native agent**, so the user's message is

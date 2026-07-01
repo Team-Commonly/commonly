@@ -168,52 +168,10 @@ spec:
             proxy_handler_instance = RateLimitSignaler()
             PYEOF
             echo "rate-limit-signaler callback installed at /app/rate_limit_signal.py"
-            # Custom prompt-injection guardrail. LiteLLM resolves `guardrail:
-            # prompt_injection_guard.PromptInjectionGuard` relative to the config
-            # dir (/app/), same as the rate-limit callback above. Heuristic only,
-            # no external dependency. default_on:false in litellm-config.yaml, so it
-            # runs ONLY for platform features that opt in via the request body.
-            cat > /app/prompt_injection_guard.py <<'PYEOF'
-            """LiteLLM custom guardrail: heuristic prompt-injection detector.
-            Blocks obvious injection / jailbreak / prompt-exfiltration patterns.
-            Extends CustomGuardrail; async_moderation_hook runs on `during_call`."""
-            import re
-            from litellm.integrations.custom_guardrail import CustomGuardrail
-
-            _PATTERNS = [
-                r"ignore (?:all |the |your )?(?:previous|prior|above|earlier) (?:instructions|prompts?|messages?)",
-                r"disregard (?:all |the |your )?(?:previous|prior|above|earlier)",
-                r"forget (?:all |everything |the )?(?:previous|prior|above)",
-                r"you are now (?:a |an |no longer)",
-                r"new (?:system )?(?:instructions?|prompt|rules?)\s*:",
-                r"(?:reveal|print|show|repeat|leak|expose) (?:your|the) (?:system )?(?:prompt|instructions?)",
-                r"(?:developer|jailbreak|dan) mode",
-                r"override (?:your |the )?(?:instructions?|rules?|safety|guardrails?)",
-                r"</?(?:system|assistant)>",
-            ]
-            _COMPILED = [re.compile(p, re.IGNORECASE) for p in _PATTERNS]
-
-            def _looks_injected(text):
-                if not isinstance(text, str) or not text:
-                    return None
-                for rx in _COMPILED:
-                    m = rx.search(text)
-                    if m:
-                        return m.group(0)[:80]
-                return None
-
-            class PromptInjectionGuard(CustomGuardrail):
-                async def async_moderation_hook(self, data, user_api_key_dict, call_type):
-                    for msg in (data.get("messages") or []):
-                        content = msg.get("content")
-                        if isinstance(content, list):
-                            content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
-                        hit = _looks_injected(content)
-                        if hit:
-                            print(f"[injection-guard] blocked (matched {hit!r})", flush=True)
-                            raise ValueError("Request blocked by the prompt-injection guardrail.")
-            PYEOF
-            echo "prompt-injection guardrail installed at /app/prompt_injection_guard.py"
+            # NOTE: the prompt-injection guardrail no longer needs a custom module
+            # written here — it now uses the NATIVE `litellm_content_filter` guardrail
+            # (configured in litellm-config.yaml) which ships with LiteLLM. The old
+            # hand-rolled /app/prompt_injection_guard.py was removed.
             # Hard-disable ChatGPT interactive device-login in this headless pod so a dead
             # codex auth degrades gracefully (router codex->nemotron fallback) instead of
             # hanging startup.
