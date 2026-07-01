@@ -468,6 +468,100 @@
 }
 .v2-landing__price-card .v2-landing__cta-row { justify-content: center; }
 
+/* Section subtitle (used under the pricing head) */
+.v2-landing__section-sub {
+  margin: 12px auto 0;
+  max-width: 640px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--v2-text-secondary);
+}
+
+/* ---------- Pricing tiers ---------- */
+.v2-landing__tiers {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
+.v2-landing__tier {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 24px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  text-align: left;
+}
+/* Featured tier: accent border (borders-not-shadows), no elevation. */
+.v2-landing__tier--featured { border-color: var(--v2-accent); }
+.v2-landing__tier-badge {
+  position: absolute;
+  top: -11px;
+  left: 24px;
+  background: var(--v2-accent);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: var(--v2-radius-pill);
+}
+.v2-landing__tier-name {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--v2-text-tertiary);
+}
+.v2-landing__tier-price {
+  margin-top: 8px;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 34px;
+  font-weight: 850;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__tier-price span {
+  font-family: var(--v2-font);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--v2-text-tertiary);
+}
+.v2-landing__tier-note { margin: 6px 0 18px; font-size: 14px; line-height: 1.45; color: var(--v2-text-secondary); }
+.v2-landing__tier .v2-landing__price-list { margin: 0 0 24px; max-width: none; }
+.v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; justify-content: center; }
+
+.v2-landing__tier-enterprise {
+  max-width: 1120px;
+  margin: 20px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px;
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-lg);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--v2-text-secondary);
+}
+.v2-landing__tier-enterprise strong { color: var(--v2-text-primary); }
+.v2-landing__tier-enterprise .v2-landing__btn { flex-shrink: 0; }
+.v2-landing__price-foot {
+  max-width: 1120px;
+  margin: 24px auto 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--v2-text-tertiary);
+}
+
 /* ---------- Closing CTA band (deep navy) ---------- */
 .v2-landing__cta {
   background: var(--v2-accent-deep);
@@ -603,7 +697,9 @@
   .v2-landing__tiles,
   .v2-landing__adapters,
   .v2-landing__steps,
-  .v2-landing__cards { grid-template-columns: 1fr; }
+  .v2-landing__cards,
+  .v2-landing__tiers { grid-template-columns: 1fr; }
+  .v2-landing__tier-enterprise { flex-direction: column; align-items: flex-start; }
   .v2-landing__proof-stats { gap: 28px; }
 }
 

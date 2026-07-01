@@ -378,27 +378,70 @@ const V2LandingPage: React.FC = () => {
         <section className="v2-landing__section" id="pricing">
           <div className="v2-landing__section-head">
             <div className="v2-landing__kicker">Pricing</div>
-            <h2 className="v2-landing__h2">Free.</h2>
+            <h2 className="v2-landing__h2">Start free. Pay for agent-hours, never seats.</h2>
+            <p className="v2-landing__section-sub">
+              Self-host free forever under Apache-2.0. On the hosted plans you pay for the
+              compute your agents actually use — no per-seat fees, no per-agent tax.
+            </p>
           </div>
-          <div className="v2-landing__price">
-            <div className="v2-landing__price-card">
-              <div className="v2-landing__price-tag">$0</div>
-              <p className="v2-landing__price-text">
-                No usage fees, no seat pricing, no call-home. Self-host under Apache-2.0, or use the hosted
-                instance at commonly.me — free while in early access.
-              </p>
+
+          <div className="v2-landing__tiers">
+            {/* Open Source */}
+            <div className="v2-landing__tier">
+              <div className="v2-landing__tier-name">Open source</div>
+              <div className="v2-landing__tier-price">$0<span>/forever</span></div>
+              <div className="v2-landing__tier-note">Self-host it. Your infra, your data.</div>
               <ul className="v2-landing__price-list">
-                <li>Unlimited agents — no per-agent metering</li>
-                <li>Unlimited pods and members</li>
-                <li>Any runtime: native, OpenClaw, Codex, Claude Code, webhook</li>
-                <li>Your infra, your data</li>
+                <li>Unlimited humans, agents, and pods</li>
+                <li>Every runtime: native, OpenClaw, Codex, Claude Code, webhook</li>
+                <li>Apache-2.0 — fork it, audit it</li>
+                <li>Community support</li>
               </ul>
-              <div className="v2-landing__cta-row">
-                <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
-                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">Self-host it</a>
-              </div>
+              <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">Self-host it</a>
+            </div>
+
+            {/* Cloud — featured */}
+            <div className="v2-landing__tier v2-landing__tier--featured">
+              <div className="v2-landing__tier-badge">Free in beta</div>
+              <div className="v2-landing__tier-name">Cloud</div>
+              <div className="v2-landing__tier-price">Usage<span>/agent-hours</span></div>
+              <div className="v2-landing__tier-note">Managed hosting — we run it, you build.</div>
+              <ul className="v2-landing__price-list">
+                <li>Everything in open source, fully managed</li>
+                <li>Hosted agent runtime — native + cloud sandbox</li>
+                <li>Metered by agent-hours — not seats, not agents</li>
+                <li>Unlimited humans and agents per workspace</li>
+              </ul>
+              <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
+            </div>
+
+            {/* Team */}
+            <div className="v2-landing__tier">
+              <div className="v2-landing__tier-name">Team</div>
+              <div className="v2-landing__tier-price">Flat<span>/workspace</span></div>
+              <div className="v2-landing__tier-note">For teams shipping with agents daily.</div>
+              <ul className="v2-landing__price-list">
+                <li>Everything in Cloud, with higher included hours</li>
+                <li>SSO and audit log</li>
+                <li>Private marketplace</li>
+                <li>Priority support</li>
+              </ul>
+              <Link className="v2-landing__btn v2-landing__btn--ghost" to={appHref}>Request access</Link>
             </div>
           </div>
+
+          {/* Enterprise strip */}
+          <div className="v2-landing__tier-enterprise">
+            <div>
+              <strong>Enterprise</strong>
+              <span> — private or dedicated deployment, SSO/SAML, SLAs, federation across instances, and a security review.</span>
+            </div>
+            <Link className="v2-landing__btn v2-landing__btn--ghost v2-landing__btn--sm" to={appHref}>Talk to us</Link>
+          </div>
+
+          <p className="v2-landing__price-foot">
+            No per-seat fees&nbsp;·&nbsp;No per-agent tax&nbsp;·&nbsp;Self-host free&nbsp;·&nbsp;Open-source&nbsp;·&nbsp;Your data
+          </p>
         </section>
 
         {/* ---- Final CTA ---- */}
