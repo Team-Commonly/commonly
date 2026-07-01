@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import {
-  Alert,
-  Box,
-  Button,
-  Container,
-  Paper,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
 import axios from '../utils/axiosConfig';
-import commonlyLogo from '../assets/commonly-logo.png';
+
+// v2-native invite-required gate. Pairs with V2Login / V2Register (reuses the
+// .v2-login card styles) so every auth surface matches after v2 became the
+// default. Two forms in one card: enter an invite code → hand off to
+// /v2/register, or submit a waitlist request for admin review. Logic is
+// unchanged from the legacy MUI version — only the presentation is v2.
+
+const Brand: React.FC = () => (
+  <div className="v2-login__brand">
+    <span className="v2-rail__brand-icon">c</span>
+    commonly
+  </div>
+);
 
 const RegistrationInviteRequired: React.FC = () => {
   const navigate = useNavigate();
@@ -53,123 +55,81 @@ const RegistrationInviteRequired: React.FC = () => {
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        background: 'radial-gradient(circle at top, rgba(46, 64, 110, 0.15), transparent 55%), linear-gradient(135deg, #0f172a 0%, #111827 45%, #0b1220 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        py: { xs: 6, md: 10 },
-      }}
-    >
-      <Container maxWidth="sm">
-        <Paper
-          elevation={6}
-          sx={{
-            borderRadius: 3,
-            background: '#0b1220',
-            border: '1px solid rgba(148, 163, 184, 0.15)',
-            p: { xs: 4, md: 5 },
-            textAlign: 'center',
-          }}
-        >
-          <Box
-            component="img"
-            src={commonlyLogo}
-            alt="Commonly logo"
-            sx={{
-              width: 52,
-              height: 52,
-              borderRadius: 2,
-              backgroundColor: '#0f172a',
-              border: '1px solid rgba(148, 163, 184, 0.2)',
-              p: 0.75,
-              mb: 2,
-            }}
-          />
-          <Typography variant="h4" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1.5 }}>
-            Invitation Required
-          </Typography>
-          <Typography variant="body1" sx={{ color: '#cbd5e1', mb: 3 }}>
-            New account registration is currently invite-only. Enter your invitation code to continue,
-            or submit a waitlist request for admin review.
-          </Typography>
-          <Box component="form" onSubmit={onContinue}>
-            <TextField
-              fullWidth
-              label="Invitation Code"
+    <div className="v2-login">
+      <div className="v2-login__card">
+        <Brand />
+        <h1 className="v2-login__title">Invitation required</h1>
+        <p className="v2-login__subtitle">
+          New account registration is invite-only right now. Enter your invitation code to continue,
+          or join the waitlist for admin review.
+        </p>
+
+        <form onSubmit={onContinue}>
+          <label className="v2-login__field">
+            <span className="v2-login__label">Invitation code</span>
+            <input
+              className="v2-login__input"
+              type="text"
               value={invitationCode}
               onChange={(e) => setInvitationCode(e.target.value)}
               required
-              sx={{
-                input: { color: '#f8fafc' },
-                '& .MuiOutlinedInput-root': {
-                  backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                  '& fieldset': { borderColor: 'rgba(148, 163, 184, 0.3)' },
-                  '&:hover fieldset': { borderColor: 'rgba(148, 163, 184, 0.5)' },
-                  '&.Mui-focused fieldset': { borderColor: '#60a5fa' },
-                },
-                '& .MuiInputLabel-root': { color: 'rgba(226, 232, 240, 0.9)' },
-              }}
             />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              sx={{
-                mt: 3,
-                py: 1.2,
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-              }}
-            >
-              Continue to Registration
-            </Button>
-          </Box>
-          <Box sx={{ mt: 3, textAlign: 'left' }}>
-            <Typography variant="subtitle2" sx={{ color: '#e2e8f0', mb: 1 }}>
-              Need access? Join the waitlist
-            </Typography>
-            {waitlistError && <Alert severity="error" sx={{ mb: 1.25 }}>{waitlistError}</Alert>}
-            {waitlistSuccess && <Alert severity="success" sx={{ mb: 1.25 }}>{waitlistSuccess}</Alert>}
-            <Box component="form" onSubmit={onWaitlistSubmit}>
-              <Stack spacing={1.25}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Email"
-                  type="email"
-                  value={waitlistEmail}
-                  onChange={(e) => setWaitlistEmail(e.target.value)}
-                  required
-                />
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Name (optional)"
-                  value={waitlistName}
-                  onChange={(e) => setWaitlistName(e.target.value)}
-                />
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Use case (optional)"
-                  value={waitlistNote}
-                  onChange={(e) => setWaitlistNote(e.target.value)}
-                />
-                <Button type="submit" variant="outlined" disabled={waitlistLoading}>
-                  {waitlistLoading ? 'Submitting...' : 'Request Waitlist Access'}
-                </Button>
-              </Stack>
-            </Box>
-          </Box>
-          <Typography variant="body2" sx={{ mt: 2.5, color: 'rgba(226, 232, 240, 0.85)' }}>
-            Already have an account?{' '}
-            <Link to="/v2/login" style={{ color: '#93c5fd' }}>Login here</Link>
-          </Typography>
-        </Paper>
-      </Container>
-    </Box>
+          </label>
+          <button type="submit" className="v2-login__submit">
+            Continue to registration
+          </button>
+        </form>
+
+        <div className="v2-login__divider">Need access? Join the waitlist</div>
+
+        <form onSubmit={onWaitlistSubmit}>
+          <label className="v2-login__field">
+            <span className="v2-login__label">Email</span>
+            <input
+              className="v2-login__input"
+              type="email"
+              autoComplete="email"
+              value={waitlistEmail}
+              onChange={(e) => setWaitlistEmail(e.target.value)}
+              required
+            />
+          </label>
+          <label className="v2-login__field">
+            <span className="v2-login__label">Name (optional)</span>
+            <input
+              className="v2-login__input"
+              type="text"
+              value={waitlistName}
+              onChange={(e) => setWaitlistName(e.target.value)}
+            />
+          </label>
+          <label className="v2-login__field">
+            <span className="v2-login__label">Use case (optional)</span>
+            <input
+              className="v2-login__input"
+              type="text"
+              value={waitlistNote}
+              onChange={(e) => setWaitlistNote(e.target.value)}
+            />
+          </label>
+          <button
+            type="submit"
+            className="v2-login__submit v2-login__submit--ghost"
+            disabled={waitlistLoading}
+          >
+            {waitlistLoading ? 'Submitting…' : 'Request waitlist access'}
+          </button>
+          {waitlistError && <div className="v2-login__error">{waitlistError}</div>}
+          {waitlistSuccess && <div className="v2-login__success">{waitlistSuccess}</div>}
+        </form>
+
+        <div className="v2-login__hint">
+          Already have an account?
+          {' '}
+          <Link to="/v2/login" className="v2-login__link">Sign in</Link>
+        </div>
+      </div>
+    </div>
   );
 };
 
