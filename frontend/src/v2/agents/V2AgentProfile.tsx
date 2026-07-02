@@ -1,0 +1,228 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import axios from 'axios';
+import getApiBaseUrl from '../../utils/apiBaseUrl';
+import V2Avatar from '../components/V2Avatar';
+import '../v2.css';
+import './v2-agent-profile.css';
+
+// Public, logged-out, read-only agent PROFILE — the "meet the agent" identity
+// card, distinct from the owner-only Configuration control panel. Sits OUTSIDE
+// the auth gate (see V2App), so every fetch MUST be token-less.
+//
+// Contract (shared with backend routes/agentProfile.ts):
+//   GET /api/agent-profile/:agentName/:instanceId → { agent, skills, pods, memory, activity }
+// Whitelisted: never email / tokens / private memory / private pod names.
+
+// Lazy token-less client (see V2Showcase for the full rationale): the default
+// axios instance injects the viewer's bearer token; a dedicated instance keeps
+// this public endpoint anonymous regardless of auth state.
+let _client: ReturnType<typeof axios.create> | null = null;
+const getClient = () => {
+  if (!_client) _client = axios.create({ baseURL: getApiBaseUrl() });
+  return _client;
+};
+
+interface AgentProfile {
+  agent: {
+    agentName: string;
+    instanceId: string;
+    displayName: string;
+    profilePicture: string;
+    runtime: string | null;
+    officialAgent: boolean;
+    description?: string;
+    capabilities: string[];
+    personality?: { tone?: string; interests?: string[] };
+    createdAt?: string;
+  };
+  skills: Array<{ name: string; description?: string }>;
+  pods: { count: number; publicNames: string[] };
+  memory: { has: boolean; entryCount: number; updatedAt?: string | null };
+  activity: Array<{ status: string; trigger?: string; startedAt?: string; turns: number; errorKind?: string }>;
+}
+
+const timeAgo = (iso?: string | null): string => {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const s = Math.max(1, Math.floor((Date.now() - then) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+};
+
+const TopBar: React.FC = () => (
+  <header className="v2-aprofile__bar">
+    <Link className="v2-aprofile__brand" to="/v2/landing">
+      <span className="v2-rail__brand-icon">c</span>
+      Commonly
+    </Link>
+    <nav className="v2-aprofile__nav">
+      <Link className="v2-aprofile__navlink" to="/v2/landing">What is Commonly?</Link>
+      <Link className="v2-aprofile__navlink" to="/v2/login">Sign in</Link>
+      <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Sign up</Link>
+    </nav>
+  </header>
+);
+
+const V2AgentProfile: React.FC = () => {
+  const { agentName, instanceId } = useParams<{ agentName: string; instanceId?: string }>();
+  const [data, setData] = useState<AgentProfile | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  const fetchProfile = useCallback(async () => {
+    setState('loading');
+    try {
+      const id = instanceId || 'default';
+      const res = await getClient().get<AgentProfile>(
+        `/api/agent-profile/${encodeURIComponent(agentName || '')}/${encodeURIComponent(id)}`,
+      );
+      setData(res.data);
+      setState('ready');
+    } catch {
+      setState('error');
+    }
+  }, [agentName, instanceId]);
+
+  useEffect(() => { fetchProfile(); }, [fetchProfile]);
+
+  if (state === 'loading') {
+    return (
+      <div className="v2-root v2-aprofile">
+        <TopBar />
+        <div className="v2-aprofile__center"><div className="v2-aprofile__muted">Loading…</div></div>
+      </div>
+    );
+  }
+  if (state === 'error' || !data) {
+    return (
+      <div className="v2-root v2-aprofile">
+        <TopBar />
+        <div className="v2-aprofile__center">
+          <h1 className="v2-aprofile__empty-title">Agent not found</h1>
+          <p className="v2-aprofile__muted">This agent may not exist. Explore what Commonly is, or start your own team.</p>
+          <div className="v2-aprofile__cta-row">
+            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Start your own team</Link>
+            <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to="/v2/landing">What is Commonly?</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { agent, skills, pods, memory, activity } = data;
+  const runtimeLabel = (agent.runtime || '').toUpperCase();
+
+  return (
+    <div className="v2-root v2-aprofile">
+      <TopBar />
+      <main className="v2-aprofile__main">
+        {/* Identity header */}
+        <section className="v2-aprofile__hero">
+          <V2Avatar name={agent.displayName} src={agent.profilePicture} size="lg" />
+          <div className="v2-aprofile__hero-text">
+            <div className="v2-aprofile__name-row">
+              <h1 className="v2-aprofile__name">{agent.displayName}</h1>
+              {runtimeLabel && <span className="v2-aprofile__runtime">{runtimeLabel}</span>}
+              {agent.officialAgent && <span className="v2-aprofile__badge">Official</span>}
+            </div>
+            {agent.description && <p className="v2-aprofile__desc">{agent.description}</p>}
+            <div className="v2-aprofile__meta">
+              <span>Active in {pods.count} pod{pods.count === 1 ? '' : 's'}</span>
+              {memory.has && <span>· {memory.entryCount} memories</span>}
+              {agent.personality?.tone && <span>· {agent.personality.tone}</span>}
+            </div>
+          </div>
+          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Talk to {agent.displayName.split(' ')[0]}</Link>
+        </section>
+
+        <div className="v2-aprofile__grid">
+          {/* Capabilities + specialties */}
+          {(agent.capabilities.length > 0 || (agent.personality?.interests?.length || 0) > 0) && (
+            <section className="v2-aprofile__card">
+              <h2 className="v2-aprofile__card-title">Specialties</h2>
+              <div className="v2-aprofile__chips">
+                {agent.capabilities.map((c) => <span key={c} className="v2-aprofile__chip">{c}</span>)}
+                {(agent.personality?.interests || []).map((i) => <span key={i} className="v2-aprofile__chip v2-aprofile__chip--soft">{i}</span>)}
+              </div>
+            </section>
+          )}
+
+          {/* Installed skills */}
+          <section className="v2-aprofile__card">
+            <h2 className="v2-aprofile__card-title">Installed skills <span className="v2-aprofile__count">{skills.length}</span></h2>
+            {skills.length === 0 ? (
+              <p className="v2-aprofile__muted">No skills attached yet.</p>
+            ) : (
+              <ul className="v2-aprofile__list">
+                {skills.slice(0, 12).map((s) => (
+                  <li key={s.name} className="v2-aprofile__skill">
+                    <span className="v2-aprofile__skill-name">{s.name}</span>
+                    {s.description && <span className="v2-aprofile__skill-desc">{s.description}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Memory layer (stat — never private content) */}
+          <section className="v2-aprofile__card">
+            <h2 className="v2-aprofile__card-title">Memory layer</h2>
+            {memory.has ? (
+              <div className="v2-aprofile__memory">
+                <div className="v2-aprofile__stat">
+                  <span className="v2-aprofile__stat-num">{memory.entryCount}</span>
+                  <span className="v2-aprofile__stat-label">entries remembered</span>
+                </div>
+                <p className="v2-aprofile__muted">
+                  Persistent memory carried across every pod and runtime this agent joins.
+                  {memory.updatedAt && ` Last updated ${timeAgo(memory.updatedAt)}.`}
+                </p>
+              </div>
+            ) : (
+              <p className="v2-aprofile__muted">No memory recorded yet.</p>
+            )}
+          </section>
+
+          {/* Pods */}
+          {pods.publicNames.length > 0 && (
+            <section className="v2-aprofile__card">
+              <h2 className="v2-aprofile__card-title">Public pods</h2>
+              <div className="v2-aprofile__chips">
+                {pods.publicNames.map((n) => <span key={n} className="v2-aprofile__chip">{n}</span>)}
+              </div>
+            </section>
+          )}
+
+          {/* Recent activity */}
+          {activity.length > 0 && (
+            <section className="v2-aprofile__card">
+              <h2 className="v2-aprofile__card-title">Recent activity</h2>
+              <ul className="v2-aprofile__list">
+                {activity.map((a, i) => (
+                  <li key={i} className="v2-aprofile__run">
+                    <span className={`v2-aprofile__run-dot v2-aprofile__run-dot--${a.errorKind ? 'err' : a.status}`} />
+                    <span className="v2-aprofile__run-label">{a.trigger || a.status}</span>
+                    <span className="v2-aprofile__muted">{a.turns} turn{a.turns === 1 ? '' : 's'} · {timeAgo(a.startedAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+
+        <div className="v2-aprofile__footer-cta">
+          <span>Every agent on Commonly keeps one identity and memory — across any runtime.</span>
+          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Start your own team</Link>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default V2AgentProfile;
