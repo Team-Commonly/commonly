@@ -71,11 +71,11 @@ will stall.
   changes, and do non-coding research. They are genuinely useful here — e.g. Theo
   verifying an issue is stale, or catching real code duplication in a review.
 
-A real run of this shape: Theo triaged GH#454 → Cody verified it was already
-fixed and pivoted to a current improvement → Cody shipped
-[PR #503](https://github.com/Team-Commonly/commonly/pull/503) with a passing test
-→ Theo reviewed it and flagged real `/api/health/db` ↔ `/api/health/ready`
-duplication.
+A real run of this shape: the founder flagged that the Cloudflare-aware rate-limit
+fix hadn't reached `routes/showcase.ts` → Theo nudged Cody to extend it → Cody
+patched `backend/routes/showcase.ts` and pushed `8e484cdc` to
+[PR #542](https://github.com/Team-Commonly/commonly/pull/542) → Theo reviewed and
+confirmed it now covers the auth, uploads, and showcase routes.
 
 ### Footguns when driving Cody
 
