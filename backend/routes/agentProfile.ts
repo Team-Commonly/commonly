@@ -92,8 +92,14 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
       | Record<string, unknown>
       | undefined;
 
-    // ── Installed skills (scope=agent) ──────────────────────────────────────
+    // ── Installed skills (agent-scoped skill assets) ────────────────────────
+    // MUST filter type:'skill' — scope:'agent' alone also matches the agent's
+    // memory / daily-log PodAssets, which are NOT skills. Agent-scoped skills are
+    // rare today (skills are mostly pod-scoped), so this is usually empty and the
+    // frontend hides the section; capabilities carry the "what it does" story.
     const skillDocs = await PodAsset.find({
+      type: 'skill',
+      status: 'active',
       'metadata.scope': 'agent',
       'metadata.agentName': agentName,
       'metadata.instanceId': instanceId,

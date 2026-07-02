@@ -153,12 +153,12 @@ const V2AgentProfile: React.FC = () => {
             </section>
           )}
 
-          {/* Installed skills */}
-          <section className="v2-aprofile__card">
-            <h2 className="v2-aprofile__card-title">Installed skills <span className="v2-aprofile__count">{skills.length}</span></h2>
-            {skills.length === 0 ? (
-              <p className="v2-aprofile__muted">No skills attached yet.</p>
-            ) : (
+          {/* Installed skills — only when the agent genuinely has agent-scoped
+              skills (rare today; skills are mostly pod-scoped). Capabilities above
+              carry the "what it does" story otherwise. */}
+          {skills.length > 0 && (
+            <section className="v2-aprofile__card">
+              <h2 className="v2-aprofile__card-title">Installed skills <span className="v2-aprofile__count">{skills.length}</span></h2>
               <ul className="v2-aprofile__list">
                 {skills.slice(0, 12).map((s) => (
                   <li key={s.name} className="v2-aprofile__skill">
@@ -167,8 +167,8 @@ const V2AgentProfile: React.FC = () => {
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
+            </section>
+          )}
 
           {/* Memory layer (stat — never private content) */}
           <section className="v2-aprofile__card">
