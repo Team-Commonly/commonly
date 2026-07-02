@@ -42,6 +42,15 @@ interface AgentProfile {
   activity: Array<{ status: string; trigger?: string; startedAt?: string; turns: number; errorKind?: string }>;
 }
 
+// Owner/admin-only memory index (fetched with the viewer's token; 401/403 for
+// everyone else → public count is shown instead).
+interface MemoryIndex {
+  viewerRole: 'owner' | 'admin';
+  totalEntries: number;
+  updatedAt?: string | null;
+  sections: Array<{ key: string; label: string; kind: string; notes: Array<{ header: string; snippet: string }> }>;
+}
+
 const timeAgo = (iso?: string | null): string => {
   if (!iso) return '';
   const then = new Date(iso).getTime();
@@ -74,6 +83,7 @@ const V2AgentProfile: React.FC = () => {
   const { agentName, instanceId } = useParams<{ agentName: string; instanceId?: string }>();
   const [data, setData] = useState<AgentProfile | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [memIndex, setMemIndex] = useState<MemoryIndex | null>(null);
 
   const fetchProfile = useCallback(async () => {
     setState('loading');
@@ -89,7 +99,25 @@ const V2AgentProfile: React.FC = () => {
     }
   }, [agentName, instanceId]);
 
-  useEffect(() => { fetchProfile(); }, [fetchProfile]);
+  // Progressive enhancement: if the viewer is signed in AND owns this agent (or
+  // is an admin), pull the private memory index. Public visitors 401/403 here and
+  // just see the count. Token passed explicitly since getClient() is token-less.
+  const fetchMemoryIndex = useCallback(async () => {
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
+    if (!token || !agentName) { setMemIndex(null); return; }
+    try {
+      const id = instanceId || 'default';
+      const res = await getClient().get<MemoryIndex>(
+        `/api/agent-memory/${encodeURIComponent(agentName)}/${encodeURIComponent(id)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setMemIndex(res.data);
+    } catch {
+      setMemIndex(null);
+    }
+  }, [agentName, instanceId]);
+
+  useEffect(() => { fetchProfile(); fetchMemoryIndex(); }, [fetchProfile, fetchMemoryIndex]);
 
   if (state === 'loading') {
     return (
@@ -170,10 +198,36 @@ const V2AgentProfile: React.FC = () => {
             </section>
           )}
 
-          {/* Memory layer (stat — never private content) */}
-          <section className="v2-aprofile__card">
-            <h2 className="v2-aprofile__card-title">Memory layer</h2>
-            {memory.has ? (
+          {/* Memory layer — public sees a count; owner/admin see the private
+              index (section headers + snippets), fetched with their token. */}
+          <section className={`v2-aprofile__card${memIndex && memIndex.sections.length > 0 ? ' v2-aprofile__card--wide' : ''}`}>
+            <h2 className="v2-aprofile__card-title">
+              Memory layer
+              {memIndex && <span className="v2-aprofile__owner-tag">{memIndex.viewerRole} view · private</span>}
+            </h2>
+            {memIndex && memIndex.sections.length > 0 ? (
+              <div className="v2-aprofile__memidx">
+                <p className="v2-aprofile__muted">
+                  {memIndex.totalEntries} notes across {memIndex.sections.length} section{memIndex.sections.length === 1 ? '' : 's'}
+                  {memIndex.updatedAt ? ` · updated ${timeAgo(memIndex.updatedAt)}` : ''}. Visible to you; hidden from the public profile.
+                </p>
+                <div className="v2-aprofile__memcols">
+                  {memIndex.sections.map((sec) => (
+                    <div key={sec.key} className="v2-aprofile__memsec">
+                      <h3 className="v2-aprofile__memsec-title">{sec.label} <span className="v2-aprofile__count">{sec.notes.length}</span></h3>
+                      <ul className="v2-aprofile__list">
+                        {sec.notes.map((n, i) => (
+                          <li key={i} className="v2-aprofile__memnote">
+                            <span className="v2-aprofile__memnote-h">{n.header}</span>
+                            {n.snippet && <span className="v2-aprofile__memnote-s">{n.snippet}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : memory.has ? (
               <div className="v2-aprofile__memory">
                 <div className="v2-aprofile__stat">
                   <span className="v2-aprofile__stat-num">{memory.entryCount}</span>

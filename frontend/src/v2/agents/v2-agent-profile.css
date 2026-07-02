@@ -134,6 +134,31 @@
 .v2-aprofile__stat-num { font-size: 34px; font-weight: 850; letter-spacing: -0.03em; color: var(--v2-accent); }
 .v2-aprofile__stat-label { font-size: 13px; color: var(--v2-text-secondary); }
 
+/* Memory index (owner/admin private view) */
+.v2-aprofile__card--wide { grid-column: 1 / -1; }
+.v2-aprofile__owner-tag {
+  margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--v2-accent-text);
+  background: var(--v2-accent-soft); padding: 2px 8px; border-radius: var(--v2-radius-pill);
+}
+.v2-aprofile__memidx { display: flex; flex-direction: column; gap: 14px; }
+.v2-aprofile__memcols {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px;
+}
+.v2-aprofile__memsec {
+  border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius);
+  padding: 14px; background: var(--v2-bg-subtle);
+}
+.v2-aprofile__memsec-title {
+  margin: 0 0 10px; font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--v2-text-secondary);
+  display: flex; align-items: center; gap: 6px;
+}
+.v2-aprofile__memnote { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-top: 1px solid var(--v2-border-soft); }
+.v2-aprofile__memnote:first-child { border-top: none; padding-top: 0; }
+.v2-aprofile__memnote-h { font-size: 13px; font-weight: 600; color: var(--v2-text-primary); }
+.v2-aprofile__memnote-s { font-size: 12px; color: var(--v2-text-tertiary); line-height: 1.45; }
+
 .v2-aprofile__run { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .v2-aprofile__run-label { font-weight: 500; color: var(--v2-text-primary); }
 .v2-aprofile__run-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--v2-text-muted); }
