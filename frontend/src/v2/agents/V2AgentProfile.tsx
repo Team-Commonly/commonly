@@ -37,18 +37,26 @@ interface AgentProfile {
     createdAt?: string;
   };
   skills: Array<{ name: string; description?: string }>;
-  pods: { count: number; publicNames: string[] };
+  pods: { count: number; public: Array<{ id: string; name: string; lastActive?: string | null }> };
   memory: { has: boolean; entryCount: number; updatedAt?: string | null };
   activity: Array<{ status: string; trigger?: string; startedAt?: string; turns: number; errorKind?: string }>;
 }
 
 // Owner/admin-only memory index (fetched with the viewer's token; 401/403 for
 // everyone else → public count is shown instead).
+interface PodEntry {
+  id: string;
+  name: string;
+  type?: string;
+  lastActive?: string | null;
+  lastMessage?: { snippet: string; at?: string | null } | null;
+}
 interface MemoryIndex {
   viewerRole: 'owner' | 'admin';
   totalEntries: number;
   updatedAt?: string | null;
   sections: Array<{ key: string; label: string; kind: string; notes: Array<{ header: string; snippet: string }> }>;
+  pods?: PodEntry[];
 }
 
 const timeAgo = (iso?: string | null): string => {
@@ -181,6 +189,33 @@ const V2AgentProfile: React.FC = () => {
             </section>
           )}
 
+          {/* Pods — owner/admin see ALL pods + the agent's last message there;
+              the public sees only publicRead pods. Sorted by last active. */}
+          {(() => {
+            const ownerPods = memIndex?.pods && memIndex.pods.length > 0 ? memIndex.pods : null;
+            const publicPods: PodEntry[] = pods.public || [];
+            const list: PodEntry[] = ownerPods || publicPods;
+            if (list.length === 0) return null;
+            return (
+              <section className="v2-aprofile__card">
+                <h2 className="v2-aprofile__card-title">
+                  {ownerPods ? 'Pods' : 'Public pods'} <span className="v2-aprofile__count">{ownerPods ? pods.count : list.length}</span>
+                  {ownerPods && pods.count > list.length && <span className="v2-aprofile__owner-tag">all pods</span>}
+                </h2>
+                <ul className="v2-aprofile__list">
+                  {list.slice(0, 8).map((p) => (
+                    <li key={p.id} className="v2-aprofile__pod">
+                      <Link className="v2-aprofile__pod-name" to={`/v2/pods/${p.id}`}>{p.name}</Link>
+                      {p.lastMessage?.snippet && <span className="v2-aprofile__pod-msg">“{p.lastMessage.snippet}”</span>}
+                      {p.lastActive && <span className="v2-aprofile__pod-when">active {timeAgo(p.lastActive)}</span>}
+                    </li>
+                  ))}
+                </ul>
+                {list.length > 8 && <span className="v2-aprofile__more">+{list.length - 8} more</span>}
+              </section>
+            );
+          })()}
+
           {/* Installed skills — only when the agent genuinely has agent-scoped
               skills (rare today; skills are mostly pod-scoped). Capabilities above
               carry the "what it does" story otherwise. */}
@@ -216,13 +251,14 @@ const V2AgentProfile: React.FC = () => {
                     <div key={sec.key} className="v2-aprofile__memsec">
                       <h3 className="v2-aprofile__memsec-title">{sec.label} <span className="v2-aprofile__count">{sec.notes.length}</span></h3>
                       <ul className="v2-aprofile__list">
-                        {sec.notes.map((n, i) => (
+                        {sec.notes.slice(0, 5).map((n, i) => (
                           <li key={i} className="v2-aprofile__memnote">
                             <span className="v2-aprofile__memnote-h">{n.header}</span>
                             {n.snippet && <span className="v2-aprofile__memnote-s">{n.snippet}</span>}
                           </li>
                         ))}
                       </ul>
+                      {sec.notes.length > 5 && <span className="v2-aprofile__more">+{sec.notes.length - 5} more</span>}
                     </div>
                   ))}
                 </div>
@@ -242,16 +278,6 @@ const V2AgentProfile: React.FC = () => {
               <p className="v2-aprofile__muted">No memory recorded yet.</p>
             )}
           </section>
-
-          {/* Pods */}
-          {pods.publicNames.length > 0 && (
-            <section className="v2-aprofile__card">
-              <h2 className="v2-aprofile__card-title">Public pods</h2>
-              <div className="v2-aprofile__chips">
-                {pods.publicNames.map((n) => <span key={n} className="v2-aprofile__chip">{n}</span>)}
-              </div>
-            </section>
-          )}
 
           {/* Recent activity */}
           {activity.length > 0 && (

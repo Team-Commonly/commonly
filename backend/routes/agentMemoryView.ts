@@ -28,6 +28,10 @@ const AgentMemory = require('../models/AgentMemory');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const Pod = require('../models/Pod');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PGMessage = require('../models/pg/Message');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
 
 interface AuthReq {
@@ -132,6 +136,41 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
       'botMetadata.instanceId': instanceId,
     }).select('username botMetadata').lean();
 
+    // ── Pods this agent is in — ALL pods (owner/admin view), each with last
+    // activity + the agent's own last message there, sorted most-active first. ──
+    const installs = await AgentInstallation.find({ agentName, instanceId, status: 'active' })
+      .select('podId').lean();
+    const podIds = Array.from(new Set((installs as Array<{ podId?: unknown }>)
+      .map((i) => (i?.podId ? String(i.podId) : '')).filter(Boolean)));
+    let pods: unknown[] = [];
+    if (podIds.length) {
+      const podDocs = await Pod.find({ _id: { $in: podIds } }).select('name type').lean();
+      const nameById = new Map((podDocs as Array<{ _id: unknown; name?: string; type?: string }>)
+        .map((p) => [String(p._id), { name: p.name || 'pod', type: p.type || '' }]));
+      let lastActiveById = new Map<string, unknown>();
+      let lastMsgById = new Map<string, { content: string; createdAt: unknown }>();
+      try {
+        const acts = await PGMessage.findMostRecentPodActivity(podIds, new Date(0));
+        lastActiveById = new Map((acts as Array<{ podId: string; lastAt: unknown }>).map((a) => [String(a.podId), a.lastAt]));
+        if (agentUser?._id) {
+          const msgs = await PGMessage.findLastMessageByUserPerPod(agentUser._id, podIds);
+          lastMsgById = new Map((msgs as Array<{ podId: string; content: string; createdAt: unknown }>)
+            .map((mm) => [String(mm.podId), { content: mm.content, createdAt: mm.createdAt }]));
+        }
+      } catch { /* PG unavailable — still list pods, just without activity/message */ }
+      pods = podIds.map((pid) => {
+        const meta = nameById.get(pid) || { name: 'pod', type: '' };
+        const lm = lastMsgById.get(pid);
+        return {
+          id: pid,
+          name: meta.name,
+          type: meta.type,
+          lastActive: lastActiveById.get(pid) || null,
+          lastMessage: lm ? { snippet: snip(lm.content), at: lm.createdAt } : null,
+        };
+      }).sort((a: any, b: any) => new Date((b.lastActive as string) || 0).getTime() - new Date((a.lastActive as string) || 0).getTime());
+    }
+
     const record = await AgentMemory.findOne({ agentName, instanceId })
       .select('sections updatedAt')
       .lean();
@@ -175,6 +214,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
       updatedAt: (record as Record<string, unknown>)?.updatedAt || null,
       totalEntries,
       sections,
+      pods,
     });
   } catch (err) {
     console.error('[agent-memory] error:', (err as Error).message);
