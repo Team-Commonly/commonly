@@ -150,7 +150,7 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
         else if (v && typeof v === 'object') memoryEntryCount += 1;
       }
       publicMemory = filterSectionsByVisibility(
-        sections,
+        sections as Parameters<typeof filterSectionsByVisibility>[0],
         [], // requester has no shared pods → public-only
         ownerPodIds,
       );
