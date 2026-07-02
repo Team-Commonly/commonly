@@ -4494,11 +4494,17 @@
 .v2-team-card__name-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   margin-bottom: 2px;
 }
 
 .v2-team-card__name {
+  /* Own the full first line so the category chip + runtime badge wrap to a meta
+     line below instead of flex-crushing the name to a single ellipsized char
+     (the "AI Citation Strategist" → "/" bug on categorized agents). */
+  flex: 1 0 100%;
+  min-width: 0;
   font-weight: 600;
   font-size: 15px;
   color: #1a1c22;
