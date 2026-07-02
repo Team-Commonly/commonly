@@ -73,19 +73,31 @@ const timeAgo = (iso?: string | null): string => {
   return `${d}d ago`;
 };
 
-const TopBar: React.FC = () => (
+// Auth-aware chrome: anonymous visitors get the conversion nav (What is Commonly? /
+// Sign in / Sign up); a signed-in viewer gets a link back into the app instead —
+// the sign-up CTAs don't belong once you're logged in.
+const TopBar: React.FC<{ authed?: boolean }> = ({ authed }) => (
   <header className="v2-aprofile__bar">
-    <Link className="v2-aprofile__brand" to="/v2/landing">
+    <Link className="v2-aprofile__brand" to={authed ? '/v2' : '/v2/landing'}>
       <span className="v2-rail__brand-icon">c</span>
       Commonly
     </Link>
     <nav className="v2-aprofile__nav">
-      <Link className="v2-aprofile__navlink" to="/v2/landing">What is Commonly?</Link>
-      <Link className="v2-aprofile__navlink" to="/v2/login">Sign in</Link>
-      <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Sign up</Link>
+      {authed ? (
+        <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to="/v2/agents">Back to Commonly</Link>
+      ) : (
+        <>
+          <Link className="v2-aprofile__navlink" to="/v2/landing">What is Commonly?</Link>
+          <Link className="v2-aprofile__navlink" to="/v2/login">Sign in</Link>
+          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Sign up</Link>
+        </>
+      )}
     </nav>
   </header>
 );
+
+const isAuthed = (): boolean =>
+  typeof window !== 'undefined' && !!window.localStorage.getItem('token');
 
 const V2AgentProfile: React.FC = () => {
   const { agentName, instanceId } = useParams<{ agentName: string; instanceId?: string }>();
@@ -130,7 +142,7 @@ const V2AgentProfile: React.FC = () => {
   if (state === 'loading') {
     return (
       <div className="v2-root v2-aprofile">
-        <TopBar />
+        <TopBar authed={isAuthed()} />
         <div className="v2-aprofile__center"><div className="v2-aprofile__muted">Loading…</div></div>
       </div>
     );
@@ -138,7 +150,7 @@ const V2AgentProfile: React.FC = () => {
   if (state === 'error' || !data) {
     return (
       <div className="v2-root v2-aprofile">
-        <TopBar />
+        <TopBar authed={isAuthed()} />
         <div className="v2-aprofile__center">
           <h1 className="v2-aprofile__empty-title">Agent not found</h1>
           <p className="v2-aprofile__muted">This agent may not exist. Explore what Commonly is, or start your own team.</p>
@@ -153,10 +165,12 @@ const V2AgentProfile: React.FC = () => {
 
   const { agent, skills, pods, memory, activity } = data;
   const runtimeLabel = (agent.runtime || '').toUpperCase();
+  const authed = isAuthed();
+  const firstName = agent.displayName.split(' ')[0];
 
   return (
     <div className="v2-root v2-aprofile">
-      <TopBar />
+      <TopBar authed={authed} />
       <main className="v2-aprofile__main">
         {/* Identity header */}
         <section className="v2-aprofile__hero">
@@ -180,7 +194,7 @@ const V2AgentProfile: React.FC = () => {
               </div>
             )}
           </div>
-          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Talk to {agent.displayName.split(' ')[0]}</Link>
+          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to={authed ? '/v2/agents' : '/v2/register'}>Talk to {firstName}</Link>
         </section>
 
         <div className="v2-aprofile__grid">
@@ -291,10 +305,12 @@ const V2AgentProfile: React.FC = () => {
           )}
         </div>
 
-        <div className="v2-aprofile__footer-cta">
-          <span>Every agent on Commonly keeps one identity and memory — across any runtime.</span>
-          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Start your own team</Link>
-        </div>
+        {!authed && (
+          <div className="v2-aprofile__footer-cta">
+            <span>Every agent on Commonly keeps one identity and memory — across any runtime.</span>
+            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Start your own team</Link>
+          </div>
+        )}
       </main>
     </div>
   );
