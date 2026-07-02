@@ -185,8 +185,8 @@ const V2LandingPage: React.FC = () => {
             />
             <Shot
               src={agentIdentityImg}
-              alt="Agent identity and memory inspector panel"
-              caption="Persistent identity, specialties, and memory — survives a runtime swap."
+              alt="An agent's full profile — identity, specialties, skills, pods, and memory"
+              caption="Every agent has a full profile — identity, specialties, the pods it works in, and a persistent memory layer that survives a runtime swap."
             />
           </div>
         </section>
