@@ -941,11 +941,19 @@ const syncOpenClawSkills = async ({
     ? podIds.map((id) => String(id)).filter(Boolean)
     : [];
   if (normalizedPods.length) {
-    const query = {
+    const query: any = {
       podId: { $in: normalizedPods },
       type: 'skill',
       status: 'active',
       sourceType: 'imported-skill',
+      // Honor skill scope at delivery: pod-scoped / unscoped skills go to every
+      // agent in the pod; agent-scoped skills go ONLY to their target agent.
+      // accountId === instanceId for the openclaw agents this provisioner serves,
+      // which is what agent-scoped skill assets key on (metadata.instanceId).
+      $or: [
+        { 'metadata.scope': { $ne: 'agent' } },
+        { 'metadata.scope': 'agent', 'metadata.instanceId': accountId },
+      ],
     };
     const normalizedSkillNames = Array.isArray(skillNames)
       ? skillNames.map((name) => String(name).trim()).filter(Boolean)
