@@ -161,6 +161,13 @@
 
 .v2-aprofile__more { font-size: 12px; color: var(--v2-text-tertiary); margin-top: 8px; display: inline-block; }
 
+/* Bounded, scrollable section bodies so a long pods/memory list keeps the card
+   compact and the sections below it visible at first glance. */
+.v2-aprofile__scroll { max-height: 300px; overflow-y: auto; padding-right: 6px; }
+.v2-aprofile__scroll::-webkit-scrollbar { width: 8px; }
+.v2-aprofile__scroll::-webkit-scrollbar-thumb { background: var(--v2-border-strong, var(--v2-border)); border-radius: 4px; }
+.v2-aprofile__scroll::-webkit-scrollbar-track { background: transparent; }
+
 /* Pods list */
 .v2-aprofile__pod { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--v2-border-soft); }
 .v2-aprofile__pod:first-child { border-top: none; padding-top: 0; }

@@ -202,8 +202,8 @@ const V2AgentProfile: React.FC = () => {
                   {ownerPods ? 'Pods' : 'Public pods'} <span className="v2-aprofile__count">{ownerPods ? pods.count : list.length}</span>
                   {ownerPods && pods.count > list.length && <span className="v2-aprofile__owner-tag">all pods</span>}
                 </h2>
-                <ul className="v2-aprofile__list">
-                  {list.slice(0, 8).map((p) => (
+                <ul className="v2-aprofile__list v2-aprofile__scroll">
+                  {list.map((p) => (
                     <li key={p.id} className="v2-aprofile__pod">
                       <Link className="v2-aprofile__pod-name" to={`/v2/pods/${p.id}`}>{p.name}</Link>
                       {p.lastMessage?.snippet && <span className="v2-aprofile__pod-msg">“{p.lastMessage.snippet}”</span>}
@@ -211,7 +211,6 @@ const V2AgentProfile: React.FC = () => {
                     </li>
                   ))}
                 </ul>
-                {list.length > 8 && <span className="v2-aprofile__more">+{list.length - 8} more</span>}
               </section>
             );
           })()}
@@ -246,7 +245,7 @@ const V2AgentProfile: React.FC = () => {
                   {memIndex.totalEntries} notes across {memIndex.sections.length} section{memIndex.sections.length === 1 ? '' : 's'}
                   {memIndex.updatedAt ? ` · updated ${timeAgo(memIndex.updatedAt)}` : ''}. Visible to you; hidden from the public profile.
                 </p>
-                <div className="v2-aprofile__memcols">
+                <div className="v2-aprofile__memcols v2-aprofile__scroll">
                   {memIndex.sections.map((sec) => (
                     <div key={sec.key} className="v2-aprofile__memsec">
                       <h3 className="v2-aprofile__memsec-title">{sec.label} <span className="v2-aprofile__count">{sec.notes.length}</span></h3>
