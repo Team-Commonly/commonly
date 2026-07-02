@@ -145,6 +145,20 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 - **Inspector closes** to free width for the main pane; default state is collapsed.
 - Header heights cluster at **42px (tabs)**, **34px (chips/buttons)**, **78px (chat header w/ subtitle)**.
 - Mobile breakpoints at `1200px / 992px / 900px / 768px`. Below 900px the rail and pods sidebar collapse off-canvas.
+- **App-shell scroll containment.** `.v2-root` is a fixed-height app shell —
+  `height: 100vh; overflow: hidden` — so the shell chrome never scrolls and each
+  pane manages its own scroll internally. This is correct for the **shell**
+  (chat, pods, inspector), but a **full-page surface that scrolls as a document**
+  (landing, showcase, agent profile) mounts its root as `.v2-root .v2-<surface>`
+  and inherits that `overflow: hidden` — so anything past the first viewport is
+  **clipped with no scrollbar**. Every such surface must override:
+  ```css
+  .v2-root.v2-<surface> { height: 100vh; overflow-y: auto; overflow-x: hidden; }
+  ```
+  `.v2-root.v2-aprofile` does this; the showcase originally didn't and clipped
+  ~500px including its footer CTA (fixed in #575). When adding a new page-scroll
+  v2 surface, add this override and verify the page scrolls to its last element.
+  Never set `overflow: auto` on bare `.v2-root` — it breaks the shell panes.
 
 ---
 
