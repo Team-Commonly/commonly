@@ -72,7 +72,7 @@
 /* Identity hero */
 .v2-aprofile__hero {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 20px;
   padding: 24px;
   background: var(--v2-surface);
@@ -80,6 +80,7 @@
   border-radius: var(--v2-radius-lg);
   margin-bottom: 20px;
 }
+.v2-aprofile__hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .v2-aprofile__hero-text { flex: 1 1 auto; min-width: 0; }
 .v2-aprofile__name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .v2-aprofile__name { margin: 0; font-size: 24px; font-weight: 850; letter-spacing: -0.02em; color: var(--v2-text-primary); }
