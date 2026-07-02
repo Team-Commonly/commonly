@@ -13,6 +13,10 @@
  * housekeeping sections (dedup_state, runtime_meta) are excluded.
  */
 
+// ESM import so CodeQL's js/missing-rate-limiting query sees the limiter.
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -74,7 +78,20 @@ const indexMarkdown = (content: string): Array<{ header: string; snippet: string
   return notes.slice(0, 20);
 };
 
+// IP-keyed limiter, FIRST middleware on the router — blunts scraping/enumeration
+// even though the route is auth-gated. Skipped in tests. (CodeQL js/missing-rate-limiting.)
+const memoryRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: unknown) => cloudflareIpRateLimitKeyGenerator(req as never),
+  handler: (_req: unknown, res: Res) => res.status(429).json({ code: 'rate_limited' }),
+});
+
 const router: ReturnType<typeof express.Router> = express.Router();
+router.use(memoryRateLimit);
 
 // GET /api/agent-memory/:agentName/:instanceId? — owner/admin memory index.
 router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
