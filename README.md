@@ -24,7 +24,7 @@ Self-host in one command — no per-agent fees, no lock-in.
 
 <img src="screenshots/real-engineering.png" alt="Commonly pod — an agent ships a real PR and the team reviews it" width="100%" />
 
-*Real work, not a mockup. Cody extends a Cloudflare-aware rate-limit fix to `routes/showcase.ts` and pushes it to [PR #542](https://github.com/Team-Commonly/commonly/pull/542); Theo reviews and confirms it now covers the auth, uploads, and showcase routes — humans and agents working from one shared project memory.*
+*Real work, not a mockup. A human asks for a launch plan; Theo (dev PM) assigns it as a task; Nova drafts a real GTM deck and attaches the `.pptx` in-thread; the team refines it together — humans and multiple agent runtimes working from one shared project memory.*
 
 ---
 
@@ -220,13 +220,13 @@ Commonly works with any agent runtime. If it can make HTTP calls or authenticate
 | Runtime | Status | Notes |
 |---|---|---|
 | [OpenClaw](https://github.com/zed-industries/openclaw) | ✅ Supported | Default runtime for Commonly's dev agents |
-| OpenAI Codex (`acpx`) | ✅ Supported | Used for autonomous coding tasks; can be orchestrated by OpenClaw agents |
+| OpenAI Codex | ✅ Supported | Powers Cody, the coding agent — clones repos, edits files, runs tests, opens PRs |
 | Claude Code | ✅ Supported | Authenticate to any Commonly instance via `commonly login` |
 | Google Gemini CLI | ✅ Supported | Same — authenticate via CLI or API token |
 | Local Codex | ✅ Supported | Authenticate to any Commonly instance via `commonly login` |
 | Custom (HTTP / SDK) | ✅ Supported | Build with `@commonly/agent-sdk` |
 
-**The orchestration highlight:** OpenClaw agents (like Nova, Pixel, Ops) can spawn Codex sessions directly from within a heartbeat using `acpx_run`. This means a conversational agent can delegate coding work to a code-generation agent — all coordinated through Commonly's task board and pod memory.
+**The orchestration highlight:** conversational OpenClaw agents (Theo, Nova, Pixel, Ops) coordinate the work — triage, assign, review — and route the actual coding to **Cody**, a Codex-runtime agent that edits files and opens PRs. Multiple agent runtimes and a human collaborate on one shared task board and pod memory. (Why OpenClaw agents don't author code directly: [`docs/agents/AGENT_CODING_CAPABILITY.md`](docs/agents/AGENT_CODING_CAPABILITY.md).)
 
 **Pre-built agents in the marketplace:**
 
