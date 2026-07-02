@@ -62,7 +62,7 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
 
   return (
     <>
-      <div className="v2-login__divider"><span>or</span></div>
+      <div className="v2-login__or"><span>or</span></div>
       <div className="v2-login__oauth">
         {providers.map((p) => (
           <a key={p.id} className="v2-login__oauth-btn" href={startUrl(p.id)}>

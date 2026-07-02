@@ -3431,7 +3431,11 @@
   font-size: 12px;
 }
 
-.v2-login__divider {
+/* "or" separator between password form and social buttons. NOT
+   .v2-login__divider — that name is already taken by the invite-required
+   page's bordered section break (defined later in this file, so it would
+   win the cascade and stack a second hairline on top of this one). */
+.v2-login__or {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -3440,8 +3444,8 @@
   font-size: 12px;
 }
 
-.v2-login__divider::before,
-.v2-login__divider::after {
+.v2-login__or::before,
+.v2-login__or::after {
   content: '';
   flex: 1;
   height: 1px;
