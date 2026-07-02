@@ -60,6 +60,34 @@ const consumeDbInvitationCode = async (code: any) => {
 
 const isValidEmail = (email: any) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+// Give every new signup a default private workspace pod so the BYO
+// onboarding flow has a target to install/talk-to an agent in. Matches
+// the Mongo Pod shape created by podController.createPod (type 'chat',
+// creator = sole member); joinPolicy 'invite-only' keeps it private.
+// Best-effort: a pod-create hiccup must never fail signup — the user
+// can always create a pod from the UI later. Shared by password
+// registration and the OAuth signup path (oauthController).
+const createDefaultWorkspacePod = async (userId: any) => {
+  try {
+    await Pod.create({
+      name: 'My Workspace',
+      description: 'Your private workspace',
+      type: 'chat',
+      joinPolicy: 'invite-only',
+      createdBy: userId,
+      members: [userId],
+    });
+  } catch (podError: any) {
+    console.warn('[register] default workspace pod creation failed:', podError?.message);
+  }
+};
+
+// Reused by oauthController so social signups honor the same invite gate.
+exports.isInviteOnlyRegistrationEnabled = isInviteOnlyRegistrationEnabled;
+exports.isEnvInvitationCodeValid = isEnvInvitationCodeValid;
+exports.consumeDbInvitationCode = consumeDbInvitationCode;
+exports.createDefaultWorkspacePod = createDefaultWorkspacePod;
+
 // 📌 Register User
 exports.register = async (req: any, res: any) => {
   try {
@@ -149,24 +177,7 @@ exports.register = async (req: any, res: any) => {
     // Save user to database
     await user.save();
 
-    // Give every new signup a default private workspace pod so the BYO
-    // onboarding flow has a target to install/talk-to an agent in. Matches
-    // the Mongo Pod shape created by podController.createPod (type 'chat',
-    // creator = sole member); joinPolicy 'invite-only' keeps it private.
-    // Best-effort: a pod-create hiccup must never fail registration — the user
-    // can always create a pod from the UI later.
-    try {
-      await Pod.create({
-        name: 'My Workspace',
-        description: 'Your private workspace',
-        type: 'chat',
-        joinPolicy: 'invite-only',
-        createdBy: user._id,
-        members: [user._id],
-      });
-    } catch (podError: any) {
-      console.warn('[register] default workspace pod creation failed:', podError?.message);
-    }
+    await createDefaultWorkspacePod(user._id);
 
     if (hasEmailConfig) {
       // Generate email verification token
@@ -324,6 +335,16 @@ exports.login = async (req: any, res: any) => {
       return res
         .status(400)
         .json({ error: 'Email not verified. Please check your inbox.' });
+    }
+
+    // OAuth-only accounts have no password hash — send them to their provider
+    // instead of letting bcrypt throw on an undefined hash.
+    if (!user.password) {
+      const providers = (user.authProviders || []).map((p: any) => p.provider).join(' or ');
+      return res.status(400).json({
+        error: `This account signs in with ${providers || 'a linked provider'}. Use the social sign-in button.`,
+        code: 'OAUTH_ONLY_ACCOUNT',
+      });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);

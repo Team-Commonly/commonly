@@ -3431,6 +3431,53 @@
   font-size: 12px;
 }
 
+.v2-login__divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--v2-text-tertiary);
+  font-size: 12px;
+}
+
+.v2-login__divider::before,
+.v2-login__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--v2-border);
+}
+
+.v2-login__oauth {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Anchor styled as a button — prefixed with .v2-root a to beat the global
+   `.v2-root a { color: inherit }` rule, same trap as .v2-login__link. */
+.v2-root a.v2-login__oauth-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--v2-radius);
+  border: 1px solid var(--v2-border-strong);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+
+.v2-root a.v2-login__oauth-btn:hover {
+  background: var(--v2-bg-subtle);
+  border-color: var(--v2-accent);
+}
+
 .v2-login__hint {
   margin-top: 18px;
   padding: 10px 12px;

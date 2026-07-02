@@ -152,6 +152,39 @@ router.patch('/:userId/role', auth, adminAuth, async (req: any, res: any) => {
   }
 });
 
+// PATCH /api/admin/users/:userId/entitlements — grant/revoke capability
+// flags (today just cloudAgents, the hosted-agent gate; see User.entitlements).
+// This is the missing admin lever for the staged open-registration plan:
+// new signups default to BYO-only, and an admin flips cloudAgents here.
+router.patch('/:userId/entitlements', auth, adminAuth, async (req: any, res: any) => {
+  try {
+    const { userId } = req.params;
+    const { cloudAgents } = req.body || {};
+    if (typeof cloudAgents !== 'boolean') {
+      return res.status(400).json({ error: 'cloudAgents must be a boolean' });
+    }
+
+    const target = await User.findById(userId);
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (target.isBot) {
+      return res.status(400).json({ error: 'Entitlements apply to human accounts, not bots' });
+    }
+
+    target.entitlements = { ...(target.entitlements || {}), cloudAgents };
+    await target.save();
+
+    return res.json({
+      message: 'User entitlements updated successfully',
+      user: { ...sanitizeUser(target), entitlements: target.entitlements },
+    });
+  } catch (error) {
+    console.error('Failed to update user entitlements:', error);
+    return res.status(500).json({ error: 'Failed to update user entitlements' });
+  }
+});
+
 // DELETE /api/admin/users/:userId
 router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
   try {

@@ -7,6 +7,7 @@ import V2YourTeamPage from './components/V2YourTeamPage';
 import V2InviteRedeem from './components/V2InviteRedeem';
 import { useAuth } from '../context/AuthContext';
 import V2Register from './components/V2Register';
+import V2OAuthComplete from './components/V2OAuthComplete';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
@@ -163,6 +164,7 @@ const V2App: React.FC = () => {
           <Route path="login" element={<V2Login />} />
           <Route path="register" element={<V2Register />} />
           <Route path="register/invite-required" element={<RegistrationInviteRequired />} />
+          <Route path="oauth/complete" element={<V2OAuthComplete />} />
           <Route path="verify-email" element={<VerifyEmail />} />
           <Route path="discord/callback" element={<DiscordCallback />} />
           <Route path="discord/success" element={<DiscordCallback type="success" />} />
