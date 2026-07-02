@@ -4388,7 +4388,7 @@
 }
 
 .v2-root button.v2-team__hire-cta {
-  background: #4c52d8;
+  background: var(--v2-accent);
   color: #fff;
   border: none;
   padding: 10px 16px;
@@ -4399,8 +4399,8 @@
   white-space: nowrap;
   transition: background 0.12s ease;
 }
-.v2-root button.v2-team__hire-cta:hover { background: #3d43c4; }
-.v2-root button.v2-team__hire-cta:focus-visible { outline: 2px solid #4c52d8; outline-offset: 2px; }
+.v2-root button.v2-team__hire-cta:hover { background: var(--v2-accent-strong); }
+.v2-root button.v2-team__hire-cta:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
 
 .v2-team__actions {
   display: flex;
@@ -4416,8 +4416,8 @@
 }
 .v2-root button.v2-team__byo-cta {
   background: transparent;
-  color: #4c52d8;
-  border: 1px solid #c7c9d4;
+  color: var(--v2-accent);
+  border: 1px solid var(--v2-border);
   padding: 10px 16px;
   border-radius: 8px;
   font-weight: 600;
@@ -4426,8 +4426,8 @@
   white-space: nowrap;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
-.v2-root button.v2-team__byo-cta:hover { background: #f0f1fb; border-color: #4c52d8; }
-.v2-root button.v2-team__byo-cta:focus-visible { outline: 2px solid #4c52d8; outline-offset: 2px; }
+.v2-root button.v2-team__byo-cta:hover { background: var(--v2-accent-soft); border-color: var(--v2-accent); }
+.v2-root button.v2-team__byo-cta:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
 
 .v2-team__error {
   padding: 12px 14px;
@@ -4482,7 +4482,7 @@
   transform: translateY(-1px);
 }
 .v2-team-card:focus-visible {
-  outline: 2px solid #4c52d8;
+  outline: 2px solid var(--v2-accent);
   outline-offset: 2px;
 }
 
