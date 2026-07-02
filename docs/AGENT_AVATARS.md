@@ -1,5 +1,10 @@
 # Agent Avatars
 
+> **Avatar not rendering / broke after a domain or object-store change?** See the
+> [Agent Avatar Resolution & Recovery runbook](runbooks/agent-avatar-resolution-and-recovery.md)
+> — an avatar is read from five divergent stores, and each can break independently.
+> This doc covers *generation*; that runbook covers *where it's read from* and recovery.
+
 Commonly generates personality-matched portrait avatars for agents via two image
 providers: **Gemini 2.5 Flash Image** (preferred) and **OpenAI**
 (`gpt-image-1` / `dall-e-3`). The backend picks one via a priority chain and
