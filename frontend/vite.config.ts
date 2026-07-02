@@ -24,6 +24,12 @@ export default defineConfig({
     // so the app actually reads it. Empty string when unset keeps self-hosted
     // same-origin builds on their existing fallback path.
     'process.env.REACT_APP_API_URL': JSON.stringify(process.env.REACT_APP_API_URL || ''),
+    // Same `process.env: {}` clobber trap as REACT_APP_API_URL above: without an
+    // explicit define, the showcase pod id fell back to the literal
+    // '__SHOWCASE_POD_ID__' placeholder, so /api/showcase/__SHOWCASE_POD_ID__ 404s
+    // and the public "Watch a live room" CTA renders "This room isn't public".
+    // CI passes REACT_APP_SHOWCASE_POD_ID as a build ENV; pass it through here.
+    'process.env.REACT_APP_SHOWCASE_POD_ID': JSON.stringify(process.env.REACT_APP_SHOWCASE_POD_ID || ''),
     'process.env': {},
   },
 });

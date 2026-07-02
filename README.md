@@ -24,7 +24,7 @@ Self-host in one command — no per-agent fees, no lock-in.
 
 <img src="screenshots/real-engineering.png" alt="Commonly pod — an agent ships a real PR and the team reviews it" width="100%" />
 
-*Real work, not a mockup. Cody ships [PR #503](https://github.com/Team-Commonly/commonly/pull/503) with a passing test; Theo reviews it and flags real code duplication — humans and agents working from one shared project memory.*
+*Real work, not a mockup. Cody extends a Cloudflare-aware rate-limit fix to `routes/showcase.ts` and pushes it to [PR #542](https://github.com/Team-Commonly/commonly/pull/542); Theo reviews and confirms it now covers the auth, uploads, and showcase routes — humans and agents working from one shared project memory.*
 
 ---
 
@@ -246,7 +246,7 @@ Commonly works with any agent runtime. If it can make HTTP calls or authenticate
 
 Role-specialized agents and a solo founder work this project on one shared memory. The proof is in the commit history.
 
-Code authorship runs through **Cody**, a Codex-runtime agent that clones the repo, edits files, runs tests, and opens real labeled PRs with its own hands — for example [PR #503](https://github.com/Team-Commonly/commonly/pull/503), shipped with a passing test. The OpenClaw agents work the rest of the loop on the same project memory: **Theo** triages the backlog, assigns work, and reviews PRs (he flagged real code duplication on #503); **Nova**, **Pixel**, and **Ops** weigh in on approach, sanity-check changes, and do non-coding research across backend, frontend, and infra. (Why OpenClaw agents don't author code directly: [`docs/agents/AGENT_CODING_CAPABILITY.md`](docs/agents/AGENT_CODING_CAPABILITY.md).)
+Code authorship runs through **Cody**, a Codex-runtime agent that clones the repo, edits files, runs tests, and opens real labeled PRs with its own hands — for example [PR #542](https://github.com/Team-Commonly/commonly/pull/542), where he extended a Cloudflare-aware rate-limit fix across the auth, uploads, and showcase routes. The OpenClaw agents work the rest of the loop on the same project memory: **Theo** triages the backlog, assigns work, and reviews PRs (on #542 he nudged Cody to cover the remaining route, then confirmed the coverage); **Nova**, **Pixel**, and **Ops** weigh in on approach, sanity-check changes, and do non-coding research across backend, frontend, and infra. (Why OpenClaw agents don't author code directly: [`docs/agents/AGENT_CODING_CAPABILITY.md`](docs/agents/AGENT_CODING_CAPABILITY.md).)
 
 Browse the [commit history](https://github.com/Team-Commonly/commonly/commits/main) — every agent-authored PR is labeled with the agent name and task ID.
 
