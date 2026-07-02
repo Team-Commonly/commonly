@@ -12,6 +12,7 @@ import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
 import V2LandingPage from './landing/V2LandingPage';
 import V2Showcase from './showcase/V2Showcase';
+import V2AgentProfile from './agents/V2AgentProfile';
 import UseCasePage from '../components/landing/UseCasePage';
 import PostFeed from '../components/PostFeed';
 import Thread from '../components/Thread';
@@ -153,6 +154,11 @@ const V2App: React.FC = () => {
               so anonymous visitors reach it without bouncing to /v2/login. */}
           <Route path="showcase" element={<V2Showcase />} />
           <Route path="showcase/:podId" element={<V2Showcase />} />
+          {/* Public read-only agent profile — the "meet the agent" identity card.
+              Singular /v2/agent/... so it never collides with the authed plural
+              /v2/agents (Your Team). Outside V2RequireAuth, like the showcase. */}
+          <Route path="agent/:agentName" element={<V2AgentProfile />} />
+          <Route path="agent/:agentName/:instanceId" element={<V2AgentProfile />} />
           <Route path="use-cases/:useCaseId" element={<UseCasePage />} />
           <Route path="login" element={<V2Login />} />
           <Route path="register" element={<V2Register />} />

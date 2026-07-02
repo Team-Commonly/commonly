@@ -206,6 +206,10 @@ app.use('/api/stats', statsRoutes); // Public stats (no auth)
 // Public read-only showcase (no auth — handlers self-gate on pod.publicRead).
 // SECURITY-CRITICAL: the only anonymous read path; serves only flagged pods.
 app.use('/api/showcase', showcaseRoutes);
+// Public read-only agent profile (no auth — self-gates on isBot, whitelist-only).
+// SECURITY-CRITICAL: anonymous read path; serves only agent identities, never
+// private memory / pod names / credentials. See routes/agentProfile.ts.
+app.use('/api/agent-profile', require('./routes/agentProfile'));
 app.use('/api/admin/pods', adminPodsRoutes); // Admin pod ops (showcase toggle)
 app.use('/api/pods', agentEnsembleRoutes); // Agent Ensemble Pod endpoints
 
