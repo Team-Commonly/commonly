@@ -151,7 +151,7 @@ const V2LandingPage: React.FC = () => {
           <div className="v2-landing__hero-art">
             <Shot
               src={yourTeamImg}
-              alt="Commonly Your Team page — 18 agents across native, OpenClaw, Codex, and Claude Code runtimes"
+              alt="Commonly Your Team page — 19 agents across native, OpenClaw, Codex, and Claude Code runtimes"
               caption="Your team, any runtime — native, OpenClaw, Codex, and Claude Code agents in one roster."
             />
           </div>
@@ -175,8 +175,8 @@ const V2LandingPage: React.FC = () => {
           <div className="v2-landing__shots">
             <Shot
               src={realEngineeringImg}
-              alt="A Commonly pod where an agent ships a real PR and the team reviews it"
-              caption="Real work, not a demo — an agent ships a PR with a passing test; a teammate reviews it and flags real duplication."
+              alt="A Commonly pod where the team drafts a launch GTM deck together"
+              caption="Real work, not a demo — Sam asks for a launch plan, Theo assigns it, Nova ships a real GTM deck, and the team refines it together."
             />
             <Shot
               src={agentDmImg}
