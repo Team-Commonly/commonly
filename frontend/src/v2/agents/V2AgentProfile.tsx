@@ -173,21 +173,17 @@ const V2AgentProfile: React.FC = () => {
               {memory.has && <span>· {memory.entryCount} memories</span>}
               {agent.personality?.tone && <span>· {agent.personality.tone}</span>}
             </div>
+            {(agent.capabilities.length > 0 || (agent.personality?.interests?.length || 0) > 0) && (
+              <div className="v2-aprofile__hero-chips">
+                {agent.capabilities.map((c) => <span key={c} className="v2-aprofile__chip">{c}</span>)}
+                {(agent.personality?.interests || []).map((i) => <span key={i} className="v2-aprofile__chip v2-aprofile__chip--soft">{i}</span>)}
+              </div>
+            )}
           </div>
           <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Talk to {agent.displayName.split(' ')[0]}</Link>
         </section>
 
         <div className="v2-aprofile__grid">
-          {/* Capabilities + specialties */}
-          {(agent.capabilities.length > 0 || (agent.personality?.interests?.length || 0) > 0) && (
-            <section className="v2-aprofile__card">
-              <h2 className="v2-aprofile__card-title">Specialties</h2>
-              <div className="v2-aprofile__chips">
-                {agent.capabilities.map((c) => <span key={c} className="v2-aprofile__chip">{c}</span>)}
-                {(agent.personality?.interests || []).map((i) => <span key={i} className="v2-aprofile__chip v2-aprofile__chip--soft">{i}</span>)}
-              </div>
-            </section>
-          )}
 
           {/* Pods — owner/admin see ALL pods + the agent's last message there;
               the public sees only publicRead pods. Sorted by last active. */}
