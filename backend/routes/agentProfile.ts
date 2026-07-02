@@ -37,6 +37,8 @@ const AgentRun = require('../models/AgentRun');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PodAsset = require('../models/PodAsset');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const PGMessage = require('../models/pg/Message');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
 
 interface Res {
@@ -126,12 +128,22 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
     const ownerPodIds = (installs as Array<{ podId?: { toString(): string } }>)
       .map((i) => (i?.podId ? String(i.podId) : ''))
       .filter(Boolean);
-    const publicPods = ownerPodIds.length
+    const publicPodDocs = ownerPodIds.length
       ? await Pod.find({ _id: { $in: ownerPodIds }, publicRead: true }).select('name').lean()
       : [];
-    const publicPodNames = (publicPods as Array<{ name?: string }>)
-      .map((p) => p.name)
-      .filter(Boolean);
+    // Enrich public pods with last-activity so the list can sort by "most active".
+    // Only publicRead pods here — private pod names never leak on the public view.
+    const publicPodIds = (publicPodDocs as Array<{ _id?: unknown }>).map((p) => String(p._id));
+    let activityByPod = new Map<string, unknown>();
+    if (publicPodIds.length) {
+      try {
+        const acts = await PGMessage.findMostRecentPodActivity(publicPodIds, new Date(0));
+        activityByPod = new Map((acts as Array<{ podId: string; lastAt: unknown }>).map((a) => [String(a.podId), a.lastAt]));
+      } catch { /* PG unavailable — pods still list, just unsorted by activity */ }
+    }
+    const publicPods = (publicPodDocs as Array<{ _id?: unknown; name?: string }>)
+      .map((p) => ({ id: String(p._id), name: p.name || 'pod', lastActive: activityByPod.get(String(p._id)) || null }))
+      .sort((a, b) => (new Date((b.lastActive as string) || 0).getTime()) - (new Date((a.lastActive as string) || 0).getTime()));
 
     // ── Memory (public sections only) ───────────────────────────────────────
     // Empty requester-pods ⇒ filterSectionsByVisibility returns ONLY public
@@ -195,7 +207,7 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
         createdAt: user.createdAt,
       },
       skills,
-      pods: { count: ownerPodIds.length, publicNames: publicPodNames },
+      pods: { count: ownerPodIds.length, public: publicPods },
       memory: {
         has: hasMemory,
         entryCount: memoryEntryCount,

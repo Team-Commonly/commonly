@@ -273,6 +273,36 @@ class Message {
       return [];
     }
   }
+
+  // One row per pod: the given user's most-recent non-system message in each pod.
+  // Powers the agent-profile "pods" list (their last message + when, per pod).
+  static async findLastMessageByUserPerPod(
+    userId: unknown,
+    podIds: unknown[],
+  ): Promise<Array<{ podId: string; content: string; createdAt: unknown }>> {
+    if (!userId || !podIds || !podIds.length) return [];
+    try {
+      const uid = (userId as { toString(): string }).toString();
+      const podIdStrs = podIds.map((id) => (id as { toString(): string } | undefined)?.toString()).filter(Boolean);
+      if (!podIdStrs.length) return [];
+      const result = await (pool as PgPool).query(
+        `SELECT DISTINCT ON (pod_id) pod_id, content, created_at
+         FROM messages
+         WHERE user_id = $1 AND pod_id = ANY($2) AND message_type != 'system'
+         ORDER BY pod_id, created_at DESC`,
+        [uid, podIdStrs],
+      );
+      return (result.rows as Array<{ pod_id: string; content: string; created_at: unknown }>).map((r) => ({
+        podId: r.pod_id,
+        content: r.content,
+        createdAt: r.created_at,
+      }));
+    } catch (error) {
+      const e = error as { message?: string };
+      console.error('Error in findLastMessageByUserPerPod:', e.message);
+      return [];
+    }
+  }
 }
 
 export default Message;
