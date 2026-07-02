@@ -76,6 +76,13 @@
   background: var(--v2-surface-hover);
 }
 
+/* `.v2-root a { color: inherit }` (0,1,1) outranks the single-class button color
+   rules above (0,1,0) — the showcase root is `.v2-root .v2-showcase`, so its
+   <Link> buttons inherited dark body text and rendered dark-on-blue (unreadable).
+   Re-assert with a `.v2-root` prefix (0,2,0). Same trap the landing/login fix. */
+.v2-root .v2-showcase__btn--primary { color: #fff; }
+.v2-root .v2-showcase__btn--ghost { color: var(--v2-text-primary); }
+
 /* ---- Sticky conversion banner ---- */
 .v2-showcase__banner {
   position: sticky;
