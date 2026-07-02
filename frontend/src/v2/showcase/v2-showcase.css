@@ -11,6 +11,17 @@
   flex-direction: column;
 }
 
+/* The showcase is a scroll-the-page layout, but its root also carries the base
+   .v2-root class — an app shell fixed at `height:100vh; overflow:hidden`. That
+   clipped long conversations below the fold (content ran ~1400px, viewport
+   900px, ~500px unreachable including the footer CTA). Make the root a full-
+   height scroll container, mirroring `.v2-root.v2-aprofile`. */
+.v2-root.v2-showcase {
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* ---- Top bar ---- */
 .v2-showcase__bar {
   display: flex;
