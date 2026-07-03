@@ -54,6 +54,7 @@ interface ProfileUser {
     isFollowing?: boolean;
     followersCount?: number;
     followingCount?: number;
+    entitlements?: { cloudAgents?: boolean };
 }
 
 interface UserStats {
@@ -105,6 +106,30 @@ const UserProfile = () => {
     const [currentTab, setCurrentTab] = useState('overview');
     const [apiToken, setApiToken] = useState<string | null>(null);
     const [apiTokenCreatedAt, setApiTokenCreatedAt] = useState<string | null>(null);
+    // Hosted-agent invitation redemption (settings-surface twin of the Your
+    // Team strip — same POST /api/auth/redeem-invitation).
+    const [redeemCode, setRedeemCode] = useState('');
+    const [redeeming, setRedeeming] = useState(false);
+    const [redeemDone, setRedeemDone] = useState(false);
+    const [redeemError, setRedeemError] = useState<string | null>(null);
+
+    const handleRedeemInvitation = async () => {
+        if (!redeemCode.trim() || redeeming) return;
+        setRedeeming(true);
+        setRedeemError(null);
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post('/api/auth/redeem-invitation', { invitationCode: redeemCode.trim() }, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            setRedeemDone(true);
+        } catch (err) {
+            const e = err as { response?: { data?: { error?: string } } };
+            setRedeemError(e.response?.data?.error || 'Could not redeem that code.');
+        } finally {
+            setRedeeming(false);
+        }
+    };
     const [isGeneratingToken, setIsGeneratingToken] = useState(false);
     const [isRevokingToken, setIsRevokingToken] = useState(false);
     const [isFollowLoading, setIsFollowLoading] = useState(false);
@@ -580,6 +605,46 @@ const UserProfile = () => {
                             <Typography variant="body2" color="text.secondary">
                                 View your account statistics and recent activity here.
                             </Typography>
+
+                            {isOwnProfile && (
+                                <Box sx={{ mt: 3 }}>
+                                    <Typography variant="h6" gutterBottom>
+                                        Hosted agents
+                                    </Typography>
+                                    {(user.entitlements?.cloudAgents || user.role === 'admin' || redeemDone) ? (
+                                        <Alert severity="success">
+                                            Hosted (cloud) agents are unlocked for this account — hire from
+                                            the agent catalog any time.
+                                        </Alert>
+                                    ) : (
+                                        <>
+                                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                                Hosted agents are invite-gated during beta. Bring-your-own
+                                                agents are always free — an invitation code unlocks
+                                                Commonly-hosted ones too.
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mt: 1, flexWrap: 'wrap' }}>
+                                                <TextField
+                                                    label="Invitation code"
+                                                    size="small"
+                                                    value={redeemCode}
+                                                    onChange={(e) => setRedeemCode(e.target.value)}
+                                                />
+                                                <Button
+                                                    variant="contained"
+                                                    disabled={redeeming || !redeemCode.trim()}
+                                                    onClick={handleRedeemInvitation}
+                                                >
+                                                    {redeeming ? 'Unlocking…' : 'Unlock'}
+                                                </Button>
+                                            </Box>
+                                            {redeemError && (
+                                                <Alert severity="error" sx={{ mt: 2 }}>{redeemError}</Alert>
+                                            )}
+                                        </>
+                                    )}
+                                </Box>
+                            )}
                         </Box>
                     )}
 

@@ -106,6 +106,10 @@ const V2Login: React.FC = () => {
           {submitting ? 'Signing in...' : 'Sign in'}
         </button>
 
+        <div className="v2-login__forgot">
+          <Link to="/v2/forgot-password" className="v2-login__link">Forgot password?</Link>
+        </div>
+
         {errorMessage && <div className="v2-login__error">{errorMessage}</div>}
 
         <V2OAuthButtons next={nextPath} />
