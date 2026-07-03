@@ -46,6 +46,42 @@ interface Stats {
 
 const fmt = (n?: number): string => (typeof n === 'number' ? n.toLocaleString() : '—');
 
+// The rotating hero term — enumerates "all your AI tools" instead of
+// asserting it. Grid-stacks every term in one cell (the slot sizes to the
+// widest term, so the line never reflows), slides the active one up on a
+// calm 2.6s cadence. Reduced-motion / no-JS visitors get the static last
+// term ("your whole team"), which reads correctly on its own.
+const ROTATING_TERMS = ['Claude Code', 'Cursor', 'Codex', 'your whole team'];
+
+const RotatingTerm: React.FC = () => {
+  const [active, setActive] = useState(0);
+  const [rotating, setRotating] = useState(false);
+
+  useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return undefined;
+    setRotating(true);
+    const t = setInterval(() => {
+      setActive((i) => (i + 1) % ROTATING_TERMS.length);
+    }, 2600);
+    return () => clearInterval(t);
+  }, []);
+
+  // Static fallback shows the closing term — the sentence must stand alone.
+  const staticIndex = ROTATING_TERMS.length - 1;
+  return (
+    <span className="v2-landing__rotator" aria-hidden="true">
+      {ROTATING_TERMS.map((term, i) => (
+        <span
+          key={term}
+          className={`v2-landing__rotator-term${(rotating ? i === active : i === staticIndex) ? ' v2-landing__rotator-term--active' : ''}`}
+        >
+          {term}
+        </span>
+      ))}
+    </span>
+  );
+};
+
 // Word-level entrance for the two highest-persuasion lines (hero H1, wedge
 // thesis). Each word rises once with a small per-word delay — see the
 // marketing-motion carve-out in frontend/design-system/README.md. Words are
@@ -94,13 +130,14 @@ const V2LandingPage: React.FC = () => {
   // reduced-motion users always get fully visible content.
   const [motion, setMotion] = useState(false);
 
-  // Primary CTA: signed-in → the shell; signed-out → /v2/register, which under
-  // invite-only lands on the invite-code + waitlist form so a brand-new visitor
-  // can actually request access. (Previously every CTA pointed at /v2/login — a
-  // dead end for someone who has no account yet. Returning users still have the
-  // dedicated "Sign in" nav link below.)
+  // Primary CTA: signed-in → the shell; signed-out → /v2/register. Since
+  // registration opened (2026-07-03: invite codes gate cloud agents, not
+  // signup) the label is "Get started", not "Request access" — the old copy
+  // told visitors the door was locked when it isn't. If the instance ever
+  // re-enables invite-only, the register page's policy check still routes to
+  // the invite-required form automatically.
   const appHref = isAuthenticated ? '/v2' : '/v2/register';
-  const primaryLabel = isAuthenticated ? 'Open the app' : 'Request access';
+  const primaryLabel = isAuthenticated ? 'Open the app' : 'Get started';
 
   useEffect(() => {
     let cancelled = false;
@@ -166,31 +203,20 @@ const V2LandingPage: React.FC = () => {
         {/* ---- Hero ---- */}
         <section className="v2-landing__hero">
           <div className="v2-landing__hero-inner">
-            <div className="v2-landing__eyebrow">Open-source · the open alternative to Raft</div>
-            <h1 className="v2-landing__title" aria-label="The open-source workspace where your agents and team share one memory.">
-              <StaggerWords text="The open-source workspace where your agents and team share one memory." />
+            <div className="v2-landing__eyebrow">Open-source · Apache 2.0</div>
+            <h1 className="v2-landing__title" aria-label="One memory for Claude Code, Cursor, Codex — your whole team.">
+              <StaggerWords text="One memory for" />
+              <br />
+              <RotatingTerm />
             </h1>
             <p className="v2-landing__lede">
-              Your AI tools each keep their own context — so you end up carrying it between them. Commonly
-              gives every agent and teammate one shared memory and identity to work from. Any runtime, your
-              infra. Self-host in <code className="v2-landing__inline-code">docker compose up</code> — no
-              per-agent fees, no lock-in.
+              The open-source workspace where agents and teammates share one project
+              memory — any runtime, your infra, no per-agent fees.
             </p>
-
-            <div className="v2-landing__badges">
-              <span className="v2-landing__badge"><LockOpenOutlinedIcon fontSize="inherit" /> Open-source (Apache 2.0)</span>
-              <span className="v2-landing__badge"><DnsOutlinedIcon fontSize="inherit" /> Self-host in one command</span>
-              <span className="v2-landing__badge"><HubOutlinedIcon fontSize="inherit" /> Any runtime</span>
-              <span className="v2-landing__badge"><PaymentsOutlinedIcon fontSize="inherit" /> No per-agent fees</span>
-            </div>
 
             <div className="v2-landing__cta-row">
               <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
               <Link className="v2-landing__btn v2-landing__btn--ghost" to="/v2/showcase">Watch a live room</Link>
-              <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">
-                <span className="v2-landing__btn-mark"><Mark size={18} /></span>
-                Star on GitHub
-              </a>
             </div>
 
             <div className="v2-landing__install" aria-label="Self-host install">
@@ -199,7 +225,7 @@ const V2LandingPage: React.FC = () => {
             </div>
 
             <div className="v2-landing__hero-by">
-              Built in the open by <a href={X_HANDLE} target="_blank" rel="noreferrer">@sam_commonly</a> · already in sign-in.
+              Built in the open by <a href={X_HANDLE} target="_blank" rel="noreferrer">@sam_commonly</a>
             </div>
           </div>
 

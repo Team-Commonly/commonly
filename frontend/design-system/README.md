@@ -136,10 +136,16 @@ entrance and scroll-reveal animation is allowed within these limits:
 - ≤ 560ms, `ease-out`, runs **once** (reveal, then inert — no loops).
 - Stagger ≤ 5 steps at ≤ 80ms apart.
 - **Word-level stagger is allowed on at most the hero H1 and the wedge
-  thesis line** — ≤ 40ms per word, full settle under ~900ms, words only
+  thesis line** — ≤ 60ms per word, full settle under ~900ms, words only
   (never per-character, never body copy), `aria-hidden` words with the
   full sentence on the parent's `aria-label`. Typewriter, shimmer, and
   gradient text effects stay banned.
+- **One rotating-term slot, hero only.** The single exception to
+  "runs once": the hero H1 may rotate one term (the "all your AI tools"
+  enumeration) at a cadence ≥ 2.5s with a ≤ 500ms rise transition, in the
+  accent color. Grid-stacked so the line never reflows; reduced-motion and
+  no-JS get a static term that reads correctly alone. Never a second
+  rotating element anywhere.
 - Still no bounces or springs.
 - `prefers-reduced-motion: reduce` disables all of it, and the hidden
   pre-reveal state must only exist when JS has confirmed motion is safe

@@ -752,7 +752,7 @@
 .v2-landing--motion [data-reveal]:not([data-reveal-stagger]) {
   opacity: 0;
   transform: translateY(14px);
-  transition: opacity 480ms ease-out, transform 480ms ease-out;
+  transition: opacity 640ms ease-out, transform 640ms ease-out;
 }
 
 .v2-landing--motion [data-reveal]:not([data-reveal-stagger]).is-revealed {
@@ -765,7 +765,7 @@
 .v2-landing--motion [data-reveal][data-reveal-stagger] > * {
   opacity: 0;
   transform: translateY(14px);
-  transition: opacity 480ms ease-out, transform 480ms ease-out;
+  transition: opacity 640ms ease-out, transform 640ms ease-out;
 }
 
 .v2-landing--motion [data-reveal][data-reveal-stagger].is-revealed > * {
@@ -773,11 +773,11 @@
   transform: none;
 }
 
-.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(2) { transition-delay: 80ms; }
-.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(3) { transition-delay: 160ms; }
-.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(4) { transition-delay: 240ms; }
-.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(5) { transition-delay: 320ms; }
-.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(n+6) { transition-delay: 400ms; }
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(2) { transition-delay: 110ms; }
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(3) { transition-delay: 220ms; }
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(4) { transition-delay: 330ms; }
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(5) { transition-delay: 440ms; }
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(n+6) { transition-delay: 550ms; }
 
 /* Hero entrance: pure CSS, runs once on load. Gated by the media
    query (not the JS class) so it also respects reduced motion when
@@ -837,8 +837,8 @@
   }
 
   .v2-landing__hero-inner .v2-landing__word {
-    animation: v2-landing-rise 380ms ease-out backwards;
-    animation-delay: calc(120ms + var(--word-i, 0) * 28ms);
+    animation: v2-landing-rise 560ms ease-out backwards;
+    animation-delay: calc(140ms + var(--word-i, 0) * 60ms);
   }
 }
 
@@ -848,11 +848,41 @@
 .v2-landing--motion .v2-landing__wedge-line .v2-landing__word {
   opacity: 0;
   transform: translateY(10px);
-  transition: opacity 360ms ease-out, transform 360ms ease-out;
-  transition-delay: calc(var(--word-i, 0) * 30ms);
+  transition: opacity 480ms ease-out, transform 480ms ease-out;
+  transition-delay: calc(var(--word-i, 0) * 45ms);
 }
 
 .v2-landing--motion .v2-landing__wedge-line.is-revealed .v2-landing__word {
   opacity: 1;
   transform: none;
+}
+
+/* Rotating hero term — the slot grid-stacks every term in one cell so it
+   sizes to the widest and the line never reflows; the active term rises in
+   at a calm 2.6s cadence (see the marketing-motion carve-out). Cobalt is
+   the page's one accent; the rotating term is the hero's one accent use. */
+.v2-landing__rotator {
+  display: inline-grid;
+  overflow: hidden;
+  vertical-align: bottom;
+  color: var(--v2-accent);
+  padding-bottom: 0.06em; /* keep descenders (y, p) out of the clip */
+}
+
+.v2-landing__rotator-term {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transform: translateY(0.55em);
+  white-space: nowrap;
+}
+
+.v2-landing__rotator-term--active {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .v2-landing__rotator-term {
+    transition: opacity 450ms ease-out, transform 450ms ease-out;
+  }
 }
