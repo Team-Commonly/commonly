@@ -37,13 +37,26 @@ const OAuthLoginStateSchema = new Schema<IOAuthLoginState>(
     invitationCode: { type: String, default: '' },
     next: { type: String, default: '/v2' },
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-    exchangeCode: { type: String, default: null, unique: true, sparse: true },
+    // NO default here — a sparse unique index skips MISSING fields but still
+    // indexes explicit nulls, so `default: null` made every pending state row
+    // collide on exchangeCode:null and 500'd the second /start ever served
+    // (2026-07-03 incident). The field stays absent until the callback stamps
+    // it; uniqueness is enforced by the partial index below.
+    exchangeCode: { type: String },
     exchangeExpiresAt: { type: Date, default: null },
     usedAt: { type: Date, default: null },
     exchangedAt: { type: Date, default: null },
     expiresAt: { type: Date, required: true, index: { expires: 0 } },
   },
   { timestamps: true, collection: 'oauth_login_states' },
+);
+
+// Unique only over rows that actually carry a code (post-callback). If this
+// index shape ever changes, drop the old `exchangeCode_1` index in Mongo by
+// hand — createIndex won't replace an existing index with different options.
+OAuthLoginStateSchema.index(
+  { exchangeCode: 1 },
+  { unique: true, partialFilterExpression: { exchangeCode: { $type: 'string' } } },
 );
 
 export default mongoose.model<IOAuthLoginState>('OAuthLoginState', OAuthLoginStateSchema);

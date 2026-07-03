@@ -106,6 +106,22 @@ describe('OAuth Controller', () => {
       expect(state.invitationCode).toBe('CODE1');
     });
 
+    it('serves consecutive starts — pending rows must not collide on the exchangeCode index', async () => {
+      // Regression: exchangeCode had `default: null` + a sparse unique index.
+      // Sparse skips MISSING fields but still indexes explicit nulls, so the
+      // SECOND /start ever served threw E11000 and 500'd (2026-07-03 live
+      // incident — GitHub worked once, then every provider start failed).
+      const res1 = mockRes();
+      const res2 = mockRes();
+      await oauthController.startOAuth(startReq('github'), res1);
+      await oauthController.startOAuth(startReq('github'), res2);
+
+      expect(res1.redirect).toHaveBeenCalledTimes(1);
+      expect(res2.redirect).toHaveBeenCalledTimes(1);
+      expect(res2.status).not.toHaveBeenCalledWith(500);
+      expect(await OAuthLoginState.countDocuments({})).toBe(2);
+    });
+
     it('rejects absolute next URLs (open-redirect guard)', async () => {
       const res = mockRes();
       await oauthController.startOAuth(startReq('github', { next: 'https://evil.example' }), res);
