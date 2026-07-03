@@ -24,6 +24,7 @@ import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import { getSession, setSession, clearSessions } from '../lib/session-store.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
+import { detectSkills, importSkills } from '../lib/skills-import.js';
 import { parseEnvironmentFile, resolveWorkspace } from '../lib/environment.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 
@@ -937,6 +938,65 @@ Docs:
         if (!result.imported && result.reason === 'needs-confirmation') process.exit(1);
       } catch (err) {
         console.error(`Import failed: ${err.message}`);
+        process.exit(1);
+      }
+    });
+
+  // ── import-skills (retention plan Phase C — metadata only) ────────────────
+  agent
+    .command('import-skills <name>')
+    .description("Register a local agent's skills (names + descriptions only) on its Commonly profile — content stays on your machine")
+    .option('--dir <path>', 'Skills directory (default: <cwd>/.claude/skills, then ~/.claude/skills)')
+    .option('--yes', 'Skip the confirmation prompt')
+    .option('--instance <url>', 'Target Commonly instance')
+    .action(async (name, opts) => {
+      const record = loadAgentToken(name);
+      if (!record) {
+        console.error(`No token for '${name}'. Attach it first: commonly agent attach <adapter> --pod <podId> --name ${name}`);
+        process.exit(1);
+      }
+      // Skill registration is a USER action (pod-membership-checked route),
+      // unlike memory import which authenticates as the agent.
+      const userToken = getToken(opts.instance);
+      if (!userToken) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+
+      try {
+        const skills = detectSkills({ explicitDir: opts.dir ? pathResolve(opts.dir) : null });
+        if (!skills.length) {
+          console.log('No skills found (looked for */SKILL.md under .claude/skills). Pass --dir to point at a skills directory.');
+          return;
+        }
+        console.log(`Found ${skills.length} skill${skills.length === 1 ? '' : 's'}:`);
+        for (const s of skills) {
+          console.log(`  ${s.name}${s.description ? ` — ${s.description.slice(0, 80)}` : ''}`);
+        }
+        console.log('\nOnly names + descriptions are uploaded — skill content stays on this machine.');
+
+        if (!opts.yes) {
+          if (!process.stdin.isTTY) {
+            console.log('Not a terminal — re-run with --yes to confirm.');
+            process.exit(1);
+          }
+          const { createInterface } = await import('readline/promises');
+          const rl = createInterface({ input: process.stdin, output: process.stdout });
+          const answer = await rl.question(`Register on ${record.agentName}'s profile? [y/N] `);
+          rl.close();
+          if (!/^y(es)?$/i.test(answer.trim())) {
+            console.log('Cancelled.');
+            return;
+          }
+        }
+
+        const client = createClient({ instance: record.instanceUrl, token: userToken });
+        const result = await importSkills(client, {
+          skills,
+          podId: record.podId,
+          agentName: record.agentName,
+          instanceId: record.instanceId || 'default',
+        });
+        console.log(`✓ Registered ${result.imported} skill${result.imported === 1 ? '' : 's'} on ${record.agentName}'s profile.`);
+      } catch (err) {
+        console.error(`Skills import failed: ${err.message}`);
         process.exit(1);
       }
     });
