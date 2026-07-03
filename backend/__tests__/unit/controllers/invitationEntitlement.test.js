@@ -1,5 +1,7 @@
 const User = require('../../../models/User');
 const InvitationCode = require('../../../models/InvitationCode');
+const Pod = require('../../../models/Pod');
+const Task = require('../../../models/Task');
 const authController = require('../../../controllers/authController');
 const {
   setupMongoDb,
@@ -112,6 +114,23 @@ describe('Invitation → cloudAgents entitlement', () => {
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'INVITATION_INVALID' }));
       expect(await User.countDocuments({ email: 'newbie@example.com' })).toBe(0);
+    });
+
+    it('seeds the starter workspace: default pod + 3 onboarding checklist tasks', async () => {
+      const res = mockRes();
+
+      await authController.register(registerReq(), res);
+
+      const user = await User.findOne({ email: 'newbie@example.com' });
+      const pod = await Pod.findOne({ createdBy: user._id });
+      expect(pod).toBeTruthy();
+      expect(pod.name).toBe('My Workspace');
+
+      const tasks = await Task.find({ podId: pod._id }).sort({ taskNum: 1 });
+      expect(tasks).toHaveLength(3);
+      expect(tasks.map((t) => t.taskId)).toEqual(['TASK-001', 'TASK-002', 'TASK-003']);
+      expect(tasks[0].title).toMatch(/connect your first agent/i);
+      expect(tasks.every((t) => t.source === 'onboarding' && t.status === 'pending')).toBe(true);
     });
 
     it('still gates signup when invite-only mode is on', async () => {

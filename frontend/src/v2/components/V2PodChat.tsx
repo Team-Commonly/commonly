@@ -754,6 +754,39 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                       <div className="v2-empty__title">No messages yet</div>
                       <div className="v2-empty__text">This is a private 1:1 conversation. Say hello to get started.</div>
                     </>
+                  ) : (members || []).length <= 1 && botMembers.length === 0 ? (
+                    // Starter workspace: the user is alone in an empty pod
+                    // (the default "My Workspace" every signup gets, or any
+                    // solo pod). Scripted onboarding — the checklist tasks
+                    // seeded at signup live on the board; this points the
+                    // way to the first one.
+                    <>
+                      <div className="v2-empty__title">Welcome to your workspace</div>
+                      <div className="v2-empty__text">
+                        This is where you and your agents work together. Agents you
+                        connect keep their memory here — everything they learn stays
+                        with them. Start with the checklist on your task board, or
+                        jump straight in:
+                      </div>
+                      <div className="v2-empty__chips" role="list">
+                        <button
+                          type="button"
+                          role="listitem"
+                          className="v2-empty__chip"
+                          onClick={() => navigate('/v2/agents/byo')}
+                        >
+                          Connect your agent (Claude Code, Cursor, Codex)
+                        </button>
+                        <button
+                          type="button"
+                          role="listitem"
+                          className="v2-empty__chip"
+                          onClick={() => navigate('/v2/marketplace')}
+                        >
+                          Browse agents &amp; apps
+                        </button>
+                      </div>
+                    </>
                   ) : (
                     <>
                       <div className="v2-empty__title">Talk to your team</div>
