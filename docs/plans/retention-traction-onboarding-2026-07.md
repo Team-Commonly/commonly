@@ -1,6 +1,30 @@
 # Retention & Traction Hardening — OAuth, Open Registration, Local-Agent Migration, Aha Moment
 
-**Status:** Proposed — 2026-07-02
+**Status:** Active — 2026-07-02 (revised 2026-07-03 after Phase A shipped)
+
+> **Revision 2026-07-03** (Sam's calls, after Phase A went live):
+> - **D2 superseded:** registration opens NOW — the invitation code is
+>   repurposed as the **cloud-agent entitlement grant** instead of a signup
+>   gate. BYO/local agents stay open to everyone; a valid invite code (at
+>   signup or redeemed later) flips `entitlements.cloudAgents`. No
+>   launch-signal wait needed since compute cost stays protected.
+> - **D4 descoped:** no LLM guide agent in v1 — a **scripted starter
+>   workspace** (pinned welcome + 3 seed checklist tasks + existing coached
+>   empty states) ships instead. The conversational guide is a later upgrade
+>   (cap decision when it comes: ~30 msgs/user/day, paid model only).
+> - **New: landing-page motion** — better animations/transitions on
+>   /v2/landing. CSS-first (no heavy animation lib), scroll-reveal +
+>   hero motion, `prefers-reduced-motion` respected, MCP-Playwright
+>   verification per Design Rule 9.
+> - **Deferred explicitly: Google Drive / GitHub repo sync.** Drive scope is
+>   sensitive → triggers Google OAuth verification review (+ possible CASA
+>   security assessment) — heavy for pre-GTM; our app is verification-free
+>   only while scopes stay non-sensitive. GitHub repo linking is closer to
+>   the wedge but belongs to a future GitHub App with incremental scopes when
+>   a concrete agent feature needs it. Phase C memory import covers "bring
+>   your context" with zero new scopes.
+> - Phase A (OAuth + entitlements endpoint) shipped and human-verified live:
+>   PRs #578 #579 #580 #581.
 **Owner:** Sam Xu
 **Companion:** ADR-011 (shell-first pre-GTM — this is the funnel half of that track), ADR-003 (memory envelope — migration target), ADR-005/006 (BYO attach paths), pricing model (humans are seats, agents never are)
 

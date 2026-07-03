@@ -4490,6 +4490,49 @@
   margin-bottom: 20px;
 }
 
+/* Invite-code redemption strip — shown to BYO-tier users; a valid code
+   unlocks hosted agents (entitlements.cloudAgents). */
+.v2-team__redeem {
+  padding: 10px 14px;
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--v2-text-secondary);
+  margin-bottom: 20px;
+}
+
+.v2-team__redeem--success {
+  background: #f0f9f1;
+  border-color: #c4e6c9;
+  color: #1e6b2a;
+}
+
+.v2-root button.v2-team__redeem-link {
+  color: var(--v2-accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  background: none;
+  padding: 0;
+}
+
+.v2-team__redeem-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.v2-team__redeem-form .v2-login__input {
+  max-width: 240px;
+}
+
+.v2-team__redeem-error {
+  color: var(--v2-danger);
+  font-size: 12px;
+}
+
 .v2-team__empty {
   border: 1px dashed #d9dce3;
   border-radius: 12px;

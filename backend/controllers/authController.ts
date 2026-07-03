@@ -82,10 +82,22 @@ const createDefaultWorkspacePod = async (userId: any) => {
   }
 };
 
+// Redeem an invitation code: env codes are reusable (marketing links), DB
+// codes consume a use. Since registration opened up (2026-07-03), a code no
+// longer gates signup — it grants the hosted-agent entitlement
+// (entitlements.cloudAgents). Returns true when the code is good.
+const redeemInvitationCode = async (code: any) => {
+  const normalized = normalizeInviteCode(code);
+  if (!normalized) return false;
+  if (isEnvInvitationCodeValid(normalized)) return true;
+  return Boolean(await consumeDbInvitationCode(normalized));
+};
+
 // Reused by oauthController so social signups honor the same invite gate.
 exports.isInviteOnlyRegistrationEnabled = isInviteOnlyRegistrationEnabled;
 exports.isEnvInvitationCodeValid = isEnvInvitationCodeValid;
 exports.consumeDbInvitationCode = consumeDbInvitationCode;
+exports.redeemInvitationCode = redeemInvitationCode;
 exports.createDefaultWorkspacePod = createDefaultWorkspacePod;
 
 // 📌 Register User
@@ -120,36 +132,38 @@ exports.register = async (req: any, res: any) => {
       return res.status(400).json({ error: 'Username already exists' });
     }
 
-    if (isInviteOnlyRegistrationEnabled()) {
-      const normalizedInvitation = normalizeInviteCode(invitationCode);
-      if (!normalizedInvitation) {
-        const codes = getInvitationCodes();
-        const activeDbCodeExists = await InvitationCode.exists({
-          isActive: true,
-          $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
-        });
-        if (!codes.length && !activeDbCodeExists) {
-          return res.status(503).json({
-            error: 'Registration is currently invite-only and invitation codes are not configured.',
-            code: 'INVITATION_CONFIG_MISSING',
-          });
-        }
+    // Invitation codes grant the hosted-agent entitlement. When the instance
+    // still runs invite-only registration they additionally gate signup.
+    // A provided-but-invalid code always fails loudly — the user typed it
+    // expecting cloud access; silently dropping it would be worse.
+    const normalizedInvitation = normalizeInviteCode(invitationCode);
+    let invitationRedeemed = false;
+    if (normalizedInvitation) {
+      invitationRedeemed = await redeemInvitationCode(normalizedInvitation);
+      if (!invitationRedeemed) {
         return res.status(403).json({
-          error: 'Invitation code is required before registration.',
-          code: 'INVITATION_REQUIRED',
+          error: 'Invalid invitation code.',
+          code: 'INVITATION_INVALID',
         });
       }
+    }
 
-      const envCodeValid = isEnvInvitationCodeValid(normalizedInvitation);
-      if (!envCodeValid) {
-        const consumed = await consumeDbInvitationCode(normalizedInvitation);
-        if (!consumed) {
-          return res.status(403).json({
-            error: 'Invalid invitation code.',
-            code: 'INVITATION_INVALID',
-          });
-        }
+    if (isInviteOnlyRegistrationEnabled() && !invitationRedeemed) {
+      const codes = getInvitationCodes();
+      const activeDbCodeExists = await InvitationCode.exists({
+        isActive: true,
+        $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+      });
+      if (!codes.length && !activeDbCodeExists) {
+        return res.status(503).json({
+          error: 'Registration is currently invite-only and invitation codes are not configured.',
+          code: 'INVITATION_CONFIG_MISSING',
+        });
       }
+      return res.status(403).json({
+        error: 'Invitation code is required before registration.',
+        code: 'INVITATION_REQUIRED',
+      });
     }
 
     const hasEmailConfig = Boolean(process.env.SMTP2GO_API_KEY)
@@ -166,12 +180,14 @@ exports.register = async (req: any, res: any) => {
       );
     }
 
-    // Create new user instance
+    // Create new user instance. A redeemed invitation grants hosted-agent
+    // access from day one; everyone else starts BYO-only.
     const user = new User({
       username: normalizedUsername,
       email: normalizedEmail,
       password: rawPassword,
       verified: shouldAutoVerify,
+      entitlements: { cloudAgents: invitationRedeemed },
     });
 
     // Save user to database
@@ -233,6 +249,43 @@ exports.register = async (req: any, res: any) => {
       }
       return res.status(400).json({ error: 'Duplicate user record.' });
     }
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// 📌 Redeem an invitation code on an existing account → grants the
+// hosted-agent entitlement. The post-signup counterpart of the optional
+// code field at registration: BYO users upgrade whenever they get a code.
+exports.redeemInvitation = async (req: any, res: any) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (user.entitlements?.cloudAgents) {
+      // Don't burn a use on an account that already has access.
+      return res.json({
+        message: 'Hosted agents are already unlocked for this account.',
+        entitlements: user.entitlements,
+      });
+    }
+
+    const redeemed = await redeemInvitationCode(req.body?.invitationCode);
+    if (!redeemed) {
+      return res.status(403).json({
+        error: 'Invalid invitation code.',
+        code: 'INVITATION_INVALID',
+      });
+    }
+
+    user.entitlements = { ...(user.entitlements || {}), cloudAgents: true };
+    await user.save();
+
+    return res.json({
+      message: 'Hosted agents unlocked.',
+      entitlements: user.entitlements,
+    });
+  } catch (err: any) {
+    console.error('Failed to redeem invitation:', err.message);
     return res.status(500).json({ error: 'Server error' });
   }
 };

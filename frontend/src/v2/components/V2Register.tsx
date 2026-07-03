@@ -30,7 +30,7 @@ const V2Register: React.FC = () => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [invitationCode] = useState(searchParams.get('invite') || '');
+  const [invitationCode, setInvitationCode] = useState(searchParams.get('invite') || '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -153,6 +153,23 @@ const V2Register: React.FC = () => {
             required
           />
         </label>
+
+        {/* With open registration the code is optional — it unlocks hosted
+            (cloud) agents. Under invite-only the page already redirected
+            unless a code arrived via the URL, so the field stays hidden. */}
+        {policy.loaded && !policy.inviteOnly && (
+          <label className="v2-login__field">
+            <span className="v2-login__label">Invitation code (optional)</span>
+            <input
+              className="v2-login__input"
+              type="text"
+              autoComplete="off"
+              placeholder="Unlocks hosted agents — leave blank to bring your own"
+              value={invitationCode}
+              onChange={(e) => setInvitationCode(e.target.value)}
+            />
+          </label>
+        )}
 
         <button
           type="submit"

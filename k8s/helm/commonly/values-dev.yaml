@@ -27,7 +27,10 @@ backend:
       effect: "NoSchedule"
   env:
     nodeEnv: development
-    registrationInviteOnly: "1"
+    # Registration opened 2026-07-03 — the invitation code now gates the
+    # hosted-agent entitlement (redeemed at signup or later), not signup
+    # itself. BYO/local agents are open to every account.
+    registrationInviteOnly: "0"
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: "dev"

@@ -18,6 +18,7 @@ const {
   getProfile,
   getRegistrationPolicy,
   requestWaitlist,
+  redeemInvitation,
 } = require('../controllers/authController');
 // eslint-disable-next-line global-require
 const {
@@ -102,6 +103,9 @@ router.post('/oauth/exchange', oauthLimiter, exchangeOAuthCode);
 router.get('/registration-policy', getRegistrationPolicy);
 router.post('/waitlist', waitlistLimiter, requestWaitlist);
 router.post('/login', loginLimiter, login);
+// Invitation redemption is authed and rare — the login limiter's
+// credential-stuffing posture (20/15min/IP) also bounds code-guessing here.
+router.post('/redeem-invitation', loginLimiter, auth, redeemInvitation);
 router.post('/refresh', auth, refresh);
 router.get('/user', auth, getCurrentUser);
 router.get('/verify-email', verifyEmail);

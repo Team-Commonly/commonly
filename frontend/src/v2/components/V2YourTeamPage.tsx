@@ -75,11 +75,10 @@ const V2YourTeamPage: React.FC = () => {
   // flag we proxy on role==='admin' (see followups). Entitled users get the
   // cloud catalog as their primary hire path; everyone else is routed to the
   // BYO flow, which works for any account.
-  const isEntitled = useMemo(() => {
+  const entitledFromUser = useMemo(() => {
     const entitlements = (user as { entitlements?: { cloudAgents?: boolean } } | null)?.entitlements;
     return Boolean(entitlements?.cloudAgents) || user?.role === 'admin';
   }, [user]);
-  const primaryHirePath = isEntitled ? '/v2/agents/browse' : '/v2/agents/byo';
   const [agents, setAgents] = useState<AgentInstallationSummary[]>([]);
   const [pods, setPods] = useState<PodSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +90,39 @@ const V2YourTeamPage: React.FC = () => {
   // Key (`name:instanceId`) of the agent whose 1:1 room is currently opening,
   // so its "Talk to" button can show progress and block a double-submit.
   const [opening, setOpening] = useState<string | null>(null);
+  // Invite-code redemption for BYO-tier users — a valid code flips the
+  // hosted-agent entitlement server-side (POST /api/auth/redeem-invitation).
+  // `redeemed` overrides isEntitled locally so the CTA updates without a
+  // full user-payload refetch.
+  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [redeemCode, setRedeemCode] = useState('');
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemError, setRedeemError] = useState<string | null>(null);
+  const [redeemed, setRedeemed] = useState(false);
+  const isEntitled = entitledFromUser || redeemed;
+  const primaryHirePath = isEntitled ? '/v2/agents/browse' : '/v2/agents/byo';
+
+  const handleRedeem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!redeemCode.trim() || redeeming) return;
+    setRedeeming(true);
+    setRedeemError(null);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        '/api/auth/redeem-invitation',
+        { invitationCode: redeemCode.trim() },
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+      );
+      setRedeemed(true);
+      setRedeemOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setRedeemError(msg || 'Could not redeem that code.');
+    } finally {
+      setRedeeming(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -216,6 +248,43 @@ const V2YourTeamPage: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {!isEntitled && (
+        <div className="v2-team__redeem">
+          {redeemOpen ? (
+            <form className="v2-team__redeem-form" onSubmit={handleRedeem}>
+              <input
+                className="v2-login__input"
+                type="text"
+                placeholder="Invitation code"
+                value={redeemCode}
+                onChange={(e) => setRedeemCode(e.target.value)}
+                autoFocus
+              />
+              <button type="submit" className="v2-team__hire-cta" disabled={redeeming || !redeemCode.trim()}>
+                {redeeming ? 'Unlocking…' : 'Unlock'}
+              </button>
+              <button type="button" className="v2-team__byo-cta" onClick={() => { setRedeemOpen(false); setRedeemError(null); }}>
+                Cancel
+              </button>
+              {redeemError && <span className="v2-team__redeem-error">{redeemError}</span>}
+            </form>
+          ) : (
+            <span>
+              Hosted agents are invite-gated during beta.
+              {' '}
+              <button type="button" className="v2-team__redeem-link" onClick={() => setRedeemOpen(true)}>
+                Have an invitation code?
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+      {redeemed && (
+        <div className="v2-team__redeem v2-team__redeem--success">
+          Hosted agents unlocked — hire your first one from the catalog.
+        </div>
+      )}
 
       {error && (
         <div className="v2-team__error">{error}</div>
