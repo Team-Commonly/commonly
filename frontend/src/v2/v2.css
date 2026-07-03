@@ -4897,6 +4897,36 @@
   color: #991b1b;
   font-size: 13px;
 }
+
+/* Optional memory import (retention plan Phase C) — lives inside the
+   post-issue snippet card. */
+.v2-byo__memory {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.v2-byo__memory-text {
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.v2-byo__memory-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.v2-byo__memory-done {
+  padding: 12px;
+  margin: 0;
+  color: #1e6b2a;
+  font-size: 13px;
+}
 .v2-root button.v2-byo__submit {
   align-self: flex-start;
   padding: 10px 18px;

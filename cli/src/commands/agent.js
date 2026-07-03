@@ -23,6 +23,7 @@ import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import { getSession, setSession, clearSessions } from '../lib/session-store.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
+import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { parseEnvironmentFile, resolveWorkspace } from '../lib/environment.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 
@@ -279,6 +280,68 @@ export const performAttach = async ({
     environment,
     workspace,
   };
+};
+
+// ── memory import (retention plan Phase C) ──────────────────────────────────
+
+/**
+ * Detect → preview → confirm → promote local memory into the agent's
+ * envelope. Interactive by design: local memory can hold private material,
+ * so nothing is sent without an explicit yes (or --yes for scripts; a
+ * non-TTY without --yes aborts rather than guessing).
+ *
+ * Exported for tests; the attach flag and the import-memory subcommand are
+ * both thin wrappers over this.
+ */
+export const runMemoryImport = async ({
+  client,
+  explicitPath = null,
+  yes = false,
+  cwd = process.cwd(),
+  log = console.log,
+  promptFn = null,
+}) => {
+  const sources = detectMemorySources({ cwd, explicitPath });
+  if (!sources.length) {
+    log('No local memory found (looked for CLAUDE.md / MEMORY.md / ~/.claude project memory). Pass a path to import a specific file.');
+    return { imported: false, reason: 'nothing-found' };
+  }
+
+  const totalKb = Math.max(1, Math.round(sources.reduce((n, s) => n + s.bytes, 0) / 1024));
+  log(`Found ${sources.length} memory source${sources.length === 1 ? '' : 's'} (${totalKb}KB):`);
+  for (const s of sources) {
+    log(`  ${s.path}  [${s.label}, ${Math.max(1, Math.round(s.bytes / 1024))}KB]`);
+  }
+  // Compose up-front so size-ceiling errors surface before the prompt, and
+  // the preview shows exactly what would land in the envelope.
+  const composed = composeImport(sources);
+  const previewLines = composed.split('\n').slice(0, 8);
+  log('\nPreview:');
+  for (const line of previewLines) log(`  | ${line}`);
+  log(`  | … (${composed.length} chars total)\n`);
+
+  if (!yes) {
+    if (!process.stdin.isTTY && !promptFn) {
+      log('Not a terminal — re-run with --yes to confirm the import.');
+      return { imported: false, reason: 'needs-confirmation' };
+    }
+    const ask = promptFn || (async (q) => {
+      const { createInterface } = await import('readline/promises');
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await rl.question(q);
+      rl.close();
+      return answer;
+    });
+    const answer = await ask('Import into this agent\'s memory? Appends to long_term; never overwrites. [y/N] ');
+    if (!/^y(es)?$/i.test(String(answer).trim())) {
+      log('Import cancelled.');
+      return { imported: false, reason: 'declined' };
+    }
+  }
+
+  const result = await importMemory(client, { sources });
+  log(`✓ Imported ${result.files} file${result.files === 1 ? '' : 's'} into long_term memory${result.appended ? ' (appended to existing)' : ''}.`);
+  return { imported: true, ...result };
 };
 
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
@@ -783,6 +846,8 @@ Docs:
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
     .option('--display <name>', 'Display name shown in the pod')
     .option('--env <path>', 'Path to environment.json (ADR-008 — sandbox/skills/MCP)')
+    .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
+    .option('--yes', 'Skip the import confirmation prompt')
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (adapterName, opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -825,9 +890,53 @@ Docs:
         if (workspace) {
           console.log(`✓ Workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
         }
+
+        // Retention plan Phase C: the agent arrives whole. Import failure is
+        // a warning, never an attach failure — the attach already succeeded
+        // and `commonly agent import-memory` can retry later.
+        if (opts.importMemory) {
+          try {
+            const runtimeClient = createClient({ instance: instanceUrl, token: runtimeToken });
+            await runMemoryImport({
+              client: runtimeClient,
+              explicitPath: typeof opts.importMemory === 'string' ? pathResolve(opts.importMemory) : null,
+              yes: Boolean(opts.yes),
+            });
+          } catch (err) {
+            console.warn(`Memory import failed (agent is still attached): ${err.message}`);
+            console.warn(`Retry with: commonly agent import-memory ${opts.name}`);
+          }
+        }
+
         console.log(`\n  Run with: commonly agent run ${opts.name}`);
       } catch (err) {
         console.error(`Attach failed: ${err.message}`);
+        process.exit(1);
+      }
+    });
+
+  // ── import-memory (retention plan Phase C) ────────────────────────────────
+  agent
+    .command('import-memory <name>')
+    .description("Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory) into an attached agent's long_term memory")
+    .option('--path <path>', 'Import a specific file or directory of .md files instead of auto-detecting')
+    .option('--yes', 'Skip the confirmation prompt')
+    .action(async (name, opts) => {
+      const record = loadAgentToken(name);
+      if (!record) {
+        console.error(`No token for '${name}'. Attach it first: commonly agent attach <adapter> --pod <podId> --name ${name}`);
+        process.exit(1);
+      }
+      try {
+        const client = createClient({ instance: record.instanceUrl, token: record.runtimeToken });
+        const result = await runMemoryImport({
+          client,
+          explicitPath: opts.path ? pathResolve(opts.path) : null,
+          yes: Boolean(opts.yes),
+        });
+        if (!result.imported && result.reason === 'needs-confirmation') process.exit(1);
+      } catch (err) {
+        console.error(`Import failed: ${err.message}`);
         process.exit(1);
       }
     });

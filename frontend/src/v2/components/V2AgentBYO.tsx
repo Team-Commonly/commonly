@@ -16,6 +16,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from '../../utils/axiosConfig';
 import V2FeaturePage from './V2FeaturePage';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod } from '../hooks/useV2Pods';
@@ -97,12 +98,68 @@ const V2AgentBYO: React.FC = () => {
         setError('Install succeeded but token issuance returned empty. Retry, or contact ops.');
       } else {
         setIssued({ token: tok, agentName: cleanName, podId });
+        setMemoryText('');
+        setMemoryDone(false);
+        setMemoryError(null);
       }
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
       setError(e.response?.data?.error || e.response?.data?.message || e.message || 'Install failed.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Retention plan Phase C — "your agent arrives whole". Optional paste /
+  // upload of the agent's local memory (MEMORY.md / CLAUDE.md), promoted
+  // into the kernel envelope with the just-issued runtime token. Explicitly
+  // opt-in: nothing is read or sent until the user pastes or picks a file
+  // and clicks import. Appends to any existing long_term (patch mode
+  // replaces sections wholesale, so read-then-append — same contract as
+  // `commonly agent import-memory`).
+  const [memoryText, setMemoryText] = useState('');
+  const [memoryBusy, setMemoryBusy] = useState(false);
+  const [memoryDone, setMemoryDone] = useState(false);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
+
+  const onMemoryFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 256 * 1024) {
+      setMemoryError('That file is over the 256KB import ceiling — trim it or paste the relevant part.');
+      return;
+    }
+    setMemoryError(null);
+    setMemoryText(await file.text());
+  };
+
+  const importMemory = async () => {
+    if (!issued || !memoryText.trim() || memoryBusy) return;
+    setMemoryBusy(true);
+    setMemoryError(null);
+    try {
+      const runtimeAuth = { headers: { Authorization: `Bearer ${issued.token}` } };
+      let existing = '';
+      try {
+        const res = await axios.get('/api/agents/runtime/memory', runtimeAuth);
+        existing = (res.data as { sections?: { long_term?: { content?: string } } })
+          ?.sections?.long_term?.content || '';
+      } catch (err) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status !== 404) throw err;
+      }
+      const imported = `# Imported local memory\n\n${memoryText.trim()}`;
+      const content = existing ? `${existing.trimEnd()}\n\n${imported}` : imported;
+      await axios.post('/api/agents/runtime/memory/sync', {
+        mode: 'patch',
+        sourceRuntime: 'import-web',
+        sections: { long_term: { content, visibility: 'private' } },
+      }, runtimeAuth);
+      setMemoryDone(true);
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      setMemoryError(e.response?.data?.error || e.message || 'Import failed.');
+    } finally {
+      setMemoryBusy(false);
     }
   };
 
@@ -227,6 +284,50 @@ const V2AgentBYO: React.FC = () => {
               </button>
             </div>
             <pre className="v2-byo__pre">{cursorSnippet}</pre>
+          </div>
+
+          <div className="v2-byo__snippet">
+            <div className="v2-byo__snippet-head">
+              <span>Bring its memory (optional)</span>
+            </div>
+            {memoryDone ? (
+              <p className="v2-byo__memory-done">
+                ✓ Memory imported — <code>{issued.agentName}</code> arrives knowing your project.
+                It shows up in the agent&apos;s profile under long-term memory.
+              </p>
+            ) : (
+              <div className="v2-byo__memory">
+                <p className="v2-byo__hint">
+                  Paste your agent&apos;s local <code>MEMORY.md</code> or <code>CLAUDE.md</code> (or
+                  pick the file) and it starts here with everything it already knows. Appends to its
+                  long-term memory; never overwrites. Nothing is sent until you click import.
+                </p>
+                <textarea
+                  className="v2-byo__input v2-byo__memory-text"
+                  rows={6}
+                  placeholder="# Paste MEMORY.md / CLAUDE.md content here…"
+                  value={memoryText}
+                  onChange={(e) => setMemoryText(e.target.value)}
+                />
+                <div className="v2-byo__memory-row">
+                  <input
+                    type="file"
+                    accept=".md,text/markdown,text/plain"
+                    aria-label="Choose a memory file"
+                    onChange={(e) => onMemoryFile(e.target.files?.[0])}
+                  />
+                  <button
+                    type="button"
+                    className="v2-byo__secondary"
+                    disabled={memoryBusy || !memoryText.trim()}
+                    onClick={importMemory}
+                  >
+                    {memoryBusy ? 'Importing…' : 'Import memory'}
+                  </button>
+                </div>
+                {memoryError && <div className="v2-byo__error">{memoryError}</div>}
+              </div>
+            )}
           </div>
 
           <div className="v2-byo__cta-row">
