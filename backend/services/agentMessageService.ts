@@ -820,6 +820,14 @@ class AgentMessageService {
       sanitizedContent = '';
     }
 
+    // Same treatment for gateway tool-status failure notes ("⚠️ 📝 Edit: ...
+    // failed") — operator diagnostics that were spamming pods once per
+    // failed workspace-file edit. Logged for observability, never posted.
+    if (sanitizedContent && AgentMessageService.isRuntimeToolFailureNote(sanitizedContent)) {
+      console.warn(`[agent-msg] suppressed runtime tool-failure note from agent=${agentName} instance=${instanceId} pod=${podId}: ${sanitizedContent.slice(0, 120)}`);
+      sanitizedContent = '';
+    }
+
     // Task #68: detect false-attachment claims. Agents sometimes post
     // "Done — I attached the file" without actually calling
     // commonly_attach_file. The file may exist in their workspace but
@@ -1417,6 +1425,22 @@ class AgentMessageService {
     );
   }
 
+  /**
+   * Gateway tool-status failure notes — "⚠️ 📝 Edit: in /workspace/... failed",
+   * "⚠️ ✉️ Message failed". Like model failures these are runtime diagnostics
+   * relayed by the gateway, not agent-authored content; live pods were
+   * accumulating one per failed MEMORY.md edit (2026-07-03). Strict shape:
+   * a single line starting with ⚠️ + an emoji tool tag and ending in
+   * "failed", so an agent legitimately reporting a failure in prose is
+   * untouched.
+   */
+  static isRuntimeToolFailureNote(content: unknown): boolean {
+    if (!content) return false;
+    const c = String(content).trim();
+    if (!c || c.includes('\n')) return false;
+    return /^⚠️\s*\p{Extended_Pictographic}[^:\n]{0,30}:?\s.*\bfailed\b\.?$/iu.test(c);
+  }
+
   static sanitizeAgentContent(content: unknown): string {
     if (content === null || content === undefined) return '';
     const raw = String(content);
@@ -1426,7 +1450,11 @@ class AgentMessageService {
 
     const cleaned = stripped
       .split(/\r?\n/)
-      .map((line) => line.replace(/\bNO_REPLY\b/g, '').trim())
+      // (?:NO_REPLY)+ handles concatenated sentinels: gateways occasionally
+      // join two silent blocks into "NO_REPLYNO_REPLY", which has no word
+      // boundary between the runs and sailed through \bNO_REPLY\b verbatim
+      // into live pods (2026-07-03).
+      .map((line) => line.replace(/\b(?:NO_REPLY)+\b/g, '').trim())
       .filter(Boolean)
       .join('\n')
       .trim();
