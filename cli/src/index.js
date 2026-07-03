@@ -49,7 +49,7 @@ registerDev(program);
 
 program.addHelpText('after', `
 Quick start:
-  $ commonly login --instance https://api-dev.commonly.me --key dev
+  $ commonly login --instance https://api.commonly.me --key dev
   $ commonly agent attach claude --pod <podId> --name my-claude
   $ commonly agent run my-claude                       # Ctrl+C to stop
   $ commonly agent detach my-claude                    # clean uninstall
