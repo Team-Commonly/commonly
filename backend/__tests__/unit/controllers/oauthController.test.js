@@ -237,6 +237,31 @@ describe('OAuth Controller', () => {
       expect(invite.useCount).toBe(1);
     });
 
+    it('grants cloudAgents when an invite code rides through /start under open registration', async () => {
+      process.env.REGISTRATION_INVITE_ONLY = 'false';
+      process.env.REGISTRATION_INVITE_CODES = 'LAUNCH-CREW';
+      await seedState({ invitationCode: 'LAUNCH-CREW' });
+      mockGithubProfile();
+      const res = mockRes();
+
+      await oauthController.oauthCallback(callbackReq(), res);
+
+      const user = await User.findOne({ email: 'octo@example.com' });
+      expect(user.entitlements.cloudAgents).toBe(true);
+    });
+
+    it('creates a BYO-only account under open registration with no code', async () => {
+      process.env.REGISTRATION_INVITE_ONLY = 'false';
+      await seedState();
+      mockGithubProfile();
+      const res = mockRes();
+
+      await oauthController.oauthCallback(callbackReq(), res);
+
+      const user = await User.findOne({ email: 'octo@example.com' });
+      expect(user.entitlements.cloudAgents).toBe(false);
+    });
+
     it('rejects a replayed state (single-use)', async () => {
       await seedState({ usedAt: new Date() });
       const res = mockRes();

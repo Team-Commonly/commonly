@@ -5,8 +5,7 @@ const User = require('../models/User');
 const OAuthLoginState = require('../models/OAuthLoginState');
 const {
   isInviteOnlyRegistrationEnabled,
-  isEnvInvitationCodeValid,
-  consumeDbInvitationCode,
+  redeemInvitationCode,
   createDefaultWorkspacePod,
 } = require('./authController');
 
@@ -268,20 +267,25 @@ exports.oauthCallback = async (req: any, res: any) => {
     }
 
     if (!user) {
-      // Brand-new signup — honor the same invite gate as password registration.
-      if (isInviteOnlyRegistrationEnabled()) {
-        const code = String(stateRow.invitationCode || '').trim();
-        if (!code) return loginErrorRedirect(res, 'invitation_required');
-        if (!isEnvInvitationCodeValid(code)) {
-          const consumed = await consumeDbInvitationCode(code);
-          if (!consumed) return loginErrorRedirect(res, 'invitation_invalid');
-        }
+      // Brand-new signup. An invitation code carried through /start grants
+      // the hosted-agent entitlement; when the instance is invite-only it
+      // additionally gates the signup itself (same semantics as password
+      // registration — a provided-but-invalid code always fails loudly).
+      const code = String(stateRow.invitationCode || '').trim();
+      let invitationRedeemed = false;
+      if (code) {
+        invitationRedeemed = await redeemInvitationCode(code);
+        if (!invitationRedeemed) return loginErrorRedirect(res, 'invitation_invalid');
+      }
+      if (isInviteOnlyRegistrationEnabled() && !invitationRedeemed) {
+        return loginErrorRedirect(res, 'invitation_required');
       }
 
       user = new User({
         username: await generateUsername(profile.usernameHint, profile.email),
         email: profile.email,
         verified: true, // provider-asserted
+        entitlements: { cloudAgents: invitationRedeemed },
         authProviders: [{
           provider,
           providerId: profile.providerId,
