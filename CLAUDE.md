@@ -164,7 +164,7 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 
 ### CURRENT STATE (April 2026)
 - **Repository**: Team-Commonly/commonly, branch: `main`
-- **Live**: `app-dev.commonly.me` / `api-dev.commonly.me`
+- **Live**: `commonly.me` (frontend) / `api.commonly.me` (API) — since the 2026-06-26 domain flip. **The old `app-dev.commonly.me` / `api-dev.commonly.me` hostnames are DEAD** (dangling DNS/tunnel entries, bare nginx 404 — verified 2026-07-03); anything still pointing at them (laptop CLI `--instance dev` profiles, old wrapper-agent configs) is polling a corpse. Same single cluster (`commonly-dev` namespace) serves the apex.
 - **Live image tags**: `kubectl get deploy -n commonly-dev -o custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image` (the file `values-dev.yaml` lags reality between deploys — trust the cluster, not the chart).
 - **GKE context, project ID, image registry, ops account**: not committed (operator-private, see `feedback-no-infra-leak-in-public-repo` memory + `.dev/values-private.yaml` / `.dev/ops-credentials.md` locally). Anything that needs a project-scoped identifier is supplied at deploy time via GitHub Actions secrets (`DEV_GCP_PROJECT_ID`, `WIF_PROVIDER`, `WIF_SERVICE_ACCOUNT`) or via ExternalSecrets.
 - **UI verification**: Use MCP Playwright (`mcp__playwright__*`)
@@ -316,7 +316,7 @@ Builds backend + frontend + clawdbot-gateway + commonly-bot in parallel from the
 TAG=$(date +%Y%m%d%H%M%S)
 REG=<AR_REGISTRY_HOST>/<DEV_GCP_PROJECT_ID>/docker     # locally-resolved, never committed
 docker build backend  -t "$REG/commonly-backend:$TAG"  && docker push "$REG/commonly-backend:$TAG"
-docker build frontend --build-arg REACT_APP_API_URL=https://api-dev.commonly.me \
+docker build frontend --build-arg REACT_APP_API_URL=https://api.commonly.me \
   -t "$REG/commonly-frontend:$TAG" && docker push "$REG/commonly-frontend:$TAG"
 (cd _external/clawdbot && docker build \
   --build-arg OPENCLAW_EXTENSIONS=acpx \
@@ -343,7 +343,7 @@ npm run lint:fix    # auto-fix
 ### MCP Playwright — UI Verification
 
 ```
-1. browser_navigate  → https://app-dev.commonly.me/<route>
+1. browser_navigate  → https://commonly.me/<route>
 2. browser_snapshot  → assert text/tabs/buttons visible
 3. browser_take_screenshot → visual confirmation
 4. browser_resize { width: 390, height: 844 } → mobile check
@@ -451,11 +451,11 @@ These are prescriptive rules not derivable from reading the code:
 
 - **Python SDK needs User-Agent header.** Default Python `urllib` UA is blocked by Cloudflare (error 1010). `examples/sdk/python/commonly.py` sets `User-Agent: commonly-sdk/0.1`. Any future CAP SDK (curl/httpx/whatever) hitting the proxied instance needs a non-default UA.
 
-- **CLI `--instance` accepts saved key OR URL symmetrically.** Both `commonly agent list --instance dev` (saved key) and `commonly agent list --instance https://api-dev.commonly.me` (URL) resolve to the same saved instance and token. Unknown URLs work for login bootstrap; unknown keys return null and the CLI falls back to defaults. See `cli/src/lib/config.js:resolveInstance`.
+- **CLI `--instance` accepts saved key OR URL symmetrically.** Both `commonly agent list --instance dev` (saved key) and `commonly agent list --instance https://api.commonly.me` (URL) resolve to the same saved instance and token. (Saved profiles created before the 2026-06-26 domain flip may still store the dead `api-dev` URL — re-`commonly login` to refresh.) Unknown URLs work for login bootstrap; unknown keys return null and the CLI falls back to defaults. See `cli/src/lib/config.js:resolveInstance`.
 
 - **`acpx_run` vs `sessions_spawn`**: Use `acpx_run` (synchronous, returns output in same message) for coding tasks. `sessions_spawn` is async and the result never routes back to the pod. **Being phased out (ADR-005 Stage 3):** dev-agent HEARTBEAT delegation is migrating from `acpx_run` to `@mention sam-local-codex` (or another wrapper) in a 1:1 agent-room — the wrapper polls CAP, spawns codex CLI on the operator's laptop, posts the reply back. Two-tick latency vs synchronous, but unblocks codex retirement from the openclaw fork. nova first, expand to theo/pixel/ops once stable.
 
-- **`sam-local-codex` is the first production ADR-005 wrapper agent** (live 2026-04-27). Runs on user laptop via `commonly agent run sam-local-codex` (nohup'd), polls `https://api-dev.commonly.me`, spawns local codex CLI 0.125.0. Boot pod: `Codex Hub` `69ef02b036b742e2e2c0c4af`. To revive if dead: `nohup commonly agent run sam-local-codex > ~/.commonly/logs/sam-local-codex.log 2>&1 & disown`. To re-attach from scratch: `commonly agent attach codex --pod 69ef02b036b742e2e2c0c4af --name sam-local-codex --instance dev`.
+- **`sam-local-codex` is the first production ADR-005 wrapper agent** (live 2026-04-27). Runs on user laptop via `commonly agent run sam-local-codex` (nohup'd), polls the API (originally `https://api-dev.commonly.me` — dead since the domain flip; the saved `dev` profile must point at `https://api.commonly.me` for revival to work), spawns local codex CLI 0.125.0. Boot pod: `Codex Hub` `69ef02b036b742e2e2c0c4af`. To revive if dead: `nohup commonly agent run sam-local-codex > ~/.commonly/logs/sam-local-codex.log 2>&1 & disown`. To re-attach from scratch: `commonly agent attach codex --pod 69ef02b036b742e2e2c0c4af --name sam-local-codex --instance dev`.
 
 - **`cloud-codex` runtime — cluster-side variant of sam-local-codex** (live 2026-05-15, PRs #362–#369). `k8s/helm/commonly/templates/agents/cloud-codex-deployment.yaml` provisions one Deployment + PVC per agent under `agents.cloudCodex.agents.<name>` in values. Pod runs `commonly agent run <name>` + codex CLI inside the cluster. Codex CLI is configured (via `~/.codex/config.toml`) to call **LiteLLM**, not chatgpt.com directly — model_provider=litellm, base_url=`http://litellm:4000/v1`, wire_api=`responses`, env_key=`LITELLM_API_KEY`. Same auth surface as every openclaw moltbot agent (single rotator, single quota pool, single observability). Use `agentName=codex` (in AGENT_TYPES) — `cloud-codex` agentName is NOT in AGENT_TYPES so the cleanup sweep marks it stale. First production agent: Cody (`agentName=codex`, `instanceId=cody`), live 2026-05-15.
 

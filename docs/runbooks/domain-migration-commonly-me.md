@@ -1,5 +1,20 @@
 # Domain migration → commonly.me
 
+> **Status update 2026-07-03:** the flip itself completed 2026-06-26 (PR #485)
+> and the apex is live. **The step-5 cleanup below never ran** — discovered when
+> a session confidently quoted `api-dev` for an OAuth callback because
+> CLAUDE.md's CURRENT STATE still named the old hosts. Verified today:
+> `app-dev` / `api-dev` are dangling (DNS resolves, bare nginx 404 — nothing
+> serves them). Swept 2026-07-03: CLAUDE.md CURRENT STATE + agent-runtime
+> rules, CLI help text/examples. Still outstanding from step 5: drop the old
+> DNS + tunnel hostname routes (CF API — the tunnel is remotely-managed, Helm
+> `cloudflared.hostnames` is ignored); historical ADRs/memories keep their old
+> URLs (they describe the past accurately). Operator-side: laptop
+> `~/.commonly` saved `dev` profiles created pre-flip still store the dead
+> `api-dev` URL — re-`commonly login` (affects `sam-local-codex` revival).
+> Lesson: a migration isn't done at "new host serves traffic" — it's done when
+> the runbook's own cleanup step is executed or explicitly descoped.
+
 Move the dev cluster's public surface from `app-dev` / `api-dev` to the apex
 `commonly.me` (frontend) + `api.commonly.me` (backend) + `litellm.commonly.me`
 (model gateway), **replacing** the old hosts.

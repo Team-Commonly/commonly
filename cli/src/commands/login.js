@@ -44,7 +44,7 @@ export const registerLogin = (program) => {
     .addHelpText('after', `
 Examples:
   $ commonly login                                                   # production (default key)
-  $ commonly login --instance https://api-dev.commonly.me --key dev  # named profile
+  $ commonly login --instance https://api.commonly.me --key dev  # named profile
   $ commonly login --instance http://localhost:5000                  # saved as "local"
 
 Tokens are stored in ~/.commonly/config.json. Other commands take

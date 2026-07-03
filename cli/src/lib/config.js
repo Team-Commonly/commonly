@@ -38,7 +38,7 @@ const normalizeUrl = (value) => (value || '').replace(/\/$/, '').toLowerCase();
  *
  * Accepts either form:
  *   - A saved key:  'dev', 'default', 'local'
- *   - A URL:        'https://api-dev.commonly.me' (any case; trailing / ok)
+ *   - A URL:        'https://api.commonly.me' (any case; trailing / ok)
  *   - null:         falls back to config.active
  *
  * Historically `resolveInstanceUrl` treated the arg as a URL and `getToken`
@@ -63,7 +63,7 @@ export const resolveInstance = (identifier = null) => {
 
   // URL-shaped inputs: resolve by URL first. Case-insensitive match so that
   // `HTTPS://API-DEV.commonly.me/` finds a record saved as the lowercased
-  // `https://api-dev.commonly.me`.
+  // `https://api.commonly.me`.
   const looksLikeUrl = /^https?:\/\//i.test(identifier);
   if (looksLikeUrl) {
     const normalized = normalizeUrl(identifier);
