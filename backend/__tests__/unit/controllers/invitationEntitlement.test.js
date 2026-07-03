@@ -145,6 +145,71 @@ describe('Invitation → cloudAgents entitlement', () => {
     });
   });
 
+  describe('password reset', () => {
+    // These use the REAL jwt (unmocked would be ideal, but the file-level
+    // mock returns static values) — so exercise the flow via the controller
+    // with the mock steering decode/verify.
+    const jwt = require('jsonwebtoken');
+
+    const makeUser = () => User.create({
+      username: 'resetter',
+      email: 'resetter@example.com',
+      password: 'old-hashed',
+      verified: false,
+    });
+
+    it('forgot-password always answers generically (no account enumeration)', async () => {
+      const res = mockRes();
+      await authController.forgotPassword({ body: { email: 'nobody@example.com' } }, res);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('If that email has an account'),
+      }));
+    });
+
+    it('reset with a valid token updates the password and marks verified', async () => {
+      const user = await makeUser();
+      jwt.decode = jest.fn().mockReturnValue({ id: String(user._id), purpose: 'password-reset' });
+      jwt.verify = jest.fn().mockReturnValue({ id: String(user._id) });
+
+      const res = mockRes();
+      await authController.resetPassword({ body: { token: 't', password: 'brand-new-pass-1' } }, res);
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('Password updated'),
+      }));
+      const fresh = await User.findById(user._id);
+      expect(fresh.verified).toBe(true);
+      expect(fresh.password).not.toBe('old-hashed');
+    });
+
+    it('rejects tokens with the wrong purpose and short passwords', async () => {
+      const user = await makeUser();
+      jwt.decode = jest.fn().mockReturnValue({ id: String(user._id), purpose: 'email-verify' });
+      const res = mockRes();
+      await authController.resetPassword({ body: { token: 't', password: 'brand-new-pass-1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+
+      const res2 = mockRes();
+      await authController.resetPassword({ body: { token: 't', password: 'short' } }, res2);
+      expect(res2.status).toHaveBeenCalledWith(400);
+    });
+
+    it('rejects when signature verification fails (used/expired token)', async () => {
+      const user = await makeUser();
+      // The pre-save hook hashed the seed password; capture the stored hash
+      // as the unchanged-baseline rather than the raw seed string.
+      const storedHash = (await User.findById(user._id)).password;
+      jwt.decode = jest.fn().mockReturnValue({ id: String(user._id), purpose: 'password-reset' });
+      jwt.verify = jest.fn().mockImplementation(() => { throw new Error('invalid signature'); });
+
+      const res = mockRes();
+      await authController.resetPassword({ body: { token: 't', password: 'brand-new-pass-1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      const fresh = await User.findById(user._id);
+      expect(fresh.password).toBe(storedHash);
+    });
+  });
+
   describe('redeemInvitation (post-signup upgrade)', () => {
     const makeUser = (entitled = false) => User.create({
       username: 'byo-user',

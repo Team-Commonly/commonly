@@ -398,6 +398,99 @@ exports.requestWaitlist = async (req: any, res: any) => {
   }
 };
 
+// ── Password reset ───────────────────────────────────────────────────────────
+// Reset tokens are JWTs signed with JWT_SECRET + the user's current password
+// hash: no server-side token state, yet the token self-invalidates the moment
+// the password changes (single-use in effect). OAuth-only accounts (no
+// password) can use this flow to ADD a password — they've proven control of
+// the email, which is the same bar signup uses.
+
+const resetTokenSecret = (user: any) => `${process.env.JWT_SECRET}:${user.password || 'oauth-only'}`;
+
+// 📌 Forgot password — always 200 (no account enumeration)
+exports.forgotPassword = async (req: any, res: any) => {
+  const genericResponse = {
+    message: 'If that email has an account, a reset link is on its way.',
+  };
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email || !isValidEmail(email)) return res.json(genericResponse);
+
+    const user = await User.findOne({ email, isBot: { $ne: true } });
+    const hasEmailConfig = Boolean(process.env.SMTP2GO_API_KEY)
+      && Boolean(process.env.SMTP2GO_FROM_EMAIL)
+      && Boolean(process.env.FRONTEND_URL);
+    if (!user || !hasEmailConfig) {
+      if (user && !hasEmailConfig) {
+        console.warn('[forgot-password] email delivery not configured; reset link not sent for', email);
+      }
+      return res.json(genericResponse);
+    }
+
+    const token = jwt.sign(
+      { id: user._id, purpose: 'password-reset' },
+      resetTokenSecret(user),
+      { expiresIn: '1h' },
+    );
+    const resetUrl = `${process.env.FRONTEND_URL}/v2/reset-password?token=${token}`;
+    try {
+      await axios.post(SMTP2GO_SEND_URL, {
+        api_key: process.env.SMTP2GO_API_KEY,
+        to: [user.email],
+        sender: process.env.SMTP2GO_FROM_EMAIL,
+        from_name: process.env.SMTP2GO_FROM_NAME || 'Commonly',
+        subject: 'Reset your password - Commonly',
+        text_body: `Reset your Commonly password (link valid for 1 hour): ${resetUrl}\n\nIf you didn't request this, ignore this email — your password is unchanged.`,
+        html_body: `<p>Reset your Commonly password (link valid for 1 hour):</p><a href="${resetUrl}">Reset password</a><p>If you didn't request this, ignore this email — your password is unchanged.</p>`,
+      }, { timeout: 30000 });
+    } catch (sendError: any) {
+      console.error('SMTP2GO error during password reset:', sendError?.response?.data || sendError.message);
+    }
+    return res.json(genericResponse);
+  } catch (err: any) {
+    console.error('forgot-password failed:', err.message);
+    return res.json(genericResponse);
+  }
+};
+
+// 📌 Reset password — consumes the emailed token
+exports.resetPassword = async (req: any, res: any) => {
+  try {
+    const token = String(req.body?.token || '');
+    const password = String(req.body?.password || '');
+    if (!token || password.length < 8) {
+      return res.status(400).json({ error: 'A reset token and a password of at least 8 characters are required.' });
+    }
+
+    // Decode (unverified) to find the user, then verify against the
+    // per-user secret — this is what makes a used token dead: the password
+    // hash it was signed against no longer exists.
+    const decoded: any = jwt.decode(token);
+    if (!decoded?.id || decoded.purpose !== 'password-reset') {
+      return res.status(400).json({ error: 'Invalid or expired reset link.' });
+    }
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(400).json({ error: 'Invalid or expired reset link.' });
+
+    try {
+      jwt.verify(token, resetTokenSecret(user));
+    } catch {
+      return res.status(400).json({ error: 'Invalid or expired reset link.' });
+    }
+
+    user.password = password; // pre-save hook hashes
+    // Resetting via email proves address ownership — unblock login for
+    // accounts that never finished the signup verification email.
+    user.verified = true;
+    await user.save();
+
+    return res.json({ message: 'Password updated. You can sign in now.' });
+  } catch (err: any) {
+    console.error('reset-password failed:', err.message);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 // 📌 Verify Email
 exports.verifyEmail = async (req: any, res: any) => {
   try {

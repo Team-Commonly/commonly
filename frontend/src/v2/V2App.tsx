@@ -8,6 +8,8 @@ import V2InviteRedeem from './components/V2InviteRedeem';
 import { useAuth } from '../context/AuthContext';
 import V2Register from './components/V2Register';
 import V2OAuthComplete from './components/V2OAuthComplete';
+import V2ForgotPassword from './components/V2ForgotPassword';
+import V2ResetPassword from './components/V2ResetPassword';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
@@ -165,6 +167,8 @@ const V2App: React.FC = () => {
           <Route path="register" element={<V2Register />} />
           <Route path="register/invite-required" element={<RegistrationInviteRequired />} />
           <Route path="oauth/complete" element={<V2OAuthComplete />} />
+          <Route path="forgot-password" element={<V2ForgotPassword />} />
+          <Route path="reset-password" element={<V2ResetPassword />} />
           <Route path="verify-email" element={<VerifyEmail />} />
           <Route path="discord/callback" element={<DiscordCallback />} />
           <Route path="discord/success" element={<DiscordCallback type="success" />} />

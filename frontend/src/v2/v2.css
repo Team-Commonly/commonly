@@ -3431,6 +3431,12 @@
   font-size: 12px;
 }
 
+.v2-login__forgot {
+  margin-top: 8px;
+  font-size: 12px;
+  text-align: right;
+}
+
 /* "or" separator between password form and social buttons. NOT
    .v2-login__divider — that name is already taken by the invite-required
    page's bordered section break (defined later in this file, so it would

@@ -19,6 +19,8 @@ const {
   getRegistrationPolicy,
   requestWaitlist,
   redeemInvitation,
+  forgotPassword,
+  resetPassword,
 } = require('../controllers/authController');
 // eslint-disable-next-line global-require
 const {
@@ -80,6 +82,18 @@ const waitlistLimiter = rateLimit({
   handler: rateLimitHandler('rate limit exceeded: 5 waitlist requests per hour'),
 });
 
+// Forgot-password sends outbound mail on every plausible hit — keep it as
+// tight as the waitlist (its own bucket so the two don't starve each other).
+const forgotLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: rateLimitHandler('rate limit exceeded: 5 password-reset requests per hour'),
+});
+
 // Social login shares the credential-stuffing posture of /login: each attempt
 // is one provider round-trip, so 30/15min/IP leaves room for retries without
 // letting a bot farm state rows.
@@ -106,6 +120,11 @@ router.post('/login', loginLimiter, login);
 // Invitation redemption is authed and rare — the login limiter's
 // credential-stuffing posture (20/15min/IP) also bounds code-guessing here.
 router.post('/redeem-invitation', loginLimiter, auth, redeemInvitation);
+// Password reset: forgot is deliberately tight (5/hour/IP — it sends email
+// and always 200s, so it's an outbound-mail amplifier); reset consumes a
+// signed token so the login limiter's posture suffices.
+router.post('/forgot-password', forgotLimiter, forgotPassword);
+router.post('/reset-password', loginLimiter, resetPassword);
 router.post('/refresh', auth, refresh);
 router.get('/user', auth, getCurrentUser);
 router.get('/verify-email', verifyEmail);
