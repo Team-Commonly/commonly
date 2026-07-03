@@ -4556,7 +4556,10 @@
 
 .v2-team__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* min(320px, 100%): a bare 320px floor overflows the ~326px content area
+     on a 390px phone (nav rail eats the rest) — the card clipped its
+     "Talk to" button off-screen (2026-07-03 mobile smoke). */
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: 16px;
 }
 

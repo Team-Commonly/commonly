@@ -47,6 +47,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('min-width: 0');
   });
 
+  test('Your Team grid columns can shrink below 320px on phones', () => {
+    // A bare minmax(320px, 1fr) floor overflows the ~326px content area on a
+    // 390px phone (nav rail eats the rest) — the agent card clipped its
+    // "Talk to" button off-screen (2026-07-03 mobile smoke). min(320px, 100%)
+    // lets the column collapse to the container width.
+    expect(ruleBody(v2, '.v2-team__grid')).toContain('minmax(min(320px, 100%), 1fr)');
+  });
+
   test('the showcase page is its own scroll container (not clipped by the app shell)', () => {
     expect(ruleBody(showcase, '.v2-root.v2-showcase')).toContain('overflow-y: auto');
   });
