@@ -120,4 +120,18 @@ describe('V2AgentBYO memory import', () => {
     expect(screen.getByRole('button', { name: /import memory/i })).toBeDisabled();
     expect(axios.post.mock.calls.some(([url]) => url === '/api/agents/runtime/memory/sync')).toBe(false);
   });
+
+  test('already-installed agent still reissues a token (lost-token recovery)', async () => {
+    axios.get.mockResolvedValueOnce({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
+    axios.post
+      .mockRejectedValueOnce({ response: { data: { error: 'Agent already installed in this pod' } } })
+      .mockResolvedValueOnce({ data: { token: AGENT_TOKEN } });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /install \+ generate token/i }));
+
+    await screen.findByText(/token issued for/i);
+    expect(screen.getByText(AGENT_TOKEN)).toBeInTheDocument();
+  });
 });
