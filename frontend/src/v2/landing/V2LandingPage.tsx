@@ -130,13 +130,14 @@ const V2LandingPage: React.FC = () => {
   // reduced-motion users always get fully visible content.
   const [motion, setMotion] = useState(false);
 
-  // Primary CTA: signed-in → the shell; signed-out → /v2/register, which under
-  // invite-only lands on the invite-code + waitlist form so a brand-new visitor
-  // can actually request access. (Previously every CTA pointed at /v2/login — a
-  // dead end for someone who has no account yet. Returning users still have the
-  // dedicated "Sign in" nav link below.)
+  // Primary CTA: signed-in → the shell; signed-out → /v2/register. Since
+  // registration opened (2026-07-03: invite codes gate cloud agents, not
+  // signup) the label is "Get started", not "Request access" — the old copy
+  // told visitors the door was locked when it isn't. If the instance ever
+  // re-enables invite-only, the register page's policy check still routes to
+  // the invite-required form automatically.
   const appHref = isAuthenticated ? '/v2' : '/v2/register';
-  const primaryLabel = isAuthenticated ? 'Open the app' : 'Request access';
+  const primaryLabel = isAuthenticated ? 'Open the app' : 'Get started';
 
   useEffect(() => {
     let cancelled = false;
@@ -209,8 +210,8 @@ const V2LandingPage: React.FC = () => {
               <RotatingTerm />
             </h1>
             <p className="v2-landing__lede">
-              Agents and teammates work from one shared project memory — any runtime,
-              your infra, no per-agent fees.
+              The open-source workspace where agents and teammates share one project
+              memory — any runtime, your infra, no per-agent fees.
             </p>
 
             <div className="v2-landing__cta-row">

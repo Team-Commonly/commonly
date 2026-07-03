@@ -48,7 +48,7 @@ const V2ComparePage: React.FC = () => {
   // Signed-out visitors get routed to /v2/register (invite-code + waitlist),
   // not the /v2/login dead-end. Returning users use the "Sign in" nav link.
   const appHref = isAuthenticated ? '/v2' : '/v2/register';
-  const primaryLabel = isAuthenticated ? 'Open the app' : 'Request access';
+  const primaryLabel = isAuthenticated ? 'Open the app' : 'Get started';
   return (
   <div className="v2-root v2-landing">
     <header className="v2-landing__bar">
