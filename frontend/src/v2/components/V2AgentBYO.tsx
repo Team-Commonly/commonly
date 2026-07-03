@@ -79,13 +79,25 @@ const V2AgentBYO: React.FC = () => {
     }
     setSubmitting(true);
     try {
-      await api.post('/api/registry/install', {
-        agentName: cleanName,
-        podId,
-        scopes: DEFAULT_SCOPES,
-        config: { runtime: { runtimeType: 'webhook' } },
-        displayName: cleanName,
-      });
+      try {
+        await api.post('/api/registry/install', {
+          agentName: cleanName,
+          podId,
+          scopes: DEFAULT_SCOPES,
+          config: { runtime: { runtimeType: 'webhook' } },
+          displayName: cleanName,
+        });
+      } catch (installErr) {
+        // "Already installed" is identity continuity (ADR-001), not a
+        // failure — this is exactly the lost-token recovery path the copy
+        // below promises ("come back here and rotate"). Fall through to
+        // force-reissue; anything else is a real error. Caught in the
+        // 2026-07-03 live smoke: the hard-fail here made token recovery
+        // impossible from the UI.
+        const msg = (installErr as { response?: { data?: { error?: string } } })
+          ?.response?.data?.error || '';
+        if (!/already installed/i.test(msg)) throw installErr;
+      }
       // Force-issue a fresh runtime token — guarantees we get the raw
       // `cm_agent_*` value (subsequent calls return `existing:true` with
       // no plaintext; `force:true` rotates).
