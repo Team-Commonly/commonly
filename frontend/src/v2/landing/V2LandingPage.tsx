@@ -95,9 +95,15 @@ const V2LandingPage: React.FC = () => {
     setMotion(true);
   }, []);
 
+  // `stats` is a dependency on purpose: when /api/stats/public resolves, the
+  // conditionally-rendered stats block shifts <main>'s child list and React
+  // remounts every section AFTER it (index-based reconciliation) — fresh DOM
+  // nodes the previous observer never saw, which would stay at opacity 0
+  // forever. Re-arming re-queries the current nodes; already-revealed ones
+  // keep their class and are skipped.
   useEffect(() => {
     if (!motion) return undefined;
-    const nodes = Array.from(document.querySelectorAll('.v2-landing [data-reveal]'));
+    const nodes = Array.from(document.querySelectorAll('.v2-landing [data-reveal]:not(.is-revealed)'));
     const io = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
@@ -108,7 +114,7 @@ const V2LandingPage: React.FC = () => {
     }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
     nodes.forEach((n) => io.observe(n));
     return () => io.disconnect();
-  }, [motion]);
+  }, [motion, stats]);
 
   const hasStats = Boolean(stats && (stats.activePods || stats.activeAgents || stats.registeredUsers));
 
