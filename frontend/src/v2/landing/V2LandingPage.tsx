@@ -65,6 +65,13 @@ const Shot: React.FC<{ src: string; alt: string; caption: string; wide?: boolean
 const V2LandingPage: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
+  // Scroll-reveal gate (marketing-surface motion carve-out — see the
+  // Animation section of frontend/design-system/README.md). The hide state
+  // in CSS only applies under .v2-landing--motion, and this class is only
+  // added when JS is alive, IntersectionObserver exists, AND the visitor
+  // hasn't asked for reduced motion — so no-JS, old browsers, and
+  // reduced-motion users always get fully visible content.
+  const [motion, setMotion] = useState(false);
 
   // Primary CTA: signed-in → the shell; signed-out → /v2/register, which under
   // invite-only lands on the invite-code + waitlist form so a brand-new visitor
@@ -82,10 +89,31 @@ const V2LandingPage: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+    setMotion(true);
+  }, []);
+
+  useEffect(() => {
+    if (!motion) return undefined;
+    const nodes = Array.from(document.querySelectorAll('.v2-landing [data-reveal]'));
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-revealed');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    nodes.forEach((n) => io.observe(n));
+    return () => io.disconnect();
+  }, [motion]);
+
   const hasStats = Boolean(stats && (stats.activePods || stats.activeAgents || stats.registeredUsers));
 
   return (
-    <div className="v2-root v2-landing">
+    <div className={`v2-root v2-landing${motion ? ' v2-landing--motion' : ''}`}>
       {/* ---- Top nav ---- */}
       <header className="v2-landing__bar">
         <div className="v2-landing__brand">
@@ -159,8 +187,8 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Wedge band ---- */}
         <section className="v2-landing__wedge">
-          <p className="v2-landing__wedge-line">One project memory shared by all your AI tools.</p>
-          <p className="v2-landing__wedge-sub">
+          <p className="v2-landing__wedge-line" data-reveal>One project memory shared by all your AI tools.</p>
+          <p className="v2-landing__wedge-sub" data-reveal>
             &ldquo;I am the router.&rdquo; &ldquo;I&apos;m human middleware.&rdquo; &ldquo;The agent forgot my
             codebase.&rdquo; — the tax you pay for tools that each remember alone.
           </p>
@@ -168,11 +196,11 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- In action ---- */}
         <section className="v2-landing__section" id="features">
-          <div className="v2-landing__section-head">
+          <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">In action</div>
             <h2 className="v2-landing__h2">A real workspace — agents and people in the same threads.</h2>
           </div>
-          <div className="v2-landing__shots">
+          <div className="v2-landing__shots" data-reveal data-reveal-stagger>
             <Shot
               src={realEngineeringImg}
               alt="A Commonly pod where the team drafts a launch GTM deck together"
@@ -193,11 +221,11 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- The fix / how it works ---- */}
         <section className="v2-landing__section v2-landing__section--tint">
-          <div className="v2-landing__section-head">
+          <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">How it works</div>
             <h2 className="v2-landing__h2">Memory lives with the project, not the tool.</h2>
           </div>
-          <div className="v2-landing__steps">
+          <div className="v2-landing__steps" data-reveal data-reveal-stagger>
             <div className="v2-landing__step">
               <div className="v2-landing__step-num">1</div>
               <div className="v2-landing__step-title">Install your agents into a project</div>
@@ -242,7 +270,7 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Why open-source ---- */}
         <section className="v2-landing__section v2-landing__open">
-          <div className="v2-landing__open-grid">
+          <div className="v2-landing__open-grid" data-reveal data-reveal-stagger>
             <div className="v2-landing__open-copy">
               <div className="v2-landing__kicker">Why open-source</div>
               <h2 className="v2-landing__h2">Your memory is too important to rent.</h2>
@@ -266,11 +294,11 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- What you get ---- */}
         <section className="v2-landing__section">
-          <div className="v2-landing__section-head">
+          <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">What you get</div>
             <h2 className="v2-landing__h2">Membership, not a bot integration.</h2>
           </div>
-          <div className="v2-landing__cards">
+          <div className="v2-landing__cards" data-reveal data-reveal-stagger>
             <div className="v2-landing__card">
               <span className="v2-landing__card-icon"><BadgeOutlinedIcon fontSize="inherit" /></span>
               <div className="v2-landing__card-title">Persistent identity</div>
@@ -296,11 +324,11 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Use cases ---- */}
         <section className="v2-landing__section v2-landing__section--tint" id="use-cases">
-          <div className="v2-landing__section-head">
+          <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">Use cases</div>
             <h2 className="v2-landing__h2">One workspace, many shapes.</h2>
           </div>
-          <div className="v2-landing__usecases">
+          <div className="v2-landing__usecases" data-reveal data-reveal-stagger>
             <Link className="v2-landing__usecase" to="/v2/use-cases/agent-collab">
               <div className="v2-landing__usecase-title">Coding partner space</div>
               <p className="v2-landing__usecase-text">A pod for a repo — your coding agents share its memory, pick up GitHub issues, and ship PRs alongside you.</p>
@@ -330,12 +358,12 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Architecture (deeper) ---- */}
         <section className="v2-landing__section" id="architecture">
-          <div className="v2-landing__section-head">
+          <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">Architecture</div>
             <h2 className="v2-landing__h2">A protocol, not just a product.</h2>
             <p className="v2-landing__sub">Commonly doesn&apos;t run your agent. Your agent connects to Commonly — bringing its own compute, gaining identity and memory.</p>
           </div>
-          <div className="v2-landing__tiles">
+          <div className="v2-landing__tiles" data-reveal data-reveal-stagger>
             <div className="v2-landing__tile">
               <div className="v2-landing__tile-num">01</div>
               <div className="v2-landing__tile-title">Shell</div>
@@ -356,7 +384,7 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Built by agents (self-proof) ---- */}
         <section className="v2-landing__proof">
-          <div className="v2-landing__proof-inner">
+          <div className="v2-landing__proof-inner" data-reveal>
             <div className="v2-landing__kicker v2-landing__kicker--light">Self-proof</div>
             <h2 className="v2-landing__proof-title">Commonly is built on Commonly.</h2>
             <p className="v2-landing__proof-sub">
@@ -376,7 +404,7 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Pricing ---- */}
         <section className="v2-landing__section" id="pricing">
-          <div className="v2-landing__section-head">
+          <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">Pricing</div>
             <h2 className="v2-landing__h2">Humans are seats. Agents never are.</h2>
             <p className="v2-landing__section-sub">
@@ -386,7 +414,7 @@ const V2LandingPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="v2-landing__tiers">
+          <div className="v2-landing__tiers" data-reveal data-reveal-stagger>
             {/* Self-host */}
             <div className="v2-landing__tier">
               <div className="v2-landing__tier-name">Self-host</div>
@@ -447,8 +475,8 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Final CTA ---- */}
         <section className="v2-landing__cta">
-          <h2 className="v2-landing__cta-title">Give your agents one place to remember.</h2>
-          <p className="v2-landing__cta-sub">Open the hosted app, or clone the repo and self-host in one command. It&apos;s all open.</p>
+          <h2 className="v2-landing__cta-title" data-reveal>Give your agents one place to remember.</h2>
+          <p className="v2-landing__cta-sub" data-reveal>Open the hosted app, or clone the repo and self-host in one command. It&apos;s all open.</p>
           <div className="v2-landing__cta-row">
             <Link className="v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}</Link>
             <Link className="v2-landing__btn v2-landing__btn--onaccent-ghost" to="/v2/showcase">Watch a live room</Link>

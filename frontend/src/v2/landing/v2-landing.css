@@ -734,3 +734,90 @@
   .v2-landing__footer { gap: 24px; }
   .v2-landing__footer-cols { gap: 28px; }
 }
+
+/* ============================================================
+   Motion — marketing-surface carve-out (design-system README
+   § Animation). App chrome stays static; landing pages may use
+   entrance + scroll-reveal within these limits: opacity +
+   translateY ≤ 16px, ≤ 560ms ease-out, run once, stagger ≤ 5
+   steps, no bounces/springs/parallax.
+
+   Safety model: the hidden state exists ONLY under
+   .v2-landing--motion, a class added by JS after checking for
+   IntersectionObserver AND prefers-reduced-motion. No JS, old
+   browser, or reduced-motion → nothing is ever hidden.
+   ============================================================ */
+
+/* Scroll-reveal: whole blocks (section heads, band copy) */
+.v2-landing--motion [data-reveal]:not([data-reveal-stagger]) {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 480ms ease-out, transform 480ms ease-out;
+}
+
+.v2-landing--motion [data-reveal]:not([data-reveal-stagger]).is-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+/* Scroll-reveal: grids — the container stays put, children rise
+   with a short per-child delay (capped at 5 steps). */
+.v2-landing--motion [data-reveal][data-reveal-stagger] > * {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 480ms ease-out, transform 480ms ease-out;
+}
+
+.v2-landing--motion [data-reveal][data-reveal-stagger].is-revealed > * {
+  opacity: 1;
+  transform: none;
+}
+
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(2) { transition-delay: 80ms; }
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(3) { transition-delay: 160ms; }
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(4) { transition-delay: 240ms; }
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(5) { transition-delay: 320ms; }
+.v2-landing--motion [data-reveal-stagger].is-revealed > :nth-child(n+6) { transition-delay: 400ms; }
+
+/* Hero entrance: pure CSS, runs once on load. Gated by the media
+   query (not the JS class) so it also respects reduced motion when
+   the page is server-rendered or JS is slow. `backwards` keeps
+   elements hidden during their delay. */
+@media (prefers-reduced-motion: no-preference) {
+  .v2-landing__hero-inner > * {
+    animation: v2-landing-rise 520ms ease-out backwards;
+  }
+
+  .v2-landing__hero-inner > :nth-child(1) { animation-delay: 40ms; }
+  .v2-landing__hero-inner > :nth-child(2) { animation-delay: 110ms; }
+  .v2-landing__hero-inner > :nth-child(3) { animation-delay: 180ms; }
+  .v2-landing__hero-inner > :nth-child(4) { animation-delay: 250ms; }
+  .v2-landing__hero-inner > :nth-child(5) { animation-delay: 320ms; }
+  .v2-landing__hero-inner > :nth-child(n+6) { animation-delay: 390ms; }
+
+  .v2-landing__hero-art {
+    animation: v2-landing-rise 560ms ease-out 280ms backwards;
+  }
+
+  /* Smooth in-page anchor scrolling (Features / Use cases / Pricing). */
+  .v2-landing {
+    scroll-behavior: smooth;
+  }
+
+  /* Screenshot cards get the existing 120ms card-hover treatment plus a
+     1px lift — still borders-not-shadows, no new shadow tokens. */
+  .v2-landing__shot-frame {
+    transition: transform 120ms ease;
+  }
+
+  .v2-landing__shot:hover .v2-landing__shot-frame {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes v2-landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}

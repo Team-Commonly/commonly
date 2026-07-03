@@ -119,12 +119,27 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 
 ### Animation
 
-- Almost none. The product is calm. The only animation in V2 is:
+- Almost none. The product is calm. The only animation in V2 **app chrome** is:
   - Typing-indicator dots (`v2-typing-dot`, 1.2s ease-in-out, staggered 0.18s).
   - Hover background swaps at 80ms.
   - Layout transitions at 300ms.
-- **No bounces, no springs, no entrance animations.**
+- **No bounces, no springs, no entrance animations** — in app chrome.
 - Loading states: skeleton blocks (`#f0eff8`), no spinners except inside buttons during async actions.
+
+**Marketing-surface carve-out (2026-07-03).** Landing/compare pages are a
+different job than the app: a first-time visitor scrolls a narrative, and
+gentle motion carries attention without making the product feel busy. On
+marketing surfaces only (`/v2/landing`, `/compare` — never inside the shell),
+entrance and scroll-reveal animation is allowed within these limits:
+
+- Opacity + `translateY` ≤ 16px only. No scale, no rotation, no parallax.
+- ≤ 560ms, `ease-out`, runs **once** (reveal, then inert — no loops).
+- Stagger ≤ 5 steps at ≤ 80ms apart.
+- Still no bounces or springs.
+- `prefers-reduced-motion: reduce` disables all of it, and the hidden
+  pre-reveal state must only exist when JS has confirmed motion is safe
+  (see `.v2-landing--motion` in `v2-landing.css`) — no-JS visitors get a
+  fully visible page.
 
 ### Cards
 
