@@ -1269,6 +1269,28 @@ class AgentMessageService {
     if (PGMessage && process.env.PG_HOST) {
       try {
         await AgentIdentityService.syncUserToPostgreSQL(agentUser);
+        // Best-effort PG pod backfill — same heal the human message paths
+        // do (messageController/pgMessageController via syncPodFromMongo).
+        // Mongo-only pods (e.g. the default "My Workspace" every signup
+        // gets from createDefaultWorkspacePod) have no row in PG `pods`,
+        // so without this the insert below FK-fails on messages_pod_id_fkey
+        // and the agent's message strands in the Mongo fallback — invisible
+        // to pod chat, which reads PG. Found in the 2026-07-03 live smoke:
+        // the BYO hero path ("install agent → talk to it") broke at the
+        // agent's first reply. Swallow errors: if PG is truly down the
+        // create below throws and the existing Mongo fallback handles it.
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+          const PGPod = require('../models/pg/Pod');
+          const pgPodExists = await PGPod.findById(String(podId));
+          if (!pgPodExists) {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+            const { syncPodFromMongo } = require('./pgPodSyncService');
+            await syncPodFromMongo(String(podId), String(agentUser._id));
+          }
+        } catch (syncErr) {
+          console.warn('[agent-msg] PG pod backfill skipped:', (syncErr as Error).message);
+        }
         const newMessage = await (PGMessage as {
           create(podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null): Promise<Record<string, unknown>>;
         }).create(
