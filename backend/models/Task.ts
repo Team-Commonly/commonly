@@ -72,7 +72,20 @@ const TaskSchema = new Schema<ITask>(
 TaskSchema.index({ podId: 1, status: 1 });
 TaskSchema.index({ podId: 1, assignee: 1, status: 1 });
 TaskSchema.index({ podId: 1, taskId: 1 }, { unique: true });
-TaskSchema.index({ podId: 1, sourceRef: 1 }, { unique: true, sparse: true });
+// Partial, NOT sparse: a compound sparse index still indexes any doc where
+// podId is present (i.e. all of them), so the second no-sourceRef task in a
+// pod would E11000. The live DB was already repaired to this exact partial
+// index (name included) — this declaration matches it so boot-time
+// autoIndex neither conflicts nor recreates the broken sparse variant on
+// fresh installs.
+TaskSchema.index(
+  { podId: 1, sourceRef: 1 },
+  {
+    unique: true,
+    name: 'podId_1_sourceRef_1_partial',
+    partialFilterExpression: { sourceRef: { $type: 'string' } },
+  },
+);
 
 export const Task: Model<ITask> = mongoose.model<ITask>('Task', TaskSchema);
 

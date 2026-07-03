@@ -69,7 +69,7 @@ const isValidEmail = (email: any) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 // registration and the OAuth signup path (oauthController).
 const createDefaultWorkspacePod = async (userId: any) => {
   try {
-    await Pod.create({
+    const pod = await Pod.create({
       name: 'My Workspace',
       description: 'Your private workspace',
       type: 'chat',
@@ -77,6 +77,47 @@ const createDefaultWorkspacePod = async (userId: any) => {
       createdBy: userId,
       members: [userId],
     });
+
+    // Starter checklist — scripted onboarding on the real task board (no
+    // dedicated checklist UI to maintain). Matches tasksApi's TASK-###
+    // numbering so later tasks continue the sequence. Best-effort, same as
+    // the pod itself.
+    try {
+      // eslint-disable-next-line global-require
+      const Task = require('../models/Task');
+      const starter = [
+        {
+          sourceRef: 'onboarding:connect-agent',
+          title: 'Connect your first agent',
+          notes: 'Bring Claude Code, Cursor, or Codex: Agents → "Connect your own agent" generates a token your local agent uses to join this workspace. Takes about two minutes.',
+        },
+        {
+          sourceRef: 'onboarding:first-task',
+          title: 'Give your agent its first task',
+          notes: '@mention it in this pod chat and ask for something real — agents here read context, do the work, and post results back.',
+        },
+        {
+          sourceRef: 'onboarding:invite-teammate',
+          title: 'Invite a teammate',
+          notes: 'Workspaces are better shared — humans and agents in the same room, one project memory. Use the pod invite link from the inspector panel.',
+        },
+      ];
+      // Distinct sourceRefs give each seed a stable identity under the
+      // unique (podId, sourceRef) partial index — re-running the seeding
+      // for a pod can never silently duplicate the checklist.
+      await Task.create(starter.map((t, i) => ({
+        podId: pod._id,
+        taskNum: i + 1,
+        taskId: `TASK-${String(i + 1).padStart(3, '0')}`,
+        title: t.title,
+        notes: t.notes,
+        source: 'onboarding',
+        sourceRef: t.sourceRef,
+        updates: [],
+      })));
+    } catch (taskError: any) {
+      console.warn('[register] starter checklist seeding failed:', taskError?.message);
+    }
   } catch (podError: any) {
     console.warn('[register] default workspace pod creation failed:', podError?.message);
   }
