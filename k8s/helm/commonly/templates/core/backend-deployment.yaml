@@ -211,31 +211,42 @@ spec:
               key: discord-guild-id
               optional: true
 
-        # OAuth Providers
-        - name: GOOGLE_CLIENT_ID
+        # Social login (OAuth) providers — names match what
+        # controllers/oauthController.ts reads. The old GITHUB_CLIENT_ID /
+        # GOOGLE_CLIENT_ID names were scaffold nothing consumed. Buttons only
+        # render when a provider's pair is present, so `optional: true` keeps
+        # instances without OAuth configured fully functional.
+        - name: GOOGLE_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: google-client-id
               optional: true
-        - name: GOOGLE_CLIENT_SECRET
+        - name: GOOGLE_OAUTH_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: google-client-secret
               optional: true
-        - name: GITHUB_CLIENT_ID
+        - name: GITHUB_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: github-client-id
               optional: true
-        - name: GITHUB_CLIENT_SECRET
+        - name: GITHUB_OAUTH_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: github-client-secret
               optional: true
+        {{- if .Values.backend.env.oauthCallbackBaseUrl }}
+        # Public base URL of this API, presented to providers as the
+        # redirect_uri origin — must match the URL registered on the OAuth
+        # app regardless of which ingress hostname the request arrived on.
+        - name: OAUTH_CALLBACK_BASE_URL
+          value: {{ .Values.backend.env.oauthCallbackBaseUrl | quote }}
+        {{- end }}
         - name: GITHUB_PAT
           valueFrom:
             secretKeyRef:

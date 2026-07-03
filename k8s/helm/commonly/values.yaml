@@ -58,6 +58,9 @@ backend:
     agentProvisionerNodePool: ""
     frontendUrl: "https://commonly.me"
     backendUrl: "https://api.commonly.me"
+    # Base URL presented to OAuth providers as the redirect_uri origin.
+    # Empty = derive from the request host (fine when the API has one host).
+    oauthCallbackBaseUrl: ""
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""

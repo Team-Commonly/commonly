@@ -33,6 +33,8 @@ backend:
     agentProvisionerNodePool: "dev"
     frontendUrl: "https://commonly.me"
     backendUrl: "https://api.commonly.me"
+    # Must match the callback URL registered on the GitHub/Google OAuth apps.
+    oauthCallbackBaseUrl: "https://api.commonly.me"
     commonlyApiUrl: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
