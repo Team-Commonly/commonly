@@ -27,6 +27,19 @@ export interface IFollowedThread {
   followedAt: Date;
 }
 
+// Social-login identities linked to this account. A user may have zero
+// (password-only), one, or several (GitHub + Google linked by verified
+// email). Accounts created via OAuth have no password — see the
+// conditional `required` on the password path below.
+export type AuthProviderName = 'github' | 'google';
+
+export interface IAuthProvider {
+  provider: AuthProviderName;
+  providerId: string;
+  email?: string;
+  linkedAt: Date;
+}
+
 // User-level alias → agent (or human) binding. Both human and bot users
 // carry this list; for bots it's the agent's "contacts" — who they go to
 // for codex review, planning, etc. For humans it's the people they DM
@@ -47,7 +60,8 @@ export interface IContactEntry {
 export interface IUser extends Document {
   username: string;
   email: string;
-  password: string;
+  password?: string;
+  authProviders: IAuthProvider[];
   verified: boolean;
   profilePicture: string;
   role: UserRole;
@@ -127,7 +141,25 @@ export interface IUserModel extends Model<IUser> {}
 const userSchema = new Schema<IUser>({
   username: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
+  // Password is only required for accounts with no linked OAuth identity —
+  // OAuth-created accounts authenticate via provider and have no password.
+  password: {
+    type: String,
+    required: function (this: IUser) {
+      return !(Array.isArray(this.authProviders) && this.authProviders.length > 0);
+    },
+  },
+  authProviders: {
+    type: [
+      new Schema<IAuthProvider>({
+        provider: { type: String, enum: ['github', 'google'], required: true },
+        providerId: { type: String, required: true },
+        email: { type: String },
+        linkedAt: { type: Date, default: Date.now },
+      }, { _id: false }),
+    ],
+    default: [],
+  },
   verified: { type: Boolean, default: false },
   profilePicture: { type: String, default: 'default' },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
@@ -256,13 +288,17 @@ const userSchema = new Schema<IUser>({
   createdAt: { type: Date, default: Date.now },
 });
 
+// OAuth callback looks users up by (provider, providerId) on every social login.
+userSchema.index({ 'authProviders.provider': 1, 'authProviders.providerId': 1 });
+
 userSchema.pre<IUser>('save', async function (next) {
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password') || !this.password) return next();
   this.password = await bcrypt.hash(this.password, 10);
   next();
 });
 
 userSchema.methods.comparePassword = async function (password: string): Promise<boolean> {
+  if (!this.password) return false; // OAuth-only account — no password to compare
   return bcrypt.compare(password, this.password);
 };
 

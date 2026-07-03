@@ -19,6 +19,13 @@ const {
   getRegistrationPolicy,
   requestWaitlist,
 } = require('../controllers/authController');
+// eslint-disable-next-line global-require
+const {
+  getOAuthProviders,
+  startOAuth,
+  oauthCallback,
+  exchangeOAuthCode,
+} = require('../controllers/oauthController');
 
 interface AuthReq {
   user?: { id: string };
@@ -72,9 +79,26 @@ const waitlistLimiter = rateLimit({
   handler: rateLimitHandler('rate limit exceeded: 5 waitlist requests per hour'),
 });
 
+// Social login shares the credential-stuffing posture of /login: each attempt
+// is one provider round-trip, so 30/15min/IP leaves room for retries without
+// letting a bot farm state rows.
+const oauthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: rateLimitHandler('rate limit exceeded: 30 OAuth attempts per 15 minutes'),
+});
+
 const router: ReturnType<typeof express.Router> = express.Router();
 
 router.post('/register', registerLimiter, register);
+router.get('/oauth/providers', getOAuthProviders);
+router.get('/oauth/:provider/start', oauthLimiter, startOAuth);
+router.get('/oauth/:provider/callback', oauthLimiter, oauthCallback);
+router.post('/oauth/exchange', oauthLimiter, exchangeOAuthCode);
 router.get('/registration-policy', getRegistrationPolicy);
 router.post('/waitlist', waitlistLimiter, requestWaitlist);
 router.post('/login', loginLimiter, login);

@@ -2,13 +2,31 @@ export {};
 const express = require('express');
 const crypto = require('crypto');
 const axios = require('axios');
+const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
 const User = require('../../models/User');
 const InvitationCode = require('../../models/InvitationCode');
 const WaitlistRequest = require('../../models/WaitlistRequest');
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 
 const router = express.Router();
+
+// Admin mutations are rare, deliberate actions — 60/15min/IP is generous for
+// a human operator while still bounding token-stuffing against the admin
+// surface (CodeQL js/missing-rate-limiting).
+const adminWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 60 admin writes per 15 minutes',
+    code: 'rate_limited',
+  }),
+});
 
 const sanitizeUser = (user: any) => ({
   id: user._id?.toString?.() || user.id,
@@ -149,6 +167,39 @@ router.patch('/:userId/role', auth, adminAuth, async (req: any, res: any) => {
   } catch (error) {
     console.error('Failed to update user role:', error);
     return res.status(500).json({ error: 'Failed to update user role' });
+  }
+});
+
+// PATCH /api/admin/users/:userId/entitlements — grant/revoke capability
+// flags (today just cloudAgents, the hosted-agent gate; see User.entitlements).
+// This is the missing admin lever for the staged open-registration plan:
+// new signups default to BYO-only, and an admin flips cloudAgents here.
+router.patch('/:userId/entitlements', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
+  try {
+    const { userId } = req.params;
+    const { cloudAgents } = req.body || {};
+    if (typeof cloudAgents !== 'boolean') {
+      return res.status(400).json({ error: 'cloudAgents must be a boolean' });
+    }
+
+    const target = await User.findById(userId);
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (target.isBot) {
+      return res.status(400).json({ error: 'Entitlements apply to human accounts, not bots' });
+    }
+
+    target.entitlements = { ...(target.entitlements || {}), cloudAgents };
+    await target.save();
+
+    return res.json({
+      message: 'User entitlements updated successfully',
+      user: { ...sanitizeUser(target), entitlements: target.entitlements },
+    });
+  } catch (error) {
+    console.error('Failed to update user entitlements:', error);
+    return res.status(500).json({ error: 'Failed to update user entitlements' });
   }
 });
 

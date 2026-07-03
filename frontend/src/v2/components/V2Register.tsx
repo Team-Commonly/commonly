@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
+import V2OAuthButtons from './V2OAuthButtons';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
@@ -162,6 +163,8 @@ const V2Register: React.FC = () => {
         </button>
 
         {error && <div className="v2-login__error">{error}</div>}
+
+        <V2OAuthButtons invite={invitationCode || undefined} />
 
         <div className="v2-login__hint">
           Already have an account?

@@ -1,10 +1,24 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import V2OAuthButtons from './V2OAuthButtons';
 
 interface LocationState {
   from?: { pathname?: string };
 }
+
+// Error codes the backend OAuth callback can bounce back with (as
+// ?oauthError=). Anything unlisted falls through to the generic line.
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  invitation_required: 'Registration is invite-only right now. Use an invitation link to sign up, or join the waitlist.',
+  invitation_invalid: 'That invitation code is invalid or used up.',
+  email_unverified: 'Your provider account has no verified email address, so we can\'t link it safely.',
+  provider_denied: 'Sign-in was cancelled at the provider.',
+  state_invalid: 'That sign-in attempt expired. Please try again.',
+  exchange_failed: 'Sign-in could not be completed. Please try again.',
+  provider_error: 'Something went wrong talking to the sign-in provider. Please try again.',
+  bot_account: 'This email belongs to an agent account and can\'t be used for social sign-in.',
+};
 
 const V2Login: React.FC = () => {
   const { login, error: authError, loading } = useAuth();
@@ -39,7 +53,14 @@ const V2Login: React.FC = () => {
     }
   };
 
-  const errorMessage = localError || authError;
+  const params = new URLSearchParams(location.search);
+  const oauthErrorCode = params.get('oauthError');
+  const oauthError = oauthErrorCode
+    ? (OAUTH_ERROR_MESSAGES[oauthErrorCode] || OAUTH_ERROR_MESSAGES.provider_error)
+    : null;
+  const nextPath = params.get('next') || undefined;
+
+  const errorMessage = localError || authError || oauthError;
 
   return (
     <div className="v2-login">
@@ -86,6 +107,8 @@ const V2Login: React.FC = () => {
         </button>
 
         {errorMessage && <div className="v2-login__error">{errorMessage}</div>}
+
+        <V2OAuthButtons next={nextPath} />
 
         <div className="v2-login__hint">
           New to Commonly?
