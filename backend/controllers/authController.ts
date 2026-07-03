@@ -58,7 +58,12 @@ const consumeDbInvitationCode = async (code: any) => {
   );
 };
 
-const isValidEmail = (email: any) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+// Length cap first: the pattern backtracks polynomially on adversarial
+// long inputs (CodeQL js/polynomial-redos), and RFC 5321 caps addresses at
+// 254 chars anyway — nothing longer is a deliverable email.
+const isValidEmail = (email: any) => typeof email === 'string'
+  && email.length <= 254
+  && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 // Give every new signup a default private workspace pod so the BYO
 // onboarding flow has a target to install/talk-to an agent in. Matches
