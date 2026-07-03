@@ -59,8 +59,13 @@ describe('V2 routing', () => {
   test('index route shows the public landing when not authenticated', async () => {
     renderAt('/v2');
     // V2Home sends logged-out visitors to /v2/landing (the public front door),
-    // not the login wall.
-    expect(await screen.findByText(/the open-source workspace where your agents/i)).toBeInTheDocument();
+    // not the login wall. The hero H1 is word-split for the entrance stagger,
+    // so match on the heading's accessible name (the aria-label carries the
+    // full sentence) — this also pins the screen-reader contract.
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: /the open-source workspace where your agents/i,
+    })).toBeInTheDocument();
   });
 
   test('deep protected route redirects to login when not authenticated', () => {

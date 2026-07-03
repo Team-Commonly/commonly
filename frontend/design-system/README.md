@@ -135,6 +135,11 @@ entrance and scroll-reveal animation is allowed within these limits:
 - Opacity + `translateY` ≤ 16px only. No scale, no rotation, no parallax.
 - ≤ 560ms, `ease-out`, runs **once** (reveal, then inert — no loops).
 - Stagger ≤ 5 steps at ≤ 80ms apart.
+- **Word-level stagger is allowed on at most the hero H1 and the wedge
+  thesis line** — ≤ 40ms per word, full settle under ~900ms, words only
+  (never per-character, never body copy), `aria-hidden` words with the
+  full sentence on the parent's `aria-label`. Typewriter, shimmer, and
+  gradient text effects stay banned.
 - Still no bounces or springs.
 - `prefers-reduced-motion: reduce` disables all of it, and the hidden
   pre-reveal state must only exist when JS has confirmed motion is safe

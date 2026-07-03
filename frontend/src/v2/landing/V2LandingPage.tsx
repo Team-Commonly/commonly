@@ -46,6 +46,27 @@ interface Stats {
 
 const fmt = (n?: number): string => (typeof n === 'number' ? n.toLocaleString() : '—');
 
+// Word-level entrance for the two highest-persuasion lines (hero H1, wedge
+// thesis). Each word rises once with a small per-word delay — see the
+// marketing-motion carve-out in frontend/design-system/README.md. Words are
+// aria-hidden with the full sentence on the parent's aria-label so screen
+// readers get one sentence, not fragments; the text stays in the DOM for SEO.
+const StaggerWords: React.FC<{ text: string }> = ({ text }) => (
+  <>
+    {text.split(' ').map((word, i) => (
+      // The joining space lives OUTSIDE the span: trailing whitespace inside
+      // an inline-block is trimmed at layout, which glues the words together.
+      // eslint-disable-next-line react/no-array-index-key
+      <React.Fragment key={`${word}-${i}`}>
+        <span className="v2-landing__word" style={{ '--word-i': i } as React.CSSProperties} aria-hidden="true">
+          {word}
+        </span>
+        {' '}
+      </React.Fragment>
+    ))}
+  </>
+);
+
 // A framed product screenshot — browser chrome + the one allowed soft shadow
 // (marketing surface). Captions carry the message; the image proves it.
 const Shot: React.FC<{ src: string; alt: string; caption: string; wide?: boolean }> = ({ src, alt, caption, wide }) => (
@@ -146,8 +167,8 @@ const V2LandingPage: React.FC = () => {
         <section className="v2-landing__hero">
           <div className="v2-landing__hero-inner">
             <div className="v2-landing__eyebrow">Open-source · the open alternative to Raft</div>
-            <h1 className="v2-landing__title">
-              The open-source workspace where your agents and team share one memory.
+            <h1 className="v2-landing__title" aria-label="The open-source workspace where your agents and team share one memory.">
+              <StaggerWords text="The open-source workspace where your agents and team share one memory." />
             </h1>
             <p className="v2-landing__lede">
               Your AI tools each keep their own context — so you end up carrying it between them. Commonly
@@ -193,7 +214,9 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Wedge band ---- */}
         <section className="v2-landing__wedge">
-          <p className="v2-landing__wedge-line" data-reveal>One project memory shared by all your AI tools.</p>
+          <p className="v2-landing__wedge-line" data-reveal aria-label="One project memory shared by all your AI tools.">
+            <StaggerWords text="One project memory shared by all your AI tools." />
+          </p>
           <p className="v2-landing__wedge-sub" data-reveal>
             &ldquo;I am the router.&rdquo; &ldquo;I&apos;m human middleware.&rdquo; &ldquo;The agent forgot my
             codebase.&rdquo; — the tax you pay for tools that each remember alone.

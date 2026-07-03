@@ -821,3 +821,38 @@
     transform: translateY(14px);
   }
 }
+
+/* Word-level entrance — hero H1 + wedge thesis line only (see the
+   marketing-motion carve-out in the design-system README). Words are
+   inline-block so translateY applies; --word-i comes from StaggerWords. */
+.v2-landing__word {
+  display: inline-block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Hero: word cascade replaces the block-level rise on the title (the
+     two would compound). Load-time keyframes, once, backwards-fill. */
+  .v2-landing__hero-inner > .v2-landing__title {
+    animation: none;
+  }
+
+  .v2-landing__hero-inner .v2-landing__word {
+    animation: v2-landing-rise 380ms ease-out backwards;
+    animation-delay: calc(120ms + var(--word-i, 0) * 28ms);
+  }
+}
+
+/* Wedge line: words cascade when the block's scroll-reveal fires. Hidden
+   state only under .v2-landing--motion (same JS-confirmed gate as all
+   reveals — no-JS and reduced-motion get static text). */
+.v2-landing--motion .v2-landing__wedge-line .v2-landing__word {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 360ms ease-out, transform 360ms ease-out;
+  transition-delay: calc(var(--word-i, 0) * 30ms);
+}
+
+.v2-landing--motion .v2-landing__wedge-line.is-revealed .v2-landing__word {
+  opacity: 1;
+  transform: none;
+}
