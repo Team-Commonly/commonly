@@ -302,7 +302,9 @@ exports.oauthCallback = async (req: any, res: any) => {
     const dest = new URLSearchParams({ code: exchangeCode, next: stateRow.next || '/v2' });
     return res.redirect(`${frontendUrl()}/v2/oauth/complete?${dest.toString()}`);
   } catch (err: any) {
-    console.error(`OAuth ${provider} callback failed:`, err?.response?.data || err.message);
+    // provider is user-controlled (req.params) — keep it out of the format
+    // string (CodeQL js/tainted-format-string).
+    console.error('OAuth callback failed for provider:', provider, err?.response?.data || err.message);
     return loginErrorRedirect(res, 'provider_error');
   }
 };
