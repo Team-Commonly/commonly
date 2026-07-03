@@ -49,6 +49,18 @@ From `CLAUDE.md` and the ADRs. If a change puts pressure on one, the author must
 - **Bytes live in the `ObjectStore` driver**, metadata lives on the parent entity.
 - **GET must be authorized.** A leaked URL from a private pod must not be publicly fetchable.
 
+### Mongo indexes
+- **Never `sparse: true` on a unique index that can see a stored `null`.**
+  Sparse skips *missing* fields only — an explicit `null` (from a schema
+  `default: null` or an assignment) IS indexed, so the second such doc throws
+  E11000. Compound sparse is worse: the doc is indexed if *any* key field is
+  present, so `{ podId, optionalField }` collides on the second doc per pod
+  even with the field absent. Use `partialFilterExpression: { field: { $type:
+  'string' } }` instead. Two production bugs from this class in one day
+  (2026-07-03): `OAuthLoginState.exchangeCode` (#581) and `Task.sourceRef`
+  (#583). If you must keep sparse, the path must have no default and no
+  code path may assign `null`.
+
 ---
 
 ## Modularity
