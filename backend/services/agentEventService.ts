@@ -762,27 +762,6 @@ class AgentEventService {
       throw new Error('agentName, podId, and type are required');
     }
 
-    // #609 companion — event routing keys on (agentName, instanceId). Since BYO
-    // agents are now installed under an owner-scoped instanceId, a caller that
-    // enqueues with the legacy 'default' (many schedulers/integration flows do)
-    // would never reach an owner-scoped agent. When the caller didn't pin a
-    // specific instanceId, resolve it from the pod's single active installation
-    // for this agentName. First-party agents (instanceId 'default') and
-    // explicit-instanceId callers are unaffected.
-    if (instanceId === 'default') {
-      // Strip-sanitize before the query (CodeQL SqlSanitizer pattern for
-      // js/sql-injection — same shape as routes/registry/install.ts).
-      const safeAgentName = String(agentName).toLowerCase().replace(/[^a-z0-9@/-]/g, '');
-      const active = await AgentInstallation.find({
-        agentName: safeAgentName,
-        podId,
-        status: 'active',
-      }).select('instanceId').lean() as Array<{ instanceId?: string }>;
-      if (active.length === 1 && active[0].instanceId && active[0].instanceId !== 'default') {
-        instanceId = active[0].instanceId;
-      }
-    }
-
     const baseEventPayload = type === 'heartbeat'
       ? await this.enrichHeartbeatPayload({
         agentName,

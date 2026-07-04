@@ -1,7 +1,6 @@
 // Agent install route — extracted from registry.js (GH#112)
 // Handles: POST /install
 const express = require('express');
-const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
@@ -62,25 +61,6 @@ const deriveInstanceId = (displayName: any, agentName: any) => {
     return 'default';
   }
   return slug;
-};
-
-/**
- * #609 — owner-scope the instanceId for user-origin (BYO / marketplace)
- * installs so that agent identity, runtime token, and memory are isolated
- * per installer. Everything downstream (bot User username, resolveMemoryIdentity,
- * AgentInstallation lookups) keys on (agentName, instanceId), so scoping the
- * instanceId here makes the whole chain tenant-isolated in one place.
- *
- * Deterministic in (userId, base) so the SAME user installing the SAME agent
- * into multiple pods gets ONE identity + shared memory (the cross-pod wedge),
- * while two DIFFERENT users who pick the same agent name never collide.
- * First-party shared agents (AGENT_TYPES, admin-provisioned) skip this and
- * keep their global instanceId.
- */
-const ownerScopedInstanceId = (userId: any, baseInstanceId: any): string => {
-  const ownerTag = `u${crypto.createHash('sha256').update(String(userId)).digest('hex').slice(0, 10)}`;
-  const base = String(baseInstanceId || 'default').trim();
-  return !base || base === 'default' ? ownerTag : `${base}-${ownerTag}`;
 };
 
 /**
@@ -233,18 +213,6 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       normalizedInstanceId = deriveInstanceId(displayName, agentName);
     }
 
-    // #609 — owner-scope the instanceId for user-origin (custom / marketplace
-    // / BYO) agents so identity + runtime token + memory are isolated per
-    // installer. First-party AGENT_TYPES agents (commonly-bot, openclaw, codex,
-    // …) are INTENTIONALLY shared — any user installing commonly-bot connects
-    // to the one shared instance — so they are never scoped, regardless of who
-    // installs. Applied BEFORE the existing-install and global-instance lookups
-    // so the whole flow keys on the scoped id consistently.
-    const isFirstPartyShared = AgentIdentityService.isKnownAgentType(safeAgentName);
-    if (!isFirstPartyShared) {
-      normalizedInstanceId = ownerScopedInstanceId(userId, normalizedInstanceId);
-    }
-
     const existingInPod = await AgentInstallation.findOne({
       agentName: agentName.toLowerCase(),
       podId,
@@ -254,6 +222,30 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
 
     if (existingInPod) {
       return res.status(400).json({ error: 'Agent already installed in this pod' });
+    }
+
+    // #609 — cross-owner identity guard. Agent identity + memory key on
+    // (agentName, instanceId) with no owner dimension, so if two DIFFERENT
+    // users install a custom agent under the same (agentName, instanceId) the
+    // second would reuse the first's bot User row + memory (a private-memory
+    // leak). First-party AGENT_TYPES agents (commonly-bot, openclaw, …) are
+    // shared by design and exempt. For everyone else, refuse to bind a name
+    // any OTHER user already owns (any install status — an uninstalled agent
+    // keeps its bot User + memory under identity continuity, so reuse would
+    // still leak). The owner can always reinstall their own agent.
+    const isFirstPartyShared = AgentIdentityService.isKnownAgentType(safeAgentName);
+    if (!isFirstPartyShared) {
+      const foreignInstall = await AgentInstallation.findOne({
+        agentName: safeAgentName,
+        instanceId: normalizedInstanceId,
+        installedBy: { $ne: userId },
+      }).select('_id').lean();
+      if (foreignInstall) {
+        return res.status(409).json({
+          code: 'agent_name_taken',
+          error: `The agent name "${safeAgentName}" is already in use by another user — please choose a different name.`,
+        });
+      }
     }
 
     const globalAgent = await findExistingAgentInstance(agentName, normalizedInstanceId);
@@ -565,7 +557,5 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
 });
 
 module.exports = installRouter;
-// Exported for the #609 tenant-isolation guard test.
-module.exports.ownerScopedInstanceId = ownerScopedInstanceId;
 
 export {};

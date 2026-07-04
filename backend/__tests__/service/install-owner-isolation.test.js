@@ -1,20 +1,17 @@
 /**
- * #609 tenant isolation — regression lock.
+ * #609 cross-owner identity guard — regression lock.
  *
- * BEFORE this fix, agent identity + memory keyed on (agentName, instanceId)
- * globally with no owner, so two different users who named their BYO agent the
- * same thing shared ONE bot User row + memory doc (a fresh account could read a
- * stranger's agent memory). See issue #609.
+ * Agent identity + memory key on (agentName, instanceId) with no owner
+ * dimension, so two DIFFERENT users installing a custom agent under the same
+ * (agentName, instanceId) would share ONE bot User row + memory (a fresh
+ * account could read a stranger's agent memory). See issue #609.
  *
- * The fix (routes/registry/install.ts) owner-scopes the instanceId for every
- * install except an admin provisioning a first-party AGENT_TYPES agent. This
- * test locks:
- *   1. Two different users installing the SAME agent name get DIFFERENT
- *      instanceIds + DIFFERENT bot User rows (isolation).
- *   2. The SAME user installing the same agent into two pods gets the SAME
- *      instanceId (identity continuity / cross-pod shared memory — the wedge).
- *   3. A non-admin cannot claim a reserved first-party name ("codex").
- *   4. The scoping helper is deterministic and owner-separating.
+ * The guard (routes/registry/install.ts) refuses to bind a custom agent name
+ * another user already owns. First-party AGENT_TYPES agents (commonly-bot,
+ * openclaw, …) are shared by design and exempt. This test locks:
+ *   1. A second user installing the SAME custom name → 409 agent_name_taken.
+ *   2. The SAME user reinstalling their own agent (another pod) → allowed.
+ *   3. A first-party name (commonly-bot) → NOT guarded (shared across users).
  */
 
 const express = require('express');
@@ -25,18 +22,15 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
-const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
-const AgentProfile = require('../../models/AgentProfile').default || require('../../models/AgentProfile');
-const AgentIdentityService = require('../../services/agentIdentityService');
+const { AgentInstallation } = require('../../models/AgentRegistry');
 
 const registryRoutes = require('../../routes/registry');
-const installRouter = require('../../routes/registry/install');
 
 const JWT_SECRET = 'test-jwt-secret-owner-isolation';
 
 jest.setTimeout(60000);
 
-describe('#609 BYO agent owner isolation', () => {
+describe('#609 cross-owner agent identity guard', () => {
   let app;
   let userA;
   let userB;
@@ -51,8 +45,6 @@ describe('#609 BYO agent owner isolation', () => {
     .set('Authorization', `Bearer ${token}`)
     .send(body);
 
-  // A BYO webhook install: no manifest needed (self-serve synthesizes one),
-  // never hits the cloud-entitlement gate.
   const byoBody = (podId, agentName) => ({
     agentName,
     podId: podId.toString(),
@@ -82,60 +74,30 @@ describe('#609 BYO agent owner isolation', () => {
     await closeMongoDb();
   });
 
-  it('isolates two different users who pick the SAME agent name', async () => {
+  it('refuses a second user claiming a custom name the first already owns', async () => {
     const resA = await installAs(tokenA, byoBody(podA, 'assistant'));
-    const resB = await installAs(tokenB, byoBody(podB, 'assistant'));
-
     expect(resA.status).toBe(200);
-    expect(resB.status).toBe(200);
 
-    const instA = resA.body.installation.instanceId;
-    const instB = resB.body.installation.instanceId;
+    const resB = await installAs(tokenB, byoBody(podB, 'assistant'));
+    expect(resB.status).toBe(409);
+    expect(resB.body.code).toBe('agent_name_taken');
 
-    // Different owners → different instanceId → different identity + memory key.
-    expect(instA).not.toEqual(instB);
-
-    // And distinct bot User rows (the actual leak vector in #609).
-    const userAgentA = await AgentIdentityService.getOrCreateAgentUser('assistant', { instanceId: instA });
-    const userAgentB = await AgentIdentityService.getOrCreateAgentUser('assistant', { instanceId: instB });
-    expect(userAgentA._id.toString()).not.toEqual(userAgentB._id.toString());
+    const bInstall = await AgentInstallation.findOne({ agentName: 'assistant', podId: podB._id });
+    expect(bInstall).toBeNull();
   });
 
-  it('keeps ONE identity for the same user across pods (cross-pod memory wedge)', async () => {
+  it('lets the SAME user reinstall their own agent into another pod', async () => {
     const res1 = await installAs(tokenA, byoBody(podA, 'helper'));
     const res2 = await installAs(tokenA, byoBody(podA2, 'helper'));
-
     expect(res1.status).toBe(200);
     expect(res2.status).toBe(200);
-    // Same owner, same agent name → same instanceId → shared memory across pods.
-    expect(res1.body.installation.instanceId).toEqual(res2.body.installation.instanceId);
     expect(res2.body.sharedIdentity).toBe(true);
   });
 
-  it('does NOT owner-scope a first-party agent — it stays shared across users', async () => {
-    // commonly-bot is a first-party AGENT_TYPES agent; two different users
-    // installing it must resolve to the SAME (un-scoped) instanceId so they
-    // connect to the one shared instance (the intended product behavior, and
-    // NOT the #609 leak — first-party memory is shared infra, not user-private).
+  it('does NOT guard a first-party agent — it stays shared across users', async () => {
     const resA = await installAs(tokenA, byoBody(podA, 'commonly-bot'));
     const resB = await installAs(tokenB, byoBody(podB, 'commonly-bot'));
     expect(resA.status).toBe(200);
     expect(resB.status).toBe(200);
-    expect(resA.body.installation.instanceId).toBe('default');
-    expect(resB.body.installation.instanceId).toBe('default');
-    // No owner tag applied.
-    expect(resA.body.installation.instanceId).not.toMatch(/-u[0-9a-f]{10}$/);
-  });
-
-  it('owner-scoping helper is deterministic and owner-separating', () => {
-    const { ownerScopedInstanceId } = installRouter;
-    const a = ownerScopedInstanceId('aaaaaaaaaaaaaaaaaaaaaaaa', 'default');
-    const a2 = ownerScopedInstanceId('aaaaaaaaaaaaaaaaaaaaaaaa', 'default');
-    const b = ownerScopedInstanceId('bbbbbbbbbbbbbbbbbbbbbbbb', 'default');
-    expect(a).toEqual(a2); // deterministic
-    expect(a).not.toEqual(b); // owner-separating
-    expect(a).toMatch(/^u[0-9a-f]{10}$/); // opaque owner tag, not 'default'
-    // A meaningful base is preserved as a prefix but still owner-tagged.
-    expect(ownerScopedInstanceId('aaaaaaaaaaaaaaaaaaaaaaaa', 'aria')).toMatch(/^aria-u[0-9a-f]{10}$/);
   });
 });
