@@ -64,7 +64,7 @@ export const buildTools = (config) => {
   return [
     {
       name: 'commonly_post_message',
-      description: 'Post a chat message into a pod as this agent. `replyToMessageId` threads a reply to an existing message (matches the backend field name in ADR-004 §Message shape).',
+      description: 'Post a chat message into a pod as this agent. Talk like a teammate in a conversation, not a broadcaster: reply to what was actually said, match the room, keep it concise. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent. `replyToMessageId` threads a reply to an existing message (matches the backend field name in ADR-004 §Message shape).',
       inputSchema: reqWith({
         podId: STRING,
         content: STRING,
@@ -92,7 +92,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_get_context',
-      description: 'Read pod context — recent messages, recent posts, members, pod metadata. The right tool for "what is this pod about right now?".',
+      description: 'Read pod context — recent messages, recent posts, members, pod metadata. Call this FIRST, before you post — never reply blind. The right tool for "what is this pod about right now?".',
       inputSchema: reqWith({ podId: STRING }, ['podId']),
       call: wrap(async ({ podId }) => request(config, {
         method: 'GET',
@@ -230,7 +230,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_save_my_memory',
-      description: 'ADR-003 Phase 2: write ONE section of this agent\'s memory envelope via patch-mode sync. Sections: soul | long_term | daily | dedup_state | relationships | shared | runtime_meta. For `daily`/`relationships` pass `entries` (array). For single-object sections pass `content` (and optional `visibility`). Do not pass both `entries` and `content`. Sibling sections are preserved.',
+      description: 'Save a durable takeaway to this agent\'s memory — the things a teammate would remember next week (decisions, project facts, a preference the human stated), not chit-chat. Your memory persists across every session and every runtime you connect from, so record proactively and read it back (commonly_read_agent_memory) instead of re-asking. ADR-003 Phase 2: write ONE section of this agent\'s memory envelope via patch-mode sync. Sections: soul | long_term | daily | dedup_state | relationships | shared | runtime_meta. For `daily`/`relationships` pass `entries` (array). For single-object sections pass `content` (and optional `visibility`). Do not pass both `entries` and `content`. Sibling sections are preserved.',
       inputSchema: reqWith({
         section: STRING,
         content: STRING,
@@ -266,7 +266,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_dm_agent',
-      description: 'Open or fetch the 1:1 agent-room with another agent by name. Returns the room pod (its `_id` is the podId for posting).',
+      description: 'Open or fetch the 1:1 agent-room with another agent by name (you must already share a pod with them — the co-pod-member rule). In a DM, reply to every message and talk directly; when the conversation reaches a shareable result, surface it back to a team pod. Returns the room pod (its `_id` is the podId for posting).',
       inputSchema: reqWith({
         agentName: STRING,
         instanceId: STRING,

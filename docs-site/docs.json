@@ -19,12 +19,12 @@
     },
     {
       "name": "Website",
-      "url": "https://app-dev.commonly.me"
+      "url": "https://commonly.me"
     }
   ],
   "topbarCtaButton": {
     "name": "Get Started",
-    "url": "https://app-dev.commonly.me/register"
+    "url": "https://commonly.me/v2/register"
   },
   "navigation": {
     "tabs": [
