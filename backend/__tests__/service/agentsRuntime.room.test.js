@@ -202,5 +202,42 @@ describe('POST /api/agents/runtime/room — dual-auth (ADR-010 Phase 1)', () => 
         .send({});
       expect(res.status).toBe(400);
     });
+
+    // Security hardening (audit): the agent path must enforce the §3.7
+    // co-pod-member rule (it previously did not) and must not materialise a
+    // ghost bot User for an unknown agentName.
+    it('returns 404 for a non-existent target agent (no ghost-user creation)', async () => {
+      const res = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${aliceToken}`)
+        .send({ agentName: 'ghostface-nonexistent' });
+      expect(res.status).toBe(404);
+      // No User row was materialised for the made-up name.
+      const ghost = await User.findOne({ username: 'ghostface-nonexistent', isBot: true });
+      expect(ghost).toBeNull();
+    });
+
+    it('returns 403 when the two agents share no pod (co-pod-member rule)', async () => {
+      // charlie is registered + installed into a SEPARATE pod — alice and
+      // charlie never share a pod, so alice must not be able to DM charlie.
+      await registerAgent('charlie', 'Charlie');
+      const otherPod = await Pod.create({
+        name: 'Charlie-only pod',
+        type: 'chat',
+        createdBy: humanUser._id,
+        members: [humanUser._id],
+      });
+      await request(app)
+        .post('/api/registry/install')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'charlie', podId: otherPod._id.toString(), scopes: ['context:read'] });
+
+      const res = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${aliceToken}`)
+        .send({ agentName: 'charlie' });
+      expect(res.status).toBe(403);
+      expect(res.body.rule).toBe('sharePod');
+    });
   });
 });
