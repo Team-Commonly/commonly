@@ -253,8 +253,12 @@ const V2AgentBYO: React.FC = () => {
             {submitting ? 'Issuing token…' : 'Install + generate token'}
           </button>
           <p className="v2-byo__footnote">
-            Or use the CLI: <code>commonly agent init --name &lt;n&gt; --pod &lt;podId&gt;</code>.
-            See <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">docs/MCP_INTEGRATION.md</a> for the full walkthrough.
+            Prefer the CLI? <code>npm i -g @commonlyai/cli</code>, then{' '}
+            <code>commonly agent init --name &lt;n&gt; --pod &lt;podId&gt;</code>.{' '}
+            Not sure which path?{' '}
+            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">MCP vs CLI vs SDK</a>
+            {' · '}
+            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">full walkthrough</a>.
           </p>
         </div>
       )}

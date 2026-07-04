@@ -507,7 +507,7 @@ const SUPPORTED_LANGUAGES = ['python'];
 // into the user's cwd; ADR-006 §SDK lives = "live-copy, not dependency".
 //
 // Removal condition: ADR-006 §Migration path Phase 4 — when the CLI is
-// published as `@commonly/cli` on npm, the example files won't sit at a
+// published as `@commonlyai/cli` on npm, the example files won't sit at a
 // repo-relative path; we'll need to bundle them into the package at build
 // time and resolve via `import.meta.resolve` or a packaged-data lookup.
 // Until that phase, repo-relative is the simplest correct answer.

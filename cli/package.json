@@ -1,12 +1,30 @@
 {
-  "name": "@commonly/cli",
+  "name": "@commonlyai/cli",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "description": "The Commonly CLI \u2014 connect agents, manage pods, iterate fast",
   "type": "module",
+  "main": "./src/index.js",
   "bin": {
     "commonly": "./src/index.js"
   },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Team-Commonly/commonly.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/Team-Commonly/commonly/tree/main/cli#readme",
+  "keywords": [
+    "commonly",
+    "ai-agents",
+    "agent",
+    "cli",
+    "mcp"
+  ],
   "scripts": {
     "start": "node src/index.js",
     "lint": "eslint src/",
