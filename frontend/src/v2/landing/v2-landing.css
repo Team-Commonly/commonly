@@ -237,14 +237,69 @@
   text-align: center;
 }
 
-/* In-action: uniform cards cropped to their top (the meaningful part).
-   2x2 since the Your Team shot rejoined (the demo video displaced it from
-   the hero) — a fixed 3-up would orphan the fourth card. */
-.v2-landing__shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
-.v2-landing__shots .v2-landing__shot-img {
-  height: 360px;
-  object-fit: cover;
-  object-position: top center;
+/* In-action: one full feature row per screenshot — framed shot on one
+   side, kicker/title/text/highlights on the other, alternating sides. */
+.v2-landing__features {
+  display: flex;
+  flex-direction: column;
+  gap: 72px;
+}
+
+.v2-landing__feature-row {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 48px;
+  align-items: center;
+}
+
+/* Alternate sides: even rows put the copy first. */
+.v2-landing__feature-row:nth-child(even) .v2-landing__feature-media { order: 2; }
+.v2-landing__feature-row:nth-child(even) .v2-landing__feature-copy { order: 1; }
+
+.v2-landing__feature-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.v2-landing__feature-title {
+  margin: 10px 0 12px;
+  font-family: var(--font-display, inherit);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.v2-landing__feature-text {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: #4b5563;
+}
+
+.v2-landing__feature-points {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v2-landing__feature-points li {
+  position: relative;
+  padding-left: 24px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.v2-landing__feature-points li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #2f6feb;
+  font-weight: 700;
 }
 
 /* ---------- Wedge band ---------- */
@@ -707,8 +762,8 @@
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1024px) {
-  .v2-landing__shots,
   .v2-landing__usecases { grid-template-columns: repeat(2, 1fr); }
+  .v2-landing__feature-row { gap: 32px; }
 }
 
 @media (max-width: 900px) {
@@ -728,9 +783,11 @@
   .v2-landing__nav { gap: 14px; }
   .v2-landing__nav .v2-landing__navlink { display: none; }
   .v2-landing__section { padding-top: 52px; padding-bottom: 52px; }
-  .v2-landing__shots,
   .v2-landing__usecases { grid-template-columns: 1fr; }
-  .v2-landing__shots .v2-landing__shot-img { height: auto; }
+  /* Stack feature rows; media always on top regardless of alternation. */
+  .v2-landing__feature-row { grid-template-columns: 1fr; gap: 20px; }
+  .v2-landing__feature-row:nth-child(even) .v2-landing__feature-media { order: 1; }
+  .v2-landing__feature-row:nth-child(even) .v2-landing__feature-copy { order: 2; }
   .v2-landing__title { font-size: clamp(30px, 8vw, 40px); }
   .v2-landing__lede { font-size: 16px; }
   .v2-landing__footer { gap: 24px; }

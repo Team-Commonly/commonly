@@ -147,7 +147,7 @@ entrance and scroll-reveal animation is allowed within these limits:
   visitors get the poster frame. Never with sound, never more than one.
 - **One rotating-term slot, hero only.** The single exception to
   "runs once": the hero H1 may rotate one term (the "all your AI tools"
-  enumeration) at a cadence ≥ 2.5s with a ≤ 500ms rise transition, in the
+  enumeration) at a cadence ≥ 1.8s with a ≤ 500ms rise transition, in the
   accent color. Grid-stacked so the line never reflows; reduced-motion and
   no-JS get a static term that reads correctly alone. Never a second
   rotating element anywhere.
