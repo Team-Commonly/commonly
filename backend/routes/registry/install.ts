@@ -1,6 +1,7 @@
 // Agent install route — extracted from registry.js (GH#112)
 // Handles: POST /install
 const express = require('express');
+const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
@@ -64,6 +65,25 @@ const deriveInstanceId = (displayName: any, agentName: any) => {
 };
 
 /**
+ * #609 — owner-scope the instanceId for user-origin (BYO / marketplace)
+ * installs so that agent identity, runtime token, and memory are isolated
+ * per installer. Everything downstream (bot User username, resolveMemoryIdentity,
+ * AgentInstallation lookups) keys on (agentName, instanceId), so scoping the
+ * instanceId here makes the whole chain tenant-isolated in one place.
+ *
+ * Deterministic in (userId, base) so the SAME user installing the SAME agent
+ * into multiple pods gets ONE identity + shared memory (the cross-pod wedge),
+ * while two DIFFERENT users who pick the same agent name never collide.
+ * First-party shared agents (AGENT_TYPES, admin-provisioned) skip this and
+ * keep their global instanceId.
+ */
+const ownerScopedInstanceId = (userId: any, baseInstanceId: any): string => {
+  const ownerTag = `u${crypto.createHash('sha256').update(String(userId)).digest('hex').slice(0, 10)}`;
+  const base = String(baseInstanceId || 'default').trim();
+  return !base || base === 'default' ? ownerTag : `${base}-${ownerTag}`;
+};
+
+/**
  * Check if an agent instance already exists globally (across all pods).
  * Returns the existing installations and agent user if found.
  */
@@ -117,6 +137,23 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     if (!safeAgentName || safeAgentName !== agentName.toLowerCase()
         || !/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(safeAgentName)) {
       return res.status(400).json({ error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/' });
+    }
+
+    // Fetched once and reused for the #609 owner-scoping decision below and
+    // the cloud-entitlement gate further down.
+    const installerUser = await User.findById(userId).select('role entitlements').lean();
+    const isAdminInstaller = installerUser?.role === 'admin';
+    // #609 — reserve first-party agent names (openclaw, codex, commonly-bot,
+    // …) for admins/the provisioner. A regular user must not be able to name
+    // their BYO agent "codex" and join/impersonate the shared first-party
+    // identity. Owner-scoping below would isolate them anyway, but rejecting
+    // the name outright avoids a confusing agent that wears a first-party
+    // icon/description.
+    if (!isAdminInstaller && AgentIdentityService.isKnownAgentType(safeAgentName)) {
+      return res.status(403).json({
+        code: 'reserved_agent_name',
+        error: `"${safeAgentName}" is a reserved first-party agent name — please choose a different name.`,
+      });
     }
 
     const pod = await Pod.findById(podId).lean();
@@ -208,6 +245,16 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       normalizedInstanceId = deriveInstanceId(displayName, agentName);
     }
 
+    // #609 — owner-scope the instanceId for every install EXCEPT an admin
+    // provisioning a shared first-party agent. This isolates BYO / marketplace
+    // agent identity + runtime token + memory per installer. Applied BEFORE the
+    // existing-install and global-instance lookups so the whole flow keys on
+    // the scoped id consistently. See ownerScopedInstanceId() above.
+    const isFirstPartyShared = isAdminInstaller && AgentIdentityService.isKnownAgentType(safeAgentName);
+    if (!isFirstPartyShared) {
+      normalizedInstanceId = ownerScopedInstanceId(userId, normalizedInstanceId);
+    }
+
     const existingInPod = await AgentInstallation.findOne({
       agentName: agentName.toLowerCase(),
       podId,
@@ -285,10 +332,8 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       runtimeType: effectiveRuntimeType,
       host: runtimeConfig.host,
     })) {
-      const installerUser = await User.findById(userId).select('role entitlements').lean();
-      const isAdmin = installerUser?.role === 'admin';
       const isEntitled = installerUser?.entitlements?.cloudAgents === true;
-      if (!isAdmin && !isEntitled) {
+      if (!isAdminInstaller && !isEntitled) {
         return res.status(403).json({
           code: 'cloud_agents_not_entitled',
           message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
@@ -530,5 +575,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
 });
 
 module.exports = installRouter;
+// Exported for the #609 tenant-isolation guard test.
+module.exports.ownerScopedInstanceId = ownerScopedInstanceId;
 
 export {};
