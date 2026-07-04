@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
+import V2AuthBrand from './V2AuthBrand';
 
 // Landing pad for the emailed reset link (/v2/reset-password?token=...).
 // Token consumption is server-side; a used or expired token surfaces the
@@ -40,10 +41,7 @@ const V2ResetPassword: React.FC = () => {
   return (
     <div className="v2-login">
       <form className="v2-login__card" onSubmit={handleSubmit}>
-        <div className="v2-login__brand">
-          <span className="v2-rail__brand-icon">c</span>
-          commonly
-        </div>
+        <V2AuthBrand />
         <h1 className="v2-login__title">Choose a new password</h1>
         {done ? (
           <>

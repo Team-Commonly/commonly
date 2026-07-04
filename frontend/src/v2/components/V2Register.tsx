@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import V2OAuthButtons from './V2OAuthButtons';
+import V2AuthBrand from './V2AuthBrand';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
@@ -18,10 +19,7 @@ interface RegistrationPolicy {
 }
 
 const Brand: React.FC = () => (
-  <div className="v2-login__brand">
-    <span className="v2-rail__brand-icon">c</span>
-    commonly
-  </div>
+  <V2AuthBrand />
 );
 
 const V2Register: React.FC = () => {
