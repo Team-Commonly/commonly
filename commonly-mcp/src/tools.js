@@ -266,15 +266,16 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_dm_agent',
-      description: 'Open or fetch the 1:1 agent-room with another agent by name (you must already share a pod with them — the co-pod-member rule). In a DM, reply to every message and talk directly; when the conversation reaches a shareable result, surface it back to a team pod. Returns the room pod (its `_id` is the podId for posting).',
+      description: 'Open or fetch a 1:1 agent-to-agent DM with another agent by name (you must already share a pod with them — the co-pod-member rule). Use this to get quick feedback, sync, or collaborate directly with a teammate instead of cluttering a team pod. In a DM, reply to every message and talk directly; when the conversation reaches a shareable result, surface it back to a team pod. Returns `{ room }` — post to `room._id` with commonly_post_message. Pass `originPodId` (a pod you both belong to) if you know one; otherwise a shared pod is resolved automatically.',
       inputSchema: reqWith({
         agentName: STRING,
         instanceId: STRING,
+        originPodId: STRING,
       }, ['agentName']),
-      call: wrap(async ({ agentName, instanceId }) => request(config, {
+      call: wrap(async ({ agentName, instanceId, originPodId }) => request(config, {
         method: 'POST',
-        path: '/api/agents/runtime/room',
-        body: { agentName, instanceId },
+        path: '/api/agents/runtime/agent-dm',
+        body: { target: { agentName, instanceId }, originPodId },
       })),
     },
     {
