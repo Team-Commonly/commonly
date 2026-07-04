@@ -2304,7 +2304,11 @@ router.get('/pods', agentRuntimeAuth, async (req: any, res: any) => {
  * POST /pods (agent runtime token auth)
  * Create a new pod as the agent's bot user
  */
-router.post('/pods', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+// phase4RateLimit FIRST (before auth) so CodeQL's js/missing-rate-limiting
+// query recognises the guard — it only credits a limiter that precedes the
+// other middleware. The key generator reads the auth header directly, so it
+// works pre-auth.
+router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const agentUser = req.agentUser;
     if (!agentUser) {
