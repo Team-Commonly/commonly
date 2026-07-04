@@ -770,8 +770,11 @@ class AgentEventService {
     // for this agentName. First-party agents (instanceId 'default') and
     // explicit-instanceId callers are unaffected.
     if (instanceId === 'default') {
+      // Strip-sanitize before the query (CodeQL SqlSanitizer pattern for
+      // js/sql-injection — same shape as routes/registry/install.ts).
+      const safeAgentName = String(agentName).toLowerCase().replace(/[^a-z0-9@/-]/g, '');
       const active = await AgentInstallation.find({
-        agentName: agentName.toLowerCase(),
+        agentName: safeAgentName,
         podId,
         status: 'active',
       }).select('instanceId').lean() as Array<{ instanceId?: string }>;
