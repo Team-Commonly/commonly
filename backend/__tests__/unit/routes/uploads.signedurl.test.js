@@ -15,7 +15,12 @@ jest.mock('../../../services/objectStore', () => ({
   __resetObjectStoreForTests: jest.fn(),
 }));
 
-jest.mock('../../../models/File', () => ({ findByFileName: jest.fn() }));
+// findByFileName(...).lean() resolves whatever mockFileMeta holds (null =
+// unknown/un-scoped file → public read).
+let mockFileMeta = null;
+jest.mock('../../../models/File', () => ({
+  findByFileName: jest.fn(() => ({ lean: () => Promise.resolve(mockFileMeta) })),
+}));
 
 // Auth middleware stub — writes userId if the header is present.
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
@@ -29,11 +34,16 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 
 const mockCanRead = jest.fn();
 const mockSignToken = jest.fn().mockReturnValue('signed-token');
+const mockVerifyToken = jest.fn();
 jest.mock('../../../services/attachmentAccess', () => ({
   DEFAULT_TOKEN_TTL_SECONDS: 300,
   canReadAttachment: (...args) => mockCanRead(...args),
   signAttachmentToken: (...args) => mockSignToken(...args),
+  verifyAttachmentToken: (...args) => mockVerifyToken(...args),
 }));
+
+const mockJwtVerify = jest.fn();
+jest.mock('jsonwebtoken', () => ({ verify: (...args) => mockJwtVerify(...args) }));
 
 const mockLog = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../../services/auditService', () => ({
@@ -102,9 +112,59 @@ describe('GET /api/uploads/:fileName/url (ADR-002 Phase 1b mint)', () => {
 
   it('does not shadow the bare GET — `/api/uploads/foo` still routes to the fetcher', async () => {
     mockStore.get.mockResolvedValue(null);
-    const File = require('../../../models/File');
-    File.findByFileName.mockResolvedValue(null);
+    mockFileMeta = null; // un-scoped → public read path
     await request(app).get('/api/uploads/foo').expect(404);
     expect(mockCanRead).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/uploads/:fileName pod-scoped authorization (ADR-002 Phase 1b flip / #IDOR)', () => {
+  let app;
+
+  beforeEach(() => {
+    app = express();
+    app.use(express.json());
+    app.use('/api/uploads', routes);
+    mockFileMeta = null;
+    mockCanRead.mockReset();
+    mockVerifyToken.mockReset();
+    mockJwtVerify.mockReset();
+    mockStore.get.mockReset().mockResolvedValue({ mime: 'image/png', stream: { pipe: (res) => res.end('bytes') } });
+    process.env.JWT_SECRET = 'test-secret';
+  });
+
+  it('serves an UN-SCOPED file publicly (no podId — e.g. an avatar)', async () => {
+    mockFileMeta = { podId: null };
+    await request(app).get('/api/uploads/avatar.png').expect(200);
+  });
+
+  it('403s a POD-SCOPED file with no token and no auth (the IDOR fix)', async () => {
+    mockFileMeta = { podId: 'pod-1' };
+    const res = await request(app).get('/api/uploads/secret.pdf').expect(403);
+    expect(res.body.msg).toMatch(/not authorized/i);
+  });
+
+  it('serves a POD-SCOPED file with a valid ?t= token', async () => {
+    mockFileMeta = { podId: 'pod-1' };
+    mockVerifyToken.mockReturnValue({ userId: 'user-1' });
+    await request(app).get('/api/uploads/secret.pdf?t=good-token').expect(200);
+    expect(mockVerifyToken).toHaveBeenCalledWith('good-token', 'secret.pdf');
+  });
+
+  it('serves a POD-SCOPED file to a Bearer user who canReadAttachment', async () => {
+    mockFileMeta = { podId: 'pod-1' };
+    mockVerifyToken.mockReturnValue(null);
+    mockJwtVerify.mockReturnValue({ id: 'member-1' });
+    mockCanRead.mockResolvedValue(true);
+    await request(app).get('/api/uploads/secret.pdf').set('Authorization', 'Bearer jwt').expect(200);
+    expect(mockCanRead).toHaveBeenCalledWith('secret.pdf', 'member-1');
+  });
+
+  it('403s a POD-SCOPED file when the Bearer user cannot read it', async () => {
+    mockFileMeta = { podId: 'pod-1' };
+    mockVerifyToken.mockReturnValue(null);
+    mockJwtVerify.mockReturnValue({ id: 'outsider' });
+    mockCanRead.mockResolvedValue(false);
+    await request(app).get('/api/uploads/secret.pdf').set('Authorization', 'Bearer jwt').expect(403);
   });
 });
