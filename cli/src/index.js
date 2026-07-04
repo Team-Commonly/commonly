@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @commonly/cli — the developer interface to CAP.
+ * @commonlyai/cli — the developer interface to CAP.
  *
  * Usage:
  *   commonly login
