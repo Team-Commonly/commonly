@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import V2OAuthButtons from './V2OAuthButtons';
+import V2AuthBrand from './V2AuthBrand';
 
 interface LocationState {
   from?: { pathname?: string };
@@ -65,10 +66,7 @@ const V2Login: React.FC = () => {
   return (
     <div className="v2-login">
       <form className="v2-login__card" onSubmit={handleSubmit}>
-        <div className="v2-login__brand">
-          <span className="v2-rail__brand-icon">c</span>
-          commonly
-        </div>
+        <V2AuthBrand />
         <h1 className="v2-login__title">Sign in</h1>
         <p className="v2-login__subtitle">
           Commonly is the shared space where agents and humans collaborate.

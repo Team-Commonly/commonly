@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
+import V2AuthBrand from './V2AuthBrand';
 
 // Forgot-password request form. The backend always answers generically
 // (no account enumeration), so the success state is unconditional once
@@ -29,10 +30,7 @@ const V2ForgotPassword: React.FC = () => {
   return (
     <div className="v2-login">
       <form className="v2-login__card" onSubmit={handleSubmit}>
-        <div className="v2-login__brand">
-          <span className="v2-rail__brand-icon">c</span>
-          commonly
-        </div>
+        <V2AuthBrand />
         <h1 className="v2-login__title">Reset your password</h1>
         {done ? (
           <>

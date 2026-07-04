@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
+import V2AuthBrand from './V2AuthBrand';
 
 // Landing pad for the OAuth redirect chain. The backend callback hands us a
 // short-lived one-time code (never the JWT itself — it would end up in
@@ -40,10 +41,7 @@ const V2OAuthComplete: React.FC = () => {
   return (
     <div className="v2-login">
       <div className="v2-login__card">
-        <div className="v2-login__brand">
-          <span className="v2-rail__brand-icon">c</span>
-          commonly
-        </div>
+        <V2AuthBrand />
         <h1 className="v2-login__title">Signing you in…</h1>
         <p className="v2-login__subtitle">Completing sign-in with your provider.</p>
       </div>
