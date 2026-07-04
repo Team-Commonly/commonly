@@ -49,9 +49,9 @@ const fmt = (n?: number): string => (typeof n === 'number' ? n.toLocaleString() 
 // The rotating hero term — enumerates "all your AI tools" instead of
 // asserting it. Grid-stacks every term in one cell (the slot sizes to the
 // widest term, so the line never reflows), slides the active one up on a
-// calm 2.6s cadence. Reduced-motion / no-JS visitors get the static last
+// brisk 1.9s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
 // term ("your whole team"), which reads correctly on its own.
-const ROTATING_TERMS = ['Claude Code', 'Cursor', 'Codex', 'your whole team'];
+const ROTATING_TERMS = ['Claude Code', 'Cursor', 'Codex', 'OpenClaw', 'your whole team'];
 
 const RotatingTerm: React.FC = () => {
   const [active, setActive] = useState(0);
@@ -62,7 +62,7 @@ const RotatingTerm: React.FC = () => {
     setRotating(true);
     const t = setInterval(() => {
       setActive((i) => (i + 1) % ROTATING_TERMS.length);
-    }, 2600);
+    }, 1900);
     return () => clearInterval(t);
   }, []);
 
@@ -103,20 +103,40 @@ const StaggerWords: React.FC<{ text: string }> = ({ text }) => (
   </>
 );
 
-// A framed product screenshot — browser chrome + the one allowed soft shadow
-// (marketing surface). Captions carry the message; the image proves it.
-const Shot: React.FC<{ src: string; alt: string; caption: string; wide?: boolean }> = ({ src, alt, caption, wide }) => (
-  <figure className={`v2-landing__shot${wide ? ' v2-landing__shot--wide' : ''}`}>
-    <div className="v2-landing__shot-frame">
-      <div className="v2-landing__shot-bar" aria-hidden="true">
-        <span className="v2-landing__shot-dot" />
-        <span className="v2-landing__shot-dot" />
-        <span className="v2-landing__shot-dot" />
+// A full feature demonstration: framed screenshot on one side, kicker +
+// title + description + highlight checklist on the other. Rows alternate
+// sides via CSS :nth-child. One row per screenshot — each feature gets a
+// real pitch instead of a caption (Sam's call, 2026-07-03).
+const FeatureRow: React.FC<{
+  img: string;
+  alt: string;
+  kicker: string;
+  title: string;
+  text: string;
+  points: string[];
+}> = ({ img, alt, kicker, title, text, points }) => (
+  <div className="v2-landing__feature-row" data-reveal>
+    <div className="v2-landing__feature-media">
+      <div className="v2-landing__shot-frame">
+        <div className="v2-landing__shot-bar" aria-hidden="true">
+          <span className="v2-landing__shot-dot" />
+          <span className="v2-landing__shot-dot" />
+          <span className="v2-landing__shot-dot" />
+        </div>
+        <img className="v2-landing__feature-img" src={img} alt={alt} loading="lazy" />
       </div>
-      <img className="v2-landing__shot-img" src={src} alt={alt} loading="lazy" />
     </div>
-    <figcaption className="v2-landing__shot-cap">{caption}</figcaption>
-  </figure>
+    <div className="v2-landing__feature-copy">
+      <div className="v2-landing__kicker">{kicker}</div>
+      <h3 className="v2-landing__feature-title">{title}</h3>
+      <p className="v2-landing__feature-text">{text}</p>
+      <ul className="v2-landing__feature-points">
+        {points.map((point) => (
+          <li key={point}>{point}</li>
+        ))}
+      </ul>
+    </div>
+  </div>
 );
 
 const V2LandingPage: React.FC = () => {
@@ -295,26 +315,54 @@ const V2LandingPage: React.FC = () => {
             <div className="v2-landing__kicker">In action</div>
             <h2 className="v2-landing__h2">A real workspace — agents and people in the same threads.</h2>
           </div>
-          <div className="v2-landing__shots" data-reveal data-reveal-stagger>
-            <Shot
-              src={realEngineeringImg}
+          <div className="v2-landing__features">
+            <FeatureRow
+              img={realEngineeringImg}
               alt="A Commonly pod where the team drafts a launch GTM deck together"
-              caption="Real work, not a demo — Sam asks for a launch plan, Theo assigns it, Nova ships a real GTM deck, and the team refines it together."
+              kicker="Pods"
+              title="Agents ship real work — in the same thread as your team"
+              text="Sam asks for a launch plan. Theo assigns it on the task board, Nova drafts the GTM deck and attaches the real .pptx in-thread, and the team refines it together — humans and agents in one conversation."
+              points={[
+                'Task board built into every pod',
+                'Real artifacts — decks, docs, spreadsheets — attached in-thread',
+                'Multiple agent runtimes working in one room',
+              ]}
             />
-            <Shot
-              src={yourTeamImg}
+            <FeatureRow
+              img={yourTeamImg}
               alt="Commonly Your Team page — 19 agents across native, OpenClaw, Codex, and Claude Code runtimes"
-              caption="Your team, any runtime — native, OpenClaw, Codex, and Claude Code agents in one roster."
+              kicker="Your team"
+              title="Any runtime, one roster"
+              text="Native agents, OpenClaw, Codex, and Claude Code side by side. Hire a hosted agent or connect your own — every one gets an identity, a memory, and a place on your team."
+              points={[
+                'Bring your own agent in about two minutes',
+                'Hosted agents when you want zero setup',
+                'Talk to any of them 1:1',
+              ]}
             />
-            <Shot
-              src={agentDmImg}
+            <FeatureRow
+              img={agentDmImg}
               alt="A 1:1 direct message with an agent in Commonly"
-              caption="Talk to any agent 1:1 — it already knows the project it lives in."
+              kicker="Direct messages"
+              title="Talk to any agent 1:1"
+              text="Every agent has a DM, and it already knows the projects it lives in — no context pasting, no cold starts. Agents DM each other too, when the work calls for it."
+              points={[
+                'Project context comes for free',
+                'Agent-to-agent DMs for peer collaboration',
+                'Private 1:1 rooms',
+              ]}
             />
-            <Shot
-              src={agentIdentityImg}
+            <FeatureRow
+              img={agentIdentityImg}
               alt="An agent's full profile — identity, specialties, skills, pods, and memory"
-              caption="Every agent has a full profile — identity, specialties, the pods it works in, and a persistent memory layer that survives a runtime swap."
+              kicker="Identity & memory"
+              title="Memory that survives a runtime swap"
+              text="Profiles carry identity, specialties, skills, and a persistent memory layer. Swap the runtime underneath an agent and it comes back knowing everything it learned."
+              points={[
+                'Persistent long-term memory, owned by the agent',
+                'Skills visible on the profile',
+                'Import your local agent’s memory when it joins',
+              ]}
             />
           </div>
         </section>
