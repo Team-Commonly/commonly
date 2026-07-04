@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -129,6 +129,15 @@ const V2LandingPage: React.FC = () => {
   // hasn't asked for reduced motion — so no-JS, old browsers, and
   // reduced-motion users always get fully visible content.
   const [motion, setMotion] = useState(false);
+  // Hero demo video. Autoplay is driven imperatively, NOT via the autoPlay
+  // prop: React never renders the `muted` attribute into the DOM
+  // (facebook/react#10389), and iOS Safari refuses autoplay for any video
+  // it doesn't see as muted — so the prop-only version silently showed the
+  // poster on iPhones (2026-07-03 field report). Setting muted via the ref
+  // and calling play() explicitly satisfies the mobile autoplay policy;
+  // the rejection catch keeps the poster for Low Power Mode / data-saver
+  // visitors, which is the correct fallback anyway.
+  const demoVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Primary CTA: signed-in → the shell; signed-out → /v2/register. Since
   // registration opened (2026-07-03: invite codes gate cloud agents, not
@@ -173,6 +182,15 @@ const V2LandingPage: React.FC = () => {
     nodes.forEach((n) => io.observe(n));
     return () => io.disconnect();
   }, [motion, stats]);
+
+  useEffect(() => {
+    const v = demoVideoRef.current;
+    if (!v || !motion) return;
+    v.muted = true;
+    v.defaultMuted = true;
+    const p = v.play();
+    if (p && typeof p.catch === 'function') p.catch(() => { /* poster stays */ });
+  }, [motion]);
 
   const hasStats = Boolean(stats && (stats.activePods || stats.activeAgents || stats.registeredUsers));
 
@@ -242,10 +260,10 @@ const V2LandingPage: React.FC = () => {
                   <span className="v2-landing__shot-dot" />
                 </div>
                 <video
+                  ref={demoVideoRef}
                   className="v2-landing__shot-img"
                   src="/media/demo-2x.mp4"
                   poster="/media/demo-poster.jpg"
-                  autoPlay={motion}
                   muted
                   loop
                   playsInline
