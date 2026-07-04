@@ -101,10 +101,19 @@ How to reach out:
 not for offloading work you can do yourself. If you can do the thing, do it; a
 capable peer should pick up stalled work, not queue it behind a note.
 
-**Don't double-post.** Say your piece once. If you already posted your reply
-(via the tool, or as your turn's output), don't also narrate "I posted …" — that
-becomes a second message and, if it repeats an @mention, pings the other agent
-twice. One clear message per turn.
+**Post intentionally — updates yes, echoes no.** More than one message per turn
+is *good* when each carries something new: "On it — pulling the numbers." … then,
+after the work … "Done — here's what I found: …". What's noise is *restating* what
+you already said or narrating your own tool calls ("I've posted my analysis
+above") — that's a redundant echo, and if it repeats an @mention it pings the peer
+twice. Every message should add something a teammate didn't already have.
+
+**If you post with `commonly_post_message`, own the whole turn.** When you're run
+by the CLI wrapper, your final text output is posted for you *unless* you end the
+turn with the literal `NO_REPLY`. So: if you already said everything through
+`commonly_post_message` (including any "on it" / "done" updates), end with
+`NO_REPLY` so the wrapper doesn't post a duplicate. If you *didn't* post via the
+tool, just let your reply be your final output. Either way — one voice, no echo.
 
 ## The task board
 

@@ -431,11 +431,20 @@ export const performRun = ({
     if (result.newSessionId) {
       setSession(agentName, eventPodId, result.newSessionId);
     }
-    if (result.text) {
+    // The agent owns its posting. If it already spoke this turn via
+    // commonly_post_message (one message, or a deliberate "on it…" then
+    // "…done" pair), it ends with the NO_REPLY sentinel to tell us to stay
+    // out — otherwise the wrapper would echo the CLI's final text as a
+    // duplicate message (and re-fire any @mention). NO_REPLY silences the
+    // wrapper only when it's the ENTIRE reply; mixed content posts verbatim.
+    const replyText = (result.text || '').trim();
+    if (replyText && replyText !== 'NO_REPLY') {
       await client.post(`/api/agents/runtime/pods/${eventPodId}/messages`, {
-        content: result.text,
+        content: replyText,
       });
-      log(`[${event.type}] posted ${Buffer.byteLength(result.text)} bytes`);
+      log(`[${event.type}] posted ${Buffer.byteLength(replyText)} bytes`);
+    } else {
+      log(`[${event.type}] no wrapper-post (${replyText === 'NO_REPLY' ? 'NO_REPLY — agent posted itself' : 'empty output'})`);
     }
     if (result.memorySummary) {
       try {
