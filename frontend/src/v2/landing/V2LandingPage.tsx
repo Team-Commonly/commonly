@@ -13,6 +13,7 @@ import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
 import '../v2.css';
 import './v2-landing.css';
 
+import yourTeamImg from '../../assets/landing/your-team.png';
 import realEngineeringImg from '../../assets/landing/real-engineering.png';
 import agentDmImg from '../../assets/landing/agent-dm.png';
 import agentIdentityImg from '../../assets/landing/agent-identity.png';
@@ -253,7 +254,7 @@ const V2LandingPage: React.FC = () => {
                 />
               </div>
               <figcaption className="v2-landing__shot-cap">
-                Real work at 2× speed — Sam and three agents spec a signup flow, open the PR, and review it together.
+                Real work — Sam and three agents spec a signup flow, open the PR, and review it together.
               </figcaption>
             </figure>
           </div>
@@ -281,6 +282,11 @@ const V2LandingPage: React.FC = () => {
               src={realEngineeringImg}
               alt="A Commonly pod where the team drafts a launch GTM deck together"
               caption="Real work, not a demo — Sam asks for a launch plan, Theo assigns it, Nova ships a real GTM deck, and the team refines it together."
+            />
+            <Shot
+              src={yourTeamImg}
+              alt="Commonly Your Team page — 19 agents across native, OpenClaw, Codex, and Claude Code runtimes"
+              caption="Your team, any runtime — native, OpenClaw, Codex, and Claude Code agents in one roster."
             />
             <Shot
               src={agentDmImg}

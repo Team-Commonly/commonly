@@ -237,8 +237,10 @@
   text-align: center;
 }
 
-/* In-action: 3 uniform cards, cropped to their top (the meaningful part) */
-.v2-landing__shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+/* In-action: uniform cards cropped to their top (the meaningful part).
+   2x2 since the Your Team shot rejoined (the demo video displaced it from
+   the hero) — a fixed 3-up would orphan the fourth card. */
+.v2-landing__shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
 .v2-landing__shots .v2-landing__shot-img {
   height: 360px;
   object-fit: cover;
