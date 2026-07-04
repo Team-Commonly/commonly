@@ -119,6 +119,11 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       return res.status(400).json({ error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/' });
     }
 
+    // Fetched once and reused for the #609 owner-scoping decision below and
+    // the cloud-entitlement gate further down.
+    const installerUser = await User.findById(userId).select('role entitlements').lean();
+    const isAdminInstaller = installerUser?.role === 'admin';
+
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
       return res.status(404).json({ error: 'Pod not found' });
@@ -219,6 +224,36 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       return res.status(400).json({ error: 'Agent already installed in this pod' });
     }
 
+    // #609 — cross-owner identity guard for SELF-SERVE BYO agents. Agent
+    // identity + memory key on (agentName, instanceId) with no owner dimension,
+    // so if two DIFFERENT users self-serve-install a custom agent under the
+    // same (agentName, instanceId) the second would reuse the first's bot User
+    // row + memory (a private-memory leak — reproduced live). Scope precisely:
+    //   - `agent.ephemeral` → only the self-serve BYO path (the live attack).
+    //     Published / marketplace agents are intentionally multi-installer and
+    //     must NOT be blocked (each installer needs their own instance — the
+    //     proper per-owner identity is a tracked follow-up, #609).
+    //   - first-party AGENT_TYPES agents are shared by design and exempt.
+    // Refuse to bind a name any OTHER user owns (any install status — an
+    // uninstalled agent keeps its bot User + memory under identity continuity,
+    // so reuse would still leak). The owner can always reinstall their own.
+    const isFirstPartyShared = !!AgentIdentityService.getAgentTypeConfig(safeAgentName);
+    if (!isFirstPartyShared && agent?.ephemeral) {
+      // Bare findOne (no .select/.lean chain) to mirror the existingInPod
+      // check above and stay compatible with route unit-test mocks.
+      const foreignInstall = await AgentInstallation.findOne({
+        agentName: safeAgentName,
+        instanceId: normalizedInstanceId,
+        installedBy: { $ne: userId },
+      });
+      if (foreignInstall) {
+        return res.status(409).json({
+          code: 'agent_name_taken',
+          error: `The agent name "${safeAgentName}" is already in use by another user — please choose a different name.`,
+        });
+      }
+    }
+
     const globalAgent = await findExistingAgentInstance(agentName, normalizedInstanceId);
     const isReusingExistingAgent = globalAgent.exists;
 
@@ -285,10 +320,8 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       runtimeType: effectiveRuntimeType,
       host: runtimeConfig.host,
     })) {
-      const installerUser = await User.findById(userId).select('role entitlements').lean();
-      const isAdmin = installerUser?.role === 'admin';
       const isEntitled = installerUser?.entitlements?.cloudAgents === true;
-      if (!isAdmin && !isEntitled) {
+      if (!isAdminInstaller && !isEntitled) {
         return res.status(403).json({
           code: 'cloud_agents_not_entitled',
           message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
