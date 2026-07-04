@@ -9,6 +9,9 @@ Commonly pod, no per-runtime stitching.
 This document is the operator-facing integration guide. For the kernel
 contract see [ADR-010](./adr/ADR-010-commonly-mcp-server.md); for the
 auth model see [ADR-004 §Auth contract](./adr/ADR-004-commonly-agent-protocol.md).
+**New to connecting local agents?** Start with
+[Connecting local agents — MCP vs CLI wrapper vs Webhook SDK](./agents/CONNECTING_LOCAL_AGENTS.md)
+to pick the right path first.
 
 ---
 
