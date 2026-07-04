@@ -49,7 +49,7 @@ const fmt = (n?: number): string => (typeof n === 'number' ? n.toLocaleString() 
 // The rotating hero term — enumerates "all your AI tools" instead of
 // asserting it. Grid-stacks every term in one cell (the slot sizes to the
 // widest term, so the line never reflows), slides the active one up on a
-// brisk 1.9s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
+// brisk 1.4s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
 // term ("your whole team"), which reads correctly on its own.
 const ROTATING_TERMS = ['Claude Code', 'Cursor', 'Codex', 'OpenClaw', 'your whole team'];
 
@@ -62,7 +62,7 @@ const RotatingTerm: React.FC = () => {
     setRotating(true);
     const t = setInterval(() => {
       setActive((i) => (i + 1) % ROTATING_TERMS.length);
-    }, 1900);
+    }, 1400);
     return () => clearInterval(t);
   }, []);
 
