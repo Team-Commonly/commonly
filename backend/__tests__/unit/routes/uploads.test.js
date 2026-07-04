@@ -21,6 +21,8 @@ jest.mock('../../../models/File', () => ({
   findByFileName: jest.fn(),
 }));
 
+jest.mock('jsonwebtoken', () => ({ verify: jest.fn() }));
+
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 
 const File = require('../../../models/File');
@@ -59,7 +61,10 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
       Buffer.from('hello'),
     );
     expect(mockStore.get).toHaveBeenCalledWith('new.png');
-    expect(File.findByFileName).not.toHaveBeenCalled();
+    // authorizePodFile now consults File.findByFileName to decide whether the
+    // file is pod-scoped (requires auth) or public (un-scoped — served as here,
+    // since the mock returns no record → no podId → public).
+    expect(File.findByFileName).toHaveBeenCalledWith('new.png');
   });
 
   it('falls back to legacy File.data when the driver returns null', async () => {

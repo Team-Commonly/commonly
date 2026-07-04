@@ -21,10 +21,12 @@
 import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
 import path from 'path';
+import jwt from 'jsonwebtoken';
 import {
   DEFAULT_TOKEN_TTL_SECONDS,
   canReadAttachment,
   signAttachmentToken,
+  verifyAttachmentToken,
 } from '../services/attachmentAccess';
 import { logAttachmentTokenMint } from '../services/auditService';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
@@ -291,15 +293,48 @@ router.get('/:fileName/url', mintRateLimit, auth, async (req: AuthReq, res: Res)
   }
 });
 
+// ADR-002 Phase 1b "flip" — authorize reads of a POD-SCOPED file. Previously
+// ANY caller who knew a filename could read a file bound to a private pod
+// (IDOR). A file with a podId now requires one of:
+//   (a) a valid `?t=<token>` minted by GET /:fileName/url (the frontend
+//       already mints these via getSignedAttachmentUrl before rendering), or
+//   (b) a Bearer token whose user canReadAttachment (owner / pod member).
+// Un-scoped files (avatars, profile pictures — File.podId null) are always
+// allowed, matching how they render in public post feeds. Returns true when
+// the read is permitted.
+const authorizePodFile = async (req: AuthReq, fileName: string): Promise<boolean> => {
+  // findByFileName returns a Mongoose query (.lean() → plain object); some
+  // callers/tests resolve it directly, so handle both shapes.
+  const q = File.findByFileName(fileName);
+  const meta = q && typeof q.lean === 'function' ? await q.lean() : await q;
+  if (!meta?.podId) return true; // un-scoped: public (avatars etc.)
+
+  const token = typeof req.query?.t === 'string' ? req.query.t : '';
+  if (token && verifyAttachmentToken(token, fileName)) return true;
+
+  const bearer = req.get?.('Authorization')?.replace('Bearer ', '');
+  if (bearer) {
+    try {
+      const decoded = jwt.verify(bearer, process.env.JWT_SECRET as string) as Record<string, unknown>;
+      const uid = (decoded.id || (decoded.user as Record<string, unknown>)?.id) as string | undefined;
+      if (uid && await canReadAttachment(fileName, uid)) return true;
+    } catch {
+      // invalid bearer — fall through to unauthorized
+    }
+  }
+  return false;
+};
+
 router.get('/:fileName', artifactReadRateLimit, async (req: AuthReq, res: Res) => {
   try {
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });
 
-    // The `?t=<token>` query param minted by `GET /:fileName/url` is passed
-    // through harmlessly; Express ignores unknown query params. Validation +
-    // enforcement land in the follow-up PR that removes public-read. See
-    // ADR-002 Phase 1b "flip" note at the top of this file.
+    // ADR-002 Phase 1b "flip" — authorize POD-SCOPED files (see
+    // authorizePodFile). Un-scoped files (avatars) stay publicly readable.
+    if (!(await authorizePodFile(req, fileName))) {
+      return res.status(403).json({ msg: 'Not authorized to read this file' });
+    }
 
     const store = getObjectStore();
     const obj = await store.get(fileName);
@@ -402,6 +437,12 @@ router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, async (req: Au
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });
     if (!/\.pptx$/i.test(String(fileName))) {
       return res.status(400).json({ msg: 'fileName must end in .pptx' });
+    }
+
+    // Same pod-scoped authorization as the raw file fetch — a private deck
+    // must not be renderable by anyone who knows its filename.
+    if (!(await authorizePodFile(req, fileName))) {
+      return res.status(403).json({ msg: 'Not authorized to read this file' });
     }
 
     // Fetch the binary from object storage (or legacy MongoDB inline bytes).

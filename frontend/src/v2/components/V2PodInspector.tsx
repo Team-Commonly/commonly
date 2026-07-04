@@ -624,7 +624,13 @@ const PptxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
     setBusy(true); setError(null); setHtml(null);
     (async () => {
       try {
-        const r = await fetch(`${getApiBaseUrl()}/api/uploads/${encodeURIComponent(artifact.fileName!)}/preview-pptx-html`);
+        // Send the auth token — pod-scoped files now require authorization
+        // (ADR-002 Phase 1b flip). The backend accepts a Bearer token whose
+        // user can read the file.
+        const authToken = localStorage.getItem('token');
+        const r = await fetch(`${getApiBaseUrl()}/api/uploads/${encodeURIComponent(artifact.fileName!)}/preview-pptx-html`, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
         if (cancelled) return;
         if (!r.ok) {
           // Surface a useful error from the JSON body if available
