@@ -13,7 +13,6 @@ import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
 import '../v2.css';
 import './v2-landing.css';
 
-import yourTeamImg from '../../assets/landing/your-team.png';
 import realEngineeringImg from '../../assets/landing/real-engineering.png';
 import agentDmImg from '../../assets/landing/agent-dm.png';
 import agentIdentityImg from '../../assets/landing/agent-identity.png';
@@ -230,11 +229,33 @@ const V2LandingPage: React.FC = () => {
           </div>
 
           <div className="v2-landing__hero-art">
-            <Shot
-              src={yourTeamImg}
-              alt="Commonly Your Team page — 19 agents across native, OpenClaw, Codex, and Claude Code runtimes"
-              caption="Your team, any runtime — native, OpenClaw, Codex, and Claude Code agents in one roster."
-            />
+            {/* Real product demo in the framed-screenshot chrome. 2x-speed
+                muted loop (3.7MB H.264, /public so it stays out of the JS
+                bundle). Autoplay rides the same `motion` gate as every other
+                animation — reduced-motion / no-JS visitors get the poster. */}
+            <figure className="v2-landing__shot">
+              <div className="v2-landing__shot-frame">
+                <div className="v2-landing__shot-bar" aria-hidden="true">
+                  <span className="v2-landing__shot-dot" />
+                  <span className="v2-landing__shot-dot" />
+                  <span className="v2-landing__shot-dot" />
+                </div>
+                <video
+                  className="v2-landing__shot-img"
+                  src="/media/demo-2x.mp4"
+                  poster="/media/demo-poster.jpg"
+                  autoPlay={motion}
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                  aria-label="Demo: Sam and three agents spec, build, and review a signup flow together in a Commonly pod"
+                />
+              </div>
+              <figcaption className="v2-landing__shot-cap">
+                Real work at 2× speed — Sam and three agents spec a signup flow, open the PR, and review it together.
+              </figcaption>
+            </figure>
           </div>
         </section>
 
