@@ -3,7 +3,7 @@
 > ⚠️ **Outdated for the current dev cluster.** The flow below describes a
 > manual `kubectl cp` of `docs/scripts/codex-oauth.js` into the gateway pod —
 > it predates the LiteLLM-mediated routing and the `codex-auth-rotator`
-> sidecar. For the dev cluster (`commonly-493005`), use the modern flow in
+> sidecar. For the dev cluster (`<DEV_GCP_PROJECT_ID>`), use the modern flow in
 > [`docs/development/LITELLM.md`](development/LITELLM.md) "Refreshing a
 > Codex account's tokens": `npx -y @openai/codex login` locally, push tokens
 > to GCP Secret Manager, force ESO sync, restart LiteLLM. The init container

@@ -11,7 +11,11 @@ kc.loadFromDefault();
 const k8sApi = kc.makeApiClient(k8s.CoreV1Api);
 const k8sAppsApi = kc.makeApiClient(k8s.AppsV1Api);
 
-const DEFAULT_GATEWAY_IMAGE = 'gcr.io/commonly-test/clawdbot-gateway:latest';
+// Resolved from env so no project-scoped registry path is committed to the
+// public tree (operator-private, supplied at deploy time — same rule as the
+// GCP project id). The placeholder is intentionally generic; a real deploy
+// sets GATEWAY_IMAGE, and gateway.metadata.image overrides per-gateway.
+const DEFAULT_GATEWAY_IMAGE = process.env.GATEWAY_IMAGE || 'gcr.io/PROJECT_ID/clawdbot-gateway:latest';
 const DEFAULT_GATEWAY_PORT = 18789;
 
 interface GatewayMetadata {

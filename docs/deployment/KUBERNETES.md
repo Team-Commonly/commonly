@@ -125,16 +125,16 @@ Backend + frontend build + rollout:
 BACKEND_TAG=$(date +%Y%m%d%H%M%S)
 FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
 
-gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
-gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
+gcloud builds submit backend --tag gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG}
 
 # Production pool
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
+kubectl set image deployment/backend backend=gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG} -n commonly
 
 # Dev pool
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+kubectl set image deployment/backend backend=gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
 
 kubectl rollout status deployment/backend -n commonly
 kubectl rollout status deployment/frontend -n commonly
@@ -309,14 +309,14 @@ To upgrade an existing deployment:
 # Rebuild and push new images (Cloud Build)
 BACKEND_TAG=$(date +%Y%m%d%H%M%S)
 FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
-gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
-gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
+gcloud builds submit backend --tag gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG}
 
 # Roll out to both namespaces
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+kubectl set image deployment/backend backend=gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG} -n commonly
+kubectl set image deployment/backend backend=gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
 
 kubectl rollout status deployment/backend -n commonly
 kubectl rollout status deployment/frontend -n commonly

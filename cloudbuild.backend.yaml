@@ -11,4 +11,4 @@ images:
   - '${_IMAGE}'
 
 substitutions:
-  _IMAGE: 'us-central1-docker.pkg.dev/commonly-493005/docker/commonly-backend:latest'
+  _IMAGE: '${_AR_HOST}/${PROJECT_ID}/docker/commonly-backend:latest'

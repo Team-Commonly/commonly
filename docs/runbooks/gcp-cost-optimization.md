@@ -83,7 +83,7 @@ Apply via:
 
 ```bash
 gcloud artifacts repositories set-cleanup-policies docker \
-  --location=us-central1 --project=commonly-493005 \
+  --location=us-central1 --project=<DEV_GCP_PROJECT_ID> \
   --policy=/tmp/ar-cleanup-policy.json
 ```
 
@@ -110,7 +110,7 @@ Apply via:
 
 ```bash
 gcloud container clusters update commonly-dev \
-  --region us-central1 --project commonly-493005 \
+  --region us-central1 --project <DEV_GCP_PROJECT_ID> \
   --enable-autoscaling --node-pool <pool> --min-nodes <m> --max-nodes <M>
 ```
 
@@ -148,16 +148,16 @@ gcloud command for the export-switch.
    ```bash
    bq --location=us-central1 mk --dataset \
      --description="Cloud Billing daily export for cost visibility" \
-     commonly-493005:billing_export
+     <DEV_GCP_PROJECT_ID>:billing_export
    ```
-2. Cloud Console UI (manual): visit `https://console.cloud.google.com/billing/<ACCOUNT_ID>/export`, pick `Daily cost detail → Edit settings`, choose project `commonly-493005`, dataset `billing_export`, save.
+2. Cloud Console UI (manual): visit `https://console.cloud.google.com/billing/<ACCOUNT_ID>/export`, pick `Daily cost detail → Edit settings`, choose project `<DEV_GCP_PROJECT_ID>`, dataset `billing_export`, save.
 3. First data lands ~24h later. Tables auto-created: `gcp_billing_export_v1_<ACCOUNT_ID>`.
 
 Sample query for daily $ by service:
 
 ```sql
 SELECT service.description, SUM(cost) AS cost_usd, currency
-FROM `commonly-493005.billing_export.gcp_billing_export_v1_*`
+FROM `<DEV_GCP_PROJECT_ID>.billing_export.gcp_billing_export_v1_*`
 WHERE _PARTITIONTIME >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
 GROUP BY service.description, currency
 ORDER BY cost_usd DESC
@@ -190,7 +190,7 @@ Drop-in script to capture the current state in one go:
 ```bash
 echo "=== pool sizing + autoscaling ==="
 gcloud container node-pools list --cluster commonly-dev --location us-central1 \
-  --project commonly-493005 \
+  --project <DEV_GCP_PROJECT_ID> \
   --format='table(name,config.machineType,config.spot,autoscaling.enabled,autoscaling.minNodeCount,autoscaling.maxNodeCount)'
 
 echo "=== workload placement (verifies ADR-015 invariant) ==="
@@ -198,7 +198,7 @@ kubectl get pods -n commonly-dev -o custom-columns='NAME:.metadata.name,NODE:.sp
 
 echo "=== AR repo size + cleanup policy ==="
 gcloud artifacts repositories describe docker --location=us-central1 \
-  --project=commonly-493005 --format='yaml(sizeBytes,cleanupPolicies)'
+  --project=<DEV_GCP_PROJECT_ID> --format='yaml(sizeBytes,cleanupPolicies)'
 
 echo "=== node usage vs requested ==="
 kubectl top nodes
