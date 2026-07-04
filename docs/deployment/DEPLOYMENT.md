@@ -222,20 +222,20 @@ Build backend + frontend images with Cloud Build:
 BACKEND_TAG=$(date +%Y%m%d%H%M%S)
 FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
 
-gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
-gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
+gcloud builds submit backend --tag gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG}
 ```
 
 Update backend + frontend images in the cluster:
 
 ```bash
 # Default pool (production)
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
+kubectl set image deployment/backend backend=gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG} -n commonly
 
 # Dev pool
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+kubectl set image deployment/backend backend=gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
 
 kubectl rollout status deployment/backend -n commonly
 kubectl rollout status deployment/frontend -n commonly
@@ -297,17 +297,17 @@ Backend + frontend images are built with Cloud Build:
 BACKEND_TAG=$(date +%Y%m%d%H%M%S)
 FRONTEND_TAG=$(date +%Y%m%d%H%M%S)
 
-gcloud builds submit backend --tag gcr.io/commonly-test/commonly-backend:${BACKEND_TAG}
-gcloud builds submit frontend --tag gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG}
+gcloud builds submit backend --tag gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG}
+gcloud builds submit frontend --tag gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG}
 ```
 
 Then deploy/rollout:
 
 ```bash
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly
-kubectl set image deployment/backend backend=gcr.io/commonly-test/commonly-backend:${BACKEND_TAG} -n commonly-dev
-kubectl set image deployment/frontend frontend=gcr.io/commonly-test/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
+kubectl set image deployment/backend backend=gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG} -n commonly
+kubectl set image deployment/frontend frontend=gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG} -n commonly
+kubectl set image deployment/backend backend=gcr.io/<GCP_PROJECT_ID>/commonly-backend:${BACKEND_TAG} -n commonly-dev
+kubectl set image deployment/frontend frontend=gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${FRONTEND_TAG} -n commonly-dev
 
 kubectl rollout status deployment/backend -n commonly
 kubectl rollout status deployment/frontend -n commonly
@@ -339,7 +339,7 @@ K8s provisioning is enabled by default:
 The Helm chart deploys a native gateway (`clawdbot-gateway`) in each namespace.
 It requires:
 - `CLAWDBOT_GATEWAY_TOKEN` in the `api-keys` secret
-- Image: `gcr.io/commonly-test/clawdbot-gateway:latest`
+- Image: `gcr.io/<GCP_PROJECT_ID>/clawdbot-gateway:latest`
 - `GEMINI_API_KEY` in the `api-keys` secret (for default OpenClaw model auth)
 - Optional `gemini-api-key-2` in the `api-keys` secret (seeds `google:backup` auth profile for rate-limit failover)
 - Deployment strategy: `Recreate` (required because gateway config/workspace PVCs are `ReadWriteOnce`; rolling updates can deadlock on volume multi-attach)
