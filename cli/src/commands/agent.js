@@ -115,14 +115,25 @@ const CHAT_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message'
 // proceeds with environment=null exactly like before this change.
 const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude']);
 
+// The commonly behavior skill ships inside this package (cli/skills/commonly)
+// so a fresh attach can mount it into the agent without a network fetch.
+// Resolved from the module location — works both from source and when the
+// package is installed under node_modules/@commonlyai/cli.
+const BUNDLED_COMMONLY_SKILL_DIR = pathResolve(
+  dirname(fileURLToPath(import.meta.url)), '..', '..', 'skills', 'commonly',
+);
+
 // Minimum-viable environment for fresh attach: wire @commonlyai/mcp so the
-// agent gets commonly_* kernel tools out of the box. ${COMMONLY_API_URL} and
-// ${COMMONLY_AGENT_TOKEN} are substituted at spawn-time by the adapter
-// (cli/src/lib/adapters/claude.js §substitutePlaceholders) so the env file
-// stays free of per-attach secrets.
+// agent gets commonly_* kernel tools out of the box, AND mount the commonly
+// behavior skill so the agent knows the house rules (orient before posting,
+// reply conversationally, use the roster, don't double-post). Without the
+// skill, wrapper-spawned CLIs fly blind and behave inconsistently — some
+// narrate after tool-posting (double-post), some default to NO_REPLY on a
+// normal question. ${COMMONLY_API_URL} / ${COMMONLY_AGENT_TOKEN} are
+// substituted at spawn-time by the adapter so the env file stays secret-free.
 export const buildDefaultEnvironment = (adapterName) => {
   if (!ADAPTERS_WITH_DEFAULT_MCP.has(adapterName)) return null;
-  return {
+  const environment = {
     mcp: [
       {
         name: 'commonly',
@@ -135,6 +146,13 @@ export const buildDefaultEnvironment = (adapterName) => {
       },
     ],
   };
+  // Only advertise the skill if it actually shipped (defensive: a broken
+  // package that dropped the skills/ dir shouldn't hand linkSkills a
+  // missing-source path every spawn).
+  if (existsSync(BUNDLED_COMMONLY_SKILL_DIR)) {
+    environment.skills = { claude: [BUNDLED_COMMONLY_SKILL_DIR] };
+  }
+  return environment;
 };
 
 // ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
@@ -413,6 +431,27 @@ export const performRun = ({
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
     // and (if the adapter returns a summary) patch-sync back after.
     const memoryLongTerm = await readLongTerm(client, { onError });
+
+    // Snapshot the pod's recent message ids so that, after the spawn, we can
+    // tell whether the agent posted itself via commonly_post_message. If it
+    // did, its final CLI text is a narration/log — echoing it would duplicate
+    // the message and re-fire any @mention. This is the wrapper-side guarantee
+    // that a deliberate multi-post ("on it…" then "…done") is never doubled,
+    // without relying on the agent to emit NO_REPLY. (A rare concurrent post by
+    // another member during the spawn window can suppress a genuine wrapper
+    // reply — an acceptable trade against a guaranteed double-post.)
+    const snapshotMessageIds = async () => {
+      try {
+        const { messages = [] } = await client.get(
+          `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
+        );
+        return new Set(messages.map((m) => String(m._id || m.id)));
+      } catch {
+        return null; // detection unavailable — fall back to posting the reply
+      }
+    };
+    const preSpawnIds = await snapshotMessageIds();
+
     log(`[${event.type}] spawning ${adapter.name}`);
     const result = await adapter.spawn(prompt, {
       sessionId,
@@ -431,20 +470,34 @@ export const performRun = ({
     if (result.newSessionId) {
       setSession(agentName, eventPodId, result.newSessionId);
     }
-    // The agent owns its posting. If it already spoke this turn via
-    // commonly_post_message (one message, or a deliberate "on it…" then
-    // "…done" pair), it ends with the NO_REPLY sentinel to tell us to stay
-    // out — otherwise the wrapper would echo the CLI's final text as a
-    // duplicate message (and re-fire any @mention). NO_REPLY silences the
-    // wrapper only when it's the ENTIRE reply; mixed content posts verbatim.
+    // Decide whether to post the CLI's final text. The agent owns its posting:
+    // if it already spoke this turn through commonly_post_message, echoing its
+    // output would double-post. Two independent signals suppress the echo:
+    //   1. Detection — a new message appeared in the pod during the spawn (the
+    //      agent posted via the tool). Automatic; no agent cooperation needed.
+    //   2. NO_REPLY — the agent explicitly asks us to stay silent. Honored only
+    //      when it's the ENTIRE reply; mixed content still posts verbatim.
+    // Otherwise (a bare CLI with no posting tools, or an agent that chose to
+    // reply via its output) the wrapper delivers the text as before.
     const replyText = (result.text || '').trim();
-    if (replyText && replyText !== 'NO_REPLY') {
+    let agentPostedItself = false;
+    if (preSpawnIds) {
+      const postSpawnIds = await snapshotMessageIds();
+      if (postSpawnIds) {
+        for (const id of postSpawnIds) {
+          if (!preSpawnIds.has(id)) { agentPostedItself = true; break; }
+        }
+      }
+    }
+    if (!replyText || replyText === 'NO_REPLY') {
+      log(`[${event.type}] no wrapper-post (${replyText === 'NO_REPLY' ? 'NO_REPLY' : 'empty output'})`);
+    } else if (agentPostedItself) {
+      log(`[${event.type}] agent posted via tool this turn — not echoing CLI output (avoids double-post)`);
+    } else {
       await client.post(`/api/agents/runtime/pods/${eventPodId}/messages`, {
         content: replyText,
       });
       log(`[${event.type}] posted ${Buffer.byteLength(replyText)} bytes`);
-    } else {
-      log(`[${event.type}] no wrapper-post (${replyText === 'NO_REPLY' ? 'NO_REPLY — agent posted itself' : 'empty output'})`);
     }
     if (result.memorySummary) {
       try {
