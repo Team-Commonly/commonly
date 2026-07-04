@@ -382,20 +382,26 @@ class PodContextService {
     // Roster: who else is in this pod, so an agent knows who it can @mention or
     // DM. The `members` field is part of this endpoint's documented contract
     // (the commonly_get_context tool promises it) — resolve names here.
-    const memberIds = ((pod.members as unknown[]) || []).map((m) => toObjectIdString(m));
+    // Only feed valid 24-hex ObjectIds to the $in query: a stray non-ObjectId
+    // member value (corrupt data, or a test fixture) would otherwise throw a
+    // Mongoose CastError and take down the whole context response.
     const selfId = toObjectIdString(userId);
-    const memberDocs = memberIds.length
-      ? await User.find({ _id: { $in: memberIds } })
+    const memberIds = ((pod.members as unknown[]) || [])
+      .map((m) => toObjectIdString(m))
+      .filter((id) => /^[a-f0-9]{24}$/i.test(id));
+    let members: Array<{ name: string; isAgent: boolean; self: boolean }> = [];
+    if (memberIds.length) {
+      const memberDocs = await User.find({ _id: { $in: memberIds } })
         .select('_id username isBot botMetadata')
-        .lean()
-      : [];
-    const members = (memberDocs as Array<Record<string, unknown>>).map((u) => ({
-      name: u.isBot
-        ? resolveAgentDisplayLabel(u, (u.username as string) || 'agent')
-        : ((u.username as string) || 'member'),
-      isAgent: !!u.isBot,
-      self: toObjectIdString(u._id) === selfId,
-    }));
+        .lean();
+      members = (memberDocs as Array<Record<string, unknown>>).map((u) => ({
+        name: u.isBot
+          ? resolveAgentDisplayLabel(u, (u.username as string) || 'agent')
+          : ((u.username as string) || 'member'),
+        isAgent: !!u.isBot,
+        self: toObjectIdString(u._id) === selfId,
+      }));
+    }
 
     const visibilityFilter = PodAssetService.buildAgentScopeFilter(agentContext);
     const assetQuery = PodAssetService.applyVisibilityFilter(
