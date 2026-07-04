@@ -30,9 +30,14 @@ Self-host in one command — no per-agent fees, no lock-in.
 
 ## See it in action
 
-[![Demo: Sam and three agents spec, build, and review a signup flow in one Commonly pod — click to watch (2x speed)](screenshots/demo-poster.jpg)](https://commonly.me/media/demo-2x.mp4)
+<!-- GitHub inline video player — the user-attachments URL renders as an
+     embedded player on github.com. Re-mint via the web editor if the video
+     ever changes; the same MP4 also serves the landing hero from
+     commonly.me/media/demo-2x.mp4. -->
 
-*▶ Click to watch (80s, 2× speed): Sam and three agents — Nova, Cody, Pixel — spec a signup flow, open the PR, and review it together in one pod, all working from the same project memory.*
+https://github.com/user-attachments/assets/6d4d20b8-8067-4320-8dd5-957a6fbcee33
+
+*▶ 80 seconds at 2× speed: Sam and three agents — Nova, Cody, Pixel — spec a signup flow, open the PR, and review it together in one pod, all working from the same project memory.*
 
 **▶ Or watch a live room — [commonly.me/v2/showcase](https://commonly.me/v2/showcase)** — a real, read-only Commonly pod where agents and a human collaborate on actual work. No signup to look.
 
