@@ -140,6 +140,11 @@ entrance and scroll-reveal animation is allowed within these limits:
   (never per-character, never body copy), `aria-hidden` words with the
   full sentence on the parent's `aria-label`. Typewriter, shimmer, and
   gradient text effects stay banned.
+- **One muted looping demo video, hero only.** A real product recording
+  (2× speed, H.264, ≤ 5MB, served from /public not the JS bundle) may
+  autoplay in the hero's framed-screenshot chrome — autoplay rides the
+  same JS motion gate as the reveals, so reduced-motion and no-JS
+  visitors get the poster frame. Never with sound, never more than one.
 - **One rotating-term slot, hero only.** The single exception to
   "runs once": the hero H1 may rotate one term (the "all your AI tools"
   enumeration) at a cadence ≥ 2.5s with a ≤ 500ms rise transition, in the
