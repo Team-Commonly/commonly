@@ -110,6 +110,11 @@ class Message {
     limit = 50,
     before: string | null = null,
   ): Promise<FormattedMessage[]> {
+    // Defense-in-depth clamp at the data layer: callers should pass a bounded
+    // limit, but a stray unbounded value must never turn into a million-row
+    // SELECT streamed into Node memory.
+    const safeLimit = Math.min(200, Math.max(1, Number.parseInt(String(limit), 10) || 50));
+    limit = safeLimit;
     try {
       let query = `
         SELECT

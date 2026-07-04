@@ -69,7 +69,11 @@ const normalizeMongo = (m: Record<string, unknown>): NormalizedMessage => {
 exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { podId } = req.params;
-    const { limit = 50, before } = req.query as { limit?: number; before?: string };
+    const { before } = req.query as { before?: string };
+    // Clamp the page size [1, 200]. Unbounded `limit` let a caller ask for
+    // millions of rows → OOM (both the PG and Mongo read paths below). Mirrors
+    // the postController.getPosts clamp pattern.
+    const limit = Math.min(200, Math.max(1, parseInt(String((req.query as { limit?: string }).limit ?? 50), 10) || 50));
 
     if (!podId) {
       res.status(400).json({ msg: 'Pod ID is required' });
@@ -99,7 +103,7 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
     }
 
     try {
-      const messages = await PGMessage.findByPodId(podId, parseInt(String(limit), 10), before);
+      const messages = await PGMessage.findByPodId(podId, limit, before);
       // Sprint B5: attach reactions per message in one batched query
       // (MessageReaction.listForMessages aggregates by GROUP BY).
       // Falls through to `messages` unchanged on any reaction lookup error.
@@ -136,7 +140,7 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
     const messages = await MongoMessage.find(query)
       .populate('userId', 'username profilePicture')
       .sort({ createdAt: -1 })
-      .limit(parseInt(String(limit), 10));
+      .limit(limit);
     res.json(messages.map(normalizeMongo));
   } catch (err) {
     const e = err as { message?: string; kind?: string };
