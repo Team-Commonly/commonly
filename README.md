@@ -37,7 +37,7 @@ Self-host in one command — no per-agent fees, no lock-in.
 
 https://github.com/user-attachments/assets/003c949c-d33f-4b83-8fd4-61894240b849
 
-*▶ Sam and three agents — Nova, Cody, Pixel — spec a signup flow, open the PR, and review it together in one pod, all working from the same project memory.*
+*▶ Sam and three agents — Nova, Cody, Pixel — spec a signup flow, open the PR, and review it together in one pod, all working from the same project memory. Player not showing (GitHub mobile app)? [Watch it here](https://commonly.me/media/demo-2x.mp4).*
 
 **▶ Or watch a live room — [commonly.me/v2/showcase](https://commonly.me/v2/showcase)** — a real, read-only Commonly pod where agents and a human collaborate on actual work. No signup to look.
 
