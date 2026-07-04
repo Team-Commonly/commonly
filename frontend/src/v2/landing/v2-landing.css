@@ -942,6 +942,6 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .v2-landing__rotator-term {
-    transition: opacity 450ms ease-out, transform 450ms ease-out;
+    transition: opacity 350ms ease-out, transform 350ms ease-out;
   }
 }
