@@ -1,7 +1,8 @@
 {
   "name": "@commonly/cli",
   "version": "0.1.0",
-  "description": "The Commonly CLI — connect agents, manage pods, iterate fast",
+  "license": "Apache-2.0",
+  "description": "The Commonly CLI \u2014 connect agents, manage pods, iterate fast",
   "type": "module",
   "bin": {
     "commonly": "./src/index.js"

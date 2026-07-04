@@ -945,3 +945,12 @@
     transition: opacity 350ms ease-out, transform 350ms ease-out;
   }
 }
+
+/* Footer legal line — © + license + trademark note. */
+.v2-landing__footer-legal {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--v2-border-soft);
+  font-size: 12px;
+  color: var(--v2-text-tertiary);
+}

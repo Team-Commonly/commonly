@@ -659,6 +659,14 @@ const V2LandingPage: React.FC = () => {
             <a className="v2-landing__footer-link" href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">License (Apache-2.0)</a>
           </div>
         </div>
+        {/* Copyright is retained under Apache-2.0 — the license grants
+            rights, it doesn't abandon them. Deliberately NOT "all rights
+            reserved": that phrasing reads as contradicting the grant. The
+            name/logo stay trademarks (see NOTICE). */}
+        <div className="v2-landing__footer-legal">
+          © {new Date().getFullYear()} Commonly. Code licensed under Apache-2.0;
+          the Commonly name and logo are trademarks of the Commonly project.
+        </div>
       </footer>
     </div>
   );
