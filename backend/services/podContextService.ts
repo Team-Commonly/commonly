@@ -8,6 +8,10 @@ const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('./podAssetService');
 // eslint-disable-next-line global-require
 const PodSkillService = require('./podSkillService');
+// eslint-disable-next-line global-require
+const User = require('../models/User');
+// eslint-disable-next-line global-require
+const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 
 const CHARS_PER_TOKEN = 3; // Conservative estimate for JSON/markdown content
 
@@ -375,6 +379,24 @@ class PodContextService {
       type: pod.type as string,
     };
 
+    // Roster: who else is in this pod, so an agent knows who it can @mention or
+    // DM. The `members` field is part of this endpoint's documented contract
+    // (the commonly_get_context tool promises it) — resolve names here.
+    const memberIds = ((pod.members as unknown[]) || []).map((m) => toObjectIdString(m));
+    const selfId = toObjectIdString(userId);
+    const memberDocs = memberIds.length
+      ? await User.find({ _id: { $in: memberIds } })
+        .select('_id username isBot botMetadata')
+        .lean()
+      : [];
+    const members = (memberDocs as Array<Record<string, unknown>>).map((u) => ({
+      name: u.isBot
+        ? resolveAgentDisplayLabel(u, (u.username as string) || 'agent')
+        : ((u.username as string) || 'member'),
+      isAgent: !!u.isBot,
+      self: toObjectIdString(u._id) === selfId,
+    }));
+
     const visibilityFilter = PodAssetService.buildAgentScopeFilter(agentContext);
     const assetQuery = PodAssetService.applyVisibilityFilter(
       { podId, status: 'active', type: { $ne: 'skill' } },
@@ -443,6 +465,7 @@ class PodContextService {
     if (shouldRefreshSkills) {
       const synthesisResult = await PodSkillService.synthesizeSkills({
         pod: podDescriptor,
+      members,
         task,
         summaries: rankedSummaries,
         assets: rankedAssets,
@@ -545,6 +568,7 @@ class PodContextService {
       _status: 'success',
       activityAvailable: hasActivity,
       pod: podDescriptor,
+      members,
       task: task || null,
       stats: {
         summaries: finalSummaries.length,
