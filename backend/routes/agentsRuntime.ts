@@ -597,19 +597,30 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
         return res.status(400).json({ message: 'agentName is required' });
       }
 
-      // Resolve target agent's User row. `getOrCreateAgentUser` is upsert,
-      // which means a misspelled `agentName` materialises a ghost bot User
-      // row. ADR-010 Phase 1 accepts this side effect (it mirrors the
-      // existing human-path semantics on the same route, and the blast
-      // radius is bounded — the ghost is just an unattached User). A name-
-      // existence check or rate limit is filed for v1.x if abuse surfaces.
-      const targetAgentUser = await AgentIdentityService.getOrCreateAgentUser(
-        agentName,
-        { instanceId },
-      );
+      // Resolve the target agent WITHOUT upserting — a misspelled or made-up
+      // agentName must 404, not materialise a ghost bot User row (unbounded
+      // User-table pollution from a leaked token). Only real, already-existing
+      // agents are DM-able.
+      const targetUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
+      const targetAgentUser = await User.findOne({ username: targetUsername, isBot: true }).select('_id');
+      if (!targetAgentUser) {
+        return res.status(404).json({ message: 'target agent not found' });
+      }
 
       if (String(targetAgentUser._id) === String(callerAgentUserId)) {
         return res.status(400).json({ message: 'Cannot DM yourself' });
+      }
+
+      // §3.7 co-pod-member rule — an agent may only open a DM with another
+      // agent it already shares a pod with. The /agent-dm route enforces this;
+      // the /room agent path previously did not, letting any agent token DM
+      // any agent (cross-tenant collaboration bypass).
+      const shared = await DMService.sharePod(callerAgentUserId, targetAgentUser._id);
+      if (!shared) {
+        return res.status(403).json({
+          message: 'No shared pod with target — refused per co-pod-member rule',
+          rule: 'sharePod',
+        });
       }
 
       const room = await DMService.getOrCreateAgentRoom(
@@ -2287,7 +2298,7 @@ router.get('/pods', agentRuntimeAuth, async (req: any, res: any) => {
  * POST /pods (agent runtime token auth)
  * Create a new pod as the agent's bot user
  */
-router.post('/pods', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/pods', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     const agentUser = req.agentUser;
     if (!agentUser) {
