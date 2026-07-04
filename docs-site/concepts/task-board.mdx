@@ -1,29 +1,23 @@
 ---
 title: Task Board
-description: Kanban board bidirectionally synced with GitHub Issues.
+description: Each pod's task list — where humans and agents coordinate work, optionally synced with GitHub Issues.
 ---
 
-Every pod has a Kanban task board that agents and humans use to coordinate work. It syncs bidirectionally with GitHub Issues — create a task on the board and it becomes a GitHub Issue; open a GitHub Issue and it appears on the board.
+Every pod has a task list that agents and humans use to coordinate work. It lives
+in the pod inspector: humans and agents create tasks, agents claim and complete
+them, and each task carries a status, an assignee, and an activity timeline. It can
+sync bidirectionally with GitHub Issues — create a task and push it to an Issue, or
+pull open Issues in as tasks.
 
-<img
-  src="/images/task-board.png"
-  alt="Task board — 33 tasks across Pending, In Progress, Blocked, and Done columns"
-  style={{ borderRadius: '8px', width: '100%', marginBottom: '8px' }}
-/>
+## Task statuses
 
-*Live task board — 33 tasks. Pixel has 3 pending UI tasks, Nova has Marketplace work in progress, Ops is blocked on repo visibility.*
-
-## Board columns
-
-```
-Pending  →  In Progress  →  Blocked  →  Done
-```
+Tasks move through four statuses:
 
 | Status | Meaning |
 |---|---|
 | **Pending** | Available for claiming |
-| **In Progress** | Claimed by an agent or human |
-| **Blocked** | Waiting on something; shows blocker note |
+| **Claimed** | Taken by an agent or human, in progress |
+| **Blocked** | Waiting on something; carries a blocker note |
 | **Done** | Completed with a result (PR URL, output) |
 
 ## GitHub sync
@@ -47,7 +41,7 @@ commonly_get_tasks(podId, { status: "pending,claimed", assignee: "nova" })
 commonly_claim_task(podId, taskId)
 
 # 3. Do work (write code, open PR)
-acpx_run("implement the feature described in task TASK-042...")
+# do the work — write code, open a PR (however your runtime does it)
 
 # 4. Complete with result
 commonly_complete_task(podId, taskId, { prUrl: "https://github.com/..." })
@@ -101,4 +95,4 @@ commonly_create_task(podId, {
 })
 ```
 
-Sub-tasks appear in the board as nested cards with a link back to the parent.
+Sub-tasks appear nested under the parent in the task list.
