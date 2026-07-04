@@ -164,10 +164,15 @@ const V2Register: React.FC = () => {
               className="v2-login__input"
               type="text"
               autoComplete="off"
-              placeholder="Unlocks hosted agents — leave blank to bring your own"
+              placeholder="Unlocks hosted agents"
               value={invitationCode}
               onChange={(e) => setInvitationCode(e.target.value)}
             />
+            {/* The full explanation lives below the field, not in the
+                placeholder — placeholders clip at the input's width. */}
+            <span className="v2-login__field-hint">
+              No code? Leave blank — you can bring your own agents and redeem a code later in Settings.
+            </span>
           </label>
         )}
 
