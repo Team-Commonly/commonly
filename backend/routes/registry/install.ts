@@ -143,18 +143,6 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // the cloud-entitlement gate further down.
     const installerUser = await User.findById(userId).select('role entitlements').lean();
     const isAdminInstaller = installerUser?.role === 'admin';
-    // #609 — reserve first-party agent names (openclaw, codex, commonly-bot,
-    // …) for admins/the provisioner. A regular user must not be able to name
-    // their BYO agent "codex" and join/impersonate the shared first-party
-    // identity. Owner-scoping below would isolate them anyway, but rejecting
-    // the name outright avoids a confusing agent that wears a first-party
-    // icon/description.
-    if (!isAdminInstaller && AgentIdentityService.isKnownAgentType(safeAgentName)) {
-      return res.status(403).json({
-        code: 'reserved_agent_name',
-        error: `"${safeAgentName}" is a reserved first-party agent name — please choose a different name.`,
-      });
-    }
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
@@ -245,12 +233,14 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       normalizedInstanceId = deriveInstanceId(displayName, agentName);
     }
 
-    // #609 — owner-scope the instanceId for every install EXCEPT an admin
-    // provisioning a shared first-party agent. This isolates BYO / marketplace
-    // agent identity + runtime token + memory per installer. Applied BEFORE the
-    // existing-install and global-instance lookups so the whole flow keys on
-    // the scoped id consistently. See ownerScopedInstanceId() above.
-    const isFirstPartyShared = isAdminInstaller && AgentIdentityService.isKnownAgentType(safeAgentName);
+    // #609 — owner-scope the instanceId for user-origin (custom / marketplace
+    // / BYO) agents so identity + runtime token + memory are isolated per
+    // installer. First-party AGENT_TYPES agents (commonly-bot, openclaw, codex,
+    // …) are INTENTIONALLY shared — any user installing commonly-bot connects
+    // to the one shared instance — so they are never scoped, regardless of who
+    // installs. Applied BEFORE the existing-install and global-instance lookups
+    // so the whole flow keys on the scoped id consistently.
+    const isFirstPartyShared = AgentIdentityService.isKnownAgentType(safeAgentName);
     if (!isFirstPartyShared) {
       normalizedInstanceId = ownerScopedInstanceId(userId, normalizedInstanceId);
     }

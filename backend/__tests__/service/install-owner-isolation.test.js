@@ -112,12 +112,19 @@ describe('#609 BYO agent owner isolation', () => {
     expect(res2.body.sharedIdentity).toBe(true);
   });
 
-  it('rejects a non-admin claiming a reserved first-party name', async () => {
-    const res = await installAs(tokenA, byoBody(podA, 'codex'));
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('reserved_agent_name');
-    const inst = await AgentInstallation.findOne({ agentName: 'codex' });
-    expect(inst).toBeNull();
+  it('does NOT owner-scope a first-party agent — it stays shared across users', async () => {
+    // commonly-bot is a first-party AGENT_TYPES agent; two different users
+    // installing it must resolve to the SAME (un-scoped) instanceId so they
+    // connect to the one shared instance (the intended product behavior, and
+    // NOT the #609 leak — first-party memory is shared infra, not user-private).
+    const resA = await installAs(tokenA, byoBody(podA, 'commonly-bot'));
+    const resB = await installAs(tokenB, byoBody(podB, 'commonly-bot'));
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+    expect(resA.body.installation.instanceId).toBe('default');
+    expect(resB.body.installation.instanceId).toBe('default');
+    // No owner tag applied.
+    expect(resA.body.installation.instanceId).not.toMatch(/-u[0-9a-f]{10}$/);
   });
 
   it('owner-scoping helper is deterministic and owner-separating', () => {
